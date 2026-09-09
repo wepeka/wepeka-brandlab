@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wepeka Brandlab — Storage Inspector</title>
+<style>
+  body{ margin:0; background:#0c0b0a; color:#f6f4f1; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; padding:32px; }
+  h1{ font-size:20px; margin:0 0 4px; }
+  p.sub{ color:#a19b92; font-size:13px; margin:0 0 28px; }
+  .box{ background:#171614; border:1px solid #2c2925; border-radius:14px; padding:20px; margin-bottom:16px; }
+  .box h2{ font-size:14px; margin:0 0 12px; }
+  .row{ display:flex; justify-content:space-between; padding:8px 0; border-top:1px solid #221f1c; font-size:13px; }
+  .row:first-child{ border-top:none; }
+  .k{ color:#a19b92; }
+  .v{ font-weight:700; }
+  .empty{ color:#6f6a62; font-size:13px; }
+  code{ background:#1d1b18; padding:2px 6px; border-radius:4px; font-size:12px; }
+  button{ background:#ffa52b; color:#1c1610; border:0; border-radius:10px; padding:9px 16px; font-weight:700; font-size:13px; cursor:pointer; margin-top:10px; }
+  button:hover{ filter:brightness(1.08); }
+  .danger{ background:#ff6a5c; }
+  .origin{ color:#ffa52b; font-weight:700; }
+  a{ color:#ffa52b; }
+</style>
+</head>
+<body>
+  <h1>Wepeka Brandlab — Storage Inspector</h1>
+  <p class="sub">Reads localStorage for <span class="origin" id="origin"></span> — the exact same data your Wepeka Brandlab app at this URL uses. Open this in the SAME browser you normally use the app in.</p>
+
+  <div class="box">
+    <h2>Current data (contentos:db:v1)</h2>
+    <div id="current"></div>
+    <button id="download-btn" style="display:none;">Download as backup file</button>
+  </div>
+
+  <div class="box">
+    <h2>Backup copies found (from a previous read error)</h2>
+    <div id="backups"></div>
+  </div>
+
+  <div class="box">
+    <h2>Every localStorage key at this address</h2>
+    <div id="allkeys"></div>
+  </div>
+
+  <script>
+    document.getElementById("origin").textContent = location.origin;
+
+    function safeParse(raw) {
+      try { return { ok: true, data: JSON.parse(raw) }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    }
+
+    const raw = localStorage.getItem("contentos:db:v1");
+    const currentEl = document.getElementById("current");
+    const downloadBtn = document.getElementById("download-btn");
+    if (!raw) {
+      currentEl.innerHTML = '<p class="empty">Nothing stored here yet — this address has no Wepeka Brandlab data at all.</p>';
+    } else {
+      downloadBtn.style.display = "inline-block";
+      downloadBtn.addEventListener("click", () => {
+        const blob = new Blob([raw], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "content-os-recovered-" + new Date().toISOString().slice(0, 10) + ".json";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+      const parsed = safeParse(raw);
+      if (!parsed.ok) {
+        currentEl.innerHTML = `<p class="empty">There IS data here (${raw.length.toLocaleString()} characters), but it can't be read: ${parsed.error}</p>`;
+      } else {
+        const db = parsed.data;
+        const brands = db.brands || [];
+        const content = db.content || [];
+        currentEl.innerHTML = `
+          <div class="row"><span class="k">Brands</span><span class="v">${brands.length}</span></div>
+          <div class="row"><span class="k">Content pieces</span><span class="v">${content.length}</span></div>
+          ${brands.map(b => `<div class="row"><span class="k">${b.name}</span><span class="v">${content.filter(c => c.brandId === b.id).length} pieces</span></div>`).join("")}
+        `;
+      }
+    }
+
+    const backupKeys = Object.keys(localStorage).filter((k) => k.startsWith("contentos:db:v1:corrupted"));
+    const backupsEl = document.getElementById("backups");
+    if (!backupKeys.length) {
+      backupsEl.innerHTML = '<p class="empty">None found.</p>';
+    } else {
+      backupsEl.innerHTML = backupKeys
+        .map((k) => {
+          const rawB = localStorage.getItem(k);
+          const parsedB = safeParse(rawB);
+          const brandNames = parsedB.ok ? (parsedB.data.brands || []).map((b) => b.name).join(", ") || "(no brands)" : "unreadable";
+          return `<div class="row"><span class="k"><code>${k}</code><br>${brandNames}</span></div>
+                  <button data-restore="${k}">Restore this backup</button>`;
+        })
+        .join("<hr style='border-color:#221f1c;margin:14px 0;'>");
+
+      backupsEl.querySelectorAll("[data-restore]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.dataset.restore;
+          const val = localStorage.getItem(key);
+          if (!safeParse(val).ok) {
+            alert("This backup is also unreadable — can't restore it.");
+            return;
+          }
+          if (!confirm("This will replace whatever is currently in contentos:db:v1 with this backup. Continue?")) return;
+          localStorage.setItem("contentos:db:v1", val);
+          alert("Restored. Reload this page to confirm, then open the app normally.");
+          location.reload();
+        });
+      });
+    }
+
+    const allEl = document.getElementById("allkeys");
+    const keys = Object.keys(localStorage);
+    allEl.innerHTML = keys.length
+      ? keys.map((k) => `<div class="row"><span class="k">${k}</span><span class="v">${(localStorage.getItem(k) || "").length.toLocaleString()} chars</span></div>`).join("")
+      : '<p class="empty">localStorage is completely empty at this address.</p>';
+  </script>
+</body>
+</html>
