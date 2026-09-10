@@ -34,15 +34,17 @@ async function applyBrandTint(brand) {
 }
 
 const TABS = [
-  { key: "dashboard", label: "Dashboard", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-dashboard" },
-  { key: "content", label: "Content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content" },
-  { key: "creator", label: "Creator", icon: "edit", path: (id) => `#/brand/${id}/creator`, tour: "tab-creator" },
-  { key: "calendar", label: "Calendar", icon: "calendar", path: (id) => `#/brand/${id}/calendar`, tour: "tab-calendar" },
+  { key: "home", label: "Home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home" },
+  { key: "dna", label: "Brand DNA", icon: "target", path: (id) => `#/brand/${id}/dna`, tour: "tab-dna" },
+  { key: "campaigns", label: "Campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns" },
+  { key: "guidelines", label: "Brand Guidelines", icon: "book", path: (id) => `#/brand/${id}/guidelines`, tour: "tab-guidelines" },
+  { key: "content-os", label: "Content OS", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os" },
+  { key: "sales", label: "Sales Tracker", icon: "folder", path: (id) => `#/brand/${id}/sales`, tour: "tab-sales" },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
   return `
-    <button type="button" class="notif-row" data-go="${brand.id}/creator/${content.id}">
+    <button type="button" class="notif-row" data-go="${brand.id}/content-os/creator/${content.id}">
       ${avatarHTML(brand, "width:26px;height:26px;border-radius:7px;font-size:11px;flex:none;")}
       <div class="ti">
         <div class="t">${escapeHtml(content.title || "Untitled")}</div>
@@ -105,7 +107,7 @@ export function shellHTML({ brandId, active }) {
         <button class="icon-btn" id="logout-btn" title="Log out" aria-label="Log out">${icon("logout", { size: 17 })}</button>
       </div>
     </header>
-    <main class="view ${["content", "creator", "calendar"].includes(active) ? "wide" : ""}" id="view-root"></main>
+    <main class="view ${active === "content-os" ? "wide" : ""}" id="view-root"></main>
   `;
 }
 

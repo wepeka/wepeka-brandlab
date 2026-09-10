@@ -246,4 +246,31 @@ export async function fetchFacebookVideoMetrics({ pageAccessToken }, videoId) {
   return { metrics, warnings };
 }
 
+// Attempts to read a Reel's Facebook-crosspost view count via the same
+// Instagram media id, against graph.facebook.com with the linked Page's
+// access token. These field names ARE valid (graph.instagram.com rejects
+// them outright, graph.facebook.com doesn't) — but confirmed against a real
+// account this does NOT reliably return the true number: it came back 0
+// for a Reel whose own in-app "Reel Insights" screen reported 405 Facebook
+// views. Meta doesn't appear to expose this specific Instagram-vs-Facebook
+// split through the public API at all, at least not through any
+// metric/breakdown combination tried. Not currently called anywhere in the
+// app — content-editor.js asks the user to read the number off Instagram's
+// own app and enter it manually instead. Left here in case a future API
+// version or a different account behaves differently; verify against a
+// real reel with known nonzero Facebook views before wiring this back up.
+export async function fetchCrosspostViews({ pageAccessToken }, igMediaId) {
+  try {
+    const json = await graphGet(`/${igMediaId}/insights`, { metric: "facebook_views,crossposted_views" }, pageAccessToken);
+    // eslint-disable-next-line no-console
+    console.log(`[Facebook] crosspost insights for media ${igMediaId} →`, JSON.stringify(json));
+    const get = (name) => json.data?.find((d) => d.name === name)?.values?.[0]?.value;
+    return { facebookViews: get("facebook_views") ?? null, crosspostedViews: get("crossposted_views") ?? null, error: null };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log(`[Facebook] crosspost insights for media ${igMediaId} → ERROR:`, e.message);
+    return { facebookViews: null, crosspostedViews: null, error: e.message };
+  }
+}
+
 export { FacebookApiError };

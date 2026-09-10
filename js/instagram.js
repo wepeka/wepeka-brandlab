@@ -129,12 +129,15 @@ const PROFILE_METRICS = [
   { key: "followersGained", names: ["follows"] },
 ];
 // Views: first name that returns a value wins (these are alternate names
-// for the same thing across API versions, not additive). Confirmed via a
-// real account's console log that Instagram has no separate metric name
-// for "Facebook crosspost views" — "facebook_views" and "crossposted_views"
-// both come back as a flat 400 error, so the combined figure the Instagram
-// app shows for crossposted content simply isn't exposed by this API. If
-// you need that exact number, type it in manually on that post.
+// for the same thing across API versions, not additive). "facebook_views"
+// and "crossposted_views" are accepted (no error) via graph.facebook.com
+// with a Page access token — this file's graph.instagram.com/IGAA-token
+// client flatly rejects both with a 400 — but confirmed against a real
+// account that even the working endpoint doesn't return the true number
+// (came back 0 for a Reel Instagram's own app reported 405 Facebook views
+// on). See facebook.js's fetchCrosspostViews for the full story; it's not
+// wired up anywhere right now. content-editor.js asks the user to read the
+// Facebook views number off Instagram's own app and enter it manually.
 const VIEWS_METRICS = {
   IMAGE: ["views", "impressions"],
   CAROUSEL_ALBUM: ["views", "impressions"],

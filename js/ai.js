@@ -239,4 +239,224 @@ export async function generateThumbnail(ai, { title, idea, brandGuidelines, logo
   return `data:${imagePart.inlineData.mimeType || "image/png"};base64,${imagePart.inlineData.data}`;
 }
 
+// Assembles a brand's structured identity into one labeled context block —
+// the shared replacement for every AI feature independently doing its own
+// `brand?.aiVoiceGuide || ""`. Falls back gracefully: a brand with only the
+// old aiVoiceGuide field filled in (created before Brand DNA existed) still
+// gets a usable, non-empty block instead of an empty one.
+export function buildBrandContext(brand) {
+  if (!brand) return "";
+  const dna = brand.brandDNA || {};
+  const lines = [
+    `Brand: ${brand.name}`,
+    dna.tagline ? `Tagline: ${dna.tagline}` : "",
+    dna.purpose ? `Purpose (why this brand exists): ${dna.purpose}` : "",
+    dna.vision ? `Vision: ${dna.vision}` : "",
+    dna.mission ? `Mission: ${dna.mission}` : "",
+    dna.targetAudience ? `Target audience: ${dna.targetAudience}` : "",
+    dna.problemSolved ? `Problem this brand solves: ${dna.problemSolved}` : "",
+    dna.positioning ? `Positioning: ${dna.positioning}` : "",
+    dna.differentiation ? `What makes this brand different: ${dna.differentiation}` : "",
+    dna.callToAction ? `Call to action: ${dna.callToAction}` : "",
+    dna.successOutcome ? `What success looks like for the customer: ${dna.successOutcome}` : "",
+    dna.failureOutcome ? `What the customer risks by doing nothing: ${dna.failureOutcome}` : "",
+    dna.personality?.length ? `Brand personality: ${dna.personality.join(", ")}` : "",
+    dna.values?.length ? `Brand values: ${dna.values.join(", ")}` : "",
+    dna.productsServices?.length ? `Products/services: ${dna.productsServices.join(", ")}` : "",
+    brand.aiVoiceGuide ? `Voice & tone guide: ${brand.aiVoiceGuide}` : "",
+  ].filter(Boolean);
+  return lines.length ? lines.join("\n") : `Brand: ${brand.name} (no brand identity details filled in yet).`;
+}
+
+// Distilled, original-wording reference to a handful of widely-known
+// marketing/branding books — principle names + one-line descriptions this
+// app writes itself, never the books' own text. Used as reasoning support
+// for AI features (e.g. suggestCampaignFit below), not something the AI is
+// meant to cite or name-drop back at the user.
+export const MARKETING_FRAMEWORKS_CONTEXT = `
+Marketing & branding principles to reason with (apply the thinking, never quote or name the source book to the user):
+- Give before you ask, and earn attention by being genuinely useful or remarkable to a specific smallest-viable audience, rather than shouting at everyone (This Is Marketing).
+- Frame the customer as the hero of their own story and the brand as their guide, not the hero — a clear plot beats a clever pitch (Building a StoryBrand).
+- A simple customer journey has three parts: what happens before they know you, during their first purchase/experience, and after — each needs its own simple next step (Marketing Made Simple).
+- Ideas spread when they carry Social currency, a Trigger, Emotion, Public visibility, Practical value, and a Story (STEPPS) — content earns sharing, it isn't just posted (Contagious).
+- Messages stick when they're Simple, Unexpected, Concrete, Credible, Emotional, and told as a Story (SUCCESs) (Made to Stick).
+- Modern marketing blends digital speed/data with human, experience-led touches — meet audiences phygitally (physical + digital) and design for participation, not just broadcast (Marketing 6.0).
+`.trim();
+
+// Given a brand's context and its live campaigns, suggests which campaign a
+// raw content idea best fits (or none), plus a content angle — so a user
+// dropping in an idea doesn't have to manually figure out which strategic
+// bucket it belongs to. Never auto-applies anything; the caller always
+// leaves the suggestion for the user to accept or ignore.
+export async function suggestCampaignFit(ai, { brand, campaigns, idea, title }) {
+  if (!campaigns.length) throw new AiApiError("This brand has no campaigns yet — create one first.");
+  const system = [
+    "You help a brand manager decide which marketing campaign a new content idea best serves, and suggest a content angle for it.",
+    buildBrandContext(brand),
+    MARKETING_FRAMEWORKS_CONTEXT,
+    "Given the idea below and this brand's active campaigns, pick the single best-fit campaign (or none if truly nothing fits), and suggest a short content angle — a specific way to shoot/frame this idea so it clearly serves that campaign's key message and audience.",
+    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"campaignId": "the chosen campaign\'s id, or null", "angle": "1-2 sentences describing the content angle", "rationale": "1-2 sentences on why this campaign/angle, in plain language, no jargon or book names"}',
+  ].join("\n\n");
+
+  const user = [
+    title ? `Title: ${title}` : "",
+    idea ? `Idea: ${idea}` : "",
+    !title && !idea ? "No title or idea given yet." : "",
+    "\nCampaigns:",
+    ...campaigns.map(
+      (c) =>
+        `- id=${c.id} | name=${c.name} | objective=${c.objective} | key message=${c.keyMessage || "(none set)"} | audience=${c.targetAudience || brand?.brandDNA?.targetAudience || "(not set)"}`
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await callModel(ai, system, user, 500);
+  try {
+    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
+    const parsed = JSON.parse(cleaned);
+    return {
+      campaignId: parsed.campaignId && campaigns.some((c) => c.id === parsed.campaignId) ? parsed.campaignId : null,
+      angle: parsed.angle || "",
+      rationale: parsed.rationale || "",
+    };
+  } catch {
+    throw new AiApiError("Couldn't read a campaign suggestion back from the AI response.");
+  }
+}
+
+// Powers the "Help me answer this" button on the Brand DNA wizard's
+// question steps. Not JSON — a single plain-text answer, since it's meant
+// to drop straight into the step's textarea for the user to edit or accept,
+// same spirit as classifyFunnel's plain-text return.
+export async function suggestBrandDnaAnswer(ai, { brand, question, guide, draftAnswer, priorAnswers = [] }) {
+  const system = [
+    "You help a small business owner answer one question in a guided brand-identity questionnaire (inspired by the StoryBrand framework).",
+    "Write ONE short, concrete paragraph (2-4 sentences) that could be their actual answer — not generic marketing advice about how to answer, an actual draft answer in first-person/brand voice.",
+    "Match the language the user has been writing in (Indonesian or English).",
+    "Respond with ONLY the answer text — no preamble, no quotes, no markdown.",
+    buildBrandContext(brand),
+  ].join("\n\n");
+
+  const user = [
+    `Question: ${question}`,
+    guide ? `What this question is really asking: ${guide}` : "",
+    priorAnswers.length ? `\nWhat they've already said in earlier steps:\n${priorAnswers.map((a) => `- ${a}`).join("\n")}` : "",
+    draftAnswer ? `\nTheir rough draft so far — refine and sharpen it, don't ignore it:\n${draftAnswer}` : "\nThey haven't written anything yet — suggest a reasonable starting point based on the brand info above.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await callModel(ai, system, user, 300);
+  return raw.trim();
+}
+
+// Fixed checklist the "answer strength" indicator under each Brand DNA
+// wizard question rates every answer against — same idea as a password-
+// strength meter's requirement list, but judged by AI instead of a regex
+// since "is this specific enough" isn't checkable with a pattern. Order
+// matters: it lines up positionally with the `criteria` booleans
+// checkBrandDnaAnswer returns.
+export const ANSWER_QUALITY_CRITERIA = [
+  "Spesifik untuk brand ini, bukan generic",
+  "Ada detail konkret (contoh, angka, situasi nyata)",
+  "Menjawab langsung apa yang ditanyakan",
+];
+
+// Powers the answer-strength meter under each Brand DNA wizard answer —
+// checks the 3 fixed criteria above and returns which ones this answer
+// meets, plus one short line of feedback. JSON, same "expect strict JSON"
+// convention as suggestCampaignFit.
+export async function checkBrandDnaAnswer(ai, { question, guide, answer }) {
+  const system = [
+    "You rate how well a short answer addresses a specific brand-identity question (inspired by the StoryBrand framework).",
+    `Judge the answer against exactly these ${ANSWER_QUALITY_CRITERIA.length} criteria, in this order:`,
+    ANSWER_QUALITY_CRITERIA.map((c, i) => `${i + 1}. ${c}`).join("\n"),
+    "Be strict — a vague answer that could apply to almost any business fails criterion 1 even if it's grammatically fine.",
+    "Then give ONE short sentence (max ~15 words) on what would make it sharper — skip this if all 3 criteria are met, say what's good about it instead.",
+    "Match the language of the answer (Indonesian or English).",
+    `Respond ONLY with valid JSON, no markdown fences: {"criteria": [true/false, true/false, true/false] (exactly ${ANSWER_QUALITY_CRITERIA.length} items, same order as above), "feedback": "..."}`,
+  ].join("\n\n");
+  const user = [`Question: ${question}`, guide ? `What it's really asking: ${guide}` : "", `Answer: ${answer}`].filter(Boolean).join("\n");
+
+  const raw = await callModel(ai, system, user, 200);
+  try {
+    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
+    const parsed = JSON.parse(cleaned);
+    const criteria = ANSWER_QUALITY_CRITERIA.map((_, i) => !!parsed.criteria?.[i]);
+    return { criteria, feedback: parsed.feedback || "" };
+  } catch {
+    return { criteria: ANSWER_QUALITY_CRITERIA.map(() => false), feedback: "" };
+  }
+}
+
+// Drafts an entire campaign — including goals for its enabled journey
+// phases — from one plain-language goal, using the brand's full context so
+// a Gen Z fashion brand's launch plan reads differently from a B2B
+// service's, instead of a generic template with the brand's name swapped
+// in. Never applied silently — the caller opens this in the same
+// review-before-save modal used for manual campaign creation.
+// `enabledPhases`: the subset of CAMPAIGN_PHASE_TEMPLATE this campaign
+// actually uses (Website/Event/Community only if the brand has/plans that
+// infrastructure) — matched back by name, not position, since the enabled
+// set varies per campaign.
+export async function generateCampaignPlan(ai, { brand, objectiveText, objective, enabledPhases, socialPlatforms = [] }) {
+  const system = [
+    "You draft a marketing campaign plan for a specific brand, tailored to that brand's actual character, audience, and products — not a generic template.",
+    buildBrandContext(brand),
+    MARKETING_FRAMEWORKS_CONTEXT,
+    socialPlatforms.length ? `Social platforms this brand actively uses: ${socialPlatforms.join(", ")}.` : "",
+    `This campaign's journey uses exactly these phases, in this order — write a specific \`goal\` for each: what it should accomplish for THIS campaign, for THIS brand, not a generic definition of the phase:\n${enabledPhases.map((p) => `- ${p.name}: ${p.description}`).join("\n")}`,
+    "Match the language of the user's stated goal (Indonesian or English).",
+    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"name": "...", "targetAudience": "...", "problemOrOpportunity": "...", "insight": "...", "bigIdea": "...", "keyMessage": "...", "offer": "...", "cta": "...", "channels": ["...", "..."], "phases": [{"name": "...", "goal": "..."}, ...]} — phases array MUST have exactly ${enabledPhases.length} items, one per phase listed above, "name" matching those exactly, same order.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const user = [`Campaign objective category: ${objective}`, `What the user said they want: ${objectiveText}`].join("\n");
+
+  const raw = await callModel(ai, system, user, 1200);
+  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
+  try {
+    const parsed = JSON.parse(cleaned);
+    const goalByName = {};
+    (parsed.phases || []).forEach((p) => { if (p?.name) goalByName[p.name.toLowerCase()] = p.goal || ""; });
+    const phases = enabledPhases.map((p) => ({ name: p.name, goal: goalByName[p.name.toLowerCase()] || "" }));
+    return {
+      name: parsed.name || "", targetAudience: parsed.targetAudience || "", problemOrOpportunity: parsed.problemOrOpportunity || "",
+      insight: parsed.insight || "", bigIdea: parsed.bigIdea || "", keyMessage: parsed.keyMessage || "",
+      offer: parsed.offer || "", cta: parsed.cta || "", channels: Array.isArray(parsed.channels) ? parsed.channels : [], phases,
+    };
+  } catch {
+    throw new AiApiError("Couldn't read a campaign plan back from the AI response.");
+  }
+}
+
+// Suggests 2-3 content ideas for one specific campaign phase — given what's
+// already been made for it, so it doesn't repeat itself. Returns ideas only;
+// the caller decides whether to turn one into an actual Content item.
+export async function suggestPhaseContent(ai, { brand, campaign, phase, existingTitles = [] }) {
+  const system = [
+    "You suggest short-form content ideas for one specific phase of a marketing campaign, tailored to the brand's actual character and audience.",
+    buildBrandContext(brand),
+    MARKETING_FRAMEWORKS_CONTEXT,
+    `Campaign: ${campaign.name} — key message: ${campaign.keyMessage || "(not set)"}. Offer: ${campaign.offer || "(not set)"}. CTA: ${campaign.cta || "(not set)"}.`,
+    `This phase ("${phase.name}") goal: ${phase.goal || "(not set — infer something reasonable for this phase and campaign)"}.`,
+    existingTitles.length ? `Content already made for this phase (don't repeat these ideas):\n${existingTitles.map((t) => `- ${t}`).join("\n")}` : "",
+    "Suggest 2-3 NEW content ideas for this phase. Match the brand's language (Indonesian or English).",
+    'Respond ONLY with valid JSON, no markdown fences: {"ideas": [{"title": "...", "angle": "1-2 sentences", "format": "e.g. Reels, Carousel, Story"}, ...]}',
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const raw = await callModel(ai, system, "Suggest the ideas now.", 700);
+  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
+  try {
+    const parsed = JSON.parse(cleaned);
+    return (parsed.ideas || []).slice(0, 3).map((i) => ({ title: i.title || "", angle: i.angle || "", format: i.format || "" }));
+  } catch {
+    throw new AiApiError("Couldn't read content ideas back from the AI response.");
+  }
+}
+
 export { AiApiError };

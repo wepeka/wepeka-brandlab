@@ -221,6 +221,19 @@ export function pickTintForeground(rgb) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// One-item-per-line textarea <-> plain string array — the encoding shared by
+// Brand DNA's personality/values/productsServices and Campaign's channels,
+// so multi-value fields don't need a dedicated add/remove list-editor UI.
+export function linesToList(text) {
+  return (text || "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+export function listToLines(list) {
+  return (list || []).join("\n");
+}
+
 // Closes any open .menu / .filter popover when clicking elsewhere.
 export function closeMenusOnOutsideClick() {
   document.addEventListener("click", (e) => {

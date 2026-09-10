@@ -260,7 +260,12 @@ function renderTable(root, brandId, state, refresh, brand) {
     menu.style.top = rect.bottom + 6 + "px";
     menu.style.left = Math.min(rect.left, window.innerWidth - 220) + "px";
     menu.innerHTML = `
-      ${igConfigured ? `<button data-act="refresh-all">${icon("refresh", { size: 15 })}Refresh All Instagram Metrics</button><div class="menu-divider"></div>` : ""}
+      ${
+        igConfigured
+          ? `<button data-act="refresh-all">${icon("refresh", { size: 15 })}Refresh All Instagram Metrics</button>`
+          : `<button data-act="refresh-all-disabled" disabled title="Connect Instagram in Edit Brand first">${icon("refresh", { size: 15 })}Refresh All Instagram Metrics <span class="text-faint" style="font-size:11px;">(connect in Edit Brand)</span></button>`
+      }
+      <div class="menu-divider"></div>
       <button data-act="delete-all" class="danger">${icon("trash", { size: 15 })}Delete All Content (${allContentCount})</button>
     `;
     document.body.appendChild(menu);

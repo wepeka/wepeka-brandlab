@@ -31,6 +31,7 @@ function paint(root, state, refresh) {
       <p class="page-sub">Every brand gets its own dashboard, calendar, and content database. Add as many as you manage.</p>
     </div>
     ${showOnboarding ? onboardingCardHTML() : ""}
+    ${setupVideoCardHTML()}
     ${overdueRemindersHTML()}
     ${weeklyWorkHTML(brands)}
     ${myRoutineHTML(state, brands)}
@@ -59,14 +60,14 @@ function paint(root, state, refresh) {
   // this list once you've genuinely advanced it.
   qsa(".weekly-work-row", root).forEach((row) => {
     row.addEventListener("click", () => {
-      location.hash = `#/brand/${row.dataset.brandId}/creator/${row.dataset.taskId}`;
+      location.hash = `#/brand/${row.dataset.brandId}/content-os/creator/${row.dataset.taskId}`;
     });
   });
 
   qsa("[data-overdue-work]", root).forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      location.hash = `#/brand/${btn.dataset.brandId}/creator/${btn.dataset.overdueWork}`;
+      location.hash = `#/brand/${btn.dataset.brandId}/content-os/creator/${btn.dataset.overdueWork}`;
     });
   });
 
@@ -147,6 +148,26 @@ function onboardingCardHTML() {
         <h3 style="font-size:15px;margin-bottom:4px;">New here? Start with the basics</h3>
         <p class="text-muted" style="font-size:13px;margin:0 0 12px;">A quick walkthrough of where everything lives — brands, Creator Studio, Calendar, notifications, and Settings.</p>
         <button type="button" class="btn btn-primary btn-sm" id="start-tour">${icon("play", { size: 13 })}Take the Tour</button>
+      </div>
+    </div>
+  `;
+}
+
+// The real explainer video is being produced separately — this is a
+// deliberately nice-looking placeholder standing in for it until an actual
+// video file/link exists. Swap the .setup-video-placeholder inner markup for
+// a real <video>/<iframe> embed once it's ready; nothing else here needs to
+// change.
+function setupVideoCardHTML() {
+  return `
+    <div class="card setup-video-card">
+      <div class="setup-video-placeholder">
+        <div class="setup-video-play">${icon("play", { size: 20 })}</div>
+        <span class="setup-video-badge">Coming soon</span>
+      </div>
+      <div class="onboarding-copy">
+        <h3 style="font-size:15px;margin-bottom:4px;">Setup walkthrough video</h3>
+        <p class="text-muted" style="font-size:13px;margin:0;">A short video covering brand setup, connecting Instagram/Facebook, and the Creator workflow end-to-end — being recorded now, it'll drop in right here.</p>
       </div>
     </div>
   `;
@@ -456,7 +477,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
 
       <div class="divider"></div>
       <div class="page-eyebrow" style="margin-bottom:12px;">Instagram (optional)</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Connects this brand's own Instagram account so "Fetch from Instagram" and "Sync All Instagram" can pull its numbers automatically.</p>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Connects this brand's own Instagram account so views/likes/comments can be pulled in automatically instead of typed by hand — per post from the Content tab ("Fetch from Instagram"), or all at once from Content → ⋯ menu → "Refresh All Instagram Metrics". Still a manual click, not a background auto-sync — this app has no server to run one on its own.</p>
       <div class="field">
         <label>Instagram Business Account ID</label>
         <input class="input" id="ig-userid" placeholder="17841400..." value="${(draft.instagram.igUserId || "").replace(/"/g, "&quot;")}" />

@@ -2,12 +2,13 @@ import { shellHTML, wireShell } from "./layout.js";
 import { getBrand, initStore } from "./store.js";
 import { onAuthChange } from "./auth.js";
 import { renderAuthScreen } from "./views/login.js";
-import { openContentEditor } from "./views/content-editor.js";
 import * as brandsView from "./views/brands.js";
-import * as dashboardView from "./views/dashboard.js";
-import * as contentListView from "./views/content-list.js";
-import * as creatorView from "./views/creator.js";
-import * as calendarView from "./views/calendar.js";
+import * as brandHomeView from "./views/brand-home.js";
+import * as brandDnaView from "./views/brand-dna.js";
+import * as brandGuidelinesView from "./views/brand-guidelines.js";
+import * as salesView from "./views/sales.js";
+import * as campaignsView from "./views/campaigns.js";
+import * as contentOsView from "./views/content-os.js";
 import * as settingsView from "./views/settings.js";
 
 const app = document.getElementById("app");
@@ -16,14 +17,20 @@ let cleanup = null;
 function parseRoute(hash) {
   const h = (hash || "").replace(/^#/, "") || "/";
   let m;
-  if ((m = h.match(/^\/brand\/([^/]+)\/content\/([^/]+)\/?$/))) return { view: "content", brandId: m[1], contentId: m[2] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content\/?$/))) return { view: "content", brandId: m[1] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/creator\/([^/]+)\/?$/))) return { view: "creator", brandId: m[1], contentId: m[2] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/creator\/?$/))) return { view: "creator", brandId: m[1] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/calendar\/?$/))) return { view: "calendar", brandId: m[1] };
-  // Analytics was folded into the Dashboard — old links still land somewhere useful.
-  if ((m = h.match(/^\/brand\/([^/]+)\/analytics\/?$/))) return { view: "dashboard", brandId: m[1] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "dashboard", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/creator\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "creator", contentId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/creator\/?$/))) return { view: "content-os", brandId: m[1], sub: "creator" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "list", contentId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/?$/))) return { view: "content-os", brandId: m[1], sub: "list" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/?$/))) return { view: "content-os", brandId: m[1], sub: "dashboard" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/([^/]+)\/?$/))) return { view: "campaigns", brandId: m[1], campaignId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/dna\/?$/))) return { view: "dna", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
+  // Analytics was folded into Content OS's Dashboard sub-tab — old links still land somewhere useful.
+  if ((m = h.match(/^\/brand\/([^/]+)\/analytics\/?$/))) return { view: "content-os", brandId: m[1], sub: "dashboard" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
   if (h === "/settings") return { view: "settings" };
   return { view: "brands" };
 }
@@ -66,18 +73,23 @@ function renderRoute() {
   window.scrollTo(0, 0);
 
   switch (route.view) {
-    case "dashboard":
-      cleanup = dashboardView.render(viewRoot, { brandId: route.brandId });
+    case "home":
+      cleanup = brandHomeView.render(viewRoot, { brandId: route.brandId });
       break;
-    case "content":
-      cleanup = contentListView.render(viewRoot, { brandId: route.brandId });
-      if (route.contentId) openContentEditor({ brandId: route.brandId, contentId: route.contentId });
+    case "dna":
+      cleanup = brandDnaView.render(viewRoot, { brandId: route.brandId });
       break;
-    case "creator":
-      cleanup = creatorView.render(viewRoot, { brandId: route.brandId, initialContentId: route.contentId });
+    case "campaigns":
+      cleanup = campaignsView.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });
       break;
-    case "calendar":
-      cleanup = calendarView.render(viewRoot, { brandId: route.brandId });
+    case "guidelines":
+      cleanup = brandGuidelinesView.render(viewRoot, { brandId: route.brandId });
+      break;
+    case "sales":
+      cleanup = salesView.render(viewRoot, { brandId: route.brandId });
+      break;
+    case "content-os":
+      cleanup = contentOsView.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
       break;
     case "settings":
       cleanup = settingsView.render(viewRoot);

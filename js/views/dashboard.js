@@ -1,4 +1,4 @@
-import { getBrand, listContent, getSettings, onChange, updateBrand, addBrandLogo, removeBrandLogo, FUNNELS } from "../store.js";
+import { getBrand, listContent, getSettings, onChange, updateBrand, addBrandLogo, removeBrandLogo, resolveContentBuckets, instagramOnlyViews, organicViews, combinedViewsWithAds, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon } from "../icons.js";
 import { formatNumber, formatPercent, formatDate, resizeImageFile, qs, qsa, toast } from "../dom.js";
@@ -96,6 +96,17 @@ function paint(root, brandId, state, refresh) {
     .sort((a, b) => b.avg - a.avg);
   const maxFormatAvg = Math.max(1, ...formatRows.map((r) => r.avg));
 
+  const buckets = resolveContentBuckets(settings);
+  const reelsItems = buckets.reels ? published.filter((c) => c.platform === buckets.reels.platform && c.format === buckets.reels.format) : [];
+  const tiktokItems = buckets.tiktok ? published.filter((c) => c.platform === buckets.tiktok.platform) : [];
+  const reelsTiktokStats = (items) => ({
+    count: items.length,
+    instagramOnly: items.reduce((s, c) => s + (instagramOnlyViews(c) || 0), 0),
+    organic: items.reduce((s, c) => s + (organicViews(c) || 0), 0),
+    ads: items.reduce((s, c) => s + (c.adsPerformance?.found ? c.adsPerformance.videoViews || 0 : 0), 0),
+    combined: items.reduce((s, c) => s + (combinedViewsWithAds(c) || 0), 0),
+  });
+
   const poorPct = evaluated ? (healthCounts.poor / evaluated) * 100 : null;
 
   const funnelStats = {};
@@ -166,7 +177,7 @@ function paint(root, brandId, state, refresh) {
       <div>
         <div class="section-title" style="margin-top:0;">
           <h2>Up Next</h2>
-          <a class="link" href="#/brand/${brand.id}/calendar">Calendar →</a>
+          <a class="link" href="#/brand/${brand.id}/content-os/calendar">Calendar →</a>
         </div>
         <div class="card card-tight">
           ${
@@ -251,6 +262,12 @@ function paint(root, brandId, state, refresh) {
           }
         </div>
       </div>
+    </div>
+
+    <div class="section-title"><h2>Reels vs TikTok</h2></div>
+    <div class="row-2" style="align-items:start;">
+      ${reelsTiktokCard("Reels (Instagram)", buckets.reels, reelsTiktokStats(reelsItems), true)}
+      ${reelsTiktokCard("TikTok", buckets.tiktok, reelsTiktokStats(tiktokItems), false)}
     </div>
   `;
 
@@ -381,6 +398,33 @@ function escapeAttr(s) {
 
 function stat(label, value) {
   return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+}
+
+// Ads views are display-only here — added on top of organic for a "how many
+// people actually saw this, total" figure, never fed back into engagement
+// rate math (that stays organic-only, computed elsewhere from
+// content.performance directly).
+function reelsTiktokCard(label, bucket, stats, showFacebookSplit) {
+  if (!bucket) {
+    return `<div><div class="section-title" style="margin-top:0;"><h2>${label}</h2></div><div class="card card-tight"><p class="text-muted" style="font-size:12.5px;margin:0;padding:14px;">${label} isn't set up in Settings → Platforms${label.includes("Reels") ? "/Formats" : ""} yet.</p></div></div>`;
+  }
+  // Reels can crosspost to Facebook, so "without Facebook" (Instagram's own
+  // number) and "with Facebook" (combined) are both worth seeing side by
+  // side — TikTok has no Facebook angle, so it only needs the simpler
+  // Organic/Ads/Combined set.
+  const statsRow = showFacebookSplit
+    ? `${stat("Instagram Only", formatNumber(stats.instagramOnly))}${stat("+ Facebook", formatNumber(stats.organic))}${stat("+ Ads", formatNumber(stats.ads))}${stat("Combined Views", formatNumber(stats.combined))}`
+    : `${stat("Organic Views", formatNumber(stats.organic))}${stat("Ads Views", formatNumber(stats.ads))}${stat("Combined Views", formatNumber(stats.combined))}`;
+  return `
+    <div>
+      <div class="section-title" style="margin-top:0;">
+        <h2>${label}</h2>
+        <span class="text-muted" style="font-size:12px;">${stats.count} published</span>
+      </div>
+      <div class="card card-tight">
+        <div class="stat-grid">${statsRow}</div>
+      </div>
+    </div>`;
 }
 
 function upNextRow(c) {

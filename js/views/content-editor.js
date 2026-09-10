@@ -1,13 +1,12 @@
-import { getContent, createContent, updateContent, getSettings, getBrand, combinePlatformMetrics, METRIC_KEYS, STATUSES, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getContent, createContent, updateContent, getSettings, getBrand, combinePlatformMetrics, resolveContentBuckets, listCampaigns, METRIC_KEYS, STATUSES, STATUS_LABELS, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
 import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, formatPercent, formatNumber, resizeImageFile, qs, qsa } from "../dom.js";
+import { toast, formatPercent, formatNumber, resizeImageFile, escapeHtml, qs, qsa } from "../dom.js";
 import { analyzeScreenshot } from "../ocr.js";
 import { findMediaByPermalink, fetchMediaMetrics } from "../instagram.js";
-import { findFacebookVideoByCaption, fetchFacebookVideoMetrics } from "../facebook.js";
 import { findAdsForPost, fetchAdInsights } from "../ads.js";
-import { generateThumbnail, classifyFunnel } from "../ai.js";
+import { generateThumbnail, classifyFunnel, suggestCampaignFit } from "../ai.js";
 
 export function openContentEditor({ brandId, contentId = null, defaults = {}, onSaved }) {
   const settings = getSettings();
@@ -16,6 +15,7 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
     ? JSON.parse(JSON.stringify(existing))
     : {
         title: "", idea: "", format: settings.formats[0]?.name || "", platform: settings.platforms[0]?.name || "",
+        campaignId: "", campaignPhaseId: "",
         funnel: "TOFU", status: "idea", scheduleDate: "", publishedDate: "", publishedUrl: "",
         script: "", caption: "", reference: "", cta: "", notes: "", thumbnail: "",
         performanceByPlatform: { instagram: {}, facebook: {} },
@@ -24,15 +24,18 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
         ...defaults,
       };
   if (!draft.performanceByPlatform) draft.performanceByPlatform = { instagram: {}, facebook: {} };
+  if (draft.campaignId === undefined) draft.campaignId = "";
+  if (draft.campaignPhaseId === undefined) draft.campaignPhaseId = "";
 
   const brand = getBrand(brandId);
   const igConfig = brand?.instagram || { accessToken: "", igUserId: "" };
   const fbConfig = brand?.facebook || { pageId: "", pageAccessToken: "" };
   const adsConfig = brand?.ads || { adAccountId: "", adsAccessToken: "" };
+  const campaigns = listCampaigns(brandId);
 
   const overlay = openDrawer({
     title: existing ? "Edit Content" : "New Content",
-    bodyHTML: bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig),
+    bodyHTML: bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig, campaigns),
     footHTML: `
       <div class="flex items-center gap-8">
         ${existing ? `<button class="btn btn-ghost btn-sm" data-archive>${icon("archive", { size: 14 })}${existing.archived ? "Unarchive" : "Archive"}</button>` : ""}
@@ -42,7 +45,7 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
         <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}Save</button>
       </div>
     `,
-    onMount: (el) => wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConfig, adsConfig, brand),
+    onMount: (el) => wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConfig, adsConfig, brand, campaigns),
   });
 
   overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
@@ -55,7 +58,8 @@ function funnelTag(funnel) {
   return `<span class="tag tag-${funnel.toLowerCase()}">${funnel}</span>`;
 }
 
-function bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig) {
+function bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig, campaigns) {
+  const buckets = resolveContentBuckets(settings);
   return `
     <div class="editor-tabs">
       <div class="editor-tab active" data-tab="basic">Basic Info</div>
@@ -76,6 +80,14 @@ function bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig) {
         <label>Content Idea</label>
         <textarea class="textarea" id="f-idea" placeholder="What is this content about, and why now?">${draft.idea || ""}</textarea>
       </div>
+      <div class="field">
+        <label>Content For</label>
+        <div class="chip-select" id="f-quickpick">
+          <button type="button" data-quickpick="reels" ${buckets.reels ? "" : "disabled"} class="${quickPickActive(draft, buckets.reels) ? "active" : ""}">Reels (Instagram)</button>
+          <button type="button" data-quickpick="tiktok" ${buckets.tiktok ? "" : "disabled"} class="${quickPickActive(draft, buckets.tiktok) ? "active" : ""}">TikTok</button>
+        </div>
+        <div class="text-faint" style="font-size:11px;margin-top:6px;">Shortcut for Platform + Format below — still fully editable for Facebook, YouTube, Carousel, etc.</div>
+      </div>
       <div class="row-2">
         <div class="field">
           <label>Platform</label>
@@ -89,6 +101,19 @@ function bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig) {
             ${settings.formats.map((f) => `<option value="${f.name}" ${draft.format === f.name ? "selected" : ""}>${f.name}</option>`).join("")}
           </select>
         </div>
+      </div>
+      <div class="field">
+        <div class="creator-field-head">
+          <label style="margin-bottom:0;">Campaign</label>
+          <button type="button" class="chip-icon-btn" id="ai-suggest-campaign" aria-label="AI suggest campaign & angle" title="${campaigns.length ? "Suggest campaign & angle using AI" : "Create a campaign first"}" ${campaigns.length ? "" : "disabled"}>${icon("bot", { size: 14 })}</button>
+        </div>
+        <select class="select" id="f-campaign">
+          <option value="">No campaign</option>
+          ${campaigns.map((c) => `<option value="${c.id}" ${draft.campaignId === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
+        </select>
+        <div id="phase-select-wrap">${phaseSelectHTML(campaigns, draft)}</div>
+        ${!campaigns.length ? `<div class="text-faint" style="font-size:11px;margin-top:6px;">No campaigns yet — create one from the Campaigns tab to link content to a goal.</div>` : ""}
+        <div id="ai-campaign-status" style="margin-top:6px;"></div>
       </div>
       <div class="field">
         <div class="creator-field-head">
@@ -211,6 +236,25 @@ function attr(v) {
   return (v || "").replace(/"/g, "&quot;");
 }
 
+// Only meaningful once a campaign is chosen — that campaign's own 4 fixed
+// phases (Attention/Engagement/Action/Retention), re-rendered whenever the
+// Campaign select changes so it never shows a phase from a different
+// campaign.
+function phaseSelectHTML(campaigns, draft) {
+  const campaign = campaigns.find((c) => c.id === draft.campaignId);
+  if (!campaign) return "";
+  return `
+    <select class="select" id="f-phase" style="margin-top:8px;">
+      <option value="">No phase</option>
+      ${campaign.phases.map((p) => `<option value="${p.id}" ${draft.campaignPhaseId === p.id ? "selected" : ""}>${p.name}</option>`).join("")}
+    </select>
+  `;
+}
+
+function quickPickActive(draft, combo) {
+  return !!combo && draft.platform === combo.platform && draft.format === combo.format;
+}
+
 function adsAreaHTML(draft, ads) {
   const adsConnected = !!(ads.adAccountId && ads.adsAccessToken);
   if (!adsConnected) {
@@ -279,8 +323,8 @@ function manualFacebookHTML(draft) {
   return `
     <div class="field">
       <label>Facebook Views (manual)</label>
-      <input class="input" type="number" min="0" id="f-fb-views-manual" value="${fbViews ?? ""}" placeholder="Auto-detect didn't find this Reel — enter its Facebook views here" />
-      <div class="text-faint" style="font-size:11.5px;margin-top:4px;">Gets added to Instagram's views for the combined total, same as an automatic Facebook match would.</div>
+      <input class="input" type="number" min="0" id="f-fb-views-manual" value="${fbViews ?? ""}" placeholder="Check this Reel's Insights in Instagram's app, enter its Facebook number here" />
+      <div class="text-faint" style="font-size:11.5px;margin-top:4px;">Instagram app → this Reel → Insights → Overview → "Views" breakdown shows Instagram/Facebook split. Meta doesn't expose that split through the API, so it's typed in here — gets added to Instagram's views for the combined total.</div>
     </div>
   `;
 }
@@ -323,11 +367,11 @@ function computedPreviewHTML(draft, settings) {
   `;
 }
 
-function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConfig, adsConfig, brand) {
+function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConfig, adsConfig, brand, campaigns) {
   const gotoCreatorBtn = qs("#goto-creator", el);
   if (gotoCreatorBtn && contentId) {
     gotoCreatorBtn.addEventListener("click", () => {
-      location.hash = `#/brand/${brandId}/creator/${contentId}`;
+      location.hash = `#/brand/${brandId}/content-os/creator/${contentId}`;
     });
   }
 
@@ -340,6 +384,68 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
       el.querySelector(`[data-pane="${tab.dataset.tab}"]`).classList.add("active");
     });
   });
+
+  function wirePhaseSelect() {
+    qs("#f-phase", el)?.addEventListener("change", (e) => {
+      draft.campaignPhaseId = e.target.value;
+    });
+  }
+  function refreshPhaseSelect() {
+    qs("#phase-select-wrap", el).innerHTML = phaseSelectHTML(campaigns, draft);
+    wirePhaseSelect();
+  }
+  wirePhaseSelect();
+
+  qs("#f-campaign", el).addEventListener("change", (e) => {
+    draft.campaignId = e.target.value;
+    draft.campaignPhaseId = "";
+    refreshPhaseSelect();
+  });
+
+  const suggestCampaignBtn = qs("#ai-suggest-campaign", el);
+  if (suggestCampaignBtn) {
+    suggestCampaignBtn.addEventListener("click", async () => {
+      const ai = settings.ai || {};
+      const statusEl = qs("#ai-campaign-status", el);
+      const hasKey = ai.provider === "gemini" ? !!ai.geminiApiKey : !!ai.anthropicApiKey;
+      if (!hasKey) {
+        statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">Add your AI API key in Settings → AI first.</div>`;
+        return;
+      }
+      suggestCampaignBtn.disabled = true;
+      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>Thinking…</span></div>`;
+      try {
+        const suggestion = await suggestCampaignFit(ai, {
+          brand,
+          campaigns,
+          idea: qs("#f-idea", el)?.value ?? draft.idea,
+          title: qs("#f-title", el)?.value ?? draft.title,
+        });
+        statusEl.innerHTML = suggestion.campaignId
+          ? `<div class="ocr-status" style="flex-direction:column;align-items:flex-start;gap:4px;">
+               ${icon("check", { size: 14 })}<strong style="font-size:12.5px;">Suggested: ${escapeHtml(campaigns.find((c) => c.id === suggestion.campaignId)?.name || "")}</strong>
+               ${suggestion.angle ? `<span style="font-size:12px;">Angle: ${escapeHtml(suggestion.angle)}</span>` : ""}
+               ${suggestion.rationale ? `<span class="text-faint" style="font-size:11.5px;">${escapeHtml(suggestion.rationale)}</span>` : ""}
+               <button type="button" class="btn btn-secondary btn-sm" id="apply-campaign-suggestion" style="margin-top:4px;">Use this campaign</button>
+             </div>`
+          : `<div class="ocr-status">${icon("info", { size: 14 })}<span>${suggestion.rationale || "No campaign seemed like a clear fit for this idea."}</span></div>`;
+        const applyBtn = qs("#apply-campaign-suggestion", el);
+        if (applyBtn) {
+          applyBtn.addEventListener("click", () => {
+            draft.campaignId = suggestion.campaignId;
+            draft.campaignPhaseId = "";
+            qs("#f-campaign", el).value = suggestion.campaignId;
+            refreshPhaseSelect();
+            toast("Campaign applied — remember to save.");
+          });
+        }
+      } catch (e) {
+        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e.message}</span></div>`;
+      } finally {
+        suggestCampaignBtn.disabled = false;
+      }
+    });
+  }
 
   // funnel chip select
   qsa("#f-funnel button", el).forEach((btn) => {
@@ -549,25 +655,22 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
         const { metrics, warnings } = await fetchMediaMetrics(igConfig, media);
         draft.performanceByPlatform.instagram = { ...draft.performanceByPlatform.instagram, ...metrics };
 
-        // If this brand has a Facebook Page connected, silently check
-        // whether this same Reel was also crossposted there (matched by
-        // caption/date, same as the Instagram import dedup) — no manual
-        // marking needed. Not finding a match just means it wasn't
-        // crossposted, which isn't an error.
+        // If this brand has a Facebook Page connected, pull how many of
+        // this same Reel's plays came from Facebook — this is the SAME
+        // Instagram media's own insight data (field facebook_views), not a
+        // separate Facebook post to go find, so there's nothing to match by
+        // caption/date and nothing to miss.
+        // Confirmed against a real account: the Graph API's facebook_views/
+        // crossposted_views fields do NOT reliably return the real
+        // Instagram-vs-Facebook split shown in Instagram's own app (Reel
+        // Insights) — they came back 0 for a reel the app itself reported
+        // 405 Facebook views on. Meta doesn't expose this breakdown through
+        // the public API, so this is never auto-written anymore — surface
+        // it as a prompt to check the app and enter it manually instead of
+        // silently writing a number that might be wrong.
         let fbFoundCount = 0;
         if (fbConnected) {
-          statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>Checking if this was also crossposted to Facebook…</span></div>`;
-          try {
-            const video = await findFacebookVideoByCaption(fbConfig, { caption: draft.caption, aroundDate: draft.publishedDate });
-            if (video) {
-              const fbResult = await fetchFacebookVideoMetrics(fbConfig, video.id);
-              draft.performanceByPlatform.facebook = { ...draft.performanceByPlatform.facebook, ...fbResult.metrics };
-              fbFoundCount = Object.keys(fbResult.metrics).length;
-              warnings.push(...fbResult.warnings.map((w) => `Facebook — ${w}`));
-            }
-          } catch (e) {
-            warnings.push(`Facebook crosspost check failed: ${e.message}`);
-          }
+          warnings.push(`Facebook crosspost views aren't reliably exposed by the API — check this Reel's "Views over time" in Instagram's own app (Overview tab) and enter the Facebook number manually below.`);
         }
 
         applyCombinedMetrics();
@@ -586,6 +689,32 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
     });
   }
   wirePerfFetchArea();
+
+  // Switching Platform (via the quick-pick or the raw dropdown) needs the
+  // Performance tab's fetch-vs-manual-entry controls to match — they used
+  // to only ever reflect whatever platform the drawer opened with.
+  const buckets = resolveContentBuckets(settings);
+  function refreshPlatformDependentUI() {
+    draft.platform = qs("#f-platform", el).value;
+    draft.format = qs("#f-format", el).value;
+    qs("#perf-fetch-area", el).innerHTML = platformFetchHTML(draft, igConfig, fbConfig);
+    wirePerfFetchArea();
+    qsa("#f-quickpick button", el).forEach((btn) => {
+      const combo = btn.dataset.quickpick === "reels" ? buckets.reels : buckets.tiktok;
+      btn.classList.toggle("active", quickPickActive(draft, combo));
+    });
+  }
+  qs("#f-platform", el).addEventListener("change", refreshPlatformDependentUI);
+  qs("#f-format", el).addEventListener("change", refreshPlatformDependentUI);
+  qsa("[data-quickpick]", el).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const combo = btn.dataset.quickpick === "reels" ? buckets.reels : buckets.tiktok;
+      if (!combo) return;
+      qs("#f-platform", el).value = combo.platform;
+      qs("#f-format", el).value = combo.format;
+      refreshPlatformDependentUI();
+    });
+  });
 
   const checkAdsBtn = qs("#check-ads", el);
   if (checkAdsBtn) {
@@ -640,6 +769,8 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
     const patch = {
       title,
       idea: qs("#f-idea", el).value,
+      campaignId: draft.campaignId || "",
+      campaignPhaseId: draft.campaignPhaseId || "",
       platform: qs("#f-platform", el).value,
       format: qs("#f-format", el).value,
       funnel: draft.funnel,

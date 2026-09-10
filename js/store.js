@@ -37,6 +37,62 @@ export function combinePlatformMetrics(performanceByPlatform = {}) {
   return totals;
 }
 
+// Resolves this brand's actual Platform/Format entries (both user-editable
+// lists, not fixed ids) that correspond to "Reels" (Instagram + Reels
+// format) and "TikTok" (TikTok platform). Matched by name, case-insensitive,
+// with a fallback chain — a brand that renamed/removed the expected entry
+// degrades to null instead of silently mislabeling content. Shared by the
+// New Content quick-pick and the dashboard's Reels-vs-TikTok widget so both
+// always agree on what counts as which.
+function findByName(list, candidates) {
+  for (const name of candidates) {
+    const hit = list.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (hit) return hit.name;
+  }
+  return null;
+}
+export function resolveContentBuckets(settings) {
+  const igPlatform = findByName(settings.platforms, ["Instagram"]);
+  const reelsFormat = findByName(settings.formats, ["Reels"]);
+  const tiktokPlatform = findByName(settings.platforms, ["TikTok", "Tik Tok"]);
+  const tiktokFormat = findByName(settings.formats, ["Short Video", "Reels"]);
+  return {
+    reels: igPlatform && reelsFormat ? { platform: igPlatform, format: reelsFormat } : null,
+    tiktok: tiktokPlatform ? { platform: tiktokPlatform, format: tiktokFormat } : null,
+  };
+}
+
+function hasPlatformBreakdown(byPlatform) {
+  return !!byPlatform && Object.values(byPlatform).some((p) => p && Object.keys(p).length);
+}
+// Organic views only — combined across whatever platforms were fetched,
+// falling back to the flat (manual/OCR) figure for content with no
+// per-platform breakdown yet, e.g. TikTok.
+export function organicViews(content) {
+  return hasPlatformBreakdown(content.performanceByPlatform)
+    ? combinePlatformMetrics(content.performanceByPlatform).views
+    : content.performance?.views ?? null;
+}
+// Instagram's own views only, excluding any Facebook crosspost number — for
+// showing "without Facebook" alongside organicViews()'s "with Facebook"
+// combined figure. Falls back to the flat performance.views for content
+// with no per-platform breakdown at all (manual entry, no crosspost data).
+export function instagramOnlyViews(content) {
+  return hasPlatformBreakdown(content.performanceByPlatform)
+    ? content.performanceByPlatform.instagram?.views ?? null
+    : content.performance?.views ?? null;
+}
+// Display-only: organic + ad-boosted views on top. Deliberately NOT fed back
+// into content.performance or computeContentMetrics — engagement-rate math
+// must stay organic-only, since paid reach behaves completely differently
+// and would dilute the percentage meaninglessly.
+export function combinedViewsWithAds(content) {
+  const organic = organicViews(content);
+  const adsViews = content.adsPerformance?.found ? content.adsPerformance.videoViews : null;
+  if (organic === null && adsViews === null) return null;
+  return (organic ?? 0) + (adsViews ?? 0);
+}
+
 // "editing" sits between production (shooting) and scheduled — Creator has
 // a checkbox that moves a card production → editing → scheduled as footage
 // gets shot and then cut, instead of only being changeable from the Status
@@ -56,11 +112,31 @@ function uid() {
   return "id-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
+export const CAMPAIGN_OBJECTIVES = ["awareness", "launch", "sales", "event", "engagement", "community", "custom"];
+export const CAMPAIGN_OBJECTIVE_LABELS = {
+  awareness: "Awareness", launch: "Product Launch", sales: "Sales", event: "Event",
+  engagement: "Engagement", community: "Community", custom: "Custom",
+};
+export const CAMPAIGN_STATUSES = ["planning", "active", "completed", "archived"];
+export const CAMPAIGN_STATUS_LABELS = { planning: "Planning", active: "Active", completed: "Completed", archived: "Archived" };
+
+function defaultBrandDNA() {
+  return {
+    tagline: "", purpose: "", vision: "", mission: "",
+    targetAudience: "", problemSolved: "", positioning: "", differentiation: "",
+    // StoryBrand-style narrative fields — what the customer gets if they say
+    // yes (the win) and what they're risking if they don't (the stakes).
+    callToAction: "", successOutcome: "", failureOutcome: "",
+    personality: [], values: [], productsServices: [],
+  };
+}
+
 function defaultDB() {
   return {
     version: 1,
     brands: [],
     content: [],
+    campaigns: [],
     // Standing weekly routine on the home page — brand + day of week +
     // activity + optional time. Recurs every week (not tied to one date);
     // shooting/editing/upload entries auto-confirm from real content
@@ -146,7 +222,7 @@ async function commitInChunks(ops) {
 // `db:change` — this is what makes the app feel live/shared.
 export function initStore() {
   return new Promise((resolve) => {
-    const ready = { brands: false, content: false, routineTemplate: false, settings: false };
+    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, settings: false };
     const checkReady = () => {
       if (Object.values(ready).every(Boolean)) resolve();
     };
@@ -168,6 +244,13 @@ export function initStore() {
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
     }, onErr("content"));
+
+    onSnapshot(collection(fdb, "campaigns"), (snap) => {
+      db.campaigns = snap.docs.map((d) => d.data());
+      ready.campaigns = true;
+      checkReady();
+      window.dispatchEvent(new CustomEvent("db:change"));
+    }, onErr("campaigns"));
 
     onSnapshot(collection(fdb, "routineTemplate"), (snap) => {
       db.routineTemplate = snap.docs.map((d) => d.data());
@@ -204,16 +287,24 @@ export function listBrands({ includeArchived = false } = {}) {
     .filter((b) => includeArchived || !b.archived)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+// Read-time fallback for brands created before Brand DNA existed — no
+// migration script needed, they just get the empty-field defaults merged in
+// the moment they're read.
 export function getBrand(id) {
-  return db.brands.find((b) => b.id === id) || null;
+  const b = db.brands.find((b) => b.id === id) || null;
+  if (b && !b.brandDNA) b.brandDNA = defaultBrandDNA();
+  return b;
 }
-export function createBrand({ name, avatar = "", driveLink = "", brandbookLink = "", logoAssets = [], instagram, facebook, ads, aiVoiceGuide = "" } = {}) {
+export function createBrand({ name, avatar = "", driveLink = "", brandbookLink = "", logoAssets = [], instagram, facebook, ads, aiVoiceGuide = "", brandDNA } = {}) {
   const brand = {
     id: uid(), name: name.trim(), avatar,
     driveLink, brandbookLink, logoAssets,
     // Plain text, not the Drive link above — this is what actually gets fed
     // into the AI prompt, since the generator can't read a linked document.
     aiVoiceGuide,
+    // Structured brand identity — the foundation Campaign/Content/AI read
+    // from instead of every feature re-asking the user the same questions.
+    brandDNA: { ...defaultBrandDNA(), ...(brandDNA || {}) },
     instagram: instagram || { accessToken: "", igUserId: "", username: "", connectedAt: null },
     facebook: facebook || { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null },
     ads: ads || { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null },
@@ -251,11 +342,14 @@ export function archiveBrand(id, archived = true) {
 }
 export function deleteBrand(id) {
   const removedContentIds = db.content.filter((c) => c.brandId === id).map((c) => c.id);
+  const removedCampaignIds = (db.campaigns || []).filter((c) => c.brandId === id).map((c) => c.id);
   db.brands = db.brands.filter((b) => b.id !== id);
   db.content = db.content.filter((c) => c.brandId !== id);
+  db.campaigns = (db.campaigns || []).filter((c) => c.brandId !== id);
   persist(async () => {
     await deleteDoc(doc(fdb, "brands", id));
     await Promise.all(removedContentIds.map((cid) => deleteDoc(doc(fdb, "content", cid))));
+    await Promise.all(removedCampaignIds.map((cid) => deleteDoc(doc(fdb, "campaigns", cid))));
   });
 }
 
@@ -264,6 +358,8 @@ function emptyContent(brandId) {
   return {
     id: uid(),
     brandId,
+    campaignId: "",
+    campaignPhaseId: "",
     title: "",
     idea: "",
     format: "",
@@ -366,6 +462,92 @@ export function listOverdueAndDueSoon({ dueSoonDays = 3 } = {}) {
   return { overdue, dueToday, dueSoon };
 }
 
+// ---------- Campaigns ----------
+// Sits above Content in the user's own model: a campaign is the goal a
+// batch of content works toward. Deliberately doesn't cascade-delete its
+// content when removed — an ended campaign shouldn't take its posts with it,
+// so deleteCampaign() below only clears the back-reference.
+// Every campaign runs through the same 7-step funnel — a simple map of
+// what needs to happen, not a fully custom workflow builder. `optional`
+// phases (Website/Event/Community) depend on infrastructure not every
+// brand has yet, so a campaign can turn them off (`phase.enabled=false`)
+// without losing the phase itself — it stays visible, muted, re-enable-able
+// any time instead of being deleted from the array. The non-optional phases
+// (Awareness/WhatsApp/UGC/Retargeting) are always enabled. Names/count/order
+// of the template itself aren't user-editable, so content can reliably
+// bucket by campaignPhaseId without ever pointing at a phase that no longer
+// exists. `description` here is looked up by consumers (not duplicated into
+// every campaign document) so wording updates apply to old campaigns too.
+export const CAMPAIGN_PHASE_TEMPLATE = [
+  { name: "Awareness", description: "Membuat audiens baru sadar brand kamu ada — biasanya lewat konten organik atau ads yang menarik perhatian.", optional: false },
+  { name: "Website", description: "Mengarahkan audiens ke website untuk info lebih lengkap dan membangun kepercayaan.", optional: true },
+  { name: "WhatsApp", description: "Percakapan langsung dengan calon pelanggan — tempat pertanyaan dijawab dan closing terjadi.", optional: false },
+  { name: "Event", description: "Pertemuan langsung (online/offline) yang mempererat hubungan dan mendorong keputusan.", optional: true },
+  { name: "UGC", description: "Konten buatan pelanggan sendiri — bukti sosial yang lebih dipercaya dibanding promosi brand.", optional: false },
+  { name: "Community", description: "Ruang berkumpul untuk pelanggan, memperkuat loyalitas jangka panjang.", optional: true },
+  { name: "Retargeting", description: "Menjangkau ulang orang yang sudah pernah berinteraksi tapi belum konversi.", optional: false },
+];
+
+function emptyCampaign(brandId) {
+  return {
+    id: uid(),
+    brandId,
+    name: "",
+    objective: "awareness",
+    targetAudience: "",
+    problemOrOpportunity: "",
+    insight: "",
+    bigIdea: "",
+    keyMessage: "",
+    offer: "",
+    cta: "",
+    channels: [],
+    // Deterministic ids (slugified name), not uid() — the template is
+    // fixed, so a stable id lets AI-drafted phase goals and manually
+    // edited phase rows both just match by name without ever needing to
+    // invent or look up a random id first. `milestones` are the user's own
+    // checkable sub-goals for that phase — separate from the AI/manual
+    // `goal` description text.
+    phases: CAMPAIGN_PHASE_TEMPLATE.map((t) => ({ id: t.name.toLowerCase(), name: t.name, goal: "", enabled: !t.optional, milestones: [] })),
+    status: "planning",
+    startDate: "",
+    endDate: "",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
+export function listCampaigns(brandId) {
+  return (db.campaigns || [])
+    .filter((c) => c.brandId === brandId)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+export function getCampaign(id) {
+  return (db.campaigns || []).find((c) => c.id === id) || null;
+}
+export function createCampaign(brandId, data = {}) {
+  const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId };
+  db.campaigns = [...(db.campaigns || []), item];
+  persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
+  return item;
+}
+export function updateCampaign(id, patch) {
+  const item = getCampaign(id);
+  if (!item) return null;
+  Object.assign(item, patch, { updatedAt: Date.now() });
+  persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
+  return item;
+}
+export function deleteCampaign(id) {
+  db.campaigns = (db.campaigns || []).filter((c) => c.id !== id);
+  const affectedContentIds = db.content.filter((c) => c.campaignId === id).map((c) => c.id);
+  db.content.forEach((c) => { if (c.campaignId === id) { c.campaignId = ""; c.campaignPhaseId = ""; } });
+  persist(async () => {
+    await deleteDoc(doc(fdb, "campaigns", id));
+    await Promise.all(affectedContentIds.map((cid) => setDoc(doc(fdb, "content", cid), getContent(cid))));
+  });
+}
+
 // ---------- Settings ----------
 export function getSettings() {
   return db.settings;
@@ -460,6 +642,7 @@ export async function importJSON(json) {
   await commitInChunks([
     ...(next.brands || []).map((b) => ({ type: "set", ref: doc(fdb, "brands", b.id), data: b })),
     ...(next.content || []).map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
+    ...(next.campaigns || []).map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
     ...(next.routineTemplate || []).map((r) => ({ type: "set", ref: doc(fdb, "routineTemplate", r.id), data: r })),
     { type: "set", ref: doc(fdb, "settings", "main"), data: next.settings },
   ]);
@@ -469,11 +652,13 @@ export async function importJSON(json) {
 export function resetAll() {
   const brandIds = db.brands.map((b) => b.id);
   const contentIds = db.content.map((c) => c.id);
+  const campaignIds = (db.campaigns || []).map((c) => c.id);
   const routineIds = (db.routineTemplate || []).map((r) => r.id);
   db = defaultDB();
   persist(() => commitInChunks([
     ...brandIds.map((id) => ({ type: "delete", ref: doc(fdb, "brands", id) })),
     ...contentIds.map((id) => ({ type: "delete", ref: doc(fdb, "content", id) })),
+    ...campaignIds.map((id) => ({ type: "delete", ref: doc(fdb, "campaigns", id) })),
     ...routineIds.map((id) => ({ type: "delete", ref: doc(fdb, "routineTemplate", id) })),
     { type: "set", ref: doc(fdb, "settings", "main"), data: db.settings },
   ]));

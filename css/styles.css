@@ -377,6 +377,25 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .onboarding-video-placeholder span{ font-size:11px; font-weight:600; }
 .onboarding-copy{ flex:1; min-width:220px; padding-right:30px; }
 
+.setup-video-card{ position:relative; display:flex; gap:20px; align-items:center; margin-bottom:28px; flex-wrap:wrap; }
+.setup-video-placeholder{
+  flex:none; width:180px; height:101px; border-radius: var(--radius-md); position:relative; overflow:hidden;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,165,43,.35), transparent 55%),
+    radial-gradient(circle at 80% 80%, rgba(255,165,43,.2), transparent 50%),
+    var(--surface-2);
+  border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center;
+}
+.setup-video-play{
+  width:40px; height:40px; border-radius:50%; background: var(--accent); color: var(--accent-text);
+  display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(255,165,43,.35);
+}
+.setup-video-badge{
+  position:absolute; top:8px; left:8px; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  background: rgba(12,11,10,.65); color: var(--text-muted); border:1px solid var(--border); border-radius:999px; padding:3px 8px;
+}
+
 .weekly-work-row{ display:flex; align-items:center; gap:12px; padding:11px 4px; border-bottom:1px solid var(--border-soft); cursor:pointer; }
 .weekly-work-row:last-child{ border-bottom:none; }
 .weekly-work-row:hover{ background: var(--surface-hover); }
@@ -793,9 +812,40 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .report-footer{ margin-top:32px; padding-top:14px; border-top:1px solid #e4e0da; font-size:10.5px; color:#8a8580; text-align:center; }
 
 @media print{
+  /* visibility:hidden alone keeps every hidden element's layout box intact
+     (invisible ≠ zero height) — #app is the entire single-page app behind
+     this modal and can be very tall, so it was silently padding out extra
+     blank pages before the actual report ever printed. Remove it from flow
+     entirely instead of just hiding it. */
+  #app, #toast-root{ display:none !important; }
   body *{ visibility:hidden; }
   .report-sheet, .report-sheet *{ visibility:visible; }
-  .report-sheet{ position:absolute; inset:0; margin:0; max-width:none; box-shadow:none; border-radius:0; }
+  /* The modal chrome (.overlay is position:fixed, .modal-body scrolls with
+     a capped height) confuses print pagination — a fixed-position ancestor
+     gets treated as a repeating layer, producing one blank/duplicate page
+     per page of the hidden document behind it. Flatten it all to normal
+     static flow so only .report-sheet's own (short) content determines the
+     page count. */
+  .overlay{ position:static !important; inset:auto; background:none !important; backdrop-filter:none !important; padding:0 !important; display:block !important; }
+  .modal{ width:auto !important; box-shadow:none !important; border:none !important; animation:none !important; }
+  .modal-body{ max-height:none !important; overflow:visible !important; padding:0 !important; }
+  .report-sheet{ position:static; margin:0 auto; max-width:none; box-shadow:none; border-radius:0; padding:20px; }
+  .report-preview-wrap{ padding:0 !important; background:none !important; }
+  .report-header{ padding-bottom:10px; margin-bottom:12px; }
+  .report-header .avatar{ width:36px !important; height:36px !important; font-size:15px !important; }
+  .report-stat-grid{ grid-template-columns: repeat(6,1fr); margin-bottom:12px; gap:6px; }
+  .report-stat{ padding:6px 8px; }
+  .report-stat-label{ font-size:8.5px; }
+  .report-stat-value{ font-size:14px; margin-top:2px; }
+  .report-section-title{ margin:10px 0 6px; font-size:12.5px; }
+  .report-table{ font-size:10.5px; }
+  .report-table th{ padding:4px 6px; }
+  .report-table td{ padding:4px 6px; }
+  .report-footer{ margin-top:10px; padding-top:6px; }
+  /* If the report genuinely doesn't fit one page, let it flow onto a
+     second one cleanly — just don't let a table row or stat box get sliced
+     in half across the page break. */
+  .report-table tr, .report-stat, .report-header{ break-inside: avoid; page-break-inside: avoid; }
 }
 
 @media (max-width: 720px){
@@ -809,3 +859,19 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
   .hero-strip h1{ font-size:32px; }
   .drawer{ width:100%; }
 }
+
+/* Campaign Journey — horizontal node/branch map, not a table. Reuses
+   existing tokens (--accent, --border, --surface) and the .glow/glow-pulse
+   animation already defined above (no new keyframe, no new palette). */
+.journey-track{ display:flex; align-items:flex-start; gap:0; overflow-x:auto; padding:22px 4px 10px; margin-bottom:20px; }
+.journey-node{ display:flex; flex-direction:column; align-items:center; gap:8px; flex:none; width:130px; background:none; border:none; padding:0; cursor:pointer; }
+.journey-node-dot{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid var(--border); background:var(--surface); color:var(--text-faint); font-weight:800; transition: width .2s, height .2s, border-color .2s, background .2s, color .2s; }
+.journey-node-dot.filled{ border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.journey-node.disabled{ opacity:.45; }
+.journey-node-dot.active{ width:60px; height:60px; }
+.journey-node-label{ font-size:13px; font-weight:700; text-align:center; }
+.journey-node.expanded .journey-node-label{ color: var(--accent); }
+.journey-node-sub{ font-size:11px; color: var(--text-faint); text-align:center; }
+.journey-connector{ flex:1; min-width:24px; height:2px; background: var(--border); margin-top:26px; transition: background .3s; }
+.journey-connector.filled{ background: var(--accent); }
+.journey-detail{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:20px 22px; }

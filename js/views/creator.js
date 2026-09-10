@@ -343,7 +343,7 @@ function paint(root, brandId, state, refresh) {
       </div>
       <div class="creator-main">
         ${selected ? mainPanel(selected) : emptyPanel()}
-        <a class="link" href="#/brand/${brandId}/calendar" style="display:block;text-align:center;font-size:12.5px;margin-top:4px;">${icon("calendar", { size: 13 })} Go to Calendar</a>
+        <a class="link" href="#/brand/${brandId}/content-os/calendar" style="display:block;text-align:center;font-size:12.5px;margin-top:4px;">${icon("calendar", { size: 13 })} Go to Calendar</a>
       </div>
     </div>
   `;
