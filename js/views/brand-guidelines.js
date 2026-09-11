@@ -5,7 +5,7 @@ import { openModal, closeOverlay } from "../modals.js";
 import {
   COLOR_FEELINGS, COLOR_PALETTES, COLOR_FORMULA_LABELS, hexToRgb, hexToCmyk, contrastRatio,
   TYPOGRAPHY_FEELINGS, FONT_LIBRARY, FONT_PAIRINGS, PREMIUM_FONT_LINK,
-  VISUAL_DIRECTIONS, APPLICATION_TYPES,
+  VISUAL_DIRECTIONS, APPLICATION_TYPES, IMAGERY_STYLE_COPY,
 } from "../brandbook-data.js";
 import { checkPersonalityConsistency } from "../consistency-engine.js";
 
@@ -90,7 +90,7 @@ function paintGate(root, brand) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">Brand Guidelines</div>
+        <div class="page-eyebrow"><a href="#/brand/${brand.id}/builder" style="color:inherit;">${icon("chevronLeft", { size: 11 })} Brand Builder</a> · Brand Guidelines</div>
         <h1>${brand.name}</h1>
       </div>
     </div>
@@ -111,7 +111,7 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">Brand Guidelines</div>
+        <div class="page-eyebrow"><a href="#/brand/${brand.id}/builder" style="color:inherit;">${icon("chevronLeft", { size: 11 })} Brand Builder</a> · Brand Guidelines</div>
         <h1>${brand.name}</h1>
       </div>
     </div>
@@ -746,15 +746,65 @@ function applicationsSectionContent(a, brand) {
   return `<div class="bb-mockup-stage" style="${mockupStageStyle(a)}">${a.applications.map((id) => renderMockup(id, a, brand)).join("")}</div>`;
 }
 
+// Tagline placement rules — the e-book explicitly separates "the tagline
+// itself" from "how it must be placed with the logo," which the tagline
+// living only in the cover/foundation text didn't cover on its own.
+function taglineSectionContent(brand) {
+  const tagline = brand.brandDNA?.tagline;
+  if (!tagline) return `<p style="font-size:12.5px;color:#8a8580;">Belum ada tagline — isi di Brand DNA.</p>`;
+  return `
+    <p style="font-size:20px;font-style:italic;font-weight:700;margin:0 0 14px;">"${escapeHtml(tagline)}"</p>
+    <p style="font-size:11.5px;line-height:1.7;color:#8a8580;">Selalu tampilkan tagline berdampingan dengan logo di materi resmi (cover, kop surat, signature email) — jangan berdiri sendiri tanpa konteks brand. Jangan diubah kata-katanya di berbagai materi; satu tagline, konsisten di mana-mana.</p>
+  `;
+}
+
+// Imagery Style ("Gaya Gambar") — one of the e-book's 7 mandatory Brand
+// Guidelines components. Deterministic: derived from whichever Visual
+// Direction the brand already picked (IMAGERY_STYLE_COPY in
+// brandbook-data.js) instead of asking yet another question.
+function imagerySectionContent(a) {
+  if (!a.visualDirection.length) return `<p style="font-size:12.5px;color:#8a8580;">Pilih Visual Direction dulu buat lihat panduan gaya gambarnya.</p>`;
+  return a.visualDirection
+    .map((d) => {
+      const style = IMAGERY_STYLE_COPY[d];
+      if (!style) return "";
+      return `
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12.5px;font-weight:800;margin-bottom:4px;">${escapeHtml(d)}</div>
+        <p style="font-size:11.5px;line-height:1.7;margin:0 0 3px;"><strong>Pencahayaan:</strong> ${escapeHtml(style.lighting)}</p>
+        <p style="font-size:11.5px;line-height:1.7;margin:0 0 3px;"><strong>Subjek &amp; komposisi:</strong> ${escapeHtml(style.subject)}</p>
+        <p style="font-size:11.5px;line-height:1.7;margin:0;"><strong>Warna &amp; editing:</strong> ${escapeHtml(style.treatment)}</p>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+// General visual pantangan beyond the logo-specific ones — the e-book's
+// "Pantangan Visual (Do's & Don'ts)" component, applied brand-wide.
+const GENERAL_DONTS = [
+  "Jangan pakai warna di luar palette resmi brand ini.",
+  "Jangan campur lebih dari 3 jenis font dalam satu desain.",
+  "Jangan ubah kata-kata tagline di berbagai materi.",
+  "Jangan taruh teks di atas background yang kontrasnya rendah.",
+  "Jangan ubah proporsi logo secara sembarangan (lihat halaman Logo).",
+];
+function generalDontsContent() {
+  return `<ul style="font-size:11.5px;line-height:1.9;margin:0;padding-left:18px;color:#33302c;">${GENERAL_DONTS.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>`;
+}
+
 // Auto-generated Table of Contents — only lists sections that actually have
 // content, so an incomplete brand never shows a broken-looking empty page.
 const TOC_SECTIONS = [
   { label: "Brand Foundation", desc: "Purpose, audience, positioning", has: (brand) => !!(brand.brandDNA?.tagline || brand.brandDNA?.purpose || brand.brandDNA?.targetAudience) },
   { label: "Personality & Voice", desc: "Karakter dan cara brand ngomong", has: (brand) => !!(brand.brandBuilder?.personality?.primary?.length || brand.brandDNA?.personality?.length || brand.aiVoiceGuide) },
+  { label: "Tagline", desc: "Jargon utama dan aturan penempatan", has: (brand) => !!brand.brandDNA?.tagline },
   { label: "Logo", desc: "Pemakaian, clear space, do's & don'ts", has: (brand, a) => a.logo.hasLogo === true && !!a.logo.dataUrl },
   { label: "Color System", desc: "Palet, kode warna, aksesibilitas", has: (brand, a) => !!a.colors.primary },
   { label: "Typography", desc: "Font system dan hierarki", has: (brand, a) => !!a.fonts.primary },
   { label: "Visual Direction", desc: "Gaya visual keseluruhan", has: (brand, a) => a.visualDirection.length > 0 },
+  { label: "Imagery Style", desc: "Panduan gaya foto & visual konten", has: (brand, a) => a.visualDirection.length > 0 },
+  { label: "Visual Do's & Don'ts", desc: "Pantangan visual brand ini", has: (brand, a) => !!a.colors.primary || !!a.fonts.primary },
   { label: "Brand Applications", desc: "Contoh penerapan di berbagai media", has: (brand, a) => a.applications.length > 0 },
 ];
 function tocSectionContent(brand, a) {
@@ -763,34 +813,35 @@ function tocSectionContent(brand, a) {
   return rows.map((s, i) => `<div class="bb-toc-row"><span class="bb-toc-num">0${i + 1}</span><span class="bb-toc-label">${escapeHtml(s.label)}</span><span class="bb-toc-desc">${escapeHtml(s.desc)}</span></div>`).join("");
 }
 
-// ---------- Live preview (right pane) ----------
+// ---------- Live preview (right pane) / Review / PDF: one shared page
+// sequence ----------
+// A color/font/visual-direction pick used to only visibly show up in a
+// separate condensed live-preview summary, which could quietly drift out
+// of sync with what the PDF actually rendered. This is now the single
+// source of truth all three surfaces (sidebar preview, review screen, PDF
+// export) render — same pages, same order, every time.
+function buildBrandBookPages(brand, a) {
+  const year = new Date().getFullYear();
+  return [
+    coverPageHTML(brand, a, year),
+    brandbookPageHTML("Contents", tocSectionContent(brand, a), brand),
+    brandbookPageHTML("Brand Foundation", foundationSectionContent(brand), brand),
+    brandbookPageHTML("Personality & Voice", personalitySectionContent(brand) + voiceToneSectionContent(brand), brand),
+    brandbookPageHTML("Tagline", taglineSectionContent(brand), brand),
+    dividerPageHTML("Identity", "Visual & Verbal Identity", "Logo, warna, tipografi, dan gaya visual brand ini.", brand, a),
+    brandbookPageHTML("Logo", logoSectionContent(a) + logoClearSpaceContent(a) + logoOnBackgroundsContent(a) + logoDontsContent(a), brand),
+    brandbookPageHTML("Color System", colorSectionContent(a) + colorUsageContent(a) + colorAccessibilityContent(a), brand),
+    brandbookPageHTML("Typography", typographySectionContent(a), brand),
+    brandbookPageHTML("Visual Direction", directionSectionContent(a), brand),
+    brandbookPageHTML("Imagery Style", imagerySectionContent(a), brand),
+    brandbookPageHTML("Visual Do's & Don'ts", generalDontsContent(), brand),
+    brandbookPageHTML("Brand Applications", applicationsSectionContent(a, brand), brand),
+    dividerPageHTML("Thank You", "Made with care.", `${brand.name} × WPK Brand Lab, ${year}.`, brand, a),
+  ];
+}
+
 function livePreviewHTML(brand, a) {
-  return `
-    <div class="brandbook-sheet" style="${brandThemeVars(a)}">
-      <div class="brandbook-page" style="min-height:0;padding:24px 26px 60px;">
-        <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" style="width:54px;top:18px;right:20px;" alt="WPK Brand Lab" />
-        <div class="brandbook-page-eyebrow">Live Preview</div>
-        <div class="brandbook-cover-name" style="font-size:22px;">${escapeHtml(brand.name)}</div>
-        ${foundationSectionContent(brand)}
-        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Personality &amp; Voice</div>
-        ${personalitySectionContent(brand)}
-        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Logo</div>
-        ${logoSectionContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Colors</div>
-        ${colorSectionContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Typography</div>
-        ${typographySectionContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Visual Direction</div>
-        ${directionSectionContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Brand Applications</div>
-        ${applicationsSectionContent(a, brand)}
-        <div class="brandbook-page-footer" style="position:static;margin-top:24px;padding-top:14px;border-top:1px solid #e4e0da;">
-          <span>${escapeHtml(brand.name)} Brand Book</span>
-          <span>Made by WPK Brand Lab</span>
-        </div>
-      </div>
-    </div>
-  `;
+  return `<div class="brandbook-sheet" style="${brandThemeVars(a)}">${buildBrandBookPages(brand, a).join("")}</div>`;
 }
 
 // ---------- Review step ----------
@@ -798,38 +849,9 @@ function reviewHTML(brand, state) {
   const a = state.answers;
   return `
     <h2 style="margin-bottom:6px;">Your Brand Book is ready</h2>
-    <p class="text-muted" style="font-size:13px;margin:0 0 20px;">Review everything below, then save it to this brand or download the PDF.</p>
+    <p class="text-muted" style="font-size:13px;margin:0 0 20px;">Review everything below (exactly what the PDF will look like), then save it to this brand or download it.</p>
     <div class="brandbook-sheet" style="margin-bottom:20px;${brandThemeVars(a)}">
-      <div class="brandbook-page">
-        <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" alt="WPK Brand Lab" />
-        <div class="brandbook-cover-name">${escapeHtml(brand.name)}</div>
-        <div class="brandbook-cover-tagline">${escapeHtml(brand.brandDNA.tagline || "")}</div>
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Contents</div>
-        ${tocSectionContent(brand, a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Brand Foundation</div>
-        ${foundationSectionContent(brand)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Personality &amp; Voice</div>
-        ${personalitySectionContent(brand)}
-        ${voiceToneSectionContent(brand)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Logo</div>
-        ${logoSectionContent(a)}
-        ${logoClearSpaceContent(a)}
-        ${logoOnBackgroundsContent(a)}
-        ${logoDontsContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Color System</div>
-        ${colorSectionContent(a)}
-        ${colorUsageContent(a)}
-        ${colorAccessibilityContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Typography</div>
-        ${typographySectionContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Visual Direction</div>
-        ${directionSectionContent(a)}
-        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Brand Applications</div>
-        ${applicationsSectionContent(a, brand)}
-        <div class="brandbook-page-footer" style="position:static;margin-top:26px;padding-top:14px;border-top:1px solid #e4e0da;">
-          <span>${escapeHtml(brand.name)} Brand Book</span><span>Made by WPK Brand Lab</span>
-        </div>
-      </div>
+      ${buildBrandBookPages(brand, a).join("")}
     </div>
     <div class="flex items-center justify-between">
       <button type="button" class="btn btn-secondary" id="wiz-back">${icon("chevronLeft", { size: 14 })}Back</button>
@@ -908,20 +930,7 @@ function coverPageHTML(brand, a, year) {
 }
 
 function openBrandBookPdf(brand, a) {
-  const year = new Date().getFullYear();
-  const pages = [
-    coverPageHTML(brand, a, year),
-    brandbookPageHTML("Contents", tocSectionContent(brand, a), brand),
-    brandbookPageHTML("Brand Foundation", foundationSectionContent(brand), brand),
-    brandbookPageHTML("Personality & Voice", personalitySectionContent(brand) + voiceToneSectionContent(brand), brand),
-    dividerPageHTML("Identity", "Visual & Verbal Identity", "Logo, warna, tipografi, dan gaya visual brand ini.", brand, a),
-    brandbookPageHTML("Logo", logoSectionContent(a) + logoClearSpaceContent(a) + logoOnBackgroundsContent(a) + logoDontsContent(a), brand),
-    brandbookPageHTML("Color System", colorSectionContent(a) + colorUsageContent(a) + colorAccessibilityContent(a), brand),
-    brandbookPageHTML("Typography", typographySectionContent(a), brand),
-    brandbookPageHTML("Visual Direction", directionSectionContent(a), brand),
-    brandbookPageHTML("Brand Applications", applicationsSectionContent(a, brand), brand),
-    dividerPageHTML("Thank You", "Made with care.", `${brand.name} × WPK Brand Lab, ${year}.`, brand, a),
-  ].join("");
+  const pages = buildBrandBookPages(brand, a).join("");
 
   const overlay = openModal({
     title: "Brand Book — PDF Preview",

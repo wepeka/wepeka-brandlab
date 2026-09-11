@@ -1257,7 +1257,7 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 /* Gradient color swatch card — light-to-dark diagonal wash of the hex
    itself, closer to how premium brand-book templates present a palette
    than a flat square. */
-.bb-swatch-card{ border-radius:12px; overflow:hidden; border:1px solid #e4e0da; flex:1; min-width:110px; }
+.bb-swatch-card{ border-radius: var(--bb-radius, 12px); overflow:hidden; border:1px solid #e4e0da; flex:1; min-width:110px; }
 .bb-swatch-fill{ height:78px; }
 .bb-swatch-meta{ padding:8px 10px; background:#fff; }
 .bb-swatch-name{ font-size:11.5px; font-weight:800; text-transform:capitalize; }
@@ -1282,9 +1282,9 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .bb-clearspace{ border:1px dashed #c9c3ba; display:inline-flex; align-items:center; justify-content:center; position:relative; }
 .bb-clearspace img{ display:block; }
 .bb-logo-bg-grid{ display:flex; gap:10px; flex-wrap:wrap; }
-.bb-logo-bg-tile{ width:100px; height:100px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid #e4e0da; }
+.bb-logo-bg-tile{ width:100px; height:100px; border-radius: var(--bb-radius, 10px); display:flex; align-items:center; justify-content:center; border:1px solid #e4e0da; }
 .bb-logo-bg-tile img{ max-width:60%; max-height:60%; object-fit:contain; }
-.bb-logo-dont{ width:100px; height:100px; border-radius:10px; border:1px solid #f0c9c4; background:#fdf3f1; display:flex; align-items:center; justify-content:center; position:relative; }
+.bb-logo-dont{ width:100px; height:100px; border-radius: var(--bb-radius, 10px); border:1px solid #f0c9c4; background:#fdf3f1; display:flex; align-items:center; justify-content:center; position:relative; }
 .bb-logo-dont img{ max-width:60%; max-height:60%; object-fit:contain; }
 .bb-logo-dont-label{ position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:10px; color:#c94a3d; font-weight:700; }
 

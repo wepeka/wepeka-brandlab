@@ -164,7 +164,7 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">Brand DNA</div>
+        <div class="page-eyebrow"><a href="#/brand/${brand.id}/builder" style="color:inherit;">${icon("chevronLeft", { size: 11 })} Brand Builder</a> · Brand DNA</div>
         <h1>${brand.name}</h1>
       </div>
     </div>

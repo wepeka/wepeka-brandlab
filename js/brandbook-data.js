@@ -186,6 +186,24 @@ export const VISUAL_DIRECTIONS = {
   Creative: { radius: "14px", spacingScale: 1, typeScale: 1.05, description: "Expressive, varied shapes, unexpected combinations." },
 };
 
+// Imagery Style ("Gaya Gambar") — one of the 7 components the e-book lists
+// as mandatory in a Brand Guidelines document (pencahayaan, filter warna,
+// penggunaan model/ilustrasi), keyed by the same Visual Direction the
+// brand already picked, so it's a deterministic derivation rather than yet
+// another question to ask.
+export const IMAGERY_STYLE_COPY = {
+  Minimal: { lighting: "Cahaya natural, terang merata, minim bayangan.", subject: "Fokus satu objek, banyak negative space.", treatment: "Warna natural, kontras rendah, tanpa filter berlebihan." },
+  Editorial: { lighting: "Cahaya dramatis, kontras tinggi ala majalah.", subject: "Komposisi terstruktur, banyak white space di margin.", treatment: "Warna tajam, editing rapi dan konsisten." },
+  Bold: { lighting: "Cahaya kuat, kontras tinggi, warna berani.", subject: "Objek besar mengisi frame, close-up.", treatment: "Saturasi tinggi, warna brand dominan." },
+  Luxury: { lighting: "Cahaya lembut, shadow terkontrol.", subject: "Detail produk, komposisi simetris.", treatment: "Warna netral/monokrom, editing halus." },
+  Playful: { lighting: "Cahaya terang, ceria.", subject: "Ekspresi natural, dinamis, candid.", treatment: "Warna cerah, sedikit oversaturate, energik." },
+  Organic: { lighting: "Cahaya alami, golden hour.", subject: "Tekstur natural, bahan asli, suasana hangat.", treatment: "Warna hangat, tone earthy." },
+  Futuristic: { lighting: "Cahaya tajam, kontras kuat, aksen neon/gradient.", subject: "Garis tegas, komposisi geometris.", treatment: "Warna dingin, editing modern/tech." },
+  Street: { lighting: "Cahaya raw, apa adanya.", subject: "Suasana jalanan, candid, tanpa setup berlebihan.", treatment: "Kontras tinggi, sedikit grain/texture, kesan mentah." },
+  Corporate: { lighting: "Cahaya studio rata dan profesional.", subject: "Komposisi rapi dan terstruktur.", treatment: "Warna konservatif, editing bersih dan konsisten." },
+  Creative: { lighting: "Cahaya eksperimental, bisa campur warna.", subject: "Komposisi tak terduga, kombinasi unik.", treatment: "Warna ekspresif, editing berani." },
+};
+
 export const APPLICATION_TYPES = [
   { id: "social", label: "Social Media Post", renderer: "socialPostMockup" },
   { id: "website", label: "Website Hero", renderer: "websiteHeroMockup" },

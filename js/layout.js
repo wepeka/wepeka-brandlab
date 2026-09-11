@@ -41,12 +41,15 @@ async function applyBrandTint(brand) {
   }
 }
 
+// Brand DNA and Brand Guidelines no longer get their own top-level tabs —
+// both now live inside Brand Builder's stage hub (js/views/brand-builder.js
+// links out to their existing routes/screens, which still work standalone,
+// just aren't separately advertised in the nav anymore). See BUILDER_ABSORBED_VIEWS
+// below for the "still highlight Brand Builder as active" handling.
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home" },
   { key: "builder", labelKey: "nav.builder", icon: "sparkle", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder" },
-  { key: "dna", labelKey: "nav.dna", icon: "target", path: (id) => `#/brand/${id}/dna`, tour: "tab-dna" },
   { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns" },
-  { key: "guidelines", labelKey: "nav.guidelines", icon: "book", path: (id) => `#/brand/${id}/guidelines`, tour: "tab-guidelines" },
   { key: "content-os", labelKey: "nav.contentOs", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os" },
   { key: "sales", labelKey: "nav.sales", icon: "folder", path: (id) => `#/brand/${id}/sales`, tour: "tab-sales" },
 ];
@@ -78,12 +81,18 @@ function notifPanelHTML({ overdue, dueToday, dueSoon }) {
   `;
 }
 
+// Brand DNA/Guidelines pages are reached through Brand Builder's stage
+// cards now (no tab of their own) — keep the Builder tab visibly active
+// while the user is on either, so the nav doesn't go blank.
+const BUILDER_ABSORBED_VIEWS = ["dna", "guidelines"];
+
 export function shellHTML({ brandId, active }) {
   const brand = brandId ? getBrand(brandId) : null;
+  const activeTabKey = BUILDER_ABSORBED_VIEWS.includes(active) ? "builder" : active;
 
   const tabsHTML = brand
     ? TABS.map(
-        (tab) => `<a class="tab ${active === tab.key ? "active" : ""}" href="${tab.path(brand.id)}" data-tour="${tab.tour}">${icon(tab.icon, { size: 16 })}${t(tab.labelKey)}</a>`
+        (tab) => `<a class="tab ${activeTabKey === tab.key ? "active" : ""}" href="${tab.path(brand.id)}" data-tour="${tab.tour}">${icon(tab.icon, { size: 16 })}${t(tab.labelKey)}</a>`
       ).join("")
     : "";
 
