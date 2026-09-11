@@ -6,6 +6,7 @@ import {
   COLOR_FEELINGS, COLOR_PALETTES, COLOR_FORMULA_LABELS, hexToRgb, hexToCmyk, contrastRatio,
   TYPOGRAPHY_FEELINGS, FONT_LIBRARY, FONT_PAIRINGS, PREMIUM_FONT_LINK,
   VISUAL_DIRECTIONS, APPLICATION_TYPES, IMAGERY_STYLE_COPY,
+  TONE_AXES, toneAxisLabel, toneExampleMessage,
 } from "../brandbook-data.js";
 import { checkPersonalityConsistency } from "../consistency-engine.js";
 
@@ -43,12 +44,6 @@ function ensureGoogleFont(family) {
   document.head.appendChild(link);
 }
 
-// Brand Book is explicitly built ON Brand DNA (tagline/audience/
-// positioning) rather than re-asking those — this is the dependency gate.
-function brandDnaReady(dna = {}) {
-  return !!(dna.tagline?.trim() && dna.targetAudience?.trim() && dna.positioning?.trim());
-}
-
 function suggestedApplications(brand) {
   const ids = ["social", "business-card", "website"];
   if ((brand.brandDNA.productsServices || []).length) ids.push("packaging");
@@ -59,11 +54,6 @@ export function render(root, { brandId }) {
   const brand = getBrand(brandId);
   if (!brand) {
     location.hash = "#/";
-    return () => {};
-  }
-
-  if (!brandDnaReady(brand.brandDNA)) {
-    paintGate(root, brand);
     return () => {};
   }
 
@@ -84,23 +74,6 @@ export function render(root, { brandId }) {
   const refresh = () => paint(root, brandId, brand, state, refresh);
   refresh();
   return () => {};
-}
-
-function paintGate(root, brand) {
-  root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow"><a href="#/brand/${brand.id}/builder" style="color:inherit;">${icon("chevronLeft", { size: 11 })} Brand Builder</a> · Brand Guidelines</div>
-        <h1>${brand.name}</h1>
-      </div>
-    </div>
-    <div class="content-view-card" style="max-width:480px;cursor:default;">
-      <div class="icon-wrap">${icon("book", { size: 22 })}</div>
-      <h3>Complete your Brand DNA first</h3>
-      <p>Your Brand Book is built on top of your Brand DNA — tagline, audience, and positioning — so you never have to explain your brand twice.</p>
-    </div>
-    <a class="btn btn-primary" href="#/brand/${brand.id}/dna" style="margin-top:16px;display:inline-flex;">${icon("target", { size: 14 })}Go to Brand DNA</a>
-  `;
 }
 
 function paint(root, brandId, brand, state, refresh) {
@@ -610,12 +583,29 @@ function personalitySectionContent(brand) {
   return `<p style="font-size:12.5px;color:#8a8580;">No personality defined yet — try the Brand Builder's Personality stage.</p>`;
 }
 
+// Prefers the Brand Builder Tone of Voice stage's 4 sliders (structured,
+// see js/views/brand-builder.js) over the plain aiVoiceGuide free-text
+// field — shows the spectrum positions as a readable line plus the same
+// live example the stage itself generates, so the Brand Book carries a
+// concrete "here's how we sound" instead of just a paragraph.
 function voiceToneSectionContent(brand) {
+  const tov = brand.brandBuilder?.toneOfVoice;
   const guide = brand.aiVoiceGuide;
   const cta = brand.brandDNA?.callToAction;
-  if (!guide && !cta) return "";
+  const structured = tov?.source
+    ? `
+    <p style="font-size:12.5px;line-height:1.8;margin:14px 0 6px;">${TONE_AXES.map((axis) => `<strong>${escapeHtml(toneAxisLabel(axis, tov[axis.key]))}</strong>`).join(" · ")}</p>
+    <div class="card card-tight" style="margin:10px 0;">
+      <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#8a8580;margin-bottom:6px;">Contoh</div>
+      <p style="font-size:12.5px;line-height:1.7;font-style:italic;margin:0;">${toneExampleMessage(tov.formal, tov.character)}</p>
+    </div>
+    ${tov.avoidWords?.length ? `<p style="font-size:11.5px;color:#8a8580;margin:8px 0 0;">Hindari: ${tov.avoidWords.map(escapeHtml).join(", ")}</p>` : ""}
+  `
+    : "";
+  if (!structured && !guide && !cta) return "";
   return `
-    ${guide ? `<p style="font-size:12.5px;line-height:1.7;margin:14px 0 0;">${escapeHtml(guide)}</p>` : ""}
+    ${structured}
+    ${!structured && guide ? `<p style="font-size:12.5px;line-height:1.7;margin:14px 0 0;">${escapeHtml(guide)}</p>` : ""}
     ${cta ? `<p style="font-size:11.5px;color:#8a8580;margin:10px 0 0;">Standard call to action: <strong style="color:#1a1816;">${escapeHtml(cta)}</strong></p>` : ""}
   `;
 }
@@ -797,7 +787,7 @@ function generalDontsContent() {
 // content, so an incomplete brand never shows a broken-looking empty page.
 const TOC_SECTIONS = [
   { label: "Brand Foundation", desc: "Purpose, audience, positioning", has: (brand) => !!(brand.brandDNA?.tagline || brand.brandDNA?.purpose || brand.brandDNA?.targetAudience) },
-  { label: "Personality & Voice", desc: "Karakter dan cara brand ngomong", has: (brand) => !!(brand.brandBuilder?.personality?.primary?.length || brand.brandDNA?.personality?.length || brand.aiVoiceGuide) },
+  { label: "Personality & Voice", desc: "Karakter dan cara brand ngomong", has: (brand) => !!(brand.brandBuilder?.personality?.primary?.length || brand.brandDNA?.personality?.length || brand.brandBuilder?.toneOfVoice?.source || brand.aiVoiceGuide) },
   { label: "Tagline", desc: "Jargon utama dan aturan penempatan", has: (brand) => !!brand.brandDNA?.tagline },
   { label: "Logo", desc: "Pemakaian, clear space, do's & don'ts", has: (brand, a) => a.logo.hasLogo === true && !!a.logo.dataUrl },
   { label: "Color System", desc: "Palet, kode warna, aksesibilitas", has: (brand, a) => !!a.colors.primary },

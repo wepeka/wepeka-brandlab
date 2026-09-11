@@ -179,6 +179,10 @@ function defaultBrandBuilder() {
     stage: "foundation",
     completedStages: [],
     personality: { feeling: "", primary: [], secondary: [], avoid: [], source: "" },
+    // 4 slider positions (0-100) across the e-book's Tone of Voice spectrums
+    // — see TONE_AXES in brandbook-data.js. 50 = dead center on every axis
+    // until the user actually moves one.
+    toneOfVoice: { formal: 50, language: 50, character: 50, emotion: 50, avoidWords: [], source: "" },
     consistencyDismissed: [],
   };
 }

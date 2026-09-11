@@ -76,7 +76,7 @@ function paint(root, brandId, refresh) {
   qsa("[data-go]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.dataset.go;
-      location.hash = target === "dna" || target === "campaigns" || target === "guidelines" || target === "sales" || target === "content-os"
+      location.hash = target === "campaigns" || target === "builder" || target === "sales" || target === "content-os"
         ? `#/brand/${brandId}/${target}`
         : `#/brand/${brandId}`;
     });
@@ -166,7 +166,7 @@ function healthStripHTML(brandId, dnaProgress, campaigns, content) {
   const uncovered = uncoveredCampaignCount(campaigns, content);
 
   const items = [
-    { label: t("brandHome.health.dna"), tier: healthTier(dnaPct), value: `${dnaPct}%`, href: `#/brand/${brandId}/dna` },
+    { label: t("brandHome.health.dna"), tier: healthTier(dnaPct), value: `${dnaPct}%`, href: `#/brand/${brandId}/builder` },
     coveragePct === null
       ? { label: t("brandHome.health.coverage"), tier: "poor", value: t("brandHome.health.noCampaigns"), href: `#/brand/${brandId}/campaigns` }
       : { label: t("brandHome.health.coverage"), tier: healthTier(coveragePct), value: `${coveragePct}%`, href: `#/brand/${brandId}/campaigns` },
@@ -196,7 +196,7 @@ function dnaWidgetHTML(progress) {
   const r = 30;
   const c = 2 * Math.PI * r;
   return `
-    <button type="button" class="brand-widget widget-dna" data-go="dna">
+    <button type="button" class="brand-widget widget-dna" data-go="builder">
       <div class="ring-wrap">
         <svg viewBox="0 0 72 72">
           <circle class="ring-track" cx="36" cy="36" r="${r}"></circle>
@@ -237,7 +237,7 @@ function guidelinesWidgetHTML(guidelines) {
     : ["var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)"];
   const fontFamily = guidelines?.fonts?.primary ? `'${guidelines.fonts.primary}', ` : "";
   return `
-    <button type="button" class="brand-widget widget-guidelines" data-go="guidelines">
+    <button type="button" class="brand-widget widget-guidelines" data-go="builder">
       <div class="aa-preview" style="font-family:${fontFamily}var(--font-display);">Aa</div>
       <h3>${t("brandHome.widget.guidelines.title")}</h3>
       <p>${t("brandHome.widget.guidelines.sub")}</p>

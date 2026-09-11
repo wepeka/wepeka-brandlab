@@ -204,6 +204,52 @@ export const IMAGERY_STYLE_COPY = {
   Creative: { lighting: "Cahaya eksperimental, bisa campur warna.", subject: "Komposisi tak terduga, kombinasi unik.", treatment: "Warna ekspresif, editing berani." },
 };
 
+// Tone of Voice — the e-book's 4 spectrums (Formal↔Casual, Sederhana↔
+// Kompleks, Serius↔Playful, Reserved↔Ekspresif). Values are 0-100 slider
+// positions; toneAxisLabel turns a raw position into a human label, and
+// toneExampleMessage rewrites the e-book's OWN worked example — a store
+// closing early for renovations — using the two axes it actually
+// demonstrates (formal/casual × serious/playful), so this stage produces
+// something concrete to react to instead of an abstract label.
+export const TONE_AXES = [
+  { key: "formal", left: "Formal", right: "Casual" },
+  { key: "language", left: "Sederhana", right: "Kompleks" },
+  { key: "character", left: "Serius", right: "Playful" },
+  { key: "emotion", left: "Reserved", right: "Ekspresif" },
+];
+
+function toneBucket(v) {
+  return v < 35 ? "low" : v > 65 ? "high" : "mid";
+}
+export function toneAxisLabel(axis, value) {
+  const b = toneBucket(value);
+  return b === "low" ? axis.left : b === "high" ? axis.right : `${axis.left}/${axis.right} seimbang`;
+}
+
+// [formal bucket][character bucket] — low=Formal/Serius pole, high=Casual/
+// Playful pole, same "toko tutup lebih awal karena renovasi" scenario
+// throughout so only the tone changes, not the message.
+const TONE_EXAMPLE_MATRIX = {
+  low: {
+    low: `"Pemberitahuan. Sehubungan dengan perbaikan fasilitas internal, operasional toko kami hari ini ditutup lebih awal pukul 17.00 WIB. Mohon maaf atas ketidaknyamanan yang ditimbulkan."`,
+    mid: `"Kepada pelanggan yang terhormat, mohon maaf toko kami tutup lebih awal hari ini pukul 17.00 karena ada perbaikan. Terima kasih atas pengertiannya."`,
+    high: `"Hari ini kami tutup sedikit lebih awal, jam 5 sore, karena ada perbaikan fasilitas. Mohon maaf atas ketidaknyamanannya, sampai jumpa besok!"`,
+  },
+  mid: {
+    low: `"Halo, mohon maaf toko tutup lebih awal hari ini (jam 5 sore) karena ada perbaikan internal. Terima kasih sudah memahami."`,
+    mid: `"Hai, hari ini kita tutup lebih awal ya jam 5 sore — lagi renovasi dikit. Makasih pengertiannya!"`,
+    high: `"Hai! Hari ini kita cabut lebih cepat jam 5 sore soalnya lagi beberes toko. Makasih ya udah ngertiin, sampai besok!"`,
+  },
+  high: {
+    low: `"Halo, mohon maaf ya, tokonya tutup lebih awal hari ini jam 5 sore karena ada perbaikan. Makasih sudah mengerti."`,
+    mid: `"Gais, hari ini mimin tutup jam 5 sore ya, lagi renovasi dikit biar makin nyaman. Makasih pengertiannya!"`,
+    high: `"Gais, maaf banget ya! Hari ini mimin terpaksa tutup warung jam 5 sore nih, soalnya lantai toko mau divermak dulu biar makin estetik pas kamu nongkrong besok. Sampai ketemu besok dengan wajah baru, ya!"`,
+  },
+};
+export function toneExampleMessage(formalValue, characterValue) {
+  return TONE_EXAMPLE_MATRIX[toneBucket(formalValue)][toneBucket(characterValue)];
+}
+
 export const APPLICATION_TYPES = [
   { id: "social", label: "Social Media Post", renderer: "socialPostMockup" },
   { id: "website", label: "Website Hero", renderer: "websiteHeroMockup" },
