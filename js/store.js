@@ -163,6 +163,26 @@ function defaultBrandGuidelines() {
   };
 }
 
+// Tracks progress + a couple of guided-flow-only decisions across the
+// Brand Builder hub (js/views/brand-builder.js) — separate from brandDNA/
+// brandGuidelines since those already have their own established shape and
+// are read-only inputs here, not owned by this wizard. "personality" is the
+// one genuinely new decision Phase 1 introduces: a primary/secondary/avoid
+// trait triad recommended from the same feeling vocabulary color/typography
+// already use, so a brand's character stays one shared decision instead of
+// three disconnected chip-selects. `source` distinguishes an accepted
+// recommendation from a hand-edited one — not a full decision-log (that's
+// bigger scope, deferred), just enough for the Consistency Engine to know
+// there's an established direction to check against.
+function defaultBrandBuilder() {
+  return {
+    stage: "foundation",
+    completedStages: [],
+    personality: { feeling: "", primary: [], secondary: [], avoid: [], source: "" },
+    consistencyDismissed: [],
+  };
+}
+
 function defaultDB() {
   return {
     version: 1,
@@ -326,6 +346,7 @@ export function getBrand(id) {
   const b = db.brands.find((b) => b.id === id) || null;
   if (b && !b.brandDNA) b.brandDNA = defaultBrandDNA();
   if (b && !b.brandGuidelines) b.brandGuidelines = defaultBrandGuidelines();
+  if (b && !b.brandBuilder) b.brandBuilder = defaultBrandBuilder();
   // Every current call site already guards these locally (brand?.instagram
   // || {...}, etc.) — defaulting here too so that stays true by
   // construction instead of by every future caller remembering to guard.
@@ -334,7 +355,7 @@ export function getBrand(id) {
   if (b && !b.ads) b.ads = { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null };
   return b;
 }
-export function createBrand({ name, avatar = "", color = "", driveLink = "", brandbookLink = "", logoAssets = [], instagram, facebook, ads, aiVoiceGuide = "", businessDescription = "", brandDNA, brandGuidelines } = {}) {
+export function createBrand({ name, avatar = "", color = "", driveLink = "", brandbookLink = "", logoAssets = [], instagram, facebook, ads, aiVoiceGuide = "", businessDescription = "", brandDNA, brandGuidelines, brandBuilder } = {}) {
   const brand = {
     id: uid(), name: name.trim(), avatar,
     // Manually-picked brand essence color (hex) — takes priority over the
@@ -358,6 +379,7 @@ export function createBrand({ name, avatar = "", color = "", driveLink = "", bra
     // brandDNA — the Brand Book builder reads brandDNA for its foundation
     // section rather than re-asking, then writes here.
     brandGuidelines: { ...defaultBrandGuidelines(), ...(brandGuidelines || {}) },
+    brandBuilder: { ...defaultBrandBuilder(), ...(brandBuilder || {}) },
     instagram: instagram || { accessToken: "", igUserId: "", username: "", connectedAt: null },
     facebook: facebook || { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null },
     ads: ads || { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null },

@@ -7,6 +7,7 @@ import {
   TYPOGRAPHY_FEELINGS, FONT_LIBRARY, FONT_PAIRINGS, PREMIUM_FONT_LINK,
   VISUAL_DIRECTIONS, APPLICATION_TYPES,
 } from "../brandbook-data.js";
+import { checkPersonalityConsistency } from "../consistency-engine.js";
 
 // A guided, two-pane Brand Book builder (questions left, live preview
 // right) built on top of Brand DNA rather than re-asking brand name/
@@ -168,8 +169,8 @@ function stepHTML(step, state, brand) {
   switch (step.key) {
     case "foundation": return foundationStepHTML(brand, state);
     case "logo": return logoStepHTML(state);
-    case "color": return colorStepHTML(state);
-    case "typography": return typographyStepHTML(state);
+    case "color": return colorStepHTML(state, brand);
+    case "typography": return typographyStepHTML(state, brand);
     case "direction": return directionStepHTML(state);
     case "applications": return applicationsStepHTML(state, brand);
     default: return "";
@@ -185,6 +186,14 @@ function wireStep(root, brandId, brand, state, refresh) {
   qs("#wiz-next", root)?.addEventListener("click", () => {
     if (qs("#wiz-next", root).disabled) return;
     state.stepIndex += 1;
+    refresh();
+  });
+
+  qs("[data-dismiss-consistency]", root)?.addEventListener("click", (e) => {
+    const id = e.currentTarget.dataset.dismissConsistency;
+    const dismissed = new Set(brand.brandBuilder.consistencyDismissed || []);
+    dismissed.add(id);
+    updateBrand(brandId, { brandBuilder: { ...brand.brandBuilder, consistencyDismissed: [...dismissed] } });
     refresh();
   });
 
@@ -256,8 +265,26 @@ function wireLogoStep(root, state, refresh) {
   qs("#logo-remove", root)?.addEventListener("click", () => { state.answers.logo.dataUrl = ""; refresh(); });
 }
 
+// Non-blocking nudge from the Consistency Engine (js/consistency-engine.js):
+// shown only once the Brand Builder Personality stage has established a
+// character and one of the feeling(s) picked here (color allows more than
+// one — the most severe conflict wins, not every one) drifts from it.
+// Dismissible per exact combination via brand.brandBuilder.
+// consistencyDismissed; never blocks picking whatever the user wants.
+function worstConsistencyBannerHTML(brand, feelings, label) {
+  const personalityFeeling = brand.brandBuilder?.personality?.feeling;
+  if (!personalityFeeling) return "";
+  const dismissed = brand.brandBuilder?.consistencyDismissed || [];
+  const warnings = feelings
+    .map((f) => checkPersonalityConsistency(personalityFeeling, f, label))
+    .filter((w) => w && !dismissed.includes(w.id));
+  if (!warnings.length) return "";
+  const worst = warnings.find((w) => w.level === "strong") || warnings[0];
+  return `<div class="hint" style="margin-bottom:14px;border-color:${worst.level === "strong" ? "var(--health-poor)" : "var(--border)"};" data-consistency-warning="${worst.id}">${icon("info", { size: 12 })}<span>${escapeHtml(worst.message)}</span><button type="button" class="icon-btn" data-dismiss-consistency="${worst.id}" title="Tutup" style="margin-left:auto;flex:none;">${icon("x", { size: 11 })}</button></div>`;
+}
+
 // ---------- Step 3: Color System ----------
-function colorStepHTML(state) {
+function colorStepHTML(state, brand) {
   const a = state.answers;
   const chips = COLOR_FEELINGS.map((f) => chipHTML(f, f, a.colorFeelings.includes(f), "data-feeling")).join("");
   const recs = a.colorFeelings.flatMap((f) => (COLOR_PALETTES[f] || []).map((p) => ({ feeling: f, ...p })));
@@ -265,6 +292,7 @@ function colorStepHTML(state) {
     <h2 style="margin-bottom:6px;">What feeling should your colors create?</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 14px;">Pick one or more — color is the fastest way a brand communicates before anyone reads a word.</p>
     <div class="bb-chip-row">${chips}</div>
+    ${worstConsistencyBannerHTML(brand, a.colorFeelings, "warna")}
     ${recs.length ? recs.map((p, i) => `
       <div class="card card-tight" style="margin-bottom:10px;">
         <div class="flex items-center justify-between" style="margin-bottom:10px;">
@@ -327,7 +355,7 @@ function wireColorStep(root, state, refresh) {
 }
 
 // ---------- Step 4: Typography ----------
-function typographyStepHTML(state) {
+function typographyStepHTML(state, brand) {
   const a = state.answers;
   const chips = TYPOGRAPHY_FEELINGS.map((f) => chipHTML(f, f, a.typographyFeelings.includes(f), "data-feeling")).join("");
   const rec = a.typographyFeelings.length ? FONT_PAIRINGS[a.typographyFeelings[0]] : null;
@@ -340,6 +368,7 @@ function typographyStepHTML(state) {
     <h2 style="margin-bottom:6px;">What should your typography feel like?</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 14px;">Type isn't just about being readable — it's the "tone of voice" of your visuals.</p>
     <div class="bb-chip-row">${chips}</div>
+    ${worstConsistencyBannerHTML(brand, a.typographyFeelings, "typography")}
     ${rec ? `
       <div class="card card-tight" style="margin-bottom:16px;">
         <div class="flex items-center justify-between" style="margin-bottom:10px;">

@@ -43,6 +43,7 @@ async function applyBrandTint(brand) {
 
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home" },
+  { key: "builder", labelKey: "nav.builder", icon: "sparkle", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder" },
   { key: "dna", labelKey: "nav.dna", icon: "target", path: (id) => `#/brand/${id}/dna`, tour: "tab-dna" },
   { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns" },
   { key: "guidelines", labelKey: "nav.guidelines", icon: "book", path: (id) => `#/brand/${id}/guidelines`, tour: "tab-guidelines" },

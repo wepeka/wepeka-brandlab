@@ -1174,6 +1174,21 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .bb-font-badge{ display:inline-block; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; background: var(--health-good-soft); color: var(--health-good); text-transform:uppercase; letter-spacing:.03em; margin-left:8px; }
 .bb-direction-desc{ font-size:12px; color: var(--text-muted); margin:0 0 6px; }
 
+/* Brand Builder hub — stage stepper cards (js/views/brand-builder.js) */
+.bb-stage-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:12px; }
+.bb-stage-card{ display:flex; align-items:flex-start; gap:12px; text-decoration:none; color:inherit; cursor:pointer; transition: border-color .15s, transform .15s; }
+.bb-stage-card:hover{ border-color: var(--accent); }
+.bb-stage-num{ flex:none; width:26px; height:26px; border-radius:50%; background: var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:800; color: var(--text-muted); }
+.bb-stage-done .bb-stage-num{ background: var(--health-good-soft); border-color: var(--health-good); color: var(--health-good); }
+.bb-stage-progress .bb-stage-num{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.bb-stage-soon{ opacity:.55; cursor:not-allowed; }
+.bb-stage-body{ flex:1; min-width:0; }
+.bb-stage-label{ font-size:13px; font-weight:700; margin-bottom:3px; }
+.bb-stage-desc{ font-size:11.5px; color: var(--text-muted); line-height:1.5; }
+.bb-stage-status{ flex:none; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; padding:3px 8px; border-radius:999px; background: var(--surface-2); color: var(--text-faint); align-self:flex-start; }
+.bb-stage-status-done{ background: var(--health-good-soft); color: var(--health-good); }
+.bb-stage-status-progress{ background: var(--accent-soft); color: var(--accent); }
+
 /* Live brand-application mockups — plain CSS, no image generation, driven
    entirely by --bb-* custom properties set on .bb-mockup-stage so every
    card re-skins instantly when a color/font/visual-direction changes. */

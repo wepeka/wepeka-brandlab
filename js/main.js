@@ -24,6 +24,8 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/?$/))) return { view: "content-os", brandId: m[1], sub: "dashboard" };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/([^/]+)\/?$/))) return { view: "campaigns", brandId: m[1], campaignId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/builder\/([^/]+)\/?$/))) return { view: "builder", brandId: m[1], stage: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/builder\/?$/))) return { view: "builder", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/dna\/?$/))) return { view: "dna", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
@@ -82,6 +84,7 @@ async function renderRoute() {
     {
       home: () => import("./views/brand-home.js"),
       dna: () => import("./views/brand-dna.js"),
+      builder: () => import("./views/brand-builder.js"),
       campaigns: () => import("./views/campaigns.js"),
       guidelines: () => import("./views/brand-guidelines.js"),
       sales: () => import("./views/sales.js"),
@@ -97,6 +100,9 @@ async function renderRoute() {
       break;
     case "dna":
       cleanup = view.render(viewRoot, { brandId: route.brandId });
+      break;
+    case "builder":
+      cleanup = view.render(viewRoot, { brandId: route.brandId, stage: route.stage });
       break;
     case "campaigns":
       cleanup = view.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });

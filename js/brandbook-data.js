@@ -42,6 +42,54 @@ export const COLOR_PALETTES = {
   ],
 };
 
+// Brand Personality — the same "feeling" vocabulary as COLOR_FEELINGS below
+// (and TYPOGRAPHY_FEELINGS further down), so a brand's chosen character is
+// one shared decision instead of three disconnected chip-selects across
+// Color/Typography/Personality. Each feeling recommends a primary/secondary/
+// avoid trait triad — "primary" is who the brand mostly is, "secondary"
+// rounds it out, "avoid" is what would actively undercut the direction.
+export const PERSONALITY_PROFILES = {
+  Trustworthy: { primary: ["Reliable", "Honest", "Steady"], secondary: ["Calm", "Clear"], avoid: ["Flashy", "Unpredictable", "Vague"] },
+  Premium: { primary: ["Confident", "Refined", "Exclusive"], secondary: ["Calm", "Polished"], avoid: ["Loud", "Cluttered", "Cheap-feeling"] },
+  Energetic: { primary: ["Bold", "Dynamic", "Upbeat"], secondary: ["Confident", "Fast-moving"], avoid: ["Slow", "Quiet", "Overly formal"] },
+  Natural: { primary: ["Warm", "Grounded", "Honest"], secondary: ["Calm", "Approachable"], avoid: ["Artificial", "Aggressive", "Corporate"] },
+  Creative: { primary: ["Original", "Expressive", "Curious"], secondary: ["Playful", "Bold"], avoid: ["Rigid", "Generic", "Predictable"] },
+  Minimal: { primary: ["Calm", "Clear", "Confident"], secondary: ["Quiet", "Precise"], avoid: ["Cluttered", "Loud", "Excessive"] },
+  Playful: { primary: ["Fun", "Warm", "Energetic"], secondary: ["Approachable", "Spontaneous"], avoid: ["Overly serious", "Rigid", "Cold"] },
+  Powerful: { primary: ["Bold", "Confident", "Decisive"], secondary: ["Serious", "Direct"], avoid: ["Timid", "Soft", "Indecisive"] },
+  Elegant: { primary: ["Refined", "Graceful", "Calm"], secondary: ["Confident", "Quiet"], avoid: ["Loud", "Rough", "Cluttered"] },
+};
+
+// Which broad character cluster each feeling belongs to — lets the
+// Consistency Engine (js/consistency-engine.js) classify any pair of
+// feelings (e.g. a Personality choice vs. a later Color/Typography choice)
+// without hand-authoring a full 9x9 pairwise table. Same axis the e-book
+// itself uses to talk about brand character (calm vs. energetic, refined
+// vs. playful) — distance 0 = same cluster (compatible), 1 = adjacent
+// (potential conflict, worth a gentle nudge), 2 = opposite (strong
+// conflict, worth a clearer warning).
+const FEELING_CLUSTER = {
+  Trustworthy: "calm", Premium: "calm", Minimal: "calm", Elegant: "calm",
+  Natural: "warm",
+  Creative: "expressive",
+  Energetic: "bold", Playful: "bold", Powerful: "bold",
+};
+const CLUSTER_DISTANCE = {
+  calm: { calm: 0, warm: 1, expressive: 2, bold: 2 },
+  warm: { calm: 1, warm: 0, expressive: 1, bold: 1 },
+  expressive: { calm: 2, warm: 1, expressive: 0, bold: 1 },
+  bold: { calm: 2, warm: 1, expressive: 1, bold: 0 },
+};
+// "compatible" | "potential" | "strong". Same feeling (or either side
+// missing) is always compatible — nothing to warn about yet.
+export function compatibilityLevel(feelingA, feelingB) {
+  if (!feelingA || !feelingB || feelingA === feelingB) return "compatible";
+  const ca = FEELING_CLUSTER[feelingA];
+  const cb = FEELING_CLUSTER[feelingB];
+  const d = CLUSTER_DISTANCE[ca]?.[cb] ?? 1;
+  return d === 0 ? "compatible" : d === 1 ? "potential" : "strong";
+}
+
 export const COLOR_FORMULA_LABELS = {
   monochromatic: "Monochromatic — one color, light to dark. Reads clean, minimal, premium.",
   analogous: "Analogous — neighboring hues. Reads calm, natural, cohesive.",

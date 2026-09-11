@@ -19,6 +19,7 @@ const DICT = {
   // Topbar / nav (js/layout.js)
   "nav.home": { en: "Home", id: "Beranda" },
   "nav.dna": { en: "Brand DNA", id: "Brand DNA" },
+  "nav.builder": { en: "Brand Builder", id: "Brand Builder" },
   "nav.campaigns": { en: "Campaigns", id: "Kampanye" },
   "nav.guidelines": { en: "Brand Guidelines", id: "Panduan Brand" },
   "nav.contentOs": { en: "Content OS", id: "Content OS" },
