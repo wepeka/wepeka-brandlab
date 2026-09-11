@@ -1,9 +1,9 @@
 import { getBrand, updateBrand } from "../store.js";
-import { qs, qsa, escapeHtml, resizeImageFile, toast } from "../dom.js";
+import { qs, qsa, escapeHtml, resizeImageFile, toast, pickTintTextColor } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import {
-  COLOR_FEELINGS, COLOR_PALETTES, COLOR_FORMULA_LABELS, hexToRgb, hexToCmyk,
+  COLOR_FEELINGS, COLOR_PALETTES, COLOR_FORMULA_LABELS, hexToRgb, hexToCmyk, contrastRatio,
   TYPOGRAPHY_FEELINGS, FONT_LIBRARY, FONT_PAIRINGS, PREMIUM_FONT_LINK,
   VISUAL_DIRECTIONS, APPLICATION_TYPES,
 } from "../brandbook-data.js";
@@ -561,12 +561,62 @@ function digitalAdMockup(answers, brand) {
 }
 
 // ---------- Shared section content (live preview, review, PDF) ----------
+
+// Sets --bb-* custom properties (color/font/radius) from the brand's own
+// chosen palette on a wrapping element — same variables the Applications
+// mockups already use (mockupStageStyle) — so every surface (live preview,
+// review, PDF) themes itself live to THIS brand instead of a fixed look.
+function brandThemeVars(a) {
+  return mockupStageStyle(a);
+}
+
 function foundationSectionContent(brand) {
   const dna = brand.brandDNA;
+  const rows = [
+    dna.tagline ? `<p style="font-size:14px;font-style:italic;margin:0 0 12px;">"${escapeHtml(dna.tagline)}"</p>` : "",
+    dna.purpose ? `<p style="font-size:12.5px;line-height:1.6;margin:0 0 8px;"><strong>Purpose:</strong> ${escapeHtml(dna.purpose)}</p>` : "",
+    dna.vision ? `<p style="font-size:12.5px;line-height:1.6;margin:0 0 8px;"><strong>Vision:</strong> ${escapeHtml(dna.vision)}</p>` : "",
+    dna.targetAudience ? `<p style="font-size:12.5px;line-height:1.6;margin:0 0 8px;"><strong>For:</strong> ${escapeHtml(dna.targetAudience)}</p>` : "",
+    dna.positioning ? `<p style="font-size:12.5px;line-height:1.6;margin:0;"><strong>Why us:</strong> ${escapeHtml(dna.positioning)}</p>` : "",
+  ].filter(Boolean);
+  return rows.length ? rows.join("") : `<p style="font-size:12.5px;color:#8a8580;">Nothing filled in yet — head to Brand DNA.</p>`;
+}
+
+// Prefers the Brand Builder Personality stage's rule-based triad
+// (brand.brandBuilder.personality — see js/views/brand-builder.js), shown as
+// "trait, not its opposite" pairs (the voice-chart pattern real brand
+// guideline docs use) since that reads sharper than a flat adjective list.
+// Falls back to Brand DNA's free-typed personality chips for brands that
+// haven't been through that stage yet, so this section is never just empty.
+function personalitySectionContent(brand) {
+  const pb = brand.brandBuilder?.personality;
+  const dnaTraits = brand.brandDNA?.personality || [];
+  if (pb?.primary?.length) {
+    const pairCount = Math.max(pb.primary.length, pb.avoid.length);
+    const rows = [];
+    for (let i = 0; i < pairCount; i++) {
+      if (!pb.primary[i] && !pb.avoid[i]) continue;
+      rows.push(
+        `<div class="bb-voice-row"><span class="bb-voice-yes">${pb.primary[i] ? escapeHtml(pb.primary[i]) : ""}</span><span class="bb-voice-sep">not</span><span class="bb-voice-no">${pb.avoid[i] ? escapeHtml(pb.avoid[i]) : ""}</span></div>`
+      );
+    }
+    return `
+      ${pb.feeling ? `<p style="font-size:12.5px;color:#8a8580;margin:0 0 10px;">Core character: <strong style="color:#1a1816;">${escapeHtml(pb.feeling)}</strong></p>` : ""}
+      ${rows.join("")}
+      ${pb.secondary?.length ? `<p style="font-size:11.5px;color:#8a8580;margin:10px 0 0;">Also: ${pb.secondary.map(escapeHtml).join(", ")}</p>` : ""}
+    `;
+  }
+  if (dnaTraits.length) return `<p style="font-size:12.5px;line-height:1.7;">${dnaTraits.map(escapeHtml).join(" · ")}</p>`;
+  return `<p style="font-size:12.5px;color:#8a8580;">No personality defined yet — try the Brand Builder's Personality stage.</p>`;
+}
+
+function voiceToneSectionContent(brand) {
+  const guide = brand.aiVoiceGuide;
+  const cta = brand.brandDNA?.callToAction;
+  if (!guide && !cta) return "";
   return `
-    ${dna.tagline ? `<p style="font-size:14px;font-style:italic;margin:0 0 12px;">"${escapeHtml(dna.tagline)}"</p>` : ""}
-    ${dna.targetAudience ? `<p style="font-size:12.5px;line-height:1.6;margin:0 0 8px;"><strong>For:</strong> ${escapeHtml(dna.targetAudience)}</p>` : ""}
-    ${dna.positioning ? `<p style="font-size:12.5px;line-height:1.6;margin:0;"><strong>Why us:</strong> ${escapeHtml(dna.positioning)}</p>` : ""}
+    ${guide ? `<p style="font-size:12.5px;line-height:1.7;margin:14px 0 0;">${escapeHtml(guide)}</p>` : ""}
+    ${cta ? `<p style="font-size:11.5px;color:#8a8580;margin:10px 0 0;">Standard call to action: <strong style="color:#1a1816;">${escapeHtml(cta)}</strong></p>` : ""}
   `;
 }
 
@@ -575,36 +625,114 @@ function logoSectionContent(a) {
   return `<p style="font-size:12.5px;color:#8a8580;">No logo added yet.</p>`;
 }
 
+// Clear space/minimum size don't need a vector logo — just the raster
+// image's own rendered box, inset with a dashed guide proportional to it.
+function logoClearSpaceContent(a) {
+  if (!a.logo.dataUrl) return "";
+  return `
+    <div class="bb-clearspace" style="padding:28px;margin-top:14px;">
+      <img src="${a.logo.dataUrl}" style="height:70px;max-width:180px;object-fit:contain;" alt="Logo" />
+    </div>
+    <p style="font-size:11.5px;color:#8a8580;margin:10px 0 0;">Clear space — jaga area kosong minimal sebesar ini di sekeliling logo, jangan ada elemen lain yang masuk.</p>
+    <p style="font-size:11.5px;color:#8a8580;margin:4px 0 0;">Ukuran minimum — jangan ditampilkan lebih kecil dari 80px (digital) atau 25mm (cetak) biar tetap kebaca jelas.</p>
+  `;
+}
+
+// Reuses the brightness/invert filter trick already used for the Business
+// Card mockup below to show the SAME uploaded logo readable on light, dark,
+// and the brand's own primary color — no separate logo variants needed.
+function logoOnBackgroundsContent(a) {
+  if (!a.logo.dataUrl) return "";
+  const bgs = [
+    { label: "Light", bg: "#ffffff", invert: false },
+    { label: "Dark", bg: "#1a1816", invert: true },
+    { label: "Primary", bg: a.colors.primary || "#1a1816", invert: false },
+  ];
+  return `
+    <div class="bb-logo-bg-grid" style="margin-top:14px;">
+      ${bgs.map((b) => `<div class="bb-logo-bg-tile" style="background:${b.bg};"><img src="${a.logo.dataUrl}" style="${b.invert ? "filter:brightness(0) invert(1);" : ""}" alt="Logo on ${b.label}" /></div>`).join("")}
+    </div>
+  `;
+}
+
+function logoDontsContent(a) {
+  if (!a.logo.dataUrl) return "";
+  return `
+    <div class="flex gap-8" style="flex-wrap:wrap;margin:14px 0 24px;">
+      <div class="bb-logo-dont"><img src="${a.logo.dataUrl}" style="transform:scaleX(1.6);" alt="" /><span class="bb-logo-dont-label">Jangan stretch</span></div>
+      <div class="bb-logo-dont"><img src="${a.logo.dataUrl}" style="filter:saturate(0) sepia(1) hue-rotate(280deg) saturate(4);" alt="" /><span class="bb-logo-dont-label">Jangan ganti warna</span></div>
+      <div class="bb-logo-dont" style="background:${a.colors.primary || "#333"};border-color:${a.colors.primary || "#333"};"><img src="${a.logo.dataUrl}" style="opacity:.35;" alt="" /><span class="bb-logo-dont-label">Jangan low-contrast</span></div>
+    </div>
+  `;
+}
+
 const COLOR_ROLE_COPY = {
-  primary: "used for headlines and primary actions.",
-  secondary: "supports the primary color across larger surfaces.",
-  accent: "highlights calls-to-action and key details.",
-  background: "the base surface color across every application.",
-  text: "used for body copy and default text.",
+  primary: "headline dan aksi utama — target 60-70% dari keseluruhan desain.",
+  secondary: "mendukung primary di area yang lebih luas — sekitar 20-30%.",
+  accent: "highlight CTA dan detail penting — 5-10% aja, jangan berlebihan.",
+  background: "warna dasar di semua aplikasi.",
+  text: "body copy dan teks default.",
 };
 
+// Gradient (light→dark) swatch card, closer to how premium brand-book
+// templates present a palette than a flat square.
 function colorSectionContent(a) {
   if (!a.colors.primary) return `<p style="font-size:12.5px;color:#8a8580;">No colors chosen yet.</p>`;
   const keys = ["primary", "secondary", "accent", "background", "text"];
-  return `<div style="display:flex;gap:14px;flex-wrap:wrap;">${keys.map((k) => `
-    <div style="width:92px;">
-      <div style="width:92px;height:92px;border-radius:8px;background:${a.colors[k]};border:1px solid #e4e0da;margin-bottom:6px;"></div>
-      <div style="font-size:10.5px;font-weight:700;text-transform:capitalize;">${k}</div>
-      <div style="font-size:10px;color:#8a8580;">${(a.colors[k] || "").toUpperCase()}</div>
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;">${keys
+    .map((k) => {
+      const hex = a.colors[k] || "#cccccc";
+      return `
+    <div class="bb-swatch-card">
+      <div class="bb-swatch-fill" style="background:linear-gradient(160deg, ${hex}, color-mix(in srgb, ${hex} 55%, #000));"></div>
+      <div class="bb-swatch-meta">
+        <div class="bb-swatch-name">${k}</div>
+        <div class="bb-swatch-code">${hex.toUpperCase()}</div>
+      </div>
     </div>
-  `).join("")}</div>`;
+  `;
+    })
+    .join("")}</div>`;
 }
 
 function colorUsageContent(a) {
   if (!a.colors.primary) return "";
-  return `<div style="margin-top:16px;">${["primary", "secondary", "accent", "background", "text"].map((k) => `<p style="font-size:11.5px;line-height:1.6;margin:0 0 4px;"><strong style="text-transform:capitalize;">${k}</strong> — ${COLOR_ROLE_COPY[k]}</p>`).join("")}</div>`;
+  return `<div style="margin-top:16px;">${["primary", "secondary", "accent", "background", "text"].map((k) => `<p style="font-size:11.5px;line-height:1.6;margin:0 0 6px;"><strong style="text-transform:capitalize;">${k}</strong> — ${COLOR_ROLE_COPY[k]}</p>`).join("")}</div>`;
 }
 
+// A real, computed WCAG contrast check (not just a decorative claim) —
+// contrastRatio() is a plain hex-to-luminance calculation, no external
+// service. 4.5:1 is the AA bar for normal text.
+function colorAccessibilityContent(a) {
+  if (!a.colors.primary || !a.colors.background || !a.colors.text) return "";
+  const pairs = [
+    { label: "Text on Background", fg: a.colors.text, bg: a.colors.background },
+    { label: "Primary on Background", fg: a.colors.primary, bg: a.colors.background },
+    { label: "Background on Primary", fg: a.colors.background, bg: a.colors.primary },
+  ];
+  return `
+    <div style="margin-top:18px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8a8580;margin-bottom:6px;">Accessibility (WCAG AA)</div>
+      ${pairs
+        .map((p) => {
+          const ratio = contrastRatio(p.fg, p.bg);
+          const pass = ratio >= 4.5;
+          return `<div class="bb-contrast-row"><span>${p.label}</span><span class="${pass ? "bb-contrast-pass" : "bb-contrast-fail"}">${ratio.toFixed(1)}:1 ${pass ? "Pass" : "Low contrast"}</span></div>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+// A real type specimen (rendered live in the chosen Google Fonts, already
+// loaded via ensureGoogleFont in the Typography step) instead of two lines
+// of plain text naming the fonts.
 function typographySectionContent(a) {
   if (!a.fonts.primary) return `<p style="font-size:12.5px;color:#8a8580;">No typefaces chosen yet.</p>`;
   return `
-    <div style="font-family:'${a.fonts.primary}';font-size:28px;font-weight:700;margin-bottom:6px;">${escapeHtml(a.fonts.primary)}</div>
-    <div style="font-family:'${a.fonts.secondary}';font-size:14px;color:#5b564f;">${escapeHtml(a.fonts.secondary)} — used for body text and captions.</div>
+    <div class="bb-type-row"><div class="bb-type-label">Heading — ${escapeHtml(a.fonts.primary)}</div><div style="font-family:'${a.fonts.primary}';font-size:30px;font-weight:700;">Aa Bb Cc</div></div>
+    <div class="bb-type-row"><div class="bb-type-label">Subheading</div><div style="font-family:'${a.fonts.primary}';font-size:18px;font-weight:700;">The quick brown fox</div></div>
+    <div class="bb-type-row" style="border-bottom:none;"><div class="bb-type-label">Body — ${escapeHtml(a.fonts.secondary)}</div><div style="font-family:'${a.fonts.secondary}';font-size:13.5px;line-height:1.6;">The quick brown fox jumps over the lazy dog. 0123456789.</div></div>
   `;
 }
 
@@ -618,15 +746,34 @@ function applicationsSectionContent(a, brand) {
   return `<div class="bb-mockup-stage" style="${mockupStageStyle(a)}">${a.applications.map((id) => renderMockup(id, a, brand)).join("")}</div>`;
 }
 
+// Auto-generated Table of Contents — only lists sections that actually have
+// content, so an incomplete brand never shows a broken-looking empty page.
+const TOC_SECTIONS = [
+  { label: "Brand Foundation", desc: "Purpose, audience, positioning", has: (brand) => !!(brand.brandDNA?.tagline || brand.brandDNA?.purpose || brand.brandDNA?.targetAudience) },
+  { label: "Personality & Voice", desc: "Karakter dan cara brand ngomong", has: (brand) => !!(brand.brandBuilder?.personality?.primary?.length || brand.brandDNA?.personality?.length || brand.aiVoiceGuide) },
+  { label: "Logo", desc: "Pemakaian, clear space, do's & don'ts", has: (brand, a) => a.logo.hasLogo === true && !!a.logo.dataUrl },
+  { label: "Color System", desc: "Palet, kode warna, aksesibilitas", has: (brand, a) => !!a.colors.primary },
+  { label: "Typography", desc: "Font system dan hierarki", has: (brand, a) => !!a.fonts.primary },
+  { label: "Visual Direction", desc: "Gaya visual keseluruhan", has: (brand, a) => a.visualDirection.length > 0 },
+  { label: "Brand Applications", desc: "Contoh penerapan di berbagai media", has: (brand, a) => a.applications.length > 0 },
+];
+function tocSectionContent(brand, a) {
+  const rows = TOC_SECTIONS.filter((s) => s.has(brand, a));
+  if (!rows.length) return `<p style="font-size:12.5px;color:#8a8580;">Belum ada bagian yang terisi.</p>`;
+  return rows.map((s, i) => `<div class="bb-toc-row"><span class="bb-toc-num">0${i + 1}</span><span class="bb-toc-label">${escapeHtml(s.label)}</span><span class="bb-toc-desc">${escapeHtml(s.desc)}</span></div>`).join("");
+}
+
 // ---------- Live preview (right pane) ----------
 function livePreviewHTML(brand, a) {
   return `
-    <div class="brandbook-sheet">
+    <div class="brandbook-sheet" style="${brandThemeVars(a)}">
       <div class="brandbook-page" style="min-height:0;padding:24px 26px 60px;">
         <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" style="width:54px;top:18px;right:20px;" alt="WPK Brand Lab" />
         <div class="brandbook-page-eyebrow">Live Preview</div>
         <div class="brandbook-cover-name" style="font-size:22px;">${escapeHtml(brand.name)}</div>
         ${foundationSectionContent(brand)}
+        <div class="brandbook-page-eyebrow" style="margin-top:18px;">Personality &amp; Voice</div>
+        ${personalitySectionContent(brand)}
         <div class="brandbook-page-eyebrow" style="margin-top:18px;">Logo</div>
         ${logoSectionContent(a)}
         <div class="brandbook-page-eyebrow" style="margin-top:18px;">Colors</div>
@@ -652,17 +799,27 @@ function reviewHTML(brand, state) {
   return `
     <h2 style="margin-bottom:6px;">Your Brand Book is ready</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 20px;">Review everything below, then save it to this brand or download the PDF.</p>
-    <div class="brandbook-sheet" style="margin-bottom:20px;">
+    <div class="brandbook-sheet" style="margin-bottom:20px;${brandThemeVars(a)}">
       <div class="brandbook-page">
         <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" alt="WPK Brand Lab" />
         <div class="brandbook-cover-name">${escapeHtml(brand.name)}</div>
         <div class="brandbook-cover-tagline">${escapeHtml(brand.brandDNA.tagline || "")}</div>
-        <div class="brandbook-page-eyebrow" style="margin-top:26px;">Foundation</div>
+        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Contents</div>
+        ${tocSectionContent(brand, a)}
+        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Brand Foundation</div>
         ${foundationSectionContent(brand)}
+        <div class="brandbook-page-eyebrow" style="margin-top:22px;">Personality &amp; Voice</div>
+        ${personalitySectionContent(brand)}
+        ${voiceToneSectionContent(brand)}
         <div class="brandbook-page-eyebrow" style="margin-top:22px;">Logo</div>
         ${logoSectionContent(a)}
+        ${logoClearSpaceContent(a)}
+        ${logoOnBackgroundsContent(a)}
+        ${logoDontsContent(a)}
         <div class="brandbook-page-eyebrow" style="margin-top:22px;">Color System</div>
         ${colorSectionContent(a)}
+        ${colorUsageContent(a)}
+        ${colorAccessibilityContent(a)}
         <div class="brandbook-page-eyebrow" style="margin-top:22px;">Typography</div>
         ${typographySectionContent(a)}
         <div class="brandbook-page-eyebrow" style="margin-top:22px;">Visual Direction</div>
@@ -711,24 +868,65 @@ function brandbookPageHTML(title, content, brand) {
   `;
 }
 
+// Full-bleed, brand-colored section-opener page — text color is picked at
+// render time (pickTintTextColor) so it always reads against whatever the
+// brand's own primary color happens to be, light or dark.
+function dividerPageHTML(indexLabel, title, sub, brand, a) {
+  const textColor = pickTintTextColor(a.colors.primary || "#1a1816");
+  return `
+    <div class="brandbook-page brandbook-print-page bb-divider" style="--bb-divider-text:${textColor};">
+      <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" alt="WPK Brand Lab" />
+      <div class="bb-divider-index">${escapeHtml(indexLabel)}</div>
+      <div class="bb-divider-title">${escapeHtml(title)}</div>
+      ${sub ? `<div class="bb-divider-sub">${escapeHtml(sub)}</div>` : ""}
+      <div class="brandbook-page-footer" style="color:${textColor};opacity:.7;">
+        <span>${escapeHtml(brand.name)} Brand Book</span>
+        <span>Made by WPK Brand Lab</span>
+      </div>
+    </div>
+  `;
+}
+
+// Cover gets its own layout rather than reusing dividerPageHTML — "Brand
+// Guidelines" (the document type) is the big headline, the brand's own name
+// is the subtitle, and a "Prepared for" line stands in for the agency-
+// deliverable footer real brand-book covers carry (designer/client credit).
+function coverPageHTML(brand, a, year) {
+  const textColor = pickTintTextColor(a.colors.primary || "#1a1816");
+  return `
+    <div class="brandbook-page brandbook-print-page bb-divider" style="--bb-divider-text:${textColor};">
+      <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" alt="WPK Brand Lab" />
+      <div class="bb-divider-index">${year}</div>
+      <div class="bb-divider-title" style="font-size:46px;">Brand<br/>Guidelines</div>
+      <div class="bb-divider-sub" style="font-weight:700;">${escapeHtml(brand.name)}${brand.brandDNA.tagline ? ` — ${escapeHtml(brand.brandDNA.tagline)}` : ""}</div>
+      <div class="brandbook-page-footer" style="color:${textColor};opacity:.7;">
+        <span>Prepared for: ${escapeHtml(brand.name)}</span>
+        <span>Made by WPK Brand Lab</span>
+      </div>
+    </div>
+  `;
+}
+
 function openBrandBookPdf(brand, a) {
+  const year = new Date().getFullYear();
   const pages = [
-    brandbookPageHTML("Cover", `
-      <div class="brandbook-cover-name">${escapeHtml(brand.name)}</div>
-      <div class="brandbook-cover-tagline">${escapeHtml(brand.brandDNA.tagline || "")}</div>
-    `, brand),
+    coverPageHTML(brand, a, year),
+    brandbookPageHTML("Contents", tocSectionContent(brand, a), brand),
     brandbookPageHTML("Brand Foundation", foundationSectionContent(brand), brand),
-    brandbookPageHTML("Logo", logoSectionContent(a), brand),
-    brandbookPageHTML("Color System", colorSectionContent(a) + colorUsageContent(a), brand),
+    brandbookPageHTML("Personality & Voice", personalitySectionContent(brand) + voiceToneSectionContent(brand), brand),
+    dividerPageHTML("Identity", "Visual & Verbal Identity", "Logo, warna, tipografi, dan gaya visual brand ini.", brand, a),
+    brandbookPageHTML("Logo", logoSectionContent(a) + logoClearSpaceContent(a) + logoOnBackgroundsContent(a) + logoDontsContent(a), brand),
+    brandbookPageHTML("Color System", colorSectionContent(a) + colorUsageContent(a) + colorAccessibilityContent(a), brand),
     brandbookPageHTML("Typography", typographySectionContent(a), brand),
     brandbookPageHTML("Visual Direction", directionSectionContent(a), brand),
     brandbookPageHTML("Brand Applications", applicationsSectionContent(a, brand), brand),
+    dividerPageHTML("Thank You", "Made with care.", `${brand.name} × WPK Brand Lab, ${year}.`, brand, a),
   ].join("");
 
   const overlay = openModal({
     title: "Brand Book — PDF Preview",
     width: "min(1100px,94vw)",
-    bodyHTML: `<div class="report-preview-wrap"><div class="brandbook-sheet" id="bb-report-sheet">${pages}</div></div>`,
+    bodyHTML: `<div class="report-preview-wrap"><div class="brandbook-sheet" id="bb-report-sheet" style="${brandThemeVars(a)}">${pages}</div></div>`,
     footHTML: `
       <button class="btn btn-secondary" id="bb-pdf-close">Close</button>
       <button class="btn btn-primary" id="bb-pdf-download">${icon("download", { size: 14 })}Download PDF</button>

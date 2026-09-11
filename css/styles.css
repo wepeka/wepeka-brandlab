@@ -991,6 +991,10 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
   .brandbook-page{ page: brandbook; break-after: page; padding:16mm 18mm; min-height:0; }
   .brandbook-page:last-child{ break-after: auto; }
   .brandbook-page + .brandbook-page{ border-top:none; }
+  /* Browsers strip background colors/gradients by default when printing —
+     without this every divider page's brand-color background (and the
+     gradient swatches) would silently print blank white. */
+  .brandbook-page, .brandbook-page *{ print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 @page brandbook{ size: landscape; margin: 10mm; }
 
@@ -1213,14 +1217,76 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
    landscape GSM-style document. On-screen this is just a wide white card
    (same white-card-on-dark technique as .report-sheet); print rules that
    paginate it live in the shared @media print block above. */
-.brandbook-sheet{ background:#ffffff; color:#1a1816; font-family: var(--font-body); border-radius:6px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overflow:hidden; }
-.brandbook-page{ position:relative; padding:44px 52px; min-height:520px; }
+/* Brand Book premium page system (js/views/brand-guidelines.js) — every
+   page is themed live from the brand's own chosen palette via --bb-* custom
+   properties (same variables the Applications mockups already use), so a
+   generated document looks designed for that specific brand instead of a
+   generic template with the name swapped in. Two page archetypes: .bb-divider
+   (full-bleed brand-color, section-opener) and the default content page
+   (paper background, structured body). */
+.brandbook-sheet{ background:#ffffff; color:#1a1816; font-family: var(--font-body); border-radius:10px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overflow:hidden; }
+.brandbook-page{ position:relative; padding:44px 52px; min-height:520px; background:#fff; color:#1a1816; }
 .brandbook-page + .brandbook-page{ border-top:1px dashed #e4e0da; }
-.brandbook-wpk-mark{ position:absolute; top:26px; right:36px; width:76px; height:auto; opacity:.9; }
+.brandbook-wpk-mark{ position:absolute; top:26px; right:36px; width:56px; height:auto; opacity:.55; }
 .brandbook-page-footer{ position:absolute; bottom:20px; left:52px; right:52px; display:flex; justify-content:space-between; font-size:10px; color:#8a8580; }
 .brandbook-page-eyebrow{ font-family: var(--font-display); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:#8a8580; margin-bottom:14px; }
 .brandbook-cover-name{ font-family: var(--font-display); font-size:38px; font-weight:800; margin-bottom:8px; }
 .brandbook-cover-tagline{ font-size:15px; color:#5b564f; }
+
+/* Divider / cover pages — full-bleed brand color, text color picked at
+   render time (js: pickTintTextColor) for guaranteed contrast against
+   whatever the brand's primary happens to be. Two soft overlapping circles
+   anchor the bottom corners — a cheap, dependency-free stand-in for the
+   organic cut-out shapes premium brand-book templates use. */
+.bb-divider{ background: var(--bb-primary, #1a1816); color: var(--bb-divider-text, #fff); display:flex; flex-direction:column; justify-content:center; overflow:hidden; }
+.bb-divider::before, .bb-divider::after{ content:""; position:absolute; border-radius:50%; background: rgba(255,255,255,.08); pointer-events:none; }
+.bb-divider::before{ width:340px; height:340px; left:-120px; bottom:-160px; }
+.bb-divider::after{ width:200px; height:200px; right:-60px; bottom:-100px; background: rgba(255,255,255,.06); }
+.bb-divider .brandbook-page-eyebrow{ color: var(--bb-divider-text, #fff); opacity:.75; }
+.bb-divider-index{ font-family: var(--font-display); font-size:13px; font-weight:800; opacity:.6; margin-bottom:10px; position:relative; z-index:1; }
+.bb-divider-title{ font-family: var(--font-display); font-size:40px; font-weight:800; line-height:1.1; margin:0 0 10px; position:relative; z-index:1; max-width:80%; }
+.bb-divider-sub{ font-size:14px; opacity:.85; max-width:62%; line-height:1.5; position:relative; z-index:1; }
+.bb-divider .brandbook-wpk-mark{ opacity:.8; filter: brightness(0) invert(1); }
+
+/* Table of contents */
+.bb-toc-row{ display:flex; align-items:baseline; gap:10px; padding:9px 0; border-bottom:1px solid #efece7; font-size:13px; }
+.bb-toc-num{ font-family: var(--font-display); font-weight:800; color: var(--bb-primary, #1a1816); flex:none; width:22px; }
+.bb-toc-label{ font-weight:700; flex:none; }
+.bb-toc-desc{ color:#8a8580; font-size:11.5px; }
+
+/* Gradient color swatch card — light-to-dark diagonal wash of the hex
+   itself, closer to how premium brand-book templates present a palette
+   than a flat square. */
+.bb-swatch-card{ border-radius:12px; overflow:hidden; border:1px solid #e4e0da; flex:1; min-width:110px; }
+.bb-swatch-fill{ height:78px; }
+.bb-swatch-meta{ padding:8px 10px; background:#fff; }
+.bb-swatch-name{ font-size:11.5px; font-weight:800; text-transform:capitalize; }
+.bb-swatch-code{ font-size:10px; color:#8a8580; font-family: ui-monospace, monospace; margin-top:2px; }
+.bb-contrast-row{ display:flex; justify-content:space-between; align-items:center; font-size:11.5px; padding:7px 0; border-bottom:1px solid #efece7; }
+.bb-contrast-pass{ color:#1f9d55; font-weight:800; }
+.bb-contrast-fail{ color:#c94a3d; font-weight:800; }
+
+/* Voice / Personality trait pairing — "Trait, not Opposite" card, each row
+   pairs one thing the brand is against one thing it deliberately isn't. */
+.bb-voice-row{ display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #efece7; font-size:12.5px; }
+.bb-voice-yes{ font-weight:800; color: var(--bb-primary, #1a1816); }
+.bb-voice-no{ color:#8a8580; text-align:right; }
+.bb-voice-sep{ color:#c9c3ba; font-size:10px; }
+
+/* Type specimen */
+.bb-type-row{ padding:10px 0; border-bottom:1px solid #efece7; }
+.bb-type-label{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#8a8580; margin-bottom:4px; }
+
+/* Logo clear-space diagram — dashed guide inset from the logo's own edges
+   by a fraction of its rendered height, computed inline per logo. */
+.bb-clearspace{ border:1px dashed #c9c3ba; display:inline-flex; align-items:center; justify-content:center; position:relative; }
+.bb-clearspace img{ display:block; }
+.bb-logo-bg-grid{ display:flex; gap:10px; flex-wrap:wrap; }
+.bb-logo-bg-tile{ width:100px; height:100px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid #e4e0da; }
+.bb-logo-bg-tile img{ max-width:60%; max-height:60%; object-fit:contain; }
+.bb-logo-dont{ width:100px; height:100px; border-radius:10px; border:1px solid #f0c9c4; background:#fdf3f1; display:flex; align-items:center; justify-content:center; position:relative; }
+.bb-logo-dont img{ max-width:60%; max-height:60%; object-fit:contain; }
+.bb-logo-dont-label{ position:absolute; bottom:-18px; left:0; right:0; text-align:center; font-size:10px; color:#c94a3d; font-weight:700; }
 
 /* Brand DNA PDF — same visual language as the Brand Book sheet above
    (WPK mark, eyebrow labels, big cover name) but staying inside the

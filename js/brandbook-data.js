@@ -116,6 +116,25 @@ export function hexToCmyk(hex) {
   return { c: Math.round(c * 100), m: Math.round(m * 100), y: Math.round(y * 100), k: Math.round(k * 100) };
 }
 
+// WCAG 2.1 relative-luminance contrast ratio between two hex colors — powers
+// the Color System page's accessibility check (a 4.5:1 minimum for normal
+// text is the AA bar every text/background pairing gets measured against).
+function relativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const [rs, gs, bs] = [r, g, b].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+}
+export function contrastRatio(hexA, hexB) {
+  const l1 = relativeLuminance(hexA);
+  const l2 = relativeLuminance(hexB);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 export const TYPOGRAPHY_FEELINGS = [
   "Modern", "Elegant", "Bold", "Friendly", "Minimal", "Editorial", "Playful", "Professional",
 ];
