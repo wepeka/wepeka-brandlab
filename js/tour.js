@@ -186,7 +186,7 @@ export function startOnboardingTour() {
 
   const steps = [
     {
-      selector: brands.length ? ".brand-card" : ".brand-card-add",
+      selector: brands.length ? ".brand-tile:not(.brand-tile-add)" : ".brand-tile-add",
       // Launched from Settings (or anywhere else), not just the home
       // screen — always start there so step 1's target actually exists.
       beforeStep: () => { location.hash = "#/"; },

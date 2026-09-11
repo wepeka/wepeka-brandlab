@@ -188,7 +188,16 @@ export function getDominantColor(imageUrl) {
   });
 }
 
+// Accepts either "rgb(r, g, b)" (from getDominantColor) or "#rrggbb"/"#rgb"
+// (from a manual <input type=color>) — one parser so pickTintTextColor/
+// pickTintForeground work with a brand's manually-picked color too.
 function parseRgb(rgb) {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(rgb || "");
+  if (hex) {
+    const h = hex[1].length === 3 ? hex[1].split("").map((c) => c + c).join("") : hex[1];
+    const num = parseInt(h, 16);
+    return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+  }
   const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb || "");
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }

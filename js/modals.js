@@ -6,11 +6,11 @@ export function closeOverlay(el) {
   el.remove();
 }
 
-export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = false }) {
+export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = false, width }) {
   const overlay = document.createElement("div");
   overlay.className = "overlay center";
   overlay.innerHTML = `
-    <div class="modal" style="${wide ? "width:min(640px,92vw)" : ""}">
+    <div class="modal" style="${width ? `width:${width};` : wide ? "width:min(640px,92vw)" : ""}">
       <div class="drawer-head">
         <h2>${title}</h2>
         <button class="icon-btn" data-close aria-label="Close">${icon("x", { size: 16 })}</button>

@@ -4,6 +4,9 @@ const S = 'fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap=
 
 const PATHS = {
   plus: `<path d="M12 5v14M5 12h14"/>`,
+  copy: `<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/>`,
+  sun: `<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2.5 12H5M19 12h2.5M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>`,
+  moon: `<path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/>`,
   grid: `<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>`,
   calendar: `<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>`,
   chart: `<path d="M4 19V9M11 19V5M18 19v-7"/><path d="M3 21h18"/>`,
@@ -48,6 +51,8 @@ const PATHS = {
   bot: `<rect x="4" y="8" width="16" height="12" rx="4"/><circle cx="9" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 8V4.5"/><circle cx="12" cy="3" r="1.1" fill="currentColor" stroke="none"/><path d="M4 13H2M22 13h-2"/>`,
   mic: `<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1"/><path d="M12 18v4M9 22h6"/>`,
   bell: `<path d="M6 8a6 6 0 0112 0c0 4.5 1.5 6 2.5 7H3.5c1-1 2.5-2.5 2.5-7z"/><path d="M9.5 19a2.5 2.5 0 005 0"/>`,
+  palette: `<path d="M12 3a9 9 0 000 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-.9.7-1.6 1.6-1.6H16a5 5 0 005-5c0-3.9-4-6.8-9-6.8z"/><circle cx="7.5" cy="10.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="11" cy="7.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/>`,
+  typography: `<path d="M5 20l4.5-14h1l4.5 14"/><path d="M6.5 15h6"/><path d="M17 20V9.5c0-1.4 1.1-2.5 2.5-2.5S22 8.1 22 9.5V10"/><path d="M17 15.5c.6-.8 1.5-1.3 2.5-1.3 1.4 0 2.5 1.1 2.5 2.5S20.9 19.2 19.5 19.2c-1 0-1.9-.5-2.5-1.3"/>`,
 };
 
 export function icon(name, { size = 18, className = "" } = {}) {

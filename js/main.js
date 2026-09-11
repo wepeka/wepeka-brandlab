@@ -2,14 +2,13 @@ import { shellHTML, wireShell } from "./layout.js";
 import { getBrand, initStore } from "./store.js";
 import { onAuthChange } from "./auth.js";
 import { renderAuthScreen } from "./views/login.js";
-import * as brandsView from "./views/brands.js";
-import * as brandHomeView from "./views/brand-home.js";
-import * as brandDnaView from "./views/brand-dna.js";
-import * as brandGuidelinesView from "./views/brand-guidelines.js";
-import * as salesView from "./views/sales.js";
-import * as campaignsView from "./views/campaigns.js";
-import * as contentOsView from "./views/content-os.js";
-import * as settingsView from "./views/settings.js";
+// Every other view is loaded lazily (dynamic import, inside renderRoute)
+// instead of statically here. These used to be static imports — which
+// meant the login screen couldn't paint until the browser had fetched and
+// evaluated every view in the whole app (Creator, Calendar, AI, OCR,
+// Instagram/Facebook, everything), since a static import graph is fully
+// resolved before a module's own top-level code runs. Logged-out visitors
+// never touch any of that, so there's no reason to make them wait for it.
 
 const app = document.getElementById("app");
 let cleanup = null;
@@ -57,8 +56,15 @@ async function boot(user) {
   renderRoute();
 }
 
-function renderRoute() {
+// Bumped on every call so a slow dynamic import from a route the user has
+// already navigated away from can't clobber whatever rendered after it —
+// only the most recent renderRoute() call is allowed to touch the DOM/set
+// cleanup once its import resolves.
+let renderToken = 0;
+
+async function renderRoute() {
   if (!storeReady) return;
+  const token = ++renderToken;
   if (cleanup) { cleanup(); cleanup = null; }
   const route = parseRoute(location.hash);
 
@@ -72,32 +78,53 @@ function renderRoute() {
   const viewRoot = document.getElementById("view-root");
   window.scrollTo(0, 0);
 
+  const view = await (
+    {
+      home: () => import("./views/brand-home.js"),
+      dna: () => import("./views/brand-dna.js"),
+      campaigns: () => import("./views/campaigns.js"),
+      guidelines: () => import("./views/brand-guidelines.js"),
+      sales: () => import("./views/sales.js"),
+      "content-os": () => import("./views/content-os.js"),
+      settings: () => import("./views/settings.js"),
+    }[route.view] || (() => import("./views/brands.js"))
+  )();
+  if (token !== renderToken) return; // navigated again while this was loading
+
   switch (route.view) {
     case "home":
-      cleanup = brandHomeView.render(viewRoot, { brandId: route.brandId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "dna":
-      cleanup = brandDnaView.render(viewRoot, { brandId: route.brandId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "campaigns":
-      cleanup = campaignsView.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });
       break;
     case "guidelines":
-      cleanup = brandGuidelinesView.render(viewRoot, { brandId: route.brandId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "sales":
-      cleanup = salesView.render(viewRoot, { brandId: route.brandId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "content-os":
-      cleanup = contentOsView.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
       break;
     case "settings":
-      cleanup = settingsView.render(viewRoot);
+      cleanup = view.render(viewRoot);
       break;
     default:
-      cleanup = brandsView.render(viewRoot);
+      cleanup = view.render(viewRoot);
   }
 }
 
+// Firebase Auth's first onAuthChange callback needs a network round-trip
+// (checking/refreshing the persisted session) before it fires at all — on
+// a slow or flaky connection that gap left #app completely empty (just the
+// dark theme's background, i.e. a black screen) until it resolved. Painting
+// the loading state synchronously here, before that listener is even
+// registered, closes the gap instead of relying on boot()'s own
+// showLoading() call, which only runs after a user is already known.
+showLoading();
 window.addEventListener("hashchange", renderRoute);
 onAuthChange(boot);

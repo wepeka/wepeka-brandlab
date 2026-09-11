@@ -4,7 +4,7 @@ import {
   ROUTINE_DAYS, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITIES, ROUTINE_ACTIVITY_LABELS,
 } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, resizeImageFile, formatDate, qs, qsa, toast } from "../dom.js";
+import { avatarHTML, resizeImageFile, formatDate, qs, qsa, toast, pickTintTextColor, pickTintForeground } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
 import { testFacebookConnection } from "../facebook.js";
@@ -25,23 +25,36 @@ function paint(root, state, refresh) {
   const showOnboarding = !localStorage.getItem(ONBOARDING_DISMISSED_KEY);
 
   root.innerHTML = `
+    <div class="brands-bg"><span class="bg-blob bg-blob-1"></span><span class="bg-blob bg-blob-2"></span><span class="bg-blob bg-blob-3"></span></div>
     <div class="hero-strip">
       <div class="kicker">Wepeka Brandlab</div>
       <h1>Choose a brand to plan, publish, and track.</h1>
       <p class="page-sub">Every brand gets its own dashboard, calendar, and content database. Add as many as you manage.</p>
+    </div>
+    <div class="brand-row-head">
+      <button class="brand-quick-add" id="add-brand-quick" aria-label="Add New Brand" title="Add New Brand">${icon("plus", { size: 15 })}</button>
+    </div>
+    <div class="brand-grid" id="brand-grid">
+      ${brands.map(brandCard).join("")}
+      <button class="brand-tile brand-tile-add" id="add-brand">
+        <div class="brand-tile-avatar brand-tile-avatar-add">${icon("plus", { size: 28 })}</div>
+        <h3>Add New Brand</h3>
+      </button>
     </div>
     ${showOnboarding ? onboardingCardHTML() : ""}
     ${setupVideoCardHTML()}
     ${overdueRemindersHTML()}
     ${weeklyWorkHTML(brands)}
     ${myRoutineHTML(state, brands)}
-    <div class="brand-grid" id="brand-grid">
-      ${brands.map(brandCard).join("")}
-      <button class="brand-card-add" id="add-brand">${icon("plus", { size: 20 })}Add New Brand</button>
-    </div>
   `;
 
+  const dragState = wireBrandGridDrag(qs("#brand-grid"));
+
   qs("#add-brand").addEventListener("click", () => {
+    if (dragState.wasDragged) return;
+    openBrandModal({ onSaved: refresh });
+  });
+  qs("#add-brand-quick").addEventListener("click", () => {
     openBrandModal({ onSaved: refresh });
   });
 
@@ -73,8 +86,9 @@ function paint(root, state, refresh) {
 
   wireMyRoutine(root, state, refresh);
 
-  qsa(".brand-card").forEach((card) => {
+  qsa(".brand-tile:not(.brand-tile-add)").forEach((card) => {
     card.addEventListener("click", (e) => {
+      if (dragState.wasDragged) return;
       if (e.target.closest("[data-menu-toggle]") || e.target.closest(".menu")) return;
       location.hash = `#/brand/${card.dataset.id}`;
     });
@@ -417,6 +431,69 @@ function wireMyRoutine(root, state, refresh) {
   });
 }
 
+// Click-and-drag panning for the brand row, for mouse users (touch/trackpad
+// already scroll it natively via overflow-x). Returns a small state object
+// so click handlers on the tiles can check `wasDragged` and skip navigating
+// when the mouseup that ended the drag happened to land on a tile — without
+// this, dragging left the row instead behaves like an accidental click.
+//
+// mousemove/mouseup have to live on `window` (a fast drag can leave the
+// grid's own bounds), but `paint()` re-renders this whole page on every
+// refresh() and would otherwise pile up a fresh pair of window-level
+// listeners each time with nothing ever removing the previous pair — so
+// the previous call's listeners are explicitly torn down before attaching
+// the new ones.
+let brandGridDragCleanup = null;
+function wireBrandGridDrag(grid) {
+  brandGridDragCleanup?.();
+  brandGridDragCleanup = null;
+  if (!grid) return { wasDragged: false };
+
+  const state = { down: false, wasDragged: false, startX: 0, startScroll: 0 };
+  grid.classList.add("draggable");
+
+  const onDown = (e) => {
+    if (e.button !== 0) return;
+    state.down = true;
+    state.wasDragged = false;
+    state.startX = e.pageX;
+    state.startScroll = grid.scrollLeft;
+    grid.classList.add("pressing");
+  };
+  const onMove = (e) => {
+    if (!state.down) return;
+    const dx = e.pageX - state.startX;
+    if (Math.abs(dx) > 5 && !state.wasDragged) {
+      state.wasDragged = true;
+      // Only now (a confirmed drag, not just a click) does pointer-events
+      // get disabled on the tiles via the .dragging class — doing that
+      // from mousedown instead would risk swallowing a plain click's own
+      // click event before it has a chance to fire.
+      grid.classList.add("dragging");
+    }
+    if (state.wasDragged) {
+      e.preventDefault();
+      grid.scrollLeft = state.startScroll - dx;
+    }
+  };
+  const onUp = () => {
+    if (!state.down) return;
+    state.down = false;
+    grid.classList.remove("pressing", "dragging");
+  };
+
+  grid.addEventListener("mousedown", onDown);
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+  brandGridDragCleanup = () => {
+    grid.removeEventListener("mousedown", onDown);
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+  };
+
+  return state;
+}
+
 function escapeText(s) {
   const d = document.createElement("div");
   d.textContent = s || "";
@@ -426,10 +503,21 @@ function escapeText(s) {
 function brandCard(brand) {
   const contents = listContent(brand.id);
   const published = contents.filter((c) => c.status === "published").length;
+  // A brand's own picked color overrides --brand-tint just for this tile —
+  // the existing .brand-tile-avatar:hover glow rule already reads
+  // --brand-tint, so scoping it here (rather than only on document.body,
+  // which only ever reflects the *currently open* brand) is what makes
+  // each tile in this all-brands list glow in its own color instead of one
+  // shared color.
+  const tintStyle = brand.color
+    ? `--brand-tint:${brand.color};--brand-tint-text:${pickTintTextColor(brand.color)};--brand-tint-fg:${pickTintForeground(brand.color)};`
+    : "";
   return `
-    <div class="brand-card" data-id="${brand.id}">
-      <button class="icon-btn card-menu" data-menu-toggle data-id="${brand.id}" aria-label="Brand actions" style="width:30px;height:30px;">${icon("dots", { size: 15 })}</button>
-      ${avatarHTML(brand)}
+    <div class="brand-tile" data-id="${brand.id}" style="${tintStyle}">
+      <div class="brand-tile-avatar">
+        ${avatarHTML(brand)}
+        <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${brand.id}" aria-label="Brand actions">${icon("dots", { size: 14 })}</button>
+      </div>
       <h3>${brand.name}</h3>
       <div class="meta">${contents.length} pieces · ${published} published</div>
     </div>
@@ -444,10 +532,12 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
   const draft = {
     name: brand?.name || "",
     avatar: brand?.avatar || "",
+    color: brand?.color || "",
     instagram: brand?.instagram || { accessToken: "", igUserId: "", username: "", connectedAt: null },
     facebook: brand?.facebook || { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null },
     ads: brand?.ads || { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null },
     aiVoiceGuide: brand?.aiVoiceGuide || "",
+    businessDescription: brand?.businessDescription || "",
   };
 
   const overlay = openModal({
@@ -460,10 +550,22 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
           <button type="button" class="btn btn-ghost btn-sm" id="remove-avatar" style="${draft.avatar ? "" : "display:none;"}">${icon("x", { size: 13 })}Remove Photo</button>
           <input type="file" id="avatar-file" accept="image/*" style="display:none;" />
         </div>
+        <div class="flex items-center gap-8" style="margin-left:auto;">
+          <div style="text-align:right;">
+            <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Brand Color</label>
+            <input type="color" id="brand-color" value="${draft.color || "#ffa52b"}" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:none;padding:0;cursor:pointer;" />
+          </div>
+        </div>
       </div>
+      <p class="text-faint" style="font-size:11.5px;margin:-14px 0 18px;">This brand's essence color — used for the hover glow on its card, and as the accent throughout its Brand Lab (tabs, buttons, highlights) once you're inside it.</p>
       <div class="field">
         <label>Brand name</label>
         <input class="input" id="brand-name" placeholder="e.g. PINTER Mandarin" value="${(draft.name || "").replace(/"/g, "&quot;")}" />
+      </div>
+      <div class="field">
+        <label>What does this brand do?</label>
+        <textarea class="textarea" id="brand-description" style="min-height:120px;" placeholder="Jelasin brand ini bergerak di bidang apa, layanan/produknya apa, dan buat siapa — misal: 'Kami lembaga kursus bahasa Mandarin di Kediri untuk anak-anak sampai dewasa, fokus ke percakapan praktis sehari-hari, bukan cuma teori tata bahasa...'">${(draft.businessDescription || "")}</textarea>
+        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">Beberapa paragraf aja — ini jadi konteks dasar yang dipakai AI di seluruh aplikasi (Brand DNA, Script Generator, Auto-Schedule, dll) biar langsung ngerti bisnismu ini apa, dari brand pertama kali dibuat.</div>
       </div>
       <div class="field" style="margin-bottom:0;">
         <div class="creator-field-head">
@@ -475,6 +577,9 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         <div class="text-faint" style="font-size:11.5px;margin-top:4px;">Fed into the AI Script Generator so hooks/scripts/captions match this brand's tone, not a generic one. Upload a plain text file to fill this in instead of typing — PDF brandbooks aren't read automatically yet, so copy/paste the relevant text, or export it as .txt first.</div>
       </div>
 
+      ${
+        brand
+          ? `
       <div class="divider"></div>
       <div class="page-eyebrow" style="margin-bottom:12px;">Instagram (optional)</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Connects this brand's own Instagram account so views/likes/comments can be pulled in automatically instead of typed by hand — per post from the Content tab ("Fetch from Instagram"), or all at once from Content → ⋯ menu → "Refresh All Instagram Metrics". Still a manual click, not a background auto-sync — this app has no server to run one on its own.</p>
@@ -516,6 +621,12 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       </div>
       <div id="ads-status" style="margin:10px 0;font-size:12.5px;">${draft.ads.accountName ? `<span style="color:var(--health-good);">Connected to ${draft.ads.accountName}</span>` : ""}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="ads-test">${icon("refresh", { size: 13 })}Test Connection</button>
+      `
+          : `
+      <div class="divider"></div>
+      <p class="text-faint" style="font-size:11.5px;margin:0;">Instagram/Facebook/Ads connections happen later — save this brand first, then reopen it and use Edit Brand to connect them.</p>
+      `
+      }
     `,
     footHTML: `
       <button class="btn btn-secondary" data-cancel>Cancel</button>
@@ -555,7 +666,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         if (e.key === "Enter") overlay.querySelector("[data-save]").click();
       });
 
-      el.querySelector("#ig-test").addEventListener("click", async () => {
+      el.querySelector("#ig-test")?.addEventListener("click", async () => {
         const igUserId = el.querySelector("#ig-userid").value.trim();
         const accessToken = el.querySelector("#ig-token").value.trim();
         const statusEl = el.querySelector("#ig-status");
@@ -573,7 +684,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         }
       });
 
-      el.querySelector("#fb-test").addEventListener("click", async () => {
+      el.querySelector("#fb-test")?.addEventListener("click", async () => {
         const pageId = el.querySelector("#fb-pageid").value.trim();
         const pageAccessToken = el.querySelector("#fb-token").value.trim();
         const statusEl = el.querySelector("#fb-status");
@@ -591,7 +702,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         }
       });
 
-      el.querySelector("#ads-test").addEventListener("click", async () => {
+      el.querySelector("#ads-test")?.addEventListener("click", async () => {
         const adAccountId = el.querySelector("#ads-account-id").value.trim();
         const adsAccessToken = el.querySelector("#ads-token").value.trim();
         const statusEl = el.querySelector("#ads-status");
@@ -620,27 +731,29 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       nameInput.focus();
       return;
     }
-    const instagram = {
-      ...draft.instagram,
-      igUserId: overlay.querySelector("#ig-userid").value.trim(),
-      accessToken: overlay.querySelector("#ig-token").value.trim(),
-    };
-    const facebook = {
-      ...draft.facebook,
-      pageId: overlay.querySelector("#fb-pageid").value.trim(),
-      pageAccessToken: overlay.querySelector("#fb-token").value.trim(),
-    };
-    const ads = {
-      ...draft.ads,
-      adAccountId: overlay.querySelector("#ads-account-id").value.trim(),
-      adsAccessToken: overlay.querySelector("#ads-token").value.trim(),
-    };
+    // The Instagram/Facebook/Ads fields only exist in the DOM when editing
+    // an existing brand (see bodyHTML above) — a brand new-created here has
+    // no connections yet, so these just fall back to draft's empty defaults.
+    const igUserIdEl = overlay.querySelector("#ig-userid");
+    const instagram = igUserIdEl
+      ? { ...draft.instagram, igUserId: igUserIdEl.value.trim(), accessToken: overlay.querySelector("#ig-token").value.trim() }
+      : draft.instagram;
+    const fbPageIdEl = overlay.querySelector("#fb-pageid");
+    const facebook = fbPageIdEl
+      ? { ...draft.facebook, pageId: fbPageIdEl.value.trim(), pageAccessToken: overlay.querySelector("#fb-token").value.trim() }
+      : draft.facebook;
+    const adsAccountIdEl = overlay.querySelector("#ads-account-id");
+    const ads = adsAccountIdEl
+      ? { ...draft.ads, adAccountId: adsAccountIdEl.value.trim(), adsAccessToken: overlay.querySelector("#ads-token").value.trim() }
+      : draft.ads;
     const aiVoiceGuide = overlay.querySelector("#brand-ai-voice").value;
+    const businessDescription = overlay.querySelector("#brand-description").value;
+    const color = overlay.querySelector("#brand-color").value;
     if (brand) {
-      updateBrand(brand.id, { name, avatar: draft.avatar, instagram, facebook, ads, aiVoiceGuide });
+      updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
       toast("Brand updated");
     } else {
-      createBrand({ name, avatar: draft.avatar, instagram, facebook, ads, aiVoiceGuide });
+      createBrand({ name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
       toast(`${name} created`);
     }
     closeOverlay(overlay);

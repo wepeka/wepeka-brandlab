@@ -8,7 +8,7 @@
 // firestore.rules / storage.rules (requires a logged-in user), not in
 // hiding this object — safe to commit as-is.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { initializeFirestore } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -21,5 +21,12 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// Plain getFirestore() defaults to the WebChannel streaming transport,
+// which fails outright in some restrictive/proxied network environments
+// (seen in this session's sandboxed browser: a bare fetch() to the same
+// Firestore REST endpoint worked fine, but the SDK's own connection never
+// came up). experimentalAutoDetectLongPolling falls back to plain HTTP
+// long-polling when streaming doesn't work, and is a no-op cost-wise
+// wherever streaming already works fine.
+export const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 export const auth = getAuth(app);

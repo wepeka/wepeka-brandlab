@@ -1,4 +1,4 @@
-import { getContent, createContent, updateContent, getSettings, getBrand, combinePlatformMetrics, resolveContentBuckets, listCampaigns, METRIC_KEYS, STATUSES, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getContent, createContent, updateContent, getSettings, getBrand, combinePlatformMetrics, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, METRIC_KEYS, STATUSES, STATUS_LABELS, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
 import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
@@ -6,7 +6,7 @@ import { toast, formatPercent, formatNumber, resizeImageFile, escapeHtml, qs, qs
 import { analyzeScreenshot } from "../ocr.js";
 import { findMediaByPermalink, fetchMediaMetrics } from "../instagram.js";
 import { findAdsForPost, fetchAdInsights } from "../ads.js";
-import { generateThumbnail, classifyFunnel, suggestCampaignFit } from "../ai.js";
+import { generateThumbnail, classifyFunnel, suggestCampaignFit, hasAiKey } from "../ai.js";
 
 export function openContentEditor({ brandId, contentId = null, defaults = {}, onSaved }) {
   const settings = getSettings();
@@ -102,6 +102,9 @@ function bodyTemplate(draft, settings, igConfig, fbConfig, adsConfig, campaigns)
           </select>
         </div>
       </div>
+      <label class="checkbox-chip" style="margin-bottom:16px;">
+        <input type="checkbox" id="f-trial-reel" ${draft.trialReel ? "checked" : ""} />Trial Reel — di-tes ke non-followers dulu sebelum share ke feed utama
+      </label>
       <div class="field">
         <div class="creator-field-head">
           <label style="margin-bottom:0;">Campaign</label>
@@ -407,7 +410,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
     suggestCampaignBtn.addEventListener("click", async () => {
       const ai = settings.ai || {};
       const statusEl = qs("#ai-campaign-status", el);
-      const hasKey = ai.provider === "gemini" ? !!ai.geminiApiKey : !!ai.anthropicApiKey;
+      const hasKey = hasAiKey(ai);
       if (!hasKey) {
         statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">Add your AI API key in Settings → AI first.</div>`;
         return;
@@ -415,15 +418,24 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
       suggestCampaignBtn.disabled = true;
       statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>Thinking…</span></div>`;
       try {
+        // Phase counts are computed fresh here (not stored on the shared
+        // `campaigns` array used elsewhere in this drawer) so the AI can
+        // prefer whichever phase is still empty over one that's already
+        // full — "which campaign fits" becomes "which campaign AND phase
+        // actually needs this content."
+        const allContent = listContent(brandId);
+        const campaignsWithCoverage = campaigns.map((c) => ({ ...c, phaseCounts: campaignPhaseContentCounts(c, allContent) }));
         const suggestion = await suggestCampaignFit(ai, {
           brand,
-          campaigns,
+          campaigns: campaignsWithCoverage,
           idea: qs("#f-idea", el)?.value ?? draft.idea,
           title: qs("#f-title", el)?.value ?? draft.title,
         });
+        const suggestedCampaign = campaigns.find((c) => c.id === suggestion.campaignId);
+        const suggestedPhase = suggestedCampaign?.phases.find((p) => p.id === suggestion.phaseId);
         statusEl.innerHTML = suggestion.campaignId
           ? `<div class="ocr-status" style="flex-direction:column;align-items:flex-start;gap:4px;">
-               ${icon("check", { size: 14 })}<strong style="font-size:12.5px;">Suggested: ${escapeHtml(campaigns.find((c) => c.id === suggestion.campaignId)?.name || "")}</strong>
+               ${icon("check", { size: 14 })}<strong style="font-size:12.5px;">Suggested: ${escapeHtml(suggestedCampaign?.name || "")}${suggestedPhase ? ` — ${escapeHtml(suggestedPhase.name)}` : ""}</strong>
                ${suggestion.angle ? `<span style="font-size:12px;">Angle: ${escapeHtml(suggestion.angle)}</span>` : ""}
                ${suggestion.rationale ? `<span class="text-faint" style="font-size:11.5px;">${escapeHtml(suggestion.rationale)}</span>` : ""}
                <button type="button" class="btn btn-secondary btn-sm" id="apply-campaign-suggestion" style="margin-top:4px;">Use this campaign</button>
@@ -433,7 +445,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
         if (applyBtn) {
           applyBtn.addEventListener("click", () => {
             draft.campaignId = suggestion.campaignId;
-            draft.campaignPhaseId = "";
+            draft.campaignPhaseId = suggestion.phaseId || "";
             qs("#f-campaign", el).value = suggestion.campaignId;
             refreshPhaseSelect();
             toast("Campaign applied — remember to save.");
@@ -462,7 +474,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
     detectFunnelBtn.addEventListener("click", async () => {
       const ai = settings.ai || {};
       const statusEl = qs("#ai-funnel-status", el);
-      const hasKey = ai.provider === "gemini" ? !!ai.geminiApiKey : !!ai.anthropicApiKey;
+      const hasKey = hasAiKey(ai);
       if (!hasKey) {
         statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">Add your AI API key in Settings → AI first.</div>`;
         return;
@@ -773,6 +785,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, igConfig, fbConf
       campaignPhaseId: draft.campaignPhaseId || "",
       platform: qs("#f-platform", el).value,
       format: qs("#f-format", el).value,
+      trialReel: qs("#f-trial-reel", el).checked,
       funnel: draft.funnel,
       status: qs("#f-status", el).value,
       scheduleDate: qs("#f-schedule", el).value,

@@ -2,12 +2,19 @@ import { icon } from "./icons.js";
 import { listBrands, getBrand, listOverdueAndDueSoon } from "./store.js";
 import { logout } from "./auth.js";
 import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, qs, qsa } from "./dom.js";
+import { getTheme, toggleTheme } from "./theme.js";
+import { t } from "./i18n.js";
 
 // Avoid re-sampling the same logo's color every navigation — it's not
 // going to change until the avatar itself does.
 const tintCache = new Map();
 async function applyBrandTint(brand) {
-  if (!brand?.avatar) {
+  // A manually-picked brand color (Edit Brand → Brand Color) always wins —
+  // it's instant (no image sampling) and is what the user explicitly chose
+  // as this brand's essence color. Falls back to auto-sampling the logo's
+  // dominant color only when no manual color has been set yet.
+  const source = brand?.color || brand?.avatar;
+  if (!source) {
     document.body.classList.remove("has-brand-tint");
     document.body.style.removeProperty("--brand-tint");
     document.body.style.removeProperty("--brand-tint-text");
@@ -15,11 +22,12 @@ async function applyBrandTint(brand) {
     return;
   }
   try {
-    let tint = tintCache.get(brand.id);
+    const cacheKey = brand.id + ":" + source;
+    let tint = tintCache.get(cacheKey);
     if (!tint) {
-      const color = await getDominantColor(brand.avatar);
+      const color = brand.color || (await getDominantColor(brand.avatar));
       tint = { color, text: pickTintTextColor(color), fg: pickTintForeground(color) };
-      tintCache.set(brand.id, tint);
+      tintCache.set(cacheKey, tint);
     }
     document.body.style.setProperty("--brand-tint", tint.color);
     document.body.style.setProperty("--brand-tint-text", tint.text);
@@ -34,12 +42,12 @@ async function applyBrandTint(brand) {
 }
 
 const TABS = [
-  { key: "home", label: "Home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home" },
-  { key: "dna", label: "Brand DNA", icon: "target", path: (id) => `#/brand/${id}/dna`, tour: "tab-dna" },
-  { key: "campaigns", label: "Campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns" },
-  { key: "guidelines", label: "Brand Guidelines", icon: "book", path: (id) => `#/brand/${id}/guidelines`, tour: "tab-guidelines" },
-  { key: "content-os", label: "Content OS", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os" },
-  { key: "sales", label: "Sales Tracker", icon: "folder", path: (id) => `#/brand/${id}/sales`, tour: "tab-sales" },
+  { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home" },
+  { key: "dna", labelKey: "nav.dna", icon: "target", path: (id) => `#/brand/${id}/dna`, tour: "tab-dna" },
+  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns" },
+  { key: "guidelines", labelKey: "nav.guidelines", icon: "book", path: (id) => `#/brand/${id}/guidelines`, tour: "tab-guidelines" },
+  { key: "content-os", labelKey: "nav.contentOs", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os" },
+  { key: "sales", labelKey: "nav.sales", icon: "folder", path: (id) => `#/brand/${id}/sales`, tour: "tab-sales" },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -56,16 +64,16 @@ function notifRowHTML({ content, brand }, tone) {
 
 function notifPanelHTML({ overdue, dueToday, dueSoon }) {
   if (!overdue.length && !dueToday.length && !dueSoon.length) {
-    return `<div class="notif-empty">${icon("check", { size: 15 })}You're all caught up.</div>`;
+    return `<div class="notif-empty">${icon("check", { size: 15 })}${t("notif.allCaughtUp")}</div>`;
   }
   const section = (label, items, tone) =>
     items.length
       ? `<div class="notif-section-head">${label}</div>${items.map((x) => notifRowHTML(x, tone)).join("")}`
       : "";
   return `
-    ${section("Overdue", overdue, "overdue")}
-    ${section("Due today", dueToday, "today")}
-    ${section("Due soon", dueSoon, "soon")}
+    ${section(t("notif.overdue"), overdue, "overdue")}
+    ${section(t("notif.dueToday"), dueToday, "today")}
+    ${section(t("notif.dueSoon"), dueSoon, "soon")}
   `;
 }
 
@@ -74,7 +82,7 @@ export function shellHTML({ brandId, active }) {
 
   const tabsHTML = brand
     ? TABS.map(
-        (t) => `<a class="tab ${active === t.key ? "active" : ""}" href="${t.path(brand.id)}" data-tour="${t.tour}">${icon(t.icon, { size: 16 })}${t.label}</a>`
+        (tab) => `<a class="tab ${active === tab.key ? "active" : ""}" href="${tab.path(brand.id)}" data-tour="${tab.tour}">${icon(tab.icon, { size: 16 })}${t(tab.labelKey)}</a>`
       ).join("")
     : "";
 
@@ -98,16 +106,19 @@ export function shellHTML({ brandId, active }) {
       ${brand ? `<div class="topbar-sep"></div>${brandSwitchHTML}` : ""}
       ${brand ? `<nav class="tabs">${tabsHTML}</nav>` : ""}
       <div class="topbar-right">
-        <a class="back-to-site" href="https://wepeka.com" target="_blank" rel="noopener noreferrer">${icon("chevronLeft", { size: 13 })}wepeka.com</a>
-        <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="Notifications" aria-label="Notifications">
+        <a class="back-to-site" href="https://wepeka.com" target="_blank" rel="noopener noreferrer">${icon("chevronLeft", { size: 13 })}${t("topbar.backToSite")}</a>
+        <button class="icon-btn" id="theme-toggle-btn" title="${t("topbar.toggleTheme")}" aria-label="${t("topbar.toggleTheme")}">
+          ${icon(getTheme() === "light" ? "sun" : "moon", { size: 17 })}
+        </button>
+        <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="${t("topbar.notifications")}" aria-label="${t("topbar.notifications")}">
           ${icon("bell", { size: 17 })}
           ${overdue.length ? `<span class="notif-badge">${overdue.length > 9 ? "9+" : overdue.length}</span>` : ""}
         </button>
-        <a class="icon-btn" href="#/settings" title="Settings" aria-label="Settings" data-tour="settings">${icon("gear", { size: 18 })}</a>
-        <button class="icon-btn" id="logout-btn" title="Log out" aria-label="Log out">${icon("logout", { size: 17 })}</button>
+        <a class="icon-btn" href="#/settings" title="${t("topbar.settings")}" aria-label="${t("topbar.settings")}" data-tour="settings">${icon("gear", { size: 18 })}</a>
+        <button class="icon-btn" id="logout-btn" title="${t("topbar.logout")}" aria-label="${t("topbar.logout")}">${icon("logout", { size: 17 })}</button>
       </div>
     </header>
-    <main class="view ${active === "content-os" ? "wide" : ""}" id="view-root"></main>
+    <main class="view view-${active} ${active === "content-os" ? "wide" : ""}" id="view-root"></main>
   `;
 }
 
@@ -119,6 +130,11 @@ export function wireShell({ brandId }) {
   });
 
   applyBrandTint(brandId ? getBrand(brandId) : null);
+
+  qs("#theme-toggle-btn")?.addEventListener("click", (e) => {
+    const next = toggleTheme();
+    e.currentTarget.innerHTML = icon(next === "light" ? "sun" : "moon", { size: 17 });
+  });
 
   const bellBtn = qs("#notif-bell-btn");
   if (bellBtn) {
@@ -157,7 +173,7 @@ export function wireShell({ brandId }) {
     menu.innerHTML = `
       ${others.map((b) => `<button data-go="${b.id}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${b.name}</button>`).join("")}
       ${others.length ? '<div class="menu-divider"></div>' : ""}
-      <button data-go="all">${icon("grid", { size: 15 })}All Brands</button>
+      <button data-go="all">${icon("grid", { size: 15 })}${t("nav.allBrands")}</button>
     `;
     document.body.appendChild(menu);
     setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));

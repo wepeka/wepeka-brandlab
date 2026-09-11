@@ -11,16 +11,18 @@ import { confirmDialog } from "../modals.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout } from "../auth.js";
 import { startOnboardingTour } from "../tour.js";
+import { t, getLang, setLang } from "../i18n.js";
 
 const PANELS = [
-  { key: "benchmarks", label: "Performance Benchmarks" },
-  { key: "platforms", label: "Platforms" },
-  { key: "formats", label: "Content Formats" },
-  { key: "brands", label: "Brand Management" },
-  { key: "ai", label: "AI" },
-  { key: "roadmap", label: "Roadmap" },
-  { key: "data", label: "Data" },
-  { key: "account", label: "Account" },
+  { key: "benchmarks", labelKey: "settings.panel.benchmarks" },
+  { key: "platforms", labelKey: "settings.panel.platforms" },
+  { key: "formats", labelKey: "settings.panel.formats" },
+  { key: "brands", labelKey: "settings.panel.brands" },
+  { key: "ai", labelKey: "settings.panel.ai" },
+  { key: "language", labelKey: "settings.panel.language" },
+  { key: "roadmap", labelKey: "settings.panel.roadmap" },
+  { key: "data", labelKey: "settings.panel.data" },
+  { key: "account", labelKey: "settings.panel.account" },
 ];
 
 // What's built vs. what's planned — kept in one place so the product's
@@ -43,14 +45,14 @@ function paint(root, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">Settings</div>
-        <h1>Configure Wepeka Brandlab</h1>
-        <p class="page-sub">Formulas, thresholds, and the building blocks every brand shares.</p>
+        <div class="page-eyebrow">${t("settings.eyebrow")}</div>
+        <h1>${t("settings.title")}</h1>
+        <p class="page-sub">${t("settings.sub")}</p>
       </div>
     </div>
     <div class="settings-grid">
       <div class="settings-nav">
-        ${PANELS.map((p) => `<button data-panel="${p.key}" class="${state.panel === p.key ? "active" : ""}">${p.label}</button>`).join("")}
+        ${PANELS.map((p) => `<button data-panel="${p.key}" class="${state.panel === p.key ? "active" : ""}">${t(p.labelKey)}</button>`).join("")}
       </div>
       <div id="settings-content"></div>
     </div>
@@ -64,9 +66,32 @@ function paint(root, state, refresh) {
   else if (state.panel === "formats") renderListEditor(content, "Content Formats", getSettings().formats, addFormat, removeFormat, "e.g. Live Stream");
   else if (state.panel === "brands") renderBrands(content, refresh);
   else if (state.panel === "ai") renderAi(content);
+  else if (state.panel === "language") renderLanguage(content);
   else if (state.panel === "roadmap") renderRoadmap(content);
   else if (state.panel === "data") renderData(content);
   else if (state.panel === "account") renderAccount(content);
+}
+
+function renderLanguage(content) {
+  const current = getLang();
+  content.innerHTML = `
+    <div class="card">
+      <h3 style="font-size:16px;margin-bottom:6px;">${t("settings.language.title")}</h3>
+      <p class="text-muted" style="font-size:13px;margin:0 0 18px;">${t("settings.language.sub")}</p>
+      <div class="segmented" style="width:240px;">
+        <button data-lang="id" class="${current === "id" ? "active" : ""}">${t("settings.language.id")}</button>
+        <button data-lang="en" class="${current === "en" ? "active" : ""}">${t("settings.language.en")}</button>
+      </div>
+    </div>
+  `;
+  qsa("[data-lang]", content).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.lang === current) return;
+      setLang(btn.dataset.lang);
+      toast(t("settings.language.reloading"));
+      location.reload();
+    });
+  });
 }
 
 function renderBenchmarks(content) {
@@ -226,12 +251,13 @@ function renderBrands(content, refresh) {
 }
 
 const AI_PROVIDERS = [
-  { key: "anthropic", label: "Anthropic (Claude)", keyField: "anthropicApiKey", placeholder: "sk-ant-...", getKeyUrl: "https://console.anthropic.com/settings/keys", getKeyLabel: "console.anthropic.com" },
-  { key: "gemini", label: "Google (Gemini)", keyField: "geminiApiKey", placeholder: "AIza...", getKeyUrl: "https://aistudio.google.com/apikey", getKeyLabel: "aistudio.google.com" },
+  { key: "anthropic", label: "Anthropic (Claude)", keyField: "anthropicApiKey", placeholder: "sk-ant-...", getKeyUrl: "https://console.anthropic.com/settings/keys", getKeyLabel: "console.anthropic.com", billedBy: "Anthropic" },
+  { key: "gemini", label: "Google (Gemini)", keyField: "geminiApiKey", placeholder: "AIza...", getKeyUrl: "https://aistudio.google.com/apikey", getKeyLabel: "aistudio.google.com", billedBy: "Google" },
+  { key: "deepseek", label: "DeepSeek", keyField: "deepseekApiKey", placeholder: "sk-...", getKeyUrl: "https://platform.deepseek.com/api_keys", getKeyLabel: "platform.deepseek.com", billedBy: "DeepSeek" },
 ];
 
 function renderAi(content) {
-  const ai = getSettings().ai || { provider: "anthropic", anthropicApiKey: "", geminiApiKey: "" };
+  const ai = getSettings().ai || { provider: "anthropic", anthropicApiKey: "", geminiApiKey: "", deepseekApiKey: "" };
   const provider = AI_PROVIDERS.find((p) => p.key === ai.provider) || AI_PROVIDERS[0];
   const currentKey = ai[provider.keyField] || "";
   content.innerHTML = `
@@ -250,7 +276,7 @@ function renderAi(content) {
       </div>
       <div id="ai-status" style="margin:10px 0;font-size:12.5px;">${currentKey ? `<span class="text-faint">Saved — click Test Connection to verify it still works.</span>` : ""}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="ai-test">${icon("refresh", { size: 13 })}Test Connection</button>
-      <p class="text-faint" style="font-size:11.5px;margin:14px 0 0;">Get a key at <a href="${provider.getKeyUrl}" target="_blank" rel="noopener noreferrer" class="link">${provider.getKeyLabel}</a>. Usage is billed to that account directly by ${provider.key === "gemini" ? "Google" : "Anthropic"}.</p>
+      <p class="text-faint" style="font-size:11.5px;margin:14px 0 0;">Get a key at <a href="${provider.getKeyUrl}" target="_blank" rel="noopener noreferrer" class="link">${provider.getKeyLabel}</a>. Usage is billed to that account directly by ${provider.billedBy}.</p>
     </div>
   `;
   qs("#ai-provider").addEventListener("change", (e) => {

@@ -55,6 +55,40 @@
   --header-h: 64px;
 }
 
+/* Light mode — same warm palette, inverted. --accent, --tofu/--mofu/--bofu
+   and --health-good/average/poor (plus --info) are deepened here (vs. the
+   dark-mode values above) because they're used directly as text/icon color
+   throughout the app, not just as button fills — the light amber/blue/etc
+   that pops on near-black would be too low-contrast as text on a
+   near-white surface. The soft (rgba-alpha) badge-background variants are
+   left as-is: a pale tint wash reads fine over either a dark or a light
+   surface. */
+:root[data-theme="light"]{
+  color-scheme: light;
+  --bg: #faf8f4;
+  --bg-raised: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2efe7;
+  --surface-hover: #ebe6db;
+  --border: #e2dbcc;
+  --border-soft: #ece6da;
+  --text: #201c17;
+  --text-muted: #6d655a;
+  --text-faint: #98907f;
+  --accent: #b4530a;
+  --accent-text: #fffaf3;
+  --accent-soft: rgba(180,83,10,.13);
+  --health-good: #1f9d5c;
+  --health-average: #a6780a;
+  --health-poor: #c8402c;
+  --info: #2f6fb8;
+  --tofu: #2f6fb8;
+  --mofu: #a6780a;
+  --bofu: #c25a2f;
+  --shadow-lg: 0 24px 60px -20px rgba(30,24,14,.18);
+  --shadow-sm: 0 2px 10px rgba(30,24,14,.08);
+}
+
 *,*::before,*::after{ box-sizing: border-box; }
 html,body{ height: 100%; }
 body{
@@ -76,6 +110,21 @@ body.has-brand-tint{
     radial-gradient(1100px 550px at 12% -8%, color-mix(in srgb, var(--brand-tint) 16%, transparent), transparent 60%),
     var(--bg);
 }
+
+/* All-brands home — large soft indigo/violet/pink blobs drifting slowly
+   over the near-black base, in the same spirit as wepeka.com's own
+   Brandlab hero (large soft-edged color washes over near-black), just
+   recolored purple/pink and given real motion for this app. Separate
+   blurred elements (not stacked radial-gradient backgrounds) so each one
+   can drift independently via a cheap, GPU-composited transform. */
+.brands-bg{ position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; }
+.brands-bg .bg-blob{ position:absolute; border-radius:50%; filter:blur(90px); opacity:.28; will-change:transform; }
+.brands-bg .bg-blob-1{ width:620px; height:620px; top:-12%; left:-6%; background:#818cf8; animation: blob-float-1 16s ease-in-out infinite alternate; }
+.brands-bg .bg-blob-2{ width:560px; height:560px; top:-8%; right:-8%; background:#a855f7; animation: blob-float-2 20s ease-in-out infinite alternate; }
+.brands-bg .bg-blob-3{ width:520px; height:520px; bottom:-14%; left:18%; background:#ec4899; animation: blob-float-3 18s ease-in-out infinite alternate; }
+@keyframes blob-float-1{ 0%{ transform: translate(0,0); } 100%{ transform: translate(4%, 6%); } }
+@keyframes blob-float-2{ 0%{ transform: translate(0,0); } 100%{ transform: translate(-5%, 4%); } }
+@keyframes blob-float-3{ 0%{ transform: translate(0,0); } 100%{ transform: translate(3%, -5%); } }
 img{ max-width: 100%; display:block; }
 a{ color: inherit; text-decoration: none; }
 button{ font-family: inherit; }
@@ -130,7 +179,7 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
   height: var(--header-h);
   display:flex; align-items:center; gap:20px;
   padding: 0 28px;
-  background: rgba(12,11,10,.85);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-soft);
 }
@@ -255,6 +304,7 @@ main.view.wide{ max-width: 1440px; }
 .checkbox-chip svg{ width:14px; height:14px; }
 .checkbox-chip input[type=checkbox]{ width:14px; height:14px; margin:0; }
 .checkbox-chip.disabled{ opacity:.5; cursor:not-allowed; }
+.checkbox-chip:has(input:checked){ border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 /* ============================================================
    Cards / surfaces
@@ -343,9 +393,9 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    Content view chooser
    ============================================================ */
 .content-view-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:16px; max-width:760px; }
-.content-view-card{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:26px 22px; text-align:left; cursor:pointer; transition: border-color .15s, transform .1s; }
-.content-view-card:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 20px color-mix(in srgb, var(--brand-tint) 25%, transparent); }
-.content-view-card .icon-wrap{ width:44px; height:44px; border-radius: var(--radius-md); background: var(--accent-soft); color: var(--accent); display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
+.content-view-card{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:26px 22px; text-align:left; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
+.content-view-card:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 26px color-mix(in srgb, var(--brand-tint) 35%, transparent); }
+.content-view-card .icon-wrap{ width:44px; height:44px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--brand-tint) 14%, transparent); color: var(--brand-tint); display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
 .content-view-card h3{ font-size:16px; margin-bottom:4px; }
 .content-view-card p{ font-size:12.5px; color: var(--text-muted); margin:0; }
 
@@ -409,6 +459,17 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .overdue-row .t{ font-weight:700; font-size:13.5px; }
 .overdue-row .m{ font-size:12px; color: var(--health-poor); margin-top:2px; }
 
+.overdue-banner{ display:flex; flex-direction:column; gap:12px; background: var(--health-poor-soft); border:1px solid color-mix(in srgb, var(--health-poor) 35%, var(--border)); border-radius: var(--radius-lg); padding:16px 18px; margin-bottom:20px; }
+.overdue-banner-head{ display:flex; align-items:flex-start; gap:10px; color: var(--health-poor); }
+.overdue-banner-head svg{ flex:none; margin-top:1px; }
+.overdue-banner-title{ font-weight:800; font-size:14.5px; color: var(--text); }
+.overdue-banner-sub{ font-size:12.5px; color: var(--text-muted); margin-top:2px; }
+.overdue-banner-list{ display:flex; flex-direction:column; gap:6px; }
+.overdue-banner-item{ display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; text-align:left; background: var(--surface); border:1px solid var(--border-soft); border-radius: var(--radius-md); padding:9px 12px; cursor:pointer; transition: border-color .15s, background .15s; }
+.overdue-banner-item:hover{ border-color: var(--health-poor); background: var(--surface-hover); }
+.overdue-banner-item .t{ font-weight:700; font-size:13px; }
+.overdue-banner-item .d{ font-size:12px; color: var(--health-poor); font-weight:700; flex:none; }
+
 .routine-task-row{ display:flex; align-items:center; gap:12px; padding:10px 4px; border-bottom:1px solid var(--border-soft); }
 .routine-task-row:last-child{ border-bottom:none; }
 .routine-task-text{ flex:1; font-weight:600; font-size:13.5px; transition: opacity .3s ease; }
@@ -419,16 +480,38 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .hero-strip{ margin-bottom: 40px; }
 .hero-strip .kicker{ color: var(--accent); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
 .hero-strip h1{ font-size: 42px; line-height:1.05; max-width: 16ch; }
-.brand-grid{ display:grid; grid-template-columns: repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
-.brand-card{ position:relative; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; cursor:pointer; transition: border-color .15s, transform .1s; }
-.brand-card:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 20px color-mix(in srgb, var(--brand-tint) 25%, transparent); }
-.brand-card .avatar{ width:44px; height:44px; border-radius: var(--radius-md); display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight:800; font-size:18px; background: var(--accent); color: var(--accent-text); margin-bottom: 16px; }
+.brand-row-head{ display:flex; justify-content:flex-end; margin-bottom:10px; }
+.brand-quick-add{ display:flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:999px; border:1.5px dashed var(--border); background:transparent; color: var(--text-muted); cursor:pointer; transition: border-color .15s, color .15s, transform .15s; }
+.brand-quick-add:hover{ border-color: var(--accent); color: var(--accent); transform: scale(1.08); }
+.brand-grid{ display:flex; flex-wrap:nowrap; align-items:flex-start; gap:28px; padding:8px 4px 16px; overflow-x:auto; scroll-snap-type:x proximity; }
+.brand-grid.draggable{ cursor:grab; }
+.brand-grid.draggable.pressing{ cursor:grabbing; }
+.brand-grid.draggable.dragging{ scroll-snap-type:none; user-select:none; }
+.brand-grid.draggable.dragging .brand-tile{ pointer-events:none; }
+
+/* Netflix-style "who's watching" profile picker — square-ish avatar,
+   name below, no card chrome. Distinct from .brand-card (below), which
+   campaigns.js still uses for its own unrelated card pattern. Slides
+   horizontally (.brand-grid) instead of wrapping once brands don't fit. */
+.brand-tile{ position:relative; display:flex; flex-direction:column; align-items:center; width:130px; flex:none; scroll-snap-align:start; background:none; border:0; padding:0; cursor:pointer; }
+.brand-tile-avatar{ position:relative; width:112px; height:112px; border-radius: var(--radius-lg); overflow:hidden; display:flex; align-items:center; justify-content:center; border:3px solid transparent; transition: border-color .15s, transform .15s, box-shadow .2s; }
+.brand-tile-avatar .avatar{ width:100%; height:100%; border-radius: calc(var(--radius-lg) - 3px); object-fit:cover; display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight:800; font-size:36px; background: var(--brand-tint); color: var(--brand-tint-text); }
+.brand-tile:hover .brand-tile-avatar{ border-color: var(--brand-tint); transform: scale(1.06); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 28px color-mix(in srgb, var(--brand-tint) 40%, transparent); }
+.brand-tile h3{ margin:12px 0 0; font-size:14.5px; font-weight:600; color: var(--text-muted); text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition: color .15s; }
+.brand-tile:hover h3{ color: var(--text); }
+.brand-tile .meta{ font-size:11px; color: var(--text-faint); margin-top:2px; }
+.brand-tile-menu{ position:absolute; top:4px; right:4px; width:26px; height:26px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(2px); opacity:0; transition: opacity .15s; }
+.brand-tile-avatar:hover .brand-tile-menu, .brand-tile-menu:focus-visible{ opacity:1; }
+.brand-tile-avatar-add{ background:transparent; border:1.5px dashed var(--border); color: var(--text-muted); }
+.brand-tile-add:hover .brand-tile-avatar-add{ border-color: var(--accent); color: var(--accent); background:transparent; box-shadow:none; }
+.brand-tile-add:hover h3{ color: var(--accent); }
+
+.brand-card{ position:relative; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
+.brand-card:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 28px color-mix(in srgb, var(--brand-tint) 40%, transparent); }
+.brand-card .avatar{ width:44px; height:44px; border-radius: var(--radius-md); display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight:800; font-size:18px; background: var(--brand-tint); color: var(--brand-tint-text); margin-bottom: 16px; }
 .brand-card h3{ font-size:17px; margin-bottom:6px; }
 .brand-card .meta{ font-size:12.5px; color: var(--text-muted); }
 .brand-card .card-menu{ position:absolute; top:14px; right:14px; }
-.brand-card-add{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; border:1.5px dashed var(--border); background:transparent; color: var(--text-muted); border-radius: var(--radius-lg); min-height: 160px; cursor:pointer; font-weight:700; font-size:13.5px; }
-.brand-card-add:hover{ border-color: var(--accent); color: var(--accent); }
-.brand-card-add svg{ width:22px; height:22px; }
 
 /* ============================================================
    Auth screen (local access lock)
@@ -454,6 +537,13 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .menu button svg{ width:15px; height:15px; }
 .menu-checkbox-row{ display:flex; align-items:center; gap:9px; width:100%; padding:9px 10px; border-radius:8px; font-size:13px; color: var(--text); cursor:pointer; }
 .menu-checkbox-row:hover{ background: var(--surface-2); }
+
+/* Filter panel — Funnel/Format/Platform/Age consolidated into one popover
+   instead of 4 separate toolbar controls; Campaign stays its own dropdown
+   outside this since it's the one most worth keeping one click away. */
+.filter-panel{ min-width:260px; padding:14px; display:flex; flex-direction:column; gap:14px; }
+.filter-panel-section .chip-select button{ width:auto; }
+.filter-panel-section .select{ width:100%; }
 .menu-checkbox-row.disabled{ opacity:.5; cursor:not-allowed; }
 .menu-checkbox-row input[type=checkbox]{ width:14px; height:14px; margin:0; }
 .menu-divider{ height:1px; background: var(--border); margin:6px 4px; }
@@ -530,16 +620,35 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    Creator studio
    ============================================================ */
 .creator-layout{ display:grid; grid-template-columns: 260px 1fr; gap:20px; align-items:start; }
-@media (max-width: 860px){
-  .creator-layout{ grid-template-columns:1fr; }
-  /* Stacked on mobile — no side-by-side panel to size against, so the
-     sidebar just flows with the page instead of scrolling in its own
-     capped-height box (100vh miscounts the browser's address bar on
-     mobile, cutting the list off with no working scroll). */
-  .creator-sidebar-list{ max-height:none; overflow-y:visible; overflow-x:visible; }
-}
 .creator-sidebar{ overflow:visible; }
 .creator-sidebar-list{ max-height: calc(100vh - 230px); overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; gap:12px; padding-right:2px; }
+@media (max-width: 860px){
+  .creator-layout{ grid-template-columns:1fr; }
+  /* Stacked on mobile, but the list still needs its OWN internal scroll —
+     without it, reaching items further down means scrolling the whole
+     page past the list, which people read as "the list won't scroll" and
+     can't tap what they can't reach. A previous fix removed internal
+     scrolling entirely because `100vh` counts the address bar as always
+     hidden, so `calc(100vh - 230px)` could compute taller than what's
+     actually visible with the bar showing — the box's own bottom edge
+     (and the scroll gesture that would start there) ends up off-screen.
+     `dvh` tracks the real visible height as the address bar shows/hides,
+     which fixes that at the source, so the box can go back to scrolling
+     in place. overscroll-behavior:contain keeps the gesture from bleeding
+     into the page scroll once the list itself is scrolled to its end —
+     that bleed was the other half of the "stuck" feeling on iOS. Must
+     come after the base .creator-sidebar-list rule above — same
+     specificity, so an earlier position here was being silently
+     overridden by it. */
+  .creator-sidebar-list{
+    max-height: 50vh;
+    max-height: 50dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+}
 .creator-item{ display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; border-bottom:1px solid var(--border-soft); }
 .creator-item:last-child{ border-bottom:none; }
 .creator-item:hover{ background: var(--surface-hover); }
@@ -551,7 +660,17 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 /* Each phase is its own separated, collapsible box — not one continuous
    list — using the CSS grid 1fr/0fr trick to animate to/from auto height
    without JS measuring anything. */
-.creator-sidebar-group{ border:1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow:hidden; }
+/* flex-shrink:0 matters here: .creator-sidebar-group is a flex item inside
+   the scrollable .creator-sidebar-list column, and its own overflow:hidden
+   (for the rounded-corner clipping) strips its normal min-content
+   protection as a flex item. Without flex-shrink:0, once total content
+   height exceeds the list's max-height, the browser squishes every group
+   down to fit instead of letting the list overflow and scroll — so
+   scrollHeight === clientHeight, nothing to scroll, and whatever got
+   squished past legibility is effectively unclickable. This is the actual
+   cause of the Creator sidebar's "list won't scroll, can't reach items
+   further down" bug, not a touch/gesture issue. */
+.creator-sidebar-group{ border:1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow:hidden; flex-shrink:0; }
 .creator-sidebar-group-head{
   width:100%; display:flex; align-items:center; justify-content:space-between; gap:6px;
   padding:12px 14px; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
@@ -674,13 +793,29 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .cal-cell.cuti .cal-date{ color: var(--health-poor); opacity:.75; }
 .cal-cell.cuti:not(.today){ background: color-mix(in srgb, var(--health-poor) 3%, var(--surface)); }
 .cal-holiday-label{ font-size:9.5px; font-weight:700; color: var(--health-poor); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:-3px; }
-.cal-item{ position:relative; font-size:11px; font-weight:700; padding:4px 18px 4px 7px; border-radius:7px; background: var(--surface-2); border:1px solid var(--border); cursor:grab; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:5px; }
+.cal-item{ position:relative; font-size:11px; font-weight:700; padding:4px 7px; border-radius:7px; background: var(--surface-2); border:1px solid var(--border); cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:5px; }
 .cal-item:hover{ border-color: var(--brand-tint); }
 .cal-item .swatch{ width:6px; height:6px; border-radius:50%; flex:none; }
-.cal-item-remove{ position:absolute; top:50%; right:3px; transform:translateY(-50%); width:14px; height:14px; border-radius:50%; background: var(--bg-raised); border:1px solid var(--border); color: var(--text-muted); display:flex; align-items:center; justify-content:center; padding:0; cursor:pointer; opacity:0; transition: opacity .15s; }
-.cal-item:hover .cal-item-remove{ opacity:1; }
-.cal-item-remove:hover{ color: var(--health-poor); border-color: var(--health-poor); }
+.cal-item-campaign-dot{ width:6px; height:6px; border-radius:2px; background: var(--brand-tint); flex:none; }
 .cal-more{ font-size:10.5px; color: var(--text-faint); padding-left:2px; }
+
+.date-bank-menu{ min-width:240px; max-width:280px; padding:8px; }
+.date-bank-menu-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; font-weight:800; color: var(--text-faint); text-transform:uppercase; letter-spacing:.04em; padding:4px 4px 8px 8px; }
+.date-bank-menu-list{ max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+.date-bank-menu-list button{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:8px; border-radius:8px; background:transparent; border:0; color: var(--text); font-size:12.5px; cursor:pointer; }
+.date-bank-menu-list button:hover{ background: var(--surface-2); }
+.date-bank-menu-title{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.date-bank-menu .swatch{ width:6px; height:6px; border-radius:50%; flex:none; }
+
+/* Campaign timeline strip — a lightweight Gantt row per active campaign
+   whose date window overlaps the visible month, positioned by day-of-
+   month percentage. Scoped to the month itself (not the padded 42-cell
+   grid), so a bar never needs to wrap across a week boundary. */
+.cal-timeline{ display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+.cal-timeline-row{ display:flex; align-items:center; gap:10px; }
+.cal-timeline-label{ width:140px; flex:none; font-size:11.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cal-timeline-track{ position:relative; flex:1; height:8px; background: var(--surface-2); border-radius:999px; }
+.cal-timeline-bar{ position:absolute; top:0; bottom:0; background: var(--brand-tint); border-radius:999px; min-width:8px; }
 
 /* Content Bank — a slide-in drag source panel, not a modal, so the
    calendar underneath stays fully interactive for dropping onto. */
@@ -846,7 +981,18 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
      second one cleanly — just don't let a table row or stat box get sliced
      in half across the page break. */
   .report-table tr, .report-stat, .report-header{ break-inside: avoid; page-break-inside: avoid; }
+  .dna-section, .dna-cover{ break-inside: avoid; page-break-inside: avoid; }
+
+  /* Brand Book — landscape multi-page GSM document, printed via a named
+     page (see @page brandbook below) so it prints landscape without
+     forcing the portrait Report/Brand DNA PDFs above into landscape too. */
+  .brandbook-sheet, .brandbook-sheet *{ visibility:visible; }
+  .brandbook-sheet{ box-shadow:none; border-radius:0; }
+  .brandbook-page{ page: brandbook; break-after: page; padding:16mm 18mm; min-height:0; }
+  .brandbook-page:last-child{ break-after: auto; }
+  .brandbook-page + .brandbook-page{ border-top:none; }
 }
+@page brandbook{ size: landscape; margin: 10mm; }
 
 @media (max-width: 720px){
   .topbar{ flex-wrap: wrap; height:auto; padding: 12px 16px; gap:10px; row-gap:10px; }
@@ -875,3 +1021,278 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .journey-connector{ flex:1; min-width:24px; height:2px; background: var(--border); margin-top:26px; transition: background .3s; }
 .journey-connector.filled{ background: var(--accent); }
 .journey-detail{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:20px 22px; }
+
+/* A bare .hint (icon + text row) — .field .hint and .auth-card .hint both
+   already existed as scoped variants; this generic one is what
+   journeyDetailHTML's "phase not part of this campaign" hint and the new
+   Mission panel's gating hint both actually need. */
+.hint{ display:flex; align-items:flex-start; gap:6px; font-size:12px; color: var(--text-faint); line-height:1.5; }
+.hint svg{ flex:none; margin-top:2px; }
+
+/* Missions — a leveling layer on top of the Journey (Quick Template
+   campaigns only). Ladder stepper reuses .status-pill's pill language;
+   the tree reuses .glow/glow-pulse and the --health-* tokens already
+   established by the Brand Health strip, instead of inventing a new
+   palette for "done/in progress/not started." */
+.mission-ladder{ display:flex; align-items:center; gap:0; overflow-x:auto; padding:4px 4px 16px; }
+.mission-badge{ display:flex; align-items:center; gap:8px; flex:none; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-pill); padding:7px 14px 7px 7px; cursor:pointer; color: var(--text-muted); transition: border-color .2s, background .2s, color .2s; }
+.mission-badge:disabled{ cursor:not-allowed; opacity:.55; }
+.mission-badge.locked{ opacity:.65; }
+.mission-badge.locked:hover{ opacity:.9; border-color: var(--border); }
+.mission-badge-dot{ width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; background: var(--surface-2); color: var(--text-faint); flex:none; }
+.mission-badge-label{ font-size:12.5px; font-weight:700; white-space:nowrap; }
+.mission-badge.completed{ border-color: var(--health-good); color: var(--health-good); }
+.mission-badge.completed .mission-badge-dot{ background: var(--health-good-soft); color: var(--health-good); }
+.mission-badge.current{ border-color: var(--accent); color: var(--accent); --glow-color: color-mix(in srgb, var(--accent) 45%, transparent); animation: glow-pulse 2.6s ease-in-out infinite; }
+.mission-badge.current .mission-badge-dot{ background: var(--accent-soft); color: var(--accent); }
+.mission-badge.active{ background: var(--surface-2); }
+.mission-connector{ width:20px; height:2px; background: var(--border); flex:none; }
+.mission-connector.filled{ background: var(--health-good); }
+
+.mission-panel{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; }
+.mission-panel-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+.mission-panel-head .btn svg{ margin-left:2px; }
+
+.mission-tree{ position:relative; width:100%; aspect-ratio: 1000 / 460; margin-bottom:8px; }
+.mission-tree svg{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+/* box-shadow (what .glow/glow-pulse animates) doesn't apply to SVG shapes —
+   this halo is an SVG <circle>, so it gets its own opacity-based pulse. */
+@keyframes mission-halo-pulse{ from{ opacity:.5; } to{ opacity:.85; } }
+.mission-halo{ filter: blur(9px); animation: mission-halo-pulse 2.6s ease-in-out infinite alternate; }
+/* Partial progress (branch fill + node ring) pulses gently so an
+   in-between milestone reads as "alive/loading," not just a static
+   in-progress color — the dasharray/dashoffset itself is the real
+   percentage, this only breathes its opacity. */
+@keyframes mission-loading-pulse{ from{ opacity:.6; } to{ opacity:1; } }
+.mission-loading{ animation: mission-loading-pulse 1.6s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce){
+  .mission-halo{ animation: none; opacity:.7; }
+  .mission-badge.current{ animation: none; }
+  .mission-loading{ animation: none; opacity:1; }
+}
+/* A silent hover/focus target over each SVG node — no visible label (a
+   16-branch mission would just collide), the number on the branch itself
+   and the matching row below are the legend. A custom CSS bubble (not the
+   native title tooltip, which is too plain/slow for a full explanation)
+   carries the real text, driven by data-tooltip + ::after so no JS
+   positioning math is needed; keyboard users get it via :focus-visible too. */
+.mission-node{ position:absolute; transform:translate(-50%,-50%); width:30px; height:30px; border-radius:50%; cursor:pointer; }
+.mission-node:hover, .mission-node.is-synced{ box-shadow: 0 0 0 3px var(--accent-soft); }
+.mission-node[data-tooltip]::after{
+  content: attr(data-tooltip);
+  position:absolute;
+  bottom:calc(100% + 10px);
+  left:50%;
+  transform:translateX(-50%) translateY(4px);
+  width:220px;
+  white-space:pre-line;
+  text-align:left;
+  background: var(--surface-2);
+  border:1px solid var(--border);
+  color: var(--text);
+  font-size:11.5px;
+  font-weight:500;
+  line-height:1.5;
+  padding:9px 11px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  opacity:0;
+  pointer-events:none;
+  transition: opacity .15s ease, transform .15s ease;
+  z-index:30;
+}
+.mission-node:hover::after, .mission-node:focus-visible::after{
+  opacity:1;
+  transform:translateX(-50%) translateY(0);
+}
+
+.mission-milestone-list{ display:flex; flex-direction:column; border:1px solid var(--border); border-radius: var(--radius-md); overflow:hidden; }
+.mission-milestone-row{ display:grid; grid-template-columns:26px 1fr auto auto auto; align-items:center; gap:14px; padding:12px 14px; border-bottom:1px solid var(--border); transition: background .15s; }
+.mission-milestone-row:last-child{ border-bottom:none; }
+.mission-milestone-row.is-synced{ background: var(--surface-2); }
+.mm-num{ width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; flex:none; }
+.mm-label{ font-size:13px; font-weight:600; }
+.mm-desc{ font-size:11.5px; color: var(--text-faint); margin-top:2px; line-height:1.4; }
+.mm-control{ font-size:12.5px; color: var(--text-muted); }
+.mm-pill{ font-size:11px; font-weight:700; padding:4px 10px; border-radius: var(--radius-pill); white-space:nowrap; }
+.mm-pill[data-state="good"]{ background: var(--health-good-soft); color: var(--health-good); }
+.mm-pill[data-state="avg"]{ background: var(--health-average-soft); color: var(--health-average); }
+.mm-pill[data-state="empty"]{ background: var(--surface-2); color: var(--text-faint); }
+@media (max-width: 760px){
+  .mission-milestone-row{ grid-template-columns:1fr; gap:6px; }
+}
+
+/* Event Campaigns — date-anchored and deliberately NOT a locked ladder:
+   every phase pill stays clickable regardless of status, so this reuses
+   the pill shape of .mission-badge but with its own status vocabulary
+   (not_started/in_progress/completed/partially_completed/missed) instead
+   of locked/current/completed. */
+.event-timeline{ display:flex; align-items:stretch; gap:10px; overflow-x:auto; padding:4px 4px 16px; }
+.event-phase-pill{ display:flex; flex-direction:column; gap:2px; flex:none; min-width:120px; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md); padding:10px 14px; cursor:pointer; text-align:left; color: var(--text-muted); }
+.event-phase-name{ font-size:12.5px; font-weight:700; color: var(--text); }
+.event-phase-date{ font-size:11px; color: var(--text-faint); }
+.event-phase-pill.active{ background: var(--surface-2); border-color: var(--accent); }
+.event-phase-pill.status-completed{ border-color: var(--health-good); }
+.event-phase-pill.status-completed .event-phase-name{ color: var(--health-good); }
+.event-phase-pill.status-in_progress{ border-color: var(--health-average); }
+.event-phase-pill.status-missed{ border-color: var(--health-poor); }
+.event-phase-pill.status-missed .event-phase-name{ color: var(--health-poor); }
+
+.event-milestone-row{ grid-template-columns:26px 1fr auto auto auto; }
+.event-sys-tag{ text-transform:uppercase; letter-spacing:.03em; font-weight:700; color: var(--accent); font-size:10px; }
+.event-status-pill[data-state="completed"]{ background: var(--health-good-soft); color: var(--health-good); }
+.event-status-pill[data-state="in_progress"], .event-status-pill[data-state="partially_completed"]{ background: var(--health-average-soft); color: var(--health-average); }
+.event-status-pill[data-state="missed"]{ background: var(--health-poor-soft); color: var(--health-poor); }
+.event-status-pill[data-state="not_started"]{ background: var(--surface-2); color: var(--text-faint); }
+.event-status-pill[data-state="not_applicable"]{ background: var(--surface-2); color: var(--text-faint); text-decoration: line-through; }
+@media (max-width: 900px){
+  .event-milestone-row{ grid-template-columns:1fr; gap:6px; }
+}
+
+/* ============================================================
+   Brand Book builder (Quest 2) — two-pane guided wizard + live
+   landscape GSM-style preview, reusing .card/.checkbox-chip/.field
+   from above for every input, and .report-sheet's white-card-on-dark
+   print technique for the sheet itself.
+   ============================================================ */
+.brandbook-layout{ display:grid; grid-template-columns: 420px 1fr; gap:28px; align-items:start; }
+.brandbook-right{ position:sticky; top:84px; max-height:calc(100vh - 110px); overflow-y:auto; background: var(--surface-2); border-radius: var(--radius-lg); padding:18px; }
+@media (max-width:960px){
+  .brandbook-layout{ grid-template-columns:1fr; }
+  .brandbook-right{ position:static; max-height:none; }
+}
+
+.bb-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.bb-palette-row{ display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+.bb-swatch{ width:38px; height:38px; border-radius:9px; border:1px solid var(--border); flex:none; }
+.bb-color-field{ display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border-soft); }
+.bb-color-field:last-child{ border-bottom:none; }
+.bb-color-field input[type=color]{ width:38px; height:38px; border-radius:9px; border:1px solid var(--border); background:none; padding:0; cursor:pointer; flex:none; }
+.bb-color-code{ font-size:11px; color: var(--text-faint); font-family: ui-monospace, monospace; }
+.bb-font-preview{ font-size:22px; margin-bottom:2px; }
+.bb-font-meta{ font-size:11.5px; color: var(--text-muted); }
+.bb-font-badge{ display:inline-block; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; background: var(--health-good-soft); color: var(--health-good); text-transform:uppercase; letter-spacing:.03em; margin-left:8px; }
+.bb-direction-desc{ font-size:12px; color: var(--text-muted); margin:0 0 6px; }
+
+/* Live brand-application mockups — plain CSS, no image generation, driven
+   entirely by --bb-* custom properties set on .bb-mockup-stage so every
+   card re-skins instantly when a color/font/visual-direction changes. */
+.bb-mockup-stage{ display:grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap:16px; }
+.bb-mockup{ background: var(--bb-bg,#fff); border-radius: var(--bb-radius,12px); overflow:hidden; border:1px solid rgba(0,0,0,.08); }
+.bb-mockup-label{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; color: var(--text-faint); font-weight:700; margin-bottom:8px; }
+.bb-mockup-headline{ font-family: var(--bb-font-primary, var(--font-display)); color: var(--bb-primary,#111); font-weight:800; line-height:1.15; font-size:16px; }
+.bb-mockup-body{ font-family: var(--bb-font-secondary, var(--font-body)); color: var(--bb-text,#333); font-size:11.5px; }
+.bb-mockup-chip{ display:inline-block; background: var(--bb-accent,#999); color: var(--bb-bg,#fff); font-family: var(--bb-font-secondary, var(--font-body)); font-size:10.5px; font-weight:700; padding:5px 11px; border-radius:999px; }
+.bb-mockup-cta{ display:inline-block; background: var(--bb-accent,#999); color: var(--bb-bg,#fff); font-size:11px; font-weight:700; padding:7px 14px; border-radius:6px; font-family: var(--bb-font-secondary, var(--font-body)); }
+.bb-mockup-social{ aspect-ratio:1; padding:16px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; }
+.bb-mockup-card{ aspect-ratio:1.6; padding:16px; display:flex; flex-direction:column; justify-content:space-between; gap:8px; }
+.bb-mockup-website{ aspect-ratio:1.4; display:flex; flex-direction:column; }
+.bb-mockup-browser-bar{ height:20px; background:rgba(0,0,0,.06); display:flex; align-items:center; gap:4px; padding:0 8px; flex:none; }
+.bb-mockup-browser-dot{ width:6px; height:6px; border-radius:50%; background:rgba(0,0,0,.2); }
+.bb-mockup-website-body{ flex:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:8px; padding:16px; }
+.bb-mockup-packaging{ aspect-ratio:.75; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; border-width:6px; border-style:solid; border-color: var(--bb-accent,#999); padding:16px; text-align:center; }
+.bb-mockup-poster{ aspect-ratio:.7; padding:20px; display:flex; flex-direction:column; justify-content:flex-end; gap:8px; }
+.bb-mockup-ad{ aspect-ratio:2.2; padding:16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+
+/* Brand Book sheet (live preview panel, Review step, and PDF) — a
+   landscape GSM-style document. On-screen this is just a wide white card
+   (same white-card-on-dark technique as .report-sheet); print rules that
+   paginate it live in the shared @media print block above. */
+.brandbook-sheet{ background:#ffffff; color:#1a1816; font-family: var(--font-body); border-radius:6px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overflow:hidden; }
+.brandbook-page{ position:relative; padding:44px 52px; min-height:520px; }
+.brandbook-page + .brandbook-page{ border-top:1px dashed #e4e0da; }
+.brandbook-wpk-mark{ position:absolute; top:26px; right:36px; width:76px; height:auto; opacity:.9; }
+.brandbook-page-footer{ position:absolute; bottom:20px; left:52px; right:52px; display:flex; justify-content:space-between; font-size:10px; color:#8a8580; }
+.brandbook-page-eyebrow{ font-family: var(--font-display); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:#8a8580; margin-bottom:14px; }
+.brandbook-cover-name{ font-family: var(--font-display); font-size:38px; font-weight:800; margin-bottom:8px; }
+.brandbook-cover-tagline{ font-size:15px; color:#5b564f; }
+
+/* Brand DNA PDF — same visual language as the Brand Book sheet above
+   (WPK mark, eyebrow labels, big cover name) but staying inside the
+   existing portrait .report-sheet shell, since the print-visibility and
+   pagination rules for that shell already work correctly and this is a
+   single simple document, not a multi-page landscape one like Brand Book. */
+.dna-sheet{ position:relative; }
+.dna-cover{ text-align:center; padding-bottom:24px; margin-bottom:20px; border-bottom:2px solid #1a1816; }
+.dna-oneliner{ font-family: var(--font-display); font-size:19px; font-style:italic; color:#1a1816; max-width:520px; margin:14px auto 0; line-height:1.4; }
+.dna-section{ margin-bottom:22px; }
+.dna-row{ margin-bottom:12px; }
+.dna-row:last-child{ margin-bottom:0; }
+.dna-row-label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:#6b6560; margin-bottom:3px; }
+.dna-row-text{ font-size:13.5px; line-height:1.6; color:#1a1816; white-space:pre-wrap; margin:0; }
+.dna-stakes-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.dna-stakes-col{ border-radius:8px; padding:14px 16px; }
+.dna-stakes-col .dna-row-label{ color:inherit; opacity:.75; }
+.dna-stakes-col .dna-row-text{ color:inherit; }
+.dna-stakes-win{ background:#eaf6ef; color:#1f6b45; }
+.dna-stakes-risk{ background:#fbeae6; color:#a8432e; }
+
+/* Brand DNA wizard — the broken-down question boxes (compose/funnel3
+   steps) and their supporting bits: a growable pill list for
+   testimonials/personality/values/products, and a 3-box "funnel" layout
+   for the plan step. Dark-theme wizard UI, separate from the light-sheet
+   .dna-* print rules above. */
+.chip-list{ display:flex; flex-wrap:wrap; gap:8px; }
+.dna-chip{ display:inline-flex; align-items:center; gap:6px; padding:6px 8px 6px 14px; border-radius:999px; background: var(--surface-2); border:1px solid var(--border); font-size:12.5px; font-weight:600; }
+.dna-chip button{ width:16px; height:16px; border-radius:50%; background: var(--bg-raised); border:1px solid var(--border); color: var(--text-muted); display:flex; align-items:center; justify-content:center; padding:0; cursor:pointer; flex:none; }
+.dna-chip button:hover{ color: var(--health-poor); border-color: var(--health-poor); }
+.dna-funnel3{ display:grid; grid-template-columns: repeat(3,1fr); gap:12px; margin-bottom:16px; }
+.dna-funnel3-box{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md); padding:14px; }
+.dna-funnel3-num{ width:22px; height:22px; border-radius:50%; background: var(--accent-soft); color: var(--accent); font-family: var(--font-display); font-weight:800; font-size:11.5px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
+@media (max-width:640px){ .dna-funnel3{ grid-template-columns:1fr; } }
+
+/* Brand Health strip — four diagnosis-and-action indicators above the
+   command center, reusing .health-badge (defined with dashboard.js's
+   stats below) rather than a new visual system. */
+.brand-health-strip{ display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:20px; }
+.brand-health-item{ display:flex; flex-direction:column; gap:8px; align-items:flex-start; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md); padding:14px 16px; transition: border-color .15s; }
+.brand-health-item:hover{ border-color: var(--brand-tint); }
+.brand-health-label{ font-size:11.5px; color: var(--text-muted); font-weight:700; }
+@media (max-width:760px){ .brand-health-strip{ grid-template-columns: repeat(2,1fr); } }
+
+/* ============================================================
+   Brand Home command center — five widgets shaped to hint at what each
+   does (a ring for progress, a mini journey for campaigns, swatches for
+   guidelines, a card stack for content, a wide banner for sales) instead
+   of five identical cards. All still read/write nothing themselves —
+   plain nav buttons — the shape is the only thing that changed.
+   ============================================================ */
+.brand-widget-grid{ display:grid; grid-template-columns: repeat(4,1fr); gap:16px; margin-bottom:28px; }
+.brand-widget{ position:relative; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; cursor:pointer; text-align:left; transition: border-color .15s, transform .1s, box-shadow .2s; overflow:hidden; }
+.brand-widget:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 26px color-mix(in srgb, var(--brand-tint) 35%, transparent); }
+.brand-widget h3{ font-size:16px; margin:0 0 3px; }
+.brand-widget p{ font-size:12.5px; color: var(--text-muted); margin:0; }
+
+.widget-dna{ grid-column: span 2; display:flex; align-items:center; gap:18px; }
+.widget-dna .ring-wrap{ position:relative; width:72px; height:72px; flex:none; }
+.widget-dna .ring-wrap svg{ width:100%; height:100%; transform:rotate(-90deg); }
+.widget-dna .ring-track{ fill:none; stroke:var(--border); stroke-width:7; }
+.widget-dna .ring-fill{ fill:none; stroke:var(--brand-tint); stroke-width:7; stroke-linecap:round; transition: stroke-dasharray .4s ease; }
+.widget-dna .ring-pct{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-weight:800; font-size:15px; color:var(--brand-tint); }
+
+.widget-campaign{ grid-column: span 2; }
+.widget-campaign .mini-journey{ display:flex; align-items:center; margin:16px 0 14px; }
+.widget-campaign .mj-dot{ width:11px; height:11px; border-radius:50%; background:var(--surface-2); border:2px solid var(--border); flex:none; transition: background .2s, border-color .2s; }
+.widget-campaign .mj-dot.filled{ background:var(--brand-tint); border-color:var(--brand-tint); }
+.widget-campaign .mj-line{ flex:1; height:2px; background:var(--border); min-width:8px; transition: background .2s; }
+.widget-campaign .mj-line.filled{ background:var(--brand-tint); }
+
+.widget-guidelines{ grid-column: span 2; }
+.widget-guidelines .swatch-row{ display:flex; gap:6px; margin:16px 0 12px; }
+.widget-guidelines .swatch{ width:24px; height:24px; border-radius:7px; flex:none; border:1px solid rgba(255,255,255,.08); }
+.widget-guidelines .aa-preview{ position:absolute; top:18px; right:20px; font-size:26px; font-weight:800; color: color-mix(in srgb, var(--brand-tint) 45%, transparent); }
+
+.widget-content-os{ grid-column: span 2; display:flex; align-items:center; gap:20px; }
+.widget-content-os .stack{ position:relative; width:52px; height:52px; flex:none; }
+.widget-content-os .stack-card{ position:absolute; inset:0; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); box-shadow: 0 3px 8px rgba(0,0,0,.35); }
+.widget-content-os .stack-card:nth-child(1){ transform: rotate(-9deg) translate(-3px,2px); }
+.widget-content-os .stack-card:nth-child(2){ transform: rotate(5deg) translate(2px,-1px); }
+.widget-content-os .stack-card:nth-child(3){ background: color-mix(in srgb, var(--brand-tint) 16%, var(--surface)); border-color: var(--brand-tint); display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-weight:800; color:var(--brand-tint); font-size:15px; }
+
+.widget-sales{ grid-column: span 4; display:flex; align-items:center; gap:18px; }
+.widget-sales .folder-badge{ width:50px; height:50px; border-radius:12px; background: color-mix(in srgb, var(--brand-tint) 14%, transparent); color: var(--brand-tint); display:flex; align-items:center; justify-content:center; flex:none; }
+
+@media (max-width: 760px){
+  .brand-widget-grid{ grid-template-columns: 1fr; }
+  .widget-dna, .widget-campaign, .widget-guidelines, .widget-content-os, .widget-sales{ grid-column: span 1; }
+}

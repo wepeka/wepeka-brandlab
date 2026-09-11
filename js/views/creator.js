@@ -1,10 +1,10 @@
-import { getBrand, listContent, getContent, updateContent, getSettings, onChange, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getBrand, listContent, getContent, createContent, updateContent, getSettings, onChange, STATUS_LABELS, FUNNELS } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, toast, avatarHTML, qs, qsa } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { generateScript, generateThumbnail } from "../ai.js";
+import { generateScript, generateThumbnail, AiApiError, hasAiKey } from "../ai.js";
 
 // Web Speech API (built into Chrome/Edge) — no AI provider or key needed,
 // purely browser-native speech-to-text. Silently disables the mic button
@@ -110,7 +110,7 @@ const DURATION_OPTIONS = ["<1 menit", "1:30 menit", "2 menit", ">2 menit", "Cust
 // caption, each with a Use button) are identical either way.
 function openAiScriptModal(content, brand, onInsert, lite = null) {
   const ai = getSettings().ai || { provider: "anthropic" };
-  const hasKey = ai.provider === "gemini" ? !!ai.geminiApiKey : !!ai.anthropicApiKey;
+  const hasKey = hasAiKey(ai);
   if (!hasKey) {
     toast("Add your AI API key in Settings → AI first.", "error");
     return;
@@ -207,6 +207,28 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
   // not satisfied with what came back? Generate More just gives you
   // another set to compare against, every batch's own "Use" buttons still
   // work.
+  // Shared by the main Generate button and the per-section "Regenerate"
+  // buttons below, so a regenerate call sees the same prompt/funnel/duration
+  // context instead of drifting from what actually produced this batch.
+  function genParams(extra) {
+    const prompt = overlay.querySelector("#ai-prompt").value.trim();
+    return {
+      title: content.title,
+      idea: content.idea,
+      platform: content.platform,
+      format: content.format,
+      funnel: state.funnel,
+      prompt,
+      duration: state.duration === "Custom" ? customDurationInput?.value.trim() : state.duration,
+      goal: overlay.querySelector("#ai-goal")?.value.trim(),
+      mofuGoal: overlay.querySelector("#ai-mofu-goal")?.value.trim(),
+      bofuOffer: overlay.querySelector("#ai-bofu-offer")?.value.trim(),
+      articleText: overlay.querySelector("#ai-article")?.value.trim(),
+      brandGuidelines: brand?.aiVoiceGuide || "",
+      ...extra,
+    };
+  }
+
   let batchCount = 0;
   const runGenerate = async () => {
     const btn = overlay.querySelector("#ai-generate");
@@ -217,21 +239,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     loadingEl.innerHTML = `<div class="spinner"></div><span>Writing…</span>`;
     resultEl.appendChild(loadingEl);
     try {
-      const prompt = overlay.querySelector("#ai-prompt").value.trim();
-      const { hooks, script, caption } = await generateScript(ai, {
-        title: content.title,
-        idea: content.idea,
-        platform: content.platform,
-        format: content.format,
-        funnel: state.funnel,
-        prompt,
-        duration: state.duration === "Custom" ? customDurationInput?.value.trim() : state.duration,
-        goal: overlay.querySelector("#ai-goal")?.value.trim(),
-        mofuGoal: overlay.querySelector("#ai-mofu-goal")?.value.trim(),
-        bofuOffer: overlay.querySelector("#ai-bofu-offer")?.value.trim(),
-        articleText: overlay.querySelector("#ai-article")?.value.trim(),
-        brandGuidelines: brand?.aiVoiceGuide || "",
-      });
+      const { hooks, script, caption } = await generateScript(ai, genParams());
       loadingEl.remove();
       batchCount++;
       const suffix = batchCount > 1 ? ` — batch ${batchCount}` : "";
@@ -239,23 +247,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       batchEl.className = "ai-batch";
       batchEl.innerHTML = `
         ${batchCount > 1 ? `<div class="divider"></div>` : ""}
-        ${hooks.length ? `<div class="page-eyebrow" style="margin-bottom:8px;">Hook options${suffix}</div>` : ""}
-        ${hooks
-          .map(
-            (h, i) => `
-          <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
-            <span style="font-size:13px;">${escapeHtml(h)}</span>
-            <button type="button" class="btn btn-secondary btn-sm" data-insert-hook="${i}" style="flex:none;">Use</button>
-          </div>`
-          )
-          .join("")}
-        ${
-          script
-            ? `<div class="page-eyebrow" style="margin:14px 0 8px;">Full script${suffix}</div>
-               <div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(script)}</div>
-               <button type="button" class="btn btn-primary btn-block use-script-btn">Use this script</button>`
-            : ""
-        }
+        <div id="hooks-section"></div>
+        <div id="script-section"></div>
         ${
           caption
             ? `<div class="page-eyebrow" style="margin:14px 0 8px;">Caption${suffix}</div>
@@ -265,16 +258,81 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
         }
       `;
       resultEl.appendChild(batchEl);
-      batchEl.querySelectorAll("[data-insert-hook]").forEach((b) => {
-        b.addEventListener("click", () => {
-          onInsert({ hook: hooks[Number(b.dataset.insertHook)] });
-          toast("Hook inserted");
+
+      // Hooks and script each get their own "Regenerate" — asking the AI to
+      // redo a hook that isn't landing shouldn't also throw away a script
+      // that's already fine, and vice versa.
+      const eyebrowRegenBtn = (label) =>
+        `<button type="button" class="icon-btn regen-btn" title="Regenerate ${label}" style="width:22px;height:22px;">${icon("refresh", { size: 12 })}</button>`;
+
+      function renderHooksSection(list) {
+        const el = batchEl.querySelector("#hooks-section");
+        el.innerHTML = list.length
+          ? `<div class="creator-field-head" style="margin-bottom:8px;">
+               <div class="page-eyebrow" style="margin-bottom:0;">Hook options${suffix}</div>
+               ${eyebrowRegenBtn("hooks")}
+             </div>
+             ${list
+               .map(
+                 (h, i) => `
+               <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
+                 <span style="font-size:13px;">${escapeHtml(h)}</span>
+                 <button type="button" class="btn btn-secondary btn-sm" data-insert-hook="${i}" style="flex:none;">Use</button>
+               </div>`
+               )
+               .join("")}`
+          : "";
+        const cards = el.querySelectorAll("[data-insert-hook]");
+        cards.forEach((b) => {
+          b.addEventListener("click", () => {
+            onInsert({ hook: list[Number(b.dataset.insertHook)] });
+            toast("Hook inserted");
+            // Once one hook's picked, the other alternatives for that same
+            // slot are moot — script/caption stay untouched, separate choices.
+            cards.forEach((c) => c.closest(".card")?.remove());
+          });
         });
-      });
-      batchEl.querySelector(".use-script-btn")?.addEventListener("click", () => {
-        onInsert({ script, funnel: state.funnel });
-        toast("Script inserted");
-      });
+        el.querySelector(".regen-btn")?.addEventListener("click", async () => {
+          const regenBtn = el.querySelector(".regen-btn");
+          regenBtn.disabled = true;
+          try {
+            const { hooks: newHooks } = await generateScript(ai, genParams({ only: "hooks" }));
+            renderHooksSection(newHooks);
+          } catch (e) {
+            toast(e instanceof AiApiError ? e.message : "Gagal regenerate hook.", "error");
+            regenBtn.disabled = false;
+          }
+        });
+      }
+      function renderScriptSection(text) {
+        const el = batchEl.querySelector("#script-section");
+        el.innerHTML = text
+          ? `<div class="creator-field-head" style="margin:14px 0 8px;">
+               <div class="page-eyebrow" style="margin-bottom:0;">Full script${suffix}</div>
+               ${eyebrowRegenBtn("script")}
+             </div>
+             <div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(text)}</div>
+             <button type="button" class="btn btn-primary btn-block use-script-btn">Use this script</button>`
+          : "";
+        el.querySelector(".use-script-btn")?.addEventListener("click", () => {
+          onInsert({ script: text, funnel: state.funnel });
+          toast("Script inserted");
+        });
+        el.querySelector(".regen-btn")?.addEventListener("click", async () => {
+          const regenBtn = el.querySelector(".regen-btn");
+          regenBtn.disabled = true;
+          try {
+            const { script: newScript } = await generateScript(ai, genParams({ only: "script" }));
+            renderScriptSection(newScript);
+          } catch (e) {
+            toast(e instanceof AiApiError ? e.message : "Gagal regenerate script.", "error");
+            regenBtn.disabled = false;
+          }
+        });
+      }
+      renderHooksSection(hooks);
+      renderScriptSection(script);
+
       batchEl.querySelector(".use-caption-btn")?.addEventListener("click", () => {
         onInsert({ caption });
         toast("Caption inserted");
@@ -294,11 +352,94 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
 // it directly (e.g. from the "Edit in Creator" button on a published item);
 // otherwise this list only shows what's still in progress, sorted so the
 // most time-sensitive piece is first.
+// Asked once, right before the blank editor opens — which platform is this
+// for? "Mirror" is the one case that isn't just a pre-filled field: it
+// creates two linked content records (Instagram + TikTok) up front from the
+// same idea, sharing a mirrorGroupId, instead of making the user duplicate
+// the piece by hand after the fact.
+function openNewContentPlatformPicker({ brandId, onSaved }) {
+  const overlay = openModal({
+    title: "Konten ini buat platform apa?",
+    bodyHTML: `
+      <div class="content-view-grid">
+        <button type="button" class="content-view-card" data-platform-pick="Instagram">
+          <div class="icon-wrap">${platformIcon("instagram")}</div>
+          <h3>Instagram</h3>
+          <p>Bikin buat Instagram aja.</p>
+        </button>
+        <button type="button" class="content-view-card" data-platform-pick="TikTok">
+          <div class="icon-wrap">${platformIcon("tiktok")}</div>
+          <h3>TikTok</h3>
+          <p>Bikin buat TikTok aja.</p>
+        </button>
+        <button type="button" class="content-view-card" data-platform-pick="mirror">
+          <div class="icon-wrap">${icon("layers", { size: 20 })}</div>
+          <h3>Mirror (keduanya)</h3>
+          <p>1 ide, otomatis jadi 2 konten (Instagram + TikTok) yang saling ke-link.</p>
+        </button>
+      </div>
+    `,
+  });
+  qsa("[data-platform-pick]", overlay).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      closeOverlay(overlay);
+      const pick = btn.dataset.platformPick;
+      if (pick === "mirror") {
+        const mirrorGroupId = `mirror-${Date.now()}`;
+        const igItem = createContent(brandId, { platform: "Instagram", mirrorGroupId, status: "idea" });
+        createContent(brandId, { platform: "TikTok", mirrorGroupId, status: "idea" });
+        toast("2 konten dibuat — Instagram & TikTok, saling ke-link.");
+        openContentEditor({ brandId, contentId: igItem.id, onSaved });
+      } else {
+        openContentEditor({ brandId, defaults: { platform: pick }, onSaved });
+      }
+    });
+  });
+}
+
 export function render(root, { brandId, initialContentId }) {
   const state = { selectedId: initialContentId || null, collapsedGroups: new Set() };
-  const refresh = () => paint(root, brandId, state, refresh);
+  const paintNow = () => paint(root, brandId, state, refresh);
+
+  // Every Firestore write (including this page's own autosave-on-blur)
+  // fires onChange, which used to tear out and rebuild the whole sidebar
+  // list on the spot. On a touch device that's a scroll killer: if a
+  // repaint lands while a finger is still down and mid-swipe, the DOM node
+  // the gesture is tracking gets replaced out from under it and the scroll
+  // just stops dead — reported as the Drafting/Editing list "stuck, won't
+  // scroll". Defer any repaint that arrives mid-touch and flush it once
+  // the finger lifts, so a live scroll gesture is never interrupted.
+  let touchActive = false;
+  let repaintPending = false;
+  const refresh = () => {
+    if (touchActive) {
+      repaintPending = true;
+      return;
+    }
+    paintNow();
+  };
+  const onTouchStart = () => {
+    touchActive = true;
+  };
+  const onTouchEnd = () => {
+    touchActive = false;
+    if (repaintPending) {
+      repaintPending = false;
+      paintNow();
+    }
+  };
+  document.addEventListener("touchstart", onTouchStart, { passive: true });
+  document.addEventListener("touchend", onTouchEnd, { passive: true });
+  document.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
   refresh();
-  return onChange(refresh);
+  const unsubscribe = onChange(refresh);
+  return () => {
+    unsubscribe();
+    document.removeEventListener("touchstart", onTouchStart);
+    document.removeEventListener("touchend", onTouchEnd);
+    document.removeEventListener("touchcancel", onTouchEnd);
+  };
 }
 
 function paint(root, brandId, state, refresh) {
@@ -348,9 +489,9 @@ function paint(root, brandId, state, refresh) {
     </div>
   `;
 
-  qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
+  qs("#new-content").addEventListener("click", () => openNewContentPlatformPicker({ brandId, onSaved: refresh }));
   const emptyNewBtn = qs("#new-content-empty");
-  if (emptyNewBtn) emptyNewBtn.addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
+  if (emptyNewBtn) emptyNewBtn.addEventListener("click", () => openNewContentPlatformPicker({ brandId, onSaved: refresh }));
 
   qsa("[data-select]", root).forEach((row) => {
     row.addEventListener("click", () => {
@@ -515,6 +656,15 @@ function paint(root, brandId, state, refresh) {
       notify("Published", `"${selected.title || "Untitled"}" is live.`);
     });
   }
+
+  qs("#copy-caption-ready", root)?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(selected.caption || "");
+      toast("Caption copied");
+    } catch {
+      toast("Couldn't copy — select and copy manually.", "error");
+    }
+  });
 
   const aiThumbGenReady = qs("#ai-thumb-gen-ready", root);
   if (aiThumbGenReady) {
@@ -713,6 +863,18 @@ function readyToUploadPanel(c) {
         ${c.thumbnail ? `<img class="thumb-preview" id="ready-thumb-img" src="${c.thumbnail}" />` : `<img class="thumb-preview" id="ready-thumb-img" style="display:none;" />`}
         <div id="ready-thumb-status" style="margin-top:6px;"></div>
       </div>
+
+      ${
+        c.caption
+          ? `<div class="field" style="margin-bottom:6px;">
+               <div class="creator-field-head">
+                 <label style="margin-bottom:0;">Caption</label>
+                 <button type="button" class="chip-icon-btn" id="copy-caption-ready" aria-label="Copy caption" title="Copy caption">${icon("copy", { size: 15 })}</button>
+               </div>
+               <div class="card card-tight" style="white-space:pre-wrap;font-size:13px;">${escapeHtml(c.caption)}</div>
+             </div>`
+          : ""
+      }
 
       <div class="divider"></div>
 

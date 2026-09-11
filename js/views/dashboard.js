@@ -6,6 +6,7 @@ import { promptDialog } from "../modals.js";
 import { openContentEditor } from "./content-editor.js";
 import { getAccountProfile, getAccountInsights } from "../instagram.js";
 import { openReportModal } from "./report.js";
+import { t } from "../i18n.js";
 
 export function render(root, { brandId }) {
   const state = { accountData: null, accountLoading: false };
@@ -126,48 +127,48 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">Brand Dashboard</div>
+        <div class="page-eyebrow">${t("dashboard.eyebrow")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">
-        <button class="btn btn-secondary" id="generate-report">${icon("download", { size: 15 })}Generate Report</button>
-        <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}New Content</button>
+        <button class="btn btn-secondary" id="generate-report">${icon("download", { size: 15 })}${t("dashboard.generateReport")}</button>
+        <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("dashboard.newContent")}</button>
       </div>
     </div>
 
-    <div class="section-title" style="margin-top:0;"><h2>Brand Assets</h2></div>
+    <div class="section-title" style="margin-top:0;"><h2>${t("dashboard.brandAssets")}</h2></div>
     ${
       !(brand.logoAssets || []).length
-        ? `<p class="text-muted" style="font-size:12.5px;margin:-6px 0 12px;">${icon("info", { size: 12 })} Add this brand's logo and mascot here if you have them — optional, but the AI Thumbnail Creator will use the first one to help keep generated thumbnails on-brand.</p>`
+        ? `<p class="text-muted" style="font-size:12.5px;margin:-6px 0 12px;">${icon("info", { size: 12 })} ${t("dashboard.brandAssetsHint")}</p>`
         : ""
     }
     <div class="logo-gallery" style="margin-bottom:14px;">
       ${(brand.logoAssets || []).map(logoThumb).join("")}
-      <button class="logo-add-tile" id="add-logo" aria-label="Add logo asset" title="Add logo">${icon("plus", { size: 16 })}</button>
+      <button class="logo-add-tile" id="add-logo" aria-label="${t("dashboard.addLogo")}" title="${t("dashboard.addLogo")}">${icon("plus", { size: 16 })}</button>
       <input type="file" id="logo-file" accept="image/*" multiple style="display:none;" />
     </div>
     <div class="row-2" style="align-items:start; margin-bottom:28px;">
-      ${assetPanel(brand, "driveLink", "Drive", "folder")}
-      ${assetPanel(brand, "brandbookLink", "Brandbook", "book")}
+      ${assetPanel(brand, "driveLink", t("dashboard.drive"), "folder")}
+      ${assetPanel(brand, "brandbookLink", t("dashboard.brandbook"), "book")}
     </div>
 
     ${igConfigured ? accountOverviewHTML(state) : ""}
 
     <div class="stat-grid">
-      ${stat("Total Content", all.length)}
-      ${stat("Published", published.length)}
-      ${stat("Scheduled", scheduled.length)}
-      ${stat("Drafts & Ideas", drafts.length)}
+      ${stat(t("dashboard.stat.totalContent"), all.length)}
+      ${stat(t("dashboard.stat.published"), published.length)}
+      ${stat(t("dashboard.stat.scheduled"), scheduled.length)}
+      ${stat(t("dashboard.stat.draftsIdeas"), drafts.length)}
     </div>
     <div class="stat-grid">
-      ${stat("Total Views", formatNumber(totalViews))}
-      ${stat("Avg. Views / Post", avgViews === null ? "—" : formatNumber(Math.round(avgViews)))}
-      ${stat("Avg. Engagement Rate", formatPercent(avgER))}
-      ${stat("Avg. Follower Conversion", formatPercent(avgFCR))}
+      ${stat(t("dashboard.stat.totalViews"), formatNumber(totalViews))}
+      ${stat(t("dashboard.stat.avgViewsPerPost"), avgViews === null ? "—" : formatNumber(Math.round(avgViews)))}
+      ${stat(t("dashboard.stat.avgER"), formatPercent(avgER))}
+      ${stat(t("dashboard.stat.avgFCR"), formatPercent(avgFCR))}
     </div>
 
     ${insights.length ? `
-      <div class="section-title" style="margin-top:8px;"><h2>What the data is telling you</h2></div>
+      <div class="section-title" style="margin-top:8px;"><h2>${t("dashboard.whatDataTells")}</h2></div>
       <div class="card card-tight" style="margin-bottom:28px;">
         ${insights.map((i) => `<div class="top-content-row"><span class="icon-btn" style="width:30px;height:30px;color:var(--accent);background:var(--accent-soft);border:none;">${icon("bulb", { size: 15 })}</span><div class="ti"><div class="t" style="white-space:normal;font-weight:600;">${i}</div></div></div>`).join("")}
       </div>
@@ -176,56 +177,56 @@ function paint(root, brandId, state, refresh) {
     <div class="row-2" style="align-items:start;">
       <div>
         <div class="section-title" style="margin-top:0;">
-          <h2>Up Next</h2>
-          <a class="link" href="#/brand/${brand.id}/content-os/calendar">Calendar →</a>
+          <h2>${t("dashboard.upNext")}</h2>
+          <a class="link" href="#/brand/${brand.id}/content-os/calendar">${t("dashboard.calendarLink")}</a>
         </div>
         <div class="card card-tight">
           ${
             upNext.length
               ? upNext.map((c) => upNextRow(c)).join("")
-              : `<div class="table-empty" style="padding:28px;">Nothing scheduled yet.</div>`
+              : `<div class="table-empty" style="padding:28px;">${t("dashboard.nothingScheduled")}</div>`
           }
         </div>
       </div>
       <div>
         <div class="section-title" style="margin-top:0;">
-          <h2>Content Health</h2>
+          <h2>${t("dashboard.contentHealth")}</h2>
         </div>
         <div class="card card-tight">
           ${
             evaluated
               ? healthBar(healthCounts, evaluated)
-              : `<div class="table-empty" style="padding:28px;">Publish content and add insights to see health.</div>`
+              : `<div class="table-empty" style="padding:28px;">${t("dashboard.publishToSeeHealth")}</div>`
           }
         </div>
       </div>
     </div>
 
     <div class="section-title">
-      <h2>Performance by Funnel</h2>
+      <h2>${t("dashboard.perfByFunnel")}</h2>
     </div>
     <div class="funnel-compare">
       ${FUNNELS.map((f) => funnelCard(f, funnelStats[f])).join("")}
     </div>
 
-    <div class="section-title"><h2>Top Performing Content</h2></div>
+    <div class="section-title"><h2>${t("dashboard.topPerforming")}</h2></div>
     <div class="card card-tight" style="margin-bottom:28px;">
       ${
         top.length
           ? top.map((x, i) => topRow(x, i)).join("")
-          : `<div class="table-empty" style="padding:28px;">No published content with views yet.</div>`
+          : `<div class="table-empty" style="padding:28px;">${t("dashboard.noPublishedViews")}</div>`
       }
     </div>
 
     ${
       boosted.length
         ? `
-      <div class="section-title"><h2>Ads Performance</h2></div>
+      <div class="section-title"><h2>${t("dashboard.adsPerformance")}</h2></div>
       <div class="stat-grid" style="margin-bottom:28px;">
-        ${stat("Boosted Posts", boosted.length)}
-        ${stat("Total Spend", `$${formatNumber(adsTotals.spend)}`)}
-        ${stat("Total Impressions", formatNumber(adsTotals.impressions))}
-        ${stat("Total Clicks", formatNumber(adsTotals.clicks))}
+        ${stat(t("dashboard.stat.boostedPosts"), boosted.length)}
+        ${stat(t("dashboard.stat.totalSpend"), `$${formatNumber(adsTotals.spend)}`)}
+        ${stat(t("dashboard.stat.totalImpressions"), formatNumber(adsTotals.impressions))}
+        ${stat(t("dashboard.stat.totalClicks"), formatNumber(adsTotals.clicks))}
       </div>`
         : ""
     }
@@ -233,8 +234,8 @@ function paint(root, brandId, state, refresh) {
     ${
       boostCandidates.length
         ? `
-      <div class="section-title"><h2>Worth Boosting</h2></div>
-      <p class="text-muted" style="font-size:12.5px;margin:-8px 0 12px;">Healthy organic performers not on ads yet — proven without spend, so a reasonable place to put budget first.</p>
+      <div class="section-title"><h2>${t("dashboard.worthBoosting")}</h2></div>
+      <p class="text-muted" style="font-size:12.5px;margin:-8px 0 12px;">${t("dashboard.worthBoostingHint")}</p>
       <div class="card card-tight" style="margin-bottom:28px;">
         ${boostCandidates.map(boostRow).join("")}
       </div>`
@@ -243,30 +244,30 @@ function paint(root, brandId, state, refresh) {
 
     <div class="row-2" style="align-items:start;">
       <div>
-        <div class="section-title"><h2>Performance by Platform</h2></div>
+        <div class="section-title"><h2>${t("dashboard.perfByPlatform")}</h2></div>
         <div class="card card-tight">
           ${
             platformRows.length
               ? platformRows.map((r) => barRow(r.platform, r.avg, maxPlatformAvg)).join("")
-              : `<div class="table-empty" style="padding:28px;">No engagement data yet.</div>`
+              : `<div class="table-empty" style="padding:28px;">${t("dashboard.noEngagementData")}</div>`
           }
         </div>
       </div>
       <div>
-        <div class="section-title"><h2>Performance by Format</h2></div>
+        <div class="section-title"><h2>${t("dashboard.perfByFormat")}</h2></div>
         <div class="card card-tight">
           ${
             formatRows.length
               ? formatRows.map((r) => barRow(r.format, r.avg, maxFormatAvg)).join("")
-              : `<div class="table-empty" style="padding:28px;">No engagement data yet.</div>`
+              : `<div class="table-empty" style="padding:28px;">${t("dashboard.noEngagementData")}</div>`
           }
         </div>
       </div>
     </div>
 
-    <div class="section-title"><h2>Reels vs TikTok</h2></div>
+    <div class="section-title"><h2>${t("dashboard.reelsVsTiktok")}</h2></div>
     <div class="row-2" style="align-items:start;">
-      ${reelsTiktokCard("Reels (Instagram)", buckets.reels, reelsTiktokStats(reelsItems), true)}
+      ${reelsTiktokCard(t("dashboard.reels"), buckets.reels, reelsTiktokStats(reelsItems), true)}
       ${reelsTiktokCard("TikTok", buckets.tiktok, reelsTiktokStats(tiktokItems), false)}
     </div>
   `;
@@ -292,7 +293,7 @@ function paint(root, brandId, state, refresh) {
         const [profile, insightsResult] = await Promise.all([getAccountProfile(ig), getAccountInsights(ig, { since, until })]);
         state.accountData = { profile, ...insightsResult };
       } catch (e) {
-        toast(`Couldn't load account overview: ${e.message}`, "error");
+        toast(t("dashboard.couldntLoadOverview", { msg: e.message }), "error");
       }
       state.accountLoading = false;
       paint(root, brandId, state, refresh);
@@ -311,7 +312,7 @@ function paint(root, brandId, state, refresh) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       removeBrandLogo(brandId, btn.dataset.removeLogo);
-      toast("Logo removed");
+      toast(t("dashboard.logoRemoved"));
     });
   });
   qsa(".logo-thumb img", root).forEach((img) => {
@@ -323,17 +324,17 @@ function paint(root, brandId, state, refresh) {
       e.stopPropagation();
       const field = btn.dataset.editResource;
       const label = btn.dataset.label;
-      const url = await promptDialog({ title: `${label} Link`, label: `${label} URL`, placeholder: "https://...", value: brand[field] || "" });
+      const url = await promptDialog({ title: t("dashboard.linkLabel", { label }), label: t("dashboard.linkUrlLabel", { label }), placeholder: "https://...", value: brand[field] || "" });
       if (!url) return;
       updateBrand(brandId, { [field]: url });
-      toast(`${label} link saved`);
+      toast(t("dashboard.linkSaved", { label }));
     });
   });
   qsa("[data-remove-resource]", root).forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       updateBrand(brandId, { [btn.dataset.removeResource]: "" });
-      toast(`${btn.dataset.label} link removed`);
+      toast(t("dashboard.linkRemoved", { label: btn.dataset.label }));
     });
   });
 }
@@ -359,8 +360,8 @@ function assetPanel(brand, field, label, iconName) {
   if (!url) {
     return `
       <div class="asset-panel empty">
-        <button class="resource-chip empty" data-edit-resource="${field}" data-label="${label}">${icon("plus", { size: 13 })}Add ${label} Link</button>
-        <div class="hint" style="margin:10px 0 0;">Paste a Google Drive share link (set to "Anyone with the link") and it'll preview right here.</div>
+        <button class="resource-chip empty" data-edit-resource="${field}" data-label="${label}">${icon("plus", { size: 13 })}${t("dashboard.addLinkBtn", { label })}</button>
+        <div class="hint" style="margin:10px 0 0;">${t("dashboard.driveHint")}</div>
       </div>`;
   }
   const embedUrl = driveEmbedUrl(url);
@@ -369,15 +370,15 @@ function assetPanel(brand, field, label, iconName) {
       <div class="asset-panel-head">
         <span class="flex items-center gap-8" style="font-weight:700;font-size:13.5px;">${icon(iconName, { size: 15 })}${label}</span>
         <div class="flex items-center gap-8">
-          <a class="btn btn-ghost btn-sm" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${icon("arrowRight", { size: 12 })}Open</a>
-          <button class="chip-icon-btn" data-edit-resource="${field}" data-label="${label}" aria-label="Edit ${label} link">${icon("edit", { size: 12 })}</button>
-          <button class="chip-icon-btn" data-remove-resource="${field}" data-label="${label}" aria-label="Remove ${label} link">${icon("x", { size: 12 })}</button>
+          <a class="btn btn-ghost btn-sm" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${icon("arrowRight", { size: 12 })}${t("dashboard.open")}</a>
+          <button class="chip-icon-btn" data-edit-resource="${field}" data-label="${label}" aria-label="${t("dashboard.editLink", { label })}">${icon("edit", { size: 12 })}</button>
+          <button class="chip-icon-btn" data-remove-resource="${field}" data-label="${label}" aria-label="${t("dashboard.removeLink", { label })}">${icon("x", { size: 12 })}</button>
         </div>
       </div>
       ${
         embedUrl
           ? `<iframe class="asset-embed" src="${embedUrl}" loading="lazy" title="${label}"></iframe>`
-          : `<div class="asset-embed-fallback">Preview isn't available for this link — use Open to view it.</div>`
+          : `<div class="asset-embed-fallback">${t("dashboard.previewUnavailable")}</div>`
       }
     </div>`;
 }
@@ -386,8 +387,8 @@ function logoThumb(logo) {
   return `
     <div class="logo-thumb" title="${escapeAttr(logo.name)}">
       <img src="${logo.dataUrl}" alt="${escapeAttr(logo.name)}" />
-      <a class="logo-download" href="${logo.dataUrl}" download="${escapeAttr(logo.name || "logo")}" aria-label="Download ${escapeAttr(logo.name)}">${icon("download", { size: 10 })}</a>
-      <button class="logo-remove" data-remove-logo="${logo.id}" aria-label="Remove ${escapeAttr(logo.name)}">${icon("x", { size: 10 })}</button>
+      <a class="logo-download" href="${logo.dataUrl}" download="${escapeAttr(logo.name || "logo")}" aria-label="${t("dashboard.downloadLogo", { name: escapeAttr(logo.name) })}">${icon("download", { size: 10 })}</a>
+      <button class="logo-remove" data-remove-logo="${logo.id}" aria-label="${t("dashboard.removeLogo", { name: escapeAttr(logo.name) })}">${icon("x", { size: 10 })}</button>
     </div>
   `;
 }
@@ -406,20 +407,20 @@ function stat(label, value) {
 // content.performance directly).
 function reelsTiktokCard(label, bucket, stats, showFacebookSplit) {
   if (!bucket) {
-    return `<div><div class="section-title" style="margin-top:0;"><h2>${label}</h2></div><div class="card card-tight"><p class="text-muted" style="font-size:12.5px;margin:0;padding:14px;">${label} isn't set up in Settings → Platforms${label.includes("Reels") ? "/Formats" : ""} yet.</p></div></div>`;
+    return `<div><div class="section-title" style="margin-top:0;"><h2>${label}</h2></div><div class="card card-tight"><p class="text-muted" style="font-size:12.5px;margin:0;padding:14px;">${t("dashboard.notSetUp", { label, extra: label.includes("Reels") ? "/Formats" : "" })}</p></div></div>`;
   }
   // Reels can crosspost to Facebook, so "without Facebook" (Instagram's own
   // number) and "with Facebook" (combined) are both worth seeing side by
   // side — TikTok has no Facebook angle, so it only needs the simpler
   // Organic/Ads/Combined set.
   const statsRow = showFacebookSplit
-    ? `${stat("Instagram Only", formatNumber(stats.instagramOnly))}${stat("+ Facebook", formatNumber(stats.organic))}${stat("+ Ads", formatNumber(stats.ads))}${stat("Combined Views", formatNumber(stats.combined))}`
-    : `${stat("Organic Views", formatNumber(stats.organic))}${stat("Ads Views", formatNumber(stats.ads))}${stat("Combined Views", formatNumber(stats.combined))}`;
+    ? `${stat(t("dashboard.stat.igOnly"), formatNumber(stats.instagramOnly))}${stat(t("dashboard.stat.plusFacebook"), formatNumber(stats.organic))}${stat(t("dashboard.stat.plusAds"), formatNumber(stats.ads))}${stat(t("dashboard.stat.combinedViews"), formatNumber(stats.combined))}`
+    : `${stat(t("dashboard.stat.organicViews"), formatNumber(stats.organic))}${stat(t("dashboard.stat.adsViews"), formatNumber(stats.ads))}${stat(t("dashboard.stat.combinedViews"), formatNumber(stats.combined))}`;
   return `
     <div>
       <div class="section-title" style="margin-top:0;">
         <h2>${label}</h2>
-        <span class="text-muted" style="font-size:12px;">${stats.count} published</span>
+        <span class="text-muted" style="font-size:12px;">${t("dashboard.publishedCount", { count: stats.count })}</span>
       </div>
       <div class="card card-tight">
         <div class="stat-grid">${statsRow}</div>
@@ -431,7 +432,7 @@ function upNextRow(c) {
   return `
     <div class="top-content-row" data-open-content="${c.id}" style="cursor:pointer;">
       <div class="ti">
-        <div class="t">${escapeText(c.title || "Untitled")}</div>
+        <div class="t">${escapeText(c.title || t("common.untitled"))}</div>
         <div class="m">${c.platform || "—"} · ${formatDate(c.scheduleDate)}</div>
       </div>
       <span class="tag tag-${c.funnel.toLowerCase()}">${c.funnel}</span>
@@ -444,7 +445,7 @@ function topRow(x, i) {
     <div class="top-content-row" data-open-content="${x.c.id}" style="cursor:pointer;">
       <div class="rank">${i + 1}</div>
       <div class="ti">
-        <div class="t">${escapeText(x.c.title || "Untitled")}</div>
+        <div class="t">${escapeText(x.c.title || t("common.untitled"))}</div>
         <div class="m">${formatNumber(x.c.performance.views)} views · ${x.m.engagementRate !== null ? formatPercent(x.m.engagementRate) + " ER" : "—"}</div>
       </div>
       ${x.m.health ? `<span class="health-badge health-${x.m.health}"><span class="health-dot"></span></span>` : ""}
@@ -457,7 +458,7 @@ function boostRow(x) {
     <div class="top-content-row" data-open-content="${x.c.id}" style="cursor:pointer;">
       <span class="health-badge health-good" style="padding:6px 10px;"><span class="health-dot"></span></span>
       <div class="ti">
-        <div class="t">${escapeText(x.c.title || "Untitled")}</div>
+        <div class="t">${escapeText(x.c.title || t("common.untitled"))}</div>
         <div class="m">${formatPercent(x.m.engagementRate)} ER · ${formatNumber(x.c.performance.views)} views</div>
       </div>
       <span class="tag tag-${x.c.funnel.toLowerCase()}">${x.c.funnel}</span>
@@ -485,9 +486,9 @@ function healthBar(counts, total) {
     <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;margin-bottom:16px;">
       ${seg("good", "good")}${seg("average", "average")}${seg("poor", "poor")}
     </div>
-    <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-good);display:inline-block;margin-right:6px;"></span>Healthy</span><span class="v">${counts.good}</span></div>
-    <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-average);display:inline-block;margin-right:6px;"></span>Average</span><span class="v">${counts.average}</span></div>
-    <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-poor);display:inline-block;margin-right:6px;"></span>Underperforming</span><span class="v">${counts.poor}</span></div>
+    <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-good);display:inline-block;margin-right:6px;"></span>${t("dashboard.healthy")}</span><span class="v">${counts.good}</span></div>
+    <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-average);display:inline-block;margin-right:6px;"></span>${t("dashboard.average")}</span><span class="v">${counts.average}</span></div>
+    <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-poor);display:inline-block;margin-right:6px;"></span>${t("dashboard.underperforming")}</span><span class="v">${counts.poor}</span></div>
   `;
 }
 
@@ -496,10 +497,10 @@ function funnelCard(funnel, stats) {
     <div class="funnel-card">
       <div class="fh">
         <span class="tag tag-${funnel.toLowerCase()}">${funnel}</span>
-        <span class="text-muted" style="font-size:12.5px;">${stats.count} content</span>
+        <span class="text-muted" style="font-size:12.5px;">${t("dashboard.funnelContentCount", { count: stats.count })}</span>
       </div>
-      <div class="metric-row"><span class="text-muted" style="font-size:13px;">Avg. Engagement Rate</span><span class="v">${formatPercent(stats.avgER)}</span></div>
-      <div class="metric-row"><span class="text-muted" style="font-size:13px;">Avg. Follower Conversion</span><span class="v">${formatPercent(stats.avgFCR)}</span></div>
+      <div class="metric-row"><span class="text-muted" style="font-size:13px;">${t("dashboard.stat.avgER")}</span><span class="v">${formatPercent(stats.avgER)}</span></div>
+      <div class="metric-row"><span class="text-muted" style="font-size:13px;">${t("dashboard.stat.avgFCR")}</span><span class="v">${formatPercent(stats.avgFCR)}</span></div>
     </div>
   `;
 }
@@ -512,16 +513,16 @@ function escapeText(s) {
 
 function accountOverviewHTML(state) {
   if (state.accountLoading) {
-    return `<div class="card" style="margin-bottom:28px;"><div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>Loading account overview…</span></div></div>`;
+    return `<div class="card" style="margin-bottom:28px;"><div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("dashboard.loadingOverview")}</span></div></div>`;
   }
   if (!state.accountData) {
     return `
       <div class="card" style="margin-bottom:28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
         <div>
-          <h3 style="font-size:15px;margin-bottom:4px;">Account Overview</h3>
-          <p class="text-muted" style="font-size:12.5px;margin:0;">See this brand's whole Instagram account — not just the content you've tracked here.</p>
+          <h3 style="font-size:15px;margin-bottom:4px;">${t("dashboard.accountOverview")}</h3>
+          <p class="text-muted" style="font-size:12.5px;margin:0;">${t("dashboard.accountOverviewHint")}</p>
         </div>
-        <button class="btn btn-secondary btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}Load Account Overview</button>
+        <button class="btn btn-secondary btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}${t("dashboard.loadAccountOverview")}</button>
       </div>
     `;
   }
@@ -529,15 +530,15 @@ function accountOverviewHTML(state) {
   return `
     <div class="card" style="margin-bottom:28px;">
       <div class="flex items-center justify-between" style="margin-bottom:14px;">
-        <h3 style="font-size:15px;">Account Overview <span class="text-faint" style="font-weight:400;font-size:12px;">— @${profile.username || "?"}, last 30 days</span></h3>
-        <button class="btn btn-ghost btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}Refresh</button>
+        <h3 style="font-size:15px;">${t("dashboard.accountOverview")} <span class="text-faint" style="font-weight:400;font-size:12px;">${t("dashboard.last30Days", { username: profile.username || "?" })}</span></h3>
+        <button class="btn btn-ghost btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}${t("dashboard.refresh")}</button>
       </div>
       <div class="stat-grid">
-        ${stat("Followers", formatNumber(profile.followers_count))}
-        ${stat("Follower Growth (30d)", metrics.followerGrowth !== undefined ? `${metrics.followerGrowth >= 0 ? "+" : ""}${formatNumber(metrics.followerGrowth)}` : "—")}
-        ${stat("Reach (30d)", metrics.reach !== undefined ? formatNumber(metrics.reach) : "—")}
-        ${stat("Profile Views (30d)", metrics.profileViews !== undefined ? formatNumber(metrics.profileViews) : "—")}
-        ${stat("Accounts Engaged (30d)", metrics.accountsEngaged !== undefined ? formatNumber(metrics.accountsEngaged) : "—")}
+        ${stat(t("dashboard.stat.followers"), formatNumber(profile.followers_count))}
+        ${stat(t("dashboard.stat.followerGrowth"), metrics.followerGrowth !== undefined ? `${metrics.followerGrowth >= 0 ? "+" : ""}${formatNumber(metrics.followerGrowth)}` : "—")}
+        ${stat(t("dashboard.stat.reach"), metrics.reach !== undefined ? formatNumber(metrics.reach) : "—")}
+        ${stat(t("dashboard.stat.profileViews"), metrics.profileViews !== undefined ? formatNumber(metrics.profileViews) : "—")}
+        ${stat(t("dashboard.stat.accountsEngaged"), metrics.accountsEngaged !== undefined ? formatNumber(metrics.accountsEngaged) : "—")}
       </div>
       ${warnings?.length ? `<p class="text-faint" style="font-size:11.5px;margin:12px 0 0;">${warnings.join(" · ")}</p>` : ""}
     </div>
@@ -551,22 +552,22 @@ function buildInsights({ funnelStats, platformRows, formatRows, poorPct }) {
     const best = [...withData].sort((a, b) => b.avgER - a.avgER)[0];
     const worst = [...withData].sort((a, b) => a.avgER - b.avgER)[0];
     if (best.funnel !== worst.funnel) {
-      out.push(`${best.funnel} content is performing best right now, averaging ${formatPercent(best.avgER)} engagement — ${worst.funnel} trails at ${formatPercent(worst.avgER)}.`);
+      out.push(t("dashboard.insight.bestWorst", { best: best.funnel, bestPct: formatPercent(best.avgER), worst: worst.funnel, worstPct: formatPercent(worst.avgER) }));
     }
   }
   withData.forEach((f) => {
     if (f.avgER !== null && f.avgFCR !== null && f.avgER > 6 && f.avgFCR < 1.5) {
-      out.push(`${f.funnel} content has high engagement but low follower conversion — great reach, but it isn't turning viewers into followers yet.`);
+      out.push(t("dashboard.insight.highErLowFcr", { funnel: f.funnel }));
     }
   });
   if (formatRows.length >= 2) {
-    out.push(`"${formatRows[0].format}" is your strongest format, averaging ${formatPercent(formatRows[0].avg)} engagement.`);
+    out.push(t("dashboard.insight.strongestFormat", { format: formatRows[0].format, pct: formatPercent(formatRows[0].avg) }));
   }
   if (platformRows.length >= 2) {
-    out.push(`${platformRows[0].platform} is outperforming your other platforms, at ${formatPercent(platformRows[0].avg)} average engagement.`);
+    out.push(t("dashboard.insight.outperformingPlatform", { platform: platformRows[0].platform, pct: formatPercent(platformRows[0].avg) }));
   }
   if (poorPct !== null && poorPct >= 40) {
-    out.push(`${formatPercent(poorPct, 0)} of your published content is underperforming — worth revisiting format or topic choices.`);
+    out.push(t("dashboard.insight.poorPct", { pct: formatPercent(poorPct, 0) }));
   }
   return out.slice(0, 4);
 }
