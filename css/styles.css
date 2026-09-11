@@ -1230,6 +1230,8 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .brandbook-wpk-mark{ position:absolute; top:26px; right:36px; width:56px; height:auto; opacity:.55; }
 .brandbook-page-footer{ position:absolute; bottom:20px; left:52px; right:52px; display:flex; justify-content:space-between; font-size:10px; color:#8a8580; }
 .brandbook-page-eyebrow{ font-family: var(--font-display); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:#8a8580; margin-bottom:14px; }
+.bb-eyebrow-icon{ display:flex; align-items:center; gap:7px; }
+.bb-eyebrow-icon svg{ width:13px; height:13px; color: var(--bb-primary, #8a8580); flex:none; }
 .brandbook-cover-name{ font-family: var(--font-display); font-size:38px; font-weight:800; margin-bottom:8px; }
 .brandbook-cover-tagline{ font-size:15px; color:#5b564f; }
 
@@ -1238,7 +1240,7 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
    whatever the brand's primary happens to be. Two soft overlapping circles
    anchor the bottom corners — a cheap, dependency-free stand-in for the
    organic cut-out shapes premium brand-book templates use. */
-.bb-divider{ background: var(--bb-primary, #1a1816); color: var(--bb-divider-text, #fff); display:flex; flex-direction:column; justify-content:center; overflow:hidden; }
+.bb-divider{ background-color: var(--bb-primary, #1a1816); background-image: radial-gradient(rgba(255,255,255,.14) 1.5px, transparent 1.5px); background-size:16px 16px; color: var(--bb-divider-text, #fff); display:flex; flex-direction:column; justify-content:center; overflow:hidden; }
 .bb-divider::before, .bb-divider::after{ content:""; position:absolute; border-radius:50%; background: rgba(255,255,255,.08); pointer-events:none; }
 .bb-divider::before{ width:340px; height:340px; left:-120px; bottom:-160px; }
 .bb-divider::after{ width:200px; height:200px; right:-60px; bottom:-100px; background: rgba(255,255,255,.06); }

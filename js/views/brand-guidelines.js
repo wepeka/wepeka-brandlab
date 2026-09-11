@@ -812,22 +812,28 @@ function tocSectionContent(brand, a) {
 // export) render — same pages, same order, every time.
 function buildBrandBookPages(brand, a) {
   const year = new Date().getFullYear();
-  return [
+  const pages = [
     coverPageHTML(brand, a, year),
-    brandbookPageHTML("Contents", tocSectionContent(brand, a), brand),
-    brandbookPageHTML("Brand Foundation", foundationSectionContent(brand), brand),
-    brandbookPageHTML("Personality & Voice", personalitySectionContent(brand) + voiceToneSectionContent(brand), brand),
-    brandbookPageHTML("Tagline", taglineSectionContent(brand), brand),
+    brandbookPageHTML("Contents", "layers", tocSectionContent(brand, a), brand),
+    brandbookPageHTML("Brand Foundation", "target", foundationSectionContent(brand), brand),
+    brandbookPageHTML("Personality & Voice", "users", personalitySectionContent(brand) + voiceToneSectionContent(brand), brand),
+    brandbookPageHTML("Tagline", "bookmark", taglineSectionContent(brand), brand),
     dividerPageHTML("Identity", "Visual & Verbal Identity", "Logo, warna, tipografi, dan gaya visual brand ini.", brand, a),
-    brandbookPageHTML("Logo", logoSectionContent(a) + logoClearSpaceContent(a) + logoOnBackgroundsContent(a) + logoDontsContent(a), brand),
-    brandbookPageHTML("Color System", colorSectionContent(a) + colorUsageContent(a) + colorAccessibilityContent(a), brand),
-    brandbookPageHTML("Typography", typographySectionContent(a), brand),
-    brandbookPageHTML("Visual Direction", directionSectionContent(a), brand),
-    brandbookPageHTML("Imagery Style", imagerySectionContent(a), brand),
-    brandbookPageHTML("Visual Do's & Don'ts", generalDontsContent(), brand),
-    brandbookPageHTML("Brand Applications", applicationsSectionContent(a, brand), brand),
+    brandbookPageHTML("Logo", "image", logoSectionContent(a) + logoClearSpaceContent(a) + logoOnBackgroundsContent(a) + logoDontsContent(a), brand),
+    brandbookPageHTML("Color System", "palette", colorSectionContent(a) + colorUsageContent(a) + colorAccessibilityContent(a), brand),
+    brandbookPageHTML("Typography", "typography", typographySectionContent(a), brand),
+    brandbookPageHTML("Visual Direction", "eye", directionSectionContent(a), brand),
+    brandbookPageHTML("Imagery Style", "image", imagerySectionContent(a), brand),
+    brandbookPageHTML("Visual Do's & Don'ts", "info", generalDontsContent(), brand),
+    brandbookPageHTML("Brand Applications", "layers", applicationsSectionContent(a, brand), brand),
     dividerPageHTML("Thank You", "Made with care.", `${brand.name} × WPK Brand Lab, ${year}.`, brand, a),
   ];
+  // Page numbers are injected as a post-pass (a {{PN}} placeholder each page
+  // builder leaves in its footer) rather than threaded through every
+  // function's arguments — the total only exists once every page above is
+  // already built.
+  const total = pages.length;
+  return pages.map((html, i) => html.replace("{{PN}}", `${i + 1} / ${total}`));
 }
 
 function livePreviewHTML(brand, a) {
@@ -866,14 +872,15 @@ function wireReview(root, brandId, brand, state, refresh) {
 }
 
 // ---------- PDF (landscape, multi-page) ----------
-function brandbookPageHTML(title, content, brand) {
+function brandbookPageHTML(title, iconName, content, brand) {
   return `
     <div class="brandbook-page brandbook-print-page">
       <img src="assets/wepeka-logo.png" class="brandbook-wpk-mark" alt="WPK Brand Lab" />
-      <div class="brandbook-page-eyebrow">${title}</div>
+      <div class="brandbook-page-eyebrow bb-eyebrow-icon">${icon(iconName, { size: 12 })}${title}</div>
       ${content}
       <div class="brandbook-page-footer">
         <span>${escapeHtml(brand.name)} Brand Book</span>
+        <span>{{PN}}</span>
         <span>Made by WPK Brand Lab</span>
       </div>
     </div>
@@ -893,6 +900,7 @@ function dividerPageHTML(indexLabel, title, sub, brand, a) {
       ${sub ? `<div class="bb-divider-sub">${escapeHtml(sub)}</div>` : ""}
       <div class="brandbook-page-footer" style="color:${textColor};opacity:.7;">
         <span>${escapeHtml(brand.name)} Brand Book</span>
+        <span>{{PN}}</span>
         <span>Made by WPK Brand Lab</span>
       </div>
     </div>
@@ -913,6 +921,7 @@ function coverPageHTML(brand, a, year) {
       <div class="bb-divider-sub" style="font-weight:700;">${escapeHtml(brand.name)}${brand.brandDNA.tagline ? ` — ${escapeHtml(brand.brandDNA.tagline)}` : ""}</div>
       <div class="brandbook-page-footer" style="color:${textColor};opacity:.7;">
         <span>Prepared for: ${escapeHtml(brand.name)}</span>
+        <span>{{PN}}</span>
         <span>Made by WPK Brand Lab</span>
       </div>
     </div>
