@@ -1,5 +1,7 @@
 // Screenshot → metrics extraction. Tesseract.js is only fetched from CDN the
 // first time someone actually drops a screenshot — nothing loads up front.
+import { t } from "./i18n.js";
+
 const TESSERACT_URL = "https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js";
 
 let loadingPromise = null;
@@ -10,7 +12,7 @@ function loadTesseract() {
     const script = document.createElement("script");
     script.src = TESSERACT_URL;
     script.onload = resolve;
-    script.onerror = () => reject(new Error("Could not load the text-recognition engine. Check your connection."));
+    script.onerror = () => reject(new Error(t("integr.ocr.loadFailed")));
     document.head.appendChild(script);
   });
   return loadingPromise;

@@ -11,6 +11,8 @@
 // graph.facebook.com (that's only for classic "EAA"-prefixed Facebook
 // tokens tied to a linked Page). This client targets the IGAA/Instagram
 // Login style, since that's the simpler, current onboarding path.
+import { t, getLang } from "./i18n.js";
+
 const API_BASE = "https://graph.instagram.com";
 
 class InstagramApiError extends Error {}
@@ -24,7 +26,7 @@ async function graphGet(path, params, accessToken) {
   const res = await fetch(url.toString(), { cache: "no-store" });
   const json = await res.json();
   if (!res.ok || json.error) {
-    throw new InstagramApiError(json.error?.message || `Instagram API request failed (${res.status}).`);
+    throw new InstagramApiError(json.error?.message || t("integr.ig.apiFailed", { status: res.status }));
   }
   return json;
 }
@@ -80,13 +82,13 @@ export function titleFromMedia(media) {
     const firstLine = caption.split("\n")[0];
     return firstLine.length > 70 ? firstLine.slice(0, 67) + "…" : firstLine;
   }
-  return `Instagram post — ${new Date(media.timestamp).toLocaleDateString()}`;
+  return t("integr.ig.postTitle", { date: new Date(media.timestamp).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID") });
 }
 
 export async function findMediaByPermalink({ igUserId, accessToken }, publishedUrl) {
   const targetCode = shortcodeFromUrl(publishedUrl);
   if (!targetCode) {
-    throw new InstagramApiError("That doesn't look like an Instagram post URL (expected a /p/, /reel/, or /tv/ link).");
+    throw new InstagramApiError(t("integr.ig.badUrl"));
   }
 
   let after;
@@ -180,7 +182,7 @@ export async function fetchMediaMetrics({ accessToken }, media) {
     if (basic.like_count !== undefined) metrics.likes = basic.like_count;
     if (basic.comments_count !== undefined) metrics.comments = basic.comments_count;
   } catch (e) {
-    warnings.push(`Couldn't read like/comment counts: ${e.message}`);
+    warnings.push(t("integr.ig.countsFailed", { msg: e.message }));
   }
 
   const productType = media.media_product_type || media.media_type || "IMAGE";
@@ -222,8 +224,8 @@ export async function fetchMediaMetrics({ accessToken }, media) {
 
   const stillMissing = ["profileVisits", "followersGained"].filter((k) => metrics[k] === undefined);
   if (stillMissing.length) {
-    const labels = stillMissing.map((k) => (k === "profileVisits" ? "Profile Visits" : "Followers Gained"));
-    warnings.push(`${labels.join(" and ")} weren't returned for this post — Instagram may only track ${labels.length > 1 ? "these" : "it"} at the account level for this media type. Fill in manually if you have the numbers.`);
+    const labels = stillMissing.map((k) => (k === "profileVisits" ? t("integr.ig.profileVisits") : t("integr.ig.followersGained")));
+    warnings.push(t(labels.length > 1 ? "integr.ig.missingMany" : "integr.ig.missingOne", { labels: labels.join(` ${t("integr.and")} `) }));
   }
 
   return { metrics, warnings };

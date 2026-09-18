@@ -3,6 +3,7 @@ import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml, avatarHTML } from "../dom.js";
+import { t } from "../i18n.js";
 
 function avg(list) { return list.length ? list.reduce((a, b) => a + b, 0) / list.length : null; }
 
@@ -23,11 +24,11 @@ export function openReportModal(brandId) {
   const state = { rangeKey: "month", start: toISODate(startOfMonth(today)), end: toISODate(endOfMonth(today)) };
 
   const overlay = openModal({
-    title: "Generate Report",
+    title: t("dashboard.generateReport"),
     bodyHTML: `<div id="report-range-picker">${rangePickerHTML(state)}</div>`,
     footHTML: `
-      <button class="btn btn-secondary" id="report-cancel">Cancel</button>
-      <button class="btn btn-primary" id="report-generate">${icon("check", { size: 15 })}Generate</button>
+      <button class="btn btn-secondary" id="report-cancel">${t("common.cancel")}</button>
+      <button class="btn btn-primary" id="report-generate">${icon("check", { size: 15 })}${t("rep.generate")}</button>
     `,
     onMount: (el) => wireRangePicker(el, state),
   });
@@ -45,23 +46,23 @@ export function openReportModal(brandId) {
 // instead of needing a separate "no filter" code path.
 const OVERALL_START = "2000-01-01";
 function rangeLabel(start, end) {
-  return start === OVERALL_START ? "All time" : `${formatDate(start)} – ${formatDate(end)}`;
+  return start === OVERALL_START ? t("rep.range.overall") : `${formatDate(start)} – ${formatDate(end)}`;
 }
 
 function rangePickerHTML(state) {
   return `
     <div class="chip-select" style="margin-bottom:18px;">
-      <button data-range="week" class="${state.rangeKey === "week" ? "active" : ""}">This Week</button>
-      <button data-range="month" class="${state.rangeKey === "month" ? "active" : ""}">This Month</button>
-      <button data-range="overall" class="${state.rangeKey === "overall" ? "active" : ""}">Overall</button>
-      <button data-range="custom" class="${state.rangeKey === "custom" ? "active" : ""}">Custom</button>
+      <button data-range="week" class="${state.rangeKey === "week" ? "active" : ""}">${t("rep.range.week")}</button>
+      <button data-range="month" class="${state.rangeKey === "month" ? "active" : ""}">${t("rep.range.month")}</button>
+      <button data-range="overall" class="${state.rangeKey === "overall" ? "active" : ""}">${t("rep.range.overall")}</button>
+      <button data-range="custom" class="${state.rangeKey === "custom" ? "active" : ""}">${t("rep.range.custom")}</button>
     </div>
     <div id="report-range-inputs" class="row-2" style="${state.rangeKey === "custom" ? "" : "display:none;"}">
-      <div class="field" style="margin-bottom:0;"><label>Start</label><input class="input" type="date" id="report-start" value="${state.start}" /></div>
-      <div class="field" style="margin-bottom:0;"><label>End</label><input class="input" type="date" id="report-end" value="${state.end}" /></div>
+      <div class="field" style="margin-bottom:0;"><label>${t("rep.range.start")}</label><input class="input" type="date" id="report-start" value="${state.start}" /></div>
+      <div class="field" style="margin-bottom:0;"><label>${t("rep.range.end")}</label><input class="input" type="date" id="report-end" value="${state.end}" /></div>
     </div>
     <p class="text-muted" style="font-size:12.5px;margin:${state.rangeKey === "custom" ? "0" : "14px 0 0"};" id="report-range-summary">
-      ${state.rangeKey === "custom" ? "" : state.rangeKey === "overall" ? "All time — everything ever published" : `${formatDate(state.start)} – ${formatDate(state.end)}`}
+      ${state.rangeKey === "custom" ? "" : state.rangeKey === "overall" ? t("rep.range.overallSummary") : `${formatDate(state.start)} – ${formatDate(state.end)}`}
     </p>
   `;
 }
@@ -86,39 +87,39 @@ function wireRangePicker(el, state) {
 
 function openReportPreview(brand, start, end) {
   const overlay = openModal({
-    title: "Report Preview",
+    title: t("rep.previewTitle"),
     wide: true,
     bodyHTML: `<div class="report-preview-wrap"><div class="report-sheet" id="report-sheet">${reportSheetHTML(brand, start, end)}</div></div>`,
     footHTML: `
-      <button class="btn btn-secondary" id="report-share">${icon("link", { size: 14 })}Share</button>
-      <button class="btn btn-secondary" id="report-print">${icon("layers", { size: 14 })}Print</button>
-      <button class="btn btn-primary" id="report-download">${icon("download", { size: 14 })}Download PDF</button>
+      <button class="btn btn-secondary" id="report-share">${icon("link", { size: 14 })}${t("rep.share")}</button>
+      <button class="btn btn-secondary" id="report-print">${icon("layers", { size: 14 })}${t("rep.print")}</button>
+      <button class="btn btn-primary" id="report-download">${icon("download", { size: 14 })}${t("rep.downloadPdf")}</button>
     `,
   });
 
   const doPrint = () => window.print();
   overlay.querySelector("#report-print").addEventListener("click", doPrint);
   overlay.querySelector("#report-download").addEventListener("click", () => {
-    toast('In the print dialog, choose "Save as PDF" as the destination.');
+    toast(t("rep.pdfHint"));
     setTimeout(doPrint, 400);
   });
   overlay.querySelector("#report-share").addEventListener("click", async () => {
     const summary = reportSummaryText(brand, start, end);
     if (navigator.share) {
       try {
-        await navigator.share({ title: `${brand.name} — Performance Report`, text: summary });
+        await navigator.share({ title: t("rep.shareTitle", { brand: brand.name }), text: summary });
       } catch {
         /* user cancelled share sheet — no-op */
       }
     } else if (navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(summary);
-        toast("Report summary copied to clipboard");
+        toast(t("rep.copied"));
       } catch {
-        toast("Couldn't access the clipboard — try Print or Download instead.", "error");
+        toast(t("rep.clipboardFailed"), "error");
       }
     } else {
-      toast("Sharing isn't supported in this browser — try Print or Download instead.", "error");
+      toast(t("rep.shareUnsupported"), "error");
     }
   });
 }
@@ -175,45 +176,45 @@ function reportSheetHTML(brand, start, end) {
       ${avatarHTML(brand, "width:52px;height:52px;border-radius:12px;font-size:20px;")}
       <div>
         <div class="report-brand">${escapeHtml(brand.name)}</div>
-        <div class="report-title">Performance Report</div>
+        <div class="report-title">${t("rep.sheetTitle")}</div>
       </div>
       <div class="report-range">
         <div>${rangeLabel(start, end)}</div>
-        <div class="report-generated">Generated ${formatDate(new Date().toISOString())}</div>
+        <div class="report-generated">${t("rep.generatedOn", { date: formatDate(new Date().toISOString()) })}</div>
       </div>
     </div>
 
     <div class="report-stat-grid">
-      ${reportStat("Content Published", d.publishedCount)}
-      ${reportStat("Total Views", formatNumber(d.totalViews))}
-      ${reportStat("Total Reach", formatNumber(d.totalReach))}
-      ${reportStat("Avg. Engagement Rate", formatPercent(d.avgER))}
-      ${reportStat("Avg. Follower Conversion", formatPercent(d.avgFCR))}
-      ${reportStat("Healthy Content", d.healthyPct === null ? "—" : formatPercent(d.healthyPct, 0))}
+      ${reportStat(t("rep.stat.published"), d.publishedCount)}
+      ${reportStat(t("rep.stat.totalViews"), formatNumber(d.totalViews))}
+      ${reportStat(t("rep.stat.totalReach"), formatNumber(d.totalReach))}
+      ${reportStat(t("dashboard.stat.avgER"), formatPercent(d.avgER))}
+      ${reportStat(t("dashboard.stat.avgFCR"), formatPercent(d.avgFCR))}
+      ${reportStat(t("rep.stat.healthy"), d.healthyPct === null ? "—" : formatPercent(d.healthyPct, 0))}
     </div>
 
-    <div class="report-section-title">Performance by Funnel</div>
+    <div class="report-section-title">${t("dashboard.perfByFunnel")}</div>
     <table class="report-table">
-      <thead><tr><th>Funnel</th><th>Content</th><th>Avg. Engagement</th><th>Avg. Follower Conv.</th></tr></thead>
+      <thead><tr><th>${t("contentList.th.funnel")}</th><th>${t("rep.th.content")}</th><th>${t("rep.th.avgEngagement")}</th><th>${t("rep.th.avgFollowerConv")}</th></tr></thead>
       <tbody>
         ${d.funnelStats.map((f) => `<tr><td>${f.funnel}</td><td>${f.count}</td><td>${formatPercent(f.avgER)}</td><td>${formatPercent(f.avgFCR)}</td></tr>`).join("")}
       </tbody>
     </table>
 
-    <div class="report-section-title">Top Performing Content</div>
+    <div class="report-section-title">${t("dashboard.topPerforming")}</div>
     ${
       d.top.length
         ? `<table class="report-table">
-            <thead><tr><th>#</th><th>Title</th><th>Platform</th><th>Views</th><th>Engagement</th><th>Health</th></tr></thead>
+            <thead><tr><th>#</th><th>${t("contentList.th.title")}</th><th>${t("contentList.fp.platform")}</th><th>${t("contentList.th.views")}</th><th>${t("contentList.th.engagement")}</th><th>${t("contentList.th.health")}</th></tr></thead>
             <tbody>
               ${d.top
                 .map(
-                  (x, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(x.c.title || "Untitled")}</td><td>${escapeHtml(x.c.platform || "—")}</td><td>${formatNumber(x.c.performance.views)}</td><td>${formatPercent(x.m.engagementRate)}</td><td>${x.m.health ? HEALTH_LABEL[x.m.health] : "—"}</td></tr>`
+                  (x, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(x.c.title || t("common.untitled"))}</td><td>${escapeHtml(x.c.platform || "—")}</td><td>${formatNumber(x.c.performance.views)}</td><td>${formatPercent(x.m.engagementRate)}</td><td>${x.m.health ? HEALTH_LABEL[x.m.health] : "—"}</td></tr>`
                 )
                 .join("")}
             </tbody>
           </table>`
-        : `<p class="report-empty">No published content with views in this period.</p>`
+        : `<p class="report-empty">${t("rep.noTop")}</p>`
     }
 
     <div class="report-footer">Wepeka Brandlab — ${escapeHtml(brand.name)}</div>
@@ -223,15 +224,15 @@ function reportSheetHTML(brand, start, end) {
 function reportSummaryText(brand, start, end) {
   const d = computeReportData(brand, start, end);
   return [
-    `${brand.name} — Performance Report`,
+    t("rep.shareTitle", { brand: brand.name }),
     rangeLabel(start, end),
     "",
-    `Content published: ${d.publishedCount}`,
-    `Total views: ${formatNumber(d.totalViews)}`,
-    `Total reach: ${formatNumber(d.totalReach)}`,
-    `Avg. engagement rate: ${formatPercent(d.avgER)}`,
-    `Avg. follower conversion: ${formatPercent(d.avgFCR)}`,
-    `Healthy content: ${d.healthyPct === null ? "—" : formatPercent(d.healthyPct, 0)}`,
+    `${t("rep.stat.published")}: ${d.publishedCount}`,
+    `${t("rep.stat.totalViews")}: ${formatNumber(d.totalViews)}`,
+    `${t("rep.stat.totalReach")}: ${formatNumber(d.totalReach)}`,
+    `${t("dashboard.stat.avgER")}: ${formatPercent(d.avgER)}`,
+    `${t("dashboard.stat.avgFCR")}: ${formatPercent(d.avgFCR)}`,
+    `${t("rep.stat.healthy")}: ${d.healthyPct === null ? "—" : formatPercent(d.healthyPct, 0)}`,
   ].join("\n");
 }
 

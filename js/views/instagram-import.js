@@ -1,7 +1,9 @@
 import { getBrand, listContent, createContent, updateContent } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
-import { qs, qsa, showProgressBar, escapeHtml } from "../dom.js";
+import { qs, qsa, showProgressBar, escapeHtml, toast } from "../dom.js";
+import { canUseInstagramApi } from "../account.js";
+import { t } from "../i18n.js";
 import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl, formatFromMedia, titleFromMedia, thumbnailFromMedia } from "../instagram.js";
 
 function normalizeCaption(s) {
@@ -12,18 +14,22 @@ function normalizeCaption(s) {
 // which ones to bring into the Content Database, instead of a blind bulk
 // import of everything on the account.
 export async function openInstagramImportPicker(brandId, onImported) {
+  if (!canUseInstagramApi()) {
+    toast(t("integr.ig.importSoon"), "error");
+    return;
+  }
   const brand = getBrand(brandId);
   const ig = brand?.instagram;
 
   const overlay = openModal({
-    title: "Import from Instagram",
+    title: t("integr.import.igTitle"),
     wide: true,
     bodyHTML: `<div id="ig-picker-body" style="min-height:140px;">
-      <div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>Looking up your recent Instagram posts…</span></div>
+      <div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("integr.import.igLoading")}</span></div>
     </div>`,
     footHTML: `
-      <button class="btn btn-secondary" id="ig-picker-cancel">Cancel</button>
-      <button class="btn btn-primary" id="ig-picker-import" disabled>Import Selected</button>
+      <button class="btn btn-secondary" id="ig-picker-cancel">${t("common.cancel")}</button>
+      <button class="btn btn-primary" id="ig-picker-import" disabled>${t("integr.import.selected")}</button>
     `,
   });
   const bodyEl = overlay.querySelector("#ig-picker-body");
@@ -34,11 +40,11 @@ export async function openInstagramImportPicker(brandId, onImported) {
   try {
     media = await listRecentMedia(ig, { maxItems: 100 });
   } catch (e) {
-    bodyEl.innerHTML = errorRow(`Couldn't reach Instagram: ${e.message}`);
+    bodyEl.innerHTML = errorRow(t("integr.import.igUnreachable", { msg: e.message }));
     return;
   }
   if (!media.length) {
-    bodyEl.innerHTML = errorRow("No posts found on this Instagram account.");
+    bodyEl.innerHTML = errorRow(t("integr.import.igEmpty"));
     return;
   }
 
@@ -64,9 +70,9 @@ export async function openInstagramImportPicker(brandId, onImported) {
 
   bodyEl.innerHTML = `
     <div class="ig-picker-toolbar">
-      <button class="btn btn-ghost btn-sm" id="ig-select-all">Select All</button>
-      <button class="btn btn-ghost btn-sm" id="ig-select-none">Select None</button>
-      <span class="text-faint" style="font-size:12px;margin-left:auto;">${media.length} posts found</span>
+      <button class="btn btn-ghost btn-sm" id="ig-select-all">${t("integr.import.selectAll")}</button>
+      <button class="btn btn-ghost btn-sm" id="ig-select-none">${t("integr.import.selectNone")}</button>
+      <span class="text-faint" style="font-size:12px;margin-left:auto;">${t("integr.import.postsFound", { count: media.length })}</span>
     </div>
     <div class="ig-picker-grid">
       ${media.map((m) => pickerCardHTML(m, existingCodes, linkTargets)).join("")}
@@ -79,7 +85,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
   function updateImportCount() {
     const checked = checkboxes().filter((cb) => cb.checked && !cb.disabled).length;
     importBtn.disabled = checked === 0;
-    importBtn.textContent = checked ? `Import Selected (${checked})` : "Import Selected";
+    importBtn.textContent = checked ? t("integr.import.selectedCount", { count: checked }) : t("integr.import.selected");
   }
   checkboxes().forEach((cb) => cb.addEventListener("change", updateImportCount));
   overlay.querySelector("#ig-select-all").addEventListener("click", () => {
@@ -104,7 +110,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
     // modal open — importing a big batch shouldn't block using the rest of
     // the app while it works through each one.
     closeOverlay(overlay);
-    const bar = showProgressBar(`Importing from Instagram`);
+    const bar = showProgressBar(t("integr.import.igProgress"));
 
     let created = 0;
     let linked = 0;
@@ -150,9 +156,9 @@ export async function openInstagramImportPicker(brandId, onImported) {
     }
 
     const summaryParts = [];
-    if (created) summaryParts.push(`${created} new`);
-    if (linked) summaryParts.push(`${linked} linked to existing ideas`);
-    bar.done(`Imported ${summaryParts.join(", ")}${metricFails ? ` — ${metricFails} need metrics filled in manually` : ""}`);
+    if (created) summaryParts.push(t("integr.import.new", { count: created }));
+    if (linked) summaryParts.push(t("integr.import.linked", { count: linked }));
+    bar.done(`${t("integr.import.done", { summary: summaryParts.join(", ") })}${metricFails ? ` — ${t("integr.import.needMetrics", { count: metricFails })}` : ""}`);
   });
 }
 
@@ -170,8 +176,8 @@ function pickerCardHTML(media, existingCodes, linkTargets) {
         <span class="ig-picker-check">${icon("check", { size: 12 })}</span>
       </div>
       <div class="ig-picker-caption">${escapeHtml(titleFromMedia(media))}</div>
-      ${already ? `<div class="ig-picker-already">Already added</div>` : ""}
-      ${linkTarget ? `<div class="ig-picker-linked">${icon("link", { size: 10 })} Matches "${escapeHtml(linkTarget.title || "Untitled")}"</div>` : ""}
+      ${already ? `<div class="ig-picker-already">${t("integr.import.already")}</div>` : ""}
+      ${linkTarget ? `<div class="ig-picker-linked">${icon("link", { size: 10 })} ${t("integr.import.matches", { title: escapeHtml(linkTarget.title || t("common.untitled")) })}</div>` : ""}
     </label>
   `;
 }

@@ -1,0 +1,153 @@
+/* Campaign: 9:16 share sheet preview, level gate, grouped milestones. */
+.cs-preview{ display:flex; justify-content:center; }
+.cs-preview img{ height:min(56vh,520px); border-radius:18px; border:1px solid var(--border); }
+.cs-caption{ font-size:12.5px; padding:10px 12px; border:1px dashed var(--border); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text); }
+
+.cd-head-actions{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.cd-gate{ margin-bottom:16px; border-color: var(--health-good); }
+.cd-gate.is-wait{ border-color: var(--health-average); }
+.cd-gate h3{ margin:0 0 4px; font-size:15px; }
+.cd-gate p{ margin:0; font-size:13px; color: var(--text-muted); }
+.cd-track-head{ display:flex; align-items:center; gap:8px; margin:18px 0 2px; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); }
+.cd-track-head:first-child{ margin-top:4px; }
+.cd-track-head span{ margin-left:auto; font-weight:700; letter-spacing:0; text-transform:none; }
+.goal-remind details > summary{ cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color: var(--text); }
+.goal-remind details > summary::-webkit-details-marker{ display:none; }
+.goal-remind details > summary small{ margin-left:auto; font-weight:600; color: var(--text-faint); }
+.goal-remind details[open] > summary{ margin-bottom:6px; }
+/* #8: campaign-scoped "these need engagement numbers" card. */
+.cd-pending-engagement{ margin-bottom:14px; border-color: var(--health-average); background: var(--health-average-soft); }
+.cd-pending-head b{ font-size:13.5px; }
+.cd-pending-list{ display:grid; gap:6px; margin-top:10px; }
+.cd-pending-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor:pointer; text-align:left; font:inherit; color: var(--text); width:100%; }
+.cd-pending-row:hover{ border-color: var(--accent); }
+.cd-pending-row span{ font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cd-post-list{ display:grid; gap:6px; }
+.cd-post{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor:pointer; text-align:left; font:inherit; color: var(--text); width:100%; }
+.cd-post:hover{ border-color: var(--accent); }
+.cd-post b{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.cd-post span{ font-size:12.5px; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.cd-post.is-hit span{ color: var(--health-good); font-weight:700; }
+.content-view-card.is-taken{ opacity:.55; cursor:not-allowed; }
+.campaign-taken-badge{ display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700; color: var(--health-good); margin-bottom:8px; }
+/* Social Growth platform chip already running as its own campaign (#1
+   multi-platform social campaigns) — same disabled-chip treatment as
+   .content-view-card.is-taken above. */
+.chip-select button.is-taken{ opacity:.5; cursor:not-allowed; }
+.chip-select button.is-taken small{ display:block; font-weight:600; font-size:10px; opacity:.8; }
+
+/* Grow Brand track accent on campaign list cards (#13) — one hue per track
+   so Social/Community/Sales Growth are tellable apart at a glance. */
+.campaign-card--track-social{ border-color: color-mix(in srgb, var(--track-social) 40%, var(--border)); }
+.campaign-card--track-community{ border-color: color-mix(in srgb, var(--track-community) 40%, var(--border)); }
+.campaign-card--track-sales{ border-color: color-mix(in srgb, var(--track-sales) 40%, var(--border)); }
+.campaign-track-badge{ display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius: var(--radius-pill); font-size:11.5px; font-weight:700; }
+.campaign-track-badge--social{ background: var(--track-social-soft); color: var(--track-social); }
+.campaign-track-badge--community{ background: var(--track-community-soft); color: var(--track-community); }
+.campaign-track-badge--sales{ background: var(--track-sales-soft); color: var(--track-sales); }
+
+.cd-brainstorm-bar{ width:100%; display:flex; align-items:center; gap:14px; text-align:left; margin:0 0 16px; padding:14px 16px; border-radius: var(--radius-lg, 16px); border:1px solid var(--accent); background: var(--accent-soft); color: var(--text); font:inherit; cursor:pointer; transition: transform .12s ease, box-shadow .12s ease; }
+.cd-brainstorm-bar:hover{ transform: translateY(-1px); box-shadow: 0 8px 28px rgba(255,165,43,.18); }
+.cd-brainstorm-icon{ flex:none; width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background: var(--accent); color:#15140F; }
+.cd-brainstorm-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.cd-brainstorm-text b{ font-size:15px; }
+.cd-brainstorm-text small{ font-size:12.5px; color: var(--text-muted); }
+.cd-brainstorm-go{ flex:none; display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:999px; background: var(--accent); color:#15140F; font-weight:800; font-size:13px; }
+@media (max-width:560px){ .cd-brainstorm-go{ display:none; } }
+.ev-tier.is-taken{ opacity:.5; cursor:not-allowed; }
+.ev-tier.is-taken em{ font-style:normal; font-size:11.5px; font-weight:700; color: var(--health-good); }
+.cd-delegated{ display:flex; align-items:center; gap:10px; margin-top:10px; padding:10px 12px; border:1px dashed var(--border); border-radius: var(--radius-md); color: var(--text-muted); text-decoration:none; font-size:13px; }
+.cd-delegated:hover{ border-color: var(--accent); color: var(--text); }
+.cd-delegated span{ flex:1; min-width:0; display:flex; flex-direction:column; font-weight:700; color: var(--text); }
+.cd-delegated small{ font-weight:500; color: var(--text-faint); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cd-panel + .goal-pace{ margin-top:16px; }
+
+/* "Rencana" roadmap on Grow Brand campaign pages (campaign-detail.js planRoadmapHTML) */
+.cd-plan{ position:relative; padding-right:46px; }
+.cd-plan-close-btn{ position:absolute; top:16px; right:16px; width:28px; height:28px; }
+.cd-plan-collapsed{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 18px; margin-top:24px; }
+.cd-plan-collapsed span{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color: var(--text-muted); }
+.cd-plan-concept{ padding:14px 16px; margin-bottom:14px; border-radius: var(--radius-md); background: var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.cd-plan-concept h3{ margin:0 0 6px; font-size:16px; }
+.cd-plan-concept p{ margin:0 0 8px; font-size:13px; color: var(--text-muted); line-height:1.55; }
+.cd-plan-concept summary{ cursor:pointer; font-size:12.5px; font-weight:700; }
+.cd-plan-concept ul{ margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.6; color: var(--text); }
+.cd-plan-ai{ display:flex; gap:8px; margin-bottom:12px; }
+.cd-plan-ai .input{ flex:1; min-width:0; }
+.cd-plan-ai .btn{ flex:none; }
+@media (max-width:560px){ .cd-plan-ai{ flex-direction:column; } }
+.cd-plan-levels{ list-style:none; margin:0; padding:0; }
+.cd-plan-level{ position:relative; display:flex; gap:12px; padding:0 0 18px; }
+.cd-plan-level:last-child{ padding-bottom:0; }
+.cd-plan-level::before{ content:""; position:absolute; left:13px; top:28px; bottom:0; width:2px; background: var(--border); }
+.cd-plan-level:last-child::before{ display:none; }
+.cd-plan-level.is-done::before{ background: var(--health-good); }
+.cd-plan-dot{ flex:none; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:800; background: var(--surface-2); border:2px solid var(--border); color: var(--text-muted); z-index:1; }
+.cd-plan-level.is-done .cd-plan-dot{ background: var(--health-good); border-color: var(--health-good); color: var(--bg); }
+.cd-plan-level.is-current .cd-plan-dot{ border-color: var(--accent); color: var(--accent); }
+.cd-plan-level.is-locked .cd-plan-head b{ color: var(--text-muted); }
+.cd-plan-body{ flex:1; min-width:0; }
+.cd-plan-head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:14px; }
+.cd-plan-state{ font-size:11px; font-weight:700; color: var(--text-faint); text-transform:uppercase; letter-spacing:.05em; }
+.cd-plan-level.is-current .cd-plan-state{ color: var(--accent); }
+.cd-plan-target{ margin:2px 0 0; font-size:12.5px; color: var(--text-muted); }
+.cd-plan-target b{ color: var(--text); }
+.cd-plan-acts{ display:grid; gap:6px; margin-top:8px; }
+.cd-plan-act{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+.cd-plan-act b{ font-size:13px; }
+.cd-plan-act p{ margin:3px 0 0; font-size:12.5px; color: var(--text-muted); line-height:1.5; }
+.cd-plan-act .btn{ flex:none; }
+.cd-plan-added{ flex:none; display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; color: var(--health-good); }
+@media (max-width:560px){ .cd-plan-act{ flex-direction:column; } }
+
+/* "Ide Campaign" bubble board (campaign-detail.js ideasWidgetHTML) — a warm,
+   playful pill/chip layout on purpose (explicit user ask for a "very
+   friendly" widget), reusing the same --track-* tokens as the card badges
+   (#13) so an idea's color matches its campaign's track at a glance. */
+.cd-ideas{ position:relative; padding:18px 46px 18px 18px; }
+.cd-ideas-close-btn{ position:absolute; top:16px; right:16px; width:28px; height:28px; }
+.cd-ideas-collapsed{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 18px; margin-top:24px; }
+.cd-ideas-collapsed span{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color: var(--text-muted); }
+.cd-ideas-input{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
+.cd-ideas-input .input{ flex:1; min-width:180px; }
+.cd-ideas-input .btn{ flex:none; }
+/* A folder-style list, not a bubble/tag cloud — one row per idea, stacked
+   top to bottom, each opening downward in place to reveal its description. */
+.cd-idea-bubbles{ display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.cd-idea-empty{ font-size:12.5px; margin:4px 0 0; }
+.cd-idea-bubble{
+  position:relative; display:flex; flex-direction:column; align-items:stretch; width:100%;
+  padding:10px 34px 10px 14px; border-radius: var(--radius-md); font-size:13.5px; font-weight:600;
+  background: var(--surface-2); border:1px solid var(--border); color: var(--text);
+  animation: idea-pop .3s cubic-bezier(.2,1.4,.4,1) both;
+}
+.cd-idea-bubble-head{ display:flex; align-items:center; gap:8px; width:100%; background:none; border:0; padding:0; margin:0; font:inherit; font-weight:inherit; color:inherit; cursor:pointer; text-align:left; }
+.cd-idea-bubble-head span{ flex:1; min-width:0; }
+.cd-idea-bubble-head svg{ flex:none; color: var(--accent); }
+.cd-idea-bubble-head svg:last-child{ margin-left:auto; opacity:.55; transition: transform .15s; }
+.cd-idea-bubble.is-open .cd-idea-bubble-head svg:last-child{ transform: rotate(180deg); }
+.cd-idea-bubble--social{ background: var(--track-social-soft); border-color: color-mix(in srgb, var(--track-social) 35%, var(--border)); }
+.cd-idea-bubble--social .cd-idea-bubble-head svg:first-child{ color: var(--track-social); }
+.cd-idea-bubble--community{ background: var(--track-community-soft); border-color: color-mix(in srgb, var(--track-community) 35%, var(--border)); }
+.cd-idea-bubble--community .cd-idea-bubble-head svg:first-child{ color: var(--track-community); }
+.cd-idea-bubble--sales{ background: var(--track-sales-soft); border-color: color-mix(in srgb, var(--track-sales) 35%, var(--border)); }
+.cd-idea-bubble--sales .cd-idea-bubble-head svg:first-child{ color: var(--track-sales); }
+.cd-idea-x, .cd-idea-add-suggestion{
+  display:flex; align-items:center; justify-content:center; flex:none;
+  width:18px; height:18px; border-radius:50%; border:0; background: rgba(127,127,127,.16);
+  color: inherit; cursor:pointer; padding:0; transition: background .12s, transform .12s;
+}
+.cd-idea-x{ position:absolute; top:10px; right:10px; }
+.cd-idea-x:hover{ background: var(--health-poor-soft); color: var(--health-poor); }
+.cd-idea-desc{ margin-top:10px; width:100%; display:flex; flex-direction:column; gap:8px; }
+.cd-idea-desc p{ margin:0; font-size:12.5px; font-weight:500; color: var(--text-muted); line-height:1.5; }
+.cd-idea-desc textarea{ min-height:96px; font-size:12.5px; }
+.cd-idea-desc .btn{ align-self:flex-start; }
+/* AI suggestions: same list-row shape, dashed to read as "not kept yet". */
+.cd-idea-bubble--suggestion{ gap:6px; padding:10px 12px; background: transparent; border-style:dashed; opacity:.9; animation:none; }
+.cd-idea-suggestion-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.cd-idea-suggestion-desc{ margin:0; padding-left:19px; font-size:12px; font-weight:500; color: var(--text-muted); line-height:1.5; }
+.cd-idea-add-suggestion{ background: var(--health-good-soft); color: var(--health-good); }
+.cd-idea-add-suggestion:hover{ transform: scale(1.12); }
+@keyframes idea-pop{ 0%{ transform:translateY(-4px); opacity:0; } 100%{ transform:translateY(0); opacity:1; } }
+@media (prefers-reduced-motion: reduce){ .cd-idea-bubble{ animation:none; } }

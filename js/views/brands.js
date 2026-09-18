@@ -1,51 +1,78 @@
 import {
   listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent,
-  listRoutineTemplate, addRoutineItem, removeRoutineItem, markRoutineDoneToday, listOverdueAndDueSoon,
-  ROUTINE_DAYS, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITIES, ROUTINE_ACTIVITY_LABELS,
+  listOverdueAndDueSoon,
 } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, resizeImageFile, formatDate, qs, qsa, toast, pickTintTextColor, pickTintForeground } from "../dom.js";
+import { avatarHTML, resizeImageFile, formatDate, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
+import { canUseInstagramApi } from "../account.js";
 import { testFacebookConnection } from "../facebook.js";
 import { testAdsConnection } from "../ads.js";
 import { startOnboardingTour } from "../tour.js";
+import { canCreateBrand, getCachedAccount } from "../account.js";
+import { getMode } from "../mode.js";
+import { getSettings } from "../store.js";
+import { hasAiKey, draftBusinessDescription } from "../ai.js";
+import { wireMic } from "../voice-input.js";
+import { t } from "../i18n.js";
 
 export function render(root) {
-  const state = { routineManageOpen: false, addActivity: "shooting", addDays: new Set() };
-  const refresh = () => paint(root, state, refresh);
+  const refresh = () => paint(root, refresh);
   refresh();
   return () => {}; // no store subscription needed — actions here re-render locally
 }
 
-const ONBOARDING_DISMISSED_KEY = "contentos:onboarding-dismissed";
-
-function paint(root, state, refresh) {
+function paint(root, refresh) {
   const brands = listBrands();
-  const showOnboarding = !localStorage.getItem(ONBOARDING_DISMISSED_KEY);
+  const guided = getMode() === "guided";
+
+  // No brand yet (either mode): the whole page is one card with one
+  // button — never a bare "add brand" tile on an empty grid, which is what
+  // a brand-new account used to land on. Pemula gets the journey framing;
+  // Pro gets the same card with a tour link. #add-brand keeps its id so
+  // the onboarding tour (js/tour.js) still finds it.
+  if (!brands.length) {
+    root.innerHTML = `
+      <div class="brands-bg"><span class="bg-blob bg-blob-1"></span><span class="bg-blob bg-blob-2"></span><span class="bg-blob bg-blob-3"></span></div>
+      <section class="card journey-hero guided-first-brand" id="journey-hero">
+        <div class="journey-hero-eyebrow"><span class="journey-hero-step">${guided ? t("brands.first.stepGuided") : t("brands.first.stepPro")}</span><span class="journey-hero-time">${icon("clock", { size: 12 })}${t("brands.first.time")}</span></div>
+        <h2>${t("brands.first.title")}</h2>
+        <p>${guided ? t("brands.first.subGuided") : t("brands.first.subPro")}</p>
+        <button type="button" class="btn btn-primary journey-hero-cta" id="add-brand">${t("brands.first.cta")}${icon("arrowRight", { size: 15 })}</button>
+        <div class="journey-hero-note">${guided ? t("brands.first.noteGuided") : t("brands.first.notePro")}</div>
+        ${
+          // Pemula: Beranda + the brand form are the onboarding — no separate
+          // tour offer needed here. Pro still gets one, since there's no
+          // guided journey walking them through it otherwise.
+          guided ? "" : `<button type="button" class="btn btn-ghost btn-sm" id="start-tour" style="margin-top:2px;">${icon("play", { size: 13 })}${t("brands.first.tour")}</button>`
+        }
+      </section>
+    `;
+    qs("#add-brand").addEventListener("click", () => openBrandModal({ onSaved: refresh }));
+    qs("#start-tour")?.addEventListener("click", () => startOnboardingTour());
+    return;
+  }
 
   root.innerHTML = `
     <div class="brands-bg"><span class="bg-blob bg-blob-1"></span><span class="bg-blob bg-blob-2"></span><span class="bg-blob bg-blob-3"></span></div>
     <div class="hero-strip">
       <div class="kicker">Wepeka Brandlab</div>
-      <h1>Choose a brand to plan, publish, and track.</h1>
-      <p class="page-sub">Every brand gets its own dashboard, calendar, and content database. Add as many as you manage.</p>
+      <h1>${guided ? t("brands.hero.titleGuided") : t("brands.hero.titlePro")}</h1>
+      <p class="page-sub">${guided ? t("brands.hero.subGuided") : t("brands.hero.subPro")}</p>
     </div>
     <div class="brand-row-head">
-      <button class="brand-quick-add" id="add-brand-quick" aria-label="Add New Brand" title="Add New Brand">${icon("plus", { size: 15 })}</button>
+      <button class="brand-quick-add" id="add-brand-quick" aria-label="${t("brands.add")}" title="${t("brands.add")}">${icon("plus", { size: 15 })}</button>
     </div>
     <div class="brand-grid" id="brand-grid">
       ${brands.map(brandCard).join("")}
       <button class="brand-tile brand-tile-add" id="add-brand">
         <div class="brand-tile-avatar brand-tile-avatar-add">${icon("plus", { size: 28 })}</div>
-        <h3>Add New Brand</h3>
+        <h3>${t("brands.add")}</h3>
       </button>
     </div>
-    ${showOnboarding ? onboardingCardHTML() : ""}
-    ${setupVideoCardHTML()}
     ${overdueRemindersHTML()}
     ${weeklyWorkHTML(brands)}
-    ${myRoutineHTML(state, brands)}
   `;
 
   const dragState = wireBrandGridDrag(qs("#brand-grid"));
@@ -54,18 +81,9 @@ function paint(root, state, refresh) {
     if (dragState.wasDragged) return;
     openBrandModal({ onSaved: refresh });
   });
-  qs("#add-brand-quick").addEventListener("click", () => {
+  qs("#add-brand-quick")?.addEventListener("click", () => {
     openBrandModal({ onSaved: refresh });
   });
-
-  const dismissBtn = qs("#dismiss-onboarding");
-  if (dismissBtn) {
-    dismissBtn.addEventListener("click", () => {
-      localStorage.setItem(ONBOARDING_DISMISSED_KEY, "1");
-      refresh();
-    });
-  }
-  qs("#start-tour")?.addEventListener("click", () => startOnboardingTour());
 
   // Read-only reflection of real progress — clicking opens the content in
   // Creator to actually do the work there. It's not a shortcut to instantly
@@ -77,14 +95,21 @@ function paint(root, state, refresh) {
     });
   });
 
+  qsa("[data-weekly-toggle]", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const brand = brands.find((b) => b.id === btn.dataset.weeklyToggle);
+      if (!brand) return;
+      updateBrand(brand.id, { weeklyCollapsed: !brand.weeklyCollapsed });
+      refresh();
+    });
+  });
+
   qsa("[data-overdue-work]", root).forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       location.hash = `#/brand/${btn.dataset.brandId}/content-os/creator/${btn.dataset.overdueWork}`;
     });
   });
-
-  wireMyRoutine(root, state, refresh);
 
   qsa(".brand-tile:not(.brand-tile-add)").forEach((card) => {
     card.addEventListener("click", (e) => {
@@ -97,94 +122,52 @@ function paint(root, state, refresh) {
   qsa("[data-menu-toggle]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      qsa(".menu").forEach((m) => m.remove());
       const id = btn.dataset.id;
       const rect = btn.getBoundingClientRect();
-      const menu = document.createElement("div");
-      menu.className = "menu";
-      menu.style.top = rect.bottom + 6 + "px";
-      menu.style.left = Math.min(rect.left, window.innerWidth - 190) + "px";
+      const menu = openMenu(btn, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
+      if (!menu) return;
       menu.innerHTML = `
-        <button data-act="edit">${icon("edit", { size: 15 })}Edit</button>
-        <button data-act="archive">${icon("archive", { size: 15 })}Archive</button>
+        <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
+        <button data-act="archive">${icon("archive", { size: 15 })}${t("brands.archive")}</button>
         <div class="menu-divider"></div>
-        <button data-act="delete" class="danger">${icon("trash", { size: 15 })}Delete</button>
+        <button data-act="delete" class="danger">${icon("trash", { size: 15 })}${t("common.delete")}</button>
       `;
-      document.body.appendChild(menu);
-      setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
       menu.addEventListener("click", async (ev) => {
         ev.stopPropagation();
         const act = ev.target.closest("[data-act]")?.dataset.act;
         if (!act) return;
-        menu.remove();
+        closeMenu();
         const brand = brands.find((b) => b.id === id);
         if (act === "edit") {
           openBrandModal({ brand, onSaved: refresh });
         } else if (act === "archive") {
           const ok = await confirmDialog({
-            title: "Archive brand?",
-            message: "You can restore it later from Settings → Brand Management. Its content is kept.",
-            confirmLabel: "Archive",
+            title: t("brands.archive.title"),
+            message: t("brands.archive.message"),
+            confirmLabel: t("brands.archive"),
           });
           if (ok) {
             archiveBrand(id, true);
-            toast("Brand archived");
+            toast(t("brands.archive.done"));
             refresh();
           }
         } else if (act === "delete") {
           const count = listContent(id, { includeArchived: true }).length;
           const ok = await confirmDialog({
-            title: "Delete brand permanently?",
-            message: `This removes the brand and all ${count} piece(s) of content inside it. This cannot be undone.`,
-            confirmLabel: "Delete Forever",
+            title: t("brands.delete.title"),
+            message: t("brands.delete.message", { count }),
+            confirmLabel: t("brands.delete.confirm"),
             danger: true,
           });
           if (ok) {
             deleteBrand(id);
-            toast("Brand deleted");
+            toast(t("brands.delete.done"));
             refresh();
           }
         }
       });
     });
   });
-}
-
-function onboardingCardHTML() {
-  return `
-    <div class="card onboarding-card">
-      <button class="icon-btn" id="dismiss-onboarding" aria-label="Dismiss" style="position:absolute;top:14px;right:14px;width:28px;height:28px;">${icon("x", { size: 14 })}</button>
-      <div class="onboarding-video-placeholder">
-        ${icon("sparkle", { size: 22 })}
-        <span>Guided tour</span>
-      </div>
-      <div class="onboarding-copy">
-        <h3 style="font-size:15px;margin-bottom:4px;">New here? Start with the basics</h3>
-        <p class="text-muted" style="font-size:13px;margin:0 0 12px;">A quick walkthrough of where everything lives — brands, Creator Studio, Calendar, notifications, and Settings.</p>
-        <button type="button" class="btn btn-primary btn-sm" id="start-tour">${icon("play", { size: 13 })}Take the Tour</button>
-      </div>
-    </div>
-  `;
-}
-
-// The real explainer video is being produced separately — this is a
-// deliberately nice-looking placeholder standing in for it until an actual
-// video file/link exists. Swap the .setup-video-placeholder inner markup for
-// a real <video>/<iframe> embed once it's ready; nothing else here needs to
-// change.
-function setupVideoCardHTML() {
-  return `
-    <div class="card setup-video-card">
-      <div class="setup-video-placeholder">
-        <div class="setup-video-play">${icon("play", { size: 20 })}</div>
-        <span class="setup-video-badge">Coming soon</span>
-      </div>
-      <div class="onboarding-copy">
-        <h3 style="font-size:15px;margin-bottom:4px;">Setup walkthrough video</h3>
-        <p class="text-muted" style="font-size:13px;margin:0;">A short video covering brand setup, connecting Instagram/Facebook, and the Creator workflow end-to-end — being recorded now, it'll drop in right here.</p>
-      </div>
-    </div>
-  `;
 }
 
 // Derived straight from real content status across every brand — not a
@@ -199,236 +182,82 @@ function overdueRemindersHTML() {
   if (!overdue.length) return "";
   return `
     <div class="card overdue-card" style="margin-bottom:28px;">
-      <div class="page-eyebrow" style="margin-bottom:14px;color:var(--health-poor);">${icon("info", { size: 13 })} Overdue</div>
+      <div class="page-eyebrow" style="margin-bottom:14px;color:var(--health-poor);">${icon("info", { size: 13 })} ${t("notif.overdue")}</div>
       <div>${overdue.map(overdueRow).join("")}</div>
     </div>
   `;
 }
 
-function overdueRow(t) {
+function overdueRow(item) {
   return `
     <div class="overdue-row">
       <div class="ti" style="flex:1;min-width:0;">
-        <div class="t">${escapeText(t.content.title || "Untitled")} <span class="text-faint">— ${escapeText(t.brand.name)}</span></div>
-        <div class="m">Konten ini belum kamu upload — dijadwalkan ${formatDate(t.content.scheduleDate)}</div>
+        <div class="t">${escapeText(item.content.title || t("common.untitled"))} <span class="text-faint">— ${escapeText(item.brand.name)}</span></div>
+        <div class="m">${t("brands.overdue.row", { date: formatDate(item.content.scheduleDate) })}</div>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" data-overdue-work="${t.content.id}" data-brand-id="${t.brand.id}" style="flex:none;">Kerjakan Sekarang</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-overdue-work="${item.content.id}" data-brand-id="${item.brand.id}" style="flex:none;">${t("brands.overdue.cta")}</button>
     </div>
   `;
 }
 
-const WEEKLY_STAGE_VERB = { production: "Shoot", editing: "Edit", scheduled: "Upload" };
+const WEEKLY_STAGE_VERB = { production: t("brands.verb.production"), editing: t("brands.verb.editing"), scheduled: t("brands.verb.scheduled") };
 
+// Grouped per brand (not one flat mixed list) — running several brands
+// made it hard to tell whose work was whose at a glance. Each group opens
+// and closes on its own, persisted on the brand itself (brand.weeklyCollapsed)
+// so a brand you're not actively juggling right now can stay tucked away.
 function weeklyWorkHTML(brands) {
-  const tasks = [];
-  brands.forEach((b) => {
-    listContent(b.id).forEach((c) => {
-      const verb = WEEKLY_STAGE_VERB[c.status];
-      if (verb) tasks.push({ verb, content: c, brand: b });
-    });
-  });
-  if (!tasks.length) return "";
-  tasks.sort((a, b) => (a.content.scheduleDate || "9999").localeCompare(b.content.scheduleDate || "9999"));
+  const groups = brands
+    .map((brand) => {
+      const tasks = listContent(brand.id)
+        .map((c) => ({ verb: WEEKLY_STAGE_VERB[c.status], content: c }))
+        .filter((x) => x.verb);
+      tasks.sort((a, b) => (a.content.scheduleDate || "9999").localeCompare(b.content.scheduleDate || "9999"));
+      return { brand, tasks };
+    })
+    .filter((g) => g.tasks.length);
+  if (!groups.length) return "";
+  // The brand with the soonest due date leads — whoever needs attention
+  // first across the whole account, not alphabetical order.
+  groups.sort((a, b) => (a.tasks[0].content.scheduleDate || "9999").localeCompare(b.tasks[0].content.scheduleDate || "9999"));
+  const totalCount = groups.reduce((n, g) => n + g.tasks.length, 0);
   return `
-    <div class="card" style="margin-bottom:28px;">
-      <div class="page-eyebrow" style="margin-bottom:14px;">This Week's Work <span class="text-faint" style="text-transform:none;letter-spacing:0;">— click one to work on it in Creator</span></div>
-      <div>${tasks.map(weeklyWorkRow).join("")}</div>
-    </div>
-  `;
-}
-
-function weeklyWorkRow(t) {
-  return `
-    <div class="weekly-work-row" data-task-id="${t.content.id}" data-brand-id="${t.brand.id}">
-      <span class="weekly-work-verb">${t.verb}</span>
-      <span class="weekly-work-title">${escapeText(t.content.title || "Untitled")}</span>
-      <span class="weekly-work-brand">${escapeText(t.brand.name)}</span>
-    </div>
-  `;
-}
-
-// A standing weekly schedule — Brand / Day / Activity / Time — not a
-// one-off to-do list. Shooting/Editing/Upload confirm themselves by
-// checking whether matching content actually moved today (same status
-// vocabulary as This Week's Work); only "Custom" needs a manual check since
-// there's no content signal to read it from.
-function todayDayKey() {
-  return ROUTINE_DAYS[(new Date().getDay() + 6) % 7];
-}
-
-const ROUTINE_AUTO_STATUS_PAST = {
-  shooting: ["editing", "scheduled", "published"],
-  editing: ["scheduled", "published"],
-  upload: ["published"],
-};
-
-function isRoutineAutoDoneToday(item) {
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const passed = ROUTINE_AUTO_STATUS_PAST[item.activity] || [];
-  return listContent(item.brandId).some((c) => passed.includes(c.status) && new Date(c.updatedAt).toISOString().slice(0, 10) === todayISO);
-}
-
-function myRoutineHTML(state, brands) {
-  const today = todayDayKey();
-  const allItems = listRoutineTemplate();
-  const todayItems = allItems.filter((t) => t.day === today);
-  const brandName = (id) => brands.find((b) => b.id === id)?.name || "?";
-
-  return `
-    <div class="card" style="margin-bottom:28px;">
-      <div class="creator-field-head" style="margin-bottom:14px;">
-        <div class="page-eyebrow" style="margin-bottom:0;">My Routine — Today (${ROUTINE_DAY_LABELS[today]})</div>
-        <button type="button" class="btn btn-ghost btn-sm" id="toggle-routine-manage">${icon("gear", { size: 13 })}${state.routineManageOpen ? "Done" : "Manage"}</button>
+    <div class="weekly-work-card">
+      <div class="weekly-work-glow" aria-hidden="true"></div>
+      <div class="weekly-work-head">
+        <div class="weekly-work-head-icon">${icon("calendar", { size: 18 })}</div>
+        <div>
+          <h2>${t("brands.weekly.title")}</h2>
+          <p>${t("brands.weekly.hint2", { count: totalCount })}</p>
+        </div>
       </div>
-      ${
-        todayItems.length
-          ? `<div>${todayItems.map((t) => routineTodayRow(t, brandName(t.brandId))).join("")}</div>`
-          : `<p class="text-muted" style="font-size:12.5px;margin:0;">Nothing set for today — click Manage to build your weekly routine (Brand, Day, Activity, optional Time).</p>`
-      }
-      ${state.routineManageOpen ? routineManageHTML(state, brands, allItems) : ""}
+      <div class="weekly-work-groups">${groups.map(weeklyWorkGroupHTML).join("")}</div>
     </div>
   `;
 }
 
-function routineTodayRow(t, brandLabel) {
-  const activityLabel = t.activity === "custom" ? t.customLabel || "Custom" : ROUTINE_ACTIVITY_LABELS[t.activity];
-  const time = t.time || "Flexible";
-  if (t.activity === "custom") {
-    const done = (t.doneDates || []).includes(new Date().toISOString().slice(0, 10));
-    return `
-      <label class="routine-task-row ${done ? "done" : ""}" data-custom-task-id="${t.id}">
-        <input type="checkbox" ${done ? "checked" : ""} />
-        <span class="routine-task-text">${escapeText(activityLabel)} — ${escapeText(brandLabel)}</span>
-        <span class="text-faint" style="font-size:11.5px;flex:none;">${escapeText(time)}</span>
-      </label>
-    `;
-  }
-  const done = isRoutineAutoDoneToday(t);
+function weeklyWorkGroupHTML(group) {
+  const collapsed = !!group.brand.weeklyCollapsed;
   return `
-    <div class="routine-task-row ${done ? "done" : ""}" style="cursor:default;">
-      <span class="routine-auto-badge ${done ? "done" : ""}">${icon(done ? "check" : "clock", { size: 12 })}</span>
-      <span class="routine-task-text">${escapeText(activityLabel)} — ${escapeText(brandLabel)}</span>
-      <span class="text-faint" style="font-size:11.5px;flex:none;">${escapeText(time)}</span>
-    </div>
-  `;
+    <div class="weekly-work-group ${collapsed ? "is-collapsed" : ""}">
+      <button type="button" class="weekly-work-group-head" data-weekly-toggle="${group.brand.id}">
+        ${avatarHTML(group.brand, "width:26px;height:26px;font-size:11px;flex:none;")}
+        <span class="weekly-work-group-name">${escapeText(group.brand.name)}</span>
+        <span class="weekly-work-group-count">${group.tasks.length}</span>
+        ${icon("chevronDown", { size: 14 })}
+      </button>
+      ${collapsed ? "" : `<div class="weekly-work-rows">${group.tasks.map((task) => weeklyWorkRow(task, group.brand.id)).join("")}</div>`}
+    </div>`;
 }
 
-function routineManageHTML(state, brands, allItems) {
-  const showCustomField = state.addActivity === "custom";
+function weeklyWorkRow(task, brandId) {
   return `
-    <div class="divider"></div>
-    <div class="page-eyebrow" style="margin-bottom:10px;">Weekly Template</div>
-    ${
-      allItems.length
-        ? `<div style="margin-bottom:16px;">${ROUTINE_DAYS.map((day) => routineManageDayGroup(day, allItems, brands)).join("")}</div>`
-        : `<p class="text-muted" style="font-size:12.5px;margin:0 0 16px;">No routine items yet — add your first one below.</p>`
-    }
-    <div class="field" style="margin-bottom:8px;">
-      <label>Brand</label>
-      <select class="select" id="routine-brand">${brands.map((b) => `<option value="${b.id}">${escapeText(b.name)}</option>`).join("")}</select>
-    </div>
-    <div class="field" style="margin-bottom:8px;">
-      <div class="creator-field-head">
-        <label style="margin-bottom:0;">Day(s) — pick as many as you need</label>
-        <label class="checkbox-chip" style="padding:4px 10px;font-size:11px;">
-          <input type="checkbox" id="routine-day-everyday" ${ROUTINE_DAYS.every((d) => state.addDays.has(d)) ? "checked" : ""} />Everyday
-        </label>
-      </div>
-      <div class="chip-select" id="routine-day-chips">
-        ${ROUTINE_DAYS.map((d) => `<button type="button" data-day="${d}" class="${state.addDays.has(d) ? "active" : ""}">${ROUTINE_DAY_LABELS[d].slice(0, 3)}</button>`).join("")}
-      </div>
-    </div>
-    <div class="row-2">
-      <div class="field" style="margin-bottom:8px;">
-        <label>Activity</label>
-        <select class="select" id="routine-activity">${ROUTINE_ACTIVITIES.map((a) => `<option value="${a}" ${state.addActivity === a ? "selected" : ""}>${ROUTINE_ACTIVITY_LABELS[a]}</option>`).join("")}</select>
-      </div>
-      <div class="field" style="margin-bottom:8px;">
-        <label>Time (optional)</label>
-        <input class="input" type="time" id="routine-time" />
-      </div>
-    </div>
-    ${showCustomField ? `<div class="field" style="margin-bottom:8px;"><label>Custom activity name</label><input class="input" id="routine-custom-label" placeholder="e.g. Cek analytics, Balas DM" /></div>` : ""}
-    <button type="button" class="btn btn-primary btn-block" id="add-routine-item">${icon("plus", { size: 15 })}Add to Weekly Template</button>
-  `;
-}
-
-function routineManageDayGroup(day, allItems, brands) {
-  const items = allItems.filter((t) => t.day === day);
-  if (!items.length) return "";
-  const brandName = (id) => brands.find((b) => b.id === id)?.name || "?";
-  return `
-    <div style="margin-bottom:10px;">
-      <div class="text-faint" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">${ROUTINE_DAY_LABELS[day]}</div>
-      ${items
-        .map(
-          (t) => `
-        <div class="flex items-center gap-8" style="padding:6px 0;">
-          <span style="flex:1;font-size:13px;">${escapeText(t.activity === "custom" ? t.customLabel || "Custom" : ROUTINE_ACTIVITY_LABELS[t.activity])} — ${escapeText(brandName(t.brandId))}${t.time ? ` <span class="text-faint">(${escapeText(t.time)})</span>` : ""}</span>
-          <button type="button" class="icon-btn" data-remove-routine="${t.id}" aria-label="Remove" style="width:26px;height:26px;">${icon("x", { size: 12 })}</button>
-        </div>`
-        )
-        .join("")}
+    <div class="weekly-work-row" data-task-id="${task.content.id}" data-brand-id="${brandId}">
+      <span class="weekly-work-verb">${task.verb}</span>
+      <span class="weekly-work-title">${escapeText(task.content.title || t("common.untitled"))}</span>
+      ${task.content.scheduleDate ? `<span class="weekly-work-date">${formatDate(task.content.scheduleDate)}</span>` : ""}
     </div>
   `;
-}
-
-function wireMyRoutine(root, state, refresh) {
-  qs("#toggle-routine-manage")?.addEventListener("click", () => {
-    state.routineManageOpen = !state.routineManageOpen;
-    refresh();
-  });
-
-  qsa("[data-custom-task-id]", root).forEach((row) => {
-    const checkbox = row.querySelector("input[type=checkbox]");
-    checkbox.addEventListener("change", () => {
-      markRoutineDoneToday(row.dataset.customTaskId, checkbox.checked);
-      refresh();
-    });
-  });
-
-  qs("#routine-activity")?.addEventListener("change", (e) => {
-    state.addActivity = e.target.value;
-    refresh();
-  });
-
-  qsa("#routine-day-chips button", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (state.addDays.has(btn.dataset.day)) state.addDays.delete(btn.dataset.day);
-      else state.addDays.add(btn.dataset.day);
-      refresh();
-    });
-  });
-  qs("#routine-day-everyday")?.addEventListener("change", (e) => {
-    state.addDays = e.target.checked ? new Set(ROUTINE_DAYS) : new Set();
-    refresh();
-  });
-
-  qs("#add-routine-item")?.addEventListener("click", () => {
-    const brandId = qs("#routine-brand")?.value;
-    if (!brandId) {
-      toast("Add a brand first.", "error");
-      return;
-    }
-    if (!state.addDays.size) {
-      toast("Pick at least one day.", "error");
-      return;
-    }
-    const activity = qs("#routine-activity").value;
-    const customLabel = qs("#routine-custom-label")?.value || "";
-    const time = qs("#routine-time").value || "";
-    state.addDays.forEach((day) => addRoutineItem({ brandId, day, activity, customLabel, time }));
-    toast(`Added to ${state.addDays.size} day(s)`);
-    state.addDays = new Set();
-    refresh();
-  });
-
-  qsa("[data-remove-routine]", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      removeRoutineItem(btn.dataset.removeRoutine);
-      refresh();
-    });
-  });
 }
 
 // Click-and-drag panning for the brand row, for mouse users (touch/trackpad
@@ -494,12 +323,6 @@ function wireBrandGridDrag(grid) {
   return state;
 }
 
-function escapeText(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
-}
-
 function brandCard(brand) {
   const contents = listContent(brand.id);
   const published = contents.filter((c) => c.status === "published").length;
@@ -516,10 +339,10 @@ function brandCard(brand) {
     <div class="brand-tile" data-id="${brand.id}" style="${tintStyle}">
       <div class="brand-tile-avatar">
         ${avatarHTML(brand)}
-        <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${brand.id}" aria-label="Brand actions">${icon("dots", { size: 14 })}</button>
+        <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${brand.id}" aria-label="${t("brands.tile.actions")}">${icon("dots", { size: 14 })}</button>
       </div>
       <h3>${brand.name}</h3>
-      <div class="meta">${contents.length} pieces · ${published} published</div>
+      <div class="meta">${t("brands.tile.meta", { count: contents.length, published })}</div>
     </div>
   `;
 }
@@ -529,6 +352,15 @@ const AVATAR_PREVIEW_STYLE = "width:64px;height:64px;border-radius:14px;font-siz
 // Shared create/edit modal (name + photo). Exported so Settings → Brand
 // Management can reuse it too instead of duplicating the form.
 export function openBrandModal({ brand = null, onSaved } = {}) {
+  if (!brand && !canCreateBrand(listBrands().length)) {
+    const limit = getCachedAccount()?.brandLimit ?? 3;
+    openModal({
+      title: t("brands.limit.title"),
+      bodyHTML: `<p style="margin:0 0 4px;">${t("brands.limit.body", { limit })}</p>`,
+      footHTML: `<a class="btn btn-primary" href="https://wa.me/62812xxxxxxx" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`,
+    });
+    return;
+  }
   const draft = {
     name: brand?.name || "",
     avatar: brand?.avatar || "",
@@ -540,105 +372,130 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     businessDescription: brand?.businessDescription || "",
   };
 
+  // Pemula mode: same fields, plainer words, and the brandbook/tone field
+  // tucked away (it's optional and "brandbook" means nothing to someone on
+  // day one — tone of voice gets set properly inside Brand Builder anyway).
+  // The field stays in the DOM (hidden) so the save handler below can keep
+  // reading it unconditionally.
+  const guided = getMode() === "guided";
   const overlay = openModal({
-    title: brand ? "Edit Brand" : "New Brand",
+    title: brand ? t("brands.form.titleEdit") : guided ? t("brands.form.titleGuided") : t("brands.form.titleNew"),
     bodyHTML: `
       <div class="flex items-center gap-8" style="margin-bottom:22px;">
         <div id="avatar-preview">${avatarHTML({ name: draft.name || "?", avatar: draft.avatar }, AVATAR_PREVIEW_STYLE)}</div>
         <div class="flex" style="flex-direction:column;gap:8px;">
-          <button type="button" class="btn btn-secondary btn-sm" id="upload-avatar">${icon("upload", { size: 14 })}<span id="upload-label">${draft.avatar ? "Change Photo" : "Upload Photo"}</span></button>
-          <button type="button" class="btn btn-ghost btn-sm" id="remove-avatar" style="${draft.avatar ? "" : "display:none;"}">${icon("x", { size: 13 })}Remove Photo</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="upload-avatar">${icon("upload", { size: 14 })}<span id="upload-label">${draft.avatar ? t("brands.form.changePhoto") : t("brands.form.uploadPhoto")}</span></button>
+          <button type="button" class="btn btn-ghost btn-sm" id="remove-avatar" style="${draft.avatar ? "" : "display:none;"}">${icon("x", { size: 13 })}${t("brands.form.removePhoto")}</button>
           <input type="file" id="avatar-file" accept="image/*" style="display:none;" />
         </div>
         <div class="flex items-center gap-8" style="margin-left:auto;">
           <div style="text-align:right;">
-            <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Brand Color</label>
+            <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">${t("brands.form.color")}</label>
             <input type="color" id="brand-color" value="${draft.color || "#ffa52b"}" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:none;padding:0;cursor:pointer;" />
           </div>
         </div>
       </div>
-      <p class="text-faint" style="font-size:11.5px;margin:-14px 0 18px;">This brand's essence color — used for the hover glow on its card, and as the accent throughout its Brand Lab (tabs, buttons, highlights) once you're inside it.</p>
+      <p class="text-faint" style="font-size:11.5px;margin:-14px 0 18px;">${guided ? t("brands.form.colorHintGuided") : t("brands.form.colorHintPro")}</p>
       <div class="field">
-        <label>Brand name</label>
-        <input class="input" id="brand-name" placeholder="e.g. PINTER Mandarin" value="${(draft.name || "").replace(/"/g, "&quot;")}" />
+        <label>${guided ? t("brands.form.nameGuided") : t("brands.form.name")}</label>
+        <input class="input" id="brand-name" placeholder="${guided ? t("brands.form.namePhGuided") : t("brands.form.namePh")}" value="${(draft.name || "").replace(/"/g, "&quot;")}" />
       </div>
-      <div class="field">
-        <label>What does this brand do?</label>
-        <textarea class="textarea" id="brand-description" style="min-height:120px;" placeholder="Jelasin brand ini bergerak di bidang apa, layanan/produknya apa, dan buat siapa — misal: 'Kami lembaga kursus bahasa Mandarin di Kediri untuk anak-anak sampai dewasa, fokus ke percakapan praktis sehari-hari, bukan cuma teori tata bahasa...'">${(draft.businessDescription || "")}</textarea>
-        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">Beberapa paragraf aja — ini jadi konteks dasar yang dipakai AI di seluruh aplikasi (Brand DNA, Script Generator, Auto-Schedule, dll) biar langsung ngerti bisnismu ini apa, dari brand pertama kali dibuat.</div>
-      </div>
-      <div class="field" style="margin-bottom:0;">
+      <div class="field" id="brand-desc-field">
         <div class="creator-field-head">
-          <label style="margin-bottom:0;">AI Voice & Style Guide / Brandbook (optional)</label>
+          <label style="margin-bottom:0;">${guided ? t("brands.form.descLabelGuided") : t("brands.form.descLabel")}</label>
+          <div class="flex items-center gap-6">
+            <button type="button" class="chip-icon-btn" id="brand-desc-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="brand-desc-ai">${icon("bot", { size: 13 })}${t("brandForm.aiHelp")}</button>
+          </div>
+        </div>
+        <div class="warn-box">
+          ${icon("info", { size: 15 })}
+          <div><b>${t("brandForm.descWarningTitle")}</b>${t("brandForm.descWarning")}<span class="warn-box-sub">${t("brandForm.descChecklist")}</span></div>
+        </div>
+        <textarea class="textarea" id="brand-description" style="min-height:120px;" placeholder="${escapeText(guided ? t("brands.form.descPhGuided") : t("brands.form.descPh"))}">${(draft.businessDescription || "")}</textarea>
+        <div id="brand-desc-ai-status" class="text-faint" style="font-size:11.5px;margin-top:4px;"></div>
+        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${guided ? t("brands.form.descHintGuided") : t("brands.form.descHint")}</div>
+      </div>
+      <div class="field" style="margin-bottom:0;" ${guided && !brand ? "hidden" : ""}>
+        <div class="creator-field-head">
+          <label style="margin-bottom:0;">${t("brands.form.voiceLabel")}</label>
           <button type="button" class="btn btn-ghost btn-sm" id="upload-brandbook-text" style="flex:none;">${icon("upload", { size: 12 })}Upload .txt</button>
           <input type="file" id="brandbook-text-file" accept=".txt,.md" style="display:none;" />
         </div>
-        <textarea class="textarea" id="brand-ai-voice" style="min-height:80px;" placeholder="e.g. Santai tapi informatif, pakai 'kamu', hindari jargon, banyak analogi sehari-hari...">${(draft.aiVoiceGuide || "")}</textarea>
-        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">Fed into the AI Script Generator so hooks/scripts/captions match this brand's tone, not a generic one. Upload a plain text file to fill this in instead of typing — PDF brandbooks aren't read automatically yet, so copy/paste the relevant text, or export it as .txt first.</div>
+        <textarea class="textarea" id="brand-ai-voice" style="min-height:80px;" placeholder="${escapeText(t("brands.form.voicePh"))}">${(draft.aiVoiceGuide || "")}</textarea>
+        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${t("brands.form.voiceHint")}</div>
       </div>
 
       ${
         brand
           ? `
       <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">Instagram (optional)</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Connects this brand's own Instagram account so views/likes/comments can be pulled in automatically instead of typed by hand — per post from the Content tab ("Fetch from Instagram"), or all at once from Content → ⋯ menu → "Refresh All Instagram Metrics". Still a manual click, not a background auto-sync — this app has no server to run one on its own.</p>
+      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ig.title")}</div>
+      ${
+        !canUseInstagramApi()
+          ? `<div class="hint" style="margin:0;">${icon("info", { size: 12 })}<span>${t("integr.ig.soonNote")}</span></div>`
+          : `
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ig.intro")}</p>
       <div class="field">
         <label>Instagram Business Account ID</label>
         <input class="input" id="ig-userid" placeholder="17841400..." value="${(draft.instagram.igUserId || "").replace(/"/g, "&quot;")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>Long-Lived Access Token</label>
-        <input class="input" type="password" id="ig-token" placeholder="IGAA..." value="${(draft.instagram.accessToken || "").replace(/"/g, "&quot;")}" />
+        ${passwordFieldHTML("ig-token", { placeholder: "IGAA...", value: draft.instagram.accessToken })}
       </div>
-      <div id="ig-status" style="margin:10px 0;font-size:12.5px;">${draft.instagram.username ? `<span style="color:var(--health-good);">Connected as @${draft.instagram.username}</span>` : ""}</div>
-      <button type="button" class="btn btn-secondary btn-sm" id="ig-test">${icon("refresh", { size: 13 })}Test Connection</button>
+      <div id="ig-status" style="margin:10px 0;font-size:12.5px;">${draft.instagram.username ? `<span style="color:var(--health-good);">${t("integr.connectedAs", { name: escapeText(draft.instagram.username) })}</span>` : ""}</div>
+      <button type="button" class="btn btn-secondary btn-sm" id="ig-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>`
+      }
 
       <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">Facebook Page (optional)</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Only needed if this brand's Reels get crossposted to a Facebook Page — once connected, "Fetch from Instagram" automatically checks for a matching crosspost and adds its views on top, no extra step needed.</p>
+      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.fb.title")}</div>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.fb.intro")}</p>
       <div class="field">
         <label>Facebook Page ID</label>
-        <input class="input" id="fb-pageid" placeholder="e.g. 10015..." value="${(draft.facebook.pageId || "").replace(/"/g, "&quot;")}" />
+        <input class="input" id="fb-pageid" placeholder="${t("integr.fb.pageIdPh")}" value="${(draft.facebook.pageId || "").replace(/"/g, "&quot;")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>Page Access Token</label>
-        <input class="input" type="password" id="fb-token" placeholder="EAA..." value="${(draft.facebook.pageAccessToken || "").replace(/"/g, "&quot;")}" />
+        ${passwordFieldHTML("fb-token", { placeholder: "EAA...", value: draft.facebook.pageAccessToken })}
       </div>
-      <div id="fb-status" style="margin:10px 0;font-size:12.5px;">${draft.facebook.pageName ? `<span style="color:var(--health-good);">Connected to ${draft.facebook.pageName}</span>` : ""}</div>
-      <button type="button" class="btn btn-secondary btn-sm" id="fb-test">${icon("refresh", { size: 13 })}Test Connection</button>
+      <div id="fb-status" style="margin:10px 0;font-size:12.5px;">${draft.facebook.pageName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.facebook.pageName) })}</span>` : ""}</div>
+      <button type="button" class="btn btn-secondary btn-sm" id="fb-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
 
       <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">Marketing / Ads (optional)</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Only needed if you boost posts — lets the content editor show real spend/impressions/reach for a boosted post instead of it looking like organic performance.</p>
+      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ads.title")}</div>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ads.intro")}</p>
       <div class="field">
         <label>Ad Account ID</label>
-        <input class="input" id="ads-account-id" placeholder="act_1234567890 (act_ prefix optional)" value="${(draft.ads.adAccountId || "").replace(/"/g, "&quot;")}" />
+        <input class="input" id="ads-account-id" placeholder="${t("integr.ads.accountPh")}" value="${(draft.ads.adAccountId || "").replace(/"/g, "&quot;")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>Access Token (needs ads_read)</label>
-        <input class="input" type="password" id="ads-token" placeholder="EAA..." value="${(draft.ads.adsAccessToken || "").replace(/"/g, "&quot;")}" />
+        <label>${t("integr.ads.token")}</label>
+        ${passwordFieldHTML("ads-token", { placeholder: "EAA...", value: draft.ads.adsAccessToken })}
       </div>
-      <div id="ads-status" style="margin:10px 0;font-size:12.5px;">${draft.ads.accountName ? `<span style="color:var(--health-good);">Connected to ${draft.ads.accountName}</span>` : ""}</div>
-      <button type="button" class="btn btn-secondary btn-sm" id="ads-test">${icon("refresh", { size: 13 })}Test Connection</button>
+      <div id="ads-status" style="margin:10px 0;font-size:12.5px;">${draft.ads.accountName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.ads.accountName) })}</span>` : ""}</div>
+      <button type="button" class="btn btn-secondary btn-sm" id="ads-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
       `
-          : `
+          : guided
+            ? ""
+            : `
       <div class="divider"></div>
-      <p class="text-faint" style="font-size:11.5px;margin:0;">Instagram/Facebook/Ads connections happen later — save this brand first, then reopen it and use Edit Brand to connect them.</p>
+      <p class="text-faint" style="font-size:11.5px;margin:0;">${t("brands.form.connectLater")}</p>
       `
       }
     `,
     footHTML: `
-      <button class="btn btn-secondary" data-cancel>Cancel</button>
-      <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}Save</button>
+      <button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button>
+      <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}${guided && !brand ? t("brands.form.saveNext") : t("common.save")}</button>
     `,
     onMount: (el) => {
+      wirePasswordToggles(el);
       const nameInput = el.querySelector("#brand-name");
       setTimeout(() => nameInput.focus(), 30);
 
       const syncAvatarUI = () => {
         el.querySelector("#avatar-preview").innerHTML = avatarHTML({ name: nameInput.value || "?", avatar: draft.avatar }, AVATAR_PREVIEW_STYLE);
-        el.querySelector("#upload-label").textContent = draft.avatar ? "Change Photo" : "Upload Photo";
+        el.querySelector("#upload-label").textContent = draft.avatar ? t("brands.form.changePhoto") : t("brands.form.uploadPhoto");
         el.querySelector("#remove-avatar").style.display = draft.avatar ? "" : "none";
       };
 
@@ -660,7 +517,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         if (!file) return;
         const text = await file.text();
         el.querySelector("#brand-ai-voice").value = text;
-        toast(`Loaded ${file.name}`);
+        toast(t("brands.form.loaded", { name: file.name }));
       });
       nameInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") overlay.querySelector("[data-save]").click();
@@ -671,16 +528,16 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         const accessToken = el.querySelector("#ig-token").value.trim();
         const statusEl = el.querySelector("#ig-status");
         if (!igUserId || !accessToken) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">Both fields are required.</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-poor);">${t("integr.bothRequired")}</span>`;
           return;
         }
-        statusEl.innerHTML = `<span class="text-muted">Testing…</span>`;
+        statusEl.innerHTML = `<span class="text-muted">${t("integr.testing")}</span>`;
         try {
           const username = await testConnection({ igUserId, accessToken });
           draft.instagram = { igUserId, accessToken, username, connectedAt: Date.now() };
-          statusEl.innerHTML = `<span style="color:var(--health-good);">Connected as @${username}</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-good);">${t("integr.connectedAs", { name: escapeText(username) })}</span>`;
         } catch (e) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">${e.message}</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeText(e.message)}</span>`;
         }
       });
 
@@ -689,16 +546,16 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         const pageAccessToken = el.querySelector("#fb-token").value.trim();
         const statusEl = el.querySelector("#fb-status");
         if (!pageId || !pageAccessToken) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">Both fields are required.</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-poor);">${t("integr.bothRequired")}</span>`;
           return;
         }
-        statusEl.innerHTML = `<span class="text-muted">Testing…</span>`;
+        statusEl.innerHTML = `<span class="text-muted">${t("integr.testing")}</span>`;
         try {
           const pageName = await testFacebookConnection({ pageId, pageAccessToken });
           draft.facebook = { pageId, pageAccessToken, pageName, connectedAt: Date.now() };
-          statusEl.innerHTML = `<span style="color:var(--health-good);">Connected to ${pageName}</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(pageName) })}</span>`;
         } catch (e) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">${e.message}</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeText(e.message)}</span>`;
         }
       });
 
@@ -707,19 +564,53 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         const adsAccessToken = el.querySelector("#ads-token").value.trim();
         const statusEl = el.querySelector("#ads-status");
         if (!adAccountId || !adsAccessToken) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">Both fields are required.</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-poor);">${t("integr.bothRequired")}</span>`;
           return;
         }
-        statusEl.innerHTML = `<span class="text-muted">Testing…</span>`;
+        statusEl.innerHTML = `<span class="text-muted">${t("integr.testing")}</span>`;
         try {
           const accountName = await testAdsConnection({ adAccountId, adsAccessToken });
           draft.ads = { adAccountId, adsAccessToken, accountName, connectedAt: Date.now() };
-          statusEl.innerHTML = `<span style="color:var(--health-good);">Connected to ${accountName}</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(accountName) })}</span>`;
         } catch (e) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">${e.message}</span>`;
+          statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeText(e.message)}</span>`;
         }
       });
     },
+  });
+
+  // Business description helpers: mic dictation, and an AI pass that turns
+  // rough notes into a proper description (never invents facts — see
+  // draftBusinessDescription in js/ai.js).
+  const descEl = overlay.querySelector("#brand-description");
+  const micBtn = overlay.querySelector("#brand-desc-mic");
+  if (micBtn) wireMic(micBtn, descEl);
+  overlay.querySelector("#brand-desc-ai")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const statusEl = overlay.querySelector("#brand-desc-ai-status");
+    const ai = getSettings().ai || {};
+    if (!hasAiKey(ai)) {
+      toast(t("brandForm.aiNoKey"), "error");
+      return;
+    }
+    const notes = descEl.value.trim();
+    if (notes.length < 5) {
+      toast(t("brandForm.aiNeedNotes"), "error");
+      descEl.focus();
+      return;
+    }
+    btn.disabled = true;
+    statusEl.textContent = t("brandForm.aiWorking");
+    try {
+      descEl.value = await draftBusinessDescription(ai, { name: overlay.querySelector("#brand-name").value.trim(), notes });
+      descEl.dispatchEvent(new Event("input", { bubbles: true }));
+      statusEl.textContent = t("brandForm.aiDone");
+    } catch (err) {
+      statusEl.textContent = "";
+      toast(err.message || t("brands.form.aiError"), "error");
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
@@ -727,8 +618,18 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     const nameInput = overlay.querySelector("#brand-name");
     const name = nameInput.value.trim();
     if (!name) {
-      toast("Give this brand a name first.", "error");
+      toast(t("brands.form.needName"), "error");
       nameInput.focus();
+      return;
+    }
+    // Every AI feature (Brand DNA options, scripts, the consultant) reads
+    // this description as its base context — an empty one quietly makes
+    // all of them generic, so it's required at the same bar the onboarding
+    // tour already sets, not just inside the tour.
+    const descInput = overlay.querySelector("#brand-description");
+    if (descInput.value.trim().length < 20) {
+      toast(t("brandForm.needDesc"), "error");
+      descInput.focus();
       return;
     }
     // The Instagram/Facebook/Ads fields only exist in the DOM when editing
@@ -751,10 +652,18 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     const color = overlay.querySelector("#brand-color").value;
     if (brand) {
       updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
-      toast("Brand updated");
+      toast(t("brands.form.updated"));
     } else {
-      createBrand({ name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
-      toast(`${name} created`);
+      const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
+      toast(t("brands.form.created", { name }));
+      // Pemula: a brand you just made is obviously the one you want to
+      // open — go straight in instead of showing a "pick a brand" page
+      // with a single option on it. Beranda takes over from there.
+      if (guided && created?.id) {
+        closeOverlay(overlay);
+        location.hash = `#/brand/${created.id}`;
+        return;
+      }
     }
     closeOverlay(overlay);
     onSaved?.();

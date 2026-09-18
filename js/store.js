@@ -6,21 +6,16 @@
 // This means none of the view files calling these functions need to change
 // — only this file's internals talk to the network.
 import { toast } from "./dom.js";
+import { t, getLang } from "./i18n.js";
+import CAMPAIGN_DICT from "./i18n/campaigns.js";
 import { db as fdb } from "./firebase.js";
 import {
-  collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch,
+  collection, doc, query, where, onSnapshot, setDoc, deleteDoc, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 export const METRIC_KEYS = [
-  { key: "views", label: "Views" },
-  { key: "reach", label: "Reach" },
-  { key: "likes", label: "Likes" },
-  { key: "comments", label: "Comments" },
-  { key: "shares", label: "Shares" },
-  { key: "saves", label: "Saves" },
-  { key: "profileVisits", label: "Profile Visits" },
-  { key: "followersGained", label: "Followers Gained" },
-];
+  "views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained",
+].map((key) => ({ key, label: t(`store.metric.${key}`) }));
 
 // Sums each metric across whatever platforms have a number for it (e.g. IG
 // views + Facebook views = one combined total) — platforms with nothing yet
@@ -98,10 +93,7 @@ export function combinedViewsWithAds(content) {
 // gets shot and then cut, instead of only being changeable from the Status
 // dropdown.
 export const STATUSES = ["idea", "draft", "production", "editing", "scheduled", "published", "archived"];
-export const STATUS_LABELS = {
-  idea: "Idea", draft: "Scripting", production: "Execution", editing: "Editing",
-  scheduled: "Ready to Upload", published: "Published", archived: "Archived",
-};
+export const STATUS_LABELS = Object.fromEntries(STATUSES.map((s) => [s, t(`store.status.${s}`)]));
 export const FUNNELS = ["TOFU", "MOFU", "BOFU"];
 export const FUNNEL_LABELS = {
   TOFU: "Top of Funnel", MOFU: "Middle of Funnel", BOFU: "Bottom of Funnel",
@@ -114,9 +106,9 @@ function uid() {
 
 export const CAMPAIGN_OBJECTIVES = ["personal-branding", "awareness", "launch", "sales", "event", "engagement", "community", "custom"];
 export const CAMPAIGN_OBJECTIVE_LABELS = {
-  "personal-branding": "Personal Branding",
-  awareness: "Awareness", launch: "Product Launch", sales: "Sales", event: "Event",
-  engagement: "Engagement", community: "Community", custom: "Custom",
+  "personal-branding": t("store.objective.personalBranding"),
+  awareness: t("store.objective.awareness"), launch: t("store.objective.launch"), sales: t("store.objective.sales"), event: t("store.objective.event"),
+  engagement: t("store.objective.engagement"), community: t("store.objective.community"), custom: t("store.objective.custom"),
 };
 // Which optional phases make sense for each objective — picking an
 // objective already drives the AI prompt and the campaign's label; this
@@ -137,9 +129,9 @@ export const CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES = {
   custom: null,
 };
 export const CAMPAIGN_STATUSES = ["planning", "active", "completed", "archived"];
-export const CAMPAIGN_STATUS_LABELS = { planning: "Planning", active: "Active", completed: "Completed", archived: "Archived" };
+export const CAMPAIGN_STATUS_LABELS = Object.fromEntries(CAMPAIGN_STATUSES.map((s) => [s, t(`store.campaignStatus.${s}`)]));
 
-function defaultBrandDNA() {
+export function defaultBrandDNA() {
   return {
     tagline: "", oneLiner: "", purpose: "", vision: "", mission: "",
     targetAudience: "", problemSolved: "", positioning: "", differentiation: "",
@@ -150,16 +142,51 @@ function defaultBrandDNA() {
   };
 }
 
-function defaultBrandGuidelines() {
+export function defaultBrandGuidelines() {
   return {
-    logo: { hasLogo: null, dataUrl: "" },
+    // dataUrl is the Main logo; secondary/logotype are optional variants
+    // (a simplified mark, a text-only wordmark) — only shown/exported when
+    // actually uploaded.
+    logo: { hasLogo: null, dataUrl: "", secondaryDataUrl: "", logotypeDataUrl: "" },
+    // Entirely optional, independent of hasLogo — a brand can have zero,
+    // one, or several: { name, description, dataUrl }.
+    mascots: [],
     colorFeelings: [],
     colorFormula: "",
     colors: { primary: "", secondary: "", accent: "", background: "", text: "" },
     typographyFeelings: [],
     fonts: { primary: "", secondary: "", accent: "" },
+    // Uploaded font files, keyed by the display name the user gave them —
+    // { [name]: dataUrl }. `fonts.*` can hold either a FONT_LIBRARY (Google
+    // Fonts) family name or one of these custom names; either way it's just
+    // a font-family string everywhere else in the app.
+    customFonts: {},
+    // Beyond the fixed Primary/Secondary/Accent roles — any extra typeface
+    // someone wants documented (a decorative font, a second script accent,
+    // etc). Each entry's `family` is a name in `customFonts` above (or a
+    // FONT_LIBRARY family); `label` is whatever the user called it.
+    extraFonts: [],
+    // Line spacing (CSS line-height) and letter spacing (CSS letter-spacing,
+    // in em) per font role — starts at a sane typographic default per role
+    // (see TYPE_SPACING_DEFAULTS in brand-guidelines.js) and is editable
+    // from the Typography step's "Tracking, Kerning & Leading" panel.
+    typeSpacing: {
+      primary: { lineHeight: 1.15, letterSpacing: 0 },
+      secondary: { lineHeight: 1.6, letterSpacing: 0 },
+      accent: { lineHeight: 1.3, letterSpacing: 0 },
+    },
     visualDirection: [],
+    // Reference photos for the Imagery Style page — separate from the
+    // deterministic lighting/subject/treatment copy already derived from
+    // Visual Direction, this is actual example images the brand wants to
+    // point to. Entirely optional.
+    moodboard: [],
     applications: [],
+    // The Brand Book PDF's only AI-written content (Value Proposition,
+    // Colour Essence) — generated once on demand from the Review screen
+    // and cached here so it's stable across renders/exports instead of
+    // re-calling the API (and drifting) every time the page repaints.
+    aiCopy: { valueProposition: null, colorEssence: null },
   };
 }
 
@@ -174,15 +201,35 @@ function defaultBrandGuidelines() {
 // recommendation from a hand-edited one — not a full decision-log (that's
 // bigger scope, deferred), just enough for the Consistency Engine to know
 // there's an established direction to check against.
+// Split out so a "reset just this one stage" action (see
+// js/views/brand-builder.js's Reset Brand DNA / Reset Brand Guidelines)
+// can rebuild a single field back to its default without touching its
+// siblings inside brandBuilder — Personality and Naming belong to the
+// Brand DNA group, Tone of Voice to Brand Guidelines, even though all
+// three live on this one object.
+export function defaultPersonality() {
+  return { feeling: "", primary: [], secondary: [], avoid: [], source: "" };
+}
+// 4 slider positions (0-100) across the e-book's Tone of Voice spectrums —
+// see TONE_AXES in brandbook-data.js. 50 = dead center on every axis until
+// the user actually moves one.
+export function defaultToneOfVoice() {
+  return { formal: 50, language: 50, character: 50, emotion: 50, avoidWords: [], source: "" };
+}
+// hasName is null until the Naming stage's opening question ("udah punya
+// nama brand?") is answered — true skips straight to confirming the name
+// they already have, false opens the AI brainstorm tool.
+export function defaultNaming() {
+  return { hasName: null, name: "", source: "" };
+}
+
 function defaultBrandBuilder() {
   return {
     stage: "foundation",
     completedStages: [],
-    personality: { feeling: "", primary: [], secondary: [], avoid: [], source: "" },
-    // 4 slider positions (0-100) across the e-book's Tone of Voice spectrums
-    // — see TONE_AXES in brandbook-data.js. 50 = dead center on every axis
-    // until the user actually moves one.
-    toneOfVoice: { formal: 50, language: 50, character: 50, emotion: 50, avoidWords: [], source: "" },
+    personality: defaultPersonality(),
+    toneOfVoice: defaultToneOfVoice(),
+    naming: defaultNaming(),
     consistencyDismissed: [],
   };
 }
@@ -217,25 +264,53 @@ function defaultDB() {
         engagementRate: "(likes + comments + shares + saves) / reach * 100",
         followerConversionRate: "followersGained / reach * 100",
       },
+      // Starting assumptions for a SMALL account (< ~5K followers), rated on
+      // ER-by-reach (the default formula above). 2025–26 reach-based
+      // medians sit around 4–6% on Instagram Reels and 5–8% on TikTok, and
+      // small accounts usually run higher — so TOFU 8% "good" is fair
+      // there, while the MOFU/BOFU "average" bars are set closer to the
+      // actual medians. Follower conversion (new followers ÷ reach) is
+      // typically 0.1–0.5%; 1% is already a strong result, so "good" is 1%
+      // and "average" 0.3% rather than the old 1–2% floors. Per-platform
+      // overrides live in thresholdsByPlatform below.
       thresholds: {
         TOFU: {
           engagementRate: { good: 8, average: 4 },
-          followerConversionRate: { good: 2, average: 1 },
+          followerConversionRate: { good: 1, average: 0.3 },
         },
         MOFU: {
-          engagementRate: { good: 6, average: 3 },
-          followerConversionRate: { good: 3, average: 1.5 },
+          engagementRate: { good: 6, average: 2.5 },
+          followerConversionRate: { good: 1.5, average: 0.5 },
         },
         BOFU: {
           engagementRate: { good: 4, average: 2 },
-          followerConversionRate: { good: 4, average: 2 },
+          followerConversionRate: { good: 2, average: 0.7 },
         },
       },
+      // Optional per-platform overrides, keyed by platform name exactly as
+      // it appears on content (e.g. "TikTok"), same shape as `thresholds`.
+      // Empty = every platform uses the defaults above. formulas.js
+      // resolves content.platform → this map → thresholds.
+      thresholdsByPlatform: {},
       // Global, not per-brand — one shared Anthropic/Gemini/DeepSeek key
       // drives AI Script & Hook Generation for every brand and every
       // teammate, same as the app's other credentials (stored in Firestore,
       // used directly from the browser).
       ai: { provider: "anthropic", anthropicApiKey: "", geminiApiKey: "", deepseekApiKey: "" },
+      // "guided" is the default for every account that never picked a
+      // mode: a brand owner opening Brandlab for the first time lands on the
+      // simplified step-by-step Home (js/views/beginner-home.js), not the
+      // widget/analytics dashboard. "advanced" is today's full app and is
+      // one topbar click away (js/mode.js) — the choice is stored
+      // account-wide, so the internal team only ever flips it once.
+      experienceMode: "guided",
+      // Which analytics widgets Advanced-mode Home shows, and in what order —
+      // see js/views/brand-home-analytics.js's WIDGET_CATALOG for the full
+      // key list. Global (like experienceMode above), not per-brand: this is
+      // a display preference for whoever's looking, not brand data. Missing
+      // entirely (older settings docs) falls back to "show everything" in
+      // brand-home-analytics.js rather than needing a migration here.
+      homeWidgets: ["growthViews", "growthEngagement", "topContent", "platformBreakdown", "formatBreakdown", "funnelBreakdown", "contentHealth"],
     },
   };
 }
@@ -255,7 +330,7 @@ function persist(sync) {
     .then(sync)
     .catch((e) => {
       console.error("Cloud sync failed", e);
-      toast("Couldn't save that change to the cloud — it may not appear for teammates.", "error");
+      toast(t("store.syncSaveFailed"), "error");
     });
 }
 
@@ -270,66 +345,129 @@ async function commitInChunks(ops) {
   }
 }
 
-// Attaches realtime listeners for every collection and resolves once the
-// first snapshot of each has arrived — main.js awaits this once, after
-// login, before the first render, so the app never flashes empty state.
-// Every snapshot after that (including this client's own writes echoing
-// back, and every other teammate's writes) re-populates `db` and fires
-// `db:change` — this is what makes the app feel live/shared.
-export function initStore() {
+// The signed-in account's uid — every collection below is queried filtered
+// to `where("ownerId","==", ownerUid)` (required for Firestore to accept an
+// unconstrained-looking listener under per-owner security rules: rules are
+// evaluated per-document, but a *query* additionally has to be provably
+// scoped to only-my-docs at the query level, or Firestore rejects it
+// client-side before rules even run). Every write below stamps `ownerId`
+// with this same value so it round-trips through that filter.
+let ownerUid = null;
+
+// Attaches realtime listeners for every collection (scoped to this account)
+// and resolves once the first snapshot of each has arrived — main.js awaits
+// this once, after login + account/plan check, before the first render, so
+// the app never flashes empty state. Every snapshot after that (including
+// this client's own writes echoing back, and every other teammate on the
+// same account's writes) re-populates `db` and fires `db:change` — this is
+// what makes the app feel live/shared.
+export function initStore(uid) {
+  ownerUid = uid;
   return new Promise((resolve) => {
     const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, settings: false };
     const checkReady = () => {
       if (Object.values(ready).every(Boolean)) resolve();
     };
-    const onErr = (label) => (e) => {
+    // A permission-denied (e.g. a momentarily stale auth token right after a
+    // network blip) or any other listener error used to leave `ready[key]`
+    // false forever — checkReady() would then never see every collection
+    // ready, so initStore()'s promise never resolved and the app stayed on
+    // main.js's "Loading…" screen permanently, even once the underlying
+    // problem (network, token) had already recovered. Marking it ready
+    // anyway lets the app proceed with whatever did load; onSnapshot keeps
+    // retrying in the background and repopulates `db` the moment it
+    // reconnects, same as it already does for a listener that succeeds late.
+    const onErr = (key, label) => (e) => {
       console.error(`Cloud sync (${label}) failed`, e);
-      toast(`Couldn't sync ${label} from the cloud.`, "error");
+      toast(t("store.syncLoadFailed", { what: t(`store.sync.${key}`) }), "error");
+      ready[key] = true;
+      checkReady();
     };
+    const mine = (col) => query(collection(fdb, col), where("ownerId", "==", uid));
 
-    onSnapshot(collection(fdb, "brands"), (snap) => {
+    onSnapshot(mine("brands"), (snap) => {
       db.brands = snap.docs.map((d) => d.data());
       ready.brands = true;
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
-    }, onErr("brands"));
+    }, onErr("brands", "brands"));
 
-    onSnapshot(collection(fdb, "content"), (snap) => {
+    onSnapshot(mine("content"), (snap) => {
       db.content = snap.docs.map((d) => d.data());
       ready.content = true;
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
-    }, onErr("content"));
+    }, onErr("content", "content"));
 
-    onSnapshot(collection(fdb, "campaigns"), (snap) => {
+    onSnapshot(mine("campaigns"), (snap) => {
       db.campaigns = snap.docs.map((d) => d.data());
       ready.campaigns = true;
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
-    }, onErr("campaigns"));
+    }, onErr("campaigns", "campaigns"));
 
-    onSnapshot(collection(fdb, "routineTemplate"), (snap) => {
+    onSnapshot(mine("routineTemplate"), (snap) => {
       db.routineTemplate = snap.docs.map((d) => d.data());
       ready.routineTemplate = true;
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
-    }, onErr("routine"));
+    }, onErr("routineTemplate", "routine"));
 
-    onSnapshot(doc(fdb, "settings", "main"), (snap) => {
+    // One settings doc per account (not shared globally) — platforms,
+    // formats, thresholds etc. are this account's own, never visible to
+    // another customer. The AI provider + keys are the one exception: they
+    // come from the shared settings/main doc (see applySettings), so both
+    // listeners below rebuild db.settings whenever either doc changes.
+    let personalData = {};
+    const applySettings = () => {
       const fresh = defaultDB();
-      const data = snap.exists() ? snap.data() : {};
+      personalAi = { ...fresh.settings.ai, ...(personalData.ai || {}) };
       db.settings = {
         ...fresh.settings,
-        ...data,
-        formulas: { ...fresh.settings.formulas, ...(data.formulas || {}) },
-        thresholds: { ...fresh.settings.thresholds, ...(data.thresholds || {}) },
-        ai: { ...fresh.settings.ai, ...(data.ai || {}) },
+        ...personalData,
+        formulas: { ...fresh.settings.formulas, ...(personalData.formulas || {}) },
+        thresholds: { ...fresh.settings.thresholds, ...(personalData.thresholds || {}) },
+        thresholdsByPlatform: { ...(personalData.thresholdsByPlatform || {}) },
+        ai: isGlobalAiActive() ? { ...personalAi, ...globalAi } : personalAi,
       };
+      window.dispatchEvent(new CustomEvent("db:change"));
+    };
+    onSnapshot(doc(fdb, "settings", uid), (snap) => {
+      personalData = snap.exists() ? snap.data() : {};
+      applySettings();
       ready.settings = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
-    }, onErr("settings"));
+    }, onErr("settings", "settings"));
+
+    // Wepeka-provided AI config shared by every account — a customer never
+    // has to bring their own API key. Not part of `ready`: if this read
+    // fails the app still loads, AI buttons just stay hidden (hasAiKey is
+    // false) until the listener recovers.
+    onSnapshot(doc(fdb, "settings", "main"), (snap) => {
+      globalAi = snap.exists() ? (snap.data().ai || null) : null;
+      applySettings();
+    }, (e) => console.error("Cloud sync (shared AI config) failed", e));
   });
+}
+
+// Shared AI config lives in settings/main (written only by the Wepeka team
+// account, see firestore.rules). `globalAi` is that doc's `ai` block or null;
+// `personalAi` is this account's own `ai` block, kept separately so
+// persistSettings() never copies the shared keys into settings/{uid}.
+let globalAi = null;
+let personalAi = null;
+const AI_KEY_FIELD = { anthropic: "anthropicApiKey", gemini: "geminiApiKey", deepseek: "deepseekApiKey" };
+// True when settings/main holds a usable key for its own provider — then it
+// overrides whatever the account set for itself.
+export function isGlobalAiActive() {
+  return !!globalAi && !!globalAi[AI_KEY_FIELD[globalAi.provider] || "anthropicApiKey"];
+}
+export function getGlobalAiSettings() {
+  return globalAi ? { ...globalAi } : null;
+}
+export function updateGlobalAiSettings(patch) {
+  const next = { ...(globalAi || {}), ...patch };
+  persist(() => setDoc(doc(fdb, "settings", "main"), { ai: next }, { merge: true }));
 }
 
 export function onChange(fn) {
@@ -361,7 +499,7 @@ export function getBrand(id) {
 }
 export function createBrand({ name, avatar = "", color = "", driveLink = "", brandbookLink = "", logoAssets = [], instagram, facebook, ads, aiVoiceGuide = "", businessDescription = "", brandDNA, brandGuidelines, brandBuilder } = {}) {
   const brand = {
-    id: uid(), name: name.trim(), avatar,
+    id: uid(), ownerId: ownerUid, name: name.trim(), avatar,
     // Manually-picked brand essence color (hex) — takes priority over the
     // auto-sampled avatar color everywhere --brand-tint is used (hover
     // glow on brand cards, the tab/scrollbar/button tint inside that
@@ -416,6 +554,44 @@ export function updateBrand(id, patch) {
   persist(() => setDoc(doc(fdb, "brands", b.id), b));
   return b;
 }
+// ---------- Brand Insights (account-level numbers) ----------
+// The one home for profile numbers (followers, reach, profile visits) —
+// campaigns read them from here instead of storing their own copy inside
+// a milestone. Entered by hand in the "Perbarui Insights" modal, or from
+// the Instagram API for accounts that have it. Every update is appended
+// to a small history so "gained since campaign start" and a trend can be
+// derived without anyone retyping old numbers.
+export const INSIGHTS_HISTORY_CAP = 60;
+export function getBrandInsights(brand, platform = "instagram") {
+  const ins = brand?.insights?.[platform];
+  return ins && typeof ins === "object" ? ins : null;
+}
+export function updateBrandInsights(brandId, platform, { followers = null, reach30d = null, profileVisits30d = null, at = Date.now(), source = "manual" } = {}) {
+  const b = getBrand(brandId);
+  if (!b) return null;
+  const num = (v) => (v === null || v === undefined || v === "" ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+  const entry = { platform, followers: num(followers), reach30d: num(reach30d), profileVisits30d: num(profileVisits30d), at, source };
+  const insights = { ...(b.insights || {}) };
+  const prev = insights[platform] || {};
+  insights[platform] = {
+    followers: entry.followers ?? prev.followers ?? null,
+    reach30d: entry.reach30d ?? prev.reach30d ?? null,
+    profileVisits30d: entry.profileVisits30d ?? prev.profileVisits30d ?? null,
+    updatedAt: at,
+    source,
+  };
+  const history = [...(b.insightsHistory || []), entry].sort((x, y) => x.at - y.at).slice(-INSIGHTS_HISTORY_CAP);
+  return updateBrand(brandId, { insights, insightsHistory: history });
+}
+// Follower count closest to (at or before) `atMs`, else the earliest one
+// after it — the baseline for "followers gained since this campaign began".
+export function insightsBaseline(brand, platform, atMs) {
+  const hist = (brand?.insightsHistory || []).filter((h) => h.platform === platform && Number.isFinite(h.followers));
+  if (!hist.length) return null;
+  const before = hist.filter((h) => h.at <= atMs);
+  return before.length ? before[before.length - 1] : hist[0];
+}
+
 export function archiveBrand(id, archived = true) {
   return updateBrand(id, { archived });
 }
@@ -499,7 +675,7 @@ export function getContent(id) {
   return c;
 }
 export function createContent(brandId, data = {}) {
-  const item = { ...emptyContent(brandId), ...data, id: uid(), brandId };
+  const item = { ...emptyContent(brandId), ...data, id: uid(), brandId, ownerId: ownerUid };
   db.content.push(item);
   persist(() => setDoc(doc(fdb, "content", item.id), item));
   return item;
@@ -529,7 +705,7 @@ export function deleteContent(id) {
 // brands.js each already had their own copy of it). Local calendar date,
 // not toISOString() — that shifts across the day boundary in any timezone
 // ahead of UTC (e.g. WIB), quietly misclassifying items right at midnight.
-function localISODate(d) {
+export function localISODate(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 export function listOverdueAndDueSoon({ dueSoonDays = 3 } = {}) {
@@ -573,13 +749,13 @@ export function listOverdueAndDueSoon({ dueSoonDays = 3 } = {}) {
 // exists. `description` here is looked up by consumers (not duplicated into
 // every campaign document) so wording updates apply to old campaigns too.
 export const CAMPAIGN_PHASE_TEMPLATE = [
-  { name: "Awareness", description: "Membuat audiens baru sadar brand kamu ada — biasanya lewat konten organik atau ads yang menarik perhatian.", optional: false },
-  { name: "Website", description: "Mengarahkan audiens ke website untuk info lebih lengkap dan membangun kepercayaan.", optional: true },
-  { name: "WhatsApp", description: "Percakapan langsung dengan calon pelanggan — tempat pertanyaan dijawab dan closing terjadi.", optional: false },
-  { name: "Event", description: "Pertemuan langsung (online/offline) yang mempererat hubungan dan mendorong keputusan.", optional: true },
-  { name: "UGC", description: "Konten buatan pelanggan sendiri — bukti sosial yang lebih dipercaya dibanding promosi brand.", optional: false },
-  { name: "Community", description: "Ruang berkumpul untuk pelanggan, memperkuat loyalitas jangka panjang.", optional: true },
-  { name: "Retargeting", description: "Menjangkau ulang orang yang sudah pernah berinteraksi tapi belum konversi.", optional: false },
+  { name: "Awareness", description: t("store.phaseDesc.awareness"), optional: false },
+  { name: "Website", description: t("store.phaseDesc.website"), optional: true },
+  { name: "WhatsApp", description: t("store.phaseDesc.whatsapp"), optional: false },
+  { name: "Event", description: t("store.phaseDesc.event"), optional: true },
+  { name: "UGC", description: t("store.phaseDesc.ugc"), optional: false },
+  { name: "Community", description: t("store.phaseDesc.community"), optional: true },
+  { name: "Retargeting", description: t("store.phaseDesc.retargeting"), optional: false },
 ];
 
 // Deterministic ids (slugified name), not uid() — the template is fixed,
@@ -671,48 +847,95 @@ export function campaignPhaseContentCounts(campaign, content) {
 // across all 5 levels of a ladder, and again across ladders) — looked up by
 // createMissionsForTemplate, shown as the tree node's hover tooltip and as
 // a caption under its row in the milestone list.
-const MILESTONE_DESCRIPTIONS = {
-  "Followers": "Total followers akun ini sekarang — cek langsung dari profil platform utama kamu.",
-  "Konten orisinal terbit": "Jumlah konten asli yang udah kamu terbitkan sejak campaign ini mulai — dihitung otomatis dari Content OS, nggak perlu diisi manual.",
-  "Konten kumulatif": "Total konten asli sejak campaign ini mulai — dihitung otomatis dari Content OS, nggak perlu diisi manual.",
-  "Minggu aktif konsisten": "Berapa minggu berturut-turut kamu tetap posting — jangan sampai vakum lebih dari 14 hari.",
-  "Engagement bermakna total": "Total interaksi asli (like, komentar, share, save, DM) dari orang beneran — bukan bot atau engagement pod.",
-  "Shares": "Berapa kali kontenmu di-share/repost orang lain — sinyal paling kuat kalau kontenmu worth di-pass ke orang lain.",
-  "Saves": "Berapa kali orang nyimpen kontenmu — biasanya nandain konten itu genuinely berguna, bukan cuma lucu sekilas.",
-  "DM bermakna": "Pesan langsung dari orang yang beneran nanya, curhat, atau nawarin sesuatu — bukan spam atau pesan template.",
-  "Komentar bermakna": "Komentar yang isinya beneran nanggepin konten kamu — bukan cuma emoji atau \"nice post\".",
-  "Video dengan engagement rate di atas 10%": "Video yang engagement rate-nya (like+komen+share dibagi reach) tembus 10%+ — tanda kontennya resonate kuat.",
-  "Engagement rate sehat dibanding rata-rata platform": "Bandingin engagement rate akun kamu sama rata-rata di platform itu — jangan cuma followers yang naik tapi engagement-nya malah turun.",
-  "Engagement tetap sehat sepanjang periode": "Engagement rate-nya nggak boleh jatuh biarpun followers naik — kualitas harus ikut naik, bukan cuma kuantitas.",
-  "Orang yang balik lagi engage (recurring engagers)": "Orang yang engage ke lebih dari satu konten kamu — nunjukkin mereka beneran ngikutin, bukan cuma numpang lewat.",
-  "Post yang tampil di atas rata-rata akun": "Konten yang hasilnya jauh di atas rata-rata konten kamu yang lain — biasanya nandain kamu nemu \"format yang kena\".",
-  "Member komunitas": "Orang yang gabung ke ruang komunitas kamu (grup WA, Discord, Circle, dll) — bukan cuma follow doang.",
-  "Member komunitas yang aktif": "Dari member yang ada, berapa yang beneran aktif — nge-chat, komentar, dateng ke acara.",
-  "UGC asli dari komunitas": "Konten yang dibikin sendiri sama audiens/komunitas kamu — bukti sosial paling kuat karena bukan kamu yang ngomong sendiri.",
-  "Community event / activation": "Acara atau aktivasi yang kamu bikin khusus buat komunitas — offline atau online.",
-  "Peserta event komunitas": "Berapa orang yang beneran dateng/ikut acara komunitas kamu.",
-  "Kolaborasi bermakna": "Kerja bareng brand/kreator lain yang beneran nambah value — bukan cuma saling follow.",
-  "Brand advocates": "Orang yang aktif promosiin brand kamu tanpa diminta atau dibayar — followers paling loyal.",
-  "Community activations": "Aktivasi/acara yang kamu bikin buat komunitas — dihitung berapa kali, bukan cuma sekali terus berhenti.",
-  "Total peserta kumulatif": "Total orang yang pernah ikut semua aktivasi komunitas kamu, dijumlahin dari awal campaign.",
-  "Kolaborasi strategis": "Kolaborasi yang dipilih sengaja buat nyampein ke audiens baru atau nguatin posisi brand/personal brand kamu.",
-  "Qualified leads": "Orang yang nunjukkin minat serius buat beli/pakai produk kamu — bukan cuma nanya-nanya doang.",
-  "Community-led activation (komunitas yang gerakin sendiri)": "Momen dimana komunitas kamu yang inisiatif bikin sesuatu sendiri, tanpa kamu yang mulai duluan — tanda komunitasnya udah hidup sendiri.",
-  "Niche/keahlian/positioning yang jelas": "Orang bisa jelasin dalam satu kalimat kamu ahlinya di bidang apa — kalau belum jelas, orang gampang lupa kamu.",
-  "Konten tembus 5K+ views": "Konten yang reach-nya jauh di atas biasanya — bukti formatnya nemu momentum.",
-  "Konten performa tinggi": "Konten yang hasilnya jauh di atas rata-rata konten kamu yang lain — biasanya nandain kamu nemu \"format yang kena\".",
-  "Kemunculan eksternal (podcast/webinar/event/dll)": "Muncul di platform orang lain — jadi bintang tamu podcast, ngisi webinar, jadi pembicara, dll — bukti orang lain juga percaya kamu.",
-  "Inbound opportunities/inquiries": "Peluang yang datang ke kamu duluan (tawaran kerja sama, job, project) — bukan kamu yang ngejar.",
-  "Audience-generated content/mention/diskusi": "Orang lain nulis/ngomongin kamu tanpa diminta — tag, repost, atau nyebut nama kamu di diskusi mereka sendiri.",
-  "Qualified inbound opportunities": "Peluang masuk yang levelnya makin besar/strategis — bukan sekadar tanya-tanya.",
-  "Mention/UGC organik": "Orang nyebut atau bikin konten soal kamu tanpa kamu minta — sinyal reputasi udah nyebar sendiri.",
-  "Signature content series/framework/IP": "Kamu punya \"ciri khas\" — format konten, kerangka berpikir, atau istilah yang orang asosiasikan sama kamu.",
-  "Komunitas/event/workshop/inisiatif yang kamu pimpin": "Kamu yang mulai dan mimpin sendiri — bukan cuma ikut acara orang lain.",
-  "Personal framework/IP yang dikenali": "Kerangka atau metode yang kamu ciptain dan udah dikenal luas orang di niche kamu.",
-  "Komunitas atau ekosistem aktif": "Ruang yang kamu bangun dan masih hidup/aktif dengan sendirinya.",
-  "Dampak profesional yang terbukti": "Bisnis, karier, partnership, atau kesempatan nyata yang lahir karena personal brand kamu — bukan cuma angka di layar.",
-  "Acara terlaksana": "Centang setelah acaranya beneran jalan — dokumentasinya bisa dipakai sebagai bukti.",
-};
+// Labels and descriptions live in js/i18n/campaigns.js ("store.ms.*" /
+// "store.msd.*"); the dictionary's `id` text is the canonical label the
+// templates below write into Firestore.
+const MS_LABEL_KEYS = new Map();
+Object.keys(CAMPAIGN_DICT).forEach((k) => {
+  if (!k.startsWith("store.ms.")) return;
+  const suffix = k.slice("store.ms.".length);
+  MS_LABEL_KEYS.set(CAMPAIGN_DICT[k].id, suffix);
+  if (!MS_LABEL_KEYS.has(CAMPAIGN_DICT[k].en)) MS_LABEL_KEYS.set(CAMPAIGN_DICT[k].en, suffix);
+});
+function milestoneDescriptionSource(label) {
+  const k = MS_LABEL_KEYS.get(label);
+  return (k && CAMPAIGN_DICT[`store.msd.${k}`]?.id) || "";
+}
+
+// ---------- Display-time localisation of stored template text ----------
+// Templates are copied into Firestore when a campaign is created, so stored
+// campaigns carry the template's canonical text (milestone labels/units in
+// Indonesian, level and phase names in English). These map that text back to
+// its i18n key when painting, so old and new campaigns both render in the
+// current language. Anything not from a template (user-typed) passes through.
+export function milestoneLabel(label) {
+  const k = MS_LABEL_KEYS.get(label);
+  return k ? t(`store.ms.${k}`) : label;
+}
+export function milestoneDescription(label, fallback = "") {
+  const k = MS_LABEL_KEYS.get(label);
+  return k && CAMPAIGN_DICT[`store.msd.${k}`] ? t(`store.msd.${k}`) : fallback;
+}
+const UNIT_KEYS = new Map(Object.entries({
+  followers: "followers", konten: "konten", minggu: "minggu", share: "share", shares: "share", save: "save", saves: "save",
+  DM: "dm", video: "video", orang: "orang", post: "post", member: "member", "member aktif": "memberAktif", UGC: "ugc",
+  event: "event", peserta: "peserta", kolaborasi: "kolaborasi", advocate: "advocate", activation: "activation", leads: "leads",
+  komentar: "komentar", comments: "komentar", kemunculan: "kemunculan", peluang: "peluang", mention: "mention", views: "views",
+  kunjungan: "kunjungan", pendaftar: "pendaftar", reminder: "reminder", interaksi: "interaksi", response: "response",
+  testimoni: "testimoni", stories: "stories", inquiry: "inquiry", demo: "demo", sample: "sample", transaksi: "transaksi",
+  feedback: "feedback", impresi: "impresi", likes: "likes", reach: "reach",
+  // Sales Growth counting units (js/goal-plan.js SALES_MODELS)
+  unit: "unit", proyek: "proyek", subscriber: "subscriber", siswa: "siswa", pesanan: "pesanan",
+}));
+export function unitLabel(unit) {
+  const k = UNIT_KEYS.get(unit);
+  return k ? t(`store.unit.${k}`) : unit || "";
+}
+const PHASE_NAME_KEYS = new Map(Object.entries({
+  Awareness: "awareness", Website: "website", WhatsApp: "whatsapp", Event: "event", UGC: "ugc", Community: "community",
+  Retargeting: "retargeting", Foundation: "foundation", Consideration: "consideration", Conversion: "conversion",
+  "Event Day": "eventDay", "Post-Event": "postEvent", Prepare: "prepare", Attract: "attract", "Pre-Event": "preEvent",
+}));
+export function phaseNameLabel(name) {
+  const k = PHASE_NAME_KEYS.get(name);
+  return k ? t(`store.phaseName.${k}`) : name;
+}
+const MISSION_KEYS = new Map(Object.entries({
+  "Get Discovered": "gs1", "Build Trust": "gs2", "Build Community": "gs3", "Activate Community": "gs4", "Build Advocacy": "gs5",
+  // Grow Brand — legacy single-campaign ladder (pre-Sep 2026), kept only so
+  // already-created campaigns still render: Komunitas/Penjualan are no
+  // longer produced by js/goal-plan.js (Social Media Growth and Community
+  // Growth are separate campaigns now, and so is Sales Growth — sal1..3 below).
+  // Dikenal/Dipercaya are reused as-is by the new Social Media Growth track.
+  Dikenal: "gb1", Dipercaya: "gb2", Komunitas: "gb3", Penjualan: "gb4",
+  // Community Growth levels (js/goal-plan.js COMMUNITY_LEVELS)
+  Rancang: "com0", Bergabung: "com1", "Partisipasi Aktif": "com2", "Rasa Memiliki": "com3", Mandiri: "com4",
+  // Social Media Growth checkpoint ladder (js/goal-plan.js SOCIAL_LEVELS)
+  "Mulai Ditemukan": "sm1", "Mulai Dikenal": "sm2", "Mulai Dipercaya": "sm3", "Punya Pengaruh": "sm4", "Jadi Rujukan": "sm5", "Top of Mind": "sm6",
+  // Sales Growth levels (js/goal-plan.js SALES_LEVELS)
+  "Penjualan Pertama": "sal1", "Penjualan Rutin": "sal2", "Pelanggan Setia": "sal3",
+  "Find Your Voice": "gp1", "Build Credibility": "gp2", "Become an Authority": "gp3", "Lead the Conversation": "gp4", "Become a Recognized Voice": "gp5",
+}));
+// { name, description, tagline } of a stored (or template) mission.
+export function missionText(mission) {
+  const k = MISSION_KEYS.get(mission?.name);
+  if (!k) return { name: mission?.name || "", description: mission?.description || "", tagline: mission?.tagline || "" };
+  return { name: t(`store.mission.${k}.name`), description: t(`store.mission.${k}.desc`), tagline: t(`store.mission.${k}.tagline`) };
+}
+export function missionProgressionNote(campaign) {
+  if (!campaign?.missionProgressionNote) return "";
+  const k = MISSION_KEYS.get(campaign.missions?.[0]?.name) || "";
+  if (k.startsWith("gs")) return t("store.ladder.growSocial.progression");
+  if (k.startsWith("gp")) return t("store.ladder.growPersonal.progression");
+  // "gb" (Dikenal/Dipercaya) is shared between the legacy single-campaign
+  // Grow Brand ladder (goalPlan.version 2, all three tracks per level — the
+  // note explains that) and the new track-pure Social Media Growth
+  // campaign (version 3, this track only) — only the legacy one gets the
+  // dynamic re-localized note; v3 campaigns fall through to their own
+  // literal note set at creation (js/goal-plan.js).
+  if (k.startsWith("gb") && campaign.goalPlan?.version !== 3) return t("goal.rules");
+  return campaign.missionProgressionNote;
+}
 
 export const MISSION_LADDERS = {
   "grow-social": {
@@ -726,22 +949,20 @@ export const MISSION_LADDERS = {
     // at Level 1 by default.
     autoLinkAllContent: true,
     calibration: {
-      question: "Kamu (atau brand ini) udah pernah jalanin proses growth kaya gini sebelumnya?",
-      skipNote: "Kalau ragu, tetap disarankan mulai dari Level 1 — progress di level awal jadi fondasi buat level berikutnya. Kamu selalu bisa balik ke mission manapun nanti.",
+      question: t("store.ladder.growSocial.question"),
+      skipNote: t("store.ladder.skipNote"),
     },
     // The framework itself: numbers are cumulative (total to date, not a
     // monthly delta) but quality/consistency must hold throughout — a viral
     // spike or bought engagement can't be used to skip a level.
-    progressionNote:
-      "Angka di tiap level itu kumulatif (total sejak awal), bukan target bulanan — tapi kualitas & konsistensi engagement harus tetap terjaga sepanjang periode. Lonjakan viral, followers, atau engagement yang dibeli nggak bisa dipakai buat lompat level (followers beli tetap dihitung mulai dari kisaran di bawah 1.000). Minimal aktif: Level 1 → 8 minggu, Level 2 → 12 minggu, Level 3 → 16 minggu, Level 4 → 20 minggu, Level 5 → 24 minggu. Maksimal vakum 14 hari berturut-turut.",
+    progressionNote: t("store.ladder.growSocial.progression"),
     missions: () => [
       {
-        name: "Get Discovered", description: "Buktikan brand kamu bisa narik perhatian secara organik.", tagline: "Bisa narik perhatian?",
+        name: "Get Discovered", description: t("store.mission.gs1.desc"), tagline: t("store.mission.gs1.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 1000, unit: "followers", highlight: true },
           { kind: "auto", label: "Konten orisinal terbit", target: 50, unit: "konten", highlight: true },
-          { kind: "number", label: "Minggu aktif konsisten", target: 8, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 1000, unit: "engagement", highlight: true },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 8, unit: "minggu" },
           { kind: "number", label: "Shares", target: 150, unit: "share" },
           { kind: "number", label: "Saves", target: 150, unit: "save" },
           { kind: "number", label: "DM bermakna", target: 50, unit: "DM" },
@@ -750,12 +971,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Build Trust", description: "Ubah perhatian jadi hubungan yang beneran — bukan cuma angka.", tagline: "Bisa bikin orang peduli?",
+        name: "Build Trust", description: t("store.mission.gs2.desc"), tagline: t("store.mission.gs2.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 3000, unit: "followers", highlight: true },
           { kind: "auto", label: "Konten kumulatif", target: 100, unit: "konten", highlight: true },
-          { kind: "number", label: "Minggu aktif konsisten", target: 12, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 3000, unit: "engagement", highlight: true },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 12, unit: "minggu" },
           { kind: "number", label: "Shares", target: 500, unit: "share" },
           { kind: "number", label: "Saves", target: 500, unit: "save" },
           { kind: "number", label: "DM bermakna", target: 150, unit: "DM" },
@@ -765,12 +985,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Build Community", description: "Ubah followers jadi orang yang aktif ikut serta.", tagline: "Bisa bikin orang betah?",
+        name: "Build Community", description: t("store.mission.gs3.desc"), tagline: t("store.mission.gs3.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 10000, unit: "followers", highlight: true },
           { kind: "auto", label: "Konten kumulatif", target: 150, unit: "konten", highlight: true },
-          { kind: "number", label: "Minggu aktif konsisten", target: 16, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 10000, unit: "engagement", highlight: true },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 16, unit: "minggu" },
           { kind: "number", label: "Shares", target: 1500, unit: "share" },
           { kind: "number", label: "Saves", target: 1500, unit: "save" },
           { kind: "number", label: "DM bermakna", target: 300, unit: "DM" },
@@ -783,12 +1002,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Activate Community", description: "Bikin komunitas kamu ikut nyumbang ke growth brand.", tagline: "Bisa bikin orang ikut serta?",
+        name: "Activate Community", description: t("store.mission.gs4.desc"), tagline: t("store.mission.gs4.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 25000, unit: "followers", highlight: true },
           { kind: "auto", label: "Konten kumulatif", target: 250, unit: "konten", highlight: true },
-          { kind: "number", label: "Minggu aktif konsisten", target: 20, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 30000, unit: "engagement", highlight: true },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 20, unit: "minggu" },
           { kind: "number", label: "Shares", target: 5000, unit: "share" },
           { kind: "number", label: "Saves", target: 5000, unit: "save" },
           { kind: "number", label: "DM bermakna", target: 750, unit: "DM" },
@@ -803,12 +1021,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Build Advocacy", description: "Bangun komunitas yang bisa aktif gerakin brand kamu sendiri.", tagline: "Orang lain bisa bantu brand kamu?",
+        name: "Build Advocacy", description: t("store.mission.gs5.desc"), tagline: t("store.mission.gs5.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 50000, unit: "followers", highlight: true },
           { kind: "auto", label: "Konten kumulatif", target: 400, unit: "konten", highlight: true },
-          { kind: "number", label: "Minggu aktif konsisten", target: 24, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 75000, unit: "engagement", highlight: true },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 24, unit: "minggu" },
           { kind: "number", label: "Shares", target: 15000, unit: "share" },
           { kind: "number", label: "Saves", target: 15000, unit: "save" },
           { kind: "number", label: "DM bermakna", target: 1500, unit: "DM" },
@@ -832,32 +1049,21 @@ export const MISSION_LADDERS = {
     // rendered when a ladder declares `terms`; MISSION_LADDERS entries
     // without it (grow-social, event) skip straight to calibration.
     terms: {
-      intro: "Sebelum mulai, baca dan setujui aturan main campaign ini dulu.",
-      rules: [
-        { title: "Keaslian Dulu", body: "Personal branding harus merepresentasikan orang asli — keahlian, pengalaman, opini, dan values kamu yang beneran, bukan karakter fiktif." },
-        { title: "Growth Organik Aja", body: "Beli followers, likes, komentar, views, akun palsu, bot, engagement pod, follow-for-follow, atau cara growth artifisial lainnya nggak boleh." },
-        { title: "Harus Konsisten", body: "Growth harus kebukti sepanjang waktu. Maksimal vakum 14 hari berturut-turut." },
-        { title: "Konten yang Ada Value-nya", body: "Konten harus kasih value asli — lewat ilmu, pengalaman, sudut pandang, edukasi, cerita, atau insight yang berguna. Promosi diri doang nggak dihitung sebagai konten thought-leadership." },
-        { title: "Kualitas di Atas Jumlah Followers", body: "Followers doang nggak nentuin kamu naik level. Otoritas, kualitas engagement, percakapan, pertumbuhan network, dan peluang juga harus ikut naik." },
-        { title: "Nggak Boleh Otoritas Palsu", body: "Nggak boleh ngarang kredensial, pencapaian, testimoni, klien, keahlian, atau pengalaman profesional." },
-        { title: "Perlu Bukti", body: "Kamu mungkin diminta nunjukkin analytics, link konten, catatan kolaborasi, catatan event, atau bukti lain." },
-        { title: "Semua Milestone Wajib", body: "Nyampe target followers doang nggak otomatis buka level berikutnya — semua milestone di level itu harus kelar dulu." },
-      ],
+      intro: t("store.ladder.growPersonal.termsIntro"),
+      rules: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ title: t(`store.terms.gp.${n}.title`), body: t(`store.terms.gp.${n}.body`) })),
     },
     calibration: {
-      question: "Kamu udah pernah jalanin proses bangun personal branding kaya gini sebelumnya?",
-      skipNote: "Kalau ragu, tetap disarankan mulai dari Level 1 — progress di level awal jadi fondasi buat level berikutnya. Kamu selalu bisa balik ke mission manapun nanti.",
+      question: t("store.ladder.growPersonal.question"),
+      skipNote: t("store.ladder.skipNote"),
     },
-    progressionNote:
-      "Tujuannya bukan cuma \"nambah followers\" — tapi Visibility → Credibility → Authority → Influence → Opportunity. Personal brand dianggap berhasil kalau perhatian berubah jadi kepercayaan, hubungan, pengaruh, dan peluang nyata. Angka tiap level kumulatif (total sejak awal). Minimal aktif: Level 1 → 8 minggu, Level 2 → 12 minggu, Level 3 → 16 minggu, Level 4 → 20 minggu, Level 5 → 24 minggu. Maksimal vakum 14 hari berturut-turut — lonjakan viral sesaat nggak dihitung sebagai growth yang berkelanjutan.",
+    progressionNote: t("store.ladder.growPersonal.progression"),
     missions: () => [
       {
-        name: "Find Your Voice", description: "Bangun kehadiran personal yang dikenali.", tagline: "Orang-orang nemuin kamu.",
+        name: "Find Your Voice", description: t("store.mission.gp1.desc"), tagline: t("store.mission.gp1.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 1000, unit: "followers" },
           { kind: "auto", label: "Konten orisinal terbit", target: 20, unit: "konten" },
-          { kind: "number", label: "Minggu aktif konsisten", target: 8, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 1500, unit: "engagement" },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 8, unit: "minggu" },
           { kind: "number", label: "Komentar bermakna", target: 100, unit: "komentar" },
           { kind: "number", label: "DM bermakna", target: 50, unit: "DM" },
           { kind: "number", label: "Shares", target: 100, unit: "share" },
@@ -868,12 +1074,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Build Credibility", description: "Dikenal buat topik atau keahlian tertentu.", tagline: "Orang-orang ngerti apa yang kamu tahu.",
+        name: "Build Credibility", description: t("store.mission.gp2.desc"), tagline: t("store.mission.gp2.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 3000, unit: "followers" },
           { kind: "auto", label: "Konten kumulatif", target: 100, unit: "konten" },
-          { kind: "number", label: "Minggu aktif konsisten", target: 12, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 5000, unit: "engagement" },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 12, unit: "minggu" },
           { kind: "number", label: "Komentar bermakna", target: 300, unit: "komentar" },
           { kind: "number", label: "DM bermakna", target: 150, unit: "DM" },
           { kind: "number", label: "Shares", target: 500, unit: "share" },
@@ -885,12 +1090,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Become an Authority", description: "Bangun otoritas yang dikenali di niche kamu.", tagline: "Orang-orang percaya keahlian kamu.",
+        name: "Become an Authority", description: t("store.mission.gp3.desc"), tagline: t("store.mission.gp3.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 10000, unit: "followers" },
           { kind: "auto", label: "Konten kumulatif", target: 200, unit: "konten" },
-          { kind: "number", label: "Minggu aktif konsisten", target: 16, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 15000, unit: "engagement" },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 16, unit: "minggu" },
           { kind: "number", label: "Komentar bermakna", target: 750, unit: "komentar" },
           { kind: "number", label: "DM bermakna", target: 300, unit: "DM" },
           { kind: "number", label: "Shares", target: 1500, unit: "share" },
@@ -903,12 +1107,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Lead the Conversation", description: "Jadi orang yang idenya mempengaruhi percakapan di niche kamu.", tagline: "Orang-orang nyari perspektif kamu.",
+        name: "Lead the Conversation", description: t("store.mission.gp4.desc"), tagline: t("store.mission.gp4.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 25000, unit: "followers" },
           { kind: "auto", label: "Konten kumulatif", target: 300, unit: "konten" },
-          { kind: "number", label: "Minggu aktif konsisten", target: 20, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 40000, unit: "engagement" },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 20, unit: "minggu" },
           { kind: "number", label: "Komentar bermakna", target: 2000, unit: "komentar" },
           { kind: "number", label: "DM bermakna", target: 750, unit: "DM" },
           { kind: "number", label: "Shares", target: 5000, unit: "share" },
@@ -923,12 +1126,11 @@ export const MISSION_LADDERS = {
         ],
       },
       {
-        name: "Become a Recognized Voice", description: "Bangun personal brand yang nyiptain pengaruh, peluang, dan ekosistem sekitar kamu.", tagline: "Orang-orang share, rekomendasiin, dan nyiptain peluang di sekitar nama kamu.",
+        name: "Become a Recognized Voice", description: t("store.mission.gp5.desc"), tagline: t("store.mission.gp5.tagline"),
         milestones: [
           { kind: "number", label: "Followers", target: 50000, unit: "followers" },
           { kind: "auto", label: "Konten kumulatif", target: 500, unit: "konten" },
-          { kind: "number", label: "Minggu aktif konsisten", target: 24, unit: "minggu" },
-          { kind: "number", label: "Engagement bermakna total", target: 100000, unit: "engagement" },
+          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 24, unit: "minggu" },
           { kind: "number", label: "Komentar bermakna", target: 5000, unit: "komentar" },
           { kind: "number", label: "DM bermakna", target: 1500, unit: "DM" },
           { kind: "number", label: "Shares", target: 15000, unit: "share" },
@@ -959,9 +1161,20 @@ export const MISSION_LADDERS = {
 // a starting rung via that tier's `startIndex` — missions below it are
 // marked already-complete instead of making someone re-prove ground
 // they've already covered before this campaign existed.
-export function createMissionsForTemplate(templateId, { startIndex = 0 } = {}) {
+// Each level's minimum active period, in weeks — the same numbers the
+// ladder's progressionNote states. Used to scale the "konten terbit"
+// targets to the cadence the brand actually committed to in "Atur Jadwal
+// Kerja" (uploads/week × minimum weeks), so a 3-posts-a-week café isn't
+// handed the same 50-piece Level 1 as a daily-posting media brand.
+export const MISSION_MIN_WEEKS = [8, 12, 16, 20, 24];
+
+export function createMissionsForTemplate(templateId, { startIndex = 0, uploadsPerWeek = null } = {}) {
   const ladder = MISSION_LADDERS[templateId];
   if (!ladder) return undefined;
+  const scaledContentTarget = (ms, i) => {
+    if (ms.kind !== "auto" || !uploadsPerWeek) return ms.target ?? null;
+    return Math.max(8, Math.round(uploadsPerWeek * (MISSION_MIN_WEEKS[i] || 8)));
+  };
   return ladder.missions().map((m, i) => ({
     id: uid(),
     name: m.name,
@@ -976,9 +1189,9 @@ export function createMissionsForTemplate(templateId, { startIndex = 0 } = {}) {
       kind: ms.kind,
       phaseId: ms.phaseId || null,
       label: ms.label,
-      description: ms.description || MILESTONE_DESCRIPTIONS[ms.label] || "",
+      description: ms.description || milestoneDescriptionSource(ms.label),
       unit: ms.unit || "",
-      target: ms.target ?? null,
+      target: scaledContentTarget(ms, i),
       threshold: ms.threshold ?? null,
       highlight: !!ms.highlight,
       custom: false,
@@ -988,38 +1201,83 @@ export function createMissionsForTemplate(templateId, { startIndex = 0 } = {}) {
   }));
 }
 
-// "logged" gates advancement — has this milestone been recorded at all.
-// "metTarget" only drives the visual (full glow vs dim) — missing a target
-// doesn't block you forever, it just shows. Number-kind milestones must
-// have a real figure typed in before Next Mission, but hitting the target
-// itself isn't a hard gate — you log what actually happened and decide to
-// move on, same as real marketing reporting.
-export function milestoneStatus(milestone, campaign, content) {
-  if (milestone.kind === "auto") {
-    // autoLinkAllContent campaigns (Grow Social Media) have no per-content
-    // linking step at all — every piece of content the brand makes counts,
-    // full stop, since the whole point of this campaign is total output.
-    const current = campaign.autoLinkAllContent
-      ? content.length
-      : content.filter((c) => c.campaignId === campaign.id && c.campaignPhaseId === milestone.phaseId).length;
-    return { current, logged: true, metTarget: current >= milestone.target };
+export function consecutiveActiveWeeks(content, offsetDays = 0) {
+  const DAY = 86400000;
+  const days = content
+    .filter((c) => c.status === "published" && c.publishedDate)
+    .map((c) => Math.floor(new Date(c.publishedDate + "T12:00:00").getTime() / DAY))
+    .filter((d) => Number.isFinite(d));
+  if (!days.length) return 0;
+  // offsetDays > 0 asks "what would the streak be N days from now if
+  // nothing new gets published" — see streakBreakInDays.
+  const today = Math.floor(Date.now() / DAY) + offsetDays;
+  let weeks = 0;
+  // Week 0 = the last 7 days including today, week 1 = the 7 before, ...
+  // Keep counting while each successive window has at least one publish.
+  for (let w = 0; w < 260; w++) {
+    const end = today - w * 7;
+    const start = end - 6;
+    if (!days.some((d) => d >= start && d <= end)) break;
+    weeks++;
   }
-  if (milestone.kind === "check") {
-    return { current: milestone.done ? 1 : 0, logged: !!milestone.done, metTarget: !!milestone.done };
-  }
-  if (milestone.kind === "auto-er-count") {
-    // Real engagement-rate math lives in formulas.js, which this module
-    // can't import without a cycle back here — the view layer
-    // (campaigns.js) computes the real current/metTarget for display and
-    // gating. This stub only needs to be safe: always "logged" so a
-    // milestone this module can't evaluate never blocks mission advancement.
-    return { current: 0, logged: true, metTarget: false };
-  }
-  const has = milestone.value !== null && milestone.value !== undefined && milestone.value !== "";
-  return { current: has ? milestone.value : 0, logged: has, metTarget: has && milestone.value >= milestone.target };
+  return weeks;
 }
-export function missionCanAdvance(mission, campaign, content) {
-  return mission.milestones.every((m) => milestoneStatus(m, campaign, content).logged);
+// The content a mission-ladder campaign counts: everything the brand makes
+// for autoLinkAllContent ladders, only linked content otherwise. Same rule
+// milestoneStatus applies inline.
+export function campaignContentPool(campaign, content) {
+  return campaign.autoLinkAllContent ? content : content.filter((c) => c.campaignId === campaign.id);
+}
+// How many weeks (since `sinceMs`) actually hit every one of the brand's
+// real cadence.uploadDays — not just "N pieces this week" but "published on
+// the days you said you'd publish on". Returns { compliantWeeks, totalWeeks }
+// so the reading can show "3 dari 5 minggu". No cadence configured yet →
+// zero of zero, so the milestone can fall back gracefully.
+const DOW_ID = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+export function cadenceComplianceWeeks(content, cadence, sinceMs) {
+  const days = cadence?.uploadDays || [];
+  if (!cadence?.configured || !days.length) return { compliantWeeks: 0, totalWeeks: 0 };
+  const DAY = 86400000;
+  const published = content
+    .filter((c) => c.status === "published" && c.publishedDate)
+    .map((c) => {
+      const d = new Date(c.publishedDate + "T12:00:00");
+      return { time: d.getTime(), dow: DOW_ID[d.getDay()] };
+    });
+  const start = Math.floor((sinceMs || Date.now()) / DAY) * DAY;
+  const now = Date.now();
+  let compliantWeeks = 0;
+  let totalWeeks = 0;
+  for (let weekStart = start; weekStart < now; weekStart += 7 * DAY) {
+    const weekEnd = weekStart + 7 * DAY;
+    totalWeeks++;
+    if (days.every((dow) => published.some((p) => p.dow === dow && p.time >= weekStart && p.time < weekEnd))) compliantWeeks++;
+  }
+  return { compliantWeeks, totalWeeks };
+}
+// First day (1..maxDays) on which the current active-weeks streak drops if
+// nothing else gets published, or null when it's safe for that long (or
+// there's no streak to lose). Returns { days, weeks }.
+export function streakBreakInDays(content, maxDays = 2) {
+  const weeks = consecutiveActiveWeeks(content);
+  if (!weeks) return null;
+  for (let d = 1; d <= maxDays; d++) {
+    if (consecutiveActiveWeeks(content, d) < weeks) return { days: d, weeks };
+  }
+  return null;
+}
+// Sum of one performance metric (e.g. "shares", "saves") across published
+// content — per-platform breakdown when the item has one, flat
+// `performance` otherwise, same precedence as organicViews above.
+export function contentMetricTotal(content, key) {
+  return content
+    .filter((c) => c.status === "published")
+    .reduce((sum, c) => {
+      const v = hasPlatformBreakdown(c.performanceByPlatform) ? combinePlatformMetrics(c.performanceByPlatform)[key] : c.performance?.[key];
+      if (v === null || v === undefined || v === "") return sum;
+      const n = Number(v);
+      return Number.isFinite(n) ? sum + n : sum;
+    }, 0);
 }
 // index 0 is always at least "current". Soft-lock: locked missions still
 // render (just inert) — the user can always see what's coming next.
@@ -1039,130 +1297,210 @@ export function missionState(campaign, index) {
 // of being fixed, and a milestone you miss just gets recorded as MISSED —
 // the campaign keeps moving toward the event date regardless.
 export const EVENT_SCALE_TIERS = [
-  { id: "small", label: "Small", range: "< 100 orang", max: 100, mult: 0.4 },
-  { id: "medium", label: "Medium", range: "100 – 500 orang", max: 500, mult: 1 },
-  { id: "large", label: "Large", range: "500 – 2.000 orang", max: 2000, mult: 2.5 },
-  { id: "major", label: "Major", range: "2.000+ orang", max: Infinity, mult: 6 },
-];
+  { id: "small", max: 100, mult: 0.4 },
+  { id: "medium", max: 500, mult: 1 },
+  { id: "large", max: 2000, mult: 2.5 },
+  { id: "major", max: Infinity, mult: 6 },
+].map((tier) => ({ ...tier, label: t(`store.scale.${tier.id}.label`), range: t(`store.scale.${tier.id}.range`) }));
 export function eventScaleFor(expectedAudience) {
   const n = Number(expectedAudience) || 0;
   return EVENT_SCALE_TIERS.find((t) => n <= t.max) || EVENT_SCALE_TIERS[EVENT_SCALE_TIERS.length - 1];
 }
 
-export const EVENT_STATUS_LABELS = {
-  not_started: "Belum Mulai",
-  in_progress: "Berjalan",
-  completed: "Selesai",
-  partially_completed: "Sebagian Selesai",
-  missed: "Terlewat",
-  not_applicable: "Nggak Relevan",
-};
+export const EVENT_STATUS_LABELS = Object.fromEntries(
+  ["not_started", "in_progress", "completed", "partially_completed", "missed", "not_applicable"].map((k) => [k, t(`store.eventStatus.${k}`)])
+);
 
 export const EVENT_ROLES = [
-  { id: "organizer", label: "Event Organizer / Event Owner", description: "Saya membuat atau menyelenggarakan event sendiri." },
-  { id: "tenant", label: "Tenant / Booth", description: "Saya membuka tenant, booth, atau berjualan di event milik pihak lain." },
-  { id: "participant", label: "Event Participant / Brand Participant", description: "Saya jadi bagian dari sebuah event — sponsor, speaker, performer, partner, exhibitor, komunitas, dll." },
-];
+  "organizer", "tenant", "participant",
+].map((id) => ({ id, label: t(`store.role.${id}.label`), description: t(`store.role.${id}.desc`) }));
 
 export const EVENT_PARTICIPATION_TYPES = [
-  { id: "speaker", label: "Speaker" },
-  { id: "sponsor", label: "Sponsor" },
-  { id: "performer", label: "Performer" },
-  { id: "community-partner", label: "Community Partner" },
-  { id: "brand-partner", label: "Brand Partner" },
-  { id: "exhibitor", label: "Exhibitor" },
-  { id: "supporting-partner", label: "Supporting Partner" },
-  { id: "workshop-provider", label: "Workshop Provider" },
+  { id: "speaker", label: t("store.participation.speaker") },
+  { id: "sponsor", label: t("store.participation.sponsor") },
+  { id: "performer", label: t("store.participation.performer") },
+  { id: "community-partner", label: t("store.participation.communityPartner") },
+  { id: "brand-partner", label: t("store.participation.brandPartner") },
+  { id: "exhibitor", label: t("store.participation.exhibitor") },
+  { id: "supporting-partner", label: t("store.participation.supportingPartner") },
+  { id: "workshop-provider", label: t("store.participation.workshopProvider") },
 ];
-
-export const EVENT_SETUP_FIELDS = {
-  organizer: [
-    { key: "eventName", label: "Nama event", type: "text" },
-    { key: "eventDate", label: "Tanggal event", type: "date" },
-    { key: "campaignStartDate", label: "Campaign mulai tanggal", type: "date" },
-    { key: "eventLocation", label: "Lokasi event", type: "text" },
-    { key: "eventCategory", label: "Kategori event", type: "text" },
-    { key: "expectedAudience", label: "Perkiraan jumlah audiens / kapasitas venue", type: "number" },
-    { key: "targetAudience", label: "Target audiens", type: "text" },
-    { key: "ticketed", label: "Berbayar atau gratis?", type: "select", options: [{ id: "free", label: "Gratis" }, { id: "ticketed", label: "Berbayar" }] },
-    { key: "registrationTarget", label: "Target pendaftaran", type: "number" },
-    { key: "currentFollowers", label: "Jumlah audiens media sosial sekarang", type: "number" },
-    { key: "mainPlatform", label: "Platform promosi utama", type: "text" },
-    { key: "budget", label: "Budget marketing", type: "number", optional: true },
-    { key: "previousPerformance", label: "Performa event sebelumnya (kalau ada)", type: "textarea", optional: true },
-  ],
-  tenant: [
-    { key: "eventName", label: "Nama event", type: "text" },
-    { key: "eventDate", label: "Tanggal event", type: "date" },
-    { key: "eventOrganizer", label: "Penyelenggara event", type: "text" },
-    { key: "eventLocation", label: "Lokasi event", type: "text" },
-    { key: "expectedVisitors", label: "Perkiraan pengunjung event", type: "number" },
-    { key: "boothSize", label: "Ukuran booth", type: "text" },
-    { key: "productsOffered", label: "Produk/jasa yang ditawarkan", type: "text" },
-    { key: "targetBoothVisitors", label: "Target pengunjung booth", type: "number" },
-    { key: "targetSales", label: "Target penjualan", type: "number" },
-    { key: "targetLeads", label: "Target leads", type: "number" },
-    { key: "socialAudience", label: "Jumlah audiens media sosial sekarang", type: "number" },
-    { key: "promotionPlatform", label: "Platform promosi", type: "text" },
-    { key: "budget", label: "Budget marketing", type: "number", optional: true },
-  ],
-  participant: [
-    { key: "eventName", label: "Nama event", type: "text" },
-    { key: "eventDate", label: "Tanggal event", type: "date" },
-    { key: "eventOrganizer", label: "Penyelenggara event", type: "text" },
-    { key: "exposureReceived", label: "Exposure yang didapat (slot, sesi, booth, dll)", type: "text" },
-    { key: "targetAudience", label: "Target audiens", type: "text" },
-    { key: "expectedExposure", label: "Perkiraan jangkauan exposure", type: "number" },
-    { key: "targetLeads", label: "Target leads", type: "number" },
-    { key: "targetNetworking", label: "Target peluang networking", type: "number" },
-    { key: "socialAudience", label: "Jumlah audiens media sosial sekarang", type: "number" },
-    { key: "promotionPlatform", label: "Platform promosi", type: "text" },
-  ],
-};
 
 export const EVENT_OBJECTIVES = {
   organizer: ["Awareness", "Attendance", "Community building", "Lead generation", "Sales / revenue", "Education", "Product launch", "Networking", "Brand positioning", "Community activation"],
   tenant: ["Sales", "Brand awareness", "Lead generation", "Product sampling", "Community building", "New followers", "Networking", "Product launch", "Customer acquisition"],
 };
+// The values above are what gets stored on eventPlan.objectives (and fed to
+// the AI as context); this is only how a chip reads in the current language.
+export const EVENT_OBJECTIVE_LABELS = Object.fromEntries(
+  Object.entries({
+    Awareness: "awareness", Attendance: "attendance", "Community building": "communityBuilding", "Lead generation": "leadGeneration",
+    "Sales / revenue": "salesRevenue", Education: "education", "Product launch": "productLaunch", Networking: "networking",
+    "Brand positioning": "brandPositioning", "Community activation": "communityActivation", Sales: "sales", "Brand awareness": "brandAwareness",
+    "Product sampling": "productSampling", "New followers": "newFollowers", "Customer acquisition": "customerAcquisition",
+  }).map(([value, key]) => [value, t(`store.evObj.${key}`)])
+);
 
+// Local-calendar date maths. `toISOString()` is UTC, so in Asia/Jakarta
+// (+7) a local midnight formats as the previous day — every date offset
+// used to come out one day early, and "today" before 07:00 was yesterday.
 function addDays(dateStr, days) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
   if (isNaN(d.getTime())) return dateStr;
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localISODate(d);
 }
+
+const EVENT_MONTHS = getLang() === "en"
+  ? ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  : ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+export function formatEventDate(isoDate) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate + "T00:00:00");
+  return isNaN(d.getTime()) ? isoDate : `${d.getDate()} ${EVENT_MONTHS[d.getMonth()]}`;
+}
+export function formatEventRange(from, to) {
+  if (!from || !to) return "";
+  if (from === to) return formatEventDate(from);
+  const a = new Date(from + "T00:00:00");
+  const b = new Date(to + "T00:00:00");
+  if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) return `${a.getDate()}–${b.getDate()} ${EVENT_MONTHS[a.getMonth()]}`;
+  return `${formatEventDate(from)} – ${formatEventDate(to)}`;
+}
+// A stored event phase's date label in the current language, rebuilt from
+// its dates (the stored dateLabel is in whatever language created it).
+export function eventPhaseDateLabel(phase, eventDate) {
+  if (!phase?.dateFrom || !phase?.dateTo) return phase?.dateLabel || "";
+  const eventDay = phase.preEvent === false
+    ? phase.dateFrom === phase.dateTo && phase.dateTo === eventDate
+    : !phase.preEvent && /^(Hari-H|Event day)/i.test(phase.dateLabel || "");
+  return eventDay ? t("store.eventDayLabel", { date: formatEventDate(phase.dateTo) }) : formatEventRange(phase.dateFrom, phase.dateTo);
+}
+// Whole days from `fromISO` to `toISO` (negative when `to` is earlier).
+export function daysBetween(fromISO, toISO) {
+  const a = new Date(fromISO + "T00:00:00").getTime();
+  const b = new Date(toISO + "T00:00:00").getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round((b - a) / 86400000);
+}
+// The pre-event runway a role's template was written for: the first
+// phase's end offset plus ~2 weeks for the first phase itself (it starts at
+// "campaign start", which the template leaves open-ended).
+export function nominalEventRunway(phaseTemplates) {
+  const first = phaseTemplates.find((p) => p.offsetFrom === null);
+  return first ? Math.abs(first.offsetTo) + 14 : 0;
+}
+const isPreEventPhase = (p) => p.offsetTo <= 0 && !(p.offsetFrom === 0 && p.offsetTo === 0);
 
 // Turns one role's phase templates into real, saveable phases+milestones —
 // called once at campaign creation. `base` is each milestone's target at
 // "medium" scale; every numeric target scales from there by the event's
 // EVENT_SCALE_TIERS multiplier, exactly the "input variables decide the
 // target" rule from the spec — never the same numbers for every event.
-export function buildEventPhases(phaseTemplates, { eventDate, campaignStartDate, scaleId }) {
+//
+// Dates: the templates assume ~44 days (organizer) / ~28 (tenant) before
+// the event. A campaign created closer than that used to get phases whose
+// window had already passed the moment it was made ("Terlewat" on day one).
+// Now the pre-event offsets are scaled to the real runway (campaign start →
+// event day); a phase that ends up with no days at all folds its milestones
+// into the next one (or the previous one for the last pre-event phase), and
+// `mergedFrom` records that so the UI can say so. `dateLabel` is the real
+// date range, not "T-30 → T-14".
+// Template flags that change how a target is derived (audit, Sep 2026):
+//  - `fixed`      a rate or an average (%, average order value) — a bigger
+//                 event doesn't make "70% attendance" become 175%, so these
+//                 never scale.
+//  - `attendance` the headline crowd number: the user's own expected
+//                 audience when they typed one, not a tier guess.
+//  - `regShare`   registrations are derived from that crowd number so the
+//                 funnel adds up (attendees ÷ EVENT_SHOW_UP_RATE, split
+//                 across the phases) instead of three unrelated constants.
+export const EVENT_SHOW_UP_RATE = 0.7;
+const EVENT_REFERENCE_AUDIENCE = 300; // what every `base` was written for ("medium")
+// Continuous multiplier from a real head-count; slightly sub-linear because
+// reach/mentions don't grow as fast as the crowd does. Lands on the old tier
+// values at their midpoints (100 → 0.4, 300 → 1, 1000 → 2.8).
+export function eventScaleMultiplier(expectedAudience) {
+  const n = Number(expectedAudience) || 0;
+  if (n <= 0) return null;
+  return Math.min(30, Math.max(0.1, Math.pow(n / EVENT_REFERENCE_AUDIENCE, 0.85)));
+}
+
+export function buildEventPhases(phaseTemplates, { eventDate, campaignStartDate, scaleId, expectedAudience = null }) {
   const tier = EVENT_SCALE_TIERS.find((t) => t.id === scaleId) || EVENT_SCALE_TIERS[1];
-  return phaseTemplates.map((p, pi) => ({
-    id: `phase-${pi}`,
-    name: p.name,
-    dateLabel: p.dateLabel,
-    dateFrom: p.offsetFrom === null ? campaignStartDate || eventDate : addDays(eventDate, p.offsetFrom),
-    dateTo: addDays(eventDate, p.offsetTo),
-    milestones: p.milestones.map((m) => ({
-      id: uid(),
-      label: m.label,
-      description: m.description || "",
-      category: m.category,
-      kind: m.kind,
-      unit: m.unit || "",
-      target: m.kind === "check" ? null : Math.max(1, Math.round((m.base || 1) * tier.mult)),
-      isSystemTarget: m.kind !== "check",
-      required: m.required !== false,
-      notApplicable: false,
-      measurementMethod: m.measurementMethod || "",
-      value: null,
-      done: false,
-      custom: false,
-    })),
-  }));
+  const mult = eventScaleMultiplier(expectedAudience) ?? tier.mult;
+  const crowd = Number(expectedAudience) > 0 ? Math.round(Number(expectedAudience)) : null;
+  const targetFor = (m) => {
+    if (m.kind === "check") return null;
+    if (m.fixed) return m.base;
+    if (m.attendance) return crowd ?? Math.max(1, Math.round(m.base * mult));
+    if (m.regShare) return Math.max(1, Math.round(((crowd ?? EVENT_REFERENCE_AUDIENCE * mult) / EVENT_SHOW_UP_RATE) * m.regShare));
+    return Math.max(1, Math.round((m.base || 1) * mult));
+  };
+  const start = campaignStartDate && campaignStartDate <= eventDate ? campaignStartDate : eventDate;
+  const runway = Math.max(0, daysBetween(start, eventDate));
+  const nominal = nominalEventRunway(phaseTemplates);
+  const factor = nominal && runway < nominal ? runway / nominal : 1;
+  const makeMilestone = (m) => ({
+    id: uid(),
+    label: m.label,
+    description: m.description || "",
+    category: m.category,
+    kind: m.kind,
+    unit: m.unit || "",
+    target: targetFor(m),
+    isSystemTarget: m.kind !== "check",
+    required: m.required !== false,
+    notApplicable: false,
+    measurementMethod: m.measurementMethod || "",
+    value: null,
+    done: false,
+    custom: false,
+  });
+  const phases = [];
+  let cursor = start;
+  let carry = [];
+  let carryNames = [];
+  phaseTemplates.forEach((p, pi) => {
+    let dateFrom;
+    let dateTo;
+    if (isPreEventPhase(p)) {
+      dateFrom = cursor;
+      dateTo = addDays(eventDate, Math.min(0, Math.round(p.offsetTo * factor)));
+      if (dateTo < dateFrom) {
+        // No days left for this phase: fold into the last pre-event phase
+        // that did fit, or carry forward when none has yet.
+        const prev = [...phases].reverse().find((ph) => ph.preEvent);
+        if (prev) {
+          prev.milestones.push(...p.milestones.map(makeMilestone));
+          prev.mergedFrom = [...(prev.mergedFrom || []), p.name];
+        } else {
+          carry.push(...p.milestones);
+          carryNames.push(p.name);
+        }
+        return;
+      }
+      cursor = addDays(dateTo, 1);
+    } else {
+      dateFrom = p.offsetFrom === null ? start : addDays(eventDate, p.offsetFrom);
+      dateTo = addDays(eventDate, p.offsetTo);
+    }
+    const eventDay = p.offsetFrom === 0 && p.offsetTo === 0;
+    phases.push({
+      id: `phase-${pi}`,
+      name: p.name,
+      preEvent: isPreEventPhase(p),
+      dateLabel: eventDay ? t("store.eventDayLabel", { date: formatEventDate(dateTo) }) : formatEventRange(dateFrom, dateTo),
+      dateFrom,
+      dateTo,
+      ...(carryNames.length ? { mergedFrom: carryNames.slice() } : {}),
+      milestones: [...carry, ...p.milestones].map(makeMilestone),
+    });
+    carry = [];
+    carryNames = [];
+  });
+  return phases;
 }
 
 // Every milestone the app can't literally count from Content OS is
@@ -1196,7 +1534,7 @@ const ORGANIZER_PHASES = [
       { kind: "number", label: "Dapatkan X saves", base: 100, unit: "save", category: "ENGAGEMENT" },
       { kind: "number", label: "Dapatkan X komentar", base: 150, unit: "komentar", category: "ENGAGEMENT" },
       { kind: "number", label: "Dapatkan X mention event", base: 30, unit: "mention", category: "ENGAGEMENT" },
-      { kind: "number", label: "Dapatkan X pendaftaran", base: 50, unit: "pendaftar", category: "CONVERSION" },
+      { kind: "number", label: "Dapatkan X pendaftaran", base: 50, unit: "pendaftar", category: "CONVERSION", regShare: 0.2 },
     ],
   },
   {
@@ -1207,7 +1545,7 @@ const ORGANIZER_PHASES = [
       { kind: "check", label: "Terbitkan konten speaker/performer/tenant/experience", category: "CONTENT", required: false },
       { kind: "number", label: "Dapatkan tambahan X reach", base: 2000, unit: "orang", category: "AWARENESS" },
       { kind: "number", label: "Dapatkan tambahan X views", base: 3000, unit: "views", category: "AWARENESS" },
-      { kind: "number", label: "Dapatkan X pendaftaran", base: 100, unit: "pendaftar", category: "CONVERSION" },
+      { kind: "number", label: "Dapatkan X pendaftaran", base: 100, unit: "pendaftar", category: "CONVERSION", regShare: 0.45 },
       { kind: "number", label: "Dapatkan X inquiries/DM", base: 40, unit: "DM", category: "ENGAGEMENT" },
       { kind: "number", label: "Dapatkan X kolaborasi/partner", base: 5, unit: "kolaborasi", category: "IMPACT" },
       { kind: "check", label: "Terbitkan social proof/testimoni (kalau ada)", category: "IMPACT", required: false },
@@ -1218,19 +1556,19 @@ const ORGANIZER_PHASES = [
     milestones: [
       { kind: "auto", label: "Terbitkan X konten countdown", base: 7, unit: "konten", category: "CONTENT" },
       { kind: "number", label: "Terbitkan X konten reminder", base: 3, unit: "konten", category: "CONTENT" },
-      { kind: "number", label: "Dapatkan X pendaftaran final", base: 80, unit: "pendaftar", category: "CONVERSION" },
+      { kind: "number", label: "Dapatkan X pendaftaran final", base: 80, unit: "pendaftar", category: "CONVERSION", regShare: 0.35 },
       { kind: "number", label: "Jangkau X orang", base: 2500, unit: "orang", category: "AWARENESS" },
       { kind: "number", label: "Dapatkan X views", base: 4000, unit: "views", category: "AWARENESS" },
       { kind: "number", label: "Dapatkan X kunjungan halaman event", base: 400, unit: "kunjungan", category: "AWARENESS" },
       { kind: "number", label: "Kirim X reminder langsung", base: 200, unit: "reminder", category: "ENGAGEMENT" },
-      { kind: "number", label: "Capai X% target registrasi sebelum hari-H", base: 80, unit: "%", category: "CONVERSION" },
+      { kind: "number", label: "Capai X% target registrasi sebelum hari-H", base: 80, unit: "%", category: "CONVERSION", fixed: true, required: false },
     ],
   },
   {
     name: "Event Day", dateLabel: "Hari-H", offsetFrom: 0, offsetTo: 0,
     milestones: [
-      { kind: "number", label: "Capai X attendee", base: 300, unit: "orang", category: "ATTENDANCE" },
-      { kind: "number", label: "Capai X% attendance rate", base: 70, unit: "%", category: "ATTENDANCE" },
+      { kind: "number", label: "Capai X attendee", base: 300, unit: "orang", category: "ATTENDANCE", attendance: true },
+      { kind: "number", label: "Capai X% attendance rate", base: 70, unit: "%", category: "ATTENDANCE", fixed: true, required: false },
       { kind: "number", label: "Dapatkan X interaksi dengan attendee", base: 300, unit: "interaksi", category: "ENGAGEMENT" },
       { kind: "number", label: "Dapatkan X social mention", base: 60, unit: "mention", category: "ENGAGEMENT" },
       { kind: "number", label: "Dapatkan X UGC posts/stories", base: 30, unit: "UGC", category: "CONTENT" },
@@ -1300,9 +1638,9 @@ const TENANT_PHASES = [
       { kind: "number", label: "X revenue", base: 3000000, unit: "Rp", category: "IMPACT", required: false },
       { kind: "number", label: "X UGC posts/stories", base: 8, unit: "UGC", category: "CONTENT" },
       { kind: "number", label: "X brand mention", base: 10, unit: "mention", category: "ENGAGEMENT" },
-      { kind: "number", label: "Konversi pengunjung booth → lead (%)", base: 25, unit: "%", category: "CONVERSION", required: false },
-      { kind: "number", label: "Konversi pengunjung booth → pembelian (%)", base: 12, unit: "%", category: "CONVERSION", required: false },
-      { kind: "number", label: "Rata-rata nilai transaksi", base: 100000, unit: "Rp", category: "IMPACT", required: false },
+      { kind: "number", label: "Konversi pengunjung booth → lead (%)", base: 25, unit: "%", category: "CONVERSION", required: false, fixed: true },
+      { kind: "number", label: "Konversi pengunjung booth → pembelian (%)", base: 12, unit: "%", category: "CONVERSION", required: false, fixed: true },
+      { kind: "number", label: "Rata-rata nilai transaksi", base: 100000, unit: "Rp", category: "IMPACT", required: false, fixed: true },
       { kind: "number", label: "Leads → peluang follow-up", base: 10, unit: "peluang", category: "IMPACT", required: false },
     ],
   },
@@ -1399,54 +1737,13 @@ export function eventPhaseTemplatesForRole(role, participationType) {
   return [];
 }
 
-// Never gates navigation (no missionCanAdvance equivalent) — status is
-// informational so the timeline stays fully clickable per rule 9.
-export function eventMilestoneStatus(milestone, phase, content) {
-  if (milestone.notApplicable) return { current: 0, achievementPct: null, status: "not_applicable" };
-  const current =
-    milestone.kind === "auto"
-      ? content.filter((c) => {
-          const t = c.createdAt;
-          return t >= new Date(phase.dateFrom + "T00:00:00").getTime() && t <= new Date(phase.dateTo + "T23:59:59").getTime();
-        }).length
-      : milestone.kind === "check"
-      ? milestone.done
-        ? 1
-        : 0
-      : milestone.value ?? 0;
-  const logged = milestone.kind === "check" ? milestone.done : milestone.kind === "auto" || (milestone.value !== null && milestone.value !== undefined);
-  const achievementPct = milestone.target ? Math.round((current / milestone.target) * 100) : logged ? 100 : 0;
-  const deadlinePassed = Date.now() > new Date(phase.dateTo + "T23:59:59").getTime();
-  let status;
-  if (logged && achievementPct >= 100) status = "completed";
-  else if (!logged) status = deadlinePassed ? "missed" : "not_started";
-  else status = deadlinePassed ? "partially_completed" : "in_progress";
-  return { current, achievementPct, status };
-}
-
 export const EVENT_PLAN_TERMS = {
-  intro: "Sebelum campaign event ini mulai, baca dan setujui aturan mainnya dulu.",
-  rules: [
-    { title: "Autentik", body: "Seluruh campaign harus dilakukan secara autentik dan nggak boleh pakai manipulasi data." },
-    { title: "No Fake Engagement", body: "Dilarang beli followers, likes, views, komentar, registrasi, atau engagement palsu buat memenuhi milestone." },
-    { title: "Data Asli Aja", body: "Progress harus berdasarkan data yang beneran terjadi." },
-    { title: "Target Bukan Jaminan", body: "Target yang dikasih sistem itu rekomendasi, bukan jaminan hasil campaign." },
-    { title: "Target Bisa Diubah", body: "Kamu bisa ubah target dari sistem atau tambahin milestone sendiri sesuai kondisi campaign kamu." },
-    { title: "Target Dinamis", body: "Target bisa beda-beda antar campaign tergantung role, skala, audiens, objective, durasi, platform, dan performa sebelumnya." },
-    { title: "Tanggal Event Fixed", body: "Campaign event punya deadline berdasarkan tanggal event. Campaign tetap jalan ke fase berikutnya meskipun milestone sebelumnya belum tercapai." },
-    { title: "Milestone Terlewat", body: "Milestone yang nggak tercapai bukan berarti campaign gagal — sistem catat sebagai MISSED atau SEBAGIAN SELESAI buat bahan evaluasi." },
-    { title: "Nggak Boleh Manipulasi Mundur", body: "Kamu nggak boleh ubah data aktual setelah deadline cuma buat naikin angka achievement." },
-    { title: "Measurement Jelas", body: "Setiap milestone harus punya cara pengukuran yang jelas." },
-    { title: "Wajib vs Opsional", body: "Milestone wajib dipakai buat objective utama campaign. Milestone opsional cuma tambahan dan nggak mempengaruhi penyelesaian campaign inti." },
-    { title: "Campaign Selesai", body: "Campaign dianggap selesai kalau udah lewatin semua fase yang ditentukan (Pre-Event → Event Day → Post-Event) — bukan berdasarkan jumlah milestone yang berhasil." },
-    { title: "Evaluasi Berdasarkan Objective", body: "Campaign harus dievaluasi berdasarkan objective yang dipilih dari awal — nggak semua metric punya bobot yang sama buat tiap jenis campaign." },
-    { title: "Beda Platform Beda Benchmark", body: "Benchmark dan performa bisa beda tiap platform — Instagram, TikTok, YouTube, LinkedIn, dll nggak bisa dianggap sama." },
-    { title: "Perbaikan Berkelanjutan", body: "Hasil campaign sebelumnya bisa dipakai jadi baseline buat bikin target campaign berikutnya lebih relevan." },
-  ],
+  intro: t("store.terms.ev.intro"),
+  rules: Array.from({ length: 15 }, (_, i) => ({ title: t(`store.terms.ev.${i + 1}.title`), body: t(`store.terms.ev.${i + 1}.body`) })),
 };
 
 export function createCampaign(brandId, data = {}) {
-  const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId };
+  const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId, ownerId: ownerUid };
   db.campaigns = [...(db.campaigns || []), item];
   persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
   return item;
@@ -1457,6 +1754,23 @@ export function updateCampaign(id, patch) {
   Object.assign(item, patch, { updatedAt: Date.now() });
   persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
   return item;
+}
+// Numbers the app genuinely can't observe (DMs, collaborations, community
+// members…) live here, once per campaign, keyed by milestone id — not per
+// level, so the same figure is never copied forward between levels.
+export function setCampaignManualMetric(campaignId, milestoneId, patch) {
+  const c = getCampaign(campaignId);
+  if (!c) return null;
+  const manualMetrics = { ...(c.manualMetrics || {}) };
+  manualMetrics[milestoneId] = { ...(manualMetrics[milestoneId] || {}), ...patch, updatedAt: Date.now() };
+  return updateCampaign(campaignId, { manualMetrics });
+}
+// Marks a mission-ladder level done (auto-advance, or a Pro "force").
+export function completeCampaignStage(campaignId, index, { completedAt = Date.now() } = {}) {
+  const c = getCampaign(campaignId);
+  if (!c?.missions?.[index]) return null;
+  const missions = c.missions.map((m, i) => (i === index ? { ...m, completedAt } : m));
+  return updateCampaign(campaignId, { missions });
 }
 export function deleteCampaign(id) {
   db.campaigns = (db.campaigns || []).filter((c) => c.id !== id);
@@ -1473,7 +1787,10 @@ export function getSettings() {
   return db.settings;
 }
 function persistSettings() {
-  persist(() => setDoc(doc(fdb, "settings", "main"), db.settings));
+  // db.settings.ai may carry the shared settings/main keys merged in —
+  // write back only this account's own ai block so the shared keys never
+  // get duplicated into a per-account doc.
+  persist(() => setDoc(doc(fdb, "settings", ownerUid), { ...db.settings, ai: personalAi || db.settings.ai }));
 }
 export function updateSettings(patch) {
   db.settings = { ...db.settings, ...patch };
@@ -1485,7 +1802,30 @@ export function updateFormulas(patch) {
   persistSettings();
 }
 export function updateAiSettings(patch) {
-  db.settings.ai = { ...db.settings.ai, ...patch };
+  personalAi = { ...(personalAi || db.settings.ai), ...patch };
+  db.settings.ai = isGlobalAiActive() ? { ...personalAi, ...globalAi } : personalAi;
+  persistSettings();
+}
+// Per-platform override — starts as a copy of the current defaults for
+// that funnel so the settings form always has real numbers to show, then
+// applies the patch. Passing `null` as the patch removes the platform's
+// override entirely (back to defaults).
+export function updatePlatformThresholds(platform, funnel, patch) {
+  const all = { ...(db.settings.thresholdsByPlatform || {}) };
+  if (patch === null) {
+    delete all[platform];
+  } else {
+    const base = all[platform] || {};
+    const current = base[funnel] || db.settings.thresholds[funnel];
+    all[platform] = {
+      ...base,
+      [funnel]: {
+        engagementRate: { ...current.engagementRate, ...(patch.engagementRate || {}) },
+        followerConversionRate: { ...current.followerConversionRate, ...(patch.followerConversionRate || {}) },
+      },
+    };
+  }
+  db.settings.thresholdsByPlatform = all;
   persistSettings();
 }
 export function updateThresholds(funnel, patch) {
@@ -1518,15 +1858,15 @@ export function removeFormat(id) {
 
 // ---------- Routine Template (standing weekly schedule, home page) ----------
 export const ROUTINE_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-export const ROUTINE_DAY_LABELS = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+export const ROUTINE_DAY_LABELS = Object.fromEntries(ROUTINE_DAYS.map((d) => [d, t(`store.day.${d}`)]));
 export const ROUTINE_ACTIVITIES = ["shooting", "editing", "upload", "custom"];
-export const ROUTINE_ACTIVITY_LABELS = { shooting: "Shooting", editing: "Editing", upload: "Upload", custom: "Custom" };
+export const ROUTINE_ACTIVITY_LABELS = Object.fromEntries(ROUTINE_ACTIVITIES.map((a) => [a, t(`store.activity.${a}`)]));
 
 export function listRoutineTemplate() {
   return db.routineTemplate || [];
 }
-export function addRoutineItem({ brandId, day, activity, customLabel = "", time = "" }) {
-  const item = { id: uid(), brandId, day, activity, customLabel: customLabel.trim(), time, doneDates: [] };
+export function addRoutineItem({ brandId, day, activity, customLabel = "", time = "", source = "manual" }) {
+  const item = { id: uid(), ownerId: ownerUid, brandId, day, activity, customLabel: customLabel.trim(), time, doneDates: [], source };
   db.routineTemplate = [...(db.routineTemplate || []), item];
   persist(() => setDoc(doc(fdb, "routineTemplate", item.id), item));
   return item;
@@ -1534,6 +1874,34 @@ export function addRoutineItem({ brandId, day, activity, customLabel = "", time 
 export function removeRoutineItem(id) {
   db.routineTemplate = (db.routineTemplate || []).filter((t) => t.id !== id);
   persist(() => deleteDoc(doc(fdb, "routineTemplate", id)));
+}
+
+// Content OS's cadence setup (Shoot/Edit/Upload days) IS this brand's My
+// Routine for those three activities — saving the setup regenerates exactly
+// those entries so the two are never out of sync. Only ever touches entries
+// this same sync created before (source:"cadence"); anything someone added
+// by hand in My Routine (source:"manual", or undefined from before this
+// existed) is left alone no matter how the setup is re-saved.
+export function syncCadenceRoutine(brandId, cadence) {
+  const untouched = (db.routineTemplate || []).filter((t) => !(t.brandId === brandId && t.source === "cadence"));
+  const fresh = [];
+  const addDays = (days, activity) => {
+    (days || []).forEach((day) => fresh.push({ id: uid(), ownerId: ownerUid, brandId, day, activity, customLabel: "", time: "", doneDates: [], source: "cadence" }));
+  };
+  addDays(cadence.shootDays, "shooting");
+  addDays(cadence.editDays, "editing");
+  addDays(cadence.uploadDays, "upload");
+
+  const removedIds = (db.routineTemplate || [])
+    .filter((t) => t.brandId === brandId && t.source === "cadence")
+    .map((t) => t.id);
+  db.routineTemplate = [...untouched, ...fresh];
+  persist(() =>
+    commitInChunks([
+      ...removedIds.map((id) => ({ type: "delete", ref: doc(fdb, "routineTemplate", id) })),
+      ...fresh.map((item) => ({ type: "set", ref: doc(fdb, "routineTemplate", item.id), data: item })),
+    ])
+  );
 }
 // Only meaningful for "custom" activity items — shooting/editing/upload
 // confirm themselves from real content activity instead of being toggled.
@@ -1559,12 +1927,20 @@ export function exportJSON() {
 export async function importJSON(json) {
   const parsed = JSON.parse(json);
   const next = { ...defaultDB(), ...parsed };
+  // Stamp ownerId on every imported doc regardless of what the backup file
+  // says — otherwise an imported doc with no/stale ownerId would be
+  // invisible to this account's own filtered queries (or worse, rejected
+  // outright by firestore.rules) right after import.
+  next.brands = (next.brands || []).map((b) => ({ ...b, ownerId: ownerUid }));
+  next.content = (next.content || []).map((c) => ({ ...c, ownerId: ownerUid }));
+  next.campaigns = (next.campaigns || []).map((c) => ({ ...c, ownerId: ownerUid }));
+  next.routineTemplate = (next.routineTemplate || []).map((r) => ({ ...r, ownerId: ownerUid }));
   await commitInChunks([
-    ...(next.brands || []).map((b) => ({ type: "set", ref: doc(fdb, "brands", b.id), data: b })),
-    ...(next.content || []).map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
-    ...(next.campaigns || []).map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
-    ...(next.routineTemplate || []).map((r) => ({ type: "set", ref: doc(fdb, "routineTemplate", r.id), data: r })),
-    { type: "set", ref: doc(fdb, "settings", "main"), data: next.settings },
+    ...next.brands.map((b) => ({ type: "set", ref: doc(fdb, "brands", b.id), data: b })),
+    ...next.content.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
+    ...next.campaigns.map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
+    ...next.routineTemplate.map((r) => ({ type: "set", ref: doc(fdb, "routineTemplate", r.id), data: r })),
+    { type: "set", ref: doc(fdb, "settings", ownerUid), data: next.settings },
   ]);
   db = next;
   window.dispatchEvent(new CustomEvent("db:change"));
@@ -1580,6 +1956,31 @@ export function resetAll() {
     ...contentIds.map((id) => ({ type: "delete", ref: doc(fdb, "content", id) })),
     ...campaignIds.map((id) => ({ type: "delete", ref: doc(fdb, "campaigns", id) })),
     ...routineIds.map((id) => ({ type: "delete", ref: doc(fdb, "routineTemplate", id) })),
-    { type: "set", ref: doc(fdb, "settings", "main"), data: db.settings },
+    { type: "set", ref: doc(fdb, "settings", ownerUid), data: db.settings },
   ]));
+}
+
+// ---------- AI feedback ----------
+// One 👍/👎 (+ optional reason) per AI result, written straight to
+// Firestore's aiFeedback collection — the seed of an eval set for prompt
+// changes (and, much later, fine-tuning). Deliberately NOT routed through
+// persist(): that fires db:change, which repaints the current view and
+// would wipe the very AI result the user is rating. Nothing in the app
+// reads this collection back, so there's no local mirror to update either.
+export function recordAiFeedback({ brandId = null, feature, prompt = "", output = "", rating, note = "" }) {
+  if (!ownerUid || !feature || !["up", "down"].includes(rating)) return null;
+  const id = uid();
+  const item = {
+    id,
+    uid: ownerUid,
+    brandId: brandId || null,
+    feature,
+    prompt: String(prompt).slice(0, 8000),
+    output: String(output).slice(0, 12000),
+    rating,
+    note: String(note || "").slice(0, 1000),
+    createdAt: Date.now(),
+  };
+  setDoc(doc(fdb, "aiFeedback", id), item).catch((e) => console.error("AI feedback save failed", e));
+  return id;
 }

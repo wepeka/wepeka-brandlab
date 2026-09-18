@@ -1,0 +1,151 @@
+/* Sign up / login screen — see js/views/login.js */
+
+/* The auth card's own field widgets live here; css/styles.css keeps the
+   shared .auth-shell / .auth-card / .field / .input rules. Everything below
+   is scoped to .auth-card so it can't leak into the rest of the app. */
+
+/* ---- Inline, per-field validation ---------------------------------- */
+.auth-card .auth-field-error{
+  margin:0;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.45;
+  color: var(--health-poor);
+}
+.auth-card .auth-field-ok{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  margin:0;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.45;
+  color: var(--health-good);
+}
+.auth-card .auth-field-ok svg{ flex:none; }
+/* .field is a flex column, so [hidden] needs the override to actually hide. */
+.auth-card .auth-field-error[hidden],
+.auth-card .auth-field-ok[hidden]{ display:none; }
+
+.auth-card .input.is-invalid{
+  border-color: var(--health-poor);
+  background: var(--health-poor-soft);
+}
+.auth-card .input.is-invalid:focus{ border-color: var(--health-poor); }
+
+/* ---- Password strength meter ---------------------------------------- */
+.auth-card .pw-meter{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin-top:2px;
+}
+.auth-card .pw-meter-track{
+  flex:1;
+  height:4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow:hidden;
+}
+.auth-card .pw-meter-fill{
+  display:block;
+  height:100%;
+  width:0;
+  border-radius: var(--radius-pill);
+  background: var(--health-poor);
+  transition: width .18s ease, background-color .18s ease;
+}
+.auth-card .pw-meter-label{
+  min-width:56px;
+  text-align:right;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color: var(--text-faint);
+}
+.auth-card .pw-meter[data-strength="none"] .pw-meter-label{ opacity:0; }
+.auth-card .pw-meter[data-strength="weak"] .pw-meter-fill{ width:33%; background: var(--health-poor); }
+.auth-card .pw-meter[data-strength="weak"] .pw-meter-label{ color: var(--health-poor); }
+.auth-card .pw-meter[data-strength="ok"] .pw-meter-fill{ width:66%; background: var(--health-average); }
+.auth-card .pw-meter[data-strength="ok"] .pw-meter-label{ color: var(--health-average); }
+.auth-card .pw-meter[data-strength="strong"] .pw-meter-fill{ width:100%; background: var(--health-good); }
+.auth-card .pw-meter[data-strength="strong"] .pw-meter-label{ color: var(--health-good); }
+
+/* ---- Live password rule checklist ----------------------------------- */
+.auth-card .pw-rules{
+  list-style:none;
+  margin:4px 0 0;
+  padding:0;
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 14px;
+}
+.auth-card .pw-rule{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  line-height:1.5;
+  color: var(--text-faint);
+  transition: color .15s ease;
+}
+.auth-card .pw-rule-mark{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:15px;
+  height:15px;
+  flex:none;
+  border-radius:50%;
+  border:1px solid var(--border);
+  color:transparent;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.auth-card .pw-rule-mark svg{ display:block; }
+.auth-card .pw-rule.is-met{ color: var(--health-good); }
+.auth-card .pw-rule.is-met .pw-rule-mark{
+  background: var(--health-good);
+  border-color: var(--health-good);
+  color: var(--bg);
+}
+
+/* ---- Terms & privacy consent ---------------------------------------- */
+.auth-card .auth-check{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  margin:2px 0 6px;
+}
+.auth-card .auth-check input[type="checkbox"]{
+  flex:none;
+  width:16px;
+  height:16px;
+  margin:2px 0 0;
+  accent-color: var(--accent);
+  cursor:pointer;
+}
+.auth-card .auth-check input[type="checkbox"].is-invalid{
+  outline:1.5px solid var(--health-poor);
+  outline-offset:2px;
+  border-radius:3px;
+}
+.auth-card .auth-check-text{
+  font-size:12.5px;
+  line-height:1.55;
+  color: var(--text-muted);
+}
+.auth-card .auth-check-text a{
+  color: var(--accent);
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+
+/* Submit stays clickable while the form is incomplete — clicking it is how
+   you find out what's still missing — but it shouldn't look ready to go. */
+.auth-card .btn.is-blocked{ opacity:.55; }
+
+/* "Continue with your Wepeka account" — the SSO door from wepeka.com */
+.auth-wepeka-btn{ gap:8px; margin-bottom:8px; }
+.auth-wepeka-btn .brand-logo{ height:15px; }
+.auth-wepeka-note{ font-size:11.5px; color: var(--text-faint); text-align:center; margin:0 0 14px; line-height:1.5; }

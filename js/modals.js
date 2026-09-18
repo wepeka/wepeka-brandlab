@@ -1,6 +1,7 @@
 // Generic overlay helpers. Overlays mount to document.body (siblings of
 // #app) so a background store-driven rerender never yanks them away mid-edit.
 import { icon } from "./icons.js";
+import { t } from "./i18n.js";
 
 export function closeOverlay(el) {
   el.remove();
@@ -13,7 +14,7 @@ export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = fals
     <div class="modal" style="${width ? `width:${width};` : wide ? "width:min(640px,92vw)" : ""}">
       <div class="drawer-head">
         <h2>${title}</h2>
-        <button class="icon-btn" data-close aria-label="Close">${icon("x", { size: 16 })}</button>
+        <button class="icon-btn" data-close aria-label="${t("common.close")}">${icon("x", { size: 16 })}</button>
       </div>
       <div class="modal-body">${bodyHTML}</div>
       ${footHTML ? `<div class="modal-foot">${footHTML}</div>` : ""}
@@ -41,7 +42,7 @@ export function openDrawer({ title, bodyHTML, footHTML = "", onMount }) {
     <div class="drawer">
       <div class="drawer-head">
         <h2>${title}</h2>
-        <button class="icon-btn" data-close aria-label="Close">${icon("x", { size: 16 })}</button>
+        <button class="icon-btn" data-close aria-label="${t("common.close")}">${icon("x", { size: 16 })}</button>
       </div>
       <div class="drawer-body">${bodyHTML}</div>
       ${footHTML ? `<div class="drawer-foot">${footHTML}</div>` : ""}
@@ -56,13 +57,13 @@ export function openDrawer({ title, bodyHTML, footHTML = "", onMount }) {
   return overlay;
 }
 
-export function confirmDialog({ title = "Are you sure?", message = "", confirmLabel = "Confirm", danger = false }) {
+export function confirmDialog({ title = t("app.confirm.title"), message = "", confirmLabel = t("app.confirm.cta"), cancelLabel = t("common.cancel"), danger = false }) {
   return new Promise((resolve) => {
     const overlay = openModal({
       title,
       bodyHTML: `<p class="text-muted" style="margin:0;font-size:13.5px;">${message}</p>`,
       footHTML: `
-        <button class="btn btn-secondary" data-cancel>Cancel</button>
+        <button class="btn btn-secondary" data-cancel>${cancelLabel}</button>
         <button class="btn ${danger ? "btn-danger" : "btn-primary"}" data-confirm>${confirmLabel}</button>
       `,
     });
@@ -77,7 +78,7 @@ export function confirmDialog({ title = "Are you sure?", message = "", confirmLa
   });
 }
 
-export function promptDialog({ title, label, placeholder = "", value = "", confirmLabel = "Save" }) {
+export function promptDialog({ title, label, placeholder = "", value = "", confirmLabel = t("common.save") }) {
   return new Promise((resolve) => {
     const overlay = openModal({
       title,
@@ -88,7 +89,7 @@ export function promptDialog({ title, label, placeholder = "", value = "", confi
         </div>
       `,
       footHTML: `
-        <button class="btn btn-secondary" data-cancel>Cancel</button>
+        <button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button>
         <button class="btn btn-primary" data-confirm>${confirmLabel}</button>
       `,
       onMount: (el) => {

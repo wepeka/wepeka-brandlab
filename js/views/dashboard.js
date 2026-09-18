@@ -1,12 +1,18 @@
 import { getBrand, listContent, getSettings, onChange, updateBrand, addBrandLogo, removeBrandLogo, resolveContentBuckets, instagramOnlyViews, organicViews, combinedViewsWithAds, FUNNELS } from "../store.js";
+import { getBrandInsights } from "../store.js";
+import { ageLabel, STALE_DAYS } from "../campaign-metrics.js";
+import { openInsightsModal } from "./insights-modal.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon } from "../icons.js";
-import { formatNumber, formatPercent, formatDate, resizeImageFile, qs, qsa, toast } from "../dom.js";
+import { formatNumber, formatPercent, formatDate, resizeImageFile, qs, qsa, toast, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
 import { promptDialog } from "../modals.js";
 import { openContentEditor } from "./content-editor.js";
+import { openQuickFillModal } from "./content-list.js";
 import { getAccountProfile, getAccountInsights } from "../instagram.js";
+import { canUseInstagramApi } from "../account.js";
 import { openReportModal } from "./report.js";
 import { t } from "../i18n.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
 
 export function render(root, { brandId }) {
   const state = { accountData: null, accountLoading: false };
@@ -21,7 +27,8 @@ function paint(root, brandId, state, refresh) {
     location.hash = "#/";
     return;
   }
-  const igConfigured = !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
+  const igConfigured = canUseInstagramApi() && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
+  const collapsed = new Set(brand.dashboardCollapsed || []);
   const settings = getSettings();
   const all = listContent(brandId);
   const withMetrics = all.map((c) => ({ c, m: computeContentMetrics(c, settings) }));
@@ -76,7 +83,7 @@ function paint(root, brandId, state, refresh) {
   const platformStats = {};
   withMetrics.forEach((x) => {
     if (x.m.engagementRate === null) return;
-    const p = x.c.platform || "Other";
+    const p = x.c.platform || t("cnt.dash.otherPlatform");
     platformStats[p] = platformStats[p] || [];
     platformStats[p].push(x.m.engagementRate);
   });
@@ -88,7 +95,7 @@ function paint(root, brandId, state, refresh) {
   const formatStats = {};
   withMetrics.forEach((x) => {
     if (x.m.engagementRate === null) return;
-    const f = x.c.format || "Unspecified";
+    const f = x.c.format || t("cnt.dash.unspecifiedFormat");
     formatStats[f] = formatStats[f] || [];
     formatStats[f].push(x.m.engagementRate);
   });
@@ -127,7 +134,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${t("dashboard.eyebrow")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("dashboard.eyebrow")}${helpButtonHTML("dashboard")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">
@@ -136,7 +143,7 @@ function paint(root, brandId, state, refresh) {
       </div>
     </div>
 
-    <div class="section-title" style="margin-top:0;"><h2>${t("dashboard.brandAssets")}</h2></div>
+    ${collapsed.has("assets") ? widgetCollapsedHTML("assets", "folder", t("dashboard.brandAssets"), t("dashboard.summary.assets", { logos: (brand.logoAssets || []).length, links: [brand.driveLink, brand.brandbookLink].filter(Boolean).length })) : widgetCardHTML("assets", "folder", t("dashboard.brandAssets"), `
     ${
       !(brand.logoAssets || []).length
         ? `<p class="text-muted" style="font-size:12.5px;margin:-6px 0 12px;">${icon("info", { size: 12 })} ${t("dashboard.brandAssetsHint")}</p>`
@@ -147,138 +154,174 @@ function paint(root, brandId, state, refresh) {
       <button class="logo-add-tile" id="add-logo" aria-label="${t("dashboard.addLogo")}" title="${t("dashboard.addLogo")}">${icon("plus", { size: 16 })}</button>
       <input type="file" id="logo-file" accept="image/*" multiple style="display:none;" />
     </div>
-    <div class="row-2" style="align-items:start; margin-bottom:28px;">
+    <div class="row-2" style="align-items:start;">
       ${assetPanel(brand, "driveLink", t("dashboard.drive"), "folder")}
       ${assetPanel(brand, "brandbookLink", t("dashboard.brandbook"), "book")}
     </div>
+    `)}
 
-    ${igConfigured ? accountOverviewHTML(state) : ""}
+    ${profileCardHTML(brand, collapsed.has("profile"))}
+    ${igConfigured ? accountOverviewHTML(state, collapsed.has("accountOverview")) : ""}
 
-    <div class="stat-grid">
+    ${
+      !published.length
+        ? `<div class="card guided-next-card" style="margin-bottom:24px;">
+             <div class="page-eyebrow" style="margin-bottom:6px;">${t("cnt.dash.empty.eyebrow")}</div>
+             <h3 style="margin:0 0 6px;">${t("cnt.dash.empty.title")}</h3>
+             <p class="text-muted" style="font-size:13px;margin:0 0 14px;max-width:560px;">${t("cnt.dash.empty.body")}</p>
+             <div class="flex gap-8" style="flex-wrap:wrap;">
+               <a class="btn btn-primary btn-sm" href="#/brand/${brandId}/content-os/creator">${icon("edit", { size: 13 })}${t("cnt.dash.empty.openCreator")}</a>
+               <a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/content-os/list">${icon("layers", { size: 13 })}${t("cnt.dash.empty.fillData")}</a>
+             </div>
+           </div>`
+        : ""
+    }
+
+    ${collapsed.has("keyStats") ? widgetCollapsedHTML("keyStats", "grid", t("dashboard.keyStats"), t("dashboard.summary.keyStats", { published: published.length, total: all.length, views: formatNumber(totalViews) })) : widgetCardHTML("keyStats", "grid", t("dashboard.keyStats"), `
+    <div class="stat-grid" style="margin-bottom:14px;">
       ${stat(t("dashboard.stat.totalContent"), all.length)}
       ${stat(t("dashboard.stat.published"), published.length)}
       ${stat(t("dashboard.stat.scheduled"), scheduled.length)}
       ${stat(t("dashboard.stat.draftsIdeas"), drafts.length)}
     </div>
-    <div class="stat-grid">
+    <div class="stat-grid" style="margin-bottom:0;">
       ${stat(t("dashboard.stat.totalViews"), formatNumber(totalViews))}
       ${stat(t("dashboard.stat.avgViewsPerPost"), avgViews === null ? "—" : formatNumber(Math.round(avgViews)))}
       ${stat(t("dashboard.stat.avgER"), formatPercent(avgER))}
       ${stat(t("dashboard.stat.avgFCR"), formatPercent(avgFCR))}
     </div>
+    `)}
 
-    ${insights.length ? `
-      <div class="section-title" style="margin-top:8px;"><h2>${t("dashboard.whatDataTells")}</h2></div>
-      <div class="card card-tight" style="margin-bottom:28px;">
+    ${insights.length ? (collapsed.has("insights") ? widgetCollapsedHTML("insights", "bulb", t("dashboard.whatDataTells"), t("dashboard.summary.insights", { count: insights.length })) : widgetCardHTML("insights", "bulb", t("dashboard.whatDataTells"), `
+      <div class="card card-tight">
         ${insights.map((i) => `<div class="top-content-row"><span class="icon-btn" style="width:30px;height:30px;color:var(--accent);background:var(--accent-soft);border:none;">${icon("bulb", { size: 15 })}</span><div class="ti"><div class="t" style="white-space:normal;font-weight:600;">${i}</div></div></div>`).join("")}
       </div>
-    ` : ""}
+    `)) : ""}
 
     <div class="row-2" style="align-items:start;">
       <div>
-        <div class="section-title" style="margin-top:0;">
-          <h2>${t("dashboard.upNext")}</h2>
-          <a class="link" href="#/brand/${brand.id}/content-os/calendar">${t("dashboard.calendarLink")}</a>
-        </div>
-        <div class="card card-tight">
+        ${collapsed.has("upNext") ? widgetCollapsedHTML("upNext", "calendar", t("dashboard.upNext"), t("dashboard.summary.upNext", { count: upNext.length })) : widgetCardHTML("upNext", "calendar", t("dashboard.upNext"), `
+        <div class="card card-tight" style="margin-bottom:0;">
           ${
             upNext.length
               ? upNext.map((c) => upNextRow(c)).join("")
               : `<div class="table-empty" style="padding:28px;">${t("dashboard.nothingScheduled")}</div>`
           }
         </div>
+        `, { extraHead: `<a class="link" href="#/brand/${brand.id}/content-os/calendar">${t("dashboard.calendarLink")}</a>` })}
       </div>
       <div>
-        <div class="section-title" style="margin-top:0;">
-          <h2>${t("dashboard.contentHealth")}</h2>
-        </div>
-        <div class="card card-tight">
+        ${collapsed.has("contentHealth") ? widgetCollapsedHTML("contentHealth", "heart", t("dashboard.contentHealth"), t("dashboard.summary.contentHealth", { good: healthCounts.good, poor: healthCounts.poor })) : widgetCardHTML("contentHealth", "heart", t("dashboard.contentHealth"), `
+        <div class="card card-tight" style="margin-bottom:0;">
           ${
             evaluated
               ? healthBar(healthCounts, evaluated)
               : `<div class="table-empty" style="padding:28px;">${t("dashboard.publishToSeeHealth")}</div>`
           }
         </div>
+        `)}
       </div>
     </div>
 
-    <div class="section-title">
-      <h2>${t("dashboard.perfByFunnel")}</h2>
-    </div>
+    ${collapsed.has("perfByFunnel") ? widgetCollapsedHTML("perfByFunnel", "layers", t("dashboard.perfByFunnel"), t("dashboard.summary.perfByFunnel")) : widgetCardHTML("perfByFunnel", "layers", t("dashboard.perfByFunnel"), `
     <div class="funnel-compare">
       ${FUNNELS.map((f) => funnelCard(f, funnelStats[f])).join("")}
     </div>
+    `)}
 
-    <div class="section-title"><h2>${t("dashboard.topPerforming")}</h2></div>
-    <div class="card card-tight" style="margin-bottom:28px;">
+    ${collapsed.has("topPerforming") ? widgetCollapsedHTML("topPerforming", "target", t("dashboard.topPerforming"), t("dashboard.summary.topPerforming", { count: top.length })) : widgetCardHTML("topPerforming", "target", t("dashboard.topPerforming"), `
+    <div class="card card-tight" style="margin-bottom:0;">
       ${
         top.length
           ? top.map((x, i) => topRow(x, i)).join("")
           : `<div class="table-empty" style="padding:28px;">${t("dashboard.noPublishedViews")}</div>`
       }
     </div>
+    `, { extraHead: `<a class="link" href="#/brand/${brand.id}/content-os/list">${t("dashboard.viewAllContent")}</a>` })}
 
     ${
       boosted.length
-        ? `
-      <div class="section-title"><h2>${t("dashboard.adsPerformance")}</h2></div>
-      <div class="stat-grid" style="margin-bottom:28px;">
+        ? (collapsed.has("adsPerformance") ? widgetCollapsedHTML("adsPerformance", "chart", t("dashboard.adsPerformance"), t("dashboard.summary.adsPerformance", { count: boosted.length })) : widgetCardHTML("adsPerformance", "chart", t("dashboard.adsPerformance"), `
+      <div class="stat-grid" style="margin-bottom:0;">
         ${stat(t("dashboard.stat.boostedPosts"), boosted.length)}
         ${stat(t("dashboard.stat.totalSpend"), `$${formatNumber(adsTotals.spend)}`)}
         ${stat(t("dashboard.stat.totalImpressions"), formatNumber(adsTotals.impressions))}
         ${stat(t("dashboard.stat.totalClicks"), formatNumber(adsTotals.clicks))}
-      </div>`
+      </div>`))
         : ""
     }
 
     ${
       boostCandidates.length
-        ? `
-      <div class="section-title"><h2>${t("dashboard.worthBoosting")}</h2></div>
-      <p class="text-muted" style="font-size:12.5px;margin:-8px 0 12px;">${t("dashboard.worthBoostingHint")}</p>
-      <div class="card card-tight" style="margin-bottom:28px;">
+        ? (collapsed.has("worthBoosting") ? widgetCollapsedHTML("worthBoosting", "sparkle", t("dashboard.worthBoosting"), t("dashboard.summary.worthBoosting", { count: boostCandidates.length })) : widgetCardHTML("worthBoosting", "sparkle", t("dashboard.worthBoosting"), `
+      <p class="text-muted" style="font-size:12.5px;margin:-4px 0 12px;">${t("dashboard.worthBoostingHint")}</p>
+      <div class="card card-tight" style="margin-bottom:0;">
         ${boostCandidates.map(boostRow).join("")}
-      </div>`
+      </div>`))
         : ""
     }
 
     <div class="row-2" style="align-items:start;">
       <div>
-        <div class="section-title"><h2>${t("dashboard.perfByPlatform")}</h2></div>
-        <div class="card card-tight">
+        ${collapsed.has("perfByPlatform") ? widgetCollapsedHTML("perfByPlatform", "chart", t("dashboard.perfByPlatform"), t("dashboard.summary.perfByPlatform", { count: platformRows.length })) : widgetCardHTML("perfByPlatform", "chart", t("dashboard.perfByPlatform"), `
+        <div class="card card-tight" style="margin-bottom:0;">
           ${
             platformRows.length
               ? platformRows.map((r) => barRow(r.platform, r.avg, maxPlatformAvg)).join("")
               : `<div class="table-empty" style="padding:28px;">${t("dashboard.noEngagementData")}</div>`
           }
         </div>
+        `)}
       </div>
       <div>
-        <div class="section-title"><h2>${t("dashboard.perfByFormat")}</h2></div>
-        <div class="card card-tight">
+        ${collapsed.has("perfByFormat") ? widgetCollapsedHTML("perfByFormat", "grid", t("dashboard.perfByFormat"), t("dashboard.summary.perfByFormat", { count: formatRows.length })) : widgetCardHTML("perfByFormat", "grid", t("dashboard.perfByFormat"), `
+        <div class="card card-tight" style="margin-bottom:0;">
           ${
             formatRows.length
               ? formatRows.map((r) => barRow(r.format, r.avg, maxFormatAvg)).join("")
               : `<div class="table-empty" style="padding:28px;">${t("dashboard.noEngagementData")}</div>`
           }
         </div>
+        `)}
       </div>
     </div>
 
-    <div class="section-title"><h2>${t("dashboard.reelsVsTiktok")}</h2></div>
+    ${collapsed.has("reelsVsTiktok") ? widgetCollapsedHTML("reelsVsTiktok", "play", t("dashboard.reelsVsTiktok"), t("dashboard.summary.reelsVsTiktok", { reels: reelsItems.length, tiktok: tiktokItems.length })) : widgetCardHTML("reelsVsTiktok", "play", t("dashboard.reelsVsTiktok"), `
     <div class="row-2" style="align-items:start;">
       ${reelsTiktokCard(t("dashboard.reels"), buckets.reels, reelsTiktokStats(reelsItems), true)}
       ${reelsTiktokCard("TikTok", buckets.tiktok, reelsTiktokStats(tiktokItems), false)}
     </div>
+    `)}
   `;
 
+  qs("#open-insights", root)?.addEventListener("click", () => openInsightsModal({ brandId, onSaved: refresh }));
   qs("#new-content").addEventListener("click", () => {
     openContentEditor({ brandId, onSaved: refresh });
   });
+  wireHelpButtons(root);
+
   qs("#generate-report").addEventListener("click", () => openReportModal(brandId));
-  qsa("[data-open-content]", root).forEach((el) => {
-    el.addEventListener("click", () => openContentEditor({ brandId, contentId: el.dataset.openContent, onSaved: refresh }));
+  qsa("[data-widget-toggle]", root).forEach((el) => {
+    el.addEventListener("click", () => {
+      const key = el.dataset.widgetToggle;
+      const next = new Set(brand.dashboardCollapsed || []);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      updateBrand(brandId, { dashboardCollapsed: [...next] });
+      refresh();
+    });
   });
+  qsa("[data-open-content]", root).forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.openContent;
+      const item = all.find((c) => c.id === id);
+      // Top Performing / Worth Boosting are always published — same
+      // "fill in performance, not metadata" default as Content List.
+      if (item?.status === "published") openQuickFillModal({ c: item, onSaved: refresh });
+      else openContentEditor({ brandId, contentId: id, onSaved: refresh });
+    });
+  });
+
 
   const loadBtn = qs("#load-account-overview");
   if (loadBtn) {
@@ -300,8 +343,8 @@ function paint(root, brandId, state, refresh) {
     });
   }
 
-  qs("#add-logo", root).addEventListener("click", () => qs("#logo-file", root).click());
-  qs("#logo-file", root).addEventListener("change", async (e) => {
+  qs("#add-logo", root)?.addEventListener("click", () => qs("#logo-file", root).click());
+  qs("#logo-file", root)?.addEventListener("change", async (e) => {
     const files = [...e.target.files];
     for (const file of files) {
       const dataUrl = await resizeImageFile(file, { maxDimension: 500 });
@@ -393,12 +436,40 @@ function logoThumb(logo) {
   `;
 }
 
-function escapeAttr(s) {
-  return (s || "").replace(/"/g, "&quot;");
-}
-
 function stat(label, value) {
   return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+}
+
+// Every section of the dashboard is its own closable widget — persisted
+// per brand (brand.dashboardCollapsed) so it stays the way the user left
+// it. widgetCardHTML is the same dark, softly-animated card used for
+// "This week's work" on Beranda (js/views/brands.js) — an icon, a title,
+// an optional one-line subtitle, and the section's own body content, all
+// on one moving gradient. widgetCollapsedHTML replaces the whole thing with
+// one clickable row carrying a real summary of what's hidden — never just a
+// bare label — so collapsing never means losing track of what's there.
+function widgetCardHTML(key, iconName, title, bodyHTML, { sub = "", extraHead = "" } = {}) {
+  return `
+    <div class="dash-widget-card">
+      <div class="dash-widget-glow" aria-hidden="true"></div>
+      <div class="dash-widget-card-head">
+        <div class="dash-widget-card-icon">${icon(iconName, { size: 18 })}</div>
+        <div class="dash-widget-card-title"><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>
+        <div class="dash-widget-card-actions">
+          ${extraHead}
+          <button type="button" class="icon-btn dash-widget-collapse-btn" data-widget-toggle="${key}" aria-label="${t("dashboard.widget.collapse")}" title="${t("dashboard.widget.collapse")}">${icon("chevronDown", { size: 14 })}</button>
+        </div>
+      </div>
+      <div class="dash-widget-card-body">${bodyHTML}</div>
+    </div>`;
+}
+function widgetCollapsedHTML(key, iconName, title, summary) {
+  return `
+    <button type="button" class="dash-widget-collapsed" data-widget-toggle="${key}">
+      <span class="dash-widget-collapsed-icon">${icon(iconName, { size: 17 })}</span>
+      <span class="dash-widget-collapsed-text"><b>${title}</b>${summary ? `<small>${summary}</small>` : ""}</span>
+      ${icon("chevronDown", { size: 14 })}
+    </button>`;
 }
 
 // Ads views are display-only here — added on top of organic for a "how many
@@ -407,7 +478,7 @@ function stat(label, value) {
 // content.performance directly).
 function reelsTiktokCard(label, bucket, stats, showFacebookSplit) {
   if (!bucket) {
-    return `<div><div class="section-title" style="margin-top:0;"><h2>${label}</h2></div><div class="card card-tight"><p class="text-muted" style="font-size:12.5px;margin:0;padding:14px;">${t("dashboard.notSetUp", { label, extra: label.includes("Reels") ? "/Formats" : "" })}</p></div></div>`;
+    return `<div><div class="section-title" style="margin-top:0;"><h2>${label}</h2></div><div class="card card-tight"><p class="text-muted" style="font-size:12.5px;margin:0;padding:14px;">${t("dashboard.notSetUp", { label, extra: label.includes("Reels") ? t("cnt.dash.formatsSuffix") : "" })}</p></div></div>`;
   }
   // Reels can crosspost to Facebook, so "without Facebook" (Instagram's own
   // number) and "with Facebook" (combined) are both worth seeing side by
@@ -452,6 +523,7 @@ function topRow(x, i) {
     </div>
   `;
 }
+
 
 function boostRow(x) {
   return `
@@ -505,35 +577,52 @@ function funnelCard(funnel, stats) {
   `;
 }
 
-function escapeText(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
+// Account-level numbers the user records themselves (or the API fills):
+// the home of followers/reach/profile visits for every campaign milestone
+// that reads profile.*. Always shown — with or without the Instagram API.
+function profileCardHTML(brand, collapsed) {
+  const ins = getBrandInsights(brand, "instagram");
+  if (collapsed) return widgetCollapsedHTML("profile", "users", t("cnt.dash.profile.title"), ins?.followers != null ? t("dashboard.summary.profile", { followers: formatNumber(ins.followers) }) : t("dashboard.summary.profileEmpty"));
+  const hist = (brand.insightsHistory || []).filter((h) => h.platform === "instagram" && Number.isFinite(h.followers));
+  const prev = hist.length > 1 ? hist[hist.length - 2] : null;
+  const delta = ins && prev ? ins.followers - prev.followers : null;
+  const spark = hist.length > 1 ? sparklineHTML(hist.slice(-12).map((h) => h.followers)) : "";
+  const sub = ins?.updatedAt
+    ? `${t("cnt.dash.profile.recorded", { age: escapeText(ageLabel(ins.updatedAt)) })}${ins.source === "instagram" ? t("cnt.dash.profile.fromApi") : ""}${ins.updatedAt < Date.now() - STALE_DAYS * 86400000 ? ` · <span class="cd-stale">${t("cnt.dash.profile.stale")}</span>` : ""}`
+    : t("cnt.dash.profile.never");
+  return widgetCardHTML("profile", "users", t("cnt.dash.profile.title"), `
+      <div class="stat-grid" style="margin-bottom:0;">
+        ${stat(t("cnt.dash.profile.followers"), ins?.followers != null ? formatNumber(ins.followers) : "—")}
+        ${stat(t("cnt.dash.profile.change"), delta === null ? "—" : `${delta >= 0 ? "+" : ""}${formatNumber(delta)}`)}
+        ${stat(t("cnt.dash.profile.reach30"), ins?.reach30d != null ? formatNumber(ins.reach30d) : "—")}
+        ${stat(t("cnt.dash.profile.visits"), ins?.profileVisits30d != null ? formatNumber(ins.profileVisits30d) : "—")}
+      </div>
+      ${spark}
+    `, { sub, extraHead: `<button class="btn btn-secondary btn-sm" id="open-insights">${icon("refresh", { size: 13 })}${ins ? t("cnt.dash.profile.update") : t("cnt.dash.profile.fill")}</button>` });
+}
+function sparklineHTML(values) {
+  const w = 240;
+  const h = 40;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * w},${h - 4 - (max === min ? h / 2 : ((v - min) / (max - min)) * (h - 8))}`).join(" ");
+  return `<svg class="cd-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true" style="margin-top:12px;display:block;max-width:100%;"><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${pts}"/></svg>`;
 }
 
-function accountOverviewHTML(state) {
+function accountOverviewHTML(state, collapsed) {
+  if (collapsed) return widgetCollapsedHTML("accountOverview", "chart", t("dashboard.accountOverview"), state.accountData ? t("dashboard.summary.accountOverview") : t("dashboard.summary.accountOverviewEmpty"));
   if (state.accountLoading) {
-    return `<div class="card" style="margin-bottom:28px;"><div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("dashboard.loadingOverview")}</span></div></div>`;
+    return widgetCardHTML("accountOverview", "chart", t("dashboard.accountOverview"), `<div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("dashboard.loadingOverview")}</span></div>`);
   }
   if (!state.accountData) {
-    return `
-      <div class="card" style="margin-bottom:28px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-        <div>
-          <h3 style="font-size:15px;margin-bottom:4px;">${t("dashboard.accountOverview")}</h3>
-          <p class="text-muted" style="font-size:12.5px;margin:0;">${t("dashboard.accountOverviewHint")}</p>
-        </div>
+    return widgetCardHTML("accountOverview", "chart", t("dashboard.accountOverview"), `
+        <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("dashboard.accountOverviewHint")}</p>
         <button class="btn btn-secondary btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}${t("dashboard.loadAccountOverview")}</button>
-      </div>
-    `;
+      `);
   }
   const { profile, metrics, warnings } = state.accountData;
-  return `
-    <div class="card" style="margin-bottom:28px;">
-      <div class="flex items-center justify-between" style="margin-bottom:14px;">
-        <h3 style="font-size:15px;">${t("dashboard.accountOverview")} <span class="text-faint" style="font-weight:400;font-size:12px;">${t("dashboard.last30Days", { username: profile.username || "?" })}</span></h3>
-        <button class="btn btn-ghost btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}${t("dashboard.refresh")}</button>
-      </div>
-      <div class="stat-grid">
+  return widgetCardHTML("accountOverview", "chart", t("dashboard.accountOverview"), `
+      <div class="stat-grid" style="margin-bottom:0;">
         ${stat(t("dashboard.stat.followers"), formatNumber(profile.followers_count))}
         ${stat(t("dashboard.stat.followerGrowth"), metrics.followerGrowth !== undefined ? `${metrics.followerGrowth >= 0 ? "+" : ""}${formatNumber(metrics.followerGrowth)}` : "—")}
         ${stat(t("dashboard.stat.reach"), metrics.reach !== undefined ? formatNumber(metrics.reach) : "—")}
@@ -541,8 +630,7 @@ function accountOverviewHTML(state) {
         ${stat(t("dashboard.stat.accountsEngaged"), metrics.accountsEngaged !== undefined ? formatNumber(metrics.accountsEngaged) : "—")}
       </div>
       ${warnings?.length ? `<p class="text-faint" style="font-size:11.5px;margin:12px 0 0;">${warnings.join(" · ")}</p>` : ""}
-    </div>
-  `;
+    `, { sub: t("dashboard.last30Days", { username: profile.username || "?" }), extraHead: `<button class="btn btn-ghost btn-sm" id="load-account-overview">${icon("refresh", { size: 13 })}${t("dashboard.refresh")}</button>` });
 }
 
 function buildInsights({ funnelStats, platformRows, formatRows, poorPct }) {

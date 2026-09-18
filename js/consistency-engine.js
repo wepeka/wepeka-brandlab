@@ -6,7 +6,12 @@
 // something that stops the user from picking whatever they want. Wider
 // coverage (audience/niche changes flagging other stages, etc.) is future
 // scope — see the "Explicitly deferred" section of the Brand Builder plan.
-import { compatibilityLevel } from "./brandbook-data.js";
+import { compatibilityLevel, feelingLabel } from "./brandbook-data.js";
+import { t } from "./i18n.js";
+
+// laterLabel is part of the stored dismissal id, so it stays as the caller
+// passes it ("warna" / "typography"); only the message shows a translated word.
+const LATER_LABEL_KEY = { warna: "dna.consistency.color", color: "dna.consistency.color", typography: "dna.consistency.typography" };
 
 // laterLabel: what to call the later decision in the message, e.g. "warna"
 // or "typography". Returns null when there's nothing worth flagging (no
@@ -19,9 +24,10 @@ export function checkPersonalityConsistency(personalityFeeling, laterFeeling, la
   return {
     id: `personality-${laterLabel}-${personalityFeeling}-${laterFeeling}`,
     level,
-    message:
-      level === "strong"
-        ? `Arah brand kamu sekarang "${personalityFeeling}". Pilihan ${laterLabel} "${laterFeeling}" ini cukup bertentangan sama arah itu — nggak salah, tapi bisa bikin kesannya nggak nyambung. Tetap pakai, atau lihat arah yang lebih align?`
-        : `Arah brand kamu sekarang "${personalityFeeling}". Pilihan ${laterLabel} "${laterFeeling}" ini sedikit beda arah — nggak salah, tapi bisa melemahkan kesan yang udah dibangun. Tetap pakai, atau coba arah yang lebih align?`,
+    message: t(level === "strong" ? "dna.consistency.strong" : "dna.consistency.potential", {
+      feeling: feelingLabel(personalityFeeling),
+      label: LATER_LABEL_KEY[laterLabel] ? t(LATER_LABEL_KEY[laterLabel]) : laterLabel,
+      later: feelingLabel(laterFeeling),
+    }),
   };
 }

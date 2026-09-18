@@ -1,7 +1,26 @@
-import { shellHTML, wireShell } from "./layout.js";
-import { getBrand, initStore } from "./store.js";
-import { onAuthChange } from "./auth.js";
+import { t, getLang } from "./i18n.js";
+
+// <html lang> follows the chosen language (screen readers, hyphenation, spellcheck).
+document.documentElement.lang = getLang();
+import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
+import { unmountGuideFab } from "./guide-fab.js";
+import { noteNavigation } from "./nav-context.js";
+import { getBrand, initStore, listBrands } from "./store.js";
+import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { renderAuthScreen } from "./views/login.js";
+import { render as renderPricingScreen } from "./views/pricing.js";
+import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
+import { toast } from "./dom.js";
+import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
+import { icon } from "./icons.js";
+import { escapeHtml } from "./dom.js";
+import { maybeShowBrandlabIntro } from "./brandlab-intro.js";
+import { maybeAutoPlayVideo } from "./guide-videos.js";
+import { maybeShowProactiveNotif } from "./proactive-notif.js";
+import { hasTourRun } from "./tour.js";
+import { maybeShowModeReminder } from "./mode-reminder.js";
+import { getMode, hasChosenMode } from "./mode.js";
+import { renderModePicker } from "./mode-picker.js";
 // Every other view is loaded lazily (dynamic import, inside renderRoute)
 // instead of statically here. These used to be static imports — which
 // meant the login screen couldn't paint until the browser had fetched and
@@ -26,36 +45,208 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/builder\/([^/]+)\/?$/))) return { view: "builder", brandId: m[1], stage: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/builder\/?$/))) return { view: "builder", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/dna\/([^/]+)\/?$/))) return { view: "dna", brandId: m[1], step: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/dna\/?$/))) return { view: "dna", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/([^/]+)\/?$/))) return { view: "guidelines", brandId: m[1], section: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "copy", brandId: m[1] };
   // Analytics was folded into Content OS's Dashboard sub-tab — old links still land somewhere useful.
   if ((m = h.match(/^\/brand\/([^/]+)\/analytics\/?$/))) return { view: "content-os", brandId: m[1], sub: "dashboard" };
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
+  if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
   return { view: "brands" };
 }
 
 let storeReady = false;
+let accountUnsub = null;
+let subscribedUid = null;
 
 function showLoading() {
-  app.innerHTML = `<div class="auth-shell"><div class="auth-card" style="text-align:center;">Loading…</div></div>`;
+  app.innerHTML = `<div class="auth-shell"><div class="auth-card" style="text-align:center;">${t("app.loading")}</div></div>`;
+}
+
+function teardownApp() {
+  storeReady = false;
+  welcomeShownThisBoot = false;
+  // Signing out and into another account in the same tab is a fresh first
+  // open for that account — it gets its own picker (and its own video).
+  modePickerShown = false;
+  delete app.dataset.shellKey;
+  unmountGuideFab();
+  syncPlanPill(null);
+  if (cleanup) { cleanup(); cleanup = null; }
+}
+
+// The one always-visible way from inside the app to the pricing page, shown
+// only to accounts that have something to decide: a running trial (days
+// left) or a read-only account (ended trial / lapsed subscription).
+function syncPlanPill(account) {
+  let pill = document.getElementById("plan-pill");
+  const onPricing = location.hash.startsWith("#/pricing");
+  const readOnly = isReadOnly(account);
+  // (A running trial is already covered by the topbar plan badge.)
+  if (!account || onPricing || !readOnly) {
+    pill?.remove();
+    return;
+  }
+  if (!pill) {
+    pill = document.createElement("a");
+    pill.id = "plan-pill";
+    pill.href = "#/pricing";
+    document.body.appendChild(pill);
+  }
+  pill.className = `plan-pill ${readOnly ? "is-readonly" : ""}`;
+  const label = readOnly
+    ? t(isTrial(account) ? "app.plan.trialEnded" : "app.plan.readonly")
+    : t("app.plan.trialLeft", { days: trialDaysLeft(account) });
+  pill.innerHTML = `<span>${label}</span><strong>${t("app.plan.choose")}</strong>`;
+}
+
+// "Welcome to Brandlab" — a quiet, centred splash right after login (once
+// per boot; reset on logout so the next login gets it again). Colours come
+// from the theme tokens, so it's white-on-black in dark mode and the
+// reverse in light. Resolves when the fade-out is done.
+let welcomeShownThisBoot = false;
+function showWelcomeSplash() {
+  app.innerHTML = `
+    <div class="welcome-splash" role="status" aria-live="polite">
+      <div class="welcome-splash-text">
+        <span class="welcome-splash-kicker">${t("splash.welcome")}</span>
+        <span class="welcome-splash-logo"><img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" /><span class="brand-mark-divider"></span><span>Brandlab</span></span>
+      </div>
+    </div>`;
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  return new Promise((resolve) => setTimeout(resolve, reduced ? 900 : 1900));
+}
+
+function lockedScreenHTML(email) {
+  return `
+    <div class="auth-shell"><div class="auth-card" style="text-align:center;">
+      <div class="brand-mark" style="justify-content:center;margin-bottom:22px;">
+        <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
+        <span class="brand-mark-divider"></span>
+        Brandlab
+      </div>
+      <h1 class="auth-title">${t("app.locked.title")}</h1>
+      <p class="page-sub" style="margin:10px 0 22px;">${t("app.locked.body", { email: escapeHtml(email) })}</p>
+      <button class="btn btn-secondary btn-block" id="locked-logout">${icon("logout", { size: 15 })}${t("topbar.logout")}</button>
+    </div></div>
+  `;
 }
 
 async function boot(user) {
+  if (!user && ssoPending) {
+    showLoading();
+    return;
+  }
   if (!user) {
-    storeReady = false;
-    if (cleanup) { cleanup(); cleanup = null; }
+    teardownApp();
+    if (accountUnsub) { accountUnsub(); accountUnsub = null; }
+    subscribedUid = null;
+    setCachedAccount(null);
+    // startsWith, not ===, so a query string on the hash (there is none
+    // today, but there was historically) still lands on the login screen
+    // instead of falling through to the pricing screen.
+    const showLogin = isPaywallUnlocked() || location.hash.startsWith("#/login");
+    if (!showLogin) {
+      app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
+      renderPricingScreen(document.getElementById("pricing-root"));
+      return;
+    }
     app.innerHTML = `<main class="view" id="auth-root" style="padding:0;max-width:none;"></main>`;
     renderAuthScreen(document.getElementById("auth-root"));
     return;
   }
+
+  if (subscribedUid === user.uid) return; // account listener already driving this user
+  subscribedUid = user.uid;
+  if (accountUnsub) { accountUnsub(); accountUnsub = null; }
+  showLoading();
+  await ensureAccountDoc(user);
+  accountUnsub = subscribeAccount(user.uid, (account) => onAccountChange(user, account));
+}
+
+// Fires once immediately with the current account doc, then again live on
+// every plan/status change — a Midtrans webhook settling payment or an
+// admin deactivating the account both land here without a page refresh.
+function onAccountChange(user, account) {
+  setCachedAccount(account);
+
+  if (!account || isDeactivated(account)) {
+    teardownApp();
+    app.innerHTML = lockedScreenHTML(user.email || "");
+    document.getElementById("locked-logout")?.addEventListener("click", () => logout());
+    return;
+  }
+
+  if (account.plan === "free") {
+    teardownApp();
+    app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
+    renderPricingScreen(document.getElementById("pricing-root"), { account, user });
+    return;
+  }
+
+  // Trial or paid plan, status "active" or "readonly" (an ended trial or a
+  // lapsed subscription can still view its data — firestore.rules blocks
+  // writes at the database level, this just lets the app render normally
+  // either way; the pill is how they get to the pricing page from here).
+  syncPlanPill(account);
   if (!storeReady) {
     showLoading();
-    await initStore();
-    storeReady = true;
+    initStore(user.uid).then(async () => {
+      // Very first open of this account: one decision ("who are you?")
+      // before anything else — no welcome modal, no tour banner stacked on
+      // top of it. Those come back on the next boot as usual; the picker
+      // itself never does once a card is chosen (js/mode.js hasChosenMode).
+      // onAccountChange re-fires on every accounts/{uid} write, and right
+      // after a signup there are several in a row — without this guard a
+      // second run would wipe the picker the person is looking at, render a
+      // fresh one, and leave the first run awaiting a click on buttons that
+      // no longer exist (so its "play the Kenalan video" never ran).
+      const firstEverOpen = !hasChosenMode() && !modePickerShown;
+      if (!welcomeShownThisBoot) {
+        welcomeShownThisBoot = true;
+        await showWelcomeSplash();
+      }
+      if (firstEverOpen) {
+        modePickerShown = true;
+        app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
+        await renderModePicker(document.getElementById("mode-root"));
+        // Picking a mode is the first thing anyone does here — the "Kenalan
+        // sama Brandlab" video plays right after it, once ever. Nothing
+        // happens while that video has no src yet (js/guide-videos.js).
+        maybeAutoPlayVideo("kenalan");
+      }
+      storeReady = true;
+      firstRouteAfterBoot = true;
+      // The mode picker (just shown above, first-ever open only) already
+      // carries the intro pitch above its two cards and marks introSeenAt
+      // itself — showing the modal again right after would just repeat it.
+      // From the next login on, the modal carries the tour offer itself
+      // ("Mulai tur (disarankan)") until the tour has been taken.
+      if (!firstEverOpen) {
+        maybeShowBrandlabIntro({ offerTour: !hasTourRun() });
+        // 7: at most one banner per boot — proactive (overdue/streak) wins
+        // when there's something real to say; the mode-switch nudge only
+        // gets a turn when there isn't, so the two never stack.
+        const shownProactive = maybeShowProactiveNotif();
+        if (!shownProactive) maybeShowModeReminder();
+      }
+      renderRoute();
+      // Weekly Instagram insights refresh for published content. Loaded
+      // lazily (same reason every view is) and a few seconds after first
+      // paint so it never competes with the initial render.
+      setTimeout(() => {
+        import("./instagram-sync.js")
+          .then((m) => m.maybeAutoSyncInstagram())
+          .catch((e) => console.warn("Instagram auto-sync unavailable", e));
+      }, 8000);
+    });
+  } else {
+    renderRoute();
   }
-  renderRoute();
 }
 
 // Bumped on every call so a slow dynamic import from a route the user has
@@ -64,30 +255,82 @@ async function boot(user) {
 // cleanup once its import resolves.
 let renderToken = 0;
 
+// Pemula mode with exactly one brand: the "pick a brand" page is a
+// decision with only one answer, so the first route after boot skips it
+// and lands straight inside that brand. Only the FIRST route — once the
+// user deliberately navigates to "Semua Brand" (to add a second one, say)
+// it has to stay put.
+let firstRouteAfterBoot = false;
+// One mode picker per boot, no matter how many account snapshots land.
+let modePickerShown = false;
+
 async function renderRoute() {
   if (!storeReady) return;
   const token = ++renderToken;
   if (cleanup) { cleanup(); cleanup = null; }
+  syncPlanPill(getCachedAccount());
+
+  // Pricing, reached from inside the app (trial/read-only pill, or an
+  // upgrade). The store stays loaded — leaving this hash just rebuilds the
+  // shell, no second boot.
+  if (location.hash.startsWith("#/pricing")) {
+    delete app.dataset.shellKey;
+    unmountGuideFab();
+    app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
+    renderPricingScreen(document.getElementById("pricing-root"), { account: getCachedAccount(), user: lastUser, backHref: "#/" });
+    window.scrollTo(0, 0);
+    return;
+  }
+
   const route = parseRoute(location.hash);
+  noteNavigation(location.hash);
+
+  if (firstRouteAfterBoot) {
+    firstRouteAfterBoot = false;
+    const brands = listBrands();
+    if (route.view === "brands" && getMode() === "guided" && brands.length === 1) {
+      location.hash = `#/brand/${brands[0].id}`;
+      return;
+    }
+  }
 
   if (route.brandId && !getBrand(route.brandId)) {
     location.hash = "#/";
     return;
   }
 
-  app.innerHTML = shellHTML({ brandId: route.brandId, active: route.view });
-  wireShell({ brandId: route.brandId });
-  const viewRoot = document.getElementById("view-root");
+  // Same brand + same mode = same topbar: keep it in place and only swap
+  // the page underneath (short fade-out, then the new page fades in), so a
+  // tab click doesn't flash the whole chrome. Anything else (entering a
+  // brand, leaving it, switching mode) rebuilds the shell.
+  const shellKey = `${route.brandId || ""}|${getMode()}`;
+  let viewRoot = document.getElementById("view-root");
+  if (viewRoot && app.dataset.shellKey === shellKey) {
+    viewRoot.classList.add("view-leave");
+    await new Promise((r) => setTimeout(r, 110));
+    if (token !== renderToken) return;
+    updateShellForRoute({ brandId: route.brandId, active: route.view });
+    viewRoot.className = `view view-${route.view} ${route.view === "content-os" ? "wide" : ""}`;
+    viewRoot.innerHTML = "";
+    void viewRoot.offsetWidth;
+    viewRoot.classList.add("view-enter");
+  } else {
+    app.innerHTML = shellHTML({ brandId: route.brandId, active: route.view });
+    app.dataset.shellKey = shellKey;
+    wireShell({ brandId: route.brandId });
+    viewRoot = document.getElementById("view-root");
+  }
   window.scrollTo(0, 0);
 
   const view = await (
     {
-      home: () => import("./views/brand-home.js"),
+      home: () => (getMode() === "guided" ? import("./views/beginner-home.js") : import("./views/brand-home.js")),
       dna: () => import("./views/brand-dna.js"),
       builder: () => import("./views/brand-builder.js"),
       campaigns: () => import("./views/campaigns.js"),
       guidelines: () => import("./views/brand-guidelines.js"),
       sales: () => import("./views/sales.js"),
+      copy: () => import("./views/copy-studio.js"),
       "content-os": () => import("./views/content-os.js"),
       settings: () => import("./views/settings.js"),
     }[route.view] || (() => import("./views/brands.js"))
@@ -99,7 +342,7 @@ async function renderRoute() {
       cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "dna":
-      cleanup = view.render(viewRoot, { brandId: route.brandId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId, step: route.step });
       break;
     case "builder":
       cleanup = view.render(viewRoot, { brandId: route.brandId, stage: route.stage });
@@ -108,16 +351,17 @@ async function renderRoute() {
       cleanup = view.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });
       break;
     case "guidelines":
-      cleanup = view.render(viewRoot, { brandId: route.brandId });
+      cleanup = view.render(viewRoot, { brandId: route.brandId, section: route.section });
       break;
     case "sales":
+    case "copy":
       cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "content-os":
       cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
       break;
     case "settings":
-      cleanup = view.render(viewRoot);
+      cleanup = view.render(viewRoot, { panel: route.panel });
       break;
     default:
       cleanup = view.render(viewRoot);
@@ -131,6 +375,43 @@ async function renderRoute() {
 // the loading state synchronously here, before that listener is even
 // registered, closes the gap instead of relying on boot()'s own
 // showLoading() call, which only runs after a user is already known.
+// Arriving from wepeka.com with a one-time Wepeka token. Handled before the
+// auth listener starts so the app never flashes the login screen first, and
+// the token is wiped from the URL immediately either way — nothing to
+// copy-paste out of the address bar, nothing left in history.
+// True from the moment a Wepeka token is spotted until the sign-in with it
+// settles — boot() waits instead of painting the login screen in between,
+// which would otherwise flash for a second on every arrival from the site.
+let ssoPending = false;
+
+async function consumeWepekaToken() {
+  const m = location.hash.match(/^#\/sso\?t=([^&]+)/);
+  if (!m) return;
+  ssoPending = true;
+  const token = decodeURIComponent(m[1]);
+  history.replaceState(null, "", location.pathname + location.search);
+  location.hash = "#/";
+  try {
+    await loginWithWepekaToken(token);
+    unlockPaywall();
+  } catch (err) {
+    console.warn("[sso] Wepeka token rejected", err);
+    toast(t("auth.wepeka.failed"), "error");
+    location.hash = "#/login";
+  } finally {
+    ssoPending = false;
+    if (!lastUser) boot(lastUser);
+  }
+}
+
+let lastUser = null;
 showLoading();
-window.addEventListener("hashchange", renderRoute);
-onAuthChange(boot);
+consumeWepekaToken();
+window.addEventListener("hashchange", () => {
+  if (!lastUser) { boot(lastUser); return; } // toggle pricing <-> login while logged out
+  renderRoute();
+});
+// Guided/Advanced toggle changes which view "home" resolves to — repaint
+// the current route immediately instead of waiting for the next navigation.
+window.addEventListener("mode:change", () => { if (storeReady) renderRoute(); });
+onAuthChange((user) => { lastUser = user; boot(user); });

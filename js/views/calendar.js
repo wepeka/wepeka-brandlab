@@ -1,10 +1,18 @@
-import { getBrand, listContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, listRoutineTemplate, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITY_LABELS } from "../store.js";
+import { getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, listRoutineTemplate, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
+import { getMode } from "../mode.js";
 import { icon, platformIcon } from "../icons.js";
-import { qs, qsa, toast, escapeHtml } from "../dom.js";
+import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { suggestSchedule, hasAiKey } from "../ai.js";
-import { t } from "../i18n.js";
+import { t, getLang } from "../i18n.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { openContentCadenceSetup } from "../cadence-setup.js";
+import { consumeNavContext } from "../nav-context.js";
+import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
+import { sectionGuideButtonHTML } from "../section-guide.js";
+import { wireGuideButton } from "../guides/common.js";
+import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calendar-guide.js";
 
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const dow = () => DOW_KEYS.map((k) => t(`calendar.dow.${k}`));
@@ -14,7 +22,7 @@ function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function sameDay(a, b) { return iso(a) === iso(b); }
-function startOfWeek(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDay()); return x; }
+function startOfWeek(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDay()); x.setHours(0, 0, 0, 0); return x; }
 
 const FUNNEL_COLOR = { TOFU: "var(--tofu)", MOFU: "var(--mofu)", BOFU: "var(--bofu)" };
 
@@ -22,42 +30,43 @@ const FUNNEL_COLOR = { TOFU: "var(--tofu)", MOFU: "var(--mofu)", BOFU: "var(--bo
 // (setneg.go.id) — exact for 2026 only, since Islamic/lunar/Balinese
 // holidays shift every year and aren't computed here. Other years fall
 // back to just the fixed-date national holidays below.
+// Values are i18n key suffixes (cal.holiday.* / cal.cuti.*), resolved when shown.
 const HOLIDAYS_ID_2026 = {
-  "2026-01-01": "Tahun Baru Masehi",
-  "2026-01-16": "Isra Mikraj",
-  "2026-02-17": "Tahun Baru Imlek",
-  "2026-03-19": "Hari Suci Nyepi",
-  "2026-03-21": "Idulfitri",
-  "2026-03-22": "Idulfitri",
-  "2026-04-03": "Wafat Yesus Kristus",
-  "2026-04-05": "Paskah",
-  "2026-05-01": "Hari Buruh",
-  "2026-05-14": "Kenaikan Yesus Kristus",
-  "2026-05-27": "Iduladha",
-  "2026-05-31": "Hari Raya Waisak",
-  "2026-06-01": "Hari Lahir Pancasila",
-  "2026-06-16": "Tahun Baru Islam",
-  "2026-08-17": "HUT RI",
-  "2026-08-25": "Maulid Nabi Muhammad",
-  "2026-12-25": "Hari Natal",
+  "2026-01-01": "newYear",
+  "2026-01-16": "israMiraj",
+  "2026-02-17": "chineseNewYear",
+  "2026-03-19": "nyepi",
+  "2026-03-21": "eidFitr",
+  "2026-03-22": "eidFitr",
+  "2026-04-03": "goodFriday",
+  "2026-04-05": "easter",
+  "2026-05-01": "labor",
+  "2026-05-14": "ascension",
+  "2026-05-27": "eidAdha",
+  "2026-05-31": "vesak",
+  "2026-06-01": "pancasila",
+  "2026-06-16": "islamicNewYear",
+  "2026-08-17": "independence",
+  "2026-08-25": "mawlid",
+  "2026-12-25": "christmas",
 };
 const CUTI_BERSAMA_ID_2026 = {
-  "2026-02-16": "Cuti Bersama Imlek",
-  "2026-03-18": "Cuti Bersama Nyepi",
-  "2026-03-20": "Cuti Bersama Idulfitri",
-  "2026-03-23": "Cuti Bersama Idulfitri",
-  "2026-03-24": "Cuti Bersama Idulfitri",
-  "2026-05-15": "Cuti Bersama Kenaikan Isa Almasih",
-  "2026-05-28": "Cuti Bersama Iduladha",
-  "2026-12-24": "Cuti Bersama Natal",
+  "2026-02-16": "chineseNewYear",
+  "2026-03-18": "nyepi",
+  "2026-03-20": "eidFitr",
+  "2026-03-23": "eidFitr",
+  "2026-03-24": "eidFitr",
+  "2026-05-15": "ascension",
+  "2026-05-28": "eidAdha",
+  "2026-12-24": "christmas",
 };
 function fixedHolidaysForYear(year) {
   return {
-    [`${year}-01-01`]: "Tahun Baru Masehi",
-    [`${year}-05-01`]: "Hari Buruh",
-    [`${year}-06-01`]: "Hari Lahir Pancasila",
-    [`${year}-08-17`]: "HUT RI",
-    [`${year}-12-25`]: "Hari Natal",
+    [`${year}-01-01`]: "newYear",
+    [`${year}-05-01`]: "labor",
+    [`${year}-06-01`]: "pancasila",
+    [`${year}-08-17`]: "independence",
+    [`${year}-12-25`]: "christmas",
   };
 }
 // { label, cuti: boolean } or null — cuti (joint leave) gets a lighter
@@ -65,18 +74,30 @@ function fixedHolidaysForYear(year) {
 function holidayForDate(dateISO) {
   const year = dateISO.slice(0, 4);
   if (year === "2026") {
-    if (HOLIDAYS_ID_2026[dateISO]) return { label: HOLIDAYS_ID_2026[dateISO], cuti: false };
-    if (CUTI_BERSAMA_ID_2026[dateISO]) return { label: CUTI_BERSAMA_ID_2026[dateISO], cuti: true };
+    if (HOLIDAYS_ID_2026[dateISO]) return { label: t(`cal.holiday.${HOLIDAYS_ID_2026[dateISO]}`), cuti: false };
+    if (CUTI_BERSAMA_ID_2026[dateISO]) return { label: t(`cal.cuti.${CUTI_BERSAMA_ID_2026[dateISO]}`), cuti: true };
     return null;
   }
   const fixed = fixedHolidaysForYear(year)[dateISO];
-  return fixed ? { label: fixed, cuti: false } : null;
+  return fixed ? { label: t(`cal.holiday.${fixed}`), cuti: false } : null;
 }
 
 export function render(root, { brandId }) {
-  const state = { view: "month", cursor: new Date(), bankOpen: false };
+  const state = { view: "month", cursor: new Date(), bankOpen: false, highlightId: null, bankCampaignId: null };
+  // Arriving from a campaign ("Jadwalkan …"): open the bank on that piece
+  // (or jump to its month if it already has a date), scoped to the campaign.
+  const navCtx = consumeNavContext();
+  if (navCtx) {
+    const c = navCtx.contentId ? getContent(navCtx.contentId) : null;
+    state.highlightId = navCtx.contentId || null;
+    state.bankCampaignId = navCtx.campaignId || null;
+    if (c?.scheduleDate || c?.publishedDate) state.cursor = new Date((c.scheduleDate || c.publishedDate) + "T00:00:00");
+    else if (navCtx.intent === "schedule" || navCtx.contentId || navCtx.campaignId) state.bankOpen = true;
+  }
   const refresh = () => paint(root, brandId, state, refresh);
   refresh();
+  // Once per mount — paint() runs again on every db:change.
+  startCalendarGuideOnMount(brandId);
   return onChange(refresh);
 }
 
@@ -85,7 +106,7 @@ export function render(root, { brandId }) {
 // the "Overdue" reminder on the home page instead, which is a clearer
 // place to actually deal with it than a grid cell in the past.
 function itemsForBrand(brandId) {
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = localISODate();
   return listContent(brandId).filter((c) => {
     if (c.publishedDate) return true;
     if (!c.scheduleDate) return false;
@@ -103,9 +124,20 @@ const BANK_GROUPS = [
   { labelKey: "calendar.bank.readyToUpload", statuses: ["scheduled"] },
 ];
 
-function contentBankHTML(brandId) {
-  const unscheduled = listContent(brandId).filter((c) => !c.scheduleDate);
-  const groups = BANK_GROUPS.map((g) => ({ ...g, items: unscheduled.filter((c) => g.statuses.includes(c.status)) })).filter((g) => g.items.length);
+function contentBankHTML(brandId, state = {}) {
+  const campaign = state.bankCampaignId ? listCampaigns(brandId).find((c) => c.id === state.bankCampaignId) : null;
+  // Content whose date passed without being published drops off the grid
+  // (itemsForBrand) — it used to vanish from the Bank too, so it looked
+  // lost. It now sits at the top of the Bank, ready to be dragged onto a
+  // new (today-or-later) date.
+  const todayISO = localISODate();
+  const pool = listContent(brandId).filter((c) => (!campaign || c.campaignId === campaign.id) && c.status !== "published" && !c.publishedDate);
+  const overdue = pool.filter((c) => c.scheduleDate && c.scheduleDate < todayISO);
+  const unscheduled = pool.filter((c) => !c.scheduleDate);
+  const groups = [
+    ...(overdue.length ? [{ labelKey: "calendar.bank.overdue", items: overdue, overdue: true }] : []),
+    ...BANK_GROUPS.map((g) => ({ ...g, items: unscheduled.filter((c) => g.statuses.includes(c.status)) })).filter((g) => g.items.length),
+  ];
   return `
     <div class="content-bank" id="content-bank">
       <div class="content-bank-head">
@@ -113,19 +145,20 @@ function contentBankHTML(brandId) {
         <button class="icon-btn" id="close-bank" aria-label="${t("common.close")}" style="width:26px;height:26px;">${icon("x", { size: 13 })}</button>
       </div>
       <p class="text-faint" style="font-size:11.5px;padding:0 14px;margin:8px 0 12px;">${t("calendar.bank.hint")}</p>
+      ${campaign ? `<div class="flex items-center gap-6" style="padding:0 14px;margin:-4px 0 10px;"><span class="tag">${escapeHtml(campaign.name)}</span><button type="button" class="icon-btn" id="bank-clear-campaign" title="${t("cal.bank.showAll")}" style="width:22px;height:22px;">${icon("x", { size: 11 })}</button></div>` : ""}
       <div class="content-bank-list">
         ${
           groups.length
             ? groups
                 .map(
                   (g) => `
-          <div class="content-bank-group">
+          <div class="content-bank-group ${g.overdue ? "is-overdue" : ""}">
             <div class="content-bank-group-head">${t(g.labelKey)} <span class="text-faint">${g.items.length}</span></div>
             ${g.items
               .map(
                 (c) => `
-              <div class="cal-item bank-item" draggable="true" data-id="${c.id}" title="${escapeAttr(c.title)}">
-                <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>${escapeText(c.title || t("common.untitled"))}
+              <div class="cal-item bank-item ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="true" data-id="${c.id}" title="${escapeHtml(c.title)}">
+                <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>${escapeHtml(c.title || t("common.untitled"))}
               </div>`
               )
               .join("")}
@@ -174,7 +207,10 @@ function cadenceNotesForBrand(brandId) {
 async function runAutoSchedule(brandId, refresh) {
   const ai = getSettings().ai || {};
   const hasKey = hasAiKey(ai);
-  if (!hasKey) {
+  // During a tour this runs on sample data (js/tour-demo.js) — no key
+  // needed, no tokens spent.
+  const demo = isTourDemo();
+  if (!hasKey && !demo) {
     toast(t("calendar.autoschedule.noKey"), "error");
     return;
   }
@@ -185,13 +221,15 @@ async function runAutoSchedule(brandId, refresh) {
     toast(t("calendar.autoschedule.nothingToSchedule"));
     return;
   }
-  toast(t("calendar.autoschedule.asking", { count: unscheduled.length }));
+  toast(demo ? DEMO_TOAST : t("calendar.autoschedule.asking", { count: unscheduled.length }));
   try {
-    const startDate = new Date().toISOString().slice(0, 10);
+    const startDate = localISODate();
     const brand = getBrand(brandId);
     const campaigns = listCampaigns(brandId);
     const campaignById = new Map(campaigns.map((c) => [c.id, c]));
-    const schedule = await suggestSchedule(ai, {
+    const schedule = demo
+      ? await demoSuggestSchedule({ items: unscheduled.map((c) => ({ id: c.id, funnel: c.funnel, status: c.status })), startDate, daysAhead: 21, cadence: brand?.contentCadence })
+      : await suggestSchedule(ai, {
       items: unscheduled.map((c) => {
         const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
         const phase = campaign?.phases?.find((p) => p.id === c.campaignPhaseId);
@@ -310,6 +348,50 @@ function exportBrandICS(brandId, brandName, items) {
   toast(t("calendar.ics.done"));
 }
 
+// The exact date span the current view shows — the month grid's padded 42
+// cells (so "clear" matches what's actually on screen, including the
+// neighboring-month days peeking in at the edges), the week's 7 days, or
+// the single day.
+function visibleRangeISO(state) {
+  const d = state.cursor;
+  if (state.view === "month") {
+    const gridStart = startOfWeek(new Date(d.getFullYear(), d.getMonth(), 1));
+    const gridEnd = new Date(gridStart);
+    gridEnd.setDate(gridEnd.getDate() + 41);
+    return { start: iso(gridStart), end: iso(gridEnd) };
+  }
+  if (state.view === "week") {
+    const s = startOfWeek(d);
+    const e = new Date(s);
+    e.setDate(e.getDate() + 6);
+    return { start: iso(s), end: iso(e) };
+  }
+  return { start: iso(d), end: iso(d) };
+}
+
+// Bulk version of "Remove from calendar" (openCalItemMenu) — clears the
+// scheduled date of everything visible on the current view so it drops back
+// into the Content Bank. Never touches already-published content: that's
+// history, not a schedule to clear.
+async function clearCalendarForView(brandId, state, refresh) {
+  const { start, end } = visibleRangeISO(state);
+  const targets = listContent(brandId).filter((c) => c.status !== "published" && c.scheduleDate && c.scheduleDate >= start && c.scheduleDate <= end);
+  if (!targets.length) {
+    toast(t("calendar.clear.empty"));
+    return;
+  }
+  const ok = await confirmDialog({
+    title: t("calendar.clear.title"),
+    message: t("calendar.clear.msg", { count: targets.length }),
+    confirmLabel: t("calendar.clear.confirm"),
+    danger: true,
+  });
+  if (!ok) return;
+  targets.forEach((c) => updateContent(c.id, { scheduleDate: "" }));
+  toast(t("calendar.clear.done", { count: targets.length }));
+  refresh();
+}
+
 function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) { location.hash = "#/"; return; }
@@ -320,13 +402,15 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${t("calendar.eyebrow")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}${sectionGuideButtonHTML("calendar")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">
         <button class="btn btn-secondary" id="toggle-bank">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}</button>
+        <button class="btn btn-secondary" id="edit-cadence" title="${t("calendar.editCadenceBtn")}">${icon("gear", { size: 15 })}${t("calendar.editCadenceBtn")}</button>
         <button class="btn btn-secondary" id="ai-autoschedule">${icon("bot", { size: 15 })}${t("calendar.autoscheduleBtn")}</button>
-        <button class="btn btn-secondary" id="export-gcal" title="${t("calendar.exportGcalTitle")}">${icon("download", { size: 15 })}${t("calendar.exportGcalBtn")}</button>
+        <button class="btn btn-secondary" id="clear-calendar">${icon("trash", { size: 15 })}${t(`calendar.clear.btn.${state.view}`)}</button>
+        ${getMode() === "guided" ? "" : `<button class="btn btn-secondary" id="export-gcal" title="${t("calendar.exportGcalTitle")}">${icon("download", { size: 15 })}${t("calendar.exportGcalBtn")}</button>`}
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
       </div>
     </div>
@@ -341,16 +425,32 @@ function paint(root, brandId, state, refresh) {
         ${["month", "week", "day"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${t(`calendar.view.${v}`)}</button>`).join("")}
       </div>
     </div>
+    ${
+      brand.contentCadence?.configured
+        ? ""
+        : `<div class="cad-card">
+             ${icon("calendar", { size: 18 })}
+             <div><b>${t("calendar.cadenceCard.title")}</b><span>${t("calendar.cadenceCard.body")}</span></div>
+             <button type="button" class="btn btn-primary btn-sm" id="cadence-card-cta">${t("calendar.cadenceCard.cta")}</button>
+           </div>`
+    }
     <div id="cal-body"></div>
-    ${state.bankOpen ? contentBankHTML(brandId) : ""}
+    ${state.bankOpen ? contentBankHTML(brandId, state) : ""}
   `;
 
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
   qs("#ai-autoschedule").addEventListener("click", () => runAutoSchedule(brandId, refresh));
-  qs("#export-gcal").addEventListener("click", () => exportBrandICS(brandId, brand.name, items));
+  qs("#edit-cadence").addEventListener("click", () => openContentCadenceSetup(brand));
+  qs("#cadence-card-cta")?.addEventListener("click", () => openContentCadenceSetup(brand));
+  qs("#export-gcal")?.addEventListener("click", () => exportBrandICS(brandId, brand.name, items));
+  qs("#clear-calendar").addEventListener("click", () => clearCalendarForView(brandId, state, refresh));
+  wireHelpButtons(root);
+  wireGuideButton(root, "calendar", () => startCalendarGuide(brandId));
+
   qs("#toggle-bank").addEventListener("click", () => { state.bankOpen = !state.bankOpen; paint(root, brandId, state, refresh); });
   const closeBankBtn = qs("#close-bank");
   if (closeBankBtn) closeBankBtn.addEventListener("click", () => { state.bankOpen = false; paint(root, brandId, state, refresh); });
+  qs("#bank-clear-campaign")?.addEventListener("click", () => { state.bankCampaignId = null; paint(root, brandId, state, refresh); });
   qs("#cal-prev").addEventListener("click", () => { step(state, -1); paint(root, brandId, state, refresh); });
   qs("#cal-next").addEventListener("click", () => { step(state, 1); paint(root, brandId, state, refresh); });
   qs("#cal-today").addEventListener("click", () => { state.cursor = new Date(); paint(root, brandId, state, refresh); });
@@ -374,12 +474,17 @@ function paint(root, brandId, state, refresh) {
 
 function periodLabel(state) {
   const d = state.cursor;
+  const dayFirst = getLang() === "id";
+  const md = (x, full) => {
+    const m = full ? months()[x.getMonth()] : months()[x.getMonth()].slice(0, 3);
+    return dayFirst ? `${x.getDate()} ${m}` : `${m} ${x.getDate()}`;
+  };
   if (state.view === "month") return `${months()[d.getMonth()]} ${d.getFullYear()}`;
   if (state.view === "week") {
     const s = startOfWeek(d); const e = new Date(s); e.setDate(e.getDate() + 6);
-    return `${months()[s.getMonth()].slice(0,3)} ${s.getDate()} – ${months()[e.getMonth()].slice(0,3)} ${e.getDate()}`;
+    return `${md(s)} – ${md(e)}`;
   }
-  return `${months()[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return dayFirst ? `${md(d, true)} ${d.getFullYear()}` : `${md(d, true)}, ${d.getFullYear()}`;
 }
 function step(state, dir) {
   const d = new Date(state.cursor);
@@ -394,6 +499,8 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
   const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
   const gridStart = startOfWeek(firstOfMonth);
   const today = new Date();
+  const todayISO = localISODate();
+  const eventDays = eventDayMarkers(campaigns);
 
   let cells = "";
   for (let i = 0; i < 42; i++) {
@@ -404,19 +511,20 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
     const shown = dayItems.slice(0, 3);
     const extra = dayItems.length - shown.length;
     const holiday = holidayForDate(iso(day));
+    const eventNames = eventDays.get(iso(day));
 
     cells += `
-      <div class="cal-cell ${outside ? "outside" : ""} ${sameDay(day, today) ? "today" : ""} ${holiday ? (holiday.cuti ? "cuti" : "holiday") : ""}" data-date="${iso(day)}" ${holiday ? `title="${escapeAttr(holiday.label)}"` : ""}>
-        <div class="cal-date">${day.getDate()}</div>
-        ${holiday ? `<div class="cal-holiday-label">${escapeText(holiday.label)}</div>` : ""}
+      <div class="cal-cell ${outside ? "outside" : ""} ${sameDay(day, today) ? "today" : ""} ${iso(day) < todayISO ? "is-past" : ""} ${holiday ? (holiday.cuti ? "cuti" : "holiday") : ""} ${eventNames ? "event-day" : ""}" data-date="${iso(day)}" ${holiday ? `title="${escapeHtml(holiday.label)}"` : eventNames ? `title="${t("cal.eventDayTitle", { names: escapeHtml(eventNames.join(", ")) })}"` : ""}>
+        <div class="cal-date">${day.getDate()}${eventNames ? `<span class="cal-event-star" aria-label="${t("cal.eventDay")}">★</span>` : ""}</div>
+        ${holiday ? `<div class="cal-holiday-label">${escapeHtml(holiday.label)}</div>` : ""}
         ${shown.map((c) => {
           const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
           const itemTitle = campaign ? `${c.title} · ${campaign.name}` : c.title;
           return `
-          <div class="cal-item" draggable="true" data-id="${c.id}" title="${escapeAttr(itemTitle)}">
+          <div class="cal-item ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="true" data-id="${c.id}" title="${escapeHtml(itemTitle)}">
             <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>
-            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeAttr(campaign.name)}"></span>` : ""}
-            ${escapeText(c.title || t("common.untitled"))}
+            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaign.name)}"></span>` : ""}
+            ${escapeHtml(c.title || t("common.untitled"))}
           </div>`;
         }).join("")}
         ${extra > 0 ? `<div class="cal-more">${t("calendar.more", { count: extra })}</div>` : ""}
@@ -448,21 +556,53 @@ function campaignTimelineHTML(campaigns, monthDate) {
   const monthEndISO = iso(monthEnd);
   const active = campaigns.filter((c) => c.status !== "archived" && c.startDate && c.endDate && c.startDate <= monthEndISO && c.endDate >= monthStartISO);
   if (!active.length) return "";
+  // Percent position of a day-of-month range inside this month's track.
+  const span = (fromISO, toISO) => {
+    const startDay = fromISO > monthStartISO ? Number(fromISO.slice(8, 10)) : 1;
+    const endDay = toISO < monthEndISO ? Number(toISO.slice(8, 10)) : daysInMonth;
+    return { left: ((startDay - 1) / daysInMonth) * 100, width: ((endDay - startDay + 1) / daysInMonth) * 100 };
+  };
   const rows = active
     .map((c) => {
-      const startDay = c.startDate > monthStartISO ? Number(c.startDate.slice(8, 10)) : 1;
-      const endDay = c.endDate < monthEndISO ? Number(c.endDate.slice(8, 10)) : daysInMonth;
-      const leftPct = ((startDay - 1) / daysInMonth) * 100;
-      const widthPct = ((endDay - startDay + 1) / daysInMonth) * 100;
+      // Event campaigns show their phases as segments (each with a name)
+      // and a marker on event day, instead of one flat bar.
+      const phases = (c.eventPlan?.phases || []).filter((p) => p.dateFrom && p.dateTo && p.dateFrom <= monthEndISO && p.dateTo >= monthStartISO);
+      let bar;
+      if (phases.length) {
+        bar = phases
+          .map((p, i) => {
+            const { left, width } = span(p.dateFrom, p.dateTo);
+            return `<div class="cal-timeline-seg seg-${i % 4}" style="left:${left}%;width:${width}%;" title="${escapeHtml(phaseNameLabel(p.name))} · ${escapeHtml(eventPhaseDateLabel(p, c.eventPlan.eventDate))}"><span>${escapeHtml(phaseNameLabel(p.name))}</span></div>`;
+          })
+          .join("");
+        const ev = c.eventPlan.eventDate;
+        if (ev && ev >= monthStartISO && ev <= monthEndISO) {
+          const { left } = span(ev, ev);
+          bar += `<div class="cal-timeline-event" style="left:${left}%;" title="${t("cal.eventDay")} · ${escapeHtml(ev)}">★</div>`;
+        }
+      } else {
+        const { left, width } = span(c.startDate, c.endDate);
+        bar = `<div class="cal-timeline-bar" style="left:${left}%;width:${width}%;"></div>`;
+      }
       return `
-        <div class="cal-timeline-row">
-          <span class="cal-timeline-label">${escapeText(c.name || t("calendar.untitledCampaign"))}</span>
-          <div class="cal-timeline-track"><div class="cal-timeline-bar" style="left:${leftPct}%;width:${widthPct}%;"></div></div>
+        <div class="cal-timeline-row ${phases.length ? "has-phases" : ""}">
+          <a class="cal-timeline-label" href="#/brand/${c.brandId}/campaigns/${c.id}" title="${escapeHtml(c.name || "")}">${escapeHtml(c.name || t("calendar.untitledCampaign"))}</a>
+          <div class="cal-timeline-track">${bar}</div>
         </div>
       `;
     })
     .join("");
   return `<div class="cal-timeline">${rows}</div>`;
+}
+
+// Event-day cells get a marker so the day itself stands out on the grid.
+function eventDayMarkers(campaigns) {
+  const map = new Map();
+  campaigns.forEach((c) => {
+    const d = c.eventPlan?.eventDate;
+    if (d && c.status !== "archived") map.set(d, [...(map.get(d) || []), c.name || t("cal.eventFallback")]);
+  });
+  return map;
 }
 
 function renderAgenda(body, brandId, state, items, campaignById, refresh) {
@@ -495,10 +635,10 @@ function agendaRow(c, campaignById) {
     <div class="agenda-row" data-id="${c.id}">
       <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0,3)}</div></div>
       <div class="ti" style="flex:1;min-width:0;">
-        <div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(c.title || t("common.untitled"))}</div>
+        <div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.title || t("common.untitled"))}</div>
         <div class="text-muted" style="font-size:12.5px;margin-top:2px;">${c.platform || "—"} · ${c.format || "—"}</div>
       </div>
-      ${campaign ? `<span class="tag" style="background:color-mix(in srgb, var(--brand-tint) 14%, transparent);color:var(--brand-tint);">${escapeText(campaign.name)}</span>` : ""}
+      ${campaign ? `<span class="tag" style="background:color-mix(in srgb, var(--brand-tint) 14%, transparent);color:var(--brand-tint);">${escapeHtml(campaign.name)}</span>` : ""}
       <span class="tag tag-${c.funnel.toLowerCase()}">${c.funnel}</span>
       <span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span>
     </div>
@@ -518,7 +658,14 @@ function wireDragAndOpen(body, brandId, refresh) {
   });
 
   qsa(".cal-cell", body).forEach((cell) => {
-    cell.addEventListener("dragover", (e) => { e.preventDefault(); cell.classList.add("drag-over"); });
+    // Past days never accept a drop: skipping preventDefault on dragover is
+    // what makes the browser show "not allowed" and refuse the drop.
+    const isPast = () => cell.dataset.date < localISODate();
+    cell.addEventListener("dragover", (e) => {
+      if (isPast()) return;
+      e.preventDefault();
+      cell.classList.add("drag-over");
+    });
     cell.addEventListener("dragleave", () => cell.classList.remove("drag-over"));
     cell.addEventListener("drop", (e) => {
       e.preventDefault();
@@ -529,6 +676,10 @@ function wireDragAndOpen(body, brandId, refresh) {
     });
     cell.addEventListener("click", (e) => {
       if (e.target.closest(".cal-item")) return;
+      if (isPast()) {
+        toast(t("calendar.pastDate"), "error");
+        return;
+      }
       openDateBankMenu(cell, { brandId, dateISO: cell.dataset.date, refresh });
     });
   });
@@ -543,10 +694,16 @@ function warnIfFunnelClash(brandId, contentId, dateISO) {
   const clash = listContent(brandId).some(
     (c) => c.id !== contentId && c.scheduleDate === dateISO && c.funnel === moving.funnel
   );
-  if (clash) toast(t("calendar.funnelClash", { date: dateISO, funnel: moving.funnel }), "error");
+  if (clash) toast(t("calendar.funnelClash", { date: formatCellDate(dateISO), funnel: moving.funnel }), "error");
 }
 
 function assignToDate(brandId, contentId, dateISO) {
+  // A scheduled date in the past used to be accepted, then the item was
+  // hidden from both the grid and the Bank — looked like it was deleted.
+  if (!dateISO || dateISO < localISODate()) {
+    toast(t("calendar.pastDate"), "error");
+    return;
+  }
   updateContent(contentId, { scheduleDate: dateISO, status: "scheduled" });
   warnIfFunnelClash(brandId, contentId, dateISO);
   toast(t("common.scheduled"));
@@ -556,22 +713,17 @@ function assignToDate(brandId, contentId, dateISO) {
 // instead of jumping straight into the editor — mirrors the row-menu
 // pattern used in Content OS's table (content-list.js).
 function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
-  qsa(".menu").forEach((m) => m.remove());
   const rect = anchorEl.getBoundingClientRect();
-  const menu = document.createElement("div");
-  menu.className = "menu";
-  menu.style.top = rect.bottom + window.scrollY + 6 + "px";
-  menu.style.left = Math.min(rect.left, window.innerWidth - 190) + window.scrollX + "px";
+  const menu = openMenu(anchorEl, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
+  if (!menu) return;
   menu.innerHTML = `
     <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
     <button data-act="remove" class="danger">${icon("x", { size: 15 })}${t("calendar.removeFromCalendar")}</button>
   `;
-  document.body.appendChild(menu);
-  setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
   menu.addEventListener("click", async (e) => {
     e.stopPropagation();
     const act = e.target.closest("[data-act]")?.dataset.act;
-    menu.remove();
+    closeMenu();
     if (act === "edit") {
       openContentEditor({ brandId, contentId, onSaved: refresh });
     } else if (act === "remove") {
@@ -592,13 +744,10 @@ function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
 // as the Content Bank sidebar, scoped to a single click-to-assign choice —
 // no dragging required — with "create new" as the fallback underneath.
 function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
-  qsa(".menu").forEach((m) => m.remove());
   const unscheduled = listContent(brandId).filter((c) => !c.scheduleDate);
   const rect = cell.getBoundingClientRect();
-  const menu = document.createElement("div");
-  menu.className = "menu date-bank-menu";
-  menu.style.top = rect.bottom + window.scrollY + 6 + "px";
-  menu.style.left = Math.min(rect.left, window.innerWidth - 260) + window.scrollX + "px";
+  const menu = openMenu(cell, { className: "date-bank-menu", top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 260) });
+  if (!menu) return;
   menu.innerHTML = `
     <div class="date-bank-menu-head">
       <span>${formatCellDate(dateISO)}</span>
@@ -612,7 +761,7 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
                 (c) => `
           <button data-assign="${c.id}">
             <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>
-            <span class="date-bank-menu-title">${escapeText(c.title || t("common.untitled"))}</span>
+            <span class="date-bank-menu-title">${escapeHtml(c.title || t("common.untitled"))}</span>
           </button>`
               )
               .join("")
@@ -622,23 +771,21 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
     <div class="menu-divider"></div>
     <button data-create>${icon("plus", { size: 15 })}${t("calendar.createNewContent")}</button>
   `;
-  document.body.appendChild(menu);
-  setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
   menu.addEventListener("click", (e) => {
     e.stopPropagation();
     if (e.target.closest("[data-close]")) {
-      menu.remove();
+      closeMenu();
       return;
     }
     const assignId = e.target.closest("[data-assign]")?.dataset.assign;
     if (assignId) {
-      menu.remove();
+      closeMenu();
       assignToDate(brandId, assignId, dateISO);
       refresh();
       return;
     }
     if (e.target.closest("[data-create]")) {
-      menu.remove();
+      closeMenu();
       openContentEditor({ brandId, defaults: { scheduleDate: dateISO, status: "scheduled" }, onSaved: refresh });
     }
   });
@@ -646,8 +793,6 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
 
 function formatCellDate(dateISO) {
   const d = new Date(`${dateISO}T00:00:00`);
-  return `${dow()[d.getDay()]}, ${months()[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+  const mon = months()[d.getMonth()].slice(0, 3);
+  return getLang() === "id" ? `${dow()[d.getDay()]}, ${d.getDate()} ${mon}` : `${dow()[d.getDay()]}, ${mon} ${d.getDate()}`;
 }
-
-function escapeText(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
-function escapeAttr(s) { return (s || "").replace(/"/g, "&quot;"); }

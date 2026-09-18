@@ -4,6 +4,8 @@
 // EAA Facebook token you already generated for the Page can usually be
 // re-generated with ads_read added — no separate app needed) and the Ad
 // Account ID for the account that ran the boost/campaign.
+import { t } from "./i18n.js";
+
 const API_BASE = "https://graph.facebook.com/v19.0";
 
 class AdsApiError extends Error {}
@@ -15,7 +17,7 @@ async function graphGet(path, params, accessToken) {
   const res = await fetch(url.toString(), { cache: "no-store" });
   const json = await res.json();
   if (!res.ok || json.error) {
-    throw new AdsApiError(json.error?.message || `Marketing API request failed (${res.status}).`);
+    throw new AdsApiError(json.error?.message || t("integr.ads.apiFailed", { status: res.status }));
   }
   return json;
 }

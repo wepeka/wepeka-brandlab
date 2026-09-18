@@ -3,6 +3,7 @@
 const S = 'fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"';
 
 const PATHS = {
+  grip: `<circle cx="9" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.2" fill="currentColor" stroke="none"/>`,
   plus: `<path d="M12 5v14M5 12h14"/>`,
   copy: `<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/>`,
   sun: `<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2.5 12H5M19 12h2.5M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>`,
@@ -31,7 +32,9 @@ const PATHS = {
   arrowRight: `<path d="M5 12h14M13 6l6 6-6 6"/>`,
   building: `<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"/>`,
   users: `<circle cx="9" cy="8" r="3"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><path d="M16 4.5a3 3 0 010 6"/><path d="M15 14a6 6 0 016 6"/>`,
+  expand: `<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>`,
   eye: `<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`,
+  eyeOff: `<path d="M3 3l18 18"/><path d="M10.6 5.2A10.9 10.9 0 0112 5c6.5 0 10 7 10 7a18 18 0 01-3.2 4.1M6.5 6.6A17.7 17.7 0 002 12s3.5 7 10 7c1.2 0 2.3-.2 3.3-.5"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/>`,
   heart: `<path d="M12 20s-7.5-4.7-9.7-9.4C.8 7.1 3 4 6.3 4c2 0 3.4 1 5.7 3.4C14.3 5 15.7 4 17.7 4 21 4 23.2 7.1 21.7 10.6 19.5 15.3 12 20 12 20z"/>`,
   comment: `<path d="M21 11.5a8.5 8.5 0 01-8.9 8.5 9 9 0 01-3.4-.6L3 21l1.7-4.9A8.5 8.5 0 1121 11.5z"/>`,
   bookmark: `<path d="M6 4h12a1 1 0 011 1v15l-7-4-7 4V5a1 1 0 011-1z"/>`,
@@ -41,6 +44,9 @@ const PATHS = {
   layers: `<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17l9 5 9-5"/>`,
   download: `<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>`,
   info: `<circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/>`,
+  help: `<circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.8 2.8 0 015.4.9c0 1.8-2.4 2.1-2.6 3.6"/><path d="M12 17v.01"/>`,
+  chat: `<path d="M21 12a8 8 0 01-11.6 7.1L4 20l1.2-4.3A8 8 0 1121 12z"/>`,
+  send: `<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>`,
   bulb: `<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-3.5 10.9c.5.4.8 1 .8 1.6V16h5.4v-.5c0-.6.3-1.2.8-1.6A6 6 0 0012 3z"/>`,
   lock: `<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>`,
   logout: `<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>`,

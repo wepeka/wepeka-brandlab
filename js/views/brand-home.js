@@ -1,35 +1,69 @@
-import { getBrand, listContent, listCampaigns, campaignPhaseCoverage, listOverdueAndDueSoon, onChange } from "../store.js";
+import { getCachedAccount, isLifetime } from "../account.js";
+import { getBrand, listContent, listCampaigns, campaignPhaseCoverage, listOverdueAndDueSoon, getSettings, onChange } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, formatDate, qs, qsa } from "../dom.js";
+import { avatarHTML, formatDate, formatNumber, qs, qsa, escapeHtml as escapeText } from "../dom.js";
+import { getTracker, trackerTotals, monthRange } from "../sales-tracker.js";
 import { openContentEditor } from "./content-editor.js";
 import { t } from "../i18n.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
+import { celebrateBuilderCompleteIfFlagged } from "./brand-builder.js";
+import { brandTopAction } from "../next-action.js";
 
-// The brand's command center — five clear choices, nothing else. Explicitly
-// NOT the stats-heavy analytics page (that lives inside Content OS now) —
-// per the user's own product spec, this page should tell someone exactly
-// what to do next, not show them numbers.
+// The brand's command center — a "what do I do next" strip and shortcut
+// widgets up top (unchanged from the original spec below), plus a
+// customizable analytics section further down for the "grafik2 dan stats
+// analytics" Advanced mode promises over Guided mode's bare 3-app view (see
+// js/views/beginner-home.js's tour copy). The two concerns stay in separate
+// files — brand-home-analytics.js owns the widget catalog and chart
+// rendering — so this file's original "what to do next" job doesn't get
+// buried under chart code.
 export function render(root, { brandId }) {
-  const refresh = () => paint(root, brandId, refresh);
+  const state = { topContentPeriod: "all" };
+  const refresh = () => paint(root, brandId, state, refresh);
   refresh();
   return onChange(refresh);
 }
 
-function brandDnaCompleteness(dna = {}) {
+// Only the 8 fields the wizard's own steps (audience, problem, trust,
+// plan, foundation, identity's tagline) treat as the real narrative —
+// NOT personality/values/productsServices, which are the identity step's
+// own chip lists and which that step's copy explicitly calls optional
+// ("Boleh dilewatin dulu kalau belum kepikiran"). Counting them here used
+// to mean someone who filled every field the wizard called required still
+// saw "72%" instead of "100%" — a real bug a user hit and reported, not
+// just a rounding quirk. This now matches brand-builder.js's own
+// definition of "Brand DNA done" (its 5 DNA_STAGES never check these
+// three either).
+export function brandDnaCompleteness(dna = {}) {
+  // One per wizard step (SB7 + identity) — purpose/vision/values are
+  // optional extras on the Review screen, so they don't count here.
   const fields = [
-    dna.tagline, dna.purpose, dna.vision, dna.mission, dna.targetAudience,
-    dna.problemSolved, dna.positioning, dna.differentiation,
-    dna.personality?.length, dna.values?.length, dna.productsServices?.length,
+    dna.targetAudience, dna.problemSolved, dna.differentiation, dna.mission,
+    dna.callToAction, dna.successOutcome, dna.failureOutcome, dna.tagline,
   ];
   const filled = fields.filter(Boolean).length;
   return { filled, total: fields.length };
 }
 
-function paint(root, brandId, refresh) {
+// "Brand DNA is finished" — every wizard field filled AND the person has
+// saved it themselves. "Isi semua pakai AI" (js/views/brand-dna.js
+// wireAiFill) can still fill all eight answers in one click, which fills the
+// fields without anyone having read them; that draft carries aiDraftPending
+// until a real save clears it. Anything that ticks a box or unlocks a next step has to go
+// through here, never through the raw field count.
+export function brandDnaDone(brand = {}) {
+  const { filled, total } = brandDnaCompleteness(brand.brandDNA);
+  return total > 0 && filled >= total && !brand.brandDNA?.aiDraftPending;
+}
+
+function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) {
     location.hash = "#/";
     return;
   }
+  celebrateBuilderCompleteIfFlagged(brandId);
   const dnaProgress = brandDnaCompleteness(brand.brandDNA);
   const campaigns = listCampaigns(brandId);
   const campaignCount = campaigns.length;
@@ -42,7 +76,7 @@ function paint(root, brandId, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${t("brandHome.eyebrow")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("brandHome.eyebrow")}${helpButtonHTML("brand-home")}</div>
         <h1>${brand.name}</h1>
       </div>
       ${avatarHTML(brand, "width:64px;height:64px;border-radius:16px;font-size:24px;flex:none;")}
@@ -53,30 +87,39 @@ function paint(root, brandId, refresh) {
     ${healthStripHTML(brandId, dnaProgress, campaigns, allContent)}
 
     <div class="brand-widget-grid">
-      ${dnaWidgetHTML(dnaProgress)}
-      ${campaignWidgetHTML(campaignCount)}
-      ${guidelinesWidgetHTML(brand.brandGuidelines)}
+      ${brandBuilderWidgetHTML(dnaProgress, brand.brandGuidelines)}
       ${contentOsWidgetHTML(allContent.length, published)}
-      ${salesWidgetHTML()}
+      ${campaignWidgetHTML(campaignCount, brandTopAction({ brand, campaigns, content: allContent, settings: getSettings() }))}
+      ${copyWidgetHTML()}
+      ${salesWidgetHTML(brand)}
     </div>
 
     <div class="section-title" style="margin-top:0;">
       <h2>${t("brandHome.upNext.title")}</h2>
       <a class="link" href="#/brand/${brandId}/content-os/calendar">${t("brandHome.upNext.calendarLink")}</a>
     </div>
-    <div class="card card-tight">
+    <div class="card card-tight" style="margin-bottom:28px;">
       ${
         upNext.length
           ? upNext.map(upNextRow).join("")
           : `<div class="table-empty" style="padding:28px;">${t("brandHome.upNext.empty")}</div>`
       }
     </div>
+
+    ${analyticsSectionHTML(allContent, getSettings(), state)}
   `;
+
+  wireHelpButtons(root);
+  wireAnalyticsSection(root, state, refresh);
 
   qsa("[data-go]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.dataset.go;
-      location.hash = target === "campaigns" || target === "builder" || target === "sales" || target === "content-os"
+      if (btn.dataset.goCampaign) {
+        location.hash = `#/brand/${brandId}/campaigns/${btn.dataset.goCampaign}`;
+        return;
+      }
+      location.hash = target === "campaigns" || target === "builder" || target === "content-os" || target === "copy" || target === "sales"
         ? `#/brand/${brandId}/${target}`
         : `#/brand/${brandId}`;
     });
@@ -85,6 +128,34 @@ function paint(root, brandId, refresh) {
   qsa("[data-open-content]", root).forEach((el) => {
     el.addEventListener("click", () => openContentEditor({ brandId, contentId: el.dataset.openContent, onSaved: refresh }));
   });
+}
+
+function copyWidgetHTML() {
+  return `
+    <button type="button" class="brand-widget widget-copy widget-featured" data-go="copy">
+      <div class="copy-badge">${icon("chat", { size: 22 })}</div>
+      <div>
+        <h3>${t("brandHome.widget.copy.title")}${isLifetime(getCachedAccount()) ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}</h3>
+        <p>${t("brandHome.widget.copy.sub")}</p>
+      </div>
+    </button>
+  `;
+}
+
+// Sales Tracker sits right next to Copy Studio. With sales logged it shows
+// this month's real numbers; before that, what it's for.
+function salesWidgetHTML(brand) {
+  const tracker = getTracker(brand);
+  const month = trackerTotals(tracker, monthRange());
+  return `
+    <button type="button" class="brand-widget widget-sales widget-featured" data-go="sales">
+      <div class="folder-badge">${icon("target", { size: 22 })}</div>
+      <div>
+        <h3>${t("brandHome.widget.sales.title")}</h3>
+        <p>${tracker.entries.length ? t("brandHome.widget.sales.month", { qty: formatNumber(month.rangeQty), revenue: `Rp ${formatNumber(month.rangeRevenue)}` }) : t("brandHome.widget.sales.empty")}</p>
+      </div>
+    </button>
+  `;
 }
 
 // Hard to miss on purpose — this is the "you forgot to upload" surface,
@@ -109,7 +180,7 @@ function overdueBannerHTML(overdue) {
           .map(
             (x) => `
           <button type="button" class="overdue-banner-item" data-open-content="${x.content.id}">
-            <span class="t">${escapeText(x.content.title || "Untitled")}</span>
+            <span class="t">${escapeText(x.content.title || t("common.untitled"))}</span>
             <span class="d">${formatDate(x.content.scheduleDate)}</span>
           </button>`
           )
@@ -171,7 +242,12 @@ function healthStripHTML(brandId, dnaProgress, campaigns, content) {
       ? { label: t("brandHome.health.coverage"), tier: "poor", value: t("brandHome.health.noCampaigns"), href: `#/brand/${brandId}/campaigns` }
       : { label: t("brandHome.health.coverage"), tier: healthTier(coveragePct), value: `${coveragePct}%`, href: `#/brand/${brandId}/campaigns` },
     { label: t("brandHome.health.gap"), tier: gap === 0 ? "good" : gap <= 3 ? "average" : "poor", value: gap === 0 ? t("brandHome.health.fullyBooked") : t("brandHome.health.emptyDays", { count: gap }), href: `#/brand/${brandId}/content-os/calendar` },
-    { label: t("brandHome.health.calendarWindow"), tier: uncovered === 0 ? "good" : "poor", value: uncovered === 0 ? t("brandHome.health.allCovered") : t("brandHome.health.uncovered", { count: uncovered }), href: `#/brand/${brandId}/content-os/calendar` },
+    // With no campaigns at all, "0 uncovered" is vacuously true — showing
+    // it green next to a red "no campaigns" badge read as a contradiction,
+    // so it's a neutral "nothing to cover yet" instead.
+    !campaigns.length
+      ? { label: t("brandHome.health.calendarWindow"), tier: "none", value: t("brandHome.health.noCampaigns"), href: `#/brand/${brandId}/campaigns` }
+      : { label: t("brandHome.health.calendarWindow"), tier: uncovered === 0 ? "good" : "poor", value: uncovered === 0 ? t("brandHome.health.allCovered") : t("brandHome.health.uncovered", { count: uncovered }), href: `#/brand/${brandId}/content-os/calendar` },
   ];
 
   return `
@@ -191,12 +267,22 @@ function healthStripHTML(brandId, dnaProgress, campaigns, content) {
 // guidelines, a card stack for content) instead of reusing one identical
 // icon-title-subtitle card five times — same nav behavior (data-go), just
 // a shape that hints at the destination.
-function dnaWidgetHTML(progress) {
+// One widget, not two — Brand DNA and Brand Guidelines both live inside
+// Brand Builder now (no separate top-level entry for either, see
+// js/layout.js), so the Home dashboard shouldn't offer two doors into the
+// same place either. Shows both signals at once (DNA completeness ring +
+// the chosen palette/font) since a single click leads to the same hub
+// either way.
+function brandBuilderWidgetHTML(progress, guidelines) {
   const pct = progress.total ? progress.filled / progress.total : 0;
   const r = 30;
   const c = 2 * Math.PI * r;
+  const hasColors = !!guidelines?.colors?.primary;
+  const colors = hasColors
+    ? ["primary", "secondary", "accent", "background", "text"].map((k) => guidelines.colors[k])
+    : ["var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)"];
   return `
-    <button type="button" class="brand-widget widget-dna" data-go="builder">
+    <button type="button" class="brand-widget widget-dna widget-featured" data-go="builder">
       <div class="ring-wrap">
         <svg viewBox="0 0 72 72">
           <circle class="ring-track" cx="36" cy="36" r="${r}"></circle>
@@ -205,14 +291,15 @@ function dnaWidgetHTML(progress) {
         <div class="ring-pct">${Math.round(pct * 100)}%</div>
       </div>
       <div>
-        <h3>${t("brandHome.widget.dna.title")}</h3>
+        <h3>${t("nav.builder")}</h3>
         <p>${progress.filled ? t("brandHome.widget.dna.filled", { filled: progress.filled, total: progress.total }) : t("brandHome.widget.dna.empty")}</p>
       </div>
+      <div class="swatch-row">${colors.map((c) => `<span class="swatch" style="background:${c};"></span>`).join("")}</div>
     </button>
   `;
 }
 
-function campaignWidgetHTML(count) {
+function campaignWidgetHTML(count, top = null) {
   const slots = 5;
   const filled = Math.min(count, slots);
   let dots = "";
@@ -221,34 +308,19 @@ function campaignWidgetHTML(count) {
     dots += `<span class="mj-dot ${i < filled ? "filled" : ""}"></span>`;
   }
   return `
-    <button type="button" class="brand-widget widget-campaign" data-go="campaigns">
+    <button type="button" class="brand-widget widget-campaign widget-featured" data-go="campaigns" ${top ? `data-go-campaign="${top.campaign.id}"` : ""}>
       <div class="icon-wrap">${icon("bulb", { size: 20 })}</div>
       <h3>${t("brandHome.widget.campaign.title")}</h3>
       <p>${count ? t("brandHome.widget.campaign.count", { count }) : t("brandHome.widget.campaign.empty")}</p>
+      ${top ? `<p class="campaign-card-next" style="margin:6px 0 0;">${icon("arrowRight", { size: 12 })}<span>${escapeText(top.campaign.name || "Campaign")}: ${escapeText(top.action.label)}</span></p>` : ""}
       <div class="mini-journey">${dots}</div>
-    </button>
-  `;
-}
-
-function guidelinesWidgetHTML(guidelines) {
-  const hasColors = !!guidelines?.colors?.primary;
-  const colors = hasColors
-    ? ["primary", "secondary", "accent", "background", "text"].map((k) => guidelines.colors[k])
-    : ["var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)"];
-  const fontFamily = guidelines?.fonts?.primary ? `'${guidelines.fonts.primary}', ` : "";
-  return `
-    <button type="button" class="brand-widget widget-guidelines" data-go="builder">
-      <div class="aa-preview" style="font-family:${fontFamily}var(--font-display);">Aa</div>
-      <h3>${t("brandHome.widget.guidelines.title")}</h3>
-      <p>${t("brandHome.widget.guidelines.sub")}</p>
-      <div class="swatch-row">${colors.map((c) => `<span class="swatch" style="background:${c};"></span>`).join("")}</div>
     </button>
   `;
 }
 
 function contentOsWidgetHTML(total, published) {
   return `
-    <button type="button" class="brand-widget widget-content-os" data-go="content-os">
+    <button type="button" class="brand-widget widget-content-os widget-featured" data-go="content-os">
       <div class="stack">
         <span class="stack-card"></span>
         <span class="stack-card"></span>
@@ -262,32 +334,15 @@ function contentOsWidgetHTML(total, published) {
   `;
 }
 
-function salesWidgetHTML() {
-  return `
-    <button type="button" class="brand-widget widget-sales" data-go="sales">
-      <div class="folder-badge">${icon("folder", { size: 22 })}</div>
-      <div>
-        <h3>${t("brandHome.widget.sales.title")}</h3>
-        <p>${t("brandHome.widget.sales.sub")}</p>
-      </div>
-    </button>
-  `;
-}
 
 function upNextRow(c) {
   return `
     <div class="top-content-row" data-open-content="${c.id}" style="cursor:pointer;">
       <div class="ti">
-        <div class="t">${escapeText(c.title || "Untitled")}</div>
+        <div class="t">${escapeText(c.title || t("common.untitled"))}</div>
         <div class="m">${c.platform || "—"} · ${formatDate(c.scheduleDate)}</div>
       </div>
       <span class="tag tag-${c.funnel.toLowerCase()}">${c.funnel}</span>
     </div>
   `;
-}
-
-function escapeText(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
 }

@@ -4,21 +4,22 @@
 // being evaluated, since they're just local settings, not remote input.
 
 import { METRIC_KEYS } from "./store.js";
+import { t } from "./i18n.js";
 
 const VAR_NAMES = METRIC_KEYS.map((m) => m.key);
 const SAFE_EXPR = /^[0-9a-zA-Z_+\-*/().\s]*$/;
 
 export function validateFormula(expr) {
-  if (!expr || !expr.trim()) return { valid: false, error: "Formula is empty." };
-  if (!SAFE_EXPR.test(expr)) return { valid: false, error: "Only numbers, metric names, and + - * / ( ) are allowed." };
+  if (!expr || !expr.trim()) return { valid: false, error: t("cnt.formula.empty") };
+  if (!SAFE_EXPR.test(expr)) return { valid: false, error: t("cnt.formula.chars") };
   const idents = expr.match(/[a-zA-Z_]+/g) || [];
   const unknown = idents.filter((i) => !VAR_NAMES.includes(i));
-  if (unknown.length) return { valid: false, error: `Unknown metric: ${unknown.join(", ")}` };
+  if (unknown.length) return { valid: false, error: t("cnt.formula.unknown", { names: unknown.join(", ") }) };
   try {
     // eslint-disable-next-line no-new-func
     new Function(...VAR_NAMES, `return (${expr});`)(...VAR_NAMES.map(() => 1));
   } catch (e) {
-    return { valid: false, error: "Formula is not valid arithmetic." };
+    return { valid: false, error: t("cnt.formula.invalid") };
   }
   return { valid: true, usedVars: [...new Set(idents)] };
 }
@@ -61,15 +62,25 @@ export function overallHealth(erRating, fcrRating) {
   return ratings.reduce((worst, r) => (RANK[r] < RANK[worst] ? r : worst));
 }
 
+// A platform-specific threshold set wins over the funnel defaults when one
+// exists for this content's platform (Settings → Tolok Ukur → per
+// platform); otherwise the shared defaults apply. Matched on the exact
+// platform name stored on the content.
+export function resolveThresholds(settings, funnel, platform) {
+  const byPlatform = platform ? settings.thresholdsByPlatform?.[platform] : null;
+  return (byPlatform && byPlatform[funnel]) || settings.thresholds[funnel] || {};
+}
+
 export function computeContentMetrics(content, settings) {
   const m = content.performance || {};
   const er = evaluateFormula(settings.formulas.engagementRate, m);
   const fcr = evaluateFormula(settings.formulas.followerConversionRate, m);
-  const th = settings.thresholds[content.funnel] || {};
+  const th = resolveThresholds(settings, content.funnel, content.platform);
   const erRating = rateValue(er, th.engagementRate);
   const fcrRating = rateValue(fcr, th.followerConversionRate);
   const health = overallHealth(erRating, fcrRating);
   return { engagementRate: er, followerConversionRate: fcr, erRating, fcrRating, health };
 }
 
-export const HEALTH_LABEL = { good: "Healthy", average: "Average", poor: "Underperforming" };
+// Language switches reload the page, so resolving these once at load is fine.
+export const HEALTH_LABEL = { good: t("dashboard.healthy"), average: t("dashboard.average"), poor: t("dashboard.underperforming") };

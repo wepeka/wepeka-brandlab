@@ -2,6 +2,7 @@ import { getBrand, listContent, createContent, updateContent } from "../store.js
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, showProgressBar, escapeHtml } from "../dom.js";
+import { t } from "../i18n.js";
 import { listRecentVideos, fetchFacebookVideoMetrics, thumbnailFromVideo, titleFromVideo } from "../facebook.js";
 
 function normalizeCaption(s) {
@@ -17,14 +18,14 @@ export async function openFacebookImportPicker(brandId, onImported) {
   const fb = brand?.facebook;
 
   const overlay = openModal({
-    title: "Import from Facebook",
+    title: t("integr.import.fbTitle"),
     wide: true,
     bodyHTML: `<div id="fb-picker-body" style="min-height:140px;">
-      <div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>Looking up this Page's recent videos…</span></div>
+      <div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("integr.import.fbLoading")}</span></div>
     </div>`,
     footHTML: `
-      <button class="btn btn-secondary" id="fb-picker-cancel">Cancel</button>
-      <button class="btn btn-primary" id="fb-picker-import" disabled>Import Selected</button>
+      <button class="btn btn-secondary" id="fb-picker-cancel">${t("common.cancel")}</button>
+      <button class="btn btn-primary" id="fb-picker-import" disabled>${t("integr.import.selected")}</button>
     `,
   });
   const bodyEl = overlay.querySelector("#fb-picker-body");
@@ -35,13 +36,13 @@ export async function openFacebookImportPicker(brandId, onImported) {
   try {
     ({ videos, warnings } = await listRecentVideos(fb, { maxItems: 100 }));
   } catch (e) {
-    bodyEl.innerHTML = errorRow(`Couldn't reach Facebook: ${e.message}`);
+    bodyEl.innerHTML = errorRow(t("integr.import.fbUnreachable", { msg: e.message }));
     return;
   }
   if (!videos.length) {
     bodyEl.innerHTML = warnings.length
-      ? errorRow(`No videos found — and one lookup failed: ${warnings.join(" · ")}`)
-      : errorRow("No videos or Reels found on this Facebook Page.");
+      ? errorRow(t("integr.import.fbEmptyWarn", { warnings: warnings.join(" · ") }))
+      : errorRow(t("integr.import.fbEmpty"));
     return;
   }
 
@@ -62,9 +63,9 @@ export async function openFacebookImportPicker(brandId, onImported) {
 
   bodyEl.innerHTML = `
     <div class="ig-picker-toolbar">
-      <button class="btn btn-ghost btn-sm" id="fb-select-all">Select All</button>
-      <button class="btn btn-ghost btn-sm" id="fb-select-none">Select None</button>
-      <span class="text-faint" style="font-size:12px;margin-left:auto;">${videos.length} videos found</span>
+      <button class="btn btn-ghost btn-sm" id="fb-select-all">${t("integr.import.selectAll")}</button>
+      <button class="btn btn-ghost btn-sm" id="fb-select-none">${t("integr.import.selectNone")}</button>
+      <span class="text-faint" style="font-size:12px;margin-left:auto;">${t("integr.import.videosFound", { count: videos.length })}</span>
     </div>
     <div class="ig-picker-grid">
       ${videos.map((v) => pickerCardHTML(v, existingUrls, linkTargets)).join("")}
@@ -77,7 +78,7 @@ export async function openFacebookImportPicker(brandId, onImported) {
   function updateImportCount() {
     const checked = checkboxes().filter((cb) => cb.checked && !cb.disabled).length;
     importBtn.disabled = checked === 0;
-    importBtn.textContent = checked ? `Import Selected (${checked})` : "Import Selected";
+    importBtn.textContent = checked ? t("integr.import.selectedCount", { count: checked }) : t("integr.import.selected");
   }
   checkboxes().forEach((cb) => cb.addEventListener("change", updateImportCount));
   overlay.querySelector("#fb-select-all").addEventListener("click", () => {
@@ -101,7 +102,7 @@ export async function openFacebookImportPicker(brandId, onImported) {
     // Same as the Instagram import — runs as a minimized floating bar
     // instead of a blocking modal.
     closeOverlay(overlay);
-    const bar = showProgressBar(`Importing from Facebook`);
+    const bar = showProgressBar(t("integr.import.fbProgress"));
 
     let created = 0;
     let linked = 0;
@@ -145,9 +146,9 @@ export async function openFacebookImportPicker(brandId, onImported) {
     }
 
     const summaryParts = [];
-    if (created) summaryParts.push(`${created} new`);
-    if (linked) summaryParts.push(`${linked} linked to existing ideas`);
-    bar.done(`Imported ${summaryParts.join(", ")}${metricFails ? ` — ${metricFails} need metrics filled in manually` : ""}`);
+    if (created) summaryParts.push(t("integr.import.new", { count: created }));
+    if (linked) summaryParts.push(t("integr.import.linked", { count: linked }));
+    bar.done(`${t("integr.import.done", { summary: summaryParts.join(", ") })}${metricFails ? ` — ${t("integr.import.needMetrics", { count: metricFails })}` : ""}`);
   });
 }
 
@@ -164,8 +165,8 @@ function pickerCardHTML(video, existingUrls, linkTargets) {
         <span class="ig-picker-check">${icon("check", { size: 12 })}</span>
       </div>
       <div class="ig-picker-caption">${escapeHtml(titleFromVideo(video))}</div>
-      ${already ? `<div class="ig-picker-already">Already added</div>` : ""}
-      ${linkTarget ? `<div class="ig-picker-linked">${icon("link", { size: 10 })} Matches "${escapeHtml(linkTarget.title || "Untitled")}"</div>` : ""}
+      ${already ? `<div class="ig-picker-already">${t("integr.import.already")}</div>` : ""}
+      ${linkTarget ? `<div class="ig-picker-linked">${icon("link", { size: 10 })} ${t("integr.import.matches", { title: escapeHtml(linkTarget.title || t("common.untitled")) })}</div>` : ""}
     </label>
   `;
 }

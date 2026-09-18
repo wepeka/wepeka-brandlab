@@ -3,6 +3,23 @@
 // pairing here is hand-authored from the brand's own e-book (Quest 2: Brand
 // System — color psychology, the 4 color formulas, font categories, and
 // visual direction), so the builder works instantly and with no API key.
+//
+// i18n: object keys and English `description`/`left`/`right` strings below
+// are stored in Firestore and/or read by AI prompts (js/ai.js), so they
+// stay stable. Everything the user SEES goes through the display helpers
+// (feelingLabel, directionLabel, directionDescription, toneAxisDisplayLabel,
+// toneExampleDisplay, personalityProfile) or the getter-based labels, all
+// backed by js/i18n/brand-guidelines.js (prefix "bbdata.").
+import { t } from "./i18n.js";
+
+// Display label for any feeling key (COLOR_FEELINGS / TYPOGRAPHY_FEELINGS /
+// personality feeling). Unknown keys fall back to the raw key.
+export function feelingLabel(key) {
+  if (!key) return "";
+  const k = `bbdata.feeling.${key}`;
+  const v = t(k);
+  return v === k ? key : v;
+}
 
 export const COLOR_FEELINGS = [
   "Trustworthy", "Premium", "Energetic", "Natural", "Creative",
@@ -60,6 +77,14 @@ export const PERSONALITY_PROFILES = {
   Elegant: { primary: ["Refined", "Graceful", "Calm"], secondary: ["Confident", "Quiet"], avoid: ["Loud", "Rough", "Cluttered"] },
 };
 
+// The same recommended triad in the current UI language (what gets shown
+// and, once the user saves, stored as their own trait text).
+export function personalityProfile(feeling) {
+  if (!PERSONALITY_PROFILES[feeling]) return null;
+  const list = (part) => t(`bbdata.personality.${feeling}.${part}`).split(",").map((x) => x.trim()).filter(Boolean);
+  return { primary: list("primary"), secondary: list("secondary"), avoid: list("avoid") };
+}
+
 // Which broad character cluster each feeling belongs to — lets the
 // Consistency Engine (js/consistency-engine.js) classify any pair of
 // feelings (e.g. a Personality choice vs. a later Color/Typography choice)
@@ -96,6 +121,77 @@ export const COLOR_FORMULA_LABELS = {
   complementary: "Complementary — opposite hues. Reads bold, high-contrast, attention-grabbing.",
   triadic: "Triadic — three evenly-spaced hues. Reads playful, varied, energetic.",
 };
+
+// The e-book's own framing of the 4 formulas — asked as its own explicit
+// "which type of palette do you want" step, before the user locks a base
+// color, matching the book's Langkah 1 (pick the formula) → Langkah 2 (pick
+// & lock the hex) sequence rather than one combined pick.
+export const COLOR_FORMULA_INFO = [
+  { key: "monochromatic", examples: "Apple, Spotify" },
+  { key: "analogous", examples: "Mastercard, BP" },
+  { key: "complementary", examples: "IKEA, LA Lakers" },
+  { key: "triadic", examples: "Burger King, Google" },
+].map((f) => ({
+  ...f,
+  get label() { return t(`bbdata.formula.${f.key}.label`); },
+  get desc() { return t(`bbdata.formula.${f.key}.desc`); },
+  get kesan() { return t(`bbdata.formula.${f.key}.impression`); },
+}));
+
+export function hexToHsl(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const rf = r / 255, gf = g / 255, bf = b / 255;
+  const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === rf) h = (gf - bf) / d + (gf < bf ? 6 : 0);
+    else if (max === gf) h = (bf - rf) / d + 2;
+    else h = (rf - gf) / d + 4;
+    h /= 6;
+  }
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+export function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+// Computes a full 5-role palette from ONE base hex + a chosen harmony
+// formula via real HSL hue-rotation math, instead of a fixed lookup table —
+// works for any base color (typed, eyedropped, or extracted from a photo),
+// not just a small preset list.
+export function generatePaletteFromBase(baseHex, formula) {
+  const { h, s, l } = hexToHsl(baseHex);
+  const bg = hslToHex(h, Math.max(4, s - 55), 97);
+  const text = hslToHex(h, Math.min(100, s + 10), 12);
+  if (formula === "monochromatic") {
+    return { primary: baseHex, secondary: hslToHex(h, Math.max(10, s - 15), Math.min(85, l + 18)), accent: hslToHex(h, Math.min(100, s + 10), Math.max(15, l - 20)), background: bg, text };
+  }
+  if (formula === "analogous") {
+    return { primary: baseHex, secondary: hslToHex(h + 30, s, l), accent: hslToHex(h - 30, s, l), background: bg, text };
+  }
+  if (formula === "complementary") {
+    return { primary: baseHex, secondary: hslToHex(h + 180, s, l), accent: hslToHex(h, Math.min(100, s + 15), Math.min(88, l + 15)), background: bg, text };
+  }
+  // triadic
+  return { primary: baseHex, secondary: hslToHex(h + 120, s, l), accent: hslToHex(h + 240, s, l), background: bg, text };
+}
 
 export function hexToRgb(hex) {
   const h = (hex || "").replace("#", "");
@@ -158,6 +254,44 @@ export const FONT_LIBRARY = [
 
 export const PREMIUM_FONT_LINK = "https://elements.envato.com/fonts";
 
+// The Typography step's "Wepeka Rekomendasi" panel — deliberately stops at
+// recommending a TYPE of font (Serif, Sans Serif, ...), never a specific
+// family, so it stays a deterministic lookup instead of pretending to know
+// someone's exact taste. Sector list is the e-book's own examples per
+// type; `flatSectors` is just that same data reshaped into one flat pick
+// list (sector -> category) for the chip UI.
+export const FONT_CATEGORIES = [
+  { key: "serif", sectorKeys: ["law", "finance", "hotel", "luxury", "print"], googleFontsUrl: "https://fonts.google.com/?category=Serif" },
+  { key: "sans-serif", sectorKeys: ["tech", "apps", "cosmetics", "casualFashion", "agency"], googleFontsUrl: "https://fonts.google.com/?category=Sans+Serif" },
+  { key: "script", sectorKeys: ["wedding", "premiumBeauty", "cosmetics", "jewelry", "highFashion"], googleFontsUrl: "https://fonts.google.com/?category=Handwriting" },
+  { key: "blackletter", sectorKeys: ["barber", "streetwear", "metal", "alcohol"], googleFontsUrl: "https://fonts.google.com/?category=Display" },
+  { key: "display", sectorKeys: ["eventPoster", "socialTitles", "standOut"], googleFontsUrl: "https://fonts.google.com/?category=Display" },
+  { key: "monospace", sectorKeys: ["devTech", "graphicDesign", "retroDigital"], googleFontsUrl: "https://fonts.google.com/?category=Monospace" },
+  { key: "handwritten", sectorKeys: ["cafe", "organicFood", "kidsToys", "journals", "ecoBrands"], googleFontsUrl: "https://fonts.google.com/?category=Handwriting" },
+].map((c) => ({
+  ...c,
+  get label() { return t(`bbdata.fontCat.${c.key}.label`); },
+  get desc() { return t(`bbdata.fontCat.${c.key}.desc`); },
+  get sectors() { return c.sectorKeys.map((s) => t(`bbdata.fontCat.${c.key}.sector.${s}`)); },
+}));
+export const FONT_CATEGORY_SECTORS = FONT_CATEGORIES.flatMap((c) => c.sectors.map((sector) => ({ sector, categoryKey: c.key })));
+
+// A ready-to-use primary (heading) + secondary (body) combo for each font
+// category above — real Google Fonts family names, contrasting where the
+// e-book's own pairing rule calls for it (a decorative/characterful heading
+// needs a plain, highly-readable body next to it). Shown in the "Wepeka
+// Rekomendasi" panel next to the category so picking a type of font doesn't
+// dead-end at just a label — there's an actual pair someone can apply.
+export const FONT_CATEGORY_PAIRINGS = {
+  serif: { primary: "Playfair Display", secondary: "Work Sans" },
+  "sans-serif": { primary: "Space Grotesk", secondary: "Inter" },
+  script: { primary: "Dancing Script", secondary: "Source Serif 4" },
+  blackletter: { primary: "UnifrakturMaguntia", secondary: "Work Sans" },
+  display: { primary: "Archivo Black", secondary: "Work Sans" },
+  monospace: { primary: "Space Mono", secondary: "Inter" },
+  handwritten: { primary: "Caveat", secondary: "Manrope" },
+};
+
 // feeling -> {primary (heading), secondary (body)} — contrasting where the
 // e-book's own pairing rule calls for it (Serif heading + Sans body etc.).
 export const FONT_PAIRINGS = {
@@ -185,24 +319,35 @@ export const VISUAL_DIRECTIONS = {
   Corporate: { radius: "4px", spacingScale: 1.1, typeScale: 0.95, description: "Structured grid, conservative color, professional." },
   Creative: { radius: "14px", spacingScale: 1, typeScale: 1.05, description: "Expressive, varied shapes, unexpected combinations." },
 };
+// `description` above is English on purpose (AI prompt context); these are
+// the UI-language versions.
+export function directionLabel(key) {
+  if (!key) return "";
+  const k = `bbdata.direction.${key}.label`;
+  const v = t(k);
+  return v === k ? key : v;
+}
+export function directionDescription(key) {
+  const k = `bbdata.direction.${key}.desc`;
+  const v = t(k);
+  return v === k ? VISUAL_DIRECTIONS[key]?.description || "" : v;
+}
 
 // Imagery Style ("Gaya Gambar") — one of the 7 components the e-book lists
 // as mandatory in a Brand Guidelines document (pencahayaan, filter warna,
 // penggunaan model/ilustrasi), keyed by the same Visual Direction the
 // brand already picked, so it's a deterministic derivation rather than yet
 // another question to ask.
-export const IMAGERY_STYLE_COPY = {
-  Minimal: { lighting: "Cahaya natural, terang merata, minim bayangan.", subject: "Fokus satu objek, banyak negative space.", treatment: "Warna natural, kontras rendah, tanpa filter berlebihan." },
-  Editorial: { lighting: "Cahaya dramatis, kontras tinggi ala majalah.", subject: "Komposisi terstruktur, banyak white space di margin.", treatment: "Warna tajam, editing rapi dan konsisten." },
-  Bold: { lighting: "Cahaya kuat, kontras tinggi, warna berani.", subject: "Objek besar mengisi frame, close-up.", treatment: "Saturasi tinggi, warna brand dominan." },
-  Luxury: { lighting: "Cahaya lembut, shadow terkontrol.", subject: "Detail produk, komposisi simetris.", treatment: "Warna netral/monokrom, editing halus." },
-  Playful: { lighting: "Cahaya terang, ceria.", subject: "Ekspresi natural, dinamis, candid.", treatment: "Warna cerah, sedikit oversaturate, energik." },
-  Organic: { lighting: "Cahaya alami, golden hour.", subject: "Tekstur natural, bahan asli, suasana hangat.", treatment: "Warna hangat, tone earthy." },
-  Futuristic: { lighting: "Cahaya tajam, kontras kuat, aksen neon/gradient.", subject: "Garis tegas, komposisi geometris.", treatment: "Warna dingin, editing modern/tech." },
-  Street: { lighting: "Cahaya raw, apa adanya.", subject: "Suasana jalanan, candid, tanpa setup berlebihan.", treatment: "Kontras tinggi, sedikit grain/texture, kesan mentah." },
-  Corporate: { lighting: "Cahaya studio rata dan profesional.", subject: "Komposisi rapi dan terstruktur.", treatment: "Warna konservatif, editing bersih dan konsisten." },
-  Creative: { lighting: "Cahaya eksperimental, bisa campur warna.", subject: "Komposisi tak terduga, kombinasi unik.", treatment: "Warna ekspresif, editing berani." },
-};
+export const IMAGERY_STYLE_COPY = Object.fromEntries(
+  ["Minimal", "Editorial", "Bold", "Luxury", "Playful", "Organic", "Futuristic", "Street", "Corporate", "Creative"].map((d) => [
+    d,
+    {
+      get lighting() { return t(`bbdata.imagery.${d}.lighting`); },
+      get subject() { return t(`bbdata.imagery.${d}.subject`); },
+      get treatment() { return t(`bbdata.imagery.${d}.treatment`); },
+    },
+  ])
+);
 
 // Tone of Voice — the e-book's 4 spectrums (Formal↔Casual, Sederhana↔
 // Kompleks, Serius↔Playful, Reserved↔Ekspresif). Values are 0-100 slider
@@ -224,6 +369,14 @@ function toneBucket(v) {
 export function toneAxisLabel(axis, value) {
   const b = toneBucket(value);
   return b === "low" ? axis.left : b === "high" ? axis.right : `${axis.left}/${axis.right} seimbang`;
+}
+// toneAxisLabel above feeds AI prompts (js/ai.js) and stays as-is; this is
+// the same bucket label in the UI language, for screens and the Brand Book.
+export function toneAxisDisplayLabel(axis, value) {
+  const b = toneBucket(value);
+  const left = t(`guidelines.tone.axis.${axis.key}.left`);
+  const right = t(`guidelines.tone.axis.${axis.key}.right`);
+  return b === "low" ? left : b === "high" ? right : t("bbdata.tone.balanced", { left, right });
 }
 
 // [formal bucket][character bucket] — low=Formal/Serius pole, high=Casual/
@@ -249,12 +402,55 @@ const TONE_EXAMPLE_MATRIX = {
 export function toneExampleMessage(formalValue, characterValue) {
   return TONE_EXAMPLE_MATRIX[toneBucket(formalValue)][toneBucket(characterValue)];
 }
+// UI-language version of the same example (toneExampleMessage stays
+// Indonesian for the AI prompt in js/ai.js).
+export function toneExampleDisplay(formalValue, characterValue) {
+  return t(`bbdata.toneExample.${toneBucket(formalValue)}.${toneBucket(characterValue)}`);
+}
+
+// Naming stage's "kamus ekstensi" — suffixes to tack onto a taken name for
+// an Instagram/domain handle instead of giving up on it, grouped by the
+// business category they read best for. `effect` is the one-line reason
+// that category's suffixes work, shown next to the suffix chips.
+export const NAME_EXTENSION_CATEGORIES = [
+  { key: "fnb", suffixes: [".eats", ".kitchen", ".food", ".bakes", ".coffee", ".resto"] },
+  { key: "fashion", suffixes: [".apparel", ".wear", ".cloth", ".label", ".goods", ".store"] },
+  { key: "beauty", suffixes: [".beauty", ".skin", ".glow", ".cosmetics"] },
+  { key: "creative", suffixes: [".studio", ".creative", ".design", ".media", ".works"] },
+  { key: "services", suffixes: [".consulting", ".academy", ".coaching", ".project", ".care"] },
+  { key: "tech", suffixes: [".tech", ".digital", ".app", ".hub", ".systems"] },
+  { key: "trust", suffixes: [".official", ".id", ".co"] },
+  { key: "global", suffixes: [".worldwide", ".global", ".company", ".corp"] },
+].map((c) => ({
+  ...c,
+  get label() { return t(`bbdata.ext.${c.key}.label`); },
+  get effect() { return t(`bbdata.ext.${c.key}.effect`); },
+}));
+
+// The 3 naming approaches the Naming stage's "belum punya nama" branch
+// asks someone to pick BEFORE brainstorming — picking the angle first
+// keeps the AI's suggestions focused on one strategy instead of a vague
+// mixed bag. "self" skips AI brainstorming entirely (there's nothing to
+// generate — it's literally their own name); "curiosity" and "descriptive"
+// each steer suggestBrandNames' prompt toward that one angle only.
+export const NAMING_STRATEGIES = [
+  { key: "curiosity", examples: ["Erigo", "Janji Jiwa", "Fore", "Wepeka"] },
+  { key: "self", examples: ["Ford", "Porsche", "Gucci", "Saint Laurent"] },
+  { key: "descriptive", examples: ["Burger King", "Kopi Kenangan", "Traveloka"] },
+].map((n) => ({
+  ...n,
+  get label() { return t(`bbdata.naming.${n.key}.label`); },
+  get desc() { return t(`bbdata.naming.${n.key}.desc`); },
+}));
 
 export const APPLICATION_TYPES = [
-  { id: "social", label: "Social Media Post", renderer: "socialPostMockup" },
-  { id: "website", label: "Website Hero", renderer: "websiteHeroMockup" },
-  { id: "business-card", label: "Business Card", renderer: "businessCardMockup" },
-  { id: "packaging", label: "Packaging Label", renderer: "packagingMockup" },
-  { id: "poster", label: "Poster", renderer: "posterMockup" },
-  { id: "ad", label: "Digital Ad", renderer: "digitalAdMockup" },
-];
+  { id: "social", renderer: "socialPostMockup" },
+  { id: "website", renderer: "websiteHeroMockup" },
+  { id: "business-card", renderer: "businessCardMockup" },
+  { id: "packaging", renderer: "packagingMockup" },
+  { id: "poster", renderer: "posterMockup" },
+  { id: "ad", renderer: "digitalAdMockup" },
+].map((a) => ({
+  ...a,
+  get label() { return t(`bbdata.app.${a.id}`); },
+}));

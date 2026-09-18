@@ -1,14 +1,19 @@
-import { getBrand, listContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, combinePlatformMetrics, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getBrand, listContent, getContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, combinePlatformMetrics, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getMode } from "../mode.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
-import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast } from "../dom.js";
+import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { confirmDialog, openModal, closeOverlay } from "../modals.js";
+import { openCelebration } from "../celebrate.js";
 import { openInstagramImportPicker } from "./instagram-import.js";
 import { openFacebookImportPicker } from "./facebook-import.js";
-import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl } from "../instagram.js";
+import { syncInstagramPerformance } from "../instagram-sync.js";
+import { canUseInstagramApi } from "../account.js";
 import { analyzeScreenshot } from "../ocr.js";
 import { t } from "../i18n.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { consumeNavContext } from "../nav-context.js";
 
 // Opening the Content tab asks "what do you want to check?" first (three
 // big choices) instead of dropping straight into a raw table. Ideas/drafts
@@ -32,6 +37,20 @@ const METRIC_PLATFORMS = [
 
 export function render(root, { brandId }) {
   const state = { view: null, selectMode: false, search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", sort: "updated", dir: "desc", selected: new Set(), metricPlatforms: new Set(["instagram", "facebook"]) };
+  // Arriving from a campaign: skip the chooser, filter to that campaign,
+  // and for "Isi performa" open Quick Fill on the piece straight away.
+  const navCtx = consumeNavContext();
+  if (navCtx?.campaignId) {
+    state.campaignId = navCtx.campaignId;
+    state.view = navCtx.status === "published" ? "published" : navCtx.status ? "drafts" : "all";
+  }
+  if (navCtx?.intent === "performance" && navCtx.contentId) {
+    state.view = "published";
+    setTimeout(() => {
+      const c = getContent(navCtx.contentId);
+      if (c) openQuickFillModal({ c, onSaved: refresh });
+    }, 0);
+  }
   const refresh = () => paint(root, brandId, state, refresh);
   refresh();
   return onChange(refresh);
@@ -99,7 +118,7 @@ function renderChooser(root, brandId, state, refresh, brand) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${t("contentList.eyebrow")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}</div>
         <h1>${brand.name}</h1>
       </div>
       <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("contentList.newContent")}</button>
@@ -116,6 +135,8 @@ function renderChooser(root, brandId, state, refresh, brand) {
       ).join("")}
     </div>
   `;
+
+  wireHelpButtons(root);
 
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
   qsa("[data-view]").forEach((btn) => {
@@ -172,7 +193,9 @@ function renderTable(root, brandId, state, refresh, brand) {
   // toward whether "Clear filters" shows up and what it resets.
   const panelFilterCount = (state.funnel ? 1 : 0) + (state.format ? 1 : 0) + (state.platform ? 1 : 0) + (state.age ? 1 : 0);
   const activeFilters = panelFilterCount + (state.campaignId ? 1 : 0);
-  const igConfigured = !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
+  const igAllowed = canUseInstagramApi();
+  const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
+  const igUnavailableNote = igAllowed ? t("contentList.connectInEditBrand") : t("contentList.comingSoon");
   const fbConfigured = !!(brand.facebook?.pageId && brand.facebook?.pageAccessToken);
   const allContentCount = listContent(brandId, { includeArchived: true }).length;
   const isPublishedView = state.view === "published";
@@ -188,6 +211,10 @@ function renderTable(root, brandId, state, refresh, brand) {
     .slice(0, 3);
   const staleQueue = publishedAll.filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
 
+  // Pemula: the list is for finding and opening content. Import, bulk
+  // select, metric-platform switch, top-performer tiles and the ⋯ menu are
+  // Pro tooling — hidden here, unchanged there.
+  const guided = getMode() === "guided";
   root.innerHTML = `
     <div class="page-head">
       <div>
@@ -200,8 +227,8 @@ function renderTable(root, brandId, state, refresh, brand) {
             ? `<button class="btn btn-secondary" id="update-engagement">${icon("chart", { size: 15 })}${t("contentList.updateEngagement")}${staleQueue.length ? ` <span class="notif-badge" style="position:static;margin-left:2px;">${staleQueue.length}</span>` : ""}</button>`
             : ""
         }
-        <button class="btn btn-secondary" id="import-content">${icon("refresh", { size: 15 })}${t("contentList.importContent")}${icon("chevronDown", { size: 12 })}</button>
-        <button class="icon-btn" id="more-actions" aria-label="${t("contentList.moreActions")}" title="${t("contentList.moreActions")}">${icon("dots", { size: 16 })}</button>
+        ${guided ? "" : `<button class="btn btn-secondary" id="import-content">${icon("refresh", { size: 15 })}${t("contentList.importContent")}${icon("chevronDown", { size: 12 })}</button>
+        <button class="icon-btn" id="more-actions" aria-label="${t("contentList.moreActions")}" title="${t("contentList.moreActions")}">${icon("dots", { size: 16 })}</button>`}
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("contentList.newContent")}</button>
       </div>
     </div>
@@ -210,11 +237,11 @@ function renderTable(root, brandId, state, refresh, brand) {
       <div class="segmented" style="width:fit-content;">
         ${VIEWS.map((v) => `<button data-view="${v.key}" class="${state.view === v.key ? "active" : ""}">${t(v.labelKey)}</button>`).join("")}
       </div>
-      <button class="btn ${state.selectMode ? "btn-primary" : "btn-secondary"} btn-sm" id="toggle-select">${icon("check", { size: 13 })}${state.selectMode ? t("contentList.doneSelecting") : t("contentList.select")}</button>
+      ${guided ? "" : `<button class="btn ${state.selectMode ? "btn-primary" : "btn-secondary"} btn-sm" id="toggle-select">${icon("check", { size: 13 })}${state.selectMode ? t("contentList.doneSelecting") : t("contentList.select")}</button>`}
     </div>
 
     ${
-      topPerformers.length
+      topPerformers.length && !guided
         ? `<div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.topPerformers")}</div>
            <div class="flex gap-10" style="margin-bottom:20px;flex-wrap:wrap;">
              ${topPerformers
@@ -243,7 +270,7 @@ function renderTable(root, brandId, state, refresh, brand) {
         ${[...campaignsById.values()].map((c) => `<option value="${c.id}" ${state.campaignId === c.id ? "selected" : ""}>${escapeText(c.name || t("common.untitled"))}</option>`).join("")}
       </select>
       <button type="button" class="btn btn-secondary btn-sm" id="filter-toggle">${icon("filter", { size: 13 })}${t("contentList.filter")}${panelFilterCount ? ` <span class="notif-badge" style="position:static;margin-left:2px;">${panelFilterCount}</span>` : ""}${icon("chevronDown", { size: 12 })}</button>
-      <button type="button" class="btn btn-secondary btn-sm" id="metric-platform-toggle">${icon("layers", { size: 13 })}${metricPlatformLabel(state.metricPlatforms)}${icon("chevronDown", { size: 12 })}</button>
+      ${guided ? "" : `<button type="button" class="btn btn-secondary btn-sm" id="metric-platform-toggle">${icon("layers", { size: 13 })}${metricPlatformLabel(state.metricPlatforms)}${icon("chevronDown", { size: 12 })}</button>`}
       ${activeFilters ? `<button class="btn btn-ghost btn-sm" id="clear-filters">${icon("x", { size: 13 })}${t("contentList.clearFilters")}</button>` : ""}
       ${
         state.selectMode && state.selected.size
@@ -291,59 +318,49 @@ function renderTable(root, brandId, state, refresh, brand) {
 
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
 
-  qs("#import-content").addEventListener("click", (e) => {
+  qs("#import-content")?.addEventListener("click", (e) => {
     e.stopPropagation();
-    qsa(".menu").forEach((m) => m.remove());
     const rect = e.currentTarget.getBoundingClientRect();
-    const menu = document.createElement("div");
-    menu.className = "menu";
-    menu.style.top = rect.bottom + 6 + "px";
-    menu.style.left = rect.left + "px";
+    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: rect.left });
+    if (!menu) return;
     menu.innerHTML = `
-      <button data-import="instagram" ${igConfigured ? "" : "disabled"}>${platformIcon("instagram")}${t("contentList.importInstagram")}${igConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${t("contentList.connectInEditBrand")}</span>`}</button>
+      <button data-import="instagram" ${igConfigured ? "" : "disabled"}>${platformIcon("instagram")}${t("contentList.importInstagram")}${igConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span>`}</button>
       <button data-import="facebook" ${fbConfigured ? "" : "disabled"}>${platformIcon("facebook")}${t("contentList.importFacebook")}${fbConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${t("contentList.connectInEditBrand")}</span>`}</button>
       <button data-import="tiktok" disabled>${platformIcon("tiktok")}${t("contentList.importTiktok")} <span class="text-faint" style="font-size:11px;">${t("contentList.comingSoon")}</span></button>
     `;
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
     menu.addEventListener("click", (ev) => {
       ev.stopPropagation();
       const target = ev.target.closest("[data-import]:not(:disabled)");
       if (!target) return;
-      menu.remove();
+      closeMenu();
       if (target.dataset.import === "instagram") openInstagramImportPicker(brandId, refresh);
       else if (target.dataset.import === "facebook") openFacebookImportPicker(brandId, refresh);
     });
   });
 
-  qs("#toggle-select").addEventListener("click", () => {
+  qs("#toggle-select")?.addEventListener("click", () => {
     state.selectMode = !state.selectMode;
     if (!state.selectMode) state.selected.clear();
     paint(root, brandId, state, refresh);
   });
 
-  qs("#more-actions").addEventListener("click", (e) => {
+  qs("#more-actions")?.addEventListener("click", (e) => {
     e.stopPropagation();
-    qsa(".menu").forEach((m) => m.remove());
     const rect = e.currentTarget.getBoundingClientRect();
-    const menu = document.createElement("div");
-    menu.className = "menu";
-    menu.style.top = rect.bottom + 6 + "px";
-    menu.style.left = Math.min(rect.left, window.innerWidth - 220) + "px";
+    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 220) });
+    if (!menu) return;
     menu.innerHTML = `
       ${
         igConfigured
           ? `<button data-act="refresh-all">${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")}</button>`
-          : `<button data-act="refresh-all-disabled" disabled title="${t("contentList.connectIgFirst")}">${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")} <span class="text-faint" style="font-size:11px;">${t("contentList.connectInEditBrand")}</span></button>`
+          : `<button data-act="refresh-all-disabled" disabled title="${igAllowed ? t("contentList.connectIgFirst") : ""}">${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")} <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span></button>`
       }
       <div class="menu-divider"></div>
       <button data-act="delete-all" class="danger">${icon("trash", { size: 15 })}${t("contentList.deleteAllContent", { count: allContentCount })}</button>
     `;
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
     menu.addEventListener("click", async (ev) => {
       ev.stopPropagation();
-      menu.remove();
+      closeMenu();
       if (ev.target.closest("[data-act='delete-all']")) {
         if (!allContentCount) { toast(t("contentList.nothingToDelete"), "error"); return; }
         const ok = await confirmDialog({
@@ -371,14 +388,11 @@ function renderTable(root, brandId, state, refresh, brand) {
       qs("#search").selectionStart = qs("#search").selectionEnd = state.search.length;
     }, 200)
   );
-  qs("#metric-platform-toggle").addEventListener("click", (e) => {
+  qs("#metric-platform-toggle")?.addEventListener("click", (e) => {
     e.stopPropagation();
-    qsa(".menu").forEach((m) => m.remove());
     const rect = e.currentTarget.getBoundingClientRect();
-    const menu = document.createElement("div");
-    menu.className = "menu";
-    menu.style.top = rect.bottom + 6 + "px";
-    menu.style.left = rect.left + "px";
+    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: rect.left });
+    if (!menu) return;
     menu.innerHTML = `
       <div style="padding:6px 14px 8px;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--text-faint);">${t("contentList.combineFrom")}</div>
       ${METRIC_PLATFORMS.map(
@@ -389,8 +403,6 @@ function renderTable(root, brandId, state, refresh, brand) {
         </label>`
       ).join("")}
     `;
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
     menu.addEventListener("click", (ev) => ev.stopPropagation());
     qsa("[data-metric-platform]", menu).forEach((cb) => {
       cb.addEventListener("change", () => {
@@ -474,12 +486,33 @@ function renderTable(root, brandId, state, refresh, brand) {
   qsa("tr[data-id]").forEach((tr) => {
     tr.addEventListener("click", (e) => {
       if (e.target.closest("[data-row-menu]") || e.target.closest(".menu") || e.target.closest("[data-row-checkbox]")) return;
-      openContentEditor({ brandId, contentId: tr.dataset.id, onSaved: refresh });
+      const item = items.find((x) => x.c.id === tr.dataset.id)?.c;
+      if (!item) return;
+      if (item.status === "published") {
+        // Once a piece is published there's nothing left to write — the one
+        // thing someone clicking it almost always wants is to fill in how it
+        // performed, not re-open the metadata form. Metadata (platform,
+        // campaign, ads) is still one click away via the row's "..." menu.
+        openQuickFillModal({ c: item, onSaved: refresh });
+      } else if (item.status !== "archived") {
+        // Still-in-progress content (idea/draft/production/editing/scheduled)
+        // is written and moved forward in Creator Studio, not here — same
+        // routing "This Week's Work" already uses elsewhere in the app.
+        location.hash = `#/brand/${brandId}/content-os/creator/${tr.dataset.id}`;
+      } else {
+        openContentEditor({ brandId, contentId: tr.dataset.id, onSaved: refresh });
+      }
     });
   });
 
   qsa("[data-open-content]").forEach((card) => {
-    card.addEventListener("click", () => openContentEditor({ brandId, contentId: card.dataset.openContent, onSaved: refresh }));
+    // Top-performer cards only ever show published content — same "fill in
+    // performance, not metadata" default as a published row above.
+    card.addEventListener("click", () => {
+      const item = items.find((x) => x.c.id === card.dataset.openContent)?.c;
+      if (item?.status === "published") openQuickFillModal({ c: item, onSaved: refresh });
+      else openContentEditor({ brandId, contentId: card.dataset.openContent, onSaved: refresh });
+    });
   });
 
   qs("#update-engagement")?.addEventListener("click", () => {
@@ -497,26 +530,21 @@ function renderTable(root, brandId, state, refresh, brand) {
   qsa("[data-row-menu]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      qsa(".menu").forEach((m) => m.remove());
       const id = btn.dataset.id;
       const item = items.find((x) => x.c.id === id)?.c;
       const rect = btn.getBoundingClientRect();
-      const menu = document.createElement("div");
-      menu.className = "menu";
-      menu.style.top = rect.bottom + 6 + "px";
-      menu.style.left = Math.min(rect.left, window.innerWidth - 190) + "px";
+      const menu = openMenu(btn, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
+      if (!menu) return;
       menu.innerHTML = `
         <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
         <button data-act="archive">${icon("archive", { size: 15 })}${item.archived ? t("contentList.unarchive") : t("contentList.archive")}</button>
         <div class="menu-divider"></div>
         <button data-act="delete" class="danger">${icon("trash", { size: 15 })}${t("common.delete")}</button>
       `;
-      document.body.appendChild(menu);
-      setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
       menu.addEventListener("click", async (ev) => {
         ev.stopPropagation();
         const act = ev.target.closest("[data-act]")?.dataset.act;
-        menu.remove();
+        closeMenu();
         if (act === "edit") openContentEditor({ brandId, contentId: id, onSaved: refresh });
         else if (act === "archive") {
           const wasArchived = item.archived;
@@ -610,7 +638,7 @@ function openEngagementQueueList({ brandId, allQueue, refresh }) {
 // piece of content. Reused from two places: the queue list above, and the
 // per-row quick-fill icon in the table (rowHTML) for updating any post on
 // the spot, not just ones that showed up as "due."
-function openQuickFillModal({ c, onSaved, onBack }) {
+export function openQuickFillModal({ c, onSaved, onBack }) {
   const perf = c.performance || {};
   const overlay = openModal({
     title: t("contentList.qf.title"),
@@ -679,7 +707,7 @@ function openQuickFillModal({ c, onSaved, onBack }) {
         if (input) input.value = metrics[key];
       });
       statusEl.innerHTML = matched.length
-        ? `<div class="ocr-status">${icon("check", { size: 14 })}<span>${t("contentList.qf.foundMetrics", { count: matched.length })}</span></div>`
+        ? `<div class="ocr-status">${icon("check", { size: 14 })}<span>${t("contentList.qf.foundMetrics", { count: matched.length, metricWord: t(matched.length === 1 ? "cnt.metric.one" : "cnt.metric.many") })}</span></div>`
         : `<div class="ocr-status">${icon("info", { size: 14 })}<span>${t("contentList.qf.noMetricsFound")}</span></div>`;
     } catch (err) {
       statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${err.message || t("contentList.qf.analyzeFailed")}</span></div>`;
@@ -691,6 +719,11 @@ function openQuickFillModal({ c, onSaved, onBack }) {
     onBack();
   });
   qs("#qe-save", overlay).addEventListener("click", () => {
+    const settings = getSettings();
+    // #12: an ad-hoc "big win" celebration when this save is what pushes
+    // the content's ER rating into "good" — compare before/after so a
+    // re-save of an already-good piece doesn't celebrate every time.
+    const wasGood = computeContentMetrics(c, settings).erRating === "good";
     const performance = { ...perf };
     METRIC_KEYS.forEach((m) => {
       const v = qs(`#qe-metric-${m.key}`, overlay).value;
@@ -700,6 +733,13 @@ function openQuickFillModal({ c, onSaved, onBack }) {
     updateContent(c.id, { performance });
     closeOverlay(overlay);
     toast(t("contentList.qf.updatedToast", { title: c.title || t("common.untitled") }));
+    const updated = computeContentMetrics({ ...c, performance }, settings);
+    if (!wasGood && updated.erRating === "good") {
+      openCelebration({
+        title: escapeText(t("celebrate.erWinTitle")),
+        sub: escapeText(t("celebrate.erWinSub", { title: c.title || t("common.untitled"), er: Math.round((updated.engagementRate || 0) * 10) / 10 })),
+      });
+    }
     onSaved?.();
   });
 }
@@ -709,12 +749,9 @@ function openQuickFillModal({ c, onSaved, onBack }) {
 // (like the existing row/import menus) so it survives the table repaint
 // each control triggers, instead of closing on every single change.
 function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange }) {
-  qsa(".menu").forEach((m) => m.remove());
   const rect = anchorBtn.getBoundingClientRect();
-  const panel = document.createElement("div");
-  panel.className = "menu filter-panel";
-  panel.style.top = rect.bottom + 6 + "px";
-  panel.style.left = Math.min(rect.left, window.innerWidth - 280) + "px";
+  const panel = openMenu(anchorBtn, { className: "filter-panel", top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 280) });
+  if (!panel) return;
   panel.innerHTML = `
     <div class="filter-panel-section">
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.funnel")}</div>
@@ -748,9 +785,7 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
         : ""
     }
   `;
-  document.body.appendChild(panel);
   panel.addEventListener("click", (e) => e.stopPropagation());
-  setTimeout(() => document.addEventListener("click", () => panel.remove(), { once: true }));
 
   qsa("#fp-funnel button", panel).forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -781,12 +816,6 @@ function metricPlatformLabel(metricPlatforms) {
   return active.map((p) => p.label).join(" + ");
 }
 
-function escapeText(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
-}
-
 // Re-fetches metrics for content already tracked here (platform Instagram +
 // a Published URL) — no new imports, just refreshed numbers on what you
 // already have.
@@ -815,36 +844,28 @@ async function refreshExistingInstagram(brandId, ig, refresh) {
   const closeBtn = overlay.querySelector("#refresh-close");
   closeBtn.addEventListener("click", () => closeOverlay(overlay));
 
-  let media;
+  const rowStatus = (c) => overlay.querySelector(`[data-row="${c.id}"] .sync-status`);
+  let ok = 0;
+  let failed = 0;
   try {
-    media = await listRecentMedia(ig, { maxItems: 100 });
+    ({ ok, failed } = await syncInstagramPerformance(brandId, ig, {
+      onRowStart: (c) => {
+        const statusEl = rowStatus(c);
+        if (statusEl) statusEl.innerHTML = `<div class="spinner"></div>`;
+      },
+      onRowDone: (c, err) => {
+        const statusEl = rowStatus(c);
+        if (!statusEl) return;
+        statusEl.style.color = err ? "var(--health-poor)" : "var(--health-good)";
+        statusEl.innerHTML = icon(err ? "x" : "check", { size: 14 });
+        if (err) statusEl.setAttribute("title", err.message);
+      },
+    }));
   } catch (e) {
     toast(t("contentList.ig.unreachable", { msg: e.message }), "error");
     closeBtn.disabled = false;
     closeBtn.textContent = t("contentList.ig.close");
     return;
-  }
-
-  let ok = 0;
-  let failed = 0;
-  for (const c of targets) {
-    const statusEl = overlay.querySelector(`[data-row="${c.id}"] .sync-status`);
-    statusEl.innerHTML = `<div class="spinner"></div>`;
-    try {
-      const code = shortcodeFromUrl(c.publishedUrl);
-      const mediaObj = media.find((m) => shortcodeFromUrl(m.permalink) === code);
-      if (!mediaObj) throw new Error("not found in recent posts");
-      const { metrics } = await fetchMediaMetrics(ig, mediaObj);
-      updateContent(c.id, { performance: metrics });
-      statusEl.style.color = "var(--health-good)";
-      statusEl.innerHTML = icon("check", { size: 14 });
-      ok++;
-    } catch (e) {
-      statusEl.style.color = "var(--health-poor)";
-      statusEl.innerHTML = icon("x", { size: 14 });
-      statusEl.setAttribute("title", e.message);
-      failed++;
-    }
   }
 
   closeBtn.disabled = false;

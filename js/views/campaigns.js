@@ -1,18 +1,31 @@
+import { backLinkHTML } from "../back-link.js";
 import {
   getBrand, listContent, createContent, onChange, getSettings,
-  listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign, campaignPhaseCoverage,
+  listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
   CAMPAIGN_OBJECTIVES, CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES, CAMPAIGN_STATUSES, CAMPAIGN_STATUS_LABELS, CAMPAIGN_PHASE_TEMPLATE,
-  MISSION_LADDERS, createMissionsForTemplate, milestoneStatus, missionCanAdvance, missionState,
-  EVENT_ROLES, EVENT_PARTICIPATION_TYPES, EVENT_SETUP_FIELDS, EVENT_OBJECTIVES, EVENT_STATUS_LABELS, EVENT_PLAN_TERMS, EVENT_SCALE_TIERS,
-  eventScaleFor, eventPhaseTemplatesForRole, buildEventPhases, eventMilestoneStatus,
-  organicViews, combinedViewsWithAds,
+  MISSION_LADDERS, createMissionsForTemplate,
+  EVENT_ROLES, EVENT_PARTICIPATION_TYPES, EVENT_OBJECTIVES, EVENT_OBJECTIVE_LABELS, EVENT_PLAN_TERMS, EVENT_SCALE_TIERS,
+  phaseNameLabel, missionText,
+  eventPhaseTemplatesForRole, buildEventPhases, eventScaleFor, nominalEventRunway, daysBetween, formatEventDate, localISODate,
 } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
-import { toast, formatNumber, linesToList, listToLines, qs, qsa } from "../dom.js";
-import { generateCampaignPlan, suggestPhaseContent, brainstormCampaignIdeas, AiApiError, hasAiKey } from "../ai.js";
-import { computeContentMetrics } from "../formulas.js";
-import { openContentEditor } from "./content-editor.js";
+import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
+import { generateCampaignPlan, AiApiError, hasAiKey } from "../ai.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { sectionGuideButtonHTML } from "../section-guide.js";
+import { maybeAutoPlayVideo } from "../guide-videos.js";
+import { wireGuideButton } from "../guides/common.js";
+import { startCampaignListGuide, startCampaignListGuideOnMount, startCampaignDetailGuideOnMount } from "../guides/campaign-guide.js";
+import { t } from "../i18n.js";
+import { getMode } from "../mode.js";
+import { isTourDemo, demoCampaignPlan, DEMO_TOAST } from "../tour-demo.js";
+import { campaignStages, activeStageIndex, campaignHeadline, TRACK_ICON } from "../campaign-metrics.js";
+import { crossCampaignInsights } from "../cross-campaign.js";
+import { nextActions } from "../next-action.js";
+import { paintDetail } from "./campaign-detail.js";
+import { mountAiFeedback } from "../ai-feedback.js";
+import { openGoalWizard } from "./goal-wizard.js";
 
 // Reuses the existing status-pill color classes (defined for Content's own
 // idea/draft/production/editing/scheduled/published/archived vocabulary)
@@ -22,9 +35,16 @@ import { openContentEditor } from "./content-editor.js";
 const CAMPAIGN_STATUS_PILL_CLASS = { planning: "status-draft", active: "status-scheduled", completed: "status-published", archived: "status-archived" };
 
 export function render(root, { brandId, campaignId }) {
-  const state = { expandedPhaseId: null, missionIndex: null, eventPhaseIndex: null };
+  const state = { stageIndex: null, celebrateIndex: null, advancing: false };
   const refresh = () => paint(root, brandId, campaignId, state, refresh);
   refresh();
+  // One-time explainer for Campaign, on whichever of the two routes gets
+  // opened first; the Video button in the page head replays it after that.
+  maybeAutoPlayVideo("campaign");
+  // Once per mount (list and detail are separate routes/mounts) — paint()
+  // runs again on every db:change.
+  if (campaignId) startCampaignDetailGuideOnMount(brandId, campaignId);
+  else startCampaignListGuideOnMount(brandId);
   return onChange(refresh);
 }
 
@@ -40,7 +60,7 @@ function paint(root, brandId, campaignId, state, refresh) {
       location.hash = `#/brand/${brandId}/campaigns`;
       return;
     }
-    paintDetail(root, brandId, brand, campaign, state, refresh);
+    paintDetail(root, brandId, brand, campaign, state, refresh, { openEdit: () => openCampaignModal({ brandId, campaign, onSaved: refresh }) });
     return;
   }
   paintList(root, brandId, brand, refresh);
@@ -51,26 +71,68 @@ function paint(root, brandId, campaignId, state, refresh) {
 function paintList(root, brandId, brand, refresh) {
   const campaigns = listCampaigns(brandId);
   const content = listContent(brandId);
+  // Grow Brand's own tracks (Social Media Growth / Community Growth) get
+  // their own grouped section — each still its own card with its own
+  // progress, never combined into one number — plus, when both are
+  // running with enough fresh data, a cross-campaign insight banner
+  // (js/cross-campaign.js). Everything else (Event, legacy campaigns)
+  // stays in the regular grid below.
+  const growBrand = campaigns.filter((c) => c.goalPlan?.version === 3 && !["archived", "completed"].includes(c.status));
+  const rest = campaigns.filter((c) => !growBrand.includes(c));
+  const insights = growBrand.length ? crossCampaignInsights({ campaigns, content, brand, settings: getSettings() }) : [];
 
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">Campaigns</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("camp.list.eyebrow")}${helpButtonHTML("campaigns")}${sectionGuideButtonHTML("campaigns")}</div>
         <h1>${brand.name}</h1>
       </div>
-      <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}New Campaign</button>
+      <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
     </div>
-    <p class="page-sub" style="margin-bottom:24px;">What this brand is working toward right now — Content gets linked to a campaign and a journey phase to show which goal it's actually serving.</p>
+    <p class="page-sub" style="margin-bottom:24px;">${
+      getMode() === "guided"
+        ? t("camp.list.subGuided")
+        : t("camp.list.subPro")
+    }</p>
+    ${growBrand.length ? growBrandSectionHTML(growBrand, insights) : ""}
     ${
-      campaigns.length
-        ? `<div class="brand-grid">${campaigns.map((c) => campaignCard(brandId, c, content)).join("")}</div>`
-        : `<div class="content-view-card" style="max-width:420px;cursor:default;">
+      rest.length
+        ? `<div class="brand-grid">${rest.map((c) => campaignCard(brandId, c, content, brand)).join("")}</div>`
+        : !campaigns.length
+        ? `<div class="content-view-card" style="max-width:420px;cursor:default;">
              <div class="icon-wrap">${icon("target", { size: 22 })}</div>
-             <h3>No campaigns yet</h3>
-             <p>Create one to give a batch of content a shared goal, message, and journey — AI can draft the whole thing from one sentence about what you want to achieve.</p>
+             <h3>${t("camp.list.emptyTitle")}</h3>
+             <p>${
+               getMode() === "guided"
+                 ? t("camp.list.emptyGuided")
+                 : t("camp.list.emptyPro")
+             }</p>
            </div>`
+        : ""
     }
   `;
+
+  function growBrandSectionHTML(list, ins) {
+    return `
+      <div class="section-title" style="margin-bottom:10px;"><h2>${t("goal.launch.title")}</h2></div>
+      ${ins.length ? ins.map(insightBannerHTML).join("") : ""}
+      <div class="brand-grid" style="margin-bottom:24px;">${list.map((c) => campaignCard(brandId, c, content, brand)).join("")}</div>
+    `;
+  }
+  function insightBannerHTML(insight) {
+    return `
+      <div class="card cross-insight">
+        <div class="cross-insight-head"><span class="page-eyebrow">${t("cross.title")}</span><span class="tag" style="font-size:10.5px;">${t(`cross.confidence.${insight.confidence}`)}</span></div>
+        <p style="margin:4px 0 0;font-size:13px;">${escapeText(insight.text)}</p>
+        <details class="cross-insight-advanced"><summary>${t("cross.advancedLabel")}</summary>
+          <p class="text-faint" style="font-size:12px;margin:6px 0 4px;">${escapeText(insight.detail)}</p>
+          ${insight.areas?.length ? `<ul class="text-faint" style="font-size:12px;margin:0;padding-left:16px;">${insight.areas.map((a) => `<li>${escapeText(a)}</li>`).join("")}</ul>` : ""}
+        </details>
+      </div>`;
+  }
+
+  wireHelpButtons(root);
+  wireGuideButton(root, "campaigns", () => startCampaignListGuide(brandId));
 
   qs("#new-campaign").addEventListener("click", () => openNewCampaignFlow({ brandId, onSaved: refresh }));
   qsa("[data-open-campaign]", root).forEach((card) => {
@@ -79,44 +141,56 @@ function paintList(root, brandId, brand, refresh) {
       location.hash = `#/brand/${brandId}/campaigns/${card.dataset.openCampaign}`;
     });
   });
+  qsa("[data-delete-campaign]", root).forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.deleteCampaign;
+      const linkedCount = content.filter((c) => c.campaignId === id).length;
+      const ok = await confirmDialog({
+        title: t("camp.list.deleteTitle"),
+        message: linkedCount ? `${t("camp.list.deleteLinked", { count: linkedCount })} ${t("common.noUndo")}` : t("common.noUndo"),
+        confirmLabel: t("common.delete"),
+        danger: true,
+      });
+      if (!ok) return;
+      deleteCampaign(id);
+      toast(t("camp.list.deleted"));
+      refresh();
+    });
+  });
   qsa("[data-menu-toggle]", root).forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      qsa(".menu").forEach((m) => m.remove());
       const id = btn.dataset.id;
       const rect = btn.getBoundingClientRect();
-      const menu = document.createElement("div");
-      menu.className = "menu";
-      menu.style.top = rect.bottom + 6 + "px";
-      menu.style.left = Math.min(rect.left, window.innerWidth - 190) + "px";
+      const menu = openMenu(btn, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
+      if (!menu) return;
       menu.innerHTML = `
-        <button data-act="edit">${icon("edit", { size: 15 })}Edit</button>
+        <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
         <div class="menu-divider"></div>
-        <button data-act="delete" class="danger">${icon("trash", { size: 15 })}Delete</button>
+        <button data-act="delete" class="danger">${icon("trash", { size: 15 })}${t("common.delete")}</button>
       `;
-      document.body.appendChild(menu);
-      setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }));
       menu.addEventListener("click", async (ev) => {
         ev.stopPropagation();
         const act = ev.target.closest("[data-act]")?.dataset.act;
         if (!act) return;
-        menu.remove();
+        closeMenu();
         const campaign = getCampaign(id);
         if (act === "edit") {
           openCampaignModal({ brandId, campaign, onSaved: refresh });
         } else if (act === "delete") {
           const linkedCount = content.filter((c) => c.campaignId === id).length;
           const ok = await confirmDialog({
-            title: "Delete this campaign?",
+            title: t("camp.list.deleteTitle"),
             message: linkedCount
-              ? `${linkedCount} content item(s) are linked to it — they'll stay, just unlinked from this campaign. This cannot be undone.`
-              : "This cannot be undone.",
-            confirmLabel: "Delete",
+              ? `${t("camp.list.deleteLinked", { count: linkedCount })} ${t("common.noUndo")}`
+              : t("common.noUndo"),
+            confirmLabel: t("common.delete"),
             danger: true,
           });
           if (ok) {
             deleteCampaign(id);
-            toast("Campaign deleted");
+            toast(t("camp.list.deleted"));
           }
         }
       });
@@ -124,34 +198,48 @@ function paintList(root, brandId, brand, refresh) {
   });
 }
 
-function campaignCard(brandId, campaign, allContent) {
-  const linked = allContent.filter((c) => c.campaignId === campaign.id);
-  const organic = linked.reduce((s, c) => s + (organicViews(c) || 0), 0);
-  const combined = linked.reduce((s, c) => s + (combinedViewsWithAds(c) || 0), 0);
-  const coverage = campaignPhaseCoverage(campaign, allContent);
+function campaignCard(brandId, campaign, allContent, brand) {
+  const ctx = { brand, campaign, content: allContent, settings: getSettings() };
+  const stages = campaignStages(campaign);
+  const idx = activeStageIndex(campaign, stages, allContent);
+  const stage = stages[idx];
+  const head = stage ? campaignHeadline(campaign, stages, idx, ctx) : null;
+  const action = nextActions({ ...ctx, limit: 1 })[0];
+  const where =
+    stage?.kind === "level" ? `${t("camp.levelOf", { n: idx + 1, total: stages.length })} · ${escapeText(stage.name)}` : stage?.kind === "window" ? `${escapeText(stage.name)} · ${escapeText(stage.dateLabel)}` : stage ? t("camp.phaseNamed", { name: escapeText(stage.name) }) : "";
+  const pct = head ? Math.round(head.reading.pct * 100) : 0;
+  // Pemula: no objective/status tag row and no ⋯ menu (edit lives on the
+  // detail page instead) — the name, where you are, the one number and the
+  // next step are the card. Delete stays reachable right here too, though,
+  // as its own trash icon — going into a campaign just to delete it was the
+  // extra hop Pemula kept getting stuck on.
+  const guided = getMode() === "guided";
+  // Grow Brand track (social/community/sales) gets its own accent + badge
+  // so the three widget kinds are tellable apart at a glance in the list —
+  // see .campaign-card--track-* in css/campaign.css.
+  const track = campaign.goalPlan?.version === 3 ? campaign.goalPlan.track : null;
   return `
-    <div class="brand-card" data-open-campaign="${campaign.id}" style="cursor:pointer;">
-      <button class="icon-btn card-menu" data-menu-toggle data-id="${campaign.id}" aria-label="Campaign actions" style="width:30px;height:30px;">${icon("dots", { size: 15 })}</button>
-      <div class="flex items-center gap-8" style="margin-bottom:12px;">
-        <span class="tag">${CAMPAIGN_OBJECTIVE_LABELS[campaign.objective] || campaign.objective}</span>
-        <span class="status-pill ${CAMPAIGN_STATUS_PILL_CLASS[campaign.status] || ""}"><span class="status-dot"></span>${CAMPAIGN_STATUS_LABELS[campaign.status] || campaign.status}</span>
-      </div>
-      <h3>${escapeText(campaign.name || "Untitled campaign")}</h3>
-      <div class="meta" style="margin-bottom:10px;">${coverage.filled}/${coverage.total} phases underway · ${linked.length} content item${linked.length === 1 ? "" : "s"}</div>
+    <div class="brand-card campaign-card ${track ? `campaign-card--track-${track}` : ""}" data-open-campaign="${campaign.id}" style="cursor:pointer;">
       ${
-        linked.length
-          ? `<div class="kv" style="padding:6px 0;"><span class="k">Organic views</span><span class="v">${formatNumber(organic)}</span></div>
-             <div class="kv" style="padding:6px 0;border-bottom:none;"><span class="k">Combined (+ ads)</span><span class="v">${formatNumber(combined)}</span></div>`
+        guided
+          ? `<button class="icon-btn card-menu" data-delete-campaign="${campaign.id}" aria-label="${t("common.delete")}" style="width:30px;height:30px;">${icon("trash", { size: 15 })}</button>`
+          : `<button class="icon-btn card-menu" data-menu-toggle data-id="${campaign.id}" aria-label="${t("camp.list.actions")}" style="width:30px;height:30px;">${icon("dots", { size: 15 })}</button>
+      <div class="flex items-center gap-8" style="margin-bottom:12px;">
+        ${track ? `<span class="campaign-track-badge campaign-track-badge--${track}">${icon(TRACK_ICON[track], { size: 12 })}${t(`goal.track.${track}`)}</span>` : `<span class="tag">${CAMPAIGN_OBJECTIVE_LABELS[campaign.objective] || campaign.objective}</span>`}
+        <span class="status-pill ${CAMPAIGN_STATUS_PILL_CLASS[campaign.status] || ""}"><span class="status-dot"></span>${CAMPAIGN_STATUS_LABELS[campaign.status] || campaign.status}</span>
+      </div>`
+      }
+      <h3>${escapeText(campaign.name || t("camp.untitled"))}</h3>
+      <div class="meta" style="margin-bottom:10px;">${where}</div>
+      ${
+        head && head.reading.target && !head.reading.isCheck
+          ? `<div class="campaign-card-headline"><b>${formatNumber(head.reading.current)}</b> / ${formatNumber(head.reading.target)} ${escapeText(head.reading.unit)} <span class="text-faint">· ${escapeText(head.milestone.label)}</span></div>
+             <div class="cd-bar" style="margin:6px 0 10px;"><span style="width:${pct}%"></span></div>`
           : ""
       }
+      ${action ? `<div class="campaign-card-next">${icon("arrowRight", { size: 12 })}<span>${escapeText(action.label)}</span></div>` : ""}
     </div>
   `;
-}
-
-function escapeText(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
 }
 
 // ---------- New campaign intake (AI-first, manual fallback) ----------
@@ -160,9 +248,9 @@ function escapeText(s) {
 // not every brand has — asked fresh for every campaign (not remembered on
 // the brand) since a brand's situation can change between campaigns.
 const OPTIONAL_PHASE_QUESTIONS = [
-  { key: "website", phaseName: "Website", question: "Sudah punya atau berencana bikin website?" },
-  { key: "event", phaseName: "Event", question: "Ada rencana bikin event?" },
-  { key: "community", phaseName: "Community", question: "Ada rencana bangun community?" },
+  { key: "website", phaseName: "Website", question: t("camp.new.optWebsite") },
+  { key: "event", phaseName: "Event", question: t("camp.new.optEvent") },
+  { key: "community", phaseName: "Community", question: t("camp.new.optCommunity") },
 ];
 
 // The 3 goals almost everyone actually starts with — pick one, name it,
@@ -173,30 +261,39 @@ const OPTIONAL_PHASE_QUESTIONS = [
 // content ideas that actually match this brand's voice — not drafting the
 // campaign's own strategy copy nobody asked for.
 const CAMPAIGN_QUICK_TEMPLATES = [
-  { id: "grow-social", label: "Grow Social Media", objective: "awareness", icon: "chart", description: "Nambah followers dan awareness lewat konten organik." },
-  { id: "grow-personal", label: "Grow Personal Branding", objective: "personal-branding", icon: "target", description: "Bangun personal brand kamu — dikenal dan dipercaya dulu." },
-  { id: "event", label: "Event", objective: "event", icon: "calendar", description: "Bangun momentum dan kehadiran buat satu acara." },
+  // Two templates only. "Grow Brand" is the Goal Plan (js/goal-plan.js):
+  // growing social media, building a community and getting sales are the
+  // same journey with a different main number, so they're one template whose
+  // first question picks that number — and whose targets are computed from
+  // the brand's own figures. The old fixed ladders (grow-social /
+  // grow-personal in MISSION_LADDERS) are no longer offered for new
+  // campaigns; existing ones keep working unchanged.
+  { id: "goal", label: t("camp.new.tpl.goal"), objective: "awareness", icon: "sparkle", description: t("camp.new.goalDesc"), recommended: t("camp.new.goalReco") },
+  { id: "event", label: t("camp.new.tpl.event"), objective: "event", icon: "calendar", description: t("camp.new.eventDesc") },
 ];
 
 function openNewCampaignFlow({ brandId, onSaved }) {
   const brand = getBrand(brandId);
-
+  // Custom (free-text goal → AI-drafted plan, openCustomCampaignFlow below)
+  // is shown as "Segera hadir" in every mode until it's ready — the flow
+  // itself is kept, just not reachable from here.
   const overlay = openModal({
-    title: "New Campaign",
+    title: t("camp.newCampaign"),
     bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">Pilih salah satu, kasih nama campaign-nya, langsung jadi — fase-fasenya udah disesuaikan otomatis buat goal ini.</p>
+      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("camp.new.intro")}</p>
       <div class="content-view-grid">
-        ${CAMPAIGN_QUICK_TEMPLATES.map((t) => `
-          <button type="button" class="content-view-card" data-quick-template="${t.id}">
-            <div class="icon-wrap">${icon(t.icon, { size: 20 })}</div>
-            <h3>${t.label}</h3>
-            <p>${t.description}</p>
+        ${CAMPAIGN_QUICK_TEMPLATES.map((tpl) => `
+          <button type="button" class="content-view-card${tpl.recommended ? " is-recommended" : ""}" data-quick-template="${tpl.id}">
+            ${tpl.recommended ? `<span class="campaign-reco-badge">${icon("sparkle", { size: 12 })}${tpl.recommended}</span>` : ""}
+            <div class="icon-wrap">${icon(tpl.icon, { size: 20 })}</div>
+            <h3>${tpl.label}</h3>
+            <p>${tpl.description}</p>
           </button>
         `).join("")}
         <button type="button" class="content-view-card" disabled style="opacity:.5;cursor:not-allowed;">
           <div class="icon-wrap">${icon("edit", { size: 20 })}</div>
-          <h3>Custom</h3>
-          <p>Coming soon</p>
+          <h3>${t("store.objective.custom")}</h3>
+          <p>${t("camp.new.customSoon")}</p>
         </button>
       </div>
     `,
@@ -206,6 +303,10 @@ function openNewCampaignFlow({ brandId, onSaved }) {
     btn.addEventListener("click", () => {
       const template = CAMPAIGN_QUICK_TEMPLATES.find((t) => t.id === btn.dataset.quickTemplate);
       closeOverlay(overlay);
+      if (template.id === "goal") {
+        openGoalWizard({ brandId, brand, onSaved });
+        return;
+      }
       // Event doesn't fit the Mission ladder contract at all (role-branching
       // setup, date-anchored non-blocking phases, dynamic targets) — it's a
       // separate intake entirely, only sharing the Terms gate mechanism.
@@ -213,13 +314,21 @@ function openNewCampaignFlow({ brandId, onSaved }) {
         openCampaignTerms({
           template,
           ladder: { terms: EVENT_PLAN_TERMS },
-          onAgree: () => openEventRoleSelect({ brandId, brand, template, onSaved }),
+          onAgree: () => openEventSetupWizard({ brandId, brand, template, onSaved }),
         });
         return;
       }
       const ladder = MISSION_LADDERS[template.id];
+      // 5.1: Pemula gets a one-click campaign from the template card —
+      // the "have you covered this ground?" calibration question and the
+      // name prompt (finishQuickCampaign already has a sensible default
+      // name ready) are both skipped, straight to Mission 1. Terms still
+      // gate Grow Personal Branding in every mode — that's a real
+      // agreement to read, not a setup question. Pro is unchanged.
       const toCalibration = () => {
-        if (ladder?.calibration) {
+        if (getMode() === "guided") {
+          finishQuickCampaign({ brandId, brand, template, onSaved });
+        } else if (ladder?.calibration) {
           openMissionCalibration({
             template,
             ladder,
@@ -250,7 +359,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
 function openCampaignTerms({ template, ladder, onAgree }) {
   const { terms } = ladder;
   const overlay = openModal({
-    title: `${template.label} — Syarat & Ketentuan`,
+    title: t("camp.new.termsTitle", { name: template.label }),
     wide: true,
     bodyHTML: `
       ${terms.intro ? `<p class="text-muted" style="font-size:13px;margin:0 0 14px;">${escapeText(terms.intro)}</p>` : ""}
@@ -268,11 +377,11 @@ function openCampaignTerms({ template, ladder, onAgree }) {
       </div>
       <label class="checkbox-chip" id="terms-agree-label" style="margin-top:14px;opacity:.4;pointer-events:none;">
         <input type="checkbox" id="terms-agree" disabled />
-        Saya udah baca dan setuju sama syarat & ketentuan ini
+        ${t("camp.new.termsAgree")}
       </label>
-      <p class="text-faint" id="terms-scroll-hint" style="font-size:11px;margin:6px 0 0;">Scroll sampai bawah dulu buat bisa centang.</p>
+      <p class="text-faint" id="terms-scroll-hint" style="font-size:11px;margin:6px 0 0;">${t("camp.new.termsScrollHint")}</p>
     `,
-    footHTML: `<button class="btn btn-primary" id="terms-continue" disabled>Lanjut</button>`,
+    footHTML: `<button class="btn btn-primary" id="terms-continue" disabled>${t("camp.next")}</button>`,
   });
 
   const scrollBox = qs("#terms-scroll", overlay);
@@ -318,17 +427,17 @@ function openMissionCalibration({ template, ladder, onContinue }) {
     bodyHTML: `
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${escapeText(calibration.question)}</p>
       <div class="flex gap-8" id="calib-step1" style="flex-wrap:wrap;">
-        <button type="button" class="btn btn-primary btn-sm" id="calib-fresh">Belum, mulai dari Mission 1</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="calib-pick-open">Sudah, aku mau pilih mission-nya</button>
+        <button type="button" class="btn btn-primary btn-sm" id="calib-fresh">${t("camp.new.calibFresh")}</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="calib-pick-open">${t("camp.new.calibPick")}</button>
       </div>
       <div id="calib-step2" style="display:none;margin-top:18px;">
         <div class="hint" style="margin-bottom:12px;">${icon("info", { size: 12 })}<span>${escapeText(calibration.skipNote)}</span></div>
         <div class="chip-select" id="calib-mission-pick" style="flex-wrap:wrap;">
-          ${missionPreviews.map((m, i) => `<button type="button" data-val="${i}">${escapeText(m.name)}</button>`).join("")}
+          ${missionPreviews.map((m, i) => `<button type="button" data-val="${i}">${escapeText(missionText(m).name)}</button>`).join("")}
         </div>
       </div>
     `,
-    footHTML: `<button class="btn btn-primary" id="calib-continue" style="display:none;" disabled>Lanjut</button>`,
+    footHTML: `<button class="btn btn-primary" id="calib-continue" style="display:none;" disabled>${t("camp.next")}</button>`,
   });
 
   let startIndex = 0;
@@ -354,21 +463,40 @@ function openMissionCalibration({ template, ladder, onContinue }) {
   });
 }
 
+// Pemula gets a ready-made name so the prompt is "press Enter", not a
+// question to think about. (The prompt itself stays — the campaign tour
+// waits on it — it's just pre-filled.)
+const GUIDED_DEFAULT_NAMES = { "grow-social": t("camp.new.defaultNameSocial"), "grow-personal": t("camp.new.defaultNamePersonal"), event: t("camp.new.defaultNameEvent") };
+
 async function finishQuickCampaign({ brandId, brand, template, startIndex, onSaved }) {
-  const name = await promptDialog({
-    title: template.label,
-    label: "Nama campaign ini apa?",
-    placeholder: template.label,
-    confirmLabel: "Buat Campaign",
-  });
+  const guided = getMode() === "guided";
+  const defaultName = `${GUIDED_DEFAULT_NAMES[template.id] || template.label} ${brand?.name || ""}`.trim();
+  // 5.1: Pemula never sees this dialog at all — the default name (already
+  // good enough that Pro's version of this same dialog pre-fills it too)
+  // is used as-is, one less decision between "pick a template" and "have
+  // a campaign". Pro keeps naming it themselves.
+  const name = guided
+    ? defaultName
+    : await promptDialog({
+        title: template.label,
+        label: t("camp.new.nameLabel"),
+        placeholder: template.label,
+        value: "",
+        confirmLabel: t("camp.createCampaign"),
+      });
   if (!name) return;
   const optionalDefaults = CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES[template.objective] || [];
-  const phases = CAMPAIGN_PHASE_TEMPLATE.map((t) => ({
-    id: t.name.toLowerCase(), name: t.name, goal: "", milestones: [],
-    enabled: !t.optional || optionalDefaults.includes(t.name),
+  const phases = CAMPAIGN_PHASE_TEMPLATE.map((tpl) => ({
+    id: tpl.name.toLowerCase(), name: tpl.name, goal: "", milestones: [],
+    enabled: !tpl.optional || optionalDefaults.includes(tpl.name),
   }));
   const ladder = MISSION_LADDERS[template.id];
-  const missions = createMissionsForTemplate(template.id, { startIndex });
+  // "Atur Jadwal Kerja" (cadence-setup.js) already asked how often this
+  // brand uploads — reuse it so the ladder's content targets match the
+  // pace the owner actually committed to, instead of one fixed number.
+  const cad = brand?.contentCadence;
+  const uploadsPerWeek = cad?.configured && cad.uploadDays?.length ? cad.uploadDays.length * (Number(cad.perDay) || 1) : null;
+  const missions = createMissionsForTemplate(template.id, { startIndex, uploadsPerWeek });
   const created = createCampaign(brandId, {
     name, objective: template.objective, status: "planning",
     targetAudience: brand?.brandDNA?.targetAudience || "",
@@ -377,7 +505,7 @@ async function finishQuickCampaign({ brandId, brand, template, startIndex, onSav
     ...(ladder?.autoLinkAllContent ? { autoLinkAllContent: true } : {}),
     ...(ladder?.progressionNote ? { missionProgressionNote: ladder.progressionNote } : {}),
   });
-  toast(`"${name}" dibuat — AI bisa bantu isi konten per fase di dalam.`);
+  toast(missions ? t("camp.new.createdLadder", { name }) : t("camp.new.createdPhases", { name }));
   onSaved?.();
   location.hash = `#/brand/${brandId}/campaigns/${created.id}`;
 }
@@ -385,107 +513,283 @@ async function finishQuickCampaign({ brandId, brand, template, startIndex, onSav
 // ---------- Event Campaign intake (role → setup → generate) ----------
 // The one question that decides everything downstream — which setup form
 // shows next, and which whole milestone catalog the campaign gets.
-function openEventRoleSelect({ brandId, brand, template, onSaved }) {
-  const overlay = openModal({
-    title: template.label,
-    bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">Kamu berperan sebagai apa dalam event ini?</p>
-      <div class="content-view-grid">
+// Event setup: three short steps instead of one 13-field form. Only what
+// the system actually uses is asked — role (which phase set), name + event
+// date (timeline), campaign start (runway), scale tier (target multiplier)
+// and objectives (context for AI). Everything the old form also collected
+// (budget, booth size, promotion platform, previous performance, social
+// audience…) was stored in eventPlan.setup and never read by anything.
+const EVENT_SCALE_HINTS = { small: t("camp.event.hintSmall"), medium: t("camp.event.hintMedium"), large: t("camp.event.hintLarge"), major: t("camp.event.hintMajor") };
+
+function openEventSetupWizard({ brandId, brand, template, onSaved }) {
+  const today = localISODate();
+  const state = {
+    step: 1,
+    role: "",
+    participationType: EVENT_PARTICIPATION_TYPES[0].id,
+    eventName: "",
+    eventDate: "",
+    campaignStartDate: today,
+    eventLocation: "",
+    scale: "medium",
+    // Optional real head-count — when given, targets scale from it
+    // continuously instead of from the four-tier guess (see buildEventPhases).
+    expectedAudience: null,
+    objectives: new Set(),
+    error: "",
+  };
+  const overlay = openModal({ title: template.label, wide: true, bodyHTML: `<div class="ev-wizard"></div>` });
+  const root = qs(".ev-wizard", overlay);
+
+  const progress = () => `
+    <div class="copy-steps">
+      ${[1, 2, 3].map((n) => `<span class="copy-step-dot ${n === state.step ? "is-current" : n < state.step ? "is-done" : ""}"></span>`).join("")}
+      <span class="copy-step-label">${t("camp.event.step", { n: state.step })}</span>
+      ${state.step > 1 ? `<button type="button" class="btn btn-ghost btn-sm copy-back" data-ev-back>${icon("chevronLeft", { size: 13 })}${t("common.back")}</button>` : ""}
+    </div>`;
+
+  const templatesFor = () => eventPhaseTemplatesForRole(state.role, state.participationType);
+
+  // Step 2's live line under the dates: is there enough runway for the
+  // role's phases, or will they be compressed (buildEventPhases handles
+  // the compression; this only tells the user before they commit).
+  function runwayHint() {
+    if (!state.eventDate) return { cls: "", text: t("camp.event.runwayNoDate") };
+    if (state.eventDate < today) return { cls: "is-bad", text: t("camp.event.runwayPast") };
+    const days = Math.max(0, daysBetween(state.campaignStartDate || today, state.eventDate));
+    const nominal = nominalEventRunway(templatesFor());
+    if (days === 0) return { cls: "is-warn", text: t("camp.event.runwayToday") };
+    if (days < nominal) return { cls: "is-warn", text: t("camp.event.runwayTight", { days }) };
+    return { cls: "is-ok", text: t("camp.event.runwayOk", { days }) };
+  }
+
+  function step1HTML() {
+    return `
+      ${progress()}
+      <h3 class="copy-q">${t("camp.event.roleQ")}</h3>
+      <div class="content-view-grid ev-roles">
         ${EVENT_ROLES.map(
           (r) => `
-          <button type="button" class="content-view-card" data-role="${r.id}">
+          <button type="button" class="content-view-card ${state.role === r.id ? "is-selected" : ""}" data-role="${r.id}">
             <h3>${escapeText(r.label)}</h3>
             <p>${escapeText(r.description)}</p>
           </button>`
         ).join("")}
       </div>
-    `,
-  });
-  qsa("[data-role]", overlay).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      closeOverlay(overlay);
-      openEventSetupForm({ brandId, brand, template, role: btn.dataset.role, onSaved });
-    });
-  });
-}
-
-function eventFieldHTML(f) {
-  const label = `${escapeText(f.label)}${f.optional ? " (opsional)" : ""}`;
-  if (f.type === "textarea") {
-    return `<div class="field"><label>${label}</label><textarea class="textarea" id="ef-${f.key}" style="min-height:52px;"></textarea></div>`;
-  }
-  if (f.type === "select") {
-    return `<div class="field"><label>${label}</label><select class="select" id="ef-${f.key}">${f.options.map((o) => `<option value="${escapeAttr(o.id)}">${escapeText(o.label)}</option>`).join("")}</select></div>`;
-  }
-  return `<div class="field"><label>${label}</label><input class="input" id="ef-${f.key}" type="${f.type === "date" ? "date" : f.type === "number" ? "number" : "text"}" /></div>`;
-}
-
-// Role-specific fields, straight from the spec, plus a multi-select
-// objective chip group (organizer/tenant) or a participation-type select
-// (participant — this one also decides which Event Day milestone set gets
-// built below, not just cosmetic).
-function openEventSetupForm({ brandId, brand, template, role, onSaved }) {
-  const fields = EVENT_SETUP_FIELDS[role];
-  const objectives = EVENT_OBJECTIVES[role];
-  const roleLabel = EVENT_ROLES.find((r) => r.id === role)?.label || role;
-  const overlay = openModal({
-    title: `${template.label} — ${roleLabel}`,
-    wide: true,
-    bodyHTML: `
       ${
-        role === "participant"
-          ? `<div class="field">
-               <label>Tipe partisipasi</label>
+        state.role === "participant"
+          ? `<div class="field" style="margin-top:16px;">
+               <label for="ef-participationType">${t("camp.event.participationQ")}</label>
                <select class="select" id="ef-participationType">
-                 ${EVENT_PARTICIPATION_TYPES.map((t) => `<option value="${t.id}">${escapeText(t.label)}</option>`).join("")}
+                 ${EVENT_PARTICIPATION_TYPES.map((pt) => `<option value="${pt.id}" ${state.participationType === pt.id ? "selected" : ""}>${escapeText(pt.label)}</option>`).join("")}
                </select>
-             </div>`
+             </div>
+             <button type="button" class="btn btn-primary btn-block" data-ev-next>${t("camp.next")}${icon("arrowRight", { size: 14 })}</button>`
           : ""
       }
-      ${fields.map(eventFieldHTML).join("")}
+    `;
+  }
+
+  function step2HTML() {
+    const hint = runwayHint();
+    return `
+      ${progress()}
+      <h3 class="copy-q">${t("camp.event.whatQ")}</h3>
+      <div class="field">
+        <label for="ef-eventName">${t("camp.event.name")} <span class="copy-required">*</span></label>
+        <input class="input" id="ef-eventName" maxlength="120" value="${escapeAttr(state.eventName)}" placeholder="${escapeAttr(t("camp.event.namePh"))}" />
+      </div>
+      <div class="ev-row">
+        <div class="field">
+          <label for="ef-eventDate">${t("camp.event.date")} <span class="copy-required">*</span></label>
+          <input class="input" id="ef-eventDate" type="date" min="${today}" value="${escapeAttr(state.eventDate)}" />
+        </div>
+        <div class="field">
+          <label for="ef-campaignStartDate">${t("camp.event.promoStart")}</label>
+          <input class="input" id="ef-campaignStartDate" type="date" value="${escapeAttr(state.campaignStartDate)}" ${state.eventDate ? `max="${escapeAttr(state.eventDate)}"` : ""} />
+        </div>
+      </div>
+      <p class="ev-runway ${hint.cls}" id="ef-runway">${icon(hint.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${escapeText(hint.text)}</span></p>
+      <div class="field">
+        <label for="ef-eventLocation">${t("camp.event.location")} <span class="copy-optional">${t("camp.optional")}</span></label>
+        <input class="input" id="ef-eventLocation" maxlength="120" value="${escapeAttr(state.eventLocation)}" placeholder="${escapeAttr(t("camp.event.locationPh"))}" />
+      </div>
+      ${state.error ? `<p class="ev-error">${escapeText(state.error)}</p>` : ""}
+      <button type="button" class="btn btn-primary btn-block" data-ev-next>${t("camp.next")}${icon("arrowRight", { size: 14 })}</button>
+    `;
+  }
+
+  function step3HTML() {
+    const objectives = EVENT_OBJECTIVES[state.role] || [];
+    const preview = buildEventPhases(templatesFor(), { eventDate: state.eventDate, campaignStartDate: state.campaignStartDate, scaleId: state.scale, expectedAudience: state.expectedAudience });
+    const merged = preview.filter((p) => p.mergedFrom?.length);
+    return `
+      ${progress()}
+      <h3 class="copy-q">${t("camp.event.sizeQ")}</h3>
+      <div class="field">
+        <label>${t("camp.event.audience")}</label>
+        <div class="ev-tier-grid">
+          ${EVENT_SCALE_TIERS.map(
+            (tier) => `
+            <button type="button" class="ev-tier ${state.scale === tier.id ? "is-selected" : ""}" data-ev-scale="${tier.id}">
+              <strong>${escapeText(tier.range)}</strong>
+              <span>${escapeText(EVENT_SCALE_HINTS[tier.id] || tier.label)}</span>
+            </button>`
+          ).join("")}
+        </div>
+        <p class="ev-field-hint">${t(getMode() === "guided" ? "camp.event.audienceHintGuided" : "camp.event.audienceHint")}</p>
+      </div>
+      <div class="field">
+        <label for="ef-expected">${t("camp.event.expected")} <span class="copy-optional">${t("camp.optional")}</span></label>
+        <input class="input" id="ef-expected" type="number" min="1" inputmode="numeric" value="${state.expectedAudience ?? ""}" placeholder="${escapeAttr(t("camp.event.expectedPh"))}" style="max-width:220px;" />
+        <p class="ev-field-hint">${t("camp.event.expectedHint")}</p>
+      </div>
       ${
-        objectives
-          ? `<div class="field" style="margin-bottom:0;">
-               <label>Main objective (bisa lebih dari satu)</label>
-               <div class="chip-select" id="ef-objectives" style="flex-wrap:wrap;">
-                 ${objectives.map((o) => `<button type="button" data-val="${escapeAttr(o)}">${escapeText(o)}</button>`).join("")}
+        objectives.length
+          ? `<div class="field">
+               <label>${t("camp.event.goals")} <span class="copy-optional">${t("camp.event.goalsHint")}</span></label>
+               <div class="chip-select" id="ef-objectives">
+                 ${objectives.map((o) => `<button type="button" data-ev-objective="${escapeAttr(o)}" class="${state.objectives.has(o) ? "active" : ""}">${escapeText(EVENT_OBJECTIVE_LABELS[o] || o)}</button>`).join("")}
                </div>
              </div>`
           : ""
       }
-    `,
-    footHTML: `<button class="btn btn-primary" id="ef-submit">Lanjut</button>`,
-  });
+      <div class="ev-summary">
+        <div class="ev-summary-title">${icon("calendar", { size: 13 })}${t("camp.event.timeline")}</div>
+        <div class="ev-summary-phases">
+          ${preview.map((p) => `<span class="ev-summary-phase"><b>${escapeText(phaseNameLabel(p.name))}</b> ${escapeText(p.dateLabel)}</span>`).join("")}
+        </div>
+        ${merged.length ? `<p class="ev-field-hint">${escapeText(t("camp.event.mergedReason", { list: merged.map((p) => t("camp.event.mergedInto", { from: p.mergedFrom.map(phaseNameLabel).join(" + "), to: phaseNameLabel(p.name) })).join("; ") }))}</p>` : ""}
+      </div>
+      <button type="button" class="btn btn-primary btn-block" id="ef-submit">${icon("check", { size: 14 })}${t("camp.createCampaign")}</button>
+    `;
+  }
 
-  const selectedObjectives = new Set();
-  qsa("#ef-objectives button", overlay).forEach((b) => {
-    b.addEventListener("click", () => {
-      b.classList.toggle("active");
-      if (b.classList.contains("active")) selectedObjectives.add(b.dataset.val);
-      else selectedObjectives.delete(b.dataset.val);
-    });
-  });
+  function paint() {
+    root.innerHTML = state.step === 1 ? step1HTML() : state.step === 2 ? step2HTML() : step3HTML();
+    wire();
+  }
 
-  qs("#ef-submit", overlay).addEventListener("click", () => {
-    const setupValues = {};
-    fields.forEach((f) => {
-      const el = qs(`#ef-${f.key}`, overlay);
-      setupValues[f.key] = el ? el.value.trim() : "";
+  function readStep2() {
+    state.eventName = qs("#ef-eventName", root)?.value.trim() ?? state.eventName;
+    state.eventDate = qs("#ef-eventDate", root)?.value ?? state.eventDate;
+    state.campaignStartDate = qs("#ef-campaignStartDate", root)?.value || today;
+    state.eventLocation = qs("#ef-eventLocation", root)?.value.trim() ?? state.eventLocation;
+    if (state.eventDate && state.campaignStartDate > state.eventDate) state.campaignStartDate = state.eventDate;
+  }
+
+  function validateStep2() {
+    if (state.eventName.length < 2) return t("camp.event.errName");
+    if (!state.eventDate) return t("camp.event.errDate");
+    if (state.eventDate < today) return t("camp.event.errPast");
+    return "";
+  }
+
+  function wire() {
+    qs("[data-ev-back]", root)?.addEventListener("click", () => {
+      // Step 3 has no inputs for step 2's values, so only read them back
+      // when leaving step 2 itself.
+      if (state.step === 2) readStep2();
+      state.step = Math.max(1, state.step - 1);
+      state.error = "";
+      paint();
     });
-    const participationType = role === "participant" ? qs("#ef-participationType", overlay).value : "";
-    closeOverlay(overlay);
-    finishEventCampaign({ brandId, brand, template, role, setupValues, objectives: [...selectedObjectives], participationType, onSaved });
-  });
+    qsa("[data-role]", root).forEach((btn) =>
+      btn.addEventListener("click", () => {
+        state.role = btn.dataset.role;
+        if (state.role === "participant") {
+          paint();
+          qs("#ef-participationType", root)?.focus();
+        } else {
+          state.step = 2;
+          paint();
+          qs("#ef-eventName", root)?.focus();
+        }
+      })
+    );
+    qs("#ef-participationType", root)?.addEventListener("change", (e) => {
+      state.participationType = e.target.value;
+    });
+    qs("[data-ev-next]", root)?.addEventListener("click", () => {
+      if (state.step === 1) {
+        state.step = 2;
+        paint();
+        qs("#ef-eventName", root)?.focus();
+        return;
+      }
+      readStep2();
+      state.error = validateStep2();
+      if (state.error) {
+        paint();
+        return;
+      }
+      state.step = 3;
+      paint();
+    });
+    // Typing must not repaint (it would drop focus); only the runway line
+    // and the start-date max update in place.
+    ["#ef-eventDate", "#ef-campaignStartDate"].forEach((sel) =>
+      qs(sel, root)?.addEventListener("input", () => {
+        readStep2();
+        const startEl = qs("#ef-campaignStartDate", root);
+        if (startEl) {
+          if (state.eventDate) startEl.max = state.eventDate;
+          if (startEl.value !== state.campaignStartDate) startEl.value = state.campaignStartDate;
+        }
+        const hint = runwayHint();
+        const el = qs("#ef-runway", root);
+        if (el) {
+          el.className = `ev-runway ${hint.cls}`;
+          el.innerHTML = `${icon(hint.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${escapeText(hint.text)}</span>`;
+        }
+      })
+    );
+    qsa("[data-ev-scale]", root).forEach((btn) =>
+      btn.addEventListener("click", () => {
+        state.scale = btn.dataset.evScale;
+        // Picking a tier by hand means the typed number no longer applies.
+        state.expectedAudience = null;
+        paint();
+      })
+    );
+    qs("#ef-expected", root)?.addEventListener("change", (e) => {
+      const n = Math.round(Number(e.target.value) || 0);
+      state.expectedAudience = n > 0 ? n : null;
+      if (state.expectedAudience) state.scale = eventScaleFor(state.expectedAudience).id;
+      paint();
+    });
+    qsa("[data-ev-objective]", root).forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const o = btn.dataset.evObjective;
+        if (state.objectives.has(o)) state.objectives.delete(o);
+        else state.objectives.add(o);
+        btn.classList.toggle("active", state.objectives.has(o));
+      })
+    );
+    qs("#ef-submit", root)?.addEventListener("click", () => {
+      closeOverlay(overlay);
+      finishEventCampaign({
+        brandId, brand, template,
+        role: state.role,
+        participationType: state.role === "participant" ? state.participationType : "",
+        eventName: state.eventName,
+        eventDate: state.eventDate,
+        campaignStartDate: state.campaignStartDate,
+        eventLocation: state.eventLocation,
+        scaleId: state.scale,
+        expectedAudience: state.expectedAudience,
+        objectives: [...state.objectives],
+        onSaved,
+      });
+    });
+  }
+  paint();
 }
 
-async function finishEventCampaign({ brandId, brand, template, role, setupValues, objectives, participationType, onSaved }) {
-  const eventName = setupValues.eventName || template.label;
-  const eventDate = setupValues.eventDate || "";
-  const campaignStartDate = setupValues.campaignStartDate || new Date().toISOString().slice(0, 10);
-  const expectedAudienceRaw = setupValues.expectedAudience || setupValues.expectedVisitors || setupValues.expectedExposure || 0;
-  const scale = eventScaleFor(expectedAudienceRaw);
+async function finishEventCampaign({ brandId, brand, template, role, participationType, eventName, eventDate, campaignStartDate, eventLocation, scaleId, expectedAudience = null, objectives, onSaved }) {
+  const scale = EVENT_SCALE_TIERS.find((tier) => tier.id === scaleId) || EVENT_SCALE_TIERS[1];
   const phaseTemplates = eventPhaseTemplatesForRole(role, participationType);
-  const phases = buildEventPhases(phaseTemplates, { eventDate, campaignStartDate, scaleId: scale.id });
+  const phases = buildEventPhases(phaseTemplates, { eventDate, campaignStartDate, scaleId: scale.id, expectedAudience });
 
   const optionalDefaults = CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES[template.objective] || [];
   const legacyPhases = CAMPAIGN_PHASE_TEMPLATE.map((t) => ({
@@ -494,14 +798,19 @@ async function finishEventCampaign({ brandId, brand, template, role, setupValues
   }));
 
   const created = createCampaign(brandId, {
-    name: eventName, objective: template.objective, status: "planning",
-    targetAudience: brand?.brandDNA?.targetAudience || setupValues.targetAudience || "",
+    name: eventName || template.label, objective: template.objective, status: "planning",
+    targetAudience: brand?.brandDNA?.targetAudience || "",
     startDate: campaignStartDate, endDate: eventDate,
     phases: legacyPhases,
     autoLinkAllContent: true,
-    eventPlan: { role, participationType: participationType || "", eventDate, scale: scale.id, setup: setupValues, objectives, phases },
+    eventPlan: {
+      role, participationType: participationType || "", eventDate, scale: scale.id,
+      setup: { eventName, eventDate, campaignStartDate, eventLocation, expectedAudience: expectedAudience ?? null },
+      objectives, phases,
+    },
   });
-  toast(`"${eventName}" dibuat — timeline dan milestone-nya udah disusun (${scale.label.toLowerCase()} scale).`);
+  const days = daysBetween(localISODate(), eventDate);
+  toast(t("camp.event.created", { name: eventName || template.label, count: phases.length, date: formatEventDate(eventDate), left: days > 0 ? t("camp.event.daysLeft", { days }) : "" }));
   onSaved?.();
   location.hash = `#/brand/${brandId}/campaigns/${created.id}`;
 }
@@ -515,26 +824,26 @@ function openCustomCampaignFlow({ brandId, onSaved }) {
   const state = { objective: "awareness" };
 
   const overlay = openModal({
-    title: "Custom Campaign",
+    title: t("camp.custom.title"),
     bodyHTML: `
       <div class="field">
-        <label>What do you want to achieve with this campaign?</label>
-        <textarea class="textarea" id="intake-goal" style="min-height:80px;" placeholder="e.g. Saya ingin launching produk baru"></textarea>
+        <label>${t("camp.custom.goal")}</label>
+        <textarea class="textarea" id="intake-goal" style="min-height:80px;" placeholder="${escapeAttr(t("camp.custom.goalPh"))}"></textarea>
       </div>
       <div class="field">
-        <label>Objective</label>
+        <label>${t("camp.custom.objective")}</label>
         <div class="chip-select" id="intake-objective">
           ${CAMPAIGN_OBJECTIVES.map((o) => `<button type="button" data-val="${o}" class="${o === "awareness" ? "active" : ""}">${CAMPAIGN_OBJECTIVE_LABELS[o]}</button>`).join("")}
         </div>
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>Social media used (optional)</label>
-        <input class="input" id="intake-social" placeholder="e.g. Instagram, TikTok" />
+        <label>${t("camp.custom.social")}</label>
+        <input class="input" id="intake-social" placeholder="${escapeAttr(t("camp.custom.socialPh"))}" />
       </div>
 
       <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">Channel setup</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">This decides which journey phases this campaign uses — the core funnel (Awareness, WhatsApp, UGC, Retargeting) always applies, these three are optional.</p>
+      <div class="page-eyebrow" style="margin-bottom:12px;">${t("camp.custom.channelSetup")}</div>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("camp.custom.channelSetupSub")}</p>
       ${OPTIONAL_PHASE_QUESTIONS.map(
         (q) => `
         <label class="flex items-center gap-8" style="margin-bottom:12px;cursor:pointer;">
@@ -546,8 +855,8 @@ function openCustomCampaignFlow({ brandId, onSaved }) {
       <div id="intake-status" style="margin-top:4px;"></div>
     `,
     footHTML: `
-      <button class="btn btn-secondary" data-skip>Skip, fill in manually</button>
-      <button class="btn btn-primary" data-generate>${icon("bot", { size: 15 })}Generate with AI</button>
+      <button class="btn btn-secondary" data-skip>${t("camp.custom.skip")}</button>
+      <button class="btn btn-primary" data-generate>${icon("bot", { size: 15 })}${t("camp.custom.generate")}</button>
     `,
     onMount: (el) => {
       setTimeout(() => el.querySelector("#intake-goal").focus(), 30);
@@ -566,7 +875,7 @@ function openCustomCampaignFlow({ brandId, onSaved }) {
         OPTIONAL_PHASE_QUESTIONS.forEach((q) => {
           el.querySelector(`#intake-${q.key}`).checked = defaults.includes(q.phaseName);
         });
-        noteEl.textContent = "Fase disesuaikan otomatis buat goal ini — bisa diubah lagi kapan saja.";
+        noteEl.textContent = t("camp.custom.phaseNote");
       }
       qsa("#intake-objective button", el).forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -596,26 +905,30 @@ function openCustomCampaignFlow({ brandId, onSaved }) {
     const statusEl = overlay.querySelector("#intake-status");
     const genBtn = overlay.querySelector("[data-generate]");
     if (!objectiveText) {
-      toast("Describe what you want to achieve first.", "error");
+      toast(t("camp.custom.goalRequired"), "error");
       return;
     }
     const ai = getSettings().ai || {};
     const hasKey = hasAiKey(ai);
-    if (!hasKey) {
-      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">Add your AI API key in Settings → AI first, or use "Skip, fill in manually" below.</div>`;
+    const demo = isTourDemo(); // tour → sample plan, no tokens (js/tour-demo.js)
+    if (!hasKey && !demo) {
+      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">${escapeText(t("camp.custom.noKey", { skip: t("camp.custom.skip") }))}</div>`;
       return;
     }
     const initialEnabled = readEnabledMap();
-    const enabledPhases = CAMPAIGN_PHASE_TEMPLATE.filter((t) => !t.optional || initialEnabled[t.name]);
+    const enabledPhases = CAMPAIGN_PHASE_TEMPLATE.filter((tpl) => !tpl.optional || initialEnabled[tpl.name]);
     const socialPlatforms = overlay.querySelector("#intake-social").value.split(",").map((s) => s.trim()).filter(Boolean);
     genBtn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>Drafting your campaign…</span></div>`;
+    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("camp.custom.drafting")}</span></div>`;
     try {
-      const aiDraft = await generateCampaignPlan(ai, { brand, objectiveText, objective: state.objective, enabledPhases, socialPlatforms });
+      if (demo) toast(DEMO_TOAST);
+      const aiDraft = demo
+        ? await demoCampaignPlan({ brand, objectiveText, enabledPhases })
+        : await generateCampaignPlan(ai, { brand, objectiveText, objective: state.objective, enabledPhases, socialPlatforms });
       closeOverlay(overlay);
-      openCampaignModal({ brandId, objective: state.objective, aiDraft, initialEnabled, onSaved });
+      openCampaignModal({ brandId, objective: state.objective, aiDraft, aiPrompt: { objective: state.objective, objectiveText, socialPlatforms }, initialEnabled, onSaved });
     } catch (e) {
-      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? e.message : "Couldn't reach the AI."}</span></div>`;
+      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeText(e.message) : t("camp.aiFailed")}</span></div>`;
       genBtn.disabled = false;
     }
   });
@@ -624,10 +937,10 @@ function openCustomCampaignFlow({ brandId, onSaved }) {
 // ---------- Create/edit modal ----------
 
 function phaseTemplateInfo(phaseId) {
-  return CAMPAIGN_PHASE_TEMPLATE.find((t) => t.name.toLowerCase() === phaseId) || { description: "", optional: false };
+  return CAMPAIGN_PHASE_TEMPLATE.find((tpl) => tpl.name.toLowerCase() === phaseId) || { description: "", optional: false };
 }
 
-function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft = null, initialEnabled = null, onSaved } = {}) {
+function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft = null, aiPrompt = null, initialEnabled = null, onSaved } = {}) {
   const draft = {
     name: campaign?.name ?? aiDraft?.name ?? "",
     objective: campaign?.objective ?? objective ?? "awareness",
@@ -644,118 +957,119 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
     endDate: campaign?.endDate || "",
     phases:
       campaign?.phases ||
-      CAMPAIGN_PHASE_TEMPLATE.map((t) => {
-        const aiGoal = aiDraft?.phases?.find((p) => p.name.toLowerCase() === t.name.toLowerCase())?.goal || "";
-        const enabled = !t.optional || !!initialEnabled?.[t.name];
-        return { id: t.name.toLowerCase(), name: t.name, goal: aiGoal, enabled, milestones: [] };
+      CAMPAIGN_PHASE_TEMPLATE.map((tpl) => {
+        const aiGoal = aiDraft?.phases?.find((p) => p.name.toLowerCase() === tpl.name.toLowerCase())?.goal || "";
+        const enabled = !tpl.optional || !!initialEnabled?.[tpl.name];
+        return { id: tpl.name.toLowerCase(), name: tpl.name, goal: aiGoal, enabled, milestones: [] };
       }),
   };
 
   const overlay = openModal({
-    title: campaign ? "Edit Campaign" : "New Campaign",
+    title: campaign ? t("camp.edit.title") : t("camp.newCampaign"),
     bodyHTML: `
-      ${aiDraft ? `<div class="hint" style="margin:0 0 16px;">${icon("bot", { size: 12 })} AI-drafted from your goal — review and edit anything before saving.</div>` : ""}
+      ${aiDraft ? `<div class="hint" style="margin:0 0 16px;">${icon("bot", { size: 12 })} ${t("camp.edit.aiHint")}</div><div id="ai-draft-feedback" style="margin:-8px 0 12px;"></div>` : ""}
       <div class="field">
-        <label>Campaign name</label>
-        <input class="input" id="c-name" placeholder="e.g. Back to School 2026" value="${escapeAttr(draft.name)}" />
+        <label>${t("camp.edit.name")}</label>
+        <input class="input" id="c-name" placeholder="${escapeAttr(t("camp.edit.namePh"))}" value="${escapeAttr(draft.name)}" />
       </div>
       <div class="row-2">
         <div class="field">
-          <label>Objective</label>
+          <label>${t("camp.custom.objective")}</label>
           <select class="select" id="c-objective">
             ${CAMPAIGN_OBJECTIVES.map((o) => `<option value="${o}" ${draft.objective === o ? "selected" : ""}>${CAMPAIGN_OBJECTIVE_LABELS[o]}</option>`).join("")}
           </select>
         </div>
         <div class="field">
-          <label>Status</label>
+          <label>${t("camp.edit.status")}</label>
           <select class="select" id="c-status">
             ${CAMPAIGN_STATUSES.map((s) => `<option value="${s}" ${draft.status === s ? "selected" : ""}>${CAMPAIGN_STATUS_LABELS[s]}</option>`).join("")}
           </select>
         </div>
       </div>
       <div class="field">
-        <label>Target Audience <span class="text-faint" style="font-weight:400;">(leave blank to use the brand's own)</span></label>
+        <label>${t("camp.edit.audience")} <span class="text-faint" style="font-weight:400;">${t("camp.edit.audienceHint")}</span></label>
         <textarea class="textarea" id="c-audience" style="min-height:60px;">${draft.targetAudience}</textarea>
       </div>
       <div class="field">
-        <label>Problem / Opportunity</label>
-        <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="What's driving this campaign right now">${draft.problemOrOpportunity}</textarea>
+        <label>${t("camp.edit.problem")}</label>
+        <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.problemPh"))}">${draft.problemOrOpportunity}</textarea>
       </div>
       <div class="field">
-        <label>Insight</label>
-        <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="A truth about the audience this campaign leans on">${draft.insight}</textarea>
+        <label>${t("camp.edit.insight")}</label>
+        <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.insightPh"))}">${draft.insight}</textarea>
       </div>
       <div class="field">
-        <label>Big Idea</label>
+        <label>${t("camp.edit.bigIdea")}</label>
         <textarea class="textarea" id="c-bigidea" style="min-height:60px;">${draft.bigIdea}</textarea>
       </div>
       <div class="field">
-        <label>Key Message</label>
-        <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="The one thing every piece of content should communicate">${draft.keyMessage}</textarea>
+        <label>${t("camp.edit.keyMessage")}</label>
+        <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.keyMessagePh"))}">${draft.keyMessage}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
-          <label>Offer</label>
+          <label>${t("camp.edit.offer")}</label>
           <input class="input" id="c-offer" value="${escapeAttr(draft.offer)}" />
         </div>
         <div class="field">
-          <label>CTA</label>
-          <input class="input" id="c-cta" placeholder="cth. Join now!" value="${escapeAttr(draft.cta)}" />
-          <div class="hint" style="margin-top:4px;">${icon("info", { size: 12 })}<span>Bikin sesingkat mungkin (2-4 kata) — ini yang dipakai ulang di mana-mana: flyer, website, bio link, story sticker, dll.</span></div>
+          <label>${t("camp.edit.cta")}</label>
+          <input class="input" id="c-cta" placeholder="${escapeAttr(t("camp.edit.ctaPh"))}" value="${escapeAttr(draft.cta)}" />
+          <div class="hint" style="margin-top:4px;">${icon("info", { size: 12 })}<span>${t("camp.edit.ctaHint")}</span></div>
         </div>
       </div>
       <div class="field">
-        <label>Channels (one per line)</label>
-        <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="e.g. Instagram Reels&#10;Email&#10;WhatsApp Broadcast">${listToLines(draft.channels)}</textarea>
+        <label>${t("camp.edit.channels")}</label>
+        <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="${t("camp.edit.channelsPh")}">${listToLines(draft.channels)}</textarea>
       </div>
       <div class="row-2">
         <div class="field" style="margin-bottom:0;">
-          <label>Start Date</label>
+          <label>${t("camp.edit.startDate")}</label>
           <input class="input" type="date" id="c-start" value="${draft.startDate}" />
         </div>
         <div class="field" style="margin-bottom:0;">
-          <label>End Date</label>
+          <label>${t("camp.edit.endDate")}</label>
           <input class="input" type="date" id="c-end" value="${draft.endDate}" />
         </div>
       </div>
 
       <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">Campaign Journey</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">Every campaign runs through the same 7-step funnel — the optional ones can be switched off any time.</p>
+      <div class="page-eyebrow" style="margin-bottom:12px;">${t("camp.edit.journey")}</div>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("camp.edit.journeySub")}</p>
       ${draft.phases
         .map((p, i) => {
           const info = phaseTemplateInfo(p.id);
           return `
         <div class="field">
           <div class="creator-field-head">
-            <label style="margin-bottom:0;">Phase ${i + 1} — <input class="input" id="phase-name-${i}" style="display:inline;width:auto;padding:4px 8px;font-size:13px;" value="${escapeAttr(p.name)}" /></label>
+            <label style="margin-bottom:0;">${t("camp.edit.phaseN", { n: i + 1 })} <input class="input" id="phase-name-${i}" style="display:inline;width:auto;padding:4px 8px;font-size:13px;" value="${escapeAttr(phaseNameLabel(p.name))}" /></label>
             ${
               info.optional
-                ? `<label class="checkbox-chip" style="padding:4px 10px;font-size:11px;"><input type="checkbox" id="phase-enabled-${i}" ${p.enabled ? "checked" : ""} />Include this phase</label>`
-                : `<span class="text-faint" style="font-size:11px;">Always included</span>`
+                ? `<label class="checkbox-chip" style="padding:4px 10px;font-size:11px;"><input type="checkbox" id="phase-enabled-${i}" ${p.enabled ? "checked" : ""} />${t("camp.edit.includePhase")}</label>`
+                : `<span class="text-faint" style="font-size:11px;">${t("camp.edit.alwaysIncluded")}</span>`
             }
           </div>
           <div class="text-faint" style="font-size:11.5px;margin-bottom:6px;">${escapeText(info.description)}</div>
-          <textarea class="textarea" id="phase-goal-${i}" style="min-height:50px;" placeholder="What should this phase accomplish?">${p.goal}</textarea>
+          <textarea class="textarea" id="phase-goal-${i}" style="min-height:50px;" placeholder="${escapeAttr(t("camp.edit.phaseGoalPh"))}">${p.goal}</textarea>
         </div>`;
         })
         .join("")}
     `,
     footHTML: `
-      <button class="btn btn-secondary" data-cancel>Cancel</button>
-      <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}Save</button>
+      <button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button>
+      <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}${t("common.save")}</button>
     `,
     onMount: (el) => {
       setTimeout(() => el.querySelector("#c-name").focus(), 30);
     },
   });
+  if (aiDraft && !aiDraft.demo) mountAiFeedback(qs("#ai-draft-feedback", overlay), { brandId, feature: "campaign-plan", prompt: aiPrompt || {}, output: aiDraft });
 
   overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
   overlay.querySelector("[data-save]").addEventListener("click", () => {
     const nameInput = overlay.querySelector("#c-name");
     const name = nameInput.value.trim();
     if (!name) {
-      toast("Give this campaign a name first.", "error");
+      toast(t("camp.edit.nameRequired"), "error");
       nameInput.focus();
       return;
     }
@@ -778,7 +1092,7 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
         const enabledInput = overlay.querySelector(`#phase-enabled-${i}`);
         return {
           id: p.id,
-          name: overlay.querySelector(`#phase-name-${i}`).value.trim() || p.name,
+          name: ((v) => (!v || v === phaseNameLabel(p.name) ? p.name : v))(overlay.querySelector(`#phase-name-${i}`).value.trim()),
           goal: overlay.querySelector(`#phase-goal-${i}`).value.trim(),
           enabled: info.optional ? !!enabledInput?.checked : true,
           milestones: p.milestones || [],
@@ -787,1118 +1101,14 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
     };
     if (campaign) {
       updateCampaign(campaign.id, patch);
-      toast("Campaign updated");
+      toast(t("camp.edit.updated"));
     } else {
       createCampaign(brandId, patch);
-      toast(`${name} created`);
+      toast(t("camp.edit.created", { name }));
     }
     closeOverlay(overlay);
     onSaved?.();
   });
-}
-
-function escapeAttr(v) {
-  return (v || "").replace(/"/g, "&quot;");
 }
 
 // ---------- Detail view — interactive journey ----------
-
-function paintDetail(root, brandId, brand, campaign, state, refresh) {
-  const allContent = listContent(brandId);
-  const linked = allContent.filter((c) => c.campaignId === campaign.id);
-  const organic = linked.reduce((s, c) => s + (organicViews(c) || 0), 0);
-  const combined = linked.reduce((s, c) => s + (combinedViewsWithAds(c) || 0), 0);
-
-  const phaseData = campaign.phases.map((phase) => ({
-    phase,
-    items: linked.filter((c) => c.campaignPhaseId === phase.id),
-  }));
-  // "Active" (the glowing, in-progress node) only ever considers enabled
-  // phases — a disabled phase (e.g. Website, not built yet) shouldn't be
-  // mistaken for "next thing to do".
-  const enabledData = phaseData.filter((pd) => pd.phase.enabled);
-  const firstEmptyEnabled = enabledData.findIndex((pd) => !pd.items.length);
-  const activePhaseId = enabledData.length
-    ? (firstEmptyEnabled === -1 ? enabledData[enabledData.length - 1] : enabledData[firstEmptyEnabled]).phase.id
-    : null;
-  if (!state.expandedPhaseId) state.expandedPhaseId = activePhaseId || phaseData[0].phase.id;
-  const expanded = phaseData.find((pd) => pd.phase.id === state.expandedPhaseId) || phaseData[0];
-
-  root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow"><a href="#/brand/${brandId}/campaigns" style="color:inherit;">Campaigns ←</a></div>
-        <h1>${escapeText(campaign.name || "Untitled campaign")}</h1>
-      </div>
-      <button class="btn btn-secondary" id="edit-campaign">${icon("edit", { size: 14 })}Edit</button>
-    </div>
-    <div class="flex items-center gap-8" style="margin-bottom:20px;">
-      <span class="tag">${CAMPAIGN_OBJECTIVE_LABELS[campaign.objective] || campaign.objective}</span>
-      <span class="status-pill ${CAMPAIGN_STATUS_PILL_CLASS[campaign.status] || ""}"><span class="status-dot"></span>${CAMPAIGN_STATUS_LABELS[campaign.status] || campaign.status}</span>
-      ${campaign.keyMessage ? `<span class="text-faint" style="font-size:12.5px;">${escapeText(campaign.keyMessage)}</span>` : ""}
-    </div>
-    ${
-      linked.length
-        ? `<div class="stat-grid" style="margin-bottom:28px;">
-             ${stat("Content Linked", linked.length)}
-             ${stat("Organic Views", formatNumber(organic))}
-             ${stat("Combined (+ ads)", formatNumber(combined))}
-           </div>`
-        : ""
-    }
-
-    ${
-      campaign.eventPlan
-        ? eventPlanSectionHTML(campaign, allContent, state)
-        : campaign.missions?.length
-        ? missionJourneySectionHTML(campaign, allContent, state)
-        : `
-      <div class="section-title" style="margin-top:0;"><h2>Campaign Journey</h2></div>
-      <div class="journey-track">
-        ${phaseData
-          .map((pd, i) => {
-            const node = journeyNodeHTML(pd, i, activePhaseId, state.expandedPhaseId);
-            const connector = i < phaseData.length - 1 ? `<div class="journey-connector ${pd.phase.enabled && pd.items.length ? "filled" : ""}"></div>` : "";
-            return node + connector;
-          })
-          .join("")}
-      </div>
-      <div id="journey-detail">${journeyDetailHTML(brandId, campaign, expanded)}</div>
-    `
-    }
-  `;
-
-  qs("#edit-campaign", root).addEventListener("click", () => openCampaignModal({ brandId, campaign, onSaved: refresh }));
-
-  if (campaign.eventPlan) {
-    if (state.eventPhaseIndex === null || state.eventPhaseIndex === undefined) state.eventPhaseIndex = currentEventPhaseIndex(campaign);
-    wireEventPlan(root, brandId, brand, campaign, allContent, state, refresh);
-  } else if (campaign.missions?.length) {
-    if (state.missionIndex === null || state.missionIndex === undefined) state.missionIndex = currentMissionIndex(campaign);
-    wireMissionJourney(root, brandId, brand, campaign, allContent, state, refresh);
-  } else {
-    qsa("[data-phase-node]", root).forEach((node) => {
-      node.addEventListener("click", () => {
-        state.expandedPhaseId = node.dataset.phaseNode;
-        refresh();
-      });
-    });
-    wireJourneyDetail(root, brandId, brand, campaign, expanded, refresh);
-  }
-}
-
-// ---------- Missions (Quick Template campaigns only) ----------
-
-function currentMissionIndex(campaign) {
-  const missions = campaign.missions || [];
-  const idx = missions.findIndex((m) => !m.completedAt);
-  return idx === -1 ? Math.max(0, missions.length - 1) : idx;
-}
-
-function missionJourneySectionHTML(campaign, allContent, state) {
-  const missions = campaign.missions;
-  if (state.missionIndex === null || state.missionIndex === undefined) state.missionIndex = currentMissionIndex(campaign);
-  const activeIndex = Math.min(state.missionIndex, missions.length - 1);
-  const mission = missions[activeIndex];
-  const statuses = mission.milestones.map((m) => resolveMilestoneStatus(m, campaign, allContent));
-  const canAdvance = missionCanAdvance(mission, campaign, allContent);
-  const st = missionState(campaign, activeIndex);
-  const isLast = activeIndex === missions.length - 1;
-  return `
-    <div class="section-title" style="margin-top:0;"><h2>Campaign Journey</h2></div>
-    ${
-      campaign.autoLinkAllContent
-        ? `<div class="hint" style="margin:-6px 0 14px;">${icon("info", { size: 12 })}<span>Campaign ini nggak punya batas waktu — semua konten yang kamu terbitkan buat brand ini otomatis kehitung di sini, nggak perlu di-link manual.</span></div>`
-        : ""
-    }
-    ${
-      campaign.missionProgressionNote
-        ? `<div class="hint" style="margin:-6px 0 14px;">${icon("info", { size: 12 })}<span>${escapeText(campaign.missionProgressionNote)}</span></div>`
-        : ""
-    }
-    ${missionLadderHTML(campaign, activeIndex)}
-    <div class="mission-panel">
-      <div class="mission-panel-head">
-        <div>
-          <div class="page-eyebrow">Mission ${activeIndex + 1}${st === "completed" ? " · Selesai" : ""}${mission.tagline ? ` · ${escapeText(mission.tagline)}` : ""}</div>
-          <h3 style="margin:2px 0 4px;">${escapeText(mission.name)}</h3>
-          <p class="text-muted" style="font-size:13px;margin:0;">${escapeText(mission.description)}</p>
-        </div>
-        <div class="flex gap-8" style="flex:none;">
-          <button type="button" class="btn btn-secondary btn-sm glow" id="brainstorm-content" style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 13 })}Brainstorm Konten</button>
-          ${
-            st === "current"
-              ? `<button type="button" class="btn btn-primary btn-sm" id="mission-advance" ${canAdvance ? "" : "disabled"}>${isLast ? "Selesaikan Campaign" : "Next Mission"}${icon("check", { size: 13 })}</button>`
-              : st === "completed"
-              ? `<span class="status-pill status-published"><span class="status-dot"></span>Selesai</span>`
-              : ""
-          }
-        </div>
-      </div>
-      ${missionTreeHTML(mission, statuses)}
-      ${
-        st === "locked"
-          ? `<div class="hint" style="margin-bottom:8px;">${icon("info", { size: 12 })}<span>Kamu lagi intip mission berikutnya — boleh atur milestone-nya dari sekarang (tambah, hapus, ubah target), tapi progress-nya baru bisa dicatat setelah giliran mission ini beneran sampai.</span></div>`
-          : `<div class="page-eyebrow" style="margin-bottom:8px;">Jalankan semua misi di bawah untuk lanjut ke level berikutnya</div>`
-      }
-      <div class="mission-milestone-list" id="mission-milestones">
-        ${mission.milestones.map((m, i) => milestoneRowHTML(m, statuses[i], i, st === "locked")).join("")}
-      </div>
-      ${
-        st === "current" || st === "locked"
-          ? `<div class="flex gap-8" style="margin-top:10px;">
-               <input class="input" id="milestone-new" placeholder="Tambah milestone kamu sendiri..." style="flex:1;" />
-               <button type="button" class="btn btn-secondary btn-sm" id="milestone-add">${icon("plus", { size: 13 })}Tambah</button>
-             </div>`
-          : ""
-      }
-      ${
-        st === "current" && !canAdvance
-          ? `<div class="hint" style="margin-top:10px;">${icon("info", { size: 12 })}<span>Isi angka atau centang semua milestone dulu buat lanjut ke mission berikutnya — nggak harus sudah kena target, yang penting sudah dicatat.</span></div>`
-          : ""
-      }
-    </div>
-  `;
-}
-
-function missionLadderHTML(campaign, activeIndex) {
-  const missions = campaign.missions;
-  return `
-    <div class="mission-ladder">
-      ${missions
-        .map((m, i) => {
-          const st = missionState(campaign, i);
-          const locked = st === "locked";
-          const connector = i > 0 ? `<div class="mission-connector ${missionState(campaign, i - 1) === "completed" ? "filled" : ""}"></div>` : "";
-          return `
-        ${connector}
-        <button type="button" class="mission-badge ${st} ${i === activeIndex ? "active" : ""}" data-mission-index="${i}" title="${locked ? `Lihat & atur milestone-nya lebih dulu — progress baru bisa dicatat setelah Mission ${i} selesai` : escapeAttr(m.name)}">
-          <span class="mission-badge-dot">${st === "completed" ? icon("check", { size: 12 }) : locked ? icon("lock", { size: 11 }) : i + 1}</span>
-          <span class="mission-badge-label">${escapeText(m.name)}</span>
-        </button>`;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-// Node x/y live in a fixed 1000×460 space (matches the .mission-tree
-// aspect-ratio) — outer milestones sit low, the middle one arcs up, so an
-// N-node mission always reads as a small canopy branching off one trunk,
-// not a straight row. Every mission in MISSION_LADDERS has exactly 3
-// milestones today, but this holds for 1-4 just as well.
-function missionNodePos(i, n) {
-  const x = n === 1 ? 500 : 150 + (700 * i) / (n - 1);
-  const t = n === 1 ? 0.5 : i / (n - 1);
-  const y = 300 - Math.sin(Math.PI * t) * 150;
-  return { x, y };
-}
-
-// Engagement rate lives in formulas.js, which store.js can't import
-// (formulas.js already imports METRIC_KEYS from store.js — importing back
-// would cycle) — so "auto-er-count" milestones get their real current/
-// metTarget computed here in the view layer instead of in store.js's
-// milestoneStatus (which just stubs this kind as a harmless non-blocker).
-function resolveMilestoneStatus(m, campaign, content) {
-  if (m.kind !== "auto-er-count") return milestoneStatus(m, campaign, content);
-  const settings = getSettings();
-  const relevant = campaign.autoLinkAllContent ? content : content.filter((c) => c.campaignId === campaign.id);
-  const current = relevant.filter((c) => {
-    if (c.status !== "published") return false;
-    const er = computeContentMetrics(c, settings).engagementRate;
-    return er !== null && er >= (m.threshold ?? 10);
-  }).length;
-  return { current, logged: true, metTarget: current >= (m.target || 1) };
-}
-
-// "logged" is trivially always true for "auto" kind (it's always
-// computable) — that's the right signal for gating advancement, but the
-// wrong one for "has this actually started" visually. A fresh auto
-// milestone with 0 content linked should read as empty, not amber.
-function missionNodeStarted(m, s) {
-  return m.kind === "auto" ? s.current > 0 : s.logged;
-}
-function missionNodeColor(m, s) {
-  return s.metTarget ? "var(--health-good)" : missionNodeStarted(m, s) ? "var(--health-average)" : "var(--border)";
-}
-
-function missionNodeTextColor(m, s) {
-  return s.metTarget || missionNodeStarted(m, s) ? "var(--bg)" : "var(--text-faint)";
-}
-
-function fmtUnit(value, unit) {
-  return unit === "%" ? `${value}%` : `${value}${unit ? " " + unit : ""}`;
-}
-
-// 0..1 — how far into its own target this milestone is. "check" has no
-// partial state (it either happened or it didn't); "auto"/"number" read
-// current against target. This drives the node's progress ring/branch fill
-// below, not just a flat "in progress" color.
-function missionNodeProgress(m, s) {
-  if (m.kind === "check") return s.done ? 1 : 0;
-  if (!m.target) return s.logged ? 1 : 0;
-  return Math.max(0, Math.min(1, s.current / m.target));
-}
-
-function missionProgressText(m, s) {
-  if (m.kind === "auto") return `${s.current}/${m.target}${m.unit ? " " + m.unit : ""}`;
-  if (m.kind === "check") return s.done ? "Selesai" : "Belum terjadi";
-  return s.logged ? `${s.current}/${m.target}${m.unit ? " " + m.unit : ""}` : `Belum diisi (target ${fmtUnit(m.target, m.unit)})`;
-}
-
-// Every milestone gets its own branch — the tree is the map, the numbered
-// list below is the legend. Nodes carry only a rung number (or a check once
-// met) rather than their label text, since a mission can have up to 16
-// milestones and text at that density just collides; matching numbers is
-// how a branch and its row in the list identify each other. A partially-
-// filled milestone reads as an actual loading ring/partial branch fill
-// (proportional to current/target) instead of a flat "in progress" amber,
-// so the tree shows how close each one is, not just started-vs-not.
-function missionTreeHTML(mission, statuses) {
-  const n = mission.milestones.length;
-  const trunk = { x: 500, y: 380 };
-  const nodes = mission.milestones.map((m, i) => ({ ...missionNodePos(i, n), m, s: statuses[i], i, pct: missionNodeProgress(m, statuses[i]) }));
-
-  // Every branch always has a faint full-length track, so the tree's shape
-  // reads even before anything's been touched — the colored fill on top is
-  // the actual progress, growing from trunk to node as pct climbs.
-  const branchTracks = nodes
-    .map((nd) => {
-      const midY = (trunk.y + nd.y) / 2;
-      return `<path d="M${trunk.x},${trunk.y} C ${trunk.x},${midY} ${nd.x},${midY} ${nd.x},${nd.y}" fill="none" stroke="var(--border)" stroke-width="4" stroke-linecap="round" opacity=".35"/>`;
-    })
-    .join("");
-  const branchFills = nodes
-    .map((nd) => {
-      if (nd.pct <= 0) return "";
-      const midY = (trunk.y + nd.y) / 2;
-      const c = nd.pct >= 1 ? "var(--health-good)" : "var(--health-average)";
-      const loading = nd.pct < 1 ? "mission-loading" : "";
-      return `<path d="M${trunk.x},${trunk.y} C ${trunk.x},${midY} ${nd.x},${midY} ${nd.x},${nd.y}" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${(100 * (1 - nd.pct)).toFixed(1)}" class="${loading}"/>`;
-    })
-    .join("");
-  const halos = nodes
-    .map((nd) => {
-      if (nd.pct < 1) return "";
-      return `<circle cx="${nd.x}" cy="${nd.y}" r="20" fill="var(--health-good)" class="mission-halo" opacity=".7"/>`;
-    })
-    .join("");
-  // Every node dot carries something — full (check + solid fill), partial
-  // (a radial ring showing exactly how far along it is, mid-fill), or empty
-  // (dim, just its rung number) — instead of one flat "in progress" state.
-  const RING_R = 11;
-  const RING_CIRC = 2 * Math.PI * RING_R;
-  const cores = nodes
-    .map((nd) => {
-      if (nd.pct >= 1) {
-        return `
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="var(--health-good)"/>
-      <g transform="translate(${nd.x - 6},${nd.y - 6}) scale(0.5)" fill="none" stroke="var(--bg)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></g>`;
-      }
-      if (nd.pct > 0) {
-        const offset = RING_CIRC * (1 - nd.pct);
-        return `
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="var(--surface-2)" stroke="var(--border)" stroke-width="2"/>
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="none" stroke="var(--health-average)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${RING_CIRC.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}" transform="rotate(-90 ${nd.x} ${nd.y})" class="mission-loading"/>
-      <text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="800" fill="var(--text)">${nd.i + 1}</text>`;
-      }
-      return `
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="var(--border)"/>
-      <text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="800" fill="var(--text-faint)">${nd.i + 1}</text>`;
-    })
-    .join("");
-  // No visible label here on purpose — with up to 16 branches, text at
-  // every node just collides. The node is still a real hover/focus target;
-  // a custom hover/focus bubble (CSS-driven, see .mission-node[data-tooltip])
-  // carries the label, live progress (e.g. "Followers — 300/1000") and full
-  // explanation — richer than the native title tooltip could show.
-  const nodeButtons = nodes
-    .map(
-      (nd) => `
-      <div class="mission-node" data-milestone-index="${nd.i}" tabindex="0" role="note" data-tooltip="${escapeAttr(`${nd.i + 1}. ${nd.m.label} — ${missionProgressText(nd.m, nd.s)}${nd.m.description ? `\n${nd.m.description}` : ""}`)}" style="left:${(nd.x / 10).toFixed(1)}%;top:${((nd.y / 460) * 100).toFixed(1)}%;"></div>`
-    )
-    .join("");
-  return `
-    <div class="mission-tree">
-      <svg viewBox="0 0 1000 460" role="img" aria-label="Diagram mission ${escapeAttr(mission.name)}">
-        <path d="M500,440 C 470,452 440,455 410,450" stroke="var(--border)" stroke-width="4" stroke-linecap="round" fill="none"/>
-        <path d="M500,440 C 530,452 560,455 590,450" stroke="var(--border)" stroke-width="4" stroke-linecap="round" fill="none"/>
-        <path d="M500,440 L500,380" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" opacity=".5"/>
-        ${branchTracks}
-        ${branchFills}
-        ${halos}
-        ${cores}
-      </svg>
-      ${nodeButtons}
-    </div>
-  `;
-}
-
-function milestoneRowHTML(m, s, i, lockedPreview = false) {
-  const pillState = s.metTarget ? "good" : missionNodeStarted(m, s) ? "avg" : "empty";
-  const pillLabel =
-    m.kind === "check"
-      ? s.logged
-        ? "Selesai"
-        : "Belum dicentang"
-      : m.kind === "number"
-      ? s.logged
-        ? s.metTarget
-          ? "Target tercapai"
-          : "Tercatat"
-        : "Perlu diisi"
-      : s.metTarget
-      ? "Selesai"
-      : s.current > 0
-      ? "Berjalan"
-      : "Belum mulai";
-  let control;
-  if (m.kind === "auto") {
-    control = `<span class="mono">${s.current} / ${m.target} ${escapeText(m.unit)}</span>`;
-  } else if (m.kind === "auto-er-count") {
-    // Read-only — computed from published content's real engagement rate,
-    // never typed in by hand.
-    control = `<span class="mono">${s.current} / ${m.target} ${escapeText(m.unit)}</span> <span class="text-faint" style="font-size:11px;">(ER ≥ ${m.threshold}%)</span>`;
-  } else if (m.kind === "check") {
-    control = `<label class="checkbox-chip"><input type="checkbox" data-milestone-check="${i}" ${m.done ? "checked" : ""} ${lockedPreview ? "disabled" : ""} />Sudah terjadi</label>`;
-  } else {
-    control = `<div class="flex items-center gap-8">
-      <input type="number" class="input" data-milestone-number="${i}" value="${m.value ?? ""}" min="0" placeholder="${lockedPreview ? "Belum giliran mission ini" : "Isi angka asli"}" style="width:100px;display:inline-block;" ${lockedPreview ? "disabled" : ""} />
-      <span class="text-faint" style="font-size:11.5px;">target ${m.target}${m.unit ? " " + escapeText(m.unit) : ""}</span>
-      <button type="button" class="icon-btn" data-milestone-edit-target="${i}" title="Ubah target" style="width:22px;height:22px;">${icon("edit", { size: 11 })}</button>
-    </div>`;
-  }
-  // The number here is the same one on its tree branch — that's the only
-  // way to tell which branch a row belongs to once the tree stops labeling
-  // nodes with text.
-  return `
-    <div class="mission-milestone-row" data-milestone-index="${i}">
-      <div class="mm-num" style="background:${missionNodeColor(m, s)};color:${missionNodeTextColor(m, s)};">${s.metTarget ? icon("check", { size: 11 }) : i + 1}</div>
-      <div>
-        <div class="mm-label">${escapeText(m.label)}</div>
-        ${m.description ? `<div class="mm-desc">${escapeText(m.description)}</div>` : ""}
-      </div>
-      <div class="mm-control">${control}</div>
-      <div class="mm-pill" data-state="${pillState}">${pillLabel}</div>
-      <button type="button" class="icon-btn" data-milestone-remove="${i}" title="Hapus milestone" style="width:24px;height:24px;">${icon("x", { size: 12 })}</button>
-    </div>
-  `;
-}
-
-function wireMissionJourney(root, brandId, brand, campaign, allContent, state, refresh) {
-  function saveMissions(missions) {
-    updateCampaign(campaign.id, { missions });
-  }
-
-  qsa("[data-mission-index]", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.missionIndex = Number(btn.dataset.missionIndex);
-      refresh();
-    });
-  });
-
-  qsa("[data-milestone-check]", root).forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const idx = Number(cb.dataset.milestoneCheck);
-      const missions = campaign.missions.map((m, mi) =>
-        mi !== state.missionIndex ? m : { ...m, milestones: m.milestones.map((ms, i) => (i === idx ? { ...ms, done: cb.checked } : ms)) }
-      );
-      saveMissions(missions);
-      refresh();
-    });
-  });
-
-  qsa("[data-milestone-number]", root).forEach((input) => {
-    const commit = () => {
-      const idx = Number(input.dataset.milestoneNumber);
-      const raw = input.value.trim();
-      // Cumulative totals can't go negative — clamp instead of just
-      // rejecting, so a stray "-" typo doesn't just silently do nothing.
-      const value = raw === "" ? null : Math.max(0, Number(raw) || 0);
-      const missions = campaign.missions.map((m, mi) =>
-        mi !== state.missionIndex ? m : { ...m, milestones: m.milestones.map((ms, i) => (i === idx ? { ...ms, value } : ms)) }
-      );
-      saveMissions(missions);
-      refresh();
-    };
-    input.addEventListener("blur", commit);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") input.blur();
-    });
-  });
-
-  qsa("[data-milestone-edit-target]", root).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const idx = Number(btn.dataset.milestoneEditTarget);
-      const m = campaign.missions[state.missionIndex].milestones[idx];
-      const raw = await promptDialog({ title: "Ubah target", label: m.label, placeholder: String(m.target ?? ""), confirmLabel: "Simpan" });
-      if (!raw) return;
-      const target = Math.max(1, Math.round(Number(raw) || 0));
-      const missions = campaign.missions.map((mm, mi) =>
-        mi !== state.missionIndex ? mm : { ...mm, milestones: mm.milestones.map((ms, i) => (i === idx ? { ...ms, target } : ms)) }
-      );
-      saveMissions(missions);
-      refresh();
-    });
-  });
-
-  qsa("[data-milestone-remove]", root).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const idx = Number(btn.dataset.milestoneRemove);
-      const mission = campaign.missions[state.missionIndex];
-      const ok = await confirmDialog({ title: "Hapus milestone ini?", message: `"${mission.milestones[idx].label}" akan dihapus dari mission ini.`, confirmLabel: "Hapus", danger: true });
-      if (!ok) return;
-      const missions = campaign.missions.map((mm, mi) =>
-        mi !== state.missionIndex ? mm : { ...mm, milestones: mm.milestones.filter((_, i) => i !== idx) }
-      );
-      saveMissions(missions);
-      refresh();
-    });
-  });
-
-  qs("#mission-advance", root)?.addEventListener("click", () => {
-    const mission = campaign.missions[state.missionIndex];
-    if (!missionCanAdvance(mission, campaign, allContent)) return;
-    let missions = campaign.missions.map((m, i) => (i === state.missionIndex ? { ...m, completedAt: Date.now() } : m));
-    const next = missions[state.missionIndex + 1];
-    if (next) {
-      // Numbers here are cumulative totals, not deltas — carry the just-
-      // completed mission's recorded value forward as the next mission's
-      // starting point (matched by label, since the same metric — e.g.
-      // "Followers" — repeats across every level) so nobody has to retype
-      // the same running total at every rung.
-      const carriedMilestones = next.milestones.map((ms) => {
-        if (ms.kind !== "number") return ms;
-        const prev = mission.milestones.find((pm) => pm.kind === "number" && pm.label === ms.label);
-        return prev && prev.value !== null && prev.value !== undefined ? { ...ms, value: prev.value } : ms;
-      });
-      missions = missions.map((m, i) => (i === state.missionIndex + 1 ? { ...next, milestones: carriedMilestones } : m));
-    }
-    saveMissions(missions);
-    toast(next ? `"${mission.name}" selesai — lanjut ke "${next.name}"` : "Semua mission selesai — objective campaign ini tercapai!");
-    if (next) state.missionIndex = state.missionIndex + 1;
-    refresh();
-  });
-
-  qs("#milestone-add", root)?.addEventListener("click", () => {
-    const input = qs("#milestone-new", root);
-    const label = input.value.trim();
-    if (!label) return;
-    const missions = campaign.missions.map((m, mi) =>
-      mi !== state.missionIndex
-        ? m
-        : {
-            ...m,
-            milestones: [
-              ...m.milestones,
-              { id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, kind: "check", phaseId: null, label, unit: "", target: null, highlight: false, custom: true, value: null, done: false },
-            ],
-          }
-    );
-    saveMissions(missions);
-    refresh();
-  });
-  qs("#milestone-new", root)?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") qs("#milestone-add", root)?.click();
-  });
-
-  qs("#brainstorm-content", root)?.addEventListener("click", () => {
-    openBrainstormModal({ brandId, brand, campaign, mission: campaign.missions[state.missionIndex], onSaved: refresh });
-  });
-
-  qsa("[data-milestone-index]", root).forEach((el) => {
-    el.addEventListener("mouseenter", () => {
-      qsa(`[data-milestone-index="${el.dataset.milestoneIndex}"]`, root).forEach((x) => x.classList.add("is-synced"));
-    });
-    el.addEventListener("mouseleave", () => {
-      qsa(`[data-milestone-index="${el.dataset.milestoneIndex}"]`, root).forEach((x) => x.classList.remove("is-synced"));
-    });
-  });
-}
-
-// "Brainstorm Konten" — for campaigns whose content isn't bucketed into a
-// specific phase (Grow Social Media's every-post-counts ladder has none),
-// this is the whole intake: AI-suggested ideas scoped to the campaign's
-// current mission, or a plain title+note typed by hand — either way it
-// saves immediately as a status:"idea" content item (same instant-save
-// pattern as "Use this idea" elsewhere in this file), landing in Content
-// OS / Creator's Drafting list with nothing else required.
-function openBrainstormModal({ brandId, brand, campaign, mission, onSaved }) {
-  let savedCount = 0;
-  const overlay = openModal({
-    title: "Brainstorm Konten",
-    wide: true,
-    bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 14px;">Ide buat "${escapeText(campaign.name)}"${mission ? ` — fokus ke mission "${escapeText(mission.name)}" yang lagi jalan` : ""}. Cuma judul + catatan singkat, langsung masuk Ideas di Creator.</p>
-      <button type="button" class="btn btn-secondary btn-sm" id="brainstorm-ai">${icon("bot", { size: 13 })}Minta AI kasih ide</button>
-      <div id="brainstorm-ai-status" style="margin-top:10px;"></div>
-      <div id="brainstorm-ai-ideas" style="margin-top:4px;"></div>
-      <div class="divider" style="margin:18px 0;"></div>
-      <div class="page-eyebrow" style="margin-bottom:10px;">Atau tulis ide sendiri</div>
-      <div class="field">
-        <input class="input" id="bs-title" placeholder="Judul ide" />
-      </div>
-      <div class="field" style="margin-bottom:10px;">
-        <textarea class="textarea" id="bs-idea" style="min-height:56px;" placeholder="Catatan singkat (opsional)"></textarea>
-      </div>
-      <button type="button" class="btn btn-primary btn-sm" id="bs-add-manual">${icon("plus", { size: 13 })}Simpan sebagai Ide</button>
-    `,
-    footHTML: `<button class="btn btn-secondary" id="brainstorm-done">Selesai</button>`,
-  });
-
-  qs("#brainstorm-ai", overlay).addEventListener("click", async () => {
-    const ai = getSettings().ai || {};
-    const statusEl = qs("#brainstorm-ai-status", overlay);
-    const hasKey = hasAiKey(ai);
-    if (!hasKey) {
-      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">Tambahin API key AI dulu di Settings → AI.</div>`;
-      return;
-    }
-    const aiBtn = qs("#brainstorm-ai", overlay);
-    aiBtn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>Mikirin ide...</span></div>`;
-    try {
-      const existingTitles = listContent(brandId)
-        .filter((c) => c.campaignId === campaign.id)
-        .map((c) => c.title)
-        .filter(Boolean);
-      const { ideas } = await brainstormCampaignIdeas(ai, { brand, campaign, mission, existingTitles });
-      statusEl.innerHTML = "";
-      qs("#brainstorm-ai-ideas", overlay).innerHTML = ideas.map((idea, i) => brainstormIdeaCardHTML(idea, i)).join("");
-      qsa("[data-use-brainstorm-idea]", overlay).forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const idea = ideas[Number(btn.dataset.useBrainstormIdea)];
-          createContent(brandId, { campaignId: campaign.id, title: idea.title, idea: idea.angle, status: "idea" });
-          savedCount++;
-          btn.textContent = "Tersimpan ✓";
-          btn.disabled = true;
-        });
-      });
-    } catch (e) {
-      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e.message}</span></div>`;
-    } finally {
-      aiBtn.disabled = false;
-    }
-  });
-
-  qs("#bs-add-manual", overlay).addEventListener("click", () => {
-    const titleEl = qs("#bs-title", overlay);
-    const ideaEl = qs("#bs-idea", overlay);
-    const title = titleEl.value.trim();
-    if (!title) {
-      toast("Isi judulnya dulu.", "error");
-      return;
-    }
-    createContent(brandId, { campaignId: campaign.id, title, idea: ideaEl.value.trim(), status: "idea" });
-    savedCount++;
-    toast(`"${title}" disimpan ke Ideas.`);
-    titleEl.value = "";
-    ideaEl.value = "";
-    titleEl.focus();
-  });
-
-  qs("#brainstorm-done", overlay).addEventListener("click", () => {
-    closeOverlay(overlay);
-    onSaved?.();
-    if (savedCount > 0) location.hash = `#/brand/${brandId}/content-os/creator`;
-  });
-}
-
-function brainstormIdeaCardHTML(idea, i) {
-  return `
-    <div class="card card-tight" style="margin-bottom:8px;padding:12px;">
-      <div style="font-weight:700;font-size:13.5px;margin-bottom:3px;">${escapeText(idea.title)}</div>
-      <div class="text-muted" style="font-size:12.5px;margin-bottom:8px;">${escapeText(idea.angle)}${idea.format ? ` · ${escapeText(idea.format)}` : ""}</div>
-      <button type="button" class="btn btn-secondary btn-sm" data-use-brainstorm-idea="${i}">${icon("plus", { size: 12 })}Simpan sebagai Ide</button>
-    </div>
-  `;
-}
-
-function stat(label, value) {
-  return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
-}
-
-// ---------- Event Campaign detail page (date-anchored, non-blocking) ----------
-
-const EVENT_CATEGORY_LABELS = { AWARENESS: "Awareness", CONTENT: "Content", CONVERSION: "Conversion", ENGAGEMENT: "Engagement", ATTENDANCE: "Attendance", IMPACT: "Impact" };
-
-function eventStatusColor(status) {
-  if (status === "completed") return "var(--health-good)";
-  if (status === "missed") return "var(--health-poor)";
-  if (status === "in_progress" || status === "partially_completed") return "var(--health-average)";
-  if (status === "not_applicable") return "var(--surface-2)";
-  return "var(--border)";
-}
-
-// Default to whichever phase's date window contains today — not "the
-// first unfinished one," since nothing here is sequential.
-function currentEventPhaseIndex(campaign) {
-  const phases = campaign.eventPlan.phases;
-  const now = Date.now();
-  const idx = phases.findIndex((p) => now >= new Date(p.dateFrom + "T00:00:00").getTime() && now <= new Date(p.dateTo + "T23:59:59").getTime());
-  if (idx !== -1) return idx;
-  if (now < new Date(phases[0].dateFrom + "T00:00:00").getTime()) return 0;
-  return phases.length - 1;
-}
-
-function eventPlanSectionHTML(campaign, allContent, state) {
-  const { eventPlan } = campaign;
-  const phases = eventPlan.phases;
-  if (state.eventPhaseIndex === null || state.eventPhaseIndex === undefined) state.eventPhaseIndex = currentEventPhaseIndex(campaign);
-  const activeIndex = Math.min(state.eventPhaseIndex, phases.length - 1);
-  const phase = phases[activeIndex];
-  const statuses = phase.milestones.map((m) => eventMilestoneStatus(m, phase, allContent));
-  const roleLabel = EVENT_ROLES.find((r) => r.id === eventPlan.role)?.label || eventPlan.role;
-  const scaleLabel = EVENT_SCALE_TIERS.find((t) => t.id === eventPlan.scale)?.label || eventPlan.scale;
-  return `
-    <div class="section-title" style="margin-top:0;"><h2>Event Timeline</h2></div>
-    <div class="hint" style="margin:-6px 0 14px;">${icon("info", { size: 12 })}<span>${escapeText(roleLabel)}${eventPlan.eventDate ? ` · Event: ${escapeText(eventPlan.eventDate)}` : ""} · Skala ${escapeText(scaleLabel)}. Fase di bawah nggak saling kunci — event punya tanggal fix, jadi kamu tetap bisa lanjut ke fase berikutnya meskipun target fase sebelumnya belum tercapai.</span></div>
-    <div class="event-timeline">
-      ${phases.map((p, i) => eventPhasePillHTML(p, i, allContent, i === activeIndex)).join("")}
-    </div>
-    <div class="mission-panel">
-      <div class="mission-panel-head">
-        <div>
-          <div class="page-eyebrow">${escapeText(phase.dateLabel)}</div>
-          <h3 style="margin:2px 0 4px;">${escapeText(phase.name)}</h3>
-        </div>
-        <div class="flex gap-8" style="flex:none;">
-          <button type="button" class="btn btn-secondary btn-sm glow" id="brainstorm-content" style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 13 })}Brainstorm Konten</button>
-        </div>
-      </div>
-      <div class="mission-milestone-list" id="event-milestones">
-        ${phase.milestones.map((m, i) => eventMilestoneRowHTML(m, statuses[i], i)).join("")}
-      </div>
-      <div class="flex gap-8" style="margin-top:10px;">
-        <button type="button" class="btn btn-secondary btn-sm" id="event-add-milestone">${icon("plus", { size: 13 })}Tambah Milestone Khusus</button>
-      </div>
-    </div>
-    ${eventFinalScoreHTML(campaign, allContent)}
-  `;
-}
-
-function eventPhasePillHTML(phase, i, allContent, active) {
-  const statuses = phase.milestones.map((m) => eventMilestoneStatus(m, phase, allContent));
-  const relevant = statuses.filter((s, idx) => phase.milestones[idx].required && s.status !== "not_applicable");
-  const allDone = relevant.length > 0 && relevant.every((s) => s.status === "completed");
-  const anyMissed = relevant.some((s) => s.status === "missed");
-  const anyProgress = relevant.some((s) => s.status === "in_progress" || s.status === "partially_completed" || s.status === "completed");
-  const pillStatus = allDone ? "completed" : anyMissed ? "missed" : anyProgress ? "in_progress" : "not_started";
-  return `
-    <button type="button" class="event-phase-pill status-${pillStatus} ${active ? "active" : ""}" data-event-phase-index="${i}">
-      <span class="event-phase-name">${escapeText(phase.name)}</span>
-      <span class="event-phase-date">${escapeText(phase.dateLabel)}</span>
-    </button>
-  `;
-}
-
-function eventMilestoneRowHTML(m, s, i) {
-  let control;
-  if (m.kind === "auto") {
-    control = `<span class="mono">${s.current} / ${m.target ?? "–"} ${escapeText(m.unit)}</span>`;
-  } else if (m.kind === "check") {
-    control = `<label class="checkbox-chip"><input type="checkbox" data-event-check="${i}" ${m.done ? "checked" : ""} ${m.notApplicable ? "disabled" : ""} />Sudah terjadi</label>`;
-  } else {
-    control = `<input type="number" class="input" data-event-number="${i}" value="${m.value ?? ""}" min="0" placeholder="Isi angka asli" style="width:100px;display:inline-block;" ${m.notApplicable ? "disabled" : ""} />`;
-  }
-  const statusLabel = EVENT_STATUS_LABELS[s.status] || s.status;
-  return `
-    <div class="mission-milestone-row event-milestone-row" data-milestone-index="${i}">
-      <div class="mm-num" style="background:${eventStatusColor(s.status)};">${s.status === "completed" ? icon("check", { size: 11 }) : i + 1}</div>
-      <div>
-        <div class="mm-label">${escapeText(m.label)}${m.required ? "" : ` <span class="text-faint" style="font-weight:500;">(opsional)</span>`}</div>
-        ${m.description ? `<div class="mm-desc">${escapeText(m.description)}</div>` : ""}
-      </div>
-      <div class="mm-control">
-        <div class="flex items-center gap-8">
-          ${control}
-          ${m.kind !== "check" ? `<button type="button" class="icon-btn" data-event-edit-target="${i}" title="Ubah target" style="width:22px;height:22px;">${icon("edit", { size: 11 })}</button>` : ""}
-        </div>
-        ${m.target !== null ? `<div class="text-faint" style="font-size:11px;margin-top:3px;">target ${m.target}${m.unit ? " " + escapeText(m.unit) : ""} · ${s.achievementPct ?? 0}%${m.isSystemTarget ? ` · <span class="event-sys-tag">rekomendasi sistem</span>` : ""}</div>` : ""}
-      </div>
-      <div class="mm-pill event-status-pill" data-state="${s.status}">${statusLabel}</div>
-      <div class="flex gap-6">
-        <button type="button" class="icon-btn" data-event-na="${i}" title="${m.notApplicable ? "Tandai relevan lagi" : "Tandai nggak relevan"}" style="width:24px;height:24px;">${icon(m.notApplicable ? "refresh" : "x", { size: 12 })}</button>
-        ${m.custom ? `<button type="button" class="icon-btn" data-event-remove="${i}" title="Hapus milestone" style="width:24px;height:24px;">${icon("trash", { size: 12 })}</button>` : ""}
-      </div>
-    </div>
-  `;
-}
-
-function eventFinalScoreHTML(campaign, allContent) {
-  const totals = {};
-  Object.keys(EVENT_CATEGORY_LABELS).forEach((c) => (totals[c] = { target: 0, actual: 0, count: 0 }));
-  campaign.eventPlan.phases.forEach((phase) => {
-    phase.milestones.forEach((m) => {
-      if (m.notApplicable || !m.target || !totals[m.category]) return;
-      const s = eventMilestoneStatus(m, phase, allContent);
-      totals[m.category].target += m.target;
-      totals[m.category].actual += Math.min(s.current, m.target * 3);
-      totals[m.category].count++;
-    });
-  });
-  const tiles = Object.entries(totals)
-    .filter(([, v]) => v.count > 0)
-    .map(([cat, v]) => {
-      const pct = v.target ? Math.round((v.actual / v.target) * 100) : 0;
-      return `<div class="stat"><div class="label">${EVENT_CATEGORY_LABELS[cat]}</div><div class="value">${pct}%</div><div class="text-faint" style="font-size:11px;">${formatNumber(v.actual)} / ${formatNumber(v.target)}</div></div>`;
-    })
-    .join("");
-  if (!tiles) return "";
-  return `
-    <div class="section-title"><h2>Final Campaign Score</h2></div>
-    <div class="stat-grid">${tiles}</div>
-  `;
-}
-
-function wireEventPlan(root, brandId, brand, campaign, allContent, state, refresh) {
-  function savePhases(phases) {
-    updateCampaign(campaign.id, { eventPlan: { ...campaign.eventPlan, phases } });
-  }
-  function activeMilestones() {
-    return campaign.eventPlan.phases[state.eventPhaseIndex].milestones;
-  }
-
-  qsa("[data-event-phase-index]", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.eventPhaseIndex = Number(btn.dataset.eventPhaseIndex);
-      refresh();
-    });
-  });
-
-  qsa("[data-event-check]", root).forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const idx = Number(cb.dataset.eventCheck);
-      const phases = campaign.eventPlan.phases.map((p, pi) =>
-        pi !== state.eventPhaseIndex ? p : { ...p, milestones: p.milestones.map((m, i) => (i === idx ? { ...m, done: cb.checked } : m)) }
-      );
-      savePhases(phases);
-      refresh();
-    });
-  });
-
-  qsa("[data-event-number]", root).forEach((input) => {
-    const commit = () => {
-      const idx = Number(input.dataset.eventNumber);
-      const raw = input.value.trim();
-      const value = raw === "" ? null : Math.max(0, Number(raw) || 0);
-      const phases = campaign.eventPlan.phases.map((p, pi) =>
-        pi !== state.eventPhaseIndex ? p : { ...p, milestones: p.milestones.map((m, i) => (i === idx ? { ...m, value } : m)) }
-      );
-      savePhases(phases);
-      refresh();
-    };
-    input.addEventListener("blur", commit);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") input.blur();
-    });
-  });
-
-  qsa("[data-event-na]", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.eventNa);
-      const phases = campaign.eventPlan.phases.map((p, pi) =>
-        pi !== state.eventPhaseIndex ? p : { ...p, milestones: p.milestones.map((m, i) => (i === idx ? { ...m, notApplicable: !m.notApplicable } : m)) }
-      );
-      savePhases(phases);
-      refresh();
-    });
-  });
-
-  qsa("[data-event-remove]", root).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const idx = Number(btn.dataset.eventRemove);
-      const m = activeMilestones()[idx];
-      const ok = await confirmDialog({ title: "Hapus milestone ini?", message: `"${m.label}" akan dihapus dari fase ini.`, confirmLabel: "Hapus", danger: true });
-      if (!ok) return;
-      const phases = campaign.eventPlan.phases.map((p, pi) => (pi !== state.eventPhaseIndex ? p : { ...p, milestones: p.milestones.filter((_, i) => i !== idx) }));
-      savePhases(phases);
-      refresh();
-    });
-  });
-
-  qsa("[data-event-edit-target]", root).forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const idx = Number(btn.dataset.eventEditTarget);
-      const m = activeMilestones()[idx];
-      const raw = await promptDialog({ title: "Ubah target", label: m.label, placeholder: String(m.target ?? ""), confirmLabel: "Simpan" });
-      if (!raw) return;
-      const target = Math.max(1, Math.round(Number(raw) || 0));
-      const phases = campaign.eventPlan.phases.map((p, pi) =>
-        pi !== state.eventPhaseIndex ? p : { ...p, milestones: p.milestones.map((mm, i) => (i === idx ? { ...mm, target, isSystemTarget: false } : mm)) }
-      );
-      savePhases(phases);
-      refresh();
-    });
-  });
-
-  qs("#event-add-milestone", root)?.addEventListener("click", () => {
-    openCustomEventMilestone({ campaign, phaseIndex: state.eventPhaseIndex, onSaved: refresh });
-  });
-
-  qs("#brainstorm-content", root)?.addEventListener("click", () => {
-    openBrainstormModal({ brandId, brand, campaign, mission: null, onSaved: refresh });
-  });
-
-  qsa("[data-milestone-index]", root).forEach((el) => {
-    el.addEventListener("mouseenter", () => {
-      qsa(`[data-milestone-index="${el.dataset.milestoneIndex}"]`, root).forEach((x) => x.classList.add("is-synced"));
-    });
-    el.addEventListener("mouseleave", () => {
-      qsa(`[data-milestone-index="${el.dataset.milestoneIndex}"]`, root).forEach((x) => x.classList.remove("is-synced"));
-    });
-  });
-}
-
-// The fuller custom-milestone form Event needs (vs. Missions' single text
-// input) — a milestone here needs a category (it feeds Final Campaign
-// Score), a phase (since phases carry the real dates), and a required flag.
-function openCustomEventMilestone({ campaign, phaseIndex, onSaved }) {
-  const phases = campaign.eventPlan.phases;
-  const overlay = openModal({
-    title: "Tambah Milestone Khusus",
-    bodyHTML: `
-      <div class="field"><label>Nama milestone</label><input class="input" id="cm-name" placeholder='cth. "Ajak 20 komunitas lokal share event ini"' /></div>
-      <div class="field"><label>Deskripsi (opsional)</label><textarea class="textarea" id="cm-desc" style="min-height:50px;"></textarea></div>
-      <div class="field"><label>Kategori</label><select class="select" id="cm-category">${Object.entries(EVENT_CATEGORY_LABELS)
-        .map(([k, v]) => `<option value="${k}">${v}</option>`)
-        .join("")}</select></div>
-      <div class="flex gap-8">
-        <div class="field" style="flex:1;"><label>Target</label><input class="input" type="number" id="cm-target" min="0" value="1" /></div>
-        <div class="field" style="flex:1;"><label>Unit</label><input class="input" id="cm-unit" placeholder="cth. kolaborasi" /></div>
-      </div>
-      <div class="field"><label>Fase (deadline)</label><select class="select" id="cm-phase">${phases
-        .map((p, i) => `<option value="${i}" ${i === phaseIndex ? "selected" : ""}>${escapeText(p.name)} (${escapeText(p.dateLabel)})</option>`)
-        .join("")}</select></div>
-      <div class="field"><label>Cara pengukuran (opsional)</label><input class="input" id="cm-method" placeholder="cth. hitung manual dari DM" /></div>
-      <label class="checkbox-chip"><input type="checkbox" id="cm-required" checked />Wajib</label>
-    `,
-    footHTML: `<button class="btn btn-primary" id="cm-save">Tambah</button>`,
-  });
-  qs("#cm-save", overlay).addEventListener("click", () => {
-    const label = qs("#cm-name", overlay).value.trim();
-    if (!label) {
-      toast("Isi nama milestone dulu.", "error");
-      return;
-    }
-    const target = Math.max(1, Math.round(Number(qs("#cm-target", overlay).value) || 1));
-    const chosenPhaseIndex = Number(qs("#cm-phase", overlay).value);
-    const milestone = {
-      id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      label,
-      description: qs("#cm-desc", overlay).value.trim(),
-      category: qs("#cm-category", overlay).value,
-      kind: "number",
-      unit: qs("#cm-unit", overlay).value.trim(),
-      target,
-      isSystemTarget: false,
-      required: qs("#cm-required", overlay).checked,
-      notApplicable: false,
-      measurementMethod: qs("#cm-method", overlay).value.trim(),
-      value: null,
-      done: false,
-      custom: true,
-    };
-    const phases = campaign.eventPlan.phases.map((p, i) => (i !== chosenPhaseIndex ? p : { ...p, milestones: [...p.milestones, milestone] }));
-    updateCampaign(campaign.id, { eventPlan: { ...campaign.eventPlan, phases } });
-    closeOverlay(overlay);
-    toast(`"${label}" ditambahkan.`);
-    onSaved?.();
-  });
-}
-
-function journeyNodeHTML(pd, index, activePhaseId, expandedPhaseId) {
-  const disabled = !pd.phase.enabled;
-  const filled = !disabled && pd.items.length > 0;
-  const isActive = pd.phase.id === activePhaseId;
-  const isExpanded = pd.phase.id === expandedPhaseId;
-  const dotStyle = isActive ? `--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);` : "";
-  const doneMilestones = (pd.phase.milestones || []).filter((m) => m.done).length;
-  return `
-    <button type="button" class="journey-node ${isExpanded ? "expanded" : ""} ${disabled ? "disabled" : ""}" data-phase-node="${pd.phase.id}">
-      <div class="journey-node-dot ${filled ? "filled" : "empty"} ${isActive ? "active glow" : ""}" style="${dotStyle}">
-        ${filled ? icon("check", { size: 20 }) : `<span>${index + 1}</span>`}
-      </div>
-      <div class="journey-node-label">${escapeText(pd.phase.name)}</div>
-      <div class="journey-node-sub">${
-        disabled
-          ? "Not used"
-          : pd.items.length
-          ? `${pd.items.length} content${pd.phase.milestones?.length ? ` · ${doneMilestones}/${pd.phase.milestones.length} milestones` : ""}`
-          : "No content yet"
-      }</div>
-    </button>
-  `;
-}
-
-function journeyDetailHTML(brandId, campaign, pd) {
-  const info = phaseTemplateInfo(pd.phase.id);
-  if (!pd.phase.enabled) {
-    return `
-      <div class="journey-detail">
-        <h3 style="font-size:16px;margin:0 0 6px;">${escapeText(pd.phase.name)}</h3>
-        <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${escapeText(info.description)}</p>
-        <div class="hint" style="margin:0 0 16px;">${icon("info", { size: 12 })} This phase isn't part of this campaign yet.</div>
-        <button type="button" class="btn btn-secondary btn-sm" id="phase-enable">${icon("check", { size: 13 })}Enable this phase</button>
-      </div>
-    `;
-  }
-  return `
-    <div class="journey-detail">
-      <div class="flex items-center justify-between" style="margin-bottom:6px;">
-        <h3 style="font-size:16px;margin:0;">${escapeText(pd.phase.name)}</h3>
-        <div class="flex gap-8">
-          <button type="button" class="btn btn-secondary btn-sm" id="phase-ai-suggest">${icon("bot", { size: 13 })}AI suggest content</button>
-          <button type="button" class="btn btn-primary btn-sm" id="phase-add-content">${icon("plus", { size: 13 })}Add content</button>
-        </div>
-      </div>
-      <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${escapeText(info.description)}</p>
-      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${pd.phase.goal ? escapeText(pd.phase.goal) : "<em>No goal set for this phase yet — edit the campaign to add one.</em>"}</p>
-
-      <div class="page-eyebrow" style="margin-bottom:8px;">Milestones</div>
-      <div id="phase-milestones">${milestonesHTML(pd.phase.milestones || [])}</div>
-      <div class="flex gap-8" style="margin:10px 0 20px;">
-        <input class="input" id="milestone-new" placeholder="Add a milestone for this phase..." style="flex:1;" />
-        <button type="button" class="btn btn-secondary btn-sm" id="milestone-add">${icon("plus", { size: 13 })}Add</button>
-      </div>
-
-      <div class="page-eyebrow" style="margin-bottom:8px;">Content</div>
-      <div id="phase-ai-ideas"></div>
-      ${
-        pd.items.length
-          ? `<div class="card card-tight">${pd.items.map((c) => phaseContentRow(brandId, c)).join("")}</div>`
-          : `<div class="table-empty" style="padding:24px;">No content made for this phase yet.</div>`
-      }
-    </div>
-  `;
-}
-
-function milestonesHTML(milestones) {
-  if (!milestones.length) return `<p class="text-faint" style="font-size:12px;margin:0;">No milestones yet — add your own checkable goals for this phase.</p>`;
-  return `
-    <div style="display:flex;flex-direction:column;gap:2px;">
-      ${milestones
-        .map(
-          (m) => `
-        <label class="routine-task-row ${m.done ? "done" : ""}" data-milestone-id="${m.id}">
-          <input type="checkbox" data-milestone-toggle="${m.id}" ${m.done ? "checked" : ""} />
-          <span class="routine-task-text">${escapeText(m.text)}</span>
-          <button type="button" class="icon-btn" data-milestone-remove="${m.id}" aria-label="Remove milestone" style="width:26px;height:26px;flex:none;">${icon("x", { size: 12 })}</button>
-        </label>`
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function phaseContentRow(brandId, c) {
-  return `
-    <div class="top-content-row" data-goto-content="${c.id}" style="cursor:pointer;">
-      <div class="ti">
-        <div class="t">${escapeText(c.title || "Untitled")}</div>
-        <div class="m">${c.platform || "—"} · <span class="status-pill status-${c.status}" style="padding:2px 8px;"><span class="status-dot"></span>${c.status}</span></div>
-      </div>
-    </div>
-  `;
-}
-
-function ideaCardHTML(idea, index) {
-  return `
-    <div class="card card-tight" style="margin-bottom:8px;" data-idea-index="${index}">
-      <div style="font-weight:700;font-size:13.5px;margin-bottom:4px;">${escapeText(idea.title)}</div>
-      <div class="text-muted" style="font-size:12.5px;margin-bottom:8px;">${escapeText(idea.angle)}${idea.format ? ` · ${escapeText(idea.format)}` : ""}</div>
-      <button type="button" class="btn btn-secondary btn-sm" data-use-idea="${index}">Use this idea</button>
-    </div>
-  `;
-}
-
-// Mutates this phase's milestones in place, then persists the whole
-// (small) phases array via the existing generic updateCampaign patch —
-// same "no dedicated CRUD needed" approach the rest of this app's list
-// fields (e.g. settings.js Platforms) already use.
-function saveMilestones(campaign, phaseId, milestones) {
-  const phases = campaign.phases.map((p) => (p.id === phaseId ? { ...p, milestones } : p));
-  updateCampaign(campaign.id, { phases });
-}
-
-function wireJourneyDetail(root, brandId, brand, campaign, pd, refresh) {
-  qs("#phase-enable", root)?.addEventListener("click", () => {
-    const phases = campaign.phases.map((p) => (p.id === pd.phase.id ? { ...p, enabled: true } : p));
-    updateCampaign(campaign.id, { phases });
-  });
-
-  qs("#milestone-add", root)?.addEventListener("click", () => {
-    const input = qs("#milestone-new", root);
-    const text = input.value.trim();
-    if (!text) return;
-    saveMilestones(campaign, pd.phase.id, [...(pd.phase.milestones || []), { id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text, done: false }]);
-  });
-  qs("#milestone-new", root)?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") qs("#milestone-add", root).click();
-  });
-  qsa("[data-milestone-toggle]", root).forEach((cb) => {
-    cb.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const milestones = (pd.phase.milestones || []).map((m) => (m.id === cb.dataset.milestoneToggle ? { ...m, done: cb.checked } : m));
-      saveMilestones(campaign, pd.phase.id, milestones);
-    });
-  });
-  qsa("[data-milestone-remove]", root).forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const milestones = (pd.phase.milestones || []).filter((m) => m.id !== btn.dataset.milestoneRemove);
-      saveMilestones(campaign, pd.phase.id, milestones);
-    });
-  });
-
-  qsa("[data-goto-content]", root).forEach((row) => {
-    row.addEventListener("click", () => openContentEditor({ brandId, contentId: row.dataset.gotoContent, onSaved: refresh }));
-  });
-
-  qs("#phase-add-content", root)?.addEventListener("click", () => {
-    openContentEditor({ brandId, defaults: { campaignId: campaign.id, campaignPhaseId: pd.phase.id }, onSaved: refresh });
-  });
-
-  const aiBtn = qs("#phase-ai-suggest", root);
-  if (aiBtn) {
-    aiBtn.addEventListener("click", async () => {
-      const ai = getSettings().ai || {};
-      const ideasEl = qs("#phase-ai-ideas", root);
-      const hasKey = hasAiKey(ai);
-      if (!hasKey) {
-        ideasEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-bottom:12px;">Add your AI API key in Settings → AI first.</div>`;
-        return;
-      }
-      aiBtn.disabled = true;
-      ideasEl.innerHTML = `<div class="ocr-status" style="margin-bottom:12px;"><div class="spinner"></div><span>Thinking…</span></div>`;
-      try {
-        const ideas = await suggestPhaseContent(ai, {
-          brand, campaign, phase: pd.phase,
-          existingTitles: pd.items.map((c) => c.title).filter(Boolean),
-        });
-        ideasEl.innerHTML = ideas.length
-          ? ideas.map((idea, i) => ideaCardHTML(idea, i)).join("")
-          : `<p class="text-faint" style="font-size:12px;margin-bottom:12px;">No ideas came back — try again.</p>`;
-        qsa("[data-use-idea]", ideasEl).forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const idea = ideas[Number(btn.dataset.useIdea)];
-            // Saved the instant it's picked — not just pre-filled — so it
-            // shows up in Content OS/Creator right away instead of only
-            // existing once someone remembers to click Save inside the
-            // editor drawer that opens next (which is now just refining an
-            // already-real record, same as clicking any other content card).
-            const created = createContent(brandId, {
-              campaignId: campaign.id, campaignPhaseId: pd.phase.id,
-              title: idea.title, idea: idea.angle, status: "idea",
-            });
-            openContentEditor({ brandId, contentId: created.id, onSaved: refresh });
-          });
-        });
-      } catch (e) {
-        ideasEl.innerHTML = `<div class="ocr-status" style="margin-bottom:12px;">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? e.message : "Couldn't reach the AI."}</span></div>`;
-      } finally {
-        aiBtn.disabled = false;
-      }
-    });
-  }
-}

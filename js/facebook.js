@@ -14,6 +14,8 @@
 // below is logged to the console, on purpose, so the first real run's log
 // can be used to lock in whichever name actually works for this account
 // instead of guessing again.
+import { t, getLang } from "./i18n.js";
+
 const API_BASE = "https://graph.facebook.com/v19.0";
 
 class FacebookApiError extends Error {}
@@ -25,7 +27,7 @@ async function graphGet(path, params, accessToken) {
   const res = await fetch(url.toString(), { cache: "no-store" });
   const json = await res.json();
   if (!res.ok || json.error) {
-    throw new FacebookApiError(json.error?.message || `Facebook API request failed (${res.status}).`);
+    throw new FacebookApiError(json.error?.message || t("integr.fb.apiFailed", { status: res.status }));
   }
   return json;
 }
@@ -116,11 +118,11 @@ export async function listRecentVideos({ pageId, pageAccessToken }, { maxItems =
   );
 
   const warnings = [];
-  if (videosResult.status === "rejected") warnings.push(`Videos: ${videosResult.reason?.message}`);
-  if (feedResult.status === "rejected") warnings.push(`Feed: ${feedResult.reason?.message}`);
+  if (videosResult.status === "rejected") warnings.push(t("integr.fb.warnVideos", { msg: videosResult.reason?.message }));
+  if (feedResult.status === "rejected") warnings.push(t("integr.fb.warnFeed", { msg: feedResult.reason?.message }));
 
   if (videosResult.status === "rejected" && feedResult.status === "rejected") {
-    throw new FacebookApiError(videosResult.reason?.message || feedResult.reason?.message || "Couldn't reach Facebook.");
+    throw new FacebookApiError(videosResult.reason?.message || feedResult.reason?.message || t("integr.fb.unreachable"));
   }
 
   const byId = new Map();
@@ -145,30 +147,7 @@ export function titleFromVideo(video) {
     const firstLine = desc.split("\n")[0];
     return firstLine.length > 70 ? firstLine.slice(0, 67) + "…" : firstLine;
   }
-  return `Facebook video — ${new Date(video.created_time).toLocaleDateString()}`;
-}
-
-// Facebook has no "find by permalink" the way Instagram does, so a
-// crossposted video is matched back to its Instagram post the same way
-// Instagram imports are deduplicated elsewhere in this app: by caption text,
-// falling back to whichever video was published closest to the post's date.
-export async function findFacebookVideoByCaption({ pageId, pageAccessToken }, { caption, aroundDate } = {}) {
-  const { videos } = await listRecentVideos({ pageId, pageAccessToken }, { maxItems: 100 });
-  const snippet = (caption || "").trim().slice(0, 60).toLowerCase();
-
-  if (snippet) {
-    const captionMatch = videos.find((v) => (v.description || "").toLowerCase().includes(snippet));
-    if (captionMatch) return captionMatch;
-  }
-  if (aroundDate) {
-    const target = new Date(aroundDate).getTime();
-    const withDelta = videos
-      .map((v) => ({ v, delta: Math.abs(new Date(v.created_time).getTime() - target) }))
-      .filter((x) => x.delta < 1000 * 60 * 60 * 24 * 3) // within 3 days
-      .sort((a, b) => a.delta - b.delta);
-    if (withDelta[0]) return withDelta[0].v;
-  }
-  return null;
+  return t("integr.fb.videoTitle", { date: new Date(video.created_time).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID") });
 }
 
 async function fetchOneField(videoId, fieldName, accessToken) {
@@ -218,7 +197,7 @@ export async function fetchFacebookVideoMetrics({ pageAccessToken }, videoId) {
     if (basic.comments?.summary?.total_count !== undefined) metrics.comments = basic.comments.summary.total_count;
     if (basic.shares?.count !== undefined) metrics.shares = basic.shares.count;
   } catch (e) {
-    warnings.push(`Couldn't read like/comment/share counts: ${e.message}`);
+    warnings.push(t("integr.fb.countsFailed", { msg: e.message }));
   }
 
   let lastError = null;
