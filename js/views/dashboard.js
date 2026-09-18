@@ -13,6 +13,7 @@ import { canUseInstagramApi } from "../account.js";
 import { openReportModal } from "./report.js";
 import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 
 export function render(root, { brandId }) {
   const state = { accountData: null, accountLoading: false };
@@ -301,16 +302,7 @@ function paint(root, brandId, state, refresh) {
   wireHelpButtons(root);
 
   qs("#generate-report").addEventListener("click", () => openReportModal(brandId));
-  qsa("[data-widget-toggle]", root).forEach((el) => {
-    el.addEventListener("click", () => {
-      const key = el.dataset.widgetToggle;
-      const next = new Set(brand.dashboardCollapsed || []);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      updateBrand(brandId, { dashboardCollapsed: [...next] });
-      refresh();
-    });
-  });
+  wireWidgetToggle(root, { collapsedList: brand.dashboardCollapsed, save: (next) => updateBrand(brandId, { dashboardCollapsed: next }), refresh });
   qsa("[data-open-content]", root).forEach((el) => {
     el.addEventListener("click", () => {
       const id = el.dataset.openContent;
@@ -440,37 +432,9 @@ function stat(label, value) {
   return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
 }
 
-// Every section of the dashboard is its own closable widget — persisted
-// per brand (brand.dashboardCollapsed) so it stays the way the user left
-// it. widgetCardHTML is the same dark, softly-animated card used for
-// "This week's work" on Beranda (js/views/brands.js) — an icon, a title,
-// an optional one-line subtitle, and the section's own body content, all
-// on one moving gradient. widgetCollapsedHTML replaces the whole thing with
-// one clickable row carrying a real summary of what's hidden — never just a
-// bare label — so collapsing never means losing track of what's there.
-function widgetCardHTML(key, iconName, title, bodyHTML, { sub = "", extraHead = "" } = {}) {
-  return `
-    <div class="dash-widget-card">
-      <div class="dash-widget-glow" aria-hidden="true"></div>
-      <div class="dash-widget-card-head">
-        <div class="dash-widget-card-icon">${icon(iconName, { size: 18 })}</div>
-        <div class="dash-widget-card-title"><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>
-        <div class="dash-widget-card-actions">
-          ${extraHead}
-          <button type="button" class="icon-btn dash-widget-collapse-btn" data-widget-toggle="${key}" aria-label="${t("dashboard.widget.collapse")}" title="${t("dashboard.widget.collapse")}">${icon("chevronDown", { size: 14 })}</button>
-        </div>
-      </div>
-      <div class="dash-widget-card-body">${bodyHTML}</div>
-    </div>`;
-}
-function widgetCollapsedHTML(key, iconName, title, summary) {
-  return `
-    <button type="button" class="dash-widget-collapsed" data-widget-toggle="${key}">
-      <span class="dash-widget-collapsed-icon">${icon(iconName, { size: 17 })}</span>
-      <span class="dash-widget-collapsed-text"><b>${title}</b>${summary ? `<small>${summary}</small>` : ""}</span>
-      ${icon("chevronDown", { size: 14 })}
-    </button>`;
-}
+// widgetCardHTML/widgetCollapsedHTML now live in js/widget-card.js, shared
+// with Beranda (brands.js, beginner-home.js, brand-home.js) and the
+// campaign detail widgets — see that file for the full picture.
 
 // Ads views are display-only here — added on top of organic for a "how many
 // people actually saw this, total" figure, never fed back into engagement

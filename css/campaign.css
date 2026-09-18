@@ -62,11 +62,9 @@
 .cd-delegated small{ font-weight:500; color: var(--text-faint); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cd-panel + .goal-pace{ margin-top:16px; }
 
-/* "Rencana" roadmap on Grow Brand campaign pages (campaign-detail.js planRoadmapHTML) */
-.cd-plan{ position:relative; padding-right:46px; }
-.cd-plan-close-btn{ position:absolute; top:16px; right:16px; width:28px; height:28px; }
-.cd-plan-collapsed{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 18px; margin-top:24px; }
-.cd-plan-collapsed span{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color: var(--text-muted); }
+/* "Rencana" roadmap on Grow Brand campaign pages (campaign-detail.js
+   planRoadmapHTML) — the outer card is js/widget-card.js's shared
+   .dash-widget-card now; these are just its own inner content. */
 .cd-plan-concept{ padding:14px 16px; margin-bottom:14px; border-radius: var(--radius-md); background: var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .cd-plan-concept h3{ margin:0 0 6px; font-size:16px; }
 .cd-plan-concept p{ margin:0 0 8px; font-size:13px; color: var(--text-muted); line-height:1.55; }
@@ -101,8 +99,7 @@
 @media (max-width:560px){ .cd-plan-act{ flex-direction:column; } }
 
 /* Sales Tracker widget on Sales Growth campaigns (campaign-detail.js
-   salesWidgetHTML) — same closable-card pattern as .cd-plan above. */
-.cd-sales-widget{ position:relative; padding-right:46px; }
+   salesWidgetHTML) — outer card is the shared .dash-widget-card. */
 .cd-sales-list{ display:grid; gap:12px; }
 .cd-sales-row{ display:grid; grid-template-columns:1fr auto; align-items:center; column-gap:12px; font-size:13.5px; }
 .cd-sales-row .cd-bar{ grid-column:1 / -1; margin:4px 0 0; }
@@ -115,10 +112,6 @@
    playful pill/chip layout on purpose (explicit user ask for a "very
    friendly" widget), reusing the same --track-* tokens as the card badges
    (#13) so an idea's color matches its campaign's track at a glance. */
-.cd-ideas{ position:relative; padding:18px 46px 18px 18px; }
-.cd-ideas-close-btn{ position:absolute; top:16px; right:16px; width:28px; height:28px; }
-.cd-ideas-collapsed{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 18px; margin-top:24px; }
-.cd-ideas-collapsed span{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color: var(--text-muted); }
 .cd-ideas-input{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
 .cd-ideas-input .input{ flex:1; min-width:180px; }
 .cd-ideas-input .btn{ flex:none; }

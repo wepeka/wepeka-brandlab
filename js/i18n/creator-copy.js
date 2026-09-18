@@ -39,6 +39,7 @@ export default {
   "cr.ai.generateAgain": { en: "Generate again", id: "Generate lagi" },
   "cr.ai.writing": { en: "Writing…", id: "Lagi nulis…" },
   "cr.ai.batch": { en: "— batch {n}", id: "— batch {n}" },
+  "cr.ai.previousGenerated": { en: "Previous AI generated", id: "Hasil AI sebelumnya" },
   "cr.ai.caption": { en: "Caption", id: "Caption" },
   "cr.ai.useCaption": { en: "Use this caption", id: "Pakai caption ini" },
   "cr.ai.captionInserted": { en: "Caption added", id: "Caption dimasukkan" },

@@ -324,7 +324,7 @@ function hubDoorHTML(brand, key) {
   // now, not a locked stage sequence that needs a landing page of its own.
   const href = isDna ? `#/brand/${brand.id}/dna` : `#/brand/${brand.id}/guidelines/color`;
   return `
-    <a class="card bb-hub-door" href="${href}">
+    <a class="card dark-surface bb-hub-door" href="${href}">
       <div class="bb-hub-icon">${icon(group.icon, { size: 30 })}</div>
       <h2 class="flex items-center gap-6">${group.label}${helpButtonHTML(key === "dna" ? "term-brand-dna" : "term-brand-guidelines")}</h2>
       <p>${group.doorDesc}</p>
@@ -395,7 +395,7 @@ function stageCardHTML(s, i, brand, locked) {
   const clickable = !s.soon && !locked;
   const href = clickable ? (s.internal ? `#/brand/${brand.id}/builder/${s.key}` : s.href(brand.id)) : "#";
   return `
-    <a class="card card-tight bb-stage-card bb-stage-${status}" href="${href}" ${s.soon ? "data-soon" : ""} ${locked ? "data-locked" : ""}>
+    <a class="card dark-surface card-tight bb-stage-card bb-stage-${status}" href="${href}" ${s.soon ? "data-soon" : ""} ${locked ? "data-locked" : ""}>
       <div class="bb-stage-num">${status === "done" ? icon("check", { size: 13 }) : locked ? icon("lock", { size: 12 }) : i + 1}</div>
       <div class="bb-stage-body">
         <div class="bb-stage-label">${escapeHtml(s.label)}</div>
@@ -522,7 +522,7 @@ function paintNaming(root, brandId, brand) {
 
   function askHTML() {
     return `
-      <div class="card" style="max-width:480px;">
+      <div class="card dark-surface" style="max-width:480px;">
         <div style="font-size:14px;font-weight:700;margin-bottom:14px;">${t("builder.naming.askQ")}</div>
         <div class="flex gap-8">
           <button type="button" class="btn btn-primary" id="naming-yes">${icon("check", { size: 14 })}${t("builder.naming.askYes")}</button>
@@ -534,7 +534,7 @@ function paintNaming(root, brandId, brand) {
 
   function manualHTML({ label, placeholder, source, cta }) {
     return `
-      <div class="card" style="max-width:480px;">
+      <div class="card dark-surface" style="max-width:480px;">
         <div class="field" style="margin-bottom:10px;">
           <label style="font-size:11.5px;">${escapeHtml(label)}</label>
           <input class="input" id="naming-manual" data-source="${source}" placeholder="${escapeHtml(placeholder)}" />
@@ -549,7 +549,7 @@ function paintNaming(root, brandId, brand) {
       <div style="display:grid;gap:12px;max-width:640px;">
         ${NAMING_STRATEGIES.map(
           (s) => `
-          <button type="button" class="card card-tight" data-naming-strategy="${s.key}" style="text-align:left;cursor:pointer;">
+          <button type="button" class="card dark-surface card-tight" data-naming-strategy="${s.key}" style="text-align:left;cursor:pointer;">
             <div style="font-size:13.5px;font-weight:700;margin-bottom:4px;">${escapeHtml(s.label)}</div>
             <div class="text-muted" style="font-size:12px;margin-bottom:6px;">${escapeHtml(s.desc)}</div>
             <div class="text-faint" style="font-size:11px;">${s.examples.map(escapeHtml).join(" · ")}</div>
@@ -567,7 +567,7 @@ function paintNaming(root, brandId, brand) {
   function selfInputHTML() {
     return `
       ${strategyBackLinkHTML()}
-      <div class="card" style="max-width:520px;margin-bottom:12px;">
+      <div class="card dark-surface" style="max-width:520px;margin-bottom:12px;">
         <div class="text-faint" style="font-size:11.5px;">${t("builder.naming.selfNote")}</div>
       </div>
       ${manualHTML({ label: t("builder.naming.selfLabel"), placeholder: t("builder.naming.selfPlaceholder"), source: "self", cta: t("guidelines.next") })}
@@ -577,7 +577,7 @@ function paintNaming(root, brandId, brand) {
   function brainstormHTML() {
     return `
       ${strategyBackLinkHTML()}
-      <div class="card" style="max-width:560px;margin-bottom:16px;">
+      <div class="card dark-surface" style="max-width:560px;margin-bottom:16px;">
         <div class="field" style="margin-bottom:10px;">
           <label style="font-size:11.5px;">${t("builder.naming.keywordsLabel")}</label>
           <input class="input" id="naming-keywords" placeholder="${escapeHtml(t("builder.naming.keywordsPlaceholder"))}" />
@@ -597,7 +597,7 @@ function paintNaming(root, brandId, brand) {
     return options
       .map(
         (o, i) => `
-      <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div class="card dark-surface card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <div>
           <div style="font-family:var(--font-display);font-weight:800;font-size:15px;">${escapeHtml(o.name)}</div>
           <div class="text-faint" style="font-size:11.5px;margin-top:2px;">${withBreakdown && o.breakdown ? `${escapeHtml(o.breakdown)} — ` : ""}${escapeHtml(o.reason || "")}</div>
@@ -611,7 +611,7 @@ function paintNaming(root, brandId, brand) {
   function checkHTML() {
     if (state.checkLoading) {
       return `
-        <div class="card" style="max-width:520px;">
+        <div class="card dark-surface" style="max-width:520px;">
           <div style="font-size:13px;margin-bottom:10px;">${t("builder.naming.nameToCheck")} <strong style="font-family:var(--font-display);">${escapeHtml(state.pendingName)}</strong></div>
           <div class="ocr-status"><div class="spinner"></div><span>${t("builder.naming.checking")}</span></div>
         </div>
@@ -619,7 +619,7 @@ function paintNaming(root, brandId, brand) {
     }
     if (!state.checkResult) {
       return `
-        <div class="card" style="max-width:520px;">
+        <div class="card dark-surface" style="max-width:520px;">
           <div style="font-size:13px;margin-bottom:14px;">${t("builder.naming.nameToCheck")} <strong style="font-family:var(--font-display);font-size:17px;">${escapeHtml(state.pendingName)}</strong></div>
           <div class="text-faint" style="font-size:11.5px;margin-bottom:14px;">${t("builder.naming.idealHint")}</div>
           <div class="flex gap-8">
@@ -631,7 +631,7 @@ function paintNaming(root, brandId, brand) {
     }
     if (state.checkResult === "error") {
       return `
-        <div class="card" style="max-width:520px;">
+        <div class="card dark-surface" style="max-width:520px;">
           <div style="font-size:13px;margin-bottom:14px;">${escapeHtml(t("builder.naming.checkError", { reason: state.checkErrorReason || t("builder.naming.aiNotReady") }))}</div>
           <button type="button" class="btn btn-primary" id="naming-check-skip">${escapeHtml(t("builder.naming.continueWith", { name: state.pendingName }))}</button>
         </div>
@@ -640,7 +640,7 @@ function paintNaming(root, brandId, brand) {
     const r = state.checkResult;
     if (!r.tooLong) {
       return `
-        <div class="card" style="max-width:520px;">
+        <div class="card dark-surface" style="max-width:520px;">
           <div style="font-family:var(--font-display);font-weight:800;font-size:20px;margin-bottom:4px;">${escapeHtml(state.pendingName)}</div>
           <div class="text-faint" style="font-size:11.5px;margin-bottom:14px;">${escapeHtml(t("builder.naming.shortEnough", { units: r.units, breakdown: r.breakdown }))}</div>
           ${similarNoteHTML(r)}
@@ -649,7 +649,7 @@ function paintNaming(root, brandId, brand) {
       `;
     }
     return `
-      <div class="card" style="max-width:560px;">
+      <div class="card dark-surface" style="max-width:560px;">
         <div style="font-family:var(--font-display);font-weight:800;font-size:20px;margin-bottom:4px;">${escapeHtml(state.pendingName)}</div>
         <div class="text-faint" style="font-size:11.5px;margin-bottom:14px;">${escapeHtml(t("builder.naming.tooLong", { units: r.units, breakdown: r.breakdown }))}</div>
         ${similarNoteHTML(r)}
@@ -684,7 +684,7 @@ function paintNaming(root, brandId, brand) {
   function suffixRowHTML(slug, sfx) {
     const handle = `${slug}${sfx}`;
     return `
-      <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div class="card dark-surface card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <div style="font-family:var(--font-display);font-weight:700;font-size:13.5px;">@${escapeHtml(handle)}</div>
         <div class="flex gap-8" style="flex:none;">
           ${instagramCheckLinkHTML(handle)}
@@ -698,7 +698,7 @@ function paintNaming(root, brandId, brand) {
     const slug = slugify(state.pendingName);
     const category = NAME_EXTENSION_CATEGORIES.find((c) => c.key === state.extensionCategory);
     return `
-      <div class="card" style="max-width:560px;margin-bottom:12px;">
+      <div class="card dark-surface" style="max-width:560px;margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
           <div style="font-size:13px;">${t("builder.naming.extIntro", { slug: escapeHtml(slug) })}</div>
           ${instagramCheckLinkHTML(slug)}
@@ -715,7 +715,7 @@ function paintNaming(root, brandId, brand) {
             : ""
         }
       </div>
-      <div class="card" style="max-width:560px;margin-bottom:12px;">
+      <div class="card dark-surface" style="max-width:560px;margin-bottom:12px;">
         <div class="field" style="margin-bottom:10px;">
           <label style="font-size:11.5px;">${t("builder.naming.extCustomLabel")}</label>
           <div class="flex gap-8" style="align-items:center;">
@@ -732,7 +732,7 @@ function paintNaming(root, brandId, brand) {
   function doneHTML() {
     const handle = state.handleSuffix ? `${slugify(state.name)}${state.handleSuffix}` : "";
     return `
-      <div class="card" style="max-width:480px;">
+      <div class="card dark-surface" style="max-width:480px;">
         <div class="flex items-center justify-between" style="margin-bottom:10px;">
           <span class="bb-stage-status bb-stage-status-done">${statusLabel("done")}</span>
           <button type="button" class="btn btn-ghost btn-sm" id="naming-change">${icon("refresh", { size: 12 })}${t("builder.naming.changeAnswer")}</button>

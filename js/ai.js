@@ -579,7 +579,23 @@ export function campaignSummaryLine(c, brand) {
   // generation, brainstorming, the Rencana playbook — so execution stays aligned with
   // what the user already decided, without each caller having to know about `campaign.ideas`.
   const ideas = c.ideas?.length ? ` | captured ideas: ${c.ideas.slice(0, 10).map((i) => i.text).join("; ")}` : "";
-  return `- id=${c.id} | name=${c.name} | objective=${c.objective} | key message=${c.keyMessage || "(none set)"} | audience=${c.targetAudience || brand?.brandDNA?.targetAudience || "(not set)"}${window}${ideas}`;
+  // Events (js/store.js buildEventPhases) aren't a growth ladder — they're
+  // a single date the whole campaign counts down to, and the brand's role
+  // that day (running it vs. renting a booth vs. speaking) changes what
+  // "good content" even means. Without this, every AI feature that reuses
+  // this summary line (brainstorm, idea generation, the playbook) treats
+  // an event exactly like a generic campaign and never mentions the date
+  // or the countdown, which is the one thing that actually matters here.
+  const event = c.eventPlan
+    ? ` | EVENT: role=${c.eventPlan.role}${c.eventPlan.participationType ? `(${c.eventPlan.participationType})` : ""}, date=${c.eventPlan.eventDate}, days left=${Math.max(0, daysUntil(c.eventPlan.eventDate))}, location=${c.eventPlan.setup?.eventLocation || "(not set)"}, objectives=${(c.eventPlan.objectives || []).join(", ") || "(none set)"}`
+    : "";
+  return `- id=${c.id} | name=${c.name} | objective=${c.objective} | key message=${c.keyMessage || "(none set)"} | audience=${c.targetAudience || brand?.brandDNA?.targetAudience || "(not set)"}${window}${ideas}${event}`;
+}
+
+function daysUntil(dateStr) {
+  if (!dateStr) return 0;
+  const ms = new Date(`${dateStr}T00:00:00`).getTime() - new Date(new Date().toDateString()).getTime();
+  return Math.round(ms / 86400000);
 }
 
 // Extends buildBrandContext with active-campaign awareness — the shared
@@ -969,6 +985,12 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
     social: "Suggest short content/post ideas for this brand's social media — one-liners a creator could turn straight into a Reels/carousel/story concept.",
     community: "Suggest short community activity ideas — things to DO with the community beyond posting content (meetups, challenges, collabs, member spotlights, giveaways, referral pushes).",
     sales: "Suggest short selling ideas and tactics — promos, bundles, offers, follow-up angles, ways to close more sales. Never suggest paid ads or anything needing ad spend data.",
+    // The campaign summary line above already carries role/date/days-left
+    // (js/ai.js campaignSummaryLine) — lean on that instead of restating
+    // it, but steer the KIND of idea toward the event's actual timeline
+    // (teaser/countdown content before it, day-of content, a recap after)
+    // and toward what this brand specifically does there.
+    event: "Suggest short content ideas for promoting and running this EVENT — teasers/countdown posts building up to it, what to post live on the day, and a recap/thank-you after. Match the angle to the brand's role at the event (running the whole thing vs. renting a booth vs. speaking/sponsoring) and how many days are left before it — an idea due next week should read differently from one for six months out.",
   }[track] || "Suggest short campaign ideas — practical, doable moves that push this campaign forward.";
   const system = [
     `You brainstorm SHORT idea bubbles for a brand's marketing campaign. ${framing}`,

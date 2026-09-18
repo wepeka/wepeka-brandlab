@@ -143,7 +143,7 @@ function emptyHTML(key) {
 // read the new order straight off the DOM — no separate index bookkeeping.
 function widgetShellHTML(key, labelKey, bodyHTML, headerExtraHTML = "") {
   return `
-    <div class="card card-tight brand-analytics-card" data-widget-key="${key}">
+    <div class="card glass-card card-tight brand-analytics-card" data-widget-key="${key}">
       <div class="brand-analytics-card-head">
         <div class="brand-analytics-card-title-row">
           <span class="brand-analytics-drag-handle" draggable="true" data-drag-handle title="${t("brandHome.analytics.dragHint")}">${icon("grip", { size: 14 })}</span>
@@ -249,7 +249,7 @@ export function analyticsSectionHTML(content, settings, state) {
         <h2>${t("brandHome.analytics.title")}</h2>
         ${customizeButtonHTML()}
       </div>
-      <div class="card card-tight" style="margin-bottom:28px;">${emptyHTML("noPublished")}</div>
+      <div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noPublished")}</div>
     `;
   }
 
@@ -310,7 +310,7 @@ export function analyticsSectionHTML(content, settings, state) {
     ${
       keys.length
         ? `<div class="brand-analytics-grid" style="margin-bottom:28px;">${keys.map((k) => widgetHTML(k, data)).join("")}</div>`
-        : `<div class="card card-tight" style="margin-bottom:28px;">${emptyHTML("noWidgets")}</div>`
+        : `<div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noWidgets")}</div>`
     }
   `;
 }

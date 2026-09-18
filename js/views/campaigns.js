@@ -99,7 +99,7 @@ function paintList(root, brandId, brand, refresh) {
       rest.length
         ? `<div class="brand-grid">${rest.map((c) => campaignCard(brandId, c, content, brand)).join("")}</div>`
         : !campaigns.length
-        ? `<div class="content-view-card" style="max-width:420px;cursor:default;">
+        ? `<div class="content-view-card glass-card" style="max-width:420px;cursor:default;">
              <div class="icon-wrap">${icon("target", { size: 22 })}</div>
              <h3>${t("camp.list.emptyTitle")}</h3>
              <p>${
@@ -121,7 +121,7 @@ function paintList(root, brandId, brand, refresh) {
   }
   function insightBannerHTML(insight) {
     return `
-      <div class="card cross-insight">
+      <div class="card glass-card cross-insight">
         <div class="cross-insight-head"><span class="page-eyebrow">${t("cross.title")}</span><span class="tag" style="font-size:10.5px;">${t(`cross.confidence.${insight.confidence}`)}</span></div>
         <p style="margin:4px 0 0;font-size:13px;">${escapeText(insight.text)}</p>
         <details class="cross-insight-advanced"><summary>${t("cross.advancedLabel")}</summary>
@@ -219,7 +219,7 @@ function campaignCard(brandId, campaign, allContent, brand) {
   // see .campaign-card--track-* in css/campaign.css.
   const track = campaign.goalPlan?.version === 3 ? campaign.goalPlan.track : null;
   return `
-    <div class="brand-card campaign-card ${track ? `campaign-card--track-${track}` : ""}" data-open-campaign="${campaign.id}" style="cursor:pointer;">
+    <div class="brand-card glass-card campaign-card ${track ? `campaign-card--track-${track}` : ""}" data-open-campaign="${campaign.id}" style="cursor:pointer;">
       ${
         guided
           ? `<button class="icon-btn card-menu" data-delete-campaign="${campaign.id}" aria-label="${t("common.delete")}" style="width:30px;height:30px;">${icon("trash", { size: 15 })}</button>`
@@ -606,7 +606,7 @@ function openEventSetupWizard({ brandId, brand, template, onSaved }) {
         </div>
         <div class="field">
           <label for="ef-campaignStartDate">${t("camp.event.promoStart")}</label>
-          <input class="input" id="ef-campaignStartDate" type="date" value="${escapeAttr(state.campaignStartDate)}" ${state.eventDate ? `max="${escapeAttr(state.eventDate)}"` : ""} />
+          <input class="input" id="ef-campaignStartDate" type="date" min="${today}" value="${escapeAttr(state.campaignStartDate)}" ${state.eventDate ? `max="${escapeAttr(state.eventDate)}"` : ""} />
         </div>
       </div>
       <p class="ev-runway ${hint.cls}" id="ef-runway">${icon(hint.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${escapeText(hint.text)}</span></p>
@@ -802,7 +802,14 @@ async function finishEventCampaign({ brandId, brand, template, role, participati
     targetAudience: brand?.brandDNA?.targetAudience || "",
     startDate: campaignStartDate, endDate: eventDate,
     phases: legacyPhases,
-    autoLinkAllContent: true,
+    // Unlike Social Growth (where every post on the platform genuinely
+    // counts toward follower growth), an event's milestones should only
+    // reflect content actually made FOR this event — brainstormed/created
+    // through it, or linked to it by hand. autoLinkAllContent:true here
+    // was sweeping in the brand's entire content list (any campaign, any
+    // status), so a brand-new event could open already showing milestones
+    // "done" from unrelated already-published posts.
+    autoLinkAllContent: false,
     eventPlan: {
       role, participationType: participationType || "", eventDate, scale: scale.id,
       setup: { eventName, eventDate, campaignStartDate, eventLocation, expectedAudience: expectedAudience ?? null },

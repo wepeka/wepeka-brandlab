@@ -9,10 +9,11 @@
 // Logging and export are free for every account; the AI advice follows the
 // same Lifetime gate as Copy Studio. Still 100% manual entry — the page
 // says so, and nothing here asks for or shows ads metrics.
-import { getBrand, listCampaigns, getSettings, unitLabel, localISODate } from "../store.js";
+import { getBrand, listCampaigns, getSettings, unitLabel, localISODate, updateBrand } from "../store.js";
+import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import {
   getTracker, addProduct, updateProduct, logSale, deleteSale, clearAllSales, saveAdvice, productStats, trackerTotals, monthRange, weeklySeries,
-  runningSalesCampaign, salesSnapshotText, activeDiscountPct, effectivePrice,
+  runningSalesCampaign, salesSnapshotText, activeDiscountPct, effectivePrice, eventCampaignsForBrand,
 } from "../sales-tracker.js";
 import { salesModel } from "../goal-plan.js";
 import { suggestSalesActions, hasAiKey, AiApiError } from "../ai.js";
@@ -64,6 +65,8 @@ function paint(root, brandId, state, refresh) {
   const productsCollapsed = isSectionCollapsed(brandId, "products");
   const historyCollapsed = isSectionCollapsed(brandId, "history");
   const hasHistory = tracker.entries.length > 0;
+  const collapsed = new Set(brand.salesWidgetsCollapsed || []);
+  const events = eventCampaignsForBrand(brandId);
 
   root.innerHTML = `
     <div class="page-head">
@@ -78,22 +81,24 @@ function paint(root, brandId, state, refresh) {
     </div>
     <p class="page-sub" style="margin-bottom:22px;">${t("sales.sub")}</p>
     ${active.length ? `
-      ${quickLogHTML(active, state, unit)}
-      <div class="stat-grid">
-        <div class="stat"><div class="label">${t("sales.stat.monthSold")}</div><div class="value">${formatNumber(totals.rangeQty)} <small>${esc(unit)}</small></div><div class="sub">${t("sales.stat.monthSales", { count: totals.rangeCount })}</div></div>
-        <div class="stat"><div class="label">${t("sales.stat.monthRevenue")}</div><div class="value st-money">${rp(totals.rangeRevenue)}</div><div class="sub">${t("sales.stat.revenueNote")}</div></div>
-        <div class="stat"><div class="label">${t("sales.stat.allSold")}</div><div class="value">${formatNumber(totals.sold)} <small>${esc(unit)}</small></div><div class="sub">${t("sales.stat.allSoldNote")}</div></div>
-        <div class="stat"><div class="label">${t("sales.stat.allRevenue")}</div><div class="value st-money">${rp(totals.revenue)}</div><div class="sub">${t("sales.stat.repeatNote", { repeat: totals.repeatCount, referral: totals.referralCount })}</div></div>
-      </div>
+      ${quickLogHTML(active, state, unit, events)}
+      ${collapsed.has("stats") ? widgetCollapsedHTML("stats", "grid", t("sales.keyStats.title"), t("sales.keyStats.summary", { sold: formatNumber(totals.rangeQty), revenue: rp(totals.rangeRevenue) })) : widgetCardHTML("stats", "grid", t("sales.keyStats.title"), `
+        <div class="stat-grid" style="margin-bottom:0;">
+          <div class="stat"><div class="label">${t("sales.stat.monthSold")}</div><div class="value">${formatNumber(totals.rangeQty)} <small>${esc(unit)}</small></div><div class="sub">${t("sales.stat.monthSales", { count: totals.rangeCount })}</div></div>
+          <div class="stat"><div class="label">${t("sales.stat.monthRevenue")}</div><div class="value st-money">${rp(totals.rangeRevenue)}</div><div class="sub">${t("sales.stat.revenueNote")}</div></div>
+          <div class="stat"><div class="label">${t("sales.stat.allSold")}</div><div class="value">${formatNumber(totals.sold)} <small>${esc(unit)}</small></div><div class="sub">${t("sales.stat.allSoldNote")}</div></div>
+          <div class="stat"><div class="label">${t("sales.stat.allRevenue")}</div><div class="value st-money">${rp(totals.revenue)}</div><div class="sub">${t("sales.stat.repeatNote", { repeat: totals.repeatCount, referral: totals.referralCount })}</div></div>
+        </div>
+      `)}
       ${campaignLinkHTML(brandId, campaign)}
-      ${trendHTML(tracker, unit)}
-      ${adviceHTML(tracker, state)}
+      ${trendHTML(tracker, unit, collapsed)}
+      ${adviceHTML(tracker, state, collapsed)}
     ` : emptyHTML()}
     <div class="section-title">
       <h2>${t("sales.products.title")}</h2>
       <div class="flex items-center gap-8">
         <button class="btn btn-secondary btn-sm" id="st-add-product">${icon("plus", { size: 14 })}${t("sales.products.add")}</button>
-        ${collapseToggleHTML("st-products-toggle", productsCollapsed)}
+        ${stats.length ? collapseToggleHTML("st-products-toggle", productsCollapsed) : ""}
       </div>
     </div>
     ${productsHTML(stats, campaign, unit, productsCollapsed)}
@@ -106,17 +111,18 @@ function paint(root, brandId, state, refresh) {
           ${collapseToggleHTML("st-history-toggle-collapse", historyCollapsed)}
         </div>
       </div>
-      ${historyHTML(tracker, state, historyCollapsed)}
+      ${historyHTML(tracker, state, historyCollapsed, events)}
     ` : ""}
   `;
 
   wireHelpButtons(root);
+  wireWidgetToggle(root, { collapsedList: brand.salesWidgetsCollapsed, save: (next) => updateBrand(brandId, { salesWidgetsCollapsed: next }), refresh });
   wire(root, brandId, state, refresh, { brand, tracker, campaign, unit });
 }
 
 function emptyHTML() {
   return `
-    <div class="content-view-card" style="max-width:520px;cursor:default;margin-bottom:8px;">
+    <div class="content-view-card glass-card" style="max-width:520px;cursor:default;margin-bottom:8px;">
       <div class="icon-wrap">${icon("target", { size: 22 })}</div>
       <h3>${t("sales.empty.title")}</h3>
       <p>${t("sales.empty.body")}</p>
@@ -128,14 +134,14 @@ function emptyHTML() {
 // done. Revenue is price × quantity until the user overrides it; date and
 // the two optional flags sit behind "details" so the default path is
 // product → number → save.
-function quickLogHTML(products, state, unit) {
+function quickLogHTML(products, state, unit, events = []) {
   const current = products.find((p) => p.id === state.productId) || products[0];
   const discountPct = activeDiscountPct(current);
   const picker = products.length > 6
     ? `<select class="select input" id="st-product">${products.map((p) => `<option value="${p.id}" ${p.id === current.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
     : `<div class="chip-select" id="st-product-chips" style="flex-wrap:wrap;">${products.map((p) => `<button type="button" data-val="${p.id}" class="${p.id === current.id ? "active" : ""}">${esc(p.name)}</button>`).join("")}</div>`;
   return `
-    <div class="card st-log" id="st-log">
+    <div class="card glass-card st-log" id="st-log">
       <div class="page-eyebrow" style="margin-bottom:10px;">${t("sales.log.title")}</div>
       <div class="field"><label>${t("sales.log.product")}</label>${picker}</div>
       <div class="st-log-row">
@@ -150,6 +156,15 @@ function quickLogHTML(products, state, unit) {
           <div class="field"><label for="st-date">${t("sales.log.date")}</label><input class="input" type="date" id="st-date" value="${localISODate()}" max="${localISODate()}" /></div>
           <div class="field" style="flex:2;"><label for="st-note">${t("sales.log.note")}</label><input class="input" id="st-note" maxlength="140" autocomplete="off" placeholder="${esc(t("sales.log.notePh"))}" /></div>
         </div>
+        ${events.length ? `
+        <div class="field" style="margin-top:10px;">
+          <label for="st-event">${t("sales.log.event")}</label>
+          <select class="select input" id="st-event">
+            <option value="">${t("sales.log.eventNone")}</option>
+            ${events.map((ev) => `<option value="${ev.id}">${esc(ev.name || "")}${ev.eventPlan?.eventDate ? ` — ${esc(formatDate(ev.eventPlan.eventDate, { year: undefined }))}` : ""}</option>`).join("")}
+          </select>
+          <p class="ev-field-hint">${t("sales.log.eventHint")}</p>
+        </div>` : ""}
         <div class="flex items-center gap-8" style="flex-wrap:wrap;">
           <label class="checkbox-chip"><input type="checkbox" id="st-repeat" />${t("sales.log.repeat")}</label>
           <label class="checkbox-chip"><input type="checkbox" id="st-referral" />${t("sales.log.referral")}</label>
@@ -161,32 +176,32 @@ function quickLogHTML(products, state, unit) {
 
 function campaignLinkHTML(brandId, campaign) {
   return campaign
-    ? `<a class="card card-tight st-campaign" href="#/brand/${brandId}/campaigns/${campaign.id}">${icon("target", { size: 16 })}<span><b>${esc(campaign.name)}</b> — ${t("sales.campaign.synced")}</span>${icon("arrowRight", { size: 14 })}</a>`
-    : `<a class="card card-tight st-campaign" href="#/brand/${brandId}/campaigns">${icon("target", { size: 16 })}<span>${t("sales.campaign.none")}</span>${icon("arrowRight", { size: 14 })}</a>`;
+    ? `<a class="card glass-card card-tight st-campaign" href="#/brand/${brandId}/campaigns/${campaign.id}">${icon("target", { size: 16 })}<span><b>${esc(campaign.name)}</b> — ${t("sales.campaign.synced")}</span>${icon("arrowRight", { size: 14 })}</a>`
+    : `<a class="card glass-card card-tight st-campaign" href="#/brand/${brandId}/campaigns">${icon("target", { size: 16 })}<span>${t("sales.campaign.none")}</span>${icon("arrowRight", { size: 14 })}</a>`;
 }
 
-function trendHTML(tracker, unit) {
+function trendHTML(tracker, unit, collapsed) {
   const series = weeklySeries(tracker);
   const max = Math.max(1, ...series.map((w) => w.qty));
   if (!series.some((w) => w.qty)) return "";
-  return `
-    <div class="section-title"><h2>${t("sales.trend.title")}</h2><span class="text-faint" style="font-size:12px;">${t("sales.trend.sub", { unit })}</span></div>
-    <div class="card st-trend">
-      ${series.map((w, i) => `
-        <div class="st-bar-col" title="${esc(formatDate(w.from, { year: undefined }))} – ${esc(formatDate(w.to, { year: undefined }))}: ${formatNumber(w.qty)} ${esc(unit)} · ${rp(w.revenue)}">
-          <span class="st-bar-val">${w.qty ? formatNumber(w.qty) : ""}</span>
-          <span class="st-bar ${i === series.length - 1 ? "is-now" : ""}" style="height:${Math.max(w.qty ? 6 : 2, Math.round((w.qty / max) * 100))}%"></span>
-          <span class="st-bar-label">${esc(formatDate(w.from, { year: undefined }))}</span>
-        </div>`).join("")}
-    </div>`;
+  if (collapsed.has("trend")) return widgetCollapsedHTML("trend", "chart", t("sales.trend.title"), t("sales.trend.summary", { unit }));
+  return widgetCardHTML("trend", "chart", t("sales.trend.title"), `
+      <div class="st-trend" style="padding:0;">
+        ${series.map((w, i) => `
+          <div class="st-bar-col" title="${esc(formatDate(w.from, { year: undefined }))} – ${esc(formatDate(w.to, { year: undefined }))}: ${formatNumber(w.qty)} ${esc(unit)} · ${rp(w.revenue)}">
+            <span class="st-bar-val">${w.qty ? formatNumber(w.qty) : ""}</span>
+            <span class="st-bar ${i === series.length - 1 ? "is-now" : ""}" style="height:${Math.max(w.qty ? 6 : 2, Math.round((w.qty / max) * 100))}%"></span>
+            <span class="st-bar-label">${esc(formatDate(w.from, { year: undefined }))}</span>
+          </div>`).join("")}
+      </div>
+    `, { sub: t("sales.trend.sub", { unit }) });
 }
 
-function adviceHTML(tracker, state) {
+function adviceHTML(tracker, state, collapsed) {
   const lifetime = isLifetime(getCachedAccount());
   const a = tracker.lastAdvice;
-  return `
-    <div class="section-title"><h2>${t("sales.advice.title")}${lifetime ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}</h2></div>
-    <div class="card st-advice">
+  if (collapsed.has("advice")) return widgetCollapsedHTML("advice", "sparkle", t("sales.advice.title"), a ? t("sales.advice.summary", { count: (a.actions || []).length }) : t("sales.advice.summaryEmpty"));
+  return widgetCardHTML("advice", "sparkle", `${t("sales.advice.title")}${lifetime ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}`, `
       ${state.adviceBusy
         ? `<div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("sales.advice.busy")}</span></div>`
         : a
@@ -199,7 +214,7 @@ function adviceHTML(tracker, state) {
         ? `<button class="btn ${a ? "btn-secondary" : "btn-primary"}" id="st-advice-go" style="margin-top:10px;">${icon("sparkle", { size: 14 })}${a ? t("sales.advice.again") : t("sales.advice.go")}</button>`
         : `<a class="btn btn-secondary" href="#/pricing" style="margin-top:10px;">${icon("lock", { size: 13 })}${t("sales.advice.locked")}</a>`}
       <p class="ev-field-hint" style="margin:10px 0 0;">${t("sales.advice.note")}</p>
-    </div>`;
+    `);
 }
 
 function collapseToggleHTML(id, collapsed) {
@@ -209,7 +224,7 @@ function collapseToggleHTML(id, collapsed) {
 function productsHTML(stats, campaign, unit, collapsed) {
   const rows = stats.filter((s) => !s.product.archived);
   const archived = stats.filter((s) => s.product.archived);
-  if (!rows.length && !archived.length) return `<div class="card card-tight"><div class="table-empty" style="padding:28px;">${t("sales.products.empty")}</div></div>`;
+  if (!rows.length && !archived.length) return `<div class="card glass-card card-tight"><div class="table-empty" style="padding:28px;">${t("sales.products.empty")}</div></div>`;
   if (collapsed) return "";
   const targetOf = (id) => campaign?.goalPlan?.products?.find((p) => p.id === id)?.target || null;
   const row = (s) => {
@@ -237,17 +252,18 @@ function productsHTML(stats, campaign, unit, collapsed) {
     </table></div></div>`;
 }
 
-function historyHTML(tracker, state, collapsed) {
+function historyHTML(tracker, state, collapsed, events = []) {
   const byId = Object.fromEntries(tracker.products.map((p) => [p.id, p]));
+  const eventById = Object.fromEntries(events.map((ev) => [ev.id, ev]));
   const list = [...tracker.entries].sort((a, b) => (b.date === a.date ? b.at - a.at : b.date < a.date ? -1 : 1));
   const shown = state.showAll ? list : list.slice(0, HISTORY_PAGE);
   if (collapsed) return "";
   return `
-    <div class="card card-tight">
+    <div class="card glass-card card-tight">
       ${shown.length ? shown.map((e) => `
         <div class="st-entry">
           <span class="st-entry-date">${esc(formatDate(e.date, { year: undefined }))}</span>
-          <span class="st-entry-main"><b>${formatNumber(e.qty)}× ${esc(byId[e.productId]?.name || "—")}</b>${e.repeat ? ` <span class="tag">${t("sales.tag.repeat")}</span>` : ""}${e.referral ? ` <span class="tag">${t("sales.tag.referral")}</span>` : ""}${e.note ? `<small>${esc(e.note)}</small>` : ""}</span>
+          <span class="st-entry-main"><b>${formatNumber(e.qty)}× ${esc(byId[e.productId]?.name || "—")}</b>${e.repeat ? ` <span class="tag">${t("sales.tag.repeat")}</span>` : ""}${e.referral ? ` <span class="tag">${t("sales.tag.referral")}</span>` : ""}${e.eventId && eventById[e.eventId] ? ` <span class="tag">${icon("calendar", { size: 10 })}${esc(eventById[e.eventId].name || "")}</span>` : ""}${e.note ? `<small>${esc(e.note)}</small>` : ""}</span>
           <span class="st-entry-amount">${rp(e.amount)}</span>
           <button class="icon-btn" data-st-delete="${e.id}" aria-label="${t("common.delete")}" style="width:28px;height:28px;">${icon("trash", { size: 13 })}</button>
         </div>`).join("") : `<div class="table-empty" style="padding:28px;">${t("sales.history.empty")}</div>`}
@@ -303,6 +319,7 @@ function wire(root, brandId, state, refresh, { brand, tracker, campaign, unit })
       productId: state.productId, qty, amount: amountEl.dataset.auto === "1" ? null : toNum(amountEl.value),
       date: qs("#st-date", root)?.value || localISODate(), note: qs("#st-note", root)?.value || "",
       repeat: !!qs("#st-repeat", root)?.checked, referral: !!qs("#st-referral", root)?.checked,
+      eventId: qs("#st-event", root)?.value || null,
     });
     if (!entry) return;
     toast(t(campaign ? "sales.log.savedSynced" : "sales.log.saved", { qty: formatNumber(entry.qty), name: tracker.products.find((p) => p.id === entry.productId)?.name || "" }));
@@ -329,7 +346,7 @@ function wire(root, brandId, state, refresh, { brand, tracker, campaign, unit })
     refresh();
   });
   qs("#st-history-clear", root)?.addEventListener("click", async () => {
-    const ok = await confirmDialog({ title: t("sales.history.clearAllTitle"), message: t("sales.history.clearAllBody"), confirmLabel: t("sales.history.clearAll"), danger: true });
+    const ok = await confirmDialog({ title: t("sales.history.clearAllTitle"), message: t("sales.history.clearAllBody", { count: tracker.entries.length }), confirmLabel: t("sales.history.clearAll"), danger: true });
     if (!ok) return;
     clearAllSales(brandId);
     toast(t("sales.history.clearAllDone"));
@@ -432,6 +449,7 @@ function openProductModal({ brandId, unit, product = null, onSaved }) {
 function exportSheets(brand, unit) {
   const tracker = getTracker(brand);
   const byId = Object.fromEntries(tracker.products.map((p) => [p.id, p]));
+  const eventById = Object.fromEntries(eventCampaignsForBrand(brand.id).map((ev) => [ev.id, ev]));
   const yesNo = (v) => (v ? t("sales.export.yes") : "");
   const entries = [...tracker.entries].sort((a, b) => (a.date === b.date ? a.at - b.at : a.date < b.date ? -1 : 1));
   const months = {};
@@ -445,8 +463,8 @@ function exportSheets(brand, unit) {
     {
       name: t("sales.export.sheetSales"),
       rows: [
-        [t("sales.log.date"), t("sales.col.product"), t("sales.export.qty", { unit }), t("sales.export.unitPrice"), t("sales.export.revenue"), t("sales.tag.repeat"), t("sales.tag.referral"), t("sales.log.note")],
-        ...entries.map((e) => [e.date, byId[e.productId]?.name || "—", e.qty, e.qty ? Math.round(e.amount / e.qty) : 0, e.amount, yesNo(e.repeat), yesNo(e.referral), e.note || ""]),
+        [t("sales.log.date"), t("sales.col.product"), t("sales.export.qty", { unit }), t("sales.export.unitPrice"), t("sales.export.revenue"), t("sales.tag.repeat"), t("sales.tag.referral"), t("sales.log.event"), t("sales.log.note")],
+        ...entries.map((e) => [e.date, byId[e.productId]?.name || "—", e.qty, e.qty ? Math.round(e.amount / e.qty) : 0, e.amount, yesNo(e.repeat), yesNo(e.referral), e.eventId ? eventById[e.eventId]?.name || "" : "", e.note || ""]),
       ],
     },
     {

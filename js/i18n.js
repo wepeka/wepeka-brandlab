@@ -103,6 +103,7 @@ const CORE = {
   "brandHome.widget.copy.sub": { en: "Copy for Threads, Stories & WhatsApp", id: "Tulisan buat Threads, Story & WhatsApp" },
   "brandHome.upNext.title": { en: "Up next", id: "Jadwal berikutnya" },
   "brandHome.upNext.calendarLink": { en: "Calendar →", id: "Kalender →" },
+  "brandHome.upNext.summary": { en: "{count} scheduled", id: "{count} terjadwal" },
   "brandHome.upNext.empty": { en: "Nothing scheduled yet.", id: "Belum ada yang dijadwalkan." },
   "brandHome.analytics.title": { en: "Analytics", id: "Analitik" },
   "brandHome.analytics.customize": { en: "Customize", id: "Sesuaikan" },

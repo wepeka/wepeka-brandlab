@@ -909,7 +909,7 @@ const MISSION_KEYS = new Map(Object.entries({
   // Dikenal/Dipercaya are reused as-is by the new Social Media Growth track.
   Dikenal: "gb1", Dipercaya: "gb2", Komunitas: "gb3", Penjualan: "gb4",
   // Community Growth levels (js/goal-plan.js COMMUNITY_LEVELS)
-  Rancang: "com0", Bergabung: "com1", "Partisipasi Aktif": "com2", "Rasa Memiliki": "com3", Mandiri: "com4",
+  Rancang: "com0", Bergabung: "com1", "Partisipasi Aktif": "com2", "Rasa Memiliki": "com3", Mandiri: "com4", Advokasi: "com5", Ekosistem: "com6",
   // Social Media Growth checkpoint ladder (js/goal-plan.js SOCIAL_LEVELS)
   "Mulai Ditemukan": "sm1", "Mulai Dikenal": "sm2", "Mulai Dipercaya": "sm3", "Punya Pengaruh": "sm4", "Jadi Rujukan": "sm5", "Top of Mind": "sm6",
   // Sales Growth levels (js/goal-plan.js SALES_LEVELS)

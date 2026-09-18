@@ -1,5 +1,5 @@
 import { getCachedAccount, isLifetime } from "../account.js";
-import { getBrand, listContent, listCampaigns, campaignPhaseCoverage, listOverdueAndDueSoon, getSettings, onChange } from "../store.js";
+import { getBrand, listContent, listCampaigns, campaignPhaseCoverage, listOverdueAndDueSoon, getSettings, onChange, updateBrand } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, formatNumber, qs, qsa, escapeHtml as escapeText } from "../dom.js";
 import { getTracker, trackerTotals, monthRange } from "../sales-tracker.js";
@@ -9,6 +9,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
 import { celebrateBuilderCompleteIfFlagged } from "./brand-builder.js";
 import { brandTopAction } from "../next-action.js";
+import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 
 // The brand's command center — a "what do I do next" strip and shortcut
 // widgets up top (unchanged from the original spec below), plus a
@@ -72,6 +73,7 @@ function paint(root, brandId, state, refresh) {
   const scheduled = allContent.filter((c) => c.status === "scheduled");
   const upNext = [...scheduled].sort((a, b) => (a.scheduleDate || "9999").localeCompare(b.scheduleDate || "9999")).slice(0, 5);
   const brandOverdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId);
+  const collapsed = new Set(brand.homeCollapsed || []);
 
   root.innerHTML = `
     <div class="page-head">
@@ -94,31 +96,30 @@ function paint(root, brandId, state, refresh) {
       ${salesWidgetHTML(brand)}
     </div>
 
-    <div class="section-title" style="margin-top:0;">
-      <h2>${t("brandHome.upNext.title")}</h2>
-      <a class="link" href="#/brand/${brandId}/content-os/calendar">${t("brandHome.upNext.calendarLink")}</a>
-    </div>
-    <div class="card card-tight" style="margin-bottom:28px;">
-      ${
-        upNext.length
-          ? upNext.map(upNextRow).join("")
-          : `<div class="table-empty" style="padding:28px;">${t("brandHome.upNext.empty")}</div>`
-      }
-    </div>
+    ${
+      collapsed.has("upNext")
+        ? widgetCollapsedHTML("upNext", "calendar", t("brandHome.upNext.title"), t("brandHome.upNext.summary", { count: upNext.length }))
+        : widgetCardHTML("upNext", "calendar", t("brandHome.upNext.title"), `
+            <div class="card card-tight" style="margin-bottom:0;">
+              ${
+                upNext.length
+                  ? upNext.map(upNextRow).join("")
+                  : `<div class="table-empty" style="padding:28px;">${t("brandHome.upNext.empty")}</div>`
+              }
+            </div>
+          `, { extraHead: `<a class="link" href="#/brand/${brandId}/content-os/calendar">${t("brandHome.upNext.calendarLink")}</a>` })
+    }
 
     ${analyticsSectionHTML(allContent, getSettings(), state)}
   `;
 
   wireHelpButtons(root);
   wireAnalyticsSection(root, state, refresh);
+  wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
 
   qsa("[data-go]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.dataset.go;
-      if (btn.dataset.goCampaign) {
-        location.hash = `#/brand/${brandId}/campaigns/${btn.dataset.goCampaign}`;
-        return;
-      }
       location.hash = target === "campaigns" || target === "builder" || target === "content-os" || target === "copy" || target === "sales"
         ? `#/brand/${brandId}/${target}`
         : `#/brand/${brandId}`;
@@ -132,7 +133,7 @@ function paint(root, brandId, state, refresh) {
 
 function copyWidgetHTML() {
   return `
-    <button type="button" class="brand-widget widget-copy widget-featured" data-go="copy">
+    <button type="button" class="brand-widget glass-card widget-copy widget-featured" data-go="copy">
       <div class="copy-badge">${icon("chat", { size: 22 })}</div>
       <div>
         <h3>${t("brandHome.widget.copy.title")}${isLifetime(getCachedAccount()) ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}</h3>
@@ -148,7 +149,7 @@ function salesWidgetHTML(brand) {
   const tracker = getTracker(brand);
   const month = trackerTotals(tracker, monthRange());
   return `
-    <button type="button" class="brand-widget widget-sales widget-featured" data-go="sales">
+    <button type="button" class="brand-widget glass-card widget-sales widget-featured" data-go="sales">
       <div class="folder-badge">${icon("target", { size: 22 })}</div>
       <div>
         <h3>${t("brandHome.widget.sales.title")}</h3>
@@ -166,7 +167,7 @@ function overdueBannerHTML(overdue) {
   if (!overdue.length) return "";
   const extra = overdue.length - 3;
   return `
-    <div class="overdue-banner">
+    <div class="overdue-banner glass-card">
       <div class="overdue-banner-head">
         ${icon("bell", { size: 18 })}
         <div>
@@ -253,7 +254,7 @@ function healthStripHTML(brandId, dnaProgress, campaigns, content) {
   return `
     <div class="brand-health-strip">
       ${items.map((it) => `
-        <a class="brand-health-item" href="${it.href}">
+        <a class="brand-health-item glass-card" href="${it.href}">
           <span class="health-badge health-${it.tier}">${it.value}</span>
           <span class="brand-health-label">${it.label}</span>
         </a>
@@ -282,7 +283,7 @@ function brandBuilderWidgetHTML(progress, guidelines) {
     ? ["primary", "secondary", "accent", "background", "text"].map((k) => guidelines.colors[k])
     : ["var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)", "var(--surface-2)"];
   return `
-    <button type="button" class="brand-widget widget-dna widget-featured" data-go="builder">
+    <button type="button" class="brand-widget glass-card widget-dna widget-featured" data-go="builder">
       <div class="ring-wrap">
         <svg viewBox="0 0 72 72">
           <circle class="ring-track" cx="36" cy="36" r="${r}"></circle>
@@ -308,7 +309,7 @@ function campaignWidgetHTML(count, top = null) {
     dots += `<span class="mj-dot ${i < filled ? "filled" : ""}"></span>`;
   }
   return `
-    <button type="button" class="brand-widget widget-campaign widget-featured" data-go="campaigns" ${top ? `data-go-campaign="${top.campaign.id}"` : ""}>
+    <button type="button" class="brand-widget glass-card widget-campaign widget-featured" data-go="campaigns">
       <div class="icon-wrap">${icon("bulb", { size: 20 })}</div>
       <h3>${t("brandHome.widget.campaign.title")}</h3>
       <p>${count ? t("brandHome.widget.campaign.count", { count }) : t("brandHome.widget.campaign.empty")}</p>
@@ -320,7 +321,7 @@ function campaignWidgetHTML(count, top = null) {
 
 function contentOsWidgetHTML(total, published) {
   return `
-    <button type="button" class="brand-widget widget-content-os widget-featured" data-go="content-os">
+    <button type="button" class="brand-widget glass-card widget-content-os widget-featured" data-go="content-os">
       <div class="stack">
         <span class="stack-card"></span>
         <span class="stack-card"></span>

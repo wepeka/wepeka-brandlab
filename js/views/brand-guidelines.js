@@ -382,7 +382,7 @@ function foundationStepHTML(brand, state) {
   return `
     <h2 style="margin-bottom:6px;">${t("guidelines.step.foundation")}</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 18px;">${t("bg.foundation.sub")}</p>
-    <div class="card card-tight" style="margin-bottom:14px;">
+    <div class="card dark-surface card-tight" style="margin-bottom:14px;">
       ${reviewRow(t("bg.foundation.brandName"), brand.name)}
       ${reviewRow(t("bg.foundation.tagline"), dna.tagline)}
       ${reviewRow(t("bg.foundation.audience"), dna.targetAudience)}
@@ -436,7 +436,7 @@ function mascotsHTML(state) {
       ${mascots
         .map(
           (m, i) => `
-        <div class="card card-tight" style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
+        <div class="card dark-surface card-tight" style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
           <img src="${m.dataUrl}" alt="${escapeHtml(m.name)}" style="width:48px;height:48px;object-fit:contain;border-radius:8px;background:var(--surface-2);flex:none;" />
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:700;">${escapeHtml(m.name)}</div>
@@ -518,11 +518,11 @@ const richText = (text) => escapeHtml(text || "").replace(/\*\*(.+?)\*\*/g, "<b>
 function noLogoGuideHTML(state, brand) {
   const prompt = logoAiPromptText(brand, state.answers);
   return `
-    <div class="card card-tight" style="font-size:12.5px;line-height:1.6;color:var(--text-muted);margin-bottom:12px;">
+    <div class="card dark-surface card-tight" style="font-size:12.5px;line-height:1.6;color:var(--text-muted);margin-bottom:12px;">
       <p style="margin:0 0 8px;">${richText(t("guidelines.logo.forms"))}</p>
       <p style="margin:0;">${t("guidelines.logo.flat")}</p>
     </div>
-    <div class="card" style="margin-bottom:12px;">
+    <div class="card dark-surface" style="margin-bottom:12px;">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:12px;">${icon("bot", { size: 13 })} ${t("guidelines.logo.chatgptTitle")}</div>
       <ol style="margin:0 0 14px;padding-left:18px;font-size:12.5px;line-height:1.9;color:var(--text-muted);">
         <li>${t("guidelines.logo.chatgptS1")}</li>
@@ -536,7 +536,7 @@ function noLogoGuideHTML(state, brand) {
         <a class="btn btn-primary btn-sm" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">${icon("bot", { size: 12 })}${t("guidelines.logo.openChatgpt")} ↗</a>
       </div>
     </div>
-    <div class="card logo-ai-upload">
+    <div class="card dark-surface logo-ai-upload">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">${icon("upload", { size: 13 })} ${t("guidelines.logo.uploadAiTitle")}</div>
       <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("guidelines.logo.uploadAiBody")} ${t("guidelines.logo.pngHint")}</p>
       <div class="logo-gallery"><button type="button" class="logo-add-tile" id="logo-add-ai" aria-label="${t("guidelines.logo.uploadAiTitle")}">${icon("upload", { size: 18 })}</button></div>
@@ -553,7 +553,7 @@ function noLogoGuideHTML(state, brand) {
 function logoColorSuggestionHTML(state) {
   if (!state.suggestedPaletteFromLogo?.length) return "";
   return `
-    <div class="card card-tight" style="margin-top:12px;">
+    <div class="card dark-surface card-tight" style="margin-top:12px;">
       <div class="flex items-center justify-between" style="margin-bottom:10px;">
         <span style="font-size:12.5px;font-weight:700;">${icon("palette", { size: 13 })} ${t("bg.logo.fromLogoTitle")}</span>
         <button type="button" class="btn btn-secondary btn-sm" id="use-logo-palette">${t("bg.logo.useForColor")}</button>
@@ -722,7 +722,7 @@ function colorStepHTML(state, brand) {
       <div class="flex gap-8" style="flex-wrap:wrap;margin-bottom:14px;">
         ${COLOR_FORMULA_INFO.map(
           (f) => `
-          <label class="card card-tight" style="cursor:pointer;flex:1;min-width:190px;${formula === f.key ? "border-color:var(--accent);" : ""}">
+          <label class="card dark-surface card-tight" style="cursor:pointer;flex:1;min-width:190px;${formula === f.key ? "border-color:var(--accent);" : ""}">
             <input type="radio" name="color-formula" value="${f.key}" data-formula ${formula === f.key ? "checked" : ""} style="position:absolute;opacity:0;" />
             <div style="font-weight:800;font-size:13px;margin-bottom:4px;">${f.label}</div>
             <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">${f.desc}</div>
@@ -742,7 +742,7 @@ function colorStepHTML(state, brand) {
       ${
         state.extractedColors?.length
           ? `
-        <div class="card card-tight" style="margin-bottom:0;">
+        <div class="card dark-surface card-tight" style="margin-bottom:0;">
           <div style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${t("bg.color.fromPhoto")}</div>
           <div class="bb-palette-row" style="margin-bottom:10px;">${state.extractedColors.map((c, i) => `<div class="bb-swatch" data-extracted-swatch="${i}" title="${escapeHtml(t("bg.color.swatchUse", { hex: c }))}" style="background:${c};cursor:pointer;"></div>`).join("")}</div>
           <button type="button" class="btn btn-secondary" id="use-extracted-palette">${t("bg.color.useFive")}</button>
@@ -754,7 +754,7 @@ function colorStepHTML(state, brand) {
     ${
       computed
         ? `
-      <div class="card card-tight" style="margin-bottom:16px;">
+      <div class="card dark-surface card-tight" style="margin-bottom:16px;">
         <div class="flex items-center justify-between" style="margin-bottom:10px;">
           <span style="font-size:12.5px;font-weight:700;">${escapeHtml(t("bg.color.autoPalette", { formula: COLOR_FORMULA_INFO.find((f) => f.key === formula)?.label || formula }))}</span>
           <button type="button" class="btn btn-secondary" id="use-computed-palette" style="padding:6px 12px;font-size:11.5px;">${t("bg.color.usePalette")}</button>
@@ -764,7 +764,7 @@ function colorStepHTML(state, brand) {
     `
         : `<p class="text-faint" style="font-size:12px;margin-bottom:16px;">${formula ? t("bg.color.hintBase") : t("bg.color.hintBoth")}</p>`
     }
-    <div class="card card-tight" style="margin-bottom:8px;">
+    <div class="card dark-surface card-tight" style="margin-bottom:8px;">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:2px;">${t("bg.color.customize")}</div>
       <p class="text-faint" style="font-size:11px;margin:0 0 10px;">${t("bg.color.typeHexHint")}</p>
       <div class="bb-color-main-row">${["primary", "secondary", "accent"].map((k) => colorFieldHTML(k, a.colors[k], true)).join("")}</div>
@@ -1070,7 +1070,7 @@ function trackingKerningLeadingHTML(a) {
   const roles = ["primary", "secondary", "accent"].filter((r) => a.fonts[r]);
   if (!roles.length) return "";
   return `
-    <div class="card" style="margin:18px 0;">
+    <div class="card dark-surface" style="margin:18px 0;">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">Tracking, Kerning &amp; Leading</div>
       <p class="text-faint" style="font-size:11px;line-height:1.6;margin:0 0 14px;">${t("bg.type.tklBody")}</p>
       ${roles.map((r) => spacingRoleHTML(r, a)).join("")}
@@ -1146,7 +1146,7 @@ function fontRecommenderHTML(state, brand) {
   const category = FONT_CATEGORIES.find((c) => c.key === state.fontRecommenderCategory);
   const chips = TYPOGRAPHY_FEELINGS.map((f) => chipHTML(f, feelingLabel(f), a.typographyFeelings.includes(f), "data-feeling")).join("");
   return `
-    <div class="card card-tight" style="margin-bottom:18px;">
+    <div class="card dark-surface card-tight" style="margin-bottom:18px;">
       <div class="flex items-center justify-between" style="margin-bottom:12px;">
         <span style="font-size:12.5px;font-weight:700;">${t("bg.type.recTitle")}</span>
         <button type="button" class="btn btn-ghost btn-sm" id="toggle-font-recommender">${icon("x", { size: 11 })}${t("common.close")}</button>
@@ -1171,7 +1171,7 @@ function fontCategoryRecommendationHTML(category) {
   const pairing = FONT_CATEGORY_PAIRINGS[category.key];
   if (pairing) { ensureGoogleFont(pairing.primary); ensureGoogleFont(pairing.secondary); }
   return `
-    <div class="card card-tight" style="background:var(--surface-2);">
+    <div class="card dark-surface card-tight" style="background:var(--surface-2);">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">${escapeHtml(t("bg.type.catFit", { label: category.label }))}</div>
       <div class="text-muted" style="font-size:12px;margin-bottom:10px;">${escapeHtml(category.desc)}</div>
       <a href="${category.googleFontsUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-bottom:${pairing ? "14px" : "0"};">${icon("link", { size: 12 })}${escapeHtml(t("bg.type.catBrowse", { label: category.label }))}</a>
@@ -1538,7 +1538,7 @@ function toneStepHTML(state) {
   return `
     <h2 style="margin-bottom:6px;" class="flex items-center gap-6">${t("guidelines.tone.title")}${helpButtonHTML("term-tone")}</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("guidelines.tone.sub")}</p>
-    <details class="card tov-detect" ${tv.source && !state.toneDetectOpen ? "" : "open"}>
+    <details class="card dark-surface tov-detect" ${tv.source && !state.toneDetectOpen ? "" : "open"}>
       <summary>${icon("bot", { size: 14 })}${t("guidelines.tone.detectTitle")}</summary>
       <p class="text-faint" style="font-size:12px;margin:8px 0 10px;">${t("guidelines.tone.detectBody")}</p>
       <div class="flex gap-8" style="align-items:flex-start;">
@@ -1548,14 +1548,14 @@ function toneStepHTML(state) {
       <button type="button" class="btn btn-secondary btn-sm" id="tov-detect" style="margin-top:8px;">${icon("bot", { size: 13 })}${t("guidelines.tone.detectBtn")}</button>
       <div id="tov-detect-status" class="text-faint" style="font-size:11.5px;margin-top:6px;"></div>
     </details>
-    <div class="card" style="margin:14px 0;">
+    <div class="card dark-surface" style="margin:14px 0;">
       ${TONE_AXES.map((axis) => toneAxisRowHTML(axis, tv[axis.key])).join("")}
     </div>
-    <div class="card card-tight" style="margin-bottom:14px;">
+    <div class="card dark-surface card-tight" style="margin-bottom:14px;">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">${t("guidelines.tone.exampleTitle")}</div>
       <p id="tov-example" style="font-size:13px;line-height:1.7;font-style:italic;margin:0;">${escapeHtml(toneExampleDisplay(tv.formal, tv.character))}</p>
     </div>
-    <div class="card">
+    <div class="card dark-surface">
       <div class="field" style="margin-bottom:0;">
         <label style="font-size:11.5px;">${t("guidelines.tone.avoidLabel")}</label>
         <div class="chip-list">
@@ -2766,7 +2766,7 @@ function reviewHTML(brand, state) {
     <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("bg.review.sub")}</p>
     ${
       needsAiCopy(a)
-        ? `<div class="card card-tight" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        ? `<div class="card dark-surface card-tight" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
              <div style="font-size:12.5px;color:var(--text-muted);max-width:480px;">${icon("bot", { size: 13 })} ${escapeHtml(t("bg.review.aiNote"))}</div>
              <button type="button" class="btn btn-secondary btn-sm" id="generate-ai-copy">${icon("bot", { size: 13 })}${t("bg.review.generate")}</button>
            </div>

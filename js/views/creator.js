@@ -180,7 +180,13 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       }
 
       <button type="button" class="btn btn-primary btn-block" id="ai-generate">${icon("bot", { size: 14 })}${t("cr.ai.generate")}</button>
-      <div id="ai-result" style="margin-top:16px;"></div>
+      <div id="ai-result" style="margin-top:16px;">
+        <div id="ai-current-batch"></div>
+        <details class="ai-history" id="ai-history" hidden>
+          <summary>${t("cr.ai.previousGenerated")} (<span id="ai-history-count">0</span>)</summary>
+          <div id="ai-history-list"></div>
+        </details>
+      </div>
     `,
     footHTML: `<button class="btn btn-secondary" id="ai-close">${t("common.close")}</button>`,
   });
@@ -263,7 +269,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     const loadingEl = document.createElement("div");
     loadingEl.className = "ocr-status";
     loadingEl.innerHTML = `<div class="spinner"></div><span>${t("cr.ai.writing")}</span>`;
-    resultEl.appendChild(loadingEl);
+    resultEl.insertBefore(loadingEl, resultEl.firstChild);
     try {
       const params = genParams();
       if (demo) toast(DEMO_TOAST);
@@ -274,7 +280,6 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       const batchEl = document.createElement("div");
       batchEl.className = "ai-batch";
       batchEl.innerHTML = `
-        ${batchCount > 1 ? `<div class="divider"></div>` : ""}
         <div id="hooks-section"></div>
         <div id="script-section"></div>
         ${
@@ -286,7 +291,21 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
             : ""
         }
       `;
-      resultEl.appendChild(batchEl);
+      // Newest batch always sits expanded up top; whatever was there before
+      // (still fully usable — its own Use/Regenerate buttons keep working
+      // after being moved) drops into the collapsed "previous" history
+      // instead of just piling up endlessly below. Nothing here is ever
+      // persisted, so closing the modal drops every batch that wasn't used.
+      const currentWrap = overlay.querySelector("#ai-current-batch");
+      const prevBatch = currentWrap.firstElementChild;
+      if (prevBatch) {
+        const historyDetails = overlay.querySelector("#ai-history");
+        const historyList = overlay.querySelector("#ai-history-list");
+        historyList.insertBefore(prevBatch, historyList.firstChild);
+        historyDetails.hidden = false;
+        overlay.querySelector("#ai-history-count").textContent = String(historyList.children.length);
+      }
+      currentWrap.appendChild(batchEl);
       if (caption && !demo) mountAiFeedback(batchEl.querySelector(".caption-feedback"), { brandId: brand?.id, feature: "creator-caption", prompt: feedbackPrompt(params), output: caption });
 
       // Hooks and script each get their own "Regenerate" — asking the AI to
@@ -1042,7 +1061,7 @@ function phaseHead(c) {
 
 function executionPanel(c) {
   return `
-    <div class="card">
+    <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:4px;">${escapeHtml(c.title || t("common.untitled"))}</div>
       <button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>
@@ -1063,7 +1082,7 @@ const EDIT_APPS = ["capcut", "edits"];
 function editingAppsHTML() {
   if (getMode() !== "guided") return "";
   return `
-    <div class="card card-tight" style="margin-bottom:18px;">
+    <div class="card dark-surface card-tight" style="margin-bottom:18px;">
       <div class="page-eyebrow" style="margin-bottom:4px;">${t("cr.editApps.title")}</div>
       <p class="text-muted" style="font-size:13px;line-height:1.6;margin:0 0 14px;">${t("cr.editApps.body")}</p>
       ${EDIT_APPS.map(
@@ -1081,7 +1100,7 @@ function editingAppsHTML() {
 
 function editingPanel(c) {
   return `
-    <div class="card">
+    <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:20px;">${escapeHtml(c.title || t("common.untitled"))}</div>
       ${editingAppsHTML()}
@@ -1097,7 +1116,7 @@ function readyToUploadPanel(c) {
   const ai = getSettings().ai || {};
   const canGenThumb = ai.provider === "gemini" && !!ai.geminiApiKey;
   return `
-    <div class="card">
+    <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:16px;">${escapeHtml(c.title || t("common.untitled"))}</div>
 
@@ -1147,7 +1166,7 @@ function draftingPanel(c, campaigns) {
       ? `<div class="hint" style="margin:0 0 16px;">${icon("info", { size: 12 })} ${t("cr.publishedNote")}</div>`
       : "";
   return `
-    <div class="card">
+    <div class="card glass-card">
       <button type="button" class="btn btn-primary btn-block" id="ai-generate-all">${icon("bot", { size: 15 })}${t("cr.aiAll")}</button>
       <p class="text-faint" style="font-size:11.5px;text-align:center;margin:6px 0 16px;">${icon("arrowUp", { size: 10 })} ${t("cr.aiAllHint")}</p>
 

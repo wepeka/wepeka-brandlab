@@ -123,12 +123,22 @@ body{
   -webkit-font-smoothing: antialiased;
   transition: background .5s ease;
 }
-/* Subtle wash sampled from the current brand's own logo/avatar — set via
-   --brand-tint in JS. Kept faint on purpose: a hint of brand identity, not
-   a competing background. */
+/* Wash sampled from the current brand's own logo/avatar — set via
+   --brand-tint in JS. Two soft glows (top-left + a lower one on the right)
+   instead of one flat radial, so it reads as a real gradient behind the
+   dark-glass widgets (.glass-card/.dash-widget-card) rather than a single
+   spotlight — their own backdrop-blur picks this color up too. Kept
+   noticeably fainter in light theme, where most of what sits on top is
+   still plain readable text/forms, not glass. */
 body.has-brand-tint{
   background:
-    radial-gradient(1100px 550px at 12% -8%, color-mix(in srgb, var(--brand-tint) 16%, transparent), transparent 60%),
+    radial-gradient(1300px 650px at 14% -10%, color-mix(in srgb, var(--brand-tint) 18%, transparent), transparent 58%),
+    radial-gradient(1000px 800px at 100% 45%, color-mix(in srgb, var(--brand-tint) 9%, transparent), transparent 60%),
+    #060605;
+}
+:root[data-theme="light"] body.has-brand-tint{
+  background:
+    radial-gradient(1100px 550px at 12% -8%, color-mix(in srgb, var(--brand-tint) 10%, transparent), transparent 60%),
     var(--bg);
 }
 
@@ -421,47 +431,62 @@ main.view.wide{ max-width: 1440px; }
 .section-title h2{ font-size:19px; }
 .section-title .link{ font-size:12.5px; font-weight:700; color: var(--accent); }
 
-/* Shared "glass widget" look for every collapsible section on both Beranda's
-   "This week's work" (js/views/brands.js) and the Brand Dashboard
-   (js/views/dashboard.js widgetCardHTML/widgetCollapsedHTML) — frosted dark
+/* Shared "glass widget" look, now the ONE art style for every box across
+   Brandlab — collapsible widgets (.dash-widget-card / .weekly-work-card,
+   js/widget-card.js) and every other card/tile/banner that isn't a
+   collapsible widget but still needs to look consistent (.glass-card,
+   added as a plain extra class with no structural change). Frosted dark
    glass (backdrop-blur over a translucent tint, so whatever sits behind it
    softly bleeds through), a thin breathing accent-glow border, and light
    text regardless of the site's own light/dark theme. Design tokens are
    re-pointed locally so every existing component nested inside (.card,
    .stat, .bar-row, .kv, .top-content-row, …) just inherits the right
    colors with no dark variant of its own needed. */
-.dash-widget-card, .weekly-work-card{
+.dash-widget-card, .weekly-work-card, .glass-card{
   --surface: rgba(255,255,255,.05); --surface-2: rgba(255,255,255,.075); --surface-hover: rgba(255,255,255,.1);
   --border: rgba(255,255,255,.12); --border-soft: rgba(255,255,255,.09);
   --text: #f5f3ff; --text-muted: rgba(245,243,255,.66); --text-faint: rgba(245,243,255,.42);
-  --accent: #ffb54a; --accent-text: #1c1610; --accent-soft: rgba(255,181,74,.18);
+  /* Follows whichever brand is open (--brand-tint, sampled from its logo or
+     picked in Edit Brand → Brand Color; set on <body> in js/layout.js) so
+     the glass isn't the same purple for every brand. --brand-tint itself
+     falls back to the app's own --accent when no brand is in context (see
+     :root below), so this degrades to the original amber outside a brand
+     page instead of breaking. */
+  --accent: var(--brand-tint); --accent-text: var(--brand-tint-text); --accent-soft: color-mix(in srgb, var(--brand-tint) 18%, transparent);
   --health-good: #3ddc84; --health-good-soft: rgba(61,220,132,.16);
   --health-average: #ffc94a; --health-average-soft: rgba(255,201,74,.16);
   --health-poor: #ff6a5c; --health-poor-soft: rgba(255,106,92,.16);
   --tofu: #7ab8ff; --mofu: #ffc94a; --bofu: #ff8a5c;
   position:relative; overflow:hidden; isolation:isolate; color: var(--text);
-  border-radius: var(--radius-lg); padding:24px; margin-bottom:28px;
-  background: linear-gradient(135deg, rgba(46,38,66,.72) 0%, rgba(22,19,32,.78) 55%, rgba(12,11,18,.82) 100%);
+  border-radius: var(--radius-lg); padding:24px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-tint) 16%, rgb(18,16,24)) 0%, rgba(14,12,19,.85) 55%, rgba(6,5,9,.9) 100%);
   backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid rgba(255,255,255,.14);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 0 1px rgba(255,181,74,.1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
   animation: glass-glow-pulse 6s ease-in-out infinite;
-  transition: transform .18s ease, box-shadow .2s ease, border-color .2s ease;
+  transition: transform .18s ease, box-shadow .2s ease, border-color .2s ease, background .3s ease;
 }
-.dash-widget-card:hover, .weekly-work-card:hover{
+/* Stacked widgets (not grid/flex tiles) still want their own bottom gap;
+   .glass-card alone leaves spacing to whatever layout already places it in
+   (grid gap, flex gap, …) so adding the class never nudges existing layout. */
+.dash-widget-card, .weekly-work-card{ margin-bottom:28px; }
+.dash-widget-card:hover, .weekly-work-card:hover, .glass-card:hover{
   transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 45%, rgba(255,255,255,.14));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), var(--shadow-md), 0 0 26px 2px rgba(255,181,74,.22);
+  border-color: color-mix(in srgb, var(--accent) 35%, rgba(255,255,255,.14));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), var(--shadow-md), 0 0 16px 1px color-mix(in srgb, var(--accent) 14%, transparent);
 }
+/* Toned down on request (the glow read as too bright/distracting while
+   reading a widget's own content) — kept as a faint "breathing" cue, not a
+   spotlight. */
 @keyframes glass-glow-pulse{
-  0%, 100%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 0 1px rgba(255,181,74,.1); }
-  50%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 16px 1px rgba(255,181,74,.2); }
+  0%, 100%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent); }
+  50%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 9px 1px color-mix(in srgb, var(--accent) 10%, transparent); }
 }
 .dash-widget-card .dash-widget-glow, .weekly-work-card .weekly-work-glow{ transition: opacity .2s ease; }
-.dash-widget-card:hover .dash-widget-glow, .weekly-work-card:hover .weekly-work-glow{ opacity:.8; }
-@media (prefers-reduced-motion: reduce){ .dash-widget-card, .weekly-work-card{ animation:none; } .dash-widget-card:hover, .weekly-work-card:hover{ transform:none; } }
+.dash-widget-card:hover .dash-widget-glow, .weekly-work-card:hover .weekly-work-glow{ opacity:.5; }
+@media (prefers-reduced-motion: reduce){ .dash-widget-card, .weekly-work-card, .glass-card{ animation:none; } .dash-widget-card:hover, .weekly-work-card:hover, .glass-card:hover{ transform:none; } }
 .dash-widget-glow{
-  position:absolute; inset:-40%; z-index:-1; pointer-events:none; filter:blur(70px); opacity:.4;
+  position:absolute; inset:-40%; z-index:-1; pointer-events:none; filter:blur(70px); opacity:.2;
   background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 60%, transparent), transparent 60%);
   animation: weekly-glow-move 14s ease-in-out infinite alternate;
 }
@@ -482,19 +507,20 @@ main.view.wide{ max-width: 1440px; }
    icon badge, the title, and a real one-line summary of what's hidden (not
    a bare pill), so tidying up never means losing track of what's there. */
 .dash-widget-collapsed{
+  --accent: var(--brand-tint);
   position:relative; overflow:hidden; isolation:isolate; width:100%; display:flex; align-items:center; gap:14px; text-align:left;
   padding:14px 18px; margin-bottom:20px; border-radius: var(--radius-lg); color:#f5f3ff;
-  background: linear-gradient(135deg, rgba(46,38,66,.72) 0%, rgba(22,19,32,.78) 55%, rgba(12,11,18,.82) 100%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-tint) 16%, rgb(18,16,24)) 0%, rgba(14,12,19,.85) 55%, rgba(6,5,9,.9) 100%);
   backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid rgba(255,255,255,.14); cursor:pointer;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 0 1px rgba(255,181,74,.1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
   animation: glass-glow-pulse 7s ease-in-out infinite;
   transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
 }
 .dash-widget-collapsed:hover{
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 50%, rgba(255,255,255,.14));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), var(--shadow-md), 0 0 22px 1px rgba(255,181,74,.24);
+  border-color: color-mix(in srgb, var(--accent) 40%, rgba(255,255,255,.14));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), var(--shadow-md), 0 0 14px 1px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 @media (prefers-reduced-motion: reduce){ .dash-widget-collapsed{ animation:none; } .dash-widget-collapsed:hover{ transform:none; } }
 .dash-widget-collapsed-icon{ flex:none; width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background: rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.1); color: var(--accent); }
@@ -502,6 +528,30 @@ main.view.wide{ max-width: 1440px; }
 .dash-widget-collapsed-text b{ font-size:14px; color:#fff; }
 .dash-widget-collapsed-text small{ font-size:12px; color: rgba(245,243,255,.62); font-weight:500; }
 .dash-widget-collapsed > svg:last-child{ flex:none; color: rgba(245,243,255,.45); transform: rotate(-90deg); transition: transform .15s, color .15s; }
+
+/* Same dark/brand-tinted language as .glass-card, deliberately WITHOUT the
+   cost: no backdrop-filter (nothing to blur) and no glow animation. Meant
+   for pages with many small boxes at once — Brand Builder/DNA/Guidelines
+   wizard steps, Content OS's repeated field cards — where giving every one
+   of them a full frosted-glass treatment would be genuinely heavy to
+   render and visually noisy. Use .glass-card for the one or two "hero"
+   boxes a section actually wants to draw the eye to; use this for
+   everything else that just needs to not look like a mismatched light
+   card next to them. */
+.dark-surface{
+  --surface: rgba(255,255,255,.045); --surface-2: rgba(255,255,255,.07); --surface-hover: rgba(255,255,255,.09);
+  --border: rgba(255,255,255,.11); --border-soft: rgba(255,255,255,.08);
+  --text: #f2f0f8; --text-muted: rgba(242,240,248,.64); --text-faint: rgba(242,240,248,.4);
+  --accent: var(--brand-tint); --accent-text: var(--brand-tint-text); --accent-soft: color-mix(in srgb, var(--brand-tint) 16%, transparent);
+  --health-good: #3ddc84; --health-good-soft: rgba(61,220,132,.14);
+  --health-average: #ffc94a; --health-average-soft: rgba(255,201,74,.14);
+  --health-poor: #ff6a5c; --health-poor-soft: rgba(255,106,92,.14);
+  background: color-mix(in srgb, var(--brand-tint) 7%, rgb(17,15,22));
+  border: 1px solid rgba(255,255,255,.09);
+  color: var(--text);
+  transition: border-color .15s ease;
+}
+.dark-surface:hover{ border-color: color-mix(in srgb, var(--accent) 32%, rgba(255,255,255,.12)); }
 .dash-widget-collapsed:hover > svg:last-child{ color: var(--accent); transform: rotate(-90deg) translateX(3px); }
 @media (max-width:640px){ .dash-widget-collapsed-text small{ display:none; } }
 
@@ -586,7 +636,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    Content view chooser
    ============================================================ */
 .content-view-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:16px; max-width:760px; }
-.content-view-card{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:26px 22px; text-align:left; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
+.content-view-card{ border:1px solid var(--border); border-radius: var(--radius-lg); padding:26px 22px; text-align:left; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
+.content-view-card:not(.glass-card){ background: var(--surface); }
 .content-view-card:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 26px color-mix(in srgb, var(--brand-tint) 35%, transparent); }
 .content-view-card .icon-wrap{ width:44px; height:44px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--brand-tint) 14%, transparent); color: var(--brand-tint); display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
 .content-view-card h3{ font-size:16px; margin-bottom:4px; }
@@ -698,7 +749,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .brand-tile-add:hover .brand-tile-avatar-add{ border-color: var(--accent); color: var(--accent); background:transparent; box-shadow:none; }
 .brand-tile-add:hover h3{ color: var(--accent); }
 
-.brand-card{ position:relative; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
+.brand-card{ position:relative; border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
+.brand-card:not(.glass-card){ background: var(--surface); }
 .brand-card:hover{ border-color: var(--brand-tint); transform: translateY(-2px); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 28px color-mix(in srgb, var(--brand-tint) 40%, transparent); }
 .brand-card .avatar{ width:44px; height:44px; border-radius: var(--radius-md); display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight:800; font-size:18px; background: var(--brand-tint); color: var(--brand-tint-text); margin-bottom: 16px; }
 .brand-card h3{ font-size:17px; margin-bottom:6px; }
@@ -1414,6 +1466,21 @@ body.tour-active .consultant-fab{ display:none; }
 .justify-between{ justify-content:space-between; }
 .w-full{ width:100%; }
 .divider{ height:1px; background: var(--border); margin: 20px 0; }
+
+/* AI generate history (js/views/creator.js openAiScriptModal, and the same
+   pattern for campaign brainstorm ideas): the newest batch renders open at
+   full size above; every earlier batch — still fully usable, just not what
+   you're looking at right now — collapses into this one small toggle
+   instead of the modal growing forever with every "Generate more". Nothing
+   in here is ever saved, so it's all gone once the modal closes. */
+.ai-history{ margin-top:18px; border-top:1px solid var(--border-soft); padding-top:2px; }
+.ai-history summary{ list-style:none; cursor:pointer; padding:10px 2px; font-size:12.5px; font-weight:700; color: var(--text-muted); display:flex; align-items:center; gap:6px; }
+.ai-history summary::-webkit-details-marker{ display:none; }
+.ai-history summary::before{ content:"▸"; display:inline-block; font-size:10px; color: var(--text-faint); transition: transform .15s ease; }
+.ai-history[open] summary::before{ transform: rotate(90deg); }
+.ai-history summary:hover{ color: var(--text); }
+#ai-history-list .ai-batch{ padding-top:14px; margin-top:14px; border-top:1px dashed var(--border-soft); opacity:.85; }
+#ai-history-list .ai-batch:first-child{ margin-top:6px; }
 .kv{ display:flex; justify-content:space-between; font-size:13px; padding:9px 0; border-bottom:1px solid var(--border-soft); }
 .kv:last-child{ border-bottom:none; }
 .kv .k{ color: var(--text-muted); }
@@ -1653,16 +1720,30 @@ body.tour-active .consultant-fab{ display:none; }
    the pill shape of .mission-badge but with its own status vocabulary
    (not_started/in_progress/completed/partially_completed/missed) instead
    of locked/current/completed. */
-.event-timeline{ display:flex; align-items:stretch; gap:10px; overflow-x:auto; padding:4px 4px 16px; }
-.event-phase-pill{ display:flex; flex-direction:column; gap:2px; flex:none; min-width:120px; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md); padding:10px 14px; cursor:pointer; text-align:left; color: var(--text-muted); }
-.event-phase-name{ font-size:12.5px; font-weight:700; color: var(--text); }
+.event-timeline{ display:flex; align-items:center; gap:0; overflow-x:auto; overflow-y:hidden; padding:8px 4px 18px; }
+.event-phase-pill{ position:relative; display:flex; align-items:center; gap:10px; flex:none; min-width:132px; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md); padding:9px 14px 9px 9px; cursor:pointer; text-align:left; color: var(--text-muted); transition: border-color .15s ease, transform .15s ease, background .15s ease; }
+.event-phase-pill:hover{ transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.event-phase-name{ font-size:12.5px; font-weight:700; color: var(--text); white-space:nowrap; }
 .event-phase-date{ font-size:11px; color: var(--text-faint); }
-.event-phase-pill.active{ background: var(--surface-2); border-color: var(--accent); }
-.event-phase-pill.status-completed{ border-color: var(--health-good); }
+/* The connecting segment between two nodes — a short flex sibling instead
+   of an absolutely-positioned pseudo-element, so it never has to guess
+   pill width/height and stays correct at any font size or language. */
+.epp-connector{ flex:none; width:22px; height:2px; background: var(--border); transition: background .2s ease; }
+.epp-connector.is-lit{ background: color-mix(in srgb, var(--accent) 70%, var(--health-good)); }
+.epp-badge{ flex:none; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font-size:11.5px; font-weight:800; background: var(--surface-2); border:1.5px solid var(--border); color: var(--text-faint); transition: background .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease; }
+.epp-body{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+.event-phase-pill.active{ background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); border-color: var(--accent); }
+.event-phase-pill.active .epp-badge{ background: var(--accent); border-color: var(--accent); color: var(--accent-text); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); animation: glow-pulse 2.4s ease-in-out infinite; --glow-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.event-phase-pill.status-completed{ border-color: color-mix(in srgb, var(--health-good) 55%, var(--border)); }
 .event-phase-pill.status-completed .event-phase-name{ color: var(--health-good); }
-.event-phase-pill.status-in_progress{ border-color: var(--health-average); }
+.event-phase-pill.status-completed .epp-badge{ background: color-mix(in srgb, var(--health-good) 20%, transparent); border-color: var(--health-good); color: var(--health-good); }
+.event-phase-pill.status-in_progress{ border-color: color-mix(in srgb, var(--health-average) 55%, var(--border)); }
 .event-phase-pill.status-missed{ border-color: var(--health-poor); }
 .event-phase-pill.status-missed .event-phase-name{ color: var(--health-poor); }
+.event-phase-pill.is-locked{ cursor:default; }
+.event-phase-pill.is-locked .epp-badge{ color: var(--text-faint); }
+.event-phase-pill.is-past .epp-badge{ background: color-mix(in srgb, var(--health-good) 14%, transparent); border-color: color-mix(in srgb, var(--health-good) 55%, var(--border)); color: var(--health-good); }
+@media (prefers-reduced-motion: reduce){ .event-phase-pill.active .epp-badge{ animation:none; } }
 
 .event-milestone-row{ grid-template-columns:26px 1fr auto auto auto; }
 .event-sys-tag{ text-transform:uppercase; letter-spacing:.03em; font-weight:700; color: var(--accent); font-size:10px; }
@@ -2311,7 +2392,8 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
    command center, reusing .health-badge (defined with dashboard.js's
    stats below) rather than a new visual system. */
 .brand-health-strip{ display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:20px; }
-.brand-health-item{ display:flex; flex-direction:column; gap:8px; align-items:flex-start; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md); padding:14px 16px; transition: border-color .15s; }
+.brand-health-item{ display:flex; flex-direction:column; gap:8px; align-items:flex-start; border:1px solid var(--border); border-radius: var(--radius-md); padding:14px 16px; transition: border-color .15s; }
+.brand-health-item:not(.glass-card){ background: var(--surface); }
 .brand-health-item:hover{ border-color: var(--brand-tint); }
 .brand-health-label{ font-size:11.5px; color: var(--text-muted); font-weight:700; }
 @media (max-width:760px){ .brand-health-strip{ grid-template-columns: repeat(2,1fr); } }
@@ -2375,6 +2457,14 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .widget-featured p{ font-size:13.5px; }
 .widget-featured.widget-content-os .stack{ width:64px; height:64px; }
 .widget-featured.widget-content-os .stack-card:nth-child(3){ font-size:18px; }
+/* .glass-card's --surface becomes a near-transparent white for the frosted
+   look, so re-mixing a widget's own accent straight into var(--surface)
+   (above) would wash the tile out almost to nothing. Re-tint into the same
+   dark glass gradient instead so these keep their per-app accent identity
+   while sitting on the same frosted-dark base as every other box. */
+.brand-widget.glass-card{ background: linear-gradient(135deg, rgba(46,38,66,.72) 0%, rgba(22,19,32,.78) 55%, rgba(12,11,18,.82) 100%); }
+.widget-featured.glass-card{ background: linear-gradient(135deg, color-mix(in srgb, var(--w-accent, var(--brand-tint)) 20%, rgba(46,38,66,.72)) 0%, rgba(22,19,32,.78) 55%, rgba(12,11,18,.82) 100%); border-color: color-mix(in srgb, var(--w-accent, var(--brand-tint)) 55%, rgba(255,255,255,.14)); }
+.widget-featured.glass-card:hover{ border-color: var(--w-accent, var(--brand-tint)); }
 
 .widget-sales{ --w-accent: var(--health-good); grid-column: span 2; display:flex; align-items:center; gap:18px; }
 .widget-sales .folder-badge{ width:50px; height:50px; border-radius:12px; background: color-mix(in srgb, var(--w-accent) 14%, transparent); color: var(--w-accent); display:flex; align-items:center; justify-content:center; flex:none; }
@@ -2797,7 +2887,11 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .journey-hero-progress{ display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color: var(--health-good); background: var(--health-good-soft); padding: 7px 12px; border-radius: var(--radius-pill); }
 .journey-hero-cta{ margin-top: 8px; padding: 13px 22px; font-size: 15px; border-radius: var(--radius-pill); }
 .journey-hero-note{ font-size:12px; color: var(--text-faint); }
-.journey-hero-today{ border-color: var(--border); box-shadow: none; background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--accent) 7%, var(--surface))); }
+.journey-hero-today{ border-color: var(--border); box-shadow: none; }
+/* Only the light default surface needs its own gradient tint — once
+   .glass-card is on the element --surface is already the frosted dark
+   base, so keep that background untouched instead of re-mixing it. */
+.journey-hero-today:not(.glass-card){ background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--accent) 7%, var(--surface))); }
 .journey-hero-today .journey-hero-eyebrow{ color: var(--text-muted); }
 
 /* Journey checklist */

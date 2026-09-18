@@ -1,5 +1,5 @@
 import { getCachedAccount, isLifetime } from "../account.js";
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as escapeText, toast, showCalloutBubble } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone } from "./brand-home.js";
@@ -10,6 +10,7 @@ import { celebrateBuilderCompleteIfFlagged, consumeDnaJustCompleted, consumeVisu
 import { funnelLabel } from "../funnel-field.js";
 import { brandTopAction } from "../next-action.js";
 import { t } from "../i18n.js";
+import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 
 // Pemula mode's Beranda. One rule: the person never has to decide what to
 // click. The page is a single "langkah kamu sekarang" card with one button,
@@ -164,6 +165,7 @@ function paint(root, brandId, refresh) {
   const upNext = [...scheduled].sort((a, b) => (a.scheduleDate || "9999").localeCompare(b.scheduleDate || "9999")).slice(0, 3);
   const productionTasks = productionTaskList(content);
   const todoRows = todoRowsHTML(brandOverdue, upNext);
+  const collapsed = new Set(brand.homeCollapsed || []);
 
   root.innerHTML = `
     <div class="page-head">
@@ -181,24 +183,21 @@ function paint(root, brandId, refresh) {
 
     ${
       productionTasks.length
-        ? `
-      <div class="section-title" style="margin-top:32px;">
-        <h2>${t("beginner.production.title")}</h2>
-        <span class="text-faint" style="font-size:12px;">${t("beginner.production.hint")}</span>
-      </div>
-      <div class="card card-tight guided-checklist" id="beginner-production" style="margin-bottom:28px;">
-        ${productionTasks.map(productionTaskRow).join("")}
-      </div>`
+        ? (collapsed.has("production")
+            ? widgetCollapsedHTML("production", "layers", t("beginner.production.title"), t("beginner.production.summary", { count: productionTasks.length }))
+            : widgetCardHTML("production", "layers", t("beginner.production.title"), `
+                <div class="card card-tight guided-checklist" style="margin-bottom:0;">${productionTasks.map(productionTaskRow).join("")}</div>
+              `, { sub: t("beginner.production.hint") }))
         : ""
     }
 
     ${
       todoRows
-        ? `
-      <div class="section-title" style="margin-top:${productionTasks.length ? "0" : "32px"};">
-        <h2>${t("beginner.todo.title")}</h2>
-      </div>
-      <div class="card card-tight guided-checklist" id="beginner-todo">${todoRows}</div>`
+        ? (collapsed.has("todo")
+            ? widgetCollapsedHTML("todo", "bell", t("beginner.todo.title"), t("beginner.todo.summary", { count: Math.min(brandOverdue.length, 3) + upNext.length }))
+            : widgetCardHTML("todo", "bell", t("beginner.todo.title"), `
+                <div class="card card-tight guided-checklist" style="margin-bottom:0;">${todoRows}</div>
+              `))
         : ""
     }
 
@@ -208,7 +207,7 @@ function paint(root, brandId, refresh) {
       <div class="section-title" style="margin-top:32px;">
         <h2>${t("beginner.quick.title")}</h2>
       </div>
-      <a class="card card-tight beginner-quick-tool" href="#/brand/${brandId}/copy" data-app="copy">
+      <a class="card glass-card card-tight beginner-quick-tool" href="#/brand/${brandId}/copy" data-app="copy">
         <div class="beginner-quick-tool-icon">${icon("chat", { size: 20 })}</div>
         <div class="ti">
           <div class="t">${t("beginner.quick.tool")}${isLifetime(getCachedAccount()) ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}</div>
@@ -216,7 +215,7 @@ function paint(root, brandId, refresh) {
         </div>
         <span class="beginner-app-done-edit">${t("beginner.quick.open")}${icon("arrowRight", { size: 12 })}</span>
       </a>
-      <a class="card card-tight beginner-quick-tool" href="#/brand/${brandId}/sales" data-app="sales" style="margin-top:10px;">
+      <a class="card glass-card card-tight beginner-quick-tool" href="#/brand/${brandId}/sales" data-app="sales" style="margin-top:10px;">
         <div class="beginner-quick-tool-icon" style="color:var(--health-good);background:color-mix(in srgb, var(--health-good) 14%, transparent);">${icon("target", { size: 20 })}</div>
         <div class="ti">
           <div class="t">${t("beginner.quick.sales")}</div>
@@ -229,6 +228,7 @@ function paint(root, brandId, refresh) {
   `;
 
   wireHelpButtons(root);
+  wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
   wireSectionGuideButton(root, "beginner-home", TOUR_STEPS);
   maybeShowSectionTour("beginner-home", TOUR_STEPS);
 
@@ -255,7 +255,7 @@ function stepHeroHTML(journey) {
   const step = journey.steps[journey.currentIndex];
   const n = journey.currentIndex + 1;
   return `
-    <section class="card journey-hero" id="journey-hero">
+    <section class="card glass-card journey-hero" id="journey-hero">
       <div class="journey-hero-eyebrow">
         <span class="journey-hero-step">${t("beginner.hero.step", { n, total: TOTAL_STEPS })}</span>
         ${step.time ? `<span class="journey-hero-time">${icon("clock", { size: 12 })}${step.time}</span>` : ""}
@@ -301,7 +301,7 @@ function todayHeroHTML(brandId, brand, campaigns, content) {
     href = `#/brand/${brandId}/content-os/creator`;
   }
   return `
-    <section class="card journey-hero journey-hero-today" id="journey-hero">
+    <section class="card glass-card journey-hero journey-hero-today" id="journey-hero">
       <div class="journey-hero-eyebrow"><span class="journey-hero-step">${t("beginner.today.eyebrow")}</span>${top ? `<span class="journey-hero-time">${icon("bulb", { size: 12 })}${escapeText(top.campaign.name || "Campaign")}</span>` : ""}</div>
       <h2>${escapeText(title)}</h2>
       <p>${escapeText(why)}</p>
@@ -332,7 +332,7 @@ function journeyHTML(journey, celebrateBuilder) {
   const rows = journey.steps.map((s, i) => journeyStepHTML(s, i, journey.currentIndex, celebrateBuilder)).join("");
   if (journey.currentIndex === -1) {
     return `
-      <details class="card card-tight journey journey-collapsed" id="beginner-journey">
+      <details class="card glass-card card-tight journey journey-collapsed" id="beginner-journey">
         <summary>
           <span class="journey-summary-check">${icon("check", { size: 14 })}</span>
           <span class="t">${t("beginner.journey.collapsed", { done: journey.doneCount, total: TOTAL_STEPS })}</span>
@@ -347,7 +347,7 @@ function journeyHTML(journey, celebrateBuilder) {
       <h2>${t("beginner.journey.title")}</h2>
       <span class="text-faint" style="font-size:12px;">${t("beginner.journey.count", { done: journey.doneCount, total: TOTAL_STEPS })}</span>
     </div>
-    <div class="card card-tight journey" id="beginner-journey">
+    <div class="card glass-card card-tight journey" id="beginner-journey">
       <div class="journey-list">${rows}</div>
     </div>
   `;

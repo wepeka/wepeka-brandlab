@@ -13,7 +13,7 @@ import {
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
 } from "../store.js";
 import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform } from "../campaign-metrics.js";
-import { getTracker, productStats, trackerTotals } from "../sales-tracker.js";
+import { getTracker, productStats, trackerTotals, eventSalesStats } from "../sales-tracker.js";
 import { computeContentMetrics } from "../formulas.js";
 import { openCampaignReport } from "./campaign-share.js";
 import { evaluateLevel, levelReminders } from "../goal-plan.js";
@@ -33,8 +33,22 @@ import { getMode } from "../mode.js";
 import { isTourDemo, demoBrainstormIdeas, demoPhaseContent, DEMO_TOAST } from "../tour-demo.js";
 import { STATUS_LABELS_GUIDED } from "../funnel-field.js";
 import { t } from "../i18n.js";
+import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 
 const CAMPAIGN_STATUS_PILL_CLASS = { planning: "status-draft", active: "status-scheduled", completed: "status-published", archived: "status-archived" };
+
+// The campaign's closable widgets (Rencana/Ide Campaign/Sales Tracker) share
+// one collapse-state array (campaign.widgetsCollapsed). The three old
+// per-widget booleans (planCollapsed/ideasCollapsed/salesWidgetCollapsed)
+// are read as a fallback so a campaign collapsed before this existed stays
+// collapsed — the first toggle on any of them migrates it onto the array.
+const WIDGET_LEGACY_FIELD = { plan: "planCollapsed", ideas: "ideasCollapsed", sales: "salesWidgetCollapsed" };
+// "eventSales" is new (no legacy boolean field to fall back to — it never
+// existed before the shared array), so it isn't a WIDGET_LEGACY_FIELD key.
+const CAMPAIGN_WIDGET_KEYS = [...Object.keys(WIDGET_LEGACY_FIELD), "eventSales"];
+function isWidgetCollapsed(campaign, key) {
+  return (campaign.widgetsCollapsed || []).includes(key) || !!campaign[WIDGET_LEGACY_FIELD[key]];
+}
 
 export function paintDetail(root, brandId, brand, campaign, state, refresh, { openEdit } = {}) {
   const content = listContent(brandId);
@@ -106,6 +120,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     ${nextActionHTML(actions)}
     ${ideasWidgetHTML(campaign, state)}
     ${salesWidgetHTML(brandId, campaign, brand)}
+    ${eventSalesWidgetHTML(brandId, campaign, brand)}
     ${planRoadmapHTML(campaign, stages, ctx)}
     ${stageNavHTML(stages, state.stageIndex, acts, content, campaign)}
 
@@ -221,7 +236,11 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   );
   wirePlanRoadmap(root, { brand, campaign, stages, refresh });
   wireIdeasWidget(root, { brand, campaign, refresh, state });
-  wireSalesWidget(root, { campaign, refresh });
+  wireWidgetToggle(root, {
+    collapsedList: CAMPAIGN_WIDGET_KEYS.filter((k) => isWidgetCollapsed(campaign, k)),
+    save: (next) => updateCampaign(campaign.id, { widgetsCollapsed: next, planCollapsed: false, ideasCollapsed: false, salesWidgetCollapsed: false }),
+    refresh,
+  });
   qsa("[data-cd-pending]", root).forEach((row) =>
     row.addEventListener("click", () => {
       const c = content.find((x) => x.id === row.dataset.cdPending);
@@ -264,7 +283,7 @@ function stageEyebrow(stage, total) {
 
 function celebrateHTML(done, next) {
   return `
-    <div class="card cd-celebrate">
+    <div class="card glass-card cd-celebrate">
       <div>
         <div class="page-eyebrow" style="margin-bottom:4px;">${t("camp.detail.celebrateEyebrow", { n: done.index + 1 })}</div>
         <h3 style="margin:0 0 4px;">${esc(t("camp.detail.celebrateTitle", { name: done.name }))}</h3>
@@ -295,7 +314,7 @@ function headlineHTML({ milestone, reading }, stageRead, stage) {
     : `${t("camp.m.home.manual")}${reading.updatedAt ? ` · ${esc(ageLabel(reading.updatedAt))}` : ""}`;
   const remaining = hasTarget && reading.current < reading.target ? esc(t("camp.detail.remaining", { count: formatNumber(reading.target - reading.current), unit: reading.unit })) : hasTarget ? t("camp.detail.targetReached") : "";
   return `
-    <div class="card cd-headline">
+    <div class="card glass-card cd-headline">
       <div class="cd-headline-label">${esc(milestone.label)}${stage?.kind === "window" && stage.state === "past" ? ` · ${t("camp.detail.phaseOver")}` : ""}</div>
       <div class="cd-headline-big">${big}</div>
       <div class="cd-bar"><span style="width:${barPct}%"></span></div>
@@ -314,7 +333,7 @@ function pendingEngagementHTML(pending) {
   if (!pending.length) return "";
   const shown = pending.slice(0, 5);
   return `
-    <div class="card cd-pending-engagement">
+    <div class="card glass-card cd-pending-engagement">
       <div class="cd-pending-head">
         <div>
           <b>${t("camp.detail.pendingEngagementTitle", { count: pending.length })}</b>
@@ -335,16 +354,10 @@ function pendingEngagementHTML(pending) {
 // or manage products. Closable, same pattern as Rencana/Ide Campaign above.
 function salesWidgetHTML(brandId, campaign, brand) {
   if (campaign.goalPlan?.track !== "sales") return "";
-  if (campaign.salesWidgetCollapsed) {
-    return `
-      <div class="card cd-plan-collapsed" id="cd-sales-collapsed">
-        <span>${icon("target", { size: 14 })}${t("camp.sales.collapsedTitle")}</span>
-        <button type="button" class="btn btn-ghost btn-sm" id="cd-sales-expand">${t("camp.sales.expand")}</button>
-      </div>`;
-  }
   const tracker = getTracker(brand);
   const stats = productStats(tracker).filter((s) => !s.product.archived);
   const totals = trackerTotals(tracker);
+  if (isWidgetCollapsed(campaign, "sales")) return widgetCollapsedHTML("sales", "target", t("camp.sales.title"), t("camp.sales.summary", { count: stats.length, sold: formatNumber(totals.sold) }));
   const targetOf = (id) => campaign.goalPlan?.products?.find((p) => p.id === id)?.target || null;
   const row = (s) => {
     const target = targetOf(s.product.id);
@@ -356,26 +369,36 @@ function salesWidgetHTML(brandId, campaign, brand) {
         ${target ? `<div class="cd-bar"><span style="width:${pct}%"></span></div>` : ""}
       </div>`;
   };
-  return `
-    <div class="section-title" style="margin-top:24px;"><h2>${t("camp.sales.title")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.sales.sub")}</span></div>
-    <div class="card cd-sales-widget" id="cd-sales-widget">
-      <button type="button" class="icon-btn cd-plan-close-btn" id="cd-sales-close" aria-label="${t("camp.plan.close")}" title="${t("camp.plan.close")}">${icon("x", { size: 13 })}</button>
+  return widgetCardHTML("sales", "target", t("camp.sales.title"), `
       ${stats.length
         ? `<div class="cd-sales-list">${stats.map(row).join("")}</div>
            <div class="cd-sales-total"><span>${t("camp.sales.totalSold")}</span><b>${formatNumber(totals.sold)}</b></div>`
         : `<p class="text-muted" style="font-size:13px;margin:0 0 10px;">${t("camp.sales.empty")}</p>`}
       <a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/sales" style="margin-top:12px;">${icon("arrowRight", { size: 13 })}${t("camp.sales.openTracker")}</a>
-    </div>`;
+    `, { sub: t("camp.sales.sub") });
 }
-function wireSalesWidget(root, { campaign, refresh }) {
-  qs("#cd-sales-close", root)?.addEventListener("click", () => {
-    updateCampaign(campaign.id, { salesWidgetCollapsed: true });
-    refresh();
-  });
-  qs("#cd-sales-expand", root)?.addEventListener("click", () => {
-    updateCampaign(campaign.id, { salesWidgetCollapsed: false });
-    refresh();
-  });
+
+// ---------- Sales at this event (Event campaigns only) ----------
+// Same shape as the Sales Tracker widget above, but scoped to sales tagged
+// with THIS event (js/sales-tracker.js logSale's optional eventId) instead
+// of every product — for a brand that sells at bazaars/launches/pop-ups,
+// "how much did we sell here" lives on the event's own page too, not just
+// buried in the Sales Tracker's full log.
+function eventSalesWidgetHTML(brandId, campaign, brand) {
+  if (!campaign.eventPlan) return "";
+  const stats = eventSalesStats(brand, campaign.id);
+  if (isWidgetCollapsed(campaign, "eventSales")) return widgetCollapsedHTML("eventSales", "target", t("camp.eventSales.title"), t("camp.eventSales.summary", { count: stats.products.length, sold: formatNumber(stats.qty) }));
+  return widgetCardHTML("eventSales", "target", t("camp.eventSales.title"), `
+      ${stats.products.length
+        ? `<div class="cd-sales-list">${stats.products.map((p) => `
+            <div class="cd-sales-row">
+              <span class="cd-sales-name">${esc(p.product.name)}</span>
+              <span class="cd-sales-sold">${formatNumber(p.qty)}</span>
+            </div>`).join("")}</div>
+           <div class="cd-sales-total"><span>${t("camp.eventSales.total")}</span><b>${formatNumber(stats.qty)}</b></div>`
+        : `<p class="text-muted" style="font-size:13px;margin:0 0 10px;">${t("camp.eventSales.empty")}</p>`}
+      <a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/sales" style="margin-top:12px;">${icon("arrowRight", { size: 13 })}${t("camp.eventSales.openTracker")}</a>
+    `, { sub: t("camp.eventSales.sub") });
 }
 
 // ---------- Ide Campaign (bubble idea board) ----------
@@ -387,18 +410,16 @@ function wireSalesWidget(root, { campaign, refresh }) {
 // aligned with what was already decided, not just what's on this page.
 const IDEA_TRACK_COPY = { social: "social", community: "community", sales: "sales" };
 function ideasWidgetHTML(campaign, state) {
-  const track = IDEA_TRACK_COPY[campaign.goalPlan?.track] || "";
+  // Events don't carry a goalPlan (js/store.js buildEventPhases is a
+  // separate, date-anchored system) — treat them as their own idea track
+  // so the widget's copy/AI framing talks about the event, not a generic
+  // "campaign" nobody asked for.
+  const track = campaign.eventPlan ? "event" : IDEA_TRACK_COPY[campaign.goalPlan?.track] || "";
   // Closable, same pattern as the Rencana widget just above it — collapses
   // to a one-line bar so the page doesn't stay crowded once the ideas are
   // captured and the user's back to just executing.
-  if (campaign.ideasCollapsed) {
-    return `
-      <div class="card cd-ideas-collapsed" id="cd-ideas-collapsed">
-        <span>${icon("bulb", { size: 14 })}${t(`camp.ideas.title.${track || "default"}`)}</span>
-        <button type="button" class="btn btn-ghost btn-sm" id="cd-ideas-expand">${t("camp.ideas.expand")}</button>
-      </div>`;
-  }
   const ideas = campaign.ideas || [];
+  if (isWidgetCollapsed(campaign, "ideas")) return widgetCollapsedHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), t("camp.ideas.summary", { count: ideas.length }));
   const suggestions = state.ideaSuggestions || [];
   const trackCls = track ? `cd-idea-bubble--${track}` : "";
   // Kept ideas open like a folder on click — the description (AI's "why",
@@ -422,39 +443,41 @@ function ideasWidgetHTML(campaign, state) {
         </div>` : ""}
     </div>`;
   };
-  const suggestionBubble = (idea, i) => `
+  // `scope` disambiguates the add button across batches ("cur" for the
+  // live one, "h0"/"h1"/… for a history batch) since each batch re-starts
+  // its own item indices — without it, adding idea #0 from an older batch
+  // could pick up whatever now sits at index 0 in a newer one.
+  const suggestionBubble = (idea, i, scope = "cur") => `
     <div class="cd-idea-bubble cd-idea-bubble--suggestion ${trackCls}">
       <div class="cd-idea-suggestion-row">
         <div class="cd-idea-bubble-head" style="cursor:default;">${icon("sparkle", { size: 11 })}<span>${esc(idea.text)}</span></div>
-        <button type="button" class="cd-idea-add-suggestion" data-suggestion-add="${i}" aria-label="${t("camp.ideas.keepOne")}">${icon("plus", { size: 12 })}</button>
+        <button type="button" class="cd-idea-add-suggestion" data-suggestion-add="${scope}:${i}" aria-label="${t("camp.ideas.keepOne")}">${icon("plus", { size: 12 })}</button>
       </div>
       ${idea.description ? `<p class="cd-idea-suggestion-desc">${esc(idea.description)}</p>` : ""}
     </div>`;
-  return `
-    <div class="section-title" style="margin-top:24px;"><h2>${t(`camp.ideas.title.${track || "default"}`)}</h2><span class="text-faint" style="font-size:12px;">${t(`camp.ideas.sub.${track || "default"}`)}</span></div>
-    <div class="card cd-ideas">
-      <button type="button" class="icon-btn cd-ideas-close-btn" id="cd-ideas-close" aria-label="${t("camp.plan.close")}" title="${t("camp.plan.close")}">${icon("x", { size: 13 })}</button>
+  const history = state.ideaSuggestionHistory || [];
+  return widgetCardHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), `
       <div class="cd-ideas-input">
         <input class="input" id="cd-idea-input" maxlength="140" placeholder="${esc(t(`camp.ideas.placeholder.${track || "default"}`))}" />
         <button type="button" class="btn btn-primary btn-sm" id="cd-idea-add">${icon("plus", { size: 13 })}${t("camp.ideas.add")}</button>
         <button type="button" class="btn btn-secondary btn-sm" id="cd-idea-ai">${icon("sparkle", { size: 13 })}${t(`camp.ideas.aiBtn.${track || "default"}`)}</button>
       </div>
       <div id="cd-idea-status"></div>
-      ${suggestions.length ? `<div class="cd-idea-bubbles cd-idea-suggestions" id="cd-idea-suggestions">${suggestions.map(suggestionBubble).join("")}</div>` : `<div id="cd-idea-suggestions"></div>`}
+      ${suggestions.length ? `<div class="cd-idea-bubbles cd-idea-suggestions" id="cd-idea-suggestions">${suggestions.map((idea, i) => suggestionBubble(idea, i)).join("")}</div>` : `<div id="cd-idea-suggestions"></div>`}
+      ${
+        history.length
+          ? `<details class="ai-history">
+               <summary>${t("cr.ai.previousGenerated")} (${history.length})</summary>
+               <div id="ai-history-list">${history.map((batch, bi) => `<div class="ai-batch cd-idea-bubbles">${batch.map((idea, i) => suggestionBubble(idea, i, `h${bi}`)).join("")}</div>`).join("")}</div>
+             </details>`
+          : ""
+      }
       <div class="cd-idea-bubbles" id="cd-idea-kept">
         ${ideas.length ? ideas.map(bubble).join("") : `<p class="text-faint cd-idea-empty">${t(`camp.ideas.empty.${track || "default"}`)}</p>`}
       </div>
-    </div>`;
+    `, { sub: t(`camp.ideas.sub.${track || "default"}`) });
 }
 function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
-  qs("#cd-ideas-close", root)?.addEventListener("click", () => {
-    updateCampaign(campaign.id, { ideasCollapsed: true });
-    refresh();
-  });
-  qs("#cd-ideas-expand", root)?.addEventListener("click", () => {
-    updateCampaign(campaign.id, { ideasCollapsed: false });
-    refresh();
-  });
   const input = qs("#cd-idea-input", root);
   if (!input) return;
   const addIdea = (text, source, description = "") => {
@@ -500,10 +523,13 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
   );
   qsa("[data-suggestion-add]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
-      const i = Number(btn.dataset.suggestionAdd);
-      const idea = (state.ideaSuggestions || [])[i];
+      const [scope, idxStr] = btn.dataset.suggestionAdd.split(":");
+      const i = Number(idxStr);
+      const batch = scope === "cur" ? state.ideaSuggestions : (state.ideaSuggestionHistory || [])[Number(scope.slice(1))];
+      const idea = batch?.[i];
       if (!idea) return;
-      state.ideaSuggestions = state.ideaSuggestions.filter((_, n) => n !== i);
+      if (scope === "cur") state.ideaSuggestions = state.ideaSuggestions.filter((_, n) => n !== i);
+      else state.ideaSuggestionHistory[Number(scope.slice(1))] = batch.filter((_, n) => n !== i);
       addIdea(idea.text, "ai", idea.description || "");
     })
   );
@@ -519,7 +545,11 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
     btn.disabled = true;
     statusEl.innerHTML = `<div class="ocr-status" style="margin:6px 0;"><div class="spinner"></div><span>${t("camp.ideas.thinking")}</span></div>`;
     try {
-      const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.goalPlan?.track, existingIdeas: (campaign.ideas || []).map((i) => i.text) });
+      const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, existingIdeas: (campaign.ideas || []).map((i) => i.text) });
+      // Whatever was still showing (not yet kept) drops into the collapsed
+      // history instead of being silently replaced — same pattern as the
+      // brainstorm modal and Creator's AI panel.
+      if (state.ideaSuggestions?.length) state.ideaSuggestionHistory = [state.ideaSuggestions, ...(state.ideaSuggestionHistory || [])];
       state.ideaSuggestions = ideas;
       statusEl.innerHTML = "";
     } catch (e) {
@@ -544,13 +574,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
   // Closable: a widget the user has to look past every time they open the
   // campaign gets closed once they don't need it any more — collapses to a
   // one-line bar with a way back, instead of disappearing for good.
-  if (campaign.planCollapsed) {
-    return `
-      <div class="card cd-plan-collapsed" id="cd-plan-collapsed">
-        <span>${icon("layers", { size: 14 })}${t("camp.plan.collapsedTitle")}</span>
-        <button type="button" class="btn btn-ghost btn-sm" id="cd-plan-expand">${t("camp.plan.expand")}</button>
-      </div>`;
-  }
+  if (isWidgetCollapsed(campaign, "plan")) return widgetCollapsedHTML("plan", "layers", t("camp.plan.title"), t("camp.plan.summary", { done: stages.filter((s) => s.state === "completed").length, total: stages.length }));
   const plan = campaign.aiPlan || null;
   const levelHTML = (s) => {
     const read = readStage(s, ctx);
@@ -572,10 +596,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
         </div>
       </li>`;
   };
-  return `
-    <div class="section-title" style="margin-top:24px;"><h2>${t("camp.plan.title")}</h2><span class="text-faint" style="font-size:12px;">${t(`camp.plan.sub.${track}`)}</span></div>
-    <div class="card cd-plan" id="cd-plan">
-      <button type="button" class="icon-btn cd-plan-close-btn" id="cd-plan-close" aria-label="${t("camp.plan.close")}" title="${t("camp.plan.close")}">${icon("x", { size: 13 })}</button>
+  return widgetCardHTML("plan", "layers", t("camp.plan.title"), `
       ${plan?.concept?.title ? `
         <div class="cd-plan-concept">
           <div class="page-eyebrow" style="margin-bottom:4px;">${t(`camp.plan.concept.${track}`)}</div>
@@ -589,18 +610,10 @@ function planRoadmapHTML(campaign, stages, ctx) {
       </div>
       <div id="cd-plan-status"></div>
       <ol class="cd-plan-levels">${stages.map(levelHTML).join("")}</ol>
-    </div>`;
+    `, { sub: t(`camp.plan.sub.${track}`) });
 }
 
 function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
-  qs("#cd-plan-close", root)?.addEventListener("click", () => {
-    updateCampaign(campaign.id, { planCollapsed: true });
-    refresh();
-  });
-  qs("#cd-plan-expand", root)?.addEventListener("click", () => {
-    updateCampaign(campaign.id, { planCollapsed: false });
-    refresh();
-  });
   const btn = qs("#cd-plan-ai", root);
   if (!btn) return;
   btn.addEventListener("click", async () => {
@@ -654,7 +667,7 @@ function nextActionHTML(actions) {
   if (!actions.length) return "";
   const [first, ...rest] = actions;
   return `
-    <div class="card cd-next" id="cd-next">
+    <div class="card glass-card cd-next" id="cd-next">
       <div class="page-eyebrow" style="margin-bottom:6px;">${t("camp.detail.nextStep")}</div>
       <h3 class="cd-next-title">${esc(first.label)}</h3>
       <p class="cd-next-why">${esc(first.why)}</p>
@@ -665,6 +678,11 @@ function nextActionHTML(actions) {
     </div>`;
 }
 
+// The stage/level strip as a connected path rather than loose buttons —
+// each node gets a numbered/checked/locked badge and the gap between two
+// nodes lights up once you've moved past it, so the whole row reads at a
+// glance as "how far along this campaign's roadmap is", not just a set of
+// tabs to click through.
 function stageNavHTML(stages, index, acts, content, campaign) {
   if (stages.length <= 1) return "";
   return `
@@ -673,10 +691,17 @@ function stageNavHTML(stages, index, acts, content, campaign) {
         .map((s, i) => {
           const sub =
             s.kind === "level" ? (s.state === "completed" ? t("camp.detail.done") : s.state === "locked" ? t("camp.detail.locked") : t("camp.detail.now")) : s.kind === "window" ? s.dateLabel : t("camp.detail.contentCount", { count: content.filter((c) => c.campaignId === campaign.id && c.campaignPhaseId === s.id).length });
-          const cls = s.kind === "level" ? (s.state === "completed" ? "status-completed" : s.state === "locked" ? "is-locked" : "status-in_progress") : s.kind === "window" ? (s.state === "past" ? "is-past" : s.state === "current" ? "status-in_progress" : "") : "";
-          return `<button type="button" class="event-phase-pill ${cls} ${i === index ? "active" : ""}" data-cd-stage="${i}">
-            <span class="event-phase-name">${s.kind === "level" ? `${i + 1}. ` : ""}${esc(s.name)}</span>
-            <span class="event-phase-date">${esc(sub)}</span>
+          const isDone = s.kind === "level" ? s.state === "completed" : s.kind === "window" ? s.state === "past" : false;
+          const isLocked = s.kind === "level" && s.state === "locked";
+          const cls = s.kind === "level" ? (isDone ? "status-completed" : isLocked ? "is-locked" : "status-in_progress") : s.kind === "window" ? (isDone ? "is-past" : s.state === "current" ? "status-in_progress" : "") : "";
+          const badge = isDone ? icon("check", { size: 12 }) : isLocked ? icon("lock", { size: 11 }) : `${i + 1}`;
+          const connector = i > 0 ? `<span class="epp-connector ${i <= index ? "is-lit" : ""}"></span>` : "";
+          return `${connector}<button type="button" class="event-phase-pill ${cls} ${i === index ? "active" : ""}" data-cd-stage="${i}">
+            <span class="epp-badge">${badge}</span>
+            <span class="epp-body">
+              <span class="event-phase-name">${esc(s.name)}</span>
+              <span class="event-phase-date">${esc(sub)}</span>
+            </span>
           </button>`;
         })
         .join("")}
@@ -735,14 +760,14 @@ function levelGateHTML(campaign, stage, stageRead, ctx) {
   if (stage.state !== "current") return "";
   const adv = ladderAdvanceState(campaign, stage, ctx);
   if (adv.targetsMet && !adv.ready) {
-    return `<div class="card cd-gate is-wait"><h3>${esc(t("camp.gate.waitTitle", { weeks: adv.weeksLeft }))}</h3><p>${esc(t("camp.gate.waitBody", { min: adv.minWeeks, weeks: adv.weeks }))}</p></div>`;
+    return `<div class="card glass-card cd-gate is-wait"><h3>${esc(t("camp.gate.waitTitle", { weeks: adv.weeksLeft }))}</h3><p>${esc(t("camp.gate.waitBody", { min: adv.minWeeks, weeks: adv.weeks }))}</p></div>`;
   }
   if (adv.targetsMet) return "";
   const open = stageRead.readings.filter((r) => r.milestone.required !== false && !r.milestone.notApplicable && !r.met);
   const head = stageRead.readings.find((r) => r.milestone.highlight);
   // Only worth saying when the headline number is done but the level isn't.
   if (!head?.met || !open.length) return "";
-  return `<div class="card cd-gate is-wait"><h3>${esc(t("camp.gate.openTitle", { count: open.length }))}</h3><p>${esc(open.map((r) => r.milestone.label).join(" · "))}</p></div>`;
+  return `<div class="card glass-card cd-gate is-wait"><h3>${esc(t("camp.gate.openTitle", { count: open.length }))}</h3><p>${esc(open.map((r) => r.milestone.label).join(" · "))}</p></div>`;
 }
 
 // The posts behind a per-post milestone (ER count / above average / average
@@ -904,7 +929,7 @@ function activitiesHTML(acts, brandId, guided) {
   const recent = [...linked].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 5);
   return `
     <div class="section-title" style="margin-top:24px;"><h2>${t("camp.detail.activity")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.detail.activitySub")}</span></div>
-    <div class="card cd-activities">
+    <div class="card glass-card cd-activities">
       ${guided ? "" : `<div class="cd-pipeline">
         ${PIPELINE.map((p) => `<button type="button" class="cd-pipe ${counts[p.key] ? "" : "is-zero"}" data-cd-pipeline="${p.key}"><b>${counts[p.key]}</b>${p.label}</button>`).join("")}
       </div>`}
@@ -947,7 +972,7 @@ function growBrandStatusHTML(campaign, stage, stageRead) {
   if (stage.state !== "current") return "";
   const ev = evaluateLevel({ readings: stageRead.readings, startedAt: stageStartedAt(campaign, stage), estWeeks: stage.raw.estWeeks || 12, uploadsPerWeek: plan.uploadsPerWeek });
   return `
-    <div class="card goal-pace ${ev.overdue ? "is-bad" : "is-ok"}">
+    <div class="card glass-card goal-pace ${ev.overdue ? "is-bad" : "is-ok"}">
       ${
         ev.overdue
           ? `<div class="goal-pace-status"><span class="goal-pace-dot"></span>${esc(t("goal.status.overdueTitle"))}</div>
@@ -1295,7 +1320,13 @@ function openBrainstormModal({ brandId, brand, campaign, stage, refresh, ctxLabe
       <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${esc(t("camp.bs.intro", { campaign: campaign.name || t("camp.untitled"), stage: stage ? `${t(stage.kind === "level" ? "camp.bs.stageLevel" : "camp.bs.stagePhase", { name: stage.name })}${stage.dateLabel ? ` (${stage.dateLabel})` : ""}` : "" }))}</p>
       <button type="button" class="btn btn-secondary btn-sm" id="brainstorm-ai">${icon("bot", { size: 13 })}${t("camp.bs.askAi")}</button>
       <div id="brainstorm-ai-status" style="margin-top:10px;"></div>
-      <div id="brainstorm-ai-ideas" style="margin-top:4px;"></div>
+      <div style="margin-top:4px;">
+        <div id="brainstorm-ai-current"></div>
+        <details class="ai-history" id="brainstorm-ai-history" hidden>
+          <summary>${t("cr.ai.previousGenerated")} (<span id="brainstorm-ai-history-count">0</span>)</summary>
+          <div id="brainstorm-ai-history-list"></div>
+        </details>
+      </div>
       <div class="divider" style="margin:18px 0;"></div>
       <div class="page-eyebrow" style="margin-bottom:10px;">${t("camp.bs.ownIdea")}</div>
       <div class="field"><input class="input" id="bs-title" placeholder="${esc(t("camp.bs.titlePh"))}" /></div>
@@ -1330,7 +1361,25 @@ function openBrainstormModal({ brandId, brand, campaign, stage, refresh, ctxLabe
       else if (stage?.kind === "phase") ideas = await suggestPhaseContent(ai, { brand, campaign, phase: stage.raw, existingTitles });
       else ({ ideas } = await brainstormCampaignIdeas(ai, { brand, campaign, mission: stage?.kind === "level" ? stage.raw : stage ? { name: stage.name, description: stage.dateLabel ? `Fase ${stage.name} (${stage.dateLabel})` : stage.description, tagline: "" } : null, existingTitles }));
       statusEl.innerHTML = "";
-      qs("#brainstorm-ai-ideas", overlay).innerHTML = (ideas || [])
+      // Newest batch of ideas renders open up top; whatever was showing
+      // before (still pick-able — its own "Save idea" buttons keep working
+      // after the move) drops into the collapsed history instead of just
+      // being overwritten and lost on every re-ask. Each batch wires its
+      // own buttons against its own `ideas` array (a closure, not a shared
+      // one) so an old batch's button can never grab the wrong idea after a
+      // newer generate has replaced the outer variable.
+      const currentWrap = qs("#brainstorm-ai-current", overlay);
+      const prevBatch = currentWrap.firstElementChild;
+      if (prevBatch) {
+        const historyDetails = qs("#brainstorm-ai-history", overlay);
+        const historyList = qs("#brainstorm-ai-history-list", overlay);
+        historyList.insertBefore(prevBatch, historyList.firstChild);
+        historyDetails.hidden = false;
+        qs("#brainstorm-ai-history-count", overlay).textContent = String(historyList.children.length);
+      }
+      const batchEl = document.createElement("div");
+      batchEl.className = "ai-batch";
+      batchEl.innerHTML = (ideas || [])
         .map(
           (idea, i) => `
         <div class="card card-tight" style="margin-bottom:8px;padding:12px;">
@@ -1340,7 +1389,8 @@ function openBrainstormModal({ brandId, brand, campaign, stage, refresh, ctxLabe
         </div>`
         )
         .join("");
-      qsa("[data-use-brainstorm-idea]", overlay).forEach((btn) => {
+      currentWrap.appendChild(batchEl);
+      batchEl.querySelectorAll("[data-use-brainstorm-idea]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const idea = ideas[Number(btn.dataset.useBrainstormIdea)];
           save({ title: idea.title, idea: idea.angle });

@@ -621,7 +621,7 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh) {
 
   body.innerHTML = filtered.length
     ? `<div class="agenda-list">${filtered.map((c) => agendaRow(c, campaignById)).join("")}</div>`
-    : `<div class="card"><div class="table-empty">${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</div></div>`;
+    : `<div class="card glass-card"><div class="table-empty">${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</div></div>`;
 
   qsa("[data-id]", body).forEach((el) => {
     el.addEventListener("click", () => openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh }));

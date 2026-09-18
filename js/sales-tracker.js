@@ -16,9 +16,9 @@
 // STORAGE: on the brand document (`brand.salesTracker`), not a collection of
 // its own — no Firestore rules change, and a small brand's log (a few
 // thousand short rows at most) sits comfortably inside one document.
-//   { model, products: [{ id, name, price, cost, openingSold, archived }],
-//     openingRevenue, entries: [{ id, productId, qty, amount, date, repeat,
-//     referral, note, at }], lastAdvice }
+//   { model, products: [{ id, name, price, cost, openingSold, discountPct,
+//     discountUntil, archived }], openingRevenue, entries: [{ id, productId,
+//     qty, amount, date, repeat, referral, note, eventId, at }], lastAdvice }
 // `openingSold` / `openingRevenue`: what was already sold before tracking
 // started (the wizard's "sold so far") — counted in totals, never shown as
 // a dated sale.
@@ -104,14 +104,43 @@ export function mergeProductsFromWizard(brandId, { model, products, openingReven
 }
 
 // ---------- Sales log ----------
-export function logSale(brandId, { productId, qty = 1, amount = null, date = localISODate(), repeat = false, referral = false, note = "" }) {
+// `eventId`: optional link to an Event campaign (campaign.eventPlan) — for a
+// brand that sells at bazaars/launches/pop-ups, tagging a sale with which
+// event it came from is what lets eventSalesStats below answer "this event
+// sold how many of what" on the campaign's own page.
+export function logSale(brandId, { productId, qty = 1, amount = null, date = localISODate(), repeat = false, referral = false, note = "", eventId = null }) {
   const tr = getTracker(getBrand(brandId));
   const product = tr.products.find((p) => p.id === productId);
   if (!product) return null;
   const q = Math.max(1, Math.round(num(qty)) || 1);
-  const entry = { id: uid("s"), productId, qty: q, amount: amount === null || amount === "" ? effectivePrice(product, date) * q : Math.max(0, num(amount)), date, repeat: !!repeat, referral: !!referral, note: String(note || "").trim().slice(0, 140), at: Date.now() };
+  const entry = { id: uid("s"), productId, qty: q, amount: amount === null || amount === "" ? effectivePrice(product, date) * q : Math.max(0, num(amount)), date, repeat: !!repeat, referral: !!referral, note: String(note || "").trim().slice(0, 140), eventId: eventId || null, at: Date.now() };
   save(brandId, { entries: [...tr.entries, entry] });
   return entry;
+}
+// Event campaigns this brand has (campaign.eventPlan, from the "Event" quick
+// template in js/views/campaigns.js) — most recent event date first, for the
+// "which event was this sale from" picker in the log form.
+export function eventCampaignsForBrand(brandId) {
+  return listCampaigns(brandId)
+    .filter((c) => c.eventPlan && c.status !== "archived")
+    .sort((a, b) => (b.eventPlan?.eventDate || "").localeCompare(a.eventPlan?.eventDate || ""));
+}
+// What's been logged against one event so far: per-product qty/revenue plus
+// the total, read by campaign-detail.js's event-sales widget.
+export function eventSalesStats(brand, eventId) {
+  const tracker = getTracker(brand);
+  const entries = tracker.entries.filter((e) => e.eventId === eventId);
+  const byProduct = {};
+  entries.forEach((e) => {
+    const row = byProduct[e.productId] || (byProduct[e.productId] = { qty: 0, revenue: 0 });
+    row.qty += e.qty;
+    row.revenue += e.amount;
+  });
+  const products = tracker.products
+    .filter((p) => byProduct[p.id])
+    .map((p) => ({ product: p, ...byProduct[p.id] }))
+    .sort((a, b) => b.qty - a.qty);
+  return { products, count: entries.length, qty: entries.reduce((a, e) => a + e.qty, 0), revenue: entries.reduce((a, e) => a + e.amount, 0) };
 }
 export function deleteSale(brandId, entryId) {
   const tr = getTracker(getBrand(brandId));

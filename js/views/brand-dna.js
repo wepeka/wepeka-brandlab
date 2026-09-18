@@ -326,7 +326,7 @@ function aiFillCardHTML(state) {
   const answered = countAnswered(state.answers);
   const compact = state.stepIndex > 0;
   return `
-    <div class="card dna-ai-fill ${compact ? "is-compact" : ""}" id="dna-ai-fill-card">
+    <div class="card dark-surface dna-ai-fill ${compact ? "is-compact" : ""}" id="dna-ai-fill-card">
       <div class="dna-ai-fill-icon">${icon("bot", { size: 18 })}</div>
       <div class="dna-ai-fill-text">
         <div class="t">${answered ? t("dna.aiFill.titleRest") : t("dna.aiFill.titleAll")}</div>
@@ -655,7 +655,7 @@ function optionCardsHTML(options) {
     ${options
       .map(
         (opt, i) => `
-      <div class="card card-tight" style="margin-top:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
+      <div class="card dark-surface card-tight" style="margin-top:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
         <span style="font-size:13px;">${escapeHtml(opt)}</span>
         <button type="button" class="btn btn-secondary btn-sm" data-use-option="${i}" style="flex:none;">${t("dna.ai.useOption")}</button>
       </div>`
@@ -1126,7 +1126,7 @@ function captureReview(root, state) {
 function oneLinerCardHTML(state) {
   const hasEnough = state.answers.targetAudience || state.answers.problemSolved;
   return `
-    <div class="card" style="margin-bottom:20px;border-color:var(--accent);">
+    <div class="card dark-surface" style="margin-bottom:20px;border-color:var(--accent);">
       <div class="flex items-center justify-between" style="margin-bottom:4px;">
         <h3 style="margin:0;font-size:15px;">${t("dna.oneLiner.title")}</h3>
         <button type="button" class="btn btn-secondary" id="gen-oneliner" ${hasEnough ? "" : "disabled"}>
@@ -1153,7 +1153,7 @@ function reviewHTML(state) {
     <p class="text-muted" style="font-size:13px;margin:${state.autoDrafted ? "0 0 6px" : "0 0 20px"};">${state.autoDrafted ? t("dna.review.subAuto") : t("dna.review.sub")}</p>
     ${state.autoDrafted ? `<a href="#" id="dna-answer-manually" class="hint" style="display:inline-block;font-size:12.5px;margin:0 0 14px;">${t("dna.review.answerManually")}</a>` : ""}
     ${oneLinerCardHTML(state)}
-    <div class="card card-tight review-card" style="margin-bottom:20px;">
+    <div class="card dark-surface card-tight review-card" style="margin-bottom:20px;">
       ${reviewSection(t("dna.review.customer"), a.targetAudience, "targetAudience", { hint: t("dna.review.customerHint") })}
       ${reviewSection(t("dna.review.problem"), a.problemSolved, "problemSolved", { hint: t("dna.review.problemHint") })}
       ${reviewSection(t("dna.review.trust"), a.differentiation, "differentiation", { hint: t("dna.review.trustHint") })}

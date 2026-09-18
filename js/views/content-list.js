@@ -247,7 +247,7 @@ function renderTable(root, brandId, state, refresh, brand) {
              ${topPerformers
                .map(
                  ({ c, m }) => `
-               <div class="card card-tight top-performer-card" data-open-content="${c.id}" style="cursor:pointer;flex:1;min-width:200px;">
+               <div class="card glass-card card-tight top-performer-card" data-open-content="${c.id}" style="cursor:pointer;flex:1;min-width:200px;">
                  <div class="flex items-center justify-between" style="margin-bottom:4px;">
                    <span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span>
                    <span class="health-badge health-good"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>

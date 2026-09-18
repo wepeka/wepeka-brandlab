@@ -41,9 +41,10 @@ export const GOAL_DURATIONS = [6, 12];
 const COMMUNITY_JOIN_RATE = 0.1; // share of followers who'll join a group/channel — used only as a starting suggestion, never forced
 const ER_GOOD_FALLBACK = 3; // % — "good" Instagram ER, social-media-analyzer benchmark
 // Dunbar's circles: ~15 people you're close to, ~50 you know well, ~150 you
-// can keep a real relationship with. A community's first stop is a founding
-// circle, not an audience.
-const DUNBAR_CIRCLES = [15, 50, 150];
+// can keep a real relationship with, then the looser "500 acquaintances" /
+// "1500 recognizable faces" circles sometimes cited past that. A community's
+// first stop is a founding circle, not an audience.
+const DUNBAR_CIRCLES = [15, 50, 150, 500, 1500];
 // 90-9-1 participation (Nielsen): in a large group ~1% create, ~9% respond,
 // 90% read — so "active" means ~10%. Small founding groups run far hotter.
 const ACTIVE_SHARE_SMALL = 0.3;
@@ -254,10 +255,12 @@ export function buildSocialGrowthPlan(input) {
 }
 
 // ============================================================
-// COMMUNITY GROWTH — five levels: Rancang (design the community before
+// COMMUNITY GROWTH — seven levels: Rancang (design the community before
 // inviting anyone) → Bergabung (join) → Partisipasi Aktif (activate) →
-// Rasa Memiliki (belong/contribute) → Mandiri (member-led). Member count is
-// asked directly in onboarding — never inferred from followers.
+// Rasa Memiliki (belong/contribute) → Mandiri (member-led) → Advokasi
+// (members actively recruit and publicly vouch for the brand) → Ekosistem
+// (the community spins up its own self-run sub-groups/chapters). Member
+// count is asked directly in onboarding — never inferred from followers.
 // ============================================================
 
 export const COMMUNITY_LEVELS = [
@@ -266,19 +269,25 @@ export const COMMUNITY_LEVELS = [
   { name: "Partisipasi Aktif", focus: "activate" },
   { name: "Rasa Memiliki", focus: "belong" },
   { name: "Mandiri", focus: "lead" },
+  { name: "Advokasi", focus: "advocate" },
+  { name: "Ekosistem", focus: "ecosystem" },
 ];
 
 // Same rule as Social: never skip straight past the level the community is
 // actually working within just because a member count crossed a threshold —
 // that level's other required milestones (rules, rituals, cross-posting…)
 // still have to happen for real. Only levels fully behind that one drop off
-// the ladder.
+// the ladder. Capped at "lead" (index 4) even for a huge existing
+// community — Advokasi/Ekosistem are always still ahead, never the
+// starting point, so the ladder never reads as "just 1-2 steps left" no
+// matter how big the community already is.
 export function placeStartCommunityLevel({ hasExisting, members }) {
   const m = Number(members) || 0;
   if (!hasExisting) return { index: 0, reason: "design" };
-  const REASONS = ["design", "join", "activate", "belong", "lead"];
-  const raw = m < DUNBAR_CIRCLES[0] ? 1 : m < DUNBAR_CIRCLES[1] ? 2 : m < DUNBAR_CIRCLES[2] ? 3 : 4;
-  const index = Math.max(0, raw - 1);
+  const REASONS = ["design", "join", "activate", "belong", "lead", "advocate", "ecosystem"];
+  const raw =
+    m < DUNBAR_CIRCLES[0] ? 1 : m < DUNBAR_CIRCLES[1] ? 2 : m < DUNBAR_CIRCLES[2] ? 3 : m < DUNBAR_CIRCLES[3] ? 4 : m < DUNBAR_CIRCLES[4] ? 5 : 6;
+  const index = Math.min(4, Math.max(0, raw - 1));
   return { index, reason: REASONS[index] };
 }
 
@@ -338,6 +347,7 @@ export function buildCommunityGrowthPlan(input) {
       memberLed: { track: "community", label: "Aktivitas yang dijalankan member sendiri", unit: "aktivitas", metric: "manual.number", target: 2, description: t("goal.ms.memberLedDesc") },
       referred: { track: "community", label: "Member baru dari ajakan member", unit: "member", metric: "manual.number", target: Math.max(5, niceRound((cp - prevCp) * 0.3)), description: t("goal.ms.referredDesc") },
       events: { track: "community", label: "Event komunitas (online/offline)", unit: "event", metric: "manual.number", target: 1, description: t("goal.ms.communityEventDesc") },
+      subInitiatives: { track: "community", label: "Inisiatif/sub-grup yang dijalankan mandiri oleh member", unit: "inisiatif", metric: "manual.number", target: 2, description: t("goal.ms.subInitiativesDesc") },
     };
     const SETS = {
       design: { required: ["concept", "rules", "ritualPlan", ...(hasExisting ? [] : ["waGroup"]), "members"], optional: [] },
@@ -345,6 +355,13 @@ export function buildCommunityGrowthPlan(input) {
       activate: { required: ["activeMembers", "activity", "members", "crossPost"], optional: ["ugc"] },
       belong: { required: ["ugc", "members", "advocates", "testimonials"], optional: ["activeMembers", "events"] },
       lead: { required: ["memberLed", "referred", "members", "advocates"], optional: ["events", "testimonials"] },
+      // Members recruit and publicly vouch for the brand on their own —
+      // the bar moves from "has advocates" (belong/lead) to "advocacy is
+      // the main growth engine now".
+      advocate: { required: ["referred", "advocates", "members", "crossPost"], optional: ["testimonials", "events"] },
+      // Capstone: the community is self-sustaining enough to spin up its
+      // own sub-groups/chapters, not just member-run one-off activities.
+      ecosystem: { required: ["subInitiatives", "memberLed", "members", "advocates"], optional: ["referred", "events"] },
     };
     const set = SETS[lvl.focus];
     // Naming the community (concept.js item 1) is never optional and never
