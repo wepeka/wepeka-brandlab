@@ -100,6 +100,17 @@
 .cd-plan-added{ flex:none; display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; color: var(--health-good); }
 @media (max-width:560px){ .cd-plan-act{ flex-direction:column; } }
 
+/* Sales Tracker widget on Sales Growth campaigns (campaign-detail.js
+   salesWidgetHTML) — same closable-card pattern as .cd-plan above. */
+.cd-sales-widget{ position:relative; padding-right:46px; }
+.cd-sales-list{ display:grid; gap:12px; }
+.cd-sales-row{ display:grid; grid-template-columns:1fr auto; align-items:center; column-gap:12px; font-size:13.5px; }
+.cd-sales-row .cd-bar{ grid-column:1 / -1; margin:4px 0 0; }
+.cd-sales-name{ font-weight:700; }
+.cd-sales-sold{ color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cd-sales-total{ display:flex; align-items:center; justify-content:space-between; margin-top:14px; padding-top:12px; border-top:1px solid var(--border-soft); font-size:13px; color: var(--text-muted); }
+.cd-sales-total b{ color: var(--text); font-size:16px; }
+
 /* "Ide Campaign" bubble board (campaign-detail.js ideasWidgetHTML) — a warm,
    playful pill/chip layout on purpose (explicit user ask for a "very
    friendly" widget), reusing the same --track-* tokens as the card badges

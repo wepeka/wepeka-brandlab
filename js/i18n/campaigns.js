@@ -782,6 +782,15 @@ export default {
   "camp.plan.collapsedTitle": { en: "Campaign plan (closed)", id: "Rencana campaign (ditutup)" },
   "camp.plan.expand": { en: "Show plan", id: "Tampilkan rencana" },
 
+  // ---------- Sales Tracker widget (campaign-detail.js salesWidgetHTML) ----------
+  "camp.sales.title": { en: "Products & sales", id: "Produk & Penjualan" },
+  "camp.sales.sub": { en: "Straight from your Sales Tracker", id: "Langsung dari Sales Tracker" },
+  "camp.sales.empty": { en: "No products in your Sales Tracker yet.", id: "Belum ada produk di Sales Tracker." },
+  "camp.sales.totalSold": { en: "Total sold", id: "Total terjual" },
+  "camp.sales.openTracker": { en: "Open Sales Tracker", id: "Buka Sales Tracker" },
+  "camp.sales.collapsedTitle": { en: "Products & sales (closed)", id: "Produk & penjualan (ditutup)" },
+  "camp.sales.expand": { en: "Show products", id: "Tampilkan produk" },
+
   "camp.identity.title": { en: "Community name & nickname", id: "Nama & Panggilan Komunitas" },
   "camp.identity.intro": { en: "Give this a real name — and a nickname members get called (like \"Swifties\" or \"Wepekans\"). It sticks with the campaign everywhere.", id: "Kasih nama sungguhan — dan panggilan buat member (kayak \"Swifties\" atau \"Wepekans\"). Ini bakal kepakai di seluruh campaign." },
   "camp.identity.nameLabel": { en: "Community name", id: "Nama komunitas" },
