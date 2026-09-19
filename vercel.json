@@ -1,13 +1,5 @@
 {
   "crons": [
     { "path": "/api/cron/check-expiry", "schedule": "0 1 * * *" }
-  ],
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [{ "type": "host", "value": "planner.wepeka.com" }],
-      "destination": "https://brandlab.wepeka.com/:path*",
-      "permanent": true
-    }
   ]
 }
