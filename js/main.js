@@ -163,10 +163,17 @@ function onAccountChange(user, account) {
       }
       storeReady = true;
       firstRouteAfterBoot = true;
-      // That picker is the only thing that ever interrupts a boot. No
-      // splash, no intro modal, no banners — the route paints straight away
-      // and the home hero says what to do next.
+      // The mode picker and, once, the "Kenalan" explainer video are the
+      // only things that ever interrupt a boot — no splash, no banners. The
+      // route always paints first (the home hero says what to do next);
+      // only a brand-new account then gets the video on top of it, and only
+      // the one time (js/guide-videos.js playFirstRunIntro, videoSeen-gated).
       renderRoute();
+      if (firstEverOpen) {
+        import("./guide-videos.js")
+          .then((m) => m.playFirstRunIntro())
+          .catch((e) => console.warn("first-run video unavailable", e));
+      }
       // Weekly Instagram insights refresh for published content. Loaded
       // lazily (same reason every view is) and a few seconds after first
       // paint so it never competes with the initial render.

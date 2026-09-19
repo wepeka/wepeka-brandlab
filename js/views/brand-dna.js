@@ -8,6 +8,7 @@ import { suggestBrandDnaOptions, generateOneLiner, AiApiError, hasAiKey, generat
 import { getMode } from "../mode.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { brandDnaCompleteness } from "../brand-progress.js";
@@ -287,7 +288,7 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}/builder`, t("nav.builder"))} · ${t("dna.eyebrowWizard")}${helpButtonHTML("brand-dna")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}/builder`, t("nav.builder"))} · ${t("dna.eyebrowWizard")}${helpButtonHTML("brand-dna")}${guideVideoButtonHTML("brand-dna")}</div>
         <h1>${brand.name}</h1>
       </div>
     </div>

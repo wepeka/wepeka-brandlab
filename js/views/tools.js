@@ -11,6 +11,7 @@ import { getTracker, trackerTotals, monthRange } from "../sales-tracker.js";
 import { escapeHtml, formatNumber } from "../dom.js";
 import { icon } from "../icons.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { t } from "../i18n.js";
@@ -53,7 +54,7 @@ function paint(root, brand) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}`, t("nav.home"))} · ${t("tools.eyebrow")}${helpButtonHTML("tools")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}`, t("nav.home"))} · ${t("tools.eyebrow")}${helpButtonHTML("tools")}${guideVideoButtonHTML("tools")}</div>
         <h1>${escapeHtml(brand.name)}</h1>
         <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:640px;">${t("tools.sub")}</p>
       </div>

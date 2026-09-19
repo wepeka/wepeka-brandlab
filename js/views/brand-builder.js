@@ -3,6 +3,7 @@ import { getBrand } from "../store.js";
 import { qs, escapeHtml, toast } from "../dom.js";
 import { icon } from "../icons.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { t } from "../i18n.js";
@@ -96,7 +97,7 @@ function paintHub(root, brand) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}`, t("nav.home"))} · Brand Builder${helpButtonHTML("brand-builder-hub")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}`, t("nav.home"))} · Brand Builder${helpButtonHTML("brand-builder-hub")}${guideVideoButtonHTML("brand-builder-hub")}</div>
         <h1>${escapeHtml(brand.name)}</h1>
         <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:640px;">${t("builder.hub.sub")}</p>
       </div>

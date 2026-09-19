@@ -13,6 +13,8 @@ import { t } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
 import { openReportModal } from "./report.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 
 // The brand's home, one file for both modes. The page answers one question
 // — "sekarang ngapain?" — with one hero card and one button:
@@ -122,7 +124,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${t("home.eyebrow")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
         <h1>${esc(brand.name)}</h1>
         <p class="page-sub">${identityDone ? t("beginner.sub.allDone") : t("home.sub.identity")}</p>
       </div>
@@ -146,6 +148,7 @@ function paint(root, brandId, state, refresh) {
     ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, `<button type="button" class="btn btn-secondary btn-sm" id="home-report">${icon("download", { size: 13 })}${t("home.report")}</button>`) : ""}
   `;
 
+  wireHelpButtons(root);
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
   if (cfg.analytics) {
     wireAnalyticsSection(root, state, refresh);

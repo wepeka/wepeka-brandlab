@@ -40,9 +40,17 @@ const HELP_CONTENT = {
     id: { title: "Campaign", body: "Tujuan yang lagi dikejar brand ini sekarang. Tiap milestone tahu sumber angkanya (Content OS, Instagram Insights, performa konten, atau catatanmu) dan kasih satu tombol buat memperbaruinya." },
     en: { title: "Campaigns", body: "The goal this brand is working toward right now. Every milestone knows where its number comes from (Content OS, Instagram Insights, content performance, or your own notes) and gives you one button to update it." },
   },
+  "campaign-detail": {
+    id: { title: "Detail Campaign", body: "Dibaca dari atas ke bawah: posisi kamu sekarang (angka utama), apa yang perlu dikerjain (Langkah berikutnya), lalu milestone dan kontennya. Angka nggak pernah diketik manual di sini — semua ada sumbernya, kecuali yang memang cuma kamu yang tahu (dicatat lewat lembar Catat angka)." },
+    en: { title: "Campaign Detail", body: "Read top to bottom: where you stand now (the headline number), what to do next (Next step), then milestones and their content. Numbers are never typed here by hand — each has a source, except the ones only you know (logged through the manual-entry sheet)." },
+  },
   "content-list": {
     id: { title: "Konten", body: "Tempat cek konten yang udah ada — pilih mau lihat semua, yang udah terjadwal, atau yang udah terbit. Buat nulis konten baru dari nol, pakai Creator Studio, bukan di sini." },
     en: { title: "Content", body: "Where you check existing content — everything, what's scheduled, or what's published. To write new content from scratch, use Creator Studio instead." },
+  },
+  "content-os": {
+    id: { title: "Content OS", body: "Tiga tab buat satu alur: Creator (nulis konten), Kalender (jadwalkan), Konten (cek yang udah ada). Selalu urutan yang sama, di kedua mode." },
+    en: { title: "Content OS", body: "Three tabs for one flow: Creator (write content), Calendar (schedule it), Content (check what's there). Always the same order, in both modes." },
   },
   "brand-dna": {
     id: { title: "Brand DNA", body: "Wizard satu pertanyaan per langkah biar nggak kayak ngisi form kosong. Lima langkah pertama itu inti — audiens, masalah, kenapa harus percaya, rencana, dan ajakan bertindak. Jawaban tersimpan tiap kali klik Lanjut, jadi aman ditinggal kapan aja." },
@@ -64,9 +72,9 @@ const HELP_CONTENT = {
     id: { title: "Copy Studio", body: "Tulisan pendek siap pakai: Threads, caption Story, broadcast WhatsApp, caption feed. Pilih format dan tujuan, ceritain mau nyampein apa, AI tulisin 3 pilihan pakai gaya bahasa brand ini. Hasilnya nggak disimpan, jadi salin dulu sebelum pindah halaman." },
     en: { title: "Copy Studio", body: "Short ready-to-use copy: Threads posts, Story captions, WhatsApp broadcasts, feed captions. Pick a format and goal, say what you want to get across, and AI writes 3 options in this brand's voice. Results aren't saved, so copy them before leaving the page." },
   },
-  "beginner-home": {
-    id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang. Di bawahnya ada 5 langkah dasar yang kebuka urut. Mau lihat semua fitur dan grafik? Klik tombol mode di pojok atas buat lihat bedanya Pemula dan Pro." },
-    en: { title: "Home", body: "The top card always tells you the one thing to do now. Below it are 5 basic steps that unlock in order. Want every feature and chart? Click the mode button at the top to see how Beginner and Pro differ." },
+  "home": {
+    id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau \"Hari ini\" begitu identitasnya rampung. Di bawahnya ada langkah berikutnya, jadwal, dan (mode Pro) analitik." },
+    en: { title: "Home", body: "The top card always tells you the one thing to do now — your unfinished brand identity, or \"Today\" once that's done. Below it are the next step, your schedule, and (Pro mode) analytics." },
   },
   "tools": {
     id: { title: "Alat", body: "Tiga alat pendukung di luar Campaign dan Konten: Brainstorm buat mikirin ide bareng AI, Copy Studio buat tulisan pendek siap pakai, dan Sales Tracker buat catat penjualan. Selalu terbuka, nggak nunggu identitas brand selesai." },

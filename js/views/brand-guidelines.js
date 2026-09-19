@@ -15,6 +15,7 @@ import { generateValueProposition, generateColorEssence, detectToneOfVoice, hasA
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
@@ -252,7 +253,7 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}${guideVideoButtonHTML("brand-guidelines")}</div>
         <h1>${brand.name}</h1>
       </div>
       ${guidelinesProgressHTML(state)}

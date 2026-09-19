@@ -23,6 +23,7 @@ import { backLinkHTML } from "../back-link.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { toast, formatNumber, formatDate, qs, qsa, escapeHtml as esc, avatarHTML } from "../dom.js";
 import { readFlag, writeFlag, clearFlag } from "../seen-flags.js";
 import { t } from "../i18n.js";
@@ -71,7 +72,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/tools`, t("nav.tools"))} · ${t("sales.eyebrow")}${helpButtonHTML("sales")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/tools`, t("nav.tools"))} · ${t("sales.eyebrow")}${helpButtonHTML("sales")}${guideVideoButtonHTML("sales")}</div>
         <h1>${esc(brand.name)}</h1>
       </div>
       ${active.length ? `<button class="btn btn-secondary" id="st-xlsx">${icon("download", { size: 15 })}${t("sales.export.excel")}</button>` : ""}

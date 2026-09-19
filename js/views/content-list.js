@@ -11,6 +11,7 @@ import { canUseInstagramApi } from "../account.js";
 import { analyzeScreenshot } from "../ocr.js";
 import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { consumeNavContext } from "../nav-context.js";
 
 // One table, three quick views: everything, what's live, what's still in
@@ -118,7 +119,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}${guideVideoButtonHTML("content-list")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">

@@ -7,6 +7,8 @@ import { openContentEditor } from "./content-editor.js";
 import { t } from "../i18n.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 
 // Umbrella for the content side: Creator Studio, the calendar and the
 // content database live here as sub-tabs — the same three, in the same
@@ -34,12 +36,13 @@ export function render(root, { brandId, sub, contentId }) {
   const activeSub = SUB_TABS.some((x) => x.key === sub) ? sub : "creator";
 
   root.innerHTML = `
-    <div class="page-eyebrow" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("nav.content")}</div>
+    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("nav.content")}${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}</div>
     <div class="tabs cos-tabs" style="margin:-4px 0 20px;">
       ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
     </div>
     <div id="cos-mount"></div>
   `;
+  wireHelpButtons(root);
   const mount = document.getElementById("cos-mount");
 
   let cleanup;

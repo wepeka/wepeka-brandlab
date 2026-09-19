@@ -8,6 +8,7 @@ import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { generateScript, AiApiError, hasAiKey, buildFullContext, campaignSummaryLine } from "../ai.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
 import { funnelFieldHTML, wireFunnelField, statusLabel } from "../funnel-field.js";
@@ -491,7 +492,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${getMode() === "guided" ? t("cr.eyebrowGuided") : "Creator Studio — Mission"}${helpButtonHTML("creator")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${getMode() === "guided" ? t("cr.eyebrowGuided") : "Creator Studio — Mission"}${helpButtonHTML("creator")}${guideVideoButtonHTML("creator")}</div>
         <h1>${brand.name}</h1>
       </div>
       <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>

@@ -6,6 +6,7 @@ import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { suggestSchedule, hasAiKey } from "../ai.js";
 import { t, getLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
 import { consumeNavContext } from "../nav-context.js";
 import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
@@ -265,7 +266,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}${guideVideoButtonHTML("calendar")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">

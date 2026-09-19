@@ -13,6 +13,7 @@ import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.
 import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
 import { hasAiKey } from "../ai.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { startCampaignListGuide, startCampaignListGuideOnMount, startCampaignDetailGuideOnMount } from "../guides/campaign-guide.js";
 import { t } from "../i18n.js";
@@ -79,7 +80,7 @@ function paintList(root, brandId, brand, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("camp.list.eyebrow")}${helpButtonHTML("campaigns")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("camp.list.eyebrow")}${helpButtonHTML("campaigns")}${guideVideoButtonHTML("campaigns")}</div>
         <h1>${brand.name}</h1>
       </div>
       <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>

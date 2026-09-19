@@ -25,6 +25,8 @@ import { brainstormCampaignIdeas, suggestPhaseContent, generateCampaignPlaybook,
 import { openInsightsModal } from "./insights-modal.js";
 import { openQuickFillModal } from "./content-list.js";
 import { setPageGuide } from "../section-guide.js";
+import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { startCampaignDetailGuide } from "../guides/campaign-guide.js";
 import { getMode } from "../mode.js";
 import { isTourDemo, demoBrainstormIdeas, demoPhaseContent, DEMO_TOAST } from "../tour-demo.js";
@@ -91,7 +93,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${helpButtonHTML("campaign-detail")}${guideVideoButtonHTML("campaign-detail")}</div>
         <h1>${esc(campaign.name || t("camp.untitled"))}</h1>
         <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}</p>
       </div>
@@ -147,6 +149,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   `;
 
   setPageGuide(() => startCampaignDetailGuide(brandId, campaign.id));
+  wireHelpButtons(root);
   qsa("[data-cd-delegated]", root).forEach((a) =>
     a.addEventListener("click", (e) => {
       e.preventDefault();
