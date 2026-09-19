@@ -1168,12 +1168,23 @@ export const MISSION_LADDERS = {
 // handed the same 50-piece Level 1 as a daily-posting media brand.
 export const MISSION_MIN_WEEKS = [8, 12, 16, 20, 24];
 
-export function createMissionsForTemplate(templateId, { startIndex = 0, uploadsPerWeek = null } = {}) {
+export function createMissionsForTemplate(templateId, { startIndex = 0, uploadsPerWeek = null, currentFollowers = null } = {}) {
   const ladder = MISSION_LADDERS[templateId];
   if (!ladder) return undefined;
   const scaledContentTarget = (ms, i) => {
     if (ms.kind !== "auto" || !uploadsPerWeek) return ms.target ?? null;
     return Math.max(8, Math.round(uploadsPerWeek * (MISSION_MIN_WEEKS[i] || 8)));
+  };
+  // #7: the mission the account actually starts on (startIndex) keeps its
+  // rung — Tahap 1 stays Tahap 1 — but if the brand already has more
+  // followers than that rung's flat catalog target, the target is raised to
+  // match reality instead of asking them to "reach" a number they're
+  // already past.
+  const resolvedTarget = (ms, i) => {
+    if (ms.label === "Followers" && i === startIndex && currentFollowers !== null && ms.target != null) {
+      return Math.max(ms.target, currentFollowers);
+    }
+    return scaledContentTarget(ms, i);
   };
   return ladder.missions().map((m, i) => ({
     id: uid(),
@@ -1191,7 +1202,7 @@ export function createMissionsForTemplate(templateId, { startIndex = 0, uploadsP
       label: ms.label,
       description: ms.description || milestoneDescriptionSource(ms.label),
       unit: ms.unit || "",
-      target: scaledContentTarget(ms, i),
+      target: resolvedTarget(ms, i),
       threshold: ms.threshold ?? null,
       highlight: !!ms.highlight,
       custom: false,

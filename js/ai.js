@@ -169,32 +169,42 @@ export async function testAiConnection(ai) {
 // already accepted. Omit for the original all-three-at-once behavior.
 export async function generateScript(
   ai,
-  { title, idea, platform, format, funnel, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, campaignLine, only }
+  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, campaignLine, only }
 ) {
   const wantsHooks = !only || only === "hooks";
   const wantsScript = !only || only === "script";
   const wantsCaption = !only || only === "caption";
+  // #1: a Carousel is a stack of still slides, not a spoken video script —
+  // ask the model for a slide array instead of forcing the HOOK/ISI
+  // PEMBAHASAN shape onto something nobody narrates.
+  const isCarousel = (format || "").toLowerCase().includes("carousel");
   const responseShape = [
     wantsHooks ? '"hooks": ["hook 1", "hook 2", "hook 3"]' : "",
-    wantsScript ? '"script": "HOOK\\n...\\n\\nISI PEMBAHASAN\\n..."' : "",
+    wantsScript
+      ? isCarousel
+        ? '"slides": [{"slideNumber": 1, "text": "..."}, {"slideNumber": 2, "text": "..."}]'
+        : '"script": "HOOK\\n...\\n\\nISI PEMBAHASAN\\n..."'
+      : "",
     wantsCaption ? '"caption": "a short caption for the post, with 3-5 relevant hashtags"' : "",
   ]
     .filter(Boolean)
     .join(", ");
   const system = [
-    "You are a short-form social video scriptwriter.",
+    isCarousel ? "You are a short-form social media carousel writer." : "You are a short-form social video scriptwriter.",
     outputLanguageRule(),
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     wantsScript
-      ? [
-          "The script MUST always use exactly this section format, with these two Indonesian labels in capitals, nothing else:",
-          "HOOK",
-          "(1-2 sentences that stop the scroll)",
-          "",
-          "ISI PEMBAHASAN",
-          "(the main content, delivered in the brand's voice)",
-        ].join("\n")
+      ? isCarousel
+        ? "Write the on-slide text for a carousel post as an array of slides, in \"slides\": one short, punchy block of text per slide (not spoken narration). Slide 1 is the cover/hook that stops the scroll, the middle slides each carry exactly one clear point, and the last slide closes with a takeaway or CTA. Use 5 to 8 slides unless the content clearly needs fewer or more."
+        : [
+            "The script MUST always use exactly this section format, with these two Indonesian labels in capitals, nothing else:",
+            "HOOK",
+            "(1-2 sentences that stop the scroll)",
+            "",
+            "ISI PEMBAHASAN",
+            "(the main content, delivered in the brand's voice)",
+          ].join("\n")
       : "",
     only === "hooks" ? "Only write hooks (the opening 1-2 sentences that stop the scroll) — no full script, no caption." : "",
     only === "caption" ? "Only write a caption — no hooks, no script." : "",
@@ -213,11 +223,19 @@ export async function generateScript(
     MOFU: `Funnel stage: MOFU (consideration) — the video should demonstrate/show: ${mofuGoal || "(not specified — infer something reasonable)"}.`,
     BOFU: `Funnel stage: BOFU (conversion) — the video should sell/push toward: ${bofuOffer || "(not specified — infer something reasonable)"}.`,
   }[funnel || "TOFU"];
+  // #5: production effort is independent of funnel stage — a TOFU idea can
+  // still be asked for as an "agak niat" bigger production, and a BOFU pitch
+  // can still be asked for as a single quick take.
+  const effortLine =
+    effort === "involved"
+      ? "Execution effort: this can be a more involved production — multiple shots/angles, a location change, props, or a short narrative are all fine if they serve the content."
+      : "Execution effort: keep this extremely easy to execute — something one person can shoot in a single take with no special props, crew, or editing, and post within minutes.";
 
   const user = [
     `Platform: ${platform || "Instagram"}`,
     `Format: ${format || "Reels"}`,
     funnelLine,
+    effortLine,
     duration ? `Target duration: ${duration}` : "",
     goal ? `Goal of this specific video: ${goal}` : "",
     campaignLine ? `This piece belongs to campaign: ${campaignLine}` : "",
@@ -225,6 +243,10 @@ export async function generateScript(
     idea ? `Idea so far: ${idea}` : "",
     prompt ? `What this content should be about: ${prompt}` : "",
     !title && !idea && !prompt ? "No title, idea, or description given — infer something reasonable and generic for this brand/platform/format." : "",
+    // #5: a free-text brief from the "discuss with AI" field — audience
+    // size, budget, or any other context the user typed — the generated
+    // content should follow this closely, as if a creative brief.
+    brief ? `\n--- Creative brief from the user (follow this closely) ---\n${brief.slice(0, 3000)}` : "",
     articleText ? `\n--- Reference article/text ---\n${articleText.slice(0, 6000)}` : "",
   ]
     .filter(Boolean)
@@ -234,11 +256,19 @@ export async function generateScript(
   try {
     const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
     const parsed = JSON.parse(cleaned);
-    return { hooks: parsed.hooks || [], script: parsed.script || "", caption: parsed.caption || "" };
+    const slides = isCarousel && Array.isArray(parsed.slides)
+      ? parsed.slides.map((s, i) => ({ slideNumber: Number(s?.slideNumber) || i + 1, text: String(s?.text || "").trim() })).filter((s) => s.text)
+      : [];
+    // `script` still carries a flat string too — everywhere else in the app
+    // (content.script field, teleprompter, PDF export) reads one script
+    // string, so a carousel's slides are joined into the same shape while
+    // `slides` (used by the Creator Studio result view) keeps them separate.
+    const script = slides.length ? slides.map((s) => `Slide ${s.slideNumber}\n${s.text}`).join("\n\n") : parsed.script || "";
+    return { hooks: parsed.hooks || [], script, caption: parsed.caption || "", slides };
   } catch {
     // Model didn't return clean JSON — show the raw text as the script
     // rather than losing the generation entirely.
-    return { hooks: [], script: raw, caption: "" };
+    return { hooks: [], script: raw, caption: "", slides: [] };
   }
 }
 
@@ -347,6 +377,56 @@ export async function rewriteCopy(ai, { brandContext = "", format, customFormat 
   return variant;
 }
 
+// #3: after the model returns its schedule, nudge it so each 7-day window
+// (from startDate) covers TOFU, MOFU and BOFU rather than trusting the
+// prompt alone — a real post-pass, not just asking nicely. For every week
+// missing a funnel stage, it looks for another week that has TWO OR MORE
+// items of that missing stage (so the donor keeps at least one) and a
+// stage of its own with two or more items in the receiving week, then swaps
+// the two items' dates. Item counts per week and per day never change —
+// only which day each item lands on — so this can never invent, drop, or
+// double-book anything; it just reshuffles for better weekly variety, and
+// only when the item pool actually has enough of each stage to allow it
+// ("kalau bisa" — best-effort, not a guarantee when the pool doesn't have it).
+function weekIndexOf(dateStr, startDate) {
+  const DAY = 86400000;
+  return Math.floor((new Date(`${dateStr}T00:00:00`).getTime() - new Date(`${startDate}T00:00:00`).getTime()) / (7 * DAY));
+}
+function rebalanceWeeklyFunnelMix(map, items, startDate) {
+  const FUNNELS = ["TOFU", "MOFU", "BOFU"];
+  const funnelOf = new Map(items.map((it) => [it.id, it.funnel || "TOFU"]));
+  const weeks = new Map(); // weekIdx -> { TOFU: [id], MOFU: [id], BOFU: [id] }
+  map.forEach((date, id) => {
+    const w = weekIndexOf(date, startDate);
+    if (!weeks.has(w)) weeks.set(w, { TOFU: [], MOFU: [], BOFU: [] });
+    weeks.get(w)[funnelOf.get(id) || "TOFU"].push(id);
+  });
+  for (const [w, buckets] of weeks) {
+    for (const need of FUNNELS.filter((f) => buckets[f].length === 0)) {
+      let donorWeek = null;
+      let donorId = null;
+      for (const [ow, obuckets] of weeks) {
+        if (ow === w || obuckets[need].length < 2) continue;
+        donorWeek = obuckets;
+        donorId = obuckets[need][obuckets[need].length - 1];
+        break;
+      }
+      if (!donorId) continue; // pool has no spare item of this stage anywhere else
+      const surplusFunnel = FUNNELS.find((f) => buckets[f].length >= 2);
+      if (!surplusFunnel) continue; // this week has nothing safe to trade away
+      const receiverId = buckets[surplusFunnel][buckets[surplusFunnel].length - 1];
+      const tmp = map.get(donorId);
+      map.set(donorId, map.get(receiverId));
+      map.set(receiverId, tmp);
+      donorWeek[need].pop();
+      donorWeek[surplusFunnel].push(receiverId);
+      buckets[surplusFunnel].pop();
+      buckets[need].push(donorId);
+    }
+  }
+  return map;
+}
+
 // Spreads a batch of not-yet-scheduled content across the days ahead —
 // avoids stacking the same funnel stage back-to-back where it can, leans on
 // weekdays, and schedules whatever's closest to actually being ready
@@ -370,6 +450,7 @@ export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, ro
     `Distribute the given content items across the ${daysAhead} days starting ${startDate} (inclusive), one date per item, format YYYY-MM-DD.`,
     "Each item's stage tells you how close it is to actually being postable — schedule items closer to ready (already shot/edited) sooner than ones still being written or filmed, since those need more lead time.",
     "Prefer spreading items evenly rather than clustering on the same day. Avoid scheduling the same funnel stage (TOFU/MOFU/BOFU) on consecutive scheduled days where there's enough variety to avoid it.",
+    "Every 7-day window starting from the start date should include at least one TOFU, one MOFU, and one BOFU item whenever the given items include all three stages — a healthy week has a mix, not all of one stage.",
     contextBlock ? "Where an item is tagged with a campaign phase, prefer a date inside that campaign's window (see Active campaigns above) when one is given, and keep items from the same phase reasonably spread rather than all on one day." : "",
     routineNotes.length
       ? `The user's own stated scheduling rules/objectives (follow these as hard constraints where possible, e.g. specific days for specific funnel stages, daily posting, etc.):\n${routineNotes.map((n) => `- ${n}`).join("\n")}`
@@ -390,7 +471,7 @@ export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, ro
     (parsed.schedule || []).forEach((row) => {
       if (row?.id && row?.date) map.set(row.id, row.date);
     });
-    return map;
+    return rebalanceWeeklyFunnelMix(map, items, startDate);
   } catch {
     throw new AiApiError(t("ai.error.readSchedule"));
   }

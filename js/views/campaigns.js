@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, listContent, createContent, onChange, getSettings,
+  getBrand, listContent, createContent, onChange, getSettings, getBrandInsights,
   listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
   CAMPAIGN_OBJECTIVES, CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES, CAMPAIGN_STATUSES, CAMPAIGN_STATUS_LABELS, CAMPAIGN_PHASE_TEMPLATE,
   MISSION_LADDERS, createMissionsForTemplate,
@@ -496,7 +496,13 @@ async function finishQuickCampaign({ brandId, brand, template, startIndex, onSav
   // pace the owner actually committed to, instead of one fixed number.
   const cad = brand?.contentCadence;
   const uploadsPerWeek = cad?.configured && cad.uploadDays?.length ? cad.uploadDays.length * (Number(cad.perDay) || 1) : null;
-  const missions = createMissionsForTemplate(template.id, { startIndex, uploadsPerWeek });
+  // #7: the starting mission's Followers target is rebased to whatever the
+  // brand already has tracked — reaching "1000 followers" at Tahap 1 no
+  // longer means starting a fresh countdown from 0 for someone who already
+  // has 1000+; they still start at Tahap 1, just with a target that reflects
+  // where they actually stand.
+  const currentFollowers = getBrandInsights(brand, "instagram")?.followers ?? null;
+  const missions = createMissionsForTemplate(template.id, { startIndex, uploadsPerWeek, currentFollowers });
   const created = createCampaign(brandId, {
     name, objective: template.objective, status: "planning",
     targetAudience: brand?.brandDNA?.targetAudience || "",

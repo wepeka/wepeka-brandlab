@@ -512,11 +512,11 @@ export function readMilestone(ms, ctx, stage = null) {
   const target = ms.target ?? null;
   const logged = r.logged !== undefined ? r.logged : true;
   const isCheck = ms.metric === "manual.check";
-  // `baseline`: where a running total stood when the stage began (a goal
-  // plan's followers) — progress is the climb from there, not from zero,
-  // or 1,200 of 3,000 reads as "40% done" on day one.
-  const base = target && num(ms.baseline) !== null && num(ms.baseline) < target ? num(ms.baseline) : 0;
-  const pct = isCheck ? (r.current ? 1 : 0) : target ? Math.max(0, Math.min(1, ((r.current || 0) - base) / (target - base))) : logged ? 1 : 0;
+  // pct always matches the "current / target" number shown next to it
+  // (e.g. "710/1000") — it used to climb from a stored baseline instead of
+  // zero, which quietly moved the bar/tree out of sync with that number and
+  // could leave it stuck at 0% even when current was well past zero.
+  const pct = isCheck ? (r.current ? 1 : 0) : target ? Math.max(0, Math.min(1, (r.current || 0) / target)) : logged ? 1 : 0;
   const met = isCheck ? !!r.current : target ? (r.current || 0) >= target : logged && (r.current || 0) > 0;
   const started = isCheck ? !!r.current : (r.current || 0) > 0 || (!r.auto && logged);
   let status = ms.notApplicable ? "na" : met ? "done" : started ? "progress" : "empty";
@@ -577,8 +577,13 @@ export function campaignHeadline(campaign, stages, stageIndex, ctx) {
 // force-next dialog still have something to read.
 export function ladderAdvanceState(campaign, stage, ctx) {
   if (stage.kind !== "level" || stage.state !== "current") return { ready: false, targetsMet: false, weeksLeft: 0 };
-  const { requiredMet, requiredTotal } = readStage(stage, ctx);
-  const targetsMet = requiredTotal > 0 && requiredMet === requiredTotal;
+  const { readings, requiredMet, requiredTotal } = readStage(stage, ctx);
+  // #8: reaching the level's Followers target on its own is treated as the
+  // level succeeding — a brand that gets there off a handful of viral pieces
+  // isn't held back waiting on the level's other required milestones (total
+  // content published, active-weeks streak, etc.) to catch up too.
+  const followersMet = readings.some((r) => r.milestone.label === "Followers" && r.met);
+  const targetsMet = followersMet || (requiredTotal > 0 && requiredMet === requiredTotal);
   // Every level's consistency rule already lives as a visible milestone
   // (active weeks / cadence), so there's no hidden wait once every required
   // bar is full — finishing every target IS finishing the level, for every

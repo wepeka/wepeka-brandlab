@@ -614,7 +614,7 @@ const CORE = {
   // Creator (js/views/creator.js)
   "creator.teleprompterCta": { en: "Use the teleprompter here", id: "Pakai teleprompter di sini" },
   "creator.teleprompterHint": { en: "Read your script from the screen while recording — it scrolls by itself.", id: "Baca naskah dari layar sambil rekam — teksnya jalan sendiri." },
-  "creator.newContentAi": { en: "Content created — let AI write the hook, script & caption.", id: "Konten dibuat — biar AI bantu bikin hook, script & caption." },
+  "creator.newContentCreated": { en: "Content created — write it yourself below, or generate with AI.", id: "Konten dibuat — tulis sendiri di bawah, atau generate pakai AI." },
 
   // Calendar / scheduling (js/views/calendar.js, js/views/content-editor.js)
   "calendar.pastDate": { en: "Content can't be scheduled on a date that has already passed. Pick today or later.", id: "Konten nggak bisa dijadwalkan di tanggal yang sudah lewat. Pilih hari ini atau setelahnya." },

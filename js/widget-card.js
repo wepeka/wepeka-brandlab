@@ -22,7 +22,7 @@ import { t } from "./i18n.js";
 export function widgetCardHTML(key, iconName, title, bodyHTML, { sub = "", extraHead = "" } = {}) {
   return `
     <div class="dash-widget-card">
-      <div class="dash-widget-glow" aria-hidden="true"></div>
+      <div class="dash-widget-backdrop" aria-hidden="true"><div class="dash-widget-glow"></div></div>
       <div class="dash-widget-card-head">
         <div class="dash-widget-card-icon">${icon(iconName, { size: 18 })}</div>
         <div class="dash-widget-card-title"><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>

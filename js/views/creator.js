@@ -118,7 +118,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     return;
   }
 
-  const state = { funnel: content.funnel || "TOFU", duration: DURATION_OPTIONS[0].val };
+  const state = { funnel: content.funnel || "TOFU", duration: DURATION_OPTIONS[0].val, effort: "easy" };
   // #6/#7: once every field this modal is for has a "used" click (any
   // batch — Generate More gives independent alternatives, not a pipeline,
   // so a script from batch 1 + a caption from batch 2 still counts), the
@@ -151,6 +151,21 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
           : `
       ${funnelFieldHTML({ id: "ai-funnel", value: state.funnel, fieldStyle: "margin-bottom:14px;" })}
       <div class="field" style="margin-bottom:14px;" id="ai-funnel-followup"></div>
+      <div class="field" style="margin-bottom:14px;">
+        <label>${t("cr.ai.effort")}</label>
+        <div class="chip-select" id="ai-effort-chips">
+          <button type="button" data-val="easy" class="${state.effort === "easy" ? "active" : ""}">${t("cr.ai.effort.easy")}</button>
+          <button type="button" data-val="involved" class="${state.effort === "involved" ? "active" : ""}">${t("cr.ai.effort.involved")}</button>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:14px;">
+        <details id="ai-brief-details">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;">${t("cr.ai.briefToggle")}</summary>
+          <div style="margin-top:8px;">
+            <textarea class="textarea" id="ai-brief" style="min-height:70px;" placeholder="${t("cr.ai.briefPh")}"></textarea>
+          </div>
+        </details>
+      </div>
       ${
         // 6.1: Pemula gets prompt + funnel (+ its MOFU/BOFU follow-up) only
         // — Duration/Goal/Article are Pro-only detail fields from here on.
@@ -212,6 +227,17 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     renderFunnelFollowup();
   });
 
+  // #5: "gampang dieksekusi" vs "agak niat" — how much production effort
+  // the suggested content should assume, independent of funnel stage (a
+  // TOFU piece can still be a bigger production, a BOFU piece can still be
+  // a single quick take).
+  overlay.querySelectorAll("#ai-effort-chips button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.effort = btn.dataset.val;
+      overlay.querySelectorAll("#ai-effort-chips button").forEach((b) => b.classList.toggle("active", b === btn));
+    });
+  });
+
   const customDurationInput = overlay.querySelector("#ai-duration-custom");
   overlay.querySelectorAll("#ai-duration-chips button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -237,6 +263,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       platform: content.platform,
       format: content.format,
       funnel: state.funnel,
+      effort: state.effort,
+      brief: overlay.querySelector("#ai-brief")?.value.trim(),
       prompt,
       duration: state.duration === "Custom" ? customDurationInput?.value.trim() : state.duration,
       goal: overlay.querySelector("#ai-goal")?.value.trim(),
@@ -273,7 +301,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     try {
       const params = genParams();
       if (demo) toast(DEMO_TOAST);
-      const { hooks, script, caption } = demo ? await demoGenerateScript(params) : await generateScript(ai, params);
+      const { hooks, script, caption, slides = [] } = demo ? await demoGenerateScript(params) : await generateScript(ai, params);
       loadingEl.remove();
       batchCount++;
       const suffix = batchCount > 1 ? ` ${t("cr.ai.batch", { n: batchCount })}` : "";
@@ -355,20 +383,38 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
           }
         });
       }
-      function renderScriptSection(text, usedParams) {
+      // #1: a Carousel shows its slides one by one (Slide 1, Slide 2, …)
+      // instead of one flat script block — `slides` is only non-empty when
+      // generateScript() was asked for a carousel format.
+      function renderScriptSection(text, usedParams, slides = []) {
         const el = batchEl.querySelector("#script-section");
+        const isCarousel = slides.length > 0;
+        const label = isCarousel ? t("cr.ai.fullCarousel") : t("cr.ai.fullScript");
+        const regenLabel = isCarousel ? t("cr.ai.regenCarousel") : t("cr.ai.regenScript");
+        const useLabel = isCarousel ? t("cr.ai.useCarousel") : t("cr.ai.useScript");
+        const body = isCarousel
+          ? slides
+              .map(
+                (s) => `
+             <div class="card card-tight" style="margin-bottom:8px;">
+               <div class="page-eyebrow" style="margin-bottom:4px;font-size:11px;">${escapeHtml(t("cr.ai.slideLabel", { n: s.slideNumber }))}</div>
+               <div style="white-space:pre-wrap;font-size:13px;">${escapeHtml(s.text)}</div>
+             </div>`
+              )
+              .join("")
+          : `<div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(text)}</div>`;
         el.innerHTML = text
           ? `<div class="creator-field-head" style="margin:14px 0 8px;">
-               <div class="page-eyebrow" style="margin-bottom:0;">${t("cr.ai.fullScript")}${suffix}</div>
-               ${eyebrowRegenBtn(t("cr.ai.regenScript"))}
+               <div class="page-eyebrow" style="margin-bottom:0;">${label}${suffix}</div>
+               ${eyebrowRegenBtn(regenLabel)}
              </div>
-             <div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(text)}</div>
-             <button type="button" class="btn btn-primary btn-block use-script-btn">${t("cr.ai.useScript")}</button>`
+             ${body}
+             <button type="button" class="btn btn-primary btn-block use-script-btn">${useLabel}</button>`
           : "";
-        if (text && !demo) mountAiFeedback(el, { brandId: brand?.id, feature: "creator-script", prompt: feedbackPrompt(usedParams), output: text });
+        if (text && !demo) mountAiFeedback(el, { brandId: brand?.id, feature: isCarousel ? "creator-carousel" : "creator-script", prompt: feedbackPrompt(usedParams), output: text });
         el.querySelector(".use-script-btn")?.addEventListener("click", (e) => {
           onInsert({ script: text, funnel: state.funnel });
-          toast(t("cr.ai.scriptInserted"));
+          toast(isCarousel ? t("cr.ai.carouselInserted") : t("cr.ai.scriptInserted"));
           const b = e.currentTarget;
           b.classList.add("is-used");
           b.disabled = true;
@@ -381,16 +427,16 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
           regenBtn.disabled = true;
           try {
             const regenParams = genParams({ only: "script" });
-            const { script: newScript } = demo ? await demoGenerateScript(regenParams) : await generateScript(ai, regenParams);
-            renderScriptSection(newScript, regenParams);
+            const { script: newScript, slides: newSlides } = demo ? await demoGenerateScript(regenParams) : await generateScript(ai, regenParams);
+            renderScriptSection(newScript, regenParams, newSlides || []);
           } catch (e) {
-            toast(e instanceof AiApiError ? e.message : t("cr.ai.regenScriptFail"), "error");
+            toast(e instanceof AiApiError ? e.message : isCarousel ? t("cr.ai.regenCarouselFail") : t("cr.ai.regenScriptFail"), "error");
             regenBtn.disabled = false;
           }
         });
       }
       renderHooksSection(hooks, params);
-      renderScriptSection(script, params);
+      renderScriptSection(script, params, slides);
 
       batchEl.querySelector(".use-caption-btn")?.addEventListener("click", (e) => {
         onInsert({ caption });
@@ -449,10 +495,12 @@ function openNewContentPlatformPicker({ brandId, onCreated, defaults = {} }) {
     btn.addEventListener("click", () => {
       closeOverlay(overlay);
       const pick = btn.dataset.platformPick;
-      // No edit drawer any more: the piece is created right away and Creator
-      // opens the AI hook/script/caption generator on it (see paint()) —
-      // people didn't know what to do with a blank form. The full edit
-      // drawer is still reachable from published content in the Konten tab.
+      // #4: the piece is created and selected, landing straight on the
+      // drafting panel's own title/idea/script/caption fields — someone can
+      // just type, or reach for the AI button (big one up top, or the small
+      // bot icon per field) whenever they want it. The AI generator used to
+      // pop open automatically on every new piece, which meant "just write
+      // it myself" wasn't an option until you closed a modal first.
       if (pick === "mirror") {
         const mirrorGroupId = `mirror-${Date.now()}`;
         const igItem = createContent(brandId, { ...defaults, platform: "Instagram", mirrorGroupId, status: "idea" });
@@ -468,17 +516,16 @@ function openNewContentPlatformPicker({ brandId, onCreated, defaults = {} }) {
 }
 
 export function render(root, { brandId, initialContentId }) {
-  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), openAiFor: null };
-  // Konten Baru → pick platform → content is created, selected, and the AI
-  // generator opens on it straight away (paint() handles state.openAiFor).
+  const state = { selectedId: initialContentId || null, collapsedGroups: new Set() };
+  // Konten Baru → pick platform → content is created and selected, opening
+  // straight on its drafting panel (manual fields, AI is opt-in — see #4).
   state.startNewContent = (defaults = {}) =>
     openNewContentPlatformPicker({
       brandId,
       defaults,
       onCreated: (id) => {
         state.selectedId = id;
-        state.openAiFor = id;
-        toast(t("creator.newContentAi"));
+        toast(t("creator.newContentCreated"));
         refresh();
       },
     });
@@ -713,10 +760,6 @@ function paint(root, brandId, state, refresh) {
 
   const aiBtn = qs("#ai-generate-all", root);
   if (aiBtn) aiBtn.addEventListener("click", openAiFor);
-  if (state.openAiFor && state.openAiFor === selected.id) {
-    state.openAiFor = null;
-    if (aiBtn) setTimeout(openAiFor, 0);
-  }
 
   // Quick per-field generate — a stripped-down version of the same modal
   // (just a prompt box, pre-filled from that field), still with the full

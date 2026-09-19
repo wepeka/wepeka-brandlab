@@ -223,7 +223,7 @@ function weeklyWorkHTML(brands) {
   const totalCount = groups.reduce((n, g) => n + g.tasks.length, 0);
   return `
     <div class="weekly-work-card">
-      <div class="weekly-work-glow" aria-hidden="true"></div>
+      <div class="weekly-work-backdrop" aria-hidden="true"><div class="weekly-work-glow"></div></div>
       <div class="weekly-work-head">
         <div class="weekly-work-head-icon">${icon("calendar", { size: 18 })}</div>
         <div>

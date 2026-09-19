@@ -457,14 +457,31 @@ main.view.wide{ max-width: 1440px; }
   --health-average: #ffc94a; --health-average-soft: rgba(255,201,74,.16);
   --health-poor: #ff6a5c; --health-poor-soft: rgba(255,106,92,.16);
   --tofu: #7ab8ff; --mofu: #ffc94a; --bofu: #ff8a5c;
-  position:relative; overflow:hidden; isolation:isolate; color: var(--text);
+  position:relative; isolation:isolate; color: var(--text);
   border-radius: var(--radius-lg); padding:24px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-tint) 16%, rgb(18,16,24)) 0%, rgba(14,12,19,.85) 55%, rgba(6,5,9,.9) 100%);
-  backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
   border: 1px solid rgba(255,255,255,.14);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
   animation: glass-glow-pulse 6s ease-in-out infinite;
   transition: transform .18s ease, box-shadow .2s ease, border-color .2s ease, background .3s ease;
+}
+/* .glass-card (no internal decorative blob) can carry its own
+   background/blur/clip directly — border-radius already clips an
+   element's own background regardless of overflow, and there's no
+   overflowing child content here, so overflow:hidden served no purpose
+   except (wrongly) also clipping this element's own hover/pulse
+   box-shadow glow flat at its edge. .dash-widget-card and
+   .weekly-work-card DO have a blurred inset:-40% blob as a child that
+   genuinely needs clipping, so for those two the background/blur/overflow
+   live on a separate inner .dash-widget-backdrop layer instead (below),
+   keeping the outer box-shadow free to bloom past the border. */
+.glass-card{
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-tint) 16%, rgb(18,16,24)) 0%, rgba(14,12,19,.85) 55%, rgba(6,5,9,.9) 100%);
+  backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+.dash-widget-backdrop, .weekly-work-backdrop{
+  position:absolute; inset:0; z-index:-1; overflow:hidden; border-radius:inherit; pointer-events:none;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-tint) 16%, rgb(18,16,24)) 0%, rgba(14,12,19,.85) 55%, rgba(6,5,9,.9) 100%);
+  backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
 /* Stacked widgets (not grid/flex tiles) still want their own bottom gap;
    .glass-card alone leaves spacing to whatever layout already places it in
@@ -508,7 +525,7 @@ main.view.wide{ max-width: 1440px; }
    a bare pill), so tidying up never means losing track of what's there. */
 .dash-widget-collapsed{
   --accent: var(--brand-tint);
-  position:relative; overflow:hidden; isolation:isolate; width:100%; display:flex; align-items:center; gap:14px; text-align:left;
+  position:relative; isolation:isolate; width:100%; display:flex; align-items:center; gap:14px; text-align:left;
   padding:14px 18px; margin-bottom:20px; border-radius: var(--radius-lg); color:#f5f3ff;
   background: linear-gradient(135deg, color-mix(in srgb, var(--brand-tint) 16%, rgb(18,16,24)) 0%, rgba(14,12,19,.85) 55%, rgba(6,5,9,.9) 100%);
   backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
@@ -737,8 +754,13 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    campaigns.js still uses for its own unrelated card pattern. Slides
    horizontally (.brand-grid) instead of wrapping once brands don't fit. */
 .brand-tile{ position:relative; display:flex; flex-direction:column; align-items:center; width:130px; flex:none; scroll-snap-align:start; background:none; border:0; padding:0; cursor:pointer; }
-.brand-tile-avatar{ position:relative; width:112px; height:112px; border-radius: var(--radius-lg); overflow:hidden; display:flex; align-items:center; justify-content:center; border:3px solid transparent; transition: border-color .15s, transform .15s, box-shadow .2s; }
-.brand-tile-avatar .avatar{ width:100%; height:100%; border-radius: calc(var(--radius-lg) - 3px); object-fit:cover; display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight:800; font-size:36px; background: var(--brand-tint); color: var(--brand-tint-text); }
+/* overflow:hidden lives on the inner .avatar (it already matches this
+   radius, so it clips the photo/initials fine on its own) instead of on
+   this outer box — this box is what grows the hover glow via box-shadow,
+   and overflow:hidden here was clipping that glow off flat at the tile's
+   own edge instead of letting it bloom outward. */
+.brand-tile-avatar{ position:relative; width:112px; height:112px; border-radius: var(--radius-lg); display:flex; align-items:center; justify-content:center; border:3px solid transparent; transition: border-color .15s, transform .15s, box-shadow .2s; }
+.brand-tile-avatar .avatar{ width:100%; height:100%; border-radius: calc(var(--radius-lg) - 3px); overflow:hidden; object-fit:cover; display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-weight:800; font-size:36px; background: var(--brand-tint); color: var(--brand-tint-text); }
 .brand-tile:hover .brand-tile-avatar{ border-color: var(--brand-tint); transform: scale(1.06); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--brand-tint) 70%, transparent), 0 0 28px color-mix(in srgb, var(--brand-tint) 40%, transparent); }
 .brand-tile h3{ margin:12px 0 0; font-size:14.5px; font-weight:600; color: var(--text-muted); text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition: color .15s; }
 .brand-tile:hover h3{ color: var(--text); }

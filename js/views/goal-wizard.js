@@ -60,7 +60,11 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
 
   const cad = brand?.contentCadence;
   const cadenceUploads = cad?.configured && cad.uploadDays?.length ? cad.uploadDays.length * (Number(cad.perDay) || 1) : null;
-  const insightsFollowers = getBrandInsights(brand, "instagram")?.followers ?? null;
+  // #6: read from whichever platform is actually selected, not always
+  // Instagram — a TikTok/Facebook goal used to start the followers field
+  // blank even when that platform's count was already tracked.
+  const insightsFollowersFor = (platform) => getBrandInsights(brand, platform)?.followers ?? null;
+  const initialPlatform = SOCIAL_PLATFORMS.find((p) => !socialTaken.has(p)) || SOCIAL_PLATFORMS[0];
   const content = listContent(brandId);
   const baseline = brandBaseline(content);
 
@@ -86,7 +90,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     },
     order: [],
     stepIdx: 0,
-    platform: SOCIAL_PLATFORMS.find((p) => !socialTaken.has(p)) || SOCIAL_PLATFORMS[0], followers: insightsFollowers, followersTarget: null, uploadsPerWeek: cadenceUploads || 3,
+    platform: initialPlatform, followers: insightsFollowersFor(initialPlatform), followersTarget: null, uploadsPerWeek: cadenceUploads || 3,
     months: 12,
     hasExisting: null, members: null, membersTarget: null, platformWhere: new Set(),
     salesSkipped: false, salesModel: tracker.model, products: trackedProducts.length ? trackedProducts : [newProduct()], salesMonths: 6,
@@ -181,7 +185,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         <div class="chip-select" id="goal-platform">${SOCIAL_PLATFORMS.map((p) => `<button type="button" data-val="${p}" class="${state.platform === p ? "active" : ""} ${socialTaken.has(p) ? "is-taken" : ""}" ${socialTaken.has(p) ? "disabled" : ""}>${esc(t(`goal.launch.platform.${p}`))}${socialTaken.has(p) ? ` <small>${t("goal.launch.platformTaken")}</small>` : ""}</button>`).join("")}</div>
         <p class="ev-field-hint">${t("goal.launch.platformHint")}</p>
       </div>
-      ${numberField("goal-followers", t("goal.launch.followersQ"), state.followers, { hint: insightsFollowers !== null && state.followers === insightsFollowers ? t("goal.wizard.fromInsights") : t("goal.launch.followersHint") })}
+      ${numberField("goal-followers", t("goal.launch.followersQ"), state.followers, { hint: insightsFollowersFor(state.platform) !== null && state.followers === insightsFollowersFor(state.platform) ? t("goal.wizard.fromInsights") : t("goal.launch.followersHint") })}
       ${numberField("goal-followers-target", t("goal.launch.followersTargetQ"), state.followersTarget, { hint: t("goal.launch.checkpointHint") })}
       <div class="goal-suggest"><span>${t("goal.suggest.label")}</span>${SOCIAL_CHECKPOINTS.filter((cp) => cp > (state.followers || 0)).map((cp) => `<button type="button" class="goal-suggest-chip" data-goal-use-followers="${cp}"><b>${formatNumber(cp)}</b></button>`).join("")}</div>
       <p class="ev-runway ${a.cls}" id="goal-assess">${icon(a.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${a.html}</span></p>
@@ -441,7 +445,11 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
           else qsa(`${sel} button`, root).forEach((x) => x.classList.toggle("active", x === b));
         })
       );
-    chips("#goal-platform", (v) => (state.platform = v));
+    chips("#goal-platform", (v) => {
+      state.platform = v;
+      const ins = insightsFollowersFor(v);
+      if (ins !== null) state.followers = ins;
+    }, true);
     chips("#goal-months", (v) => (state.months = v === "custom" ? (GOAL_DURATIONS.includes(state.months) ? 9 : state.months) : Number(v)), true);
     wireNumberFormat("#goal-months-custom", () => {
       state.months = Math.min(24, Math.max(2, toNum(qs("#goal-months-custom", root)?.value) || 2));

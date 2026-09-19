@@ -31,6 +31,11 @@ export default {
   "cr.ai.goalPh": { en: "e.g. educate, spark curiosity", id: "misal: edukasi, bikin penasaran" },
   "cr.ai.article": { en: "Article/reference (optional)", id: "Artikel/referensi (opsional)" },
   "cr.ai.articlePh": { en: "Links can't be read automatically (news sites block it) — paste the article text here if you have one", id: "Link nggak bisa dibaca otomatis (diblokir situs beritanya) — paste teks artikelnya di sini kalau ada" },
+  "cr.ai.effort": { en: "How much effort to execute?", id: "Seberapa niat eksekusinya?" },
+  "cr.ai.effort.easy": { en: "Quick & easy", id: "Gampang & cepat" },
+  "cr.ai.effort.involved": { en: "Can be more involved", id: "Boleh agak niat" },
+  "cr.ai.briefToggle": { en: "Discuss with AI first (optional)", id: "Diskusi dulu sama AI (opsional)" },
+  "cr.ai.briefPh": { en: "Give context — who's the audience, roughly how many people, production budget, etc. AI will follow this brief closely.", id: "Ceritain konteksnya — target audiencenya siapa, kira-kira berapa orang, budget produksi, dll. AI bakal ikutin brief ini." },
   "cr.ai.mofuLabel": { en: "What do you want to show or demonstrate?", id: "Apa yang mau kamu tunjukin/demonstrasikan?" },
   "cr.ai.mofuPh": { en: "e.g. how to use the product, behind the scenes", id: "misal: cara pakai produk, proses di balik layar" },
   "cr.ai.bofuLabel": { en: "What are you selling?", id: "Apa yang mau kamu jual?" },
@@ -53,6 +58,12 @@ export default {
   "cr.ai.scriptInserted": { en: "Script added", id: "Script dimasukkan" },
   "cr.ai.regenScript": { en: "Regenerate script", id: "Generate ulang script" },
   "cr.ai.regenScriptFail": { en: "Couldn't regenerate the script.", id: "Gagal generate ulang script." },
+  "cr.ai.fullCarousel": { en: "Carousel slides", id: "Slide carousel" },
+  "cr.ai.useCarousel": { en: "Use these slides", id: "Pakai slide ini" },
+  "cr.ai.carouselInserted": { en: "Slides added", id: "Slide dimasukkan" },
+  "cr.ai.regenCarousel": { en: "Regenerate slides", id: "Generate ulang slide" },
+  "cr.ai.regenCarouselFail": { en: "Couldn't regenerate the slides.", id: "Gagal generate ulang slide." },
+  "cr.ai.slideLabel": { en: "Slide {n}", id: "Slide {n}" },
   // #6: shown on the Use button once clicked, in place of "Use this
   // script/caption" — the color change (css/styles.css .btn.is-used) is
   // the whole point, this label just names the new state.
