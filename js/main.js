@@ -47,6 +47,7 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "copy", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "tools", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
@@ -263,6 +264,7 @@ async function renderRoute() {
       guidelines: () => import("./views/brand-guidelines.js"),
       sales: () => import("./views/sales.js"),
       copy: () => import("./views/copy-studio.js"),
+      tools: () => import("./views/tools.js"),
       "content-os": () => import("./views/content-os.js"),
       settings: () => import("./views/settings.js"),
     }[route.view] || (() => import("./views/brands.js"))
@@ -287,6 +289,7 @@ async function renderRoute() {
       break;
     case "sales":
     case "copy":
+    case "tools":
       cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "content-os":

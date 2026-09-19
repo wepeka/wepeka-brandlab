@@ -7,6 +7,7 @@
 import { getBrand, listCampaigns, getSettings } from "../store.js";
 import { icon } from "../icons.js";
 import { escapeHtml, toast, qs, qsa, avatarHTML } from "../dom.js";
+import { backLinkHTML } from "../back-link.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
@@ -172,7 +173,7 @@ function paint(ctx) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/tools`, t("nav.tools"))} · ${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}</div>
         <h1>${escapeHtml(brand.name)}</h1>
         <p class="page-sub">${t("copy.sub")}</p>
       </div>

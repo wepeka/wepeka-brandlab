@@ -68,6 +68,10 @@ const HELP_CONTENT = {
     id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang. Di bawahnya ada 5 langkah dasar yang kebuka urut. Mau lihat semua fitur dan grafik? Klik tombol mode di pojok atas buat lihat bedanya Pemula dan Pro." },
     en: { title: "Home", body: "The top card always tells you the one thing to do now. Below it are 5 basic steps that unlock in order. Want every feature and chart? Click the mode button at the top to see how Beginner and Pro differ." },
   },
+  "tools": {
+    id: { title: "Alat", body: "Tiga alat pendukung di luar Campaign dan Konten: Brainstorm buat mikirin ide bareng AI, Copy Studio buat tulisan pendek siap pakai, dan Sales Tracker buat catat penjualan. Selalu terbuka, nggak nunggu identitas brand selesai." },
+    en: { title: "Tools", body: "Three supporting tools outside Campaigns and Content: Brainstorm to think through ideas with AI, Copy Studio for quick ready-to-use copy, and the Sales Tracker to log sales. Always open, no need to finish your brand identity first." },
+  },
 
   // Key terms — shown next to the words themselves.
   "term-brand-dna": {

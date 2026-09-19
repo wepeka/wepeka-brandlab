@@ -1710,6 +1710,23 @@ body.tour-active .consultant-fab{ display:none; }
   .bb-hub-grid{ grid-template-columns: 1fr; }
 }
 
+/* Tools hub — Brainstorm / Copy Studio / Sales Tracker (js/views/tools.js,
+   Brief Revisi 2 fase 2). Same card language as .bb-hub-door, but an
+   auto-fit grid (3 cards today, room for more later) instead of a fixed
+   two-up layout. */
+.tools-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:20px; }
+.tool-card{ position:relative; display:flex; flex-direction:column; align-items:flex-start; text-decoration:none; color:inherit; padding:32px 28px; cursor:pointer; transition: transform .15s; }
+.tool-card:hover{ transform: translateY(-2px); }
+.tool-card h2{ font-size:20px; margin:0 0 6px; }
+.tool-card p{ font-size:13px; color: var(--text-muted); margin:0; }
+.tool-card.is-next{ border-color: color-mix(in srgb, var(--brand-tint) 45%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-tint) 25%, transparent); }
+.tool-card-badge{ position:absolute; top:18px; right:18px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); background: var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:3px 9px; }
+.tool-card-status{ margin-top:16px; font-size:12.5px; font-weight:700; color: var(--brand-tint); }
+
+@media (max-width: 760px){
+  .tools-grid{ grid-template-columns: 1fr; }
+}
+
 /* Plays once, the first time this row appears right after an app finishes —
    the entrance itself (fading/sliding in) plus a green pulse so the "this
    card just moved down here" transition actually reads as a transition,

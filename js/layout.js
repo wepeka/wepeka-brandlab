@@ -58,13 +58,15 @@ const MODE_CONFIG = {
 const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 
 // One tab row for both modes. `matches` = which route views light a tab up
-// (Brand DNA / Guidelines live under Brand; Copy Studio under Konten).
-// Sales Tracker and Copy Studio have no tab — they're in the ⋯ menu.
+// (Brand DNA / Guidelines live under Brand; Copy Studio, Sales Tracker and
+// Brainstorm live under the Tools tab, which is never gated — there's
+// nothing there that needs the brand's identity filled in first).
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
   { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
   { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns"], gated: true },
-  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os", "copy"], gated: true },
+  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os"], gated: true },
+  { key: "tools", labelKey: "nav.tools", icon: "sparkle", path: (id) => `#/brand/${id}/tools`, tour: "tab-tools", matches: ["tools", "copy", "sales", "brainstorm"] },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -212,22 +214,15 @@ function aiUsagePopoverHTML() {
 }
 
 // The ⋯ menu: everything that used to be its own topbar button (mode,
-// theme, AI meter, settings, logout) plus the two tools without a tab.
-function appMenuHTML(brandId) {
+// theme, AI meter, settings, logout). Copy Studio and Sales Tracker moved
+// to the Tools tab (R2, Brief Revisi 2 fase 2) — no longer listed here.
+function appMenuHTML() {
   const mode = getMode();
   const other = mode === "guided" ? "advanced" : "guided";
-  const pro = mode === "advanced";
   return `
     <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
     <button type="button" data-act="theme">${icon(getTheme() === "light" ? "moon" : "sun", { size: 15 })}${t("topbar.toggleTheme")}</button>
     <button type="button" class="menu-ai-row" data-act="ai">${aiUsageRowHTML()}</button>
-    ${
-      brandId
-        ? `<div class="menu-divider"></div>
-           <button type="button" data-go="#/brand/${brandId}/copy">${icon("edit", { size: 15 })}${t("menu.copyStudio")}</button>
-           ${pro ? `<button type="button" data-go="#/brand/${brandId}/sales">${icon("chart", { size: 15 })}${t("nav.sales")}</button>` : ""}`
-        : ""
-    }
     <div class="menu-divider"></div>
     <button type="button" data-go="#/settings/brands">${icon("users", { size: 15 })}${t("settings.panel.brands")}</button>
     <button type="button" data-go="#/settings">${icon("gear", { size: 15 })}${t("topbar.settings")}</button>
@@ -299,7 +294,7 @@ export function wireShell({ brandId }) {
     e.stopPropagation();
     const menu = menuBelow(menuBtn, { className: "app-menu", width: 250 });
     if (!menu) return;
-    menu.innerHTML = appMenuHTML(brandId);
+    menu.innerHTML = appMenuHTML();
     menu.addEventListener("click", async (ev) => {
       const go = ev.target.closest("[data-go]");
       if (go) {
