@@ -2,7 +2,7 @@
 // DNA, Brand Guidelines, moodboard, tone of voice...). Hover (on devices
 // with a mouse) or click shows a short "what this is + how to use it"
 // popover. Deliberately NOT a popup that appears on its own (that's
-// js/brandlab-intro.js and js/proactive-notif.js) and NOT a tour
+// the topbar ? popover) and NOT a tour
 // (js/tour.js) — this is the quiet layer, silent until someone wonders
 // "apa ini?".
 //

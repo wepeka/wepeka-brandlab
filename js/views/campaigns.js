@@ -4,22 +4,20 @@ import {
   listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
   CAMPAIGN_OBJECTIVES, CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES, CAMPAIGN_STATUSES, CAMPAIGN_STATUS_LABELS, CAMPAIGN_PHASE_TEMPLATE,
   MISSION_LADDERS, createMissionsForTemplate,
-  EVENT_ROLES, EVENT_PARTICIPATION_TYPES, EVENT_OBJECTIVES, EVENT_OBJECTIVE_LABELS, EVENT_PLAN_TERMS, EVENT_SCALE_TIERS,
+  EVENT_ROLES, EVENT_PARTICIPATION_TYPES, EVENT_OBJECTIVES, EVENT_OBJECTIVE_LABELS, EVENT_SCALE_TIERS,
   phaseNameLabel, missionText,
   eventPhaseTemplatesForRole, buildEventPhases, eventScaleFor, nominalEventRunway, daysBetween, formatEventDate, localISODate,
 } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
 import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
-import { generateCampaignPlan, AiApiError, hasAiKey } from "../ai.js";
+import { hasAiKey } from "../ai.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
-import { sectionGuideButtonHTML } from "../section-guide.js";
-import { maybeAutoPlayVideo } from "../guide-videos.js";
-import { wireGuideButton } from "../guides/common.js";
+import { setPageGuide } from "../section-guide.js";
 import { startCampaignListGuide, startCampaignListGuideOnMount, startCampaignDetailGuideOnMount } from "../guides/campaign-guide.js";
 import { t } from "../i18n.js";
 import { getMode } from "../mode.js";
-import { isTourDemo, demoCampaignPlan, DEMO_TOAST } from "../tour-demo.js";
+import { DEMO_TOAST } from "../tour-demo.js";
 import { campaignStages, activeStageIndex, campaignHeadline, TRACK_ICON } from "../campaign-metrics.js";
 import { crossCampaignInsights } from "../cross-campaign.js";
 import { nextActions } from "../next-action.js";
@@ -38,9 +36,6 @@ export function render(root, { brandId, campaignId }) {
   const state = { stageIndex: null, celebrateIndex: null, advancing: false };
   const refresh = () => paint(root, brandId, campaignId, state, refresh);
   refresh();
-  // One-time explainer for Campaign, on whichever of the two routes gets
-  // opened first; the Video button in the page head replays it after that.
-  maybeAutoPlayVideo("campaign");
   // Once per mount (list and detail are separate routes/mounts) — paint()
   // runs again on every db:change.
   if (campaignId) startCampaignDetailGuideOnMount(brandId, campaignId);
@@ -84,7 +79,7 @@ function paintList(root, brandId, brand, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("camp.list.eyebrow")}${helpButtonHTML("campaigns")}${sectionGuideButtonHTML("campaigns")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("camp.list.eyebrow")}${helpButtonHTML("campaigns")}</div>
         <h1>${brand.name}</h1>
       </div>
       <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
@@ -132,7 +127,7 @@ function paintList(root, brandId, brand, refresh) {
   }
 
   wireHelpButtons(root);
-  wireGuideButton(root, "campaigns", () => startCampaignListGuide(brandId));
+  setPageGuide(() => startCampaignListGuide(brandId));
 
   qs("#new-campaign").addEventListener("click", () => openNewCampaignFlow({ brandId, onSaved: refresh }));
   qsa("[data-open-campaign]", root).forEach((card) => {
@@ -274,7 +269,6 @@ const CAMPAIGN_QUICK_TEMPLATES = [
 
 function openNewCampaignFlow({ brandId, onSaved }) {
   const brand = getBrand(brandId);
-  // Custom (free-text goal → AI-drafted plan, openCustomCampaignFlow below)
   // is shown as "Segera hadir" in every mode until it's ready — the flow
   // itself is kept, just not reachable from here.
   const overlay = openModal({
@@ -290,12 +284,8 @@ function openNewCampaignFlow({ brandId, onSaved }) {
             <p>${tpl.description}</p>
           </button>
         `).join("")}
-        <button type="button" class="content-view-card" disabled style="opacity:.5;cursor:not-allowed;">
-          <div class="icon-wrap">${icon("edit", { size: 20 })}</div>
-          <h3>${t("store.objective.custom")}</h3>
-          <p>${t("camp.new.customSoon")}</p>
-        </button>
       </div>
+      <p class="text-faint" style="font-size:11.5px;margin:12px 0 0;">${t("camp.new.termsNote")}</p>
     `,
   });
 
@@ -311,11 +301,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
       // setup, date-anchored non-blocking phases, dynamic targets) — it's a
       // separate intake entirely, only sharing the Terms gate mechanism.
       if (template.id === "event") {
-        openCampaignTerms({
-          template,
-          ladder: { terms: EVENT_PLAN_TERMS },
-          onAgree: () => openEventSetupWizard({ brandId, brand, template, onSaved }),
-        });
+        openEventSetupWizard({ brandId, brand, template, onSaved });
         return;
       }
       const ladder = MISSION_LADDERS[template.id];
@@ -338,78 +324,8 @@ function openNewCampaignFlow({ brandId, onSaved }) {
           finishQuickCampaign({ brandId, brand, template, onSaved });
         }
       };
-      if (ladder?.terms) {
-        openCampaignTerms({ template, ladder, onAgree: toCalibration });
-      } else {
-        toCalibration();
-      }
+      toCalibration();
     });
-  });
-
-  qs("#open-custom-flow", overlay)?.addEventListener("click", () => {
-    closeOverlay(overlay);
-    openCustomCampaignFlow({ brandId, onSaved });
-  });
-}
-
-// A real Terms & Conditions gate — scroll to the bottom before the "I've
-// read this" checkbox even becomes clickable, same pattern apps use for
-// agreements people actually need to have seen once. Only shown for
-// templates whose MISSION_LADDERS entry declares `terms`.
-function openCampaignTerms({ template, ladder, onAgree }) {
-  const { terms } = ladder;
-  const overlay = openModal({
-    title: t("camp.new.termsTitle", { name: template.label }),
-    wide: true,
-    bodyHTML: `
-      ${terms.intro ? `<p class="text-muted" style="font-size:13px;margin:0 0 14px;">${escapeText(terms.intro)}</p>` : ""}
-      <div id="terms-scroll" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 18px;">
-        ${terms.rules
-          .map(
-            (r, i) => `
-          <p style="margin:0 0 14px;font-size:13px;line-height:1.6;color:var(--text-muted);">
-            <strong style="color:var(--text);display:block;margin-bottom:2px;">${i + 1}. ${escapeText(r.title)}</strong>
-            ${escapeText(r.body)}
-          </p>`
-          )
-          .join("")}
-        <div style="height:1px;"></div>
-      </div>
-      <label class="checkbox-chip" id="terms-agree-label" style="margin-top:14px;opacity:.4;pointer-events:none;">
-        <input type="checkbox" id="terms-agree" disabled />
-        ${t("camp.new.termsAgree")}
-      </label>
-      <p class="text-faint" id="terms-scroll-hint" style="font-size:11px;margin:6px 0 0;">${t("camp.new.termsScrollHint")}</p>
-    `,
-    footHTML: `<button class="btn btn-primary" id="terms-continue" disabled>${t("camp.next")}</button>`,
-  });
-
-  const scrollBox = qs("#terms-scroll", overlay);
-  const checkbox = qs("#terms-agree", overlay);
-  const agreeLabel = qs("#terms-agree-label", overlay);
-  const continueBtn = qs("#terms-continue", overlay);
-  const hint = qs("#terms-scroll-hint", overlay);
-
-  function unlockAgree() {
-    checkbox.disabled = false;
-    agreeLabel.style.opacity = "1";
-    agreeLabel.style.pointerEvents = "auto";
-    hint.style.display = "none";
-  }
-  function checkScrolled() {
-    if (scrollBox.scrollTop + scrollBox.clientHeight >= scrollBox.scrollHeight - 12) unlockAgree();
-  }
-  scrollBox.addEventListener("scroll", checkScrolled);
-  // Short content that never needs scrolling shouldn't block on a scroll
-  // event that'll never fire.
-  if (scrollBox.scrollHeight <= scrollBox.clientHeight + 4) unlockAgree();
-
-  checkbox.addEventListener("change", () => {
-    continueBtn.disabled = !checkbox.checked;
-  });
-  continueBtn.addEventListener("click", () => {
-    closeOverlay(overlay);
-    onAgree();
   });
 }
 
@@ -826,125 +742,6 @@ async function finishEventCampaign({ brandId, brand, template, role, participati
   toast(t("camp.event.created", { name: eventName || template.label, count: phases.length, date: formatEventDate(eventDate), left: days > 0 ? t("camp.event.daysLeft", { days }) : "" }));
   onSaved?.();
   location.hash = `#/brand/${brandId}/campaigns/${created.id}`;
-}
-
-// The old, detailed intake (free-text goal + objective + channel-setup +
-// AI-drafted strategy copy) — kept as an escape hatch for anyone who wants
-// the fuller brief, one step behind the 3 quick templates above instead of
-// being the first thing everyone sees.
-function openCustomCampaignFlow({ brandId, onSaved }) {
-  const brand = getBrand(brandId);
-  const state = { objective: "awareness" };
-
-  const overlay = openModal({
-    title: t("camp.custom.title"),
-    bodyHTML: `
-      <div class="field">
-        <label>${t("camp.custom.goal")}</label>
-        <textarea class="textarea" id="intake-goal" style="min-height:80px;" placeholder="${escapeAttr(t("camp.custom.goalPh"))}"></textarea>
-      </div>
-      <div class="field">
-        <label>${t("camp.custom.objective")}</label>
-        <div class="chip-select" id="intake-objective">
-          ${CAMPAIGN_OBJECTIVES.map((o) => `<button type="button" data-val="${o}" class="${o === "awareness" ? "active" : ""}">${CAMPAIGN_OBJECTIVE_LABELS[o]}</button>`).join("")}
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:0;">
-        <label>${t("camp.custom.social")}</label>
-        <input class="input" id="intake-social" placeholder="${escapeAttr(t("camp.custom.socialPh"))}" />
-      </div>
-
-      <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">${t("camp.custom.channelSetup")}</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("camp.custom.channelSetupSub")}</p>
-      ${OPTIONAL_PHASE_QUESTIONS.map(
-        (q) => `
-        <label class="flex items-center gap-8" style="margin-bottom:12px;cursor:pointer;">
-          <input type="checkbox" id="intake-${q.key}" />
-          <span style="font-size:13px;">${q.question}</span>
-        </label>`
-      ).join("")}
-      <div id="intake-phase-note" class="text-faint" style="font-size:11px;margin:-4px 0 12px;"></div>
-      <div id="intake-status" style="margin-top:4px;"></div>
-    `,
-    footHTML: `
-      <button class="btn btn-secondary" data-skip>${t("camp.custom.skip")}</button>
-      <button class="btn btn-primary" data-generate>${icon("bot", { size: 15 })}${t("camp.custom.generate")}</button>
-    `,
-    onMount: (el) => {
-      setTimeout(() => el.querySelector("#intake-goal").focus(), 30);
-      // Picking an objective already drives the AI prompt and the
-      // campaign's label — extending it to also default the 3 optional
-      // phases gets the "start from a sensible template" effect for free,
-      // with one concept (Objective) instead of a separate template
-      // picker. Still just a default: every checkbox stays editable after.
-      function applyObjectiveDefaults(objective) {
-        const defaults = CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES[objective];
-        const noteEl = el.querySelector("#intake-phase-note");
-        if (defaults === null || defaults === undefined) {
-          noteEl.textContent = "";
-          return;
-        }
-        OPTIONAL_PHASE_QUESTIONS.forEach((q) => {
-          el.querySelector(`#intake-${q.key}`).checked = defaults.includes(q.phaseName);
-        });
-        noteEl.textContent = t("camp.custom.phaseNote");
-      }
-      qsa("#intake-objective button", el).forEach((btn) => {
-        btn.addEventListener("click", () => {
-          state.objective = btn.dataset.val;
-          qsa("#intake-objective button", el).forEach((b) => b.classList.toggle("active", b === btn));
-          applyObjectiveDefaults(state.objective);
-        });
-      });
-      applyObjectiveDefaults(state.objective);
-    },
-  });
-
-  function readEnabledMap() {
-    const map = {};
-    OPTIONAL_PHASE_QUESTIONS.forEach((q) => { map[q.phaseName] = !!overlay.querySelector(`#intake-${q.key}`).checked; });
-    return map;
-  }
-
-  overlay.querySelector("[data-skip]").addEventListener("click", () => {
-    const initialEnabled = readEnabledMap();
-    closeOverlay(overlay);
-    openCampaignModal({ brandId, initialEnabled, onSaved });
-  });
-
-  overlay.querySelector("[data-generate]").addEventListener("click", async () => {
-    const objectiveText = overlay.querySelector("#intake-goal").value.trim();
-    const statusEl = overlay.querySelector("#intake-status");
-    const genBtn = overlay.querySelector("[data-generate]");
-    if (!objectiveText) {
-      toast(t("camp.custom.goalRequired"), "error");
-      return;
-    }
-    const ai = getSettings().ai || {};
-    const hasKey = hasAiKey(ai);
-    const demo = isTourDemo(); // tour → sample plan, no tokens (js/tour-demo.js)
-    if (!hasKey && !demo) {
-      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">${escapeText(t("camp.custom.noKey", { skip: t("camp.custom.skip") }))}</div>`;
-      return;
-    }
-    const initialEnabled = readEnabledMap();
-    const enabledPhases = CAMPAIGN_PHASE_TEMPLATE.filter((tpl) => !tpl.optional || initialEnabled[tpl.name]);
-    const socialPlatforms = overlay.querySelector("#intake-social").value.split(",").map((s) => s.trim()).filter(Boolean);
-    genBtn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("camp.custom.drafting")}</span></div>`;
-    try {
-      if (demo) toast(DEMO_TOAST);
-      const aiDraft = demo
-        ? await demoCampaignPlan({ brand, objectiveText, enabledPhases })
-        : await generateCampaignPlan(ai, { brand, objectiveText, objective: state.objective, enabledPhases, socialPlatforms });
-      closeOverlay(overlay);
-      openCampaignModal({ brandId, objective: state.objective, aiDraft, aiPrompt: { objective: state.objective, objectiveText, socialPlatforms }, initialEnabled, onSaved });
-    } catch (e) {
-      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeText(e.message) : t("camp.aiFailed")}</span></div>`;
-      genBtn.disabled = false;
-    }
-  });
 }
 
 // ---------- Create/edit modal ----------

@@ -1,7 +1,7 @@
 // Shared "glass widget" card — the same closable, softly-glowing dark card
 // used across Beranda ("This week's work" in js/views/brands.js), the Brand
-// Dashboard (js/views/dashboard.js), Beranda's Pemula/Pro home pages
-// (js/views/beginner-home.js, js/views/brand-home.js), and the campaign
+// the brand home (js/views/home.js), the brand list (js/views/brands.js)
+// and the campaign
 // detail widgets (js/views/campaign-detail.js — Rencana, Ide Campaign,
 // Sales Tracker). One HTML shape, one CSS recipe (css/styles.css
 // .dash-widget-card / .dash-widget-collapsed), so "close this section" and

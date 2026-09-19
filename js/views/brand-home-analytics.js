@@ -1,9 +1,9 @@
 // Advanced-mode Home's "grafik2 dan stats analytics" — a customizable set of
 // chart/stat widgets, separate from the plain "what do I do next" widgets in
-// brand-home.js itself. Lives in its own file because it's a genuinely
+// home.js itself. Lives in its own file because it is a genuinely
 // different concern (derived performance analytics vs. brand-progress
 // shortcuts) and because the widget catalog + chart drawing needs room to
-// grow without bloating brand-home.js's paint().
+// grow without bloating home.js.
 import { getSettings, updateSettings, FUNNELS } from "../store.js";
 import { computeContentMetrics } from "../formulas.js";
 import { formatNumber, formatPercent, qs, qsa, openMenu, escapeHtml as escapeText } from "../dom.js";
@@ -19,8 +19,9 @@ export const WIDGET_CATALOG = [
   { key: "funnelBreakdown", labelKey: "brandHome.analytics.widget.funnelBreakdown" },
   { key: "contentHealth", labelKey: "brandHome.analytics.widget.contentHealth" },
 ];
-export const DEFAULT_HOME_WIDGETS = WIDGET_CATALOG.map((w) => w.key);
-const WIDGET_KEYS = new Set(DEFAULT_HOME_WIDGETS);
+// Four by default; the rest are one checkbox away in the Customize menu.
+export const DEFAULT_HOME_WIDGETS = ["growthViews", "contentHealth", "topContent", "platformBreakdown"];
+const WIDGET_KEYS = new Set(WIDGET_CATALOG.map((w) => w.key));
 
 // Stored order IS display order (see updateSettings calls below) — a widget
 // missing from the saved array just isn't shown, so re-enabling one always
@@ -145,10 +146,7 @@ function widgetShellHTML(key, labelKey, bodyHTML, headerExtraHTML = "") {
   return `
     <div class="card glass-card card-tight brand-analytics-card" data-widget-key="${key}">
       <div class="brand-analytics-card-head">
-        <div class="brand-analytics-card-title-row">
-          <span class="brand-analytics-drag-handle" draggable="true" data-drag-handle title="${t("brandHome.analytics.dragHint")}">${icon("grip", { size: 14 })}</span>
-          <div class="brand-analytics-card-title">${t(labelKey)}</div>
-        </div>
+        <div class="brand-analytics-card-title">${t(labelKey)}</div>
         ${headerExtraHTML}
       </div>
       ${bodyHTML}
@@ -235,10 +233,10 @@ function widgetHTML(key, data) {
 }
 
 // `state.topContentPeriod` is ephemeral view state (like a table's sort
-// column elsewhere in this app) — it lives in brand-home.js's closure, not in
+// column elsewhere in this app) — it lives in home.js, not in
 // Firestore settings, since "which week am I looking at" isn't a preference
 // worth persisting the way widget on/off + order are.
-export function analyticsSectionHTML(content, settings, state) {
+export function analyticsSectionHTML(content, settings, state, extraHeadHTML = "") {
   const published = content.filter((c) => c.status === "published");
   const withMetrics = published.map((c) => ({ c, m: computeContentMetrics(c, settings) }));
   const keys = enabledWidgets();
@@ -247,7 +245,7 @@ export function analyticsSectionHTML(content, settings, state) {
     return `
       <div class="section-title">
         <h2>${t("brandHome.analytics.title")}</h2>
-        ${customizeButtonHTML()}
+        <span class="flex gap-8">${extraHeadHTML}${customizeButtonHTML()}</span>
       </div>
       <div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noPublished")}</div>
     `;
@@ -305,7 +303,7 @@ export function analyticsSectionHTML(content, settings, state) {
   return `
     <div class="section-title">
       <h2>${t("brandHome.analytics.title")}</h2>
-      ${customizeButtonHTML()}
+      <span class="flex gap-8">${extraHeadHTML}${customizeButtonHTML()}</span>
     </div>
     ${
       keys.length
@@ -329,8 +327,6 @@ export function wireAnalyticsSection(root, state, refresh) {
       refresh();
     });
   }
-
-  wireDragReorder(root);
 }
 
 function wireCustomizeMenu(root) {
@@ -356,9 +352,7 @@ function wireCustomizeMenu(root) {
     qsa("[data-home-widget]", menu).forEach((cb) => {
       cb.addEventListener("change", () => {
         const key = cb.dataset.homeWidget;
-        // Preserve whatever order is already saved (which may include a
-        // custom drag order) instead of resetting to the catalog's fixed
-        // order — re-enabling a widget just appends it at the end.
+        // Preserve the saved order — re-enabling a widget appends it.
         let order = [...enabledWidgets()];
         if (cb.checked) {
           if (!order.includes(key)) order.push(key);
@@ -369,66 +363,4 @@ function wireCustomizeMenu(root) {
       });
     });
   });
-}
-
-// Native HTML5 drag-and-drop, no library — each card's grip handle is the
-// draggable element (so grabbing the chart/rows inside a card doesn't start
-// a drag), but the whole card is what moves, via setDragImage. Dropping
-// reads the final DOM order straight off data-widget-key and saves it, so
-// the next paint() just renders in that order — no separate index state to
-// keep in sync.
-function wireDragReorder(root) {
-  const grid = qs(".brand-analytics-grid", root);
-  if (!grid) return;
-
-  qsa("[data-drag-handle]", grid).forEach((handle) => {
-    handle.addEventListener("dragstart", (e) => {
-      const card = handle.closest("[data-widget-key]");
-      if (!card) return;
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", card.dataset.widgetKey);
-      e.dataTransfer.setDragImage(card, 24, 24);
-      requestAnimationFrame(() => card.classList.add("dragging"));
-    });
-    handle.addEventListener("dragend", () => {
-      handle.closest("[data-widget-key]")?.classList.remove("dragging");
-    });
-  });
-
-  grid.addEventListener("dragover", (e) => {
-    const dragging = grid.querySelector(".dragging");
-    if (!dragging) return;
-    e.preventDefault();
-    const after = getDragAfterElement(grid, e.clientX, e.clientY, dragging);
-    if (after == null) grid.appendChild(dragging);
-    else if (after !== dragging) grid.insertBefore(dragging, after);
-  });
-
-  grid.addEventListener("drop", (e) => {
-    if (!grid.querySelector(".dragging")) return;
-    e.preventDefault();
-    const order = qsa("[data-widget-key]", grid).map((c) => c.dataset.widgetKey);
-    updateSettings({ homeWidgets: order });
-  });
-}
-
-// Nearest-center heuristic (works for a wrapping grid, not just a single
-// column): find whichever card's center the cursor is closest to, then
-// decide before/after that card by which half of it the cursor is on.
-function getDragAfterElement(grid, x, y, dragging) {
-  const candidates = qsa("[data-widget-key]", grid).filter((el) => el !== dragging);
-  let closest = null;
-  let closestDist = Infinity;
-  candidates.forEach((el) => {
-    const box = el.getBoundingClientRect();
-    const cx = box.left + box.width / 2;
-    const cy = box.top + box.height / 2;
-    const dist = Math.hypot(x - cx, y - cy);
-    if (dist < closestDist) {
-      closestDist = dist;
-      closest = { el, isAfter: x > cx };
-    }
-  });
-  if (!closest) return null;
-  return closest.isAfter ? closest.el.nextElementSibling : closest.el;
 }

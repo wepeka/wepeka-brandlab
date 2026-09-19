@@ -24,17 +24,9 @@ async function ensureMonthView() {
   }
 }
 
-async function closeBank() {
-  const close = qs("#close-bank");
-  if (close) {
-    close.click();
-    await tick();
-  }
-}
 
 export function buildCalendarSteps({ brandId }) {
   const drawerOpen = () => !!qs(".overlay .drawer");
-  let beforeIds = new Set();
 
   const steps = [
     // Prasyarat: Bank Konten kosong → bikin satu konten dulu (sama seperti
@@ -69,43 +61,15 @@ export function buildCalendarSteps({ brandId }) {
       selector: ".cal-grid",
       beforeStep: async () => {
         await ensureMonthView();
-        await closeBank();
       },
       title: t("guide.cal.grid.title"),
       body: t("guide.cal.grid.body"),
       placement: "top",
     },
-    // 2
-    {
-      selector: "#toggle-bank",
-      beforeStep: closeBank,
-      title: t("guide.cal.bank.title"),
-      body: t("guide.cal.bank.body"),
-      interactive: { type: "click" },
-    },
-    // 3 — drag-and-drop, advances once any piece that had no date gets one
-    {
-      selector: ".bank-item",
-      beforeStep: async () => {
-        beforeIds = new Set(unscheduledOpen(brandId).map((c) => c.id));
-        if (!qs("#content-bank")) {
-          qs("#toggle-bank")?.click();
-          await tick();
-        }
-      },
-      title: t("guide.cal.drag.title"),
-      body: t("guide.cal.drag.body"),
-      interactive: { type: "until", predicate: () => [...beforeIds].some((id) => getContent(id)?.scheduleDate) },
-      hint: t("guide.cal.drag.hint"),
-      skippable: true,
-      dim: false,
-      write: true,
-    },
     // 4 — click a date → the Bank menu for that day
     {
       selector: [".cal-cell.today", ".cal-cell:not(.outside)"],
       beforeStep: async () => {
-        await closeBank();
         await ensureMonthView();
         if (!qs(".cal-cell.today")) {
           qs("#cal-today")?.click();
@@ -193,24 +157,11 @@ export function buildCalendarSteps({ brandId }) {
       skippable: true,
       write: true,
     },
-    // 13 — no gate: clicking would force a file download during the tour
-    {
-      selector: "#export-gcal",
-      title: t("guide.cal.gcal.title"),
-      body: t("guide.cal.gcal.body"),
-    },
     // 14
     {
       selector: '[data-view="week"]',
       title: t("guide.cal.week.title"),
       body: t("guide.cal.week.body"),
-      interactive: { type: "click" },
-    },
-    // 15
-    {
-      selector: '[data-view="day"]',
-      title: t("guide.cal.day.title"),
-      body: t("guide.cal.day.body"),
       interactive: { type: "click" },
     },
     // 16
@@ -265,9 +216,7 @@ export function startCalendarGuide(brandId) {
 export function startCalendarGuideOnMount(brandId) {
   startGuideOnMount({
     pendingKey: "calendar",
-    autoplayKey: "calendar",
     build: () => buildCalendarSteps({ brandId }),
     options: calendarTourOptions(brandId),
-    autoplay: false,
   });
 }

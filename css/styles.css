@@ -197,20 +197,6 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
 
 .icon-btn.has-overdue{ --glow-color: color-mix(in srgb, var(--health-poor) 55%, transparent); animation: glow-pulse 2.4s ease-in-out infinite; }
 
-/* Proactive notif banner (js/proactive-notif.js) — self-appearing once per
-   app-open, so it needs to read as urgent at a glance: full-width, fixed to
-   the very top (above the topbar), the same health-poor red the rest of the
-   app already uses for "needs attention". Slides down via max-height/opacity
-   (not display) so the close button's fade-out has something to animate. */
-.proactive-notif{ position:relative; max-height:0; opacity:0; overflow:hidden; transition: max-height .25s ease, opacity .25s ease; background: var(--health-poor); }
-.proactive-notif.in{ max-height:60px; opacity:1; }
-.proactive-notif-inner{ display:flex; align-items:center; gap:10px; max-width:1100px; margin:0 auto; padding:12px 20px; color:#fff; font-size:13px; font-weight:600; }
-.proactive-notif-inner svg{ flex:none; }
-.proactive-notif-inner span{ flex:1; }
-.proactive-notif-cta{ flex:none; background:#fff; color: var(--health-poor); border:none; font-weight:700; }
-.proactive-notif-close{ flex:none; color:#fff; }
-.proactive-notif-close:hover{ background: rgba(255,255,255,.15); }
-
 .tour-prompt{ position:relative; max-height:0; opacity:0; overflow:hidden; transition: max-height .25s ease, opacity .25s ease; background: var(--accent); }
 .tour-prompt.in{ max-height:60px; opacity:1; }
 .tour-prompt-inner{ display:flex; align-items:center; gap:10px; max-width:1100px; margin:0 auto; padding:12px 20px; color: var(--accent-text); font-size:13px; font-weight:600; }
@@ -270,16 +256,6 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
 :root[data-theme="light"] .brand-logo{ filter: invert(1); }
 .brand-mark-divider{ width:1px; height:18px; background: var(--border); }
 .topbar-sep{ width:1px; align-self:stretch; margin: 14px 0; background: var(--border); }
-
-.back-to-site{
-  display:flex; align-items:center; gap:5px;
-  padding: 8px 12px; border-radius: var(--radius-pill);
-  background: var(--surface); border:1px solid var(--border);
-  color: var(--text-muted); font-size:12.5px; font-weight:700;
-  white-space:nowrap;
-}
-.back-to-site:hover{ background: var(--surface-hover); color: var(--text); }
-.back-to-site svg{ width:14px; height:14px; }
 
 .brand-switch{
   display:flex; align-items:center; gap:8px;
@@ -683,59 +659,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .empty-state .icon-wrap svg{ width:26px; height:26px; }
 .empty-state h3{ font-size:18px; color: var(--text); margin-bottom:8px; }
 .empty-state p{ max-width: 40ch; margin: 0 auto 18px; font-size:13.5px; }
-
-/* ============================================================
-   Brand select screen
-   ============================================================ */
-/* "This week's work" (js/views/brands.js weeklyWorkHTML) — the same
-   .dash-widget-card glass treatment (css above, shared with the Brand
-   Dashboard's widgets) plus its own header and one collapsible group per
-   brand. .weekly-work-glow reuses that shared recipe by name. */
-.weekly-work-glow{
-  position:absolute; inset:-40%; z-index:-1; pointer-events:none; filter:blur(60px); opacity:.55;
-  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 60%);
-  animation: weekly-glow-move 14s ease-in-out infinite alternate;
-}
 @keyframes weekly-glow-move{ 0%{ transform: translate(-6%,-4%) scale(1); } 100%{ transform: translate(8%,6%) scale(1.18); } }
-@media (prefers-reduced-motion: reduce){ .weekly-work-glow{ animation:none; } }
-.weekly-work-head{ position:relative; z-index:1; display:flex; align-items:center; gap:14px; margin-bottom:18px; }
-.weekly-work-head-icon{ flex:none; width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background: rgba(255,255,255,.08); color: var(--accent); }
-.weekly-work-head h2{ font-size:19px; color:#fff; margin:0 0 2px; }
-.weekly-work-head p{ margin:0; font-size:12.5px; color: rgba(244,242,255,.6); }
-.weekly-work-groups{ display:flex; flex-direction:column; gap:10px; }
-.weekly-work-group{ background: rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius: var(--radius-md); overflow:hidden; }
-.weekly-work-group-head{ width:100%; display:flex; align-items:center; gap:10px; padding:12px 14px; background:none; border:0; color:inherit; cursor:pointer; font:inherit; text-align:left; }
-.weekly-work-group-head:hover{ background: rgba(255,255,255,.05); }
-.weekly-work-group-head .avatar{ width:26px; height:26px; font-size:11px; }
-.weekly-work-group-name{ flex:1; min-width:0; font-weight:700; font-size:13.5px; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.weekly-work-group-count{ flex:none; font-size:11px; font-weight:800; padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.1); color: rgba(244,242,255,.85); }
-.weekly-work-group-head > svg:last-child{ flex:none; color: rgba(244,242,255,.5); transition: transform .15s; }
-.weekly-work-group.is-collapsed .weekly-work-group-head > svg:last-child{ transform: rotate(-90deg); }
-.weekly-work-rows{ padding:0 14px 6px; }
-.weekly-work-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.07); cursor:pointer; }
-.weekly-work-row:last-child{ border-bottom:none; }
-.weekly-work-row:hover .weekly-work-title{ text-decoration:underline; }
-.weekly-work-verb{ font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color: var(--accent); background: rgba(255,255,255,.1); padding:4px 9px; border-radius:999px; flex:none; }
-.weekly-work-title{ flex:1; min-width:0; font-weight:600; font-size:13.5px; color:#f4f2ff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.weekly-work-date{ font-size:11.5px; color: rgba(244,242,255,.5); flex:none; }
-@media (max-width:560px){ .weekly-work-card{ padding:18px; } }
-
-.overdue-card{ border-color: color-mix(in srgb, var(--health-poor) 35%, var(--border)); }
-.overdue-row{ display:flex; align-items:center; gap:14px; padding:11px 4px; border-bottom:1px solid var(--border-soft); }
-.overdue-row:last-child{ border-bottom:none; }
-.overdue-row .t{ font-weight:700; font-size:13.5px; }
-.overdue-row .m{ font-size:12px; color: var(--health-poor); margin-top:2px; }
-
-.overdue-banner{ display:flex; flex-direction:column; gap:12px; background: var(--health-poor-soft); border:1px solid color-mix(in srgb, var(--health-poor) 35%, var(--border)); border-radius: var(--radius-lg); padding:16px 18px; margin-bottom:20px; }
-.overdue-banner-head{ display:flex; align-items:flex-start; gap:10px; color: var(--health-poor); }
-.overdue-banner-head svg{ flex:none; margin-top:1px; }
-.overdue-banner-title{ font-weight:800; font-size:14.5px; color: var(--text); }
-.overdue-banner-sub{ font-size:12.5px; color: var(--text-muted); margin-top:2px; }
-.overdue-banner-list{ display:flex; flex-direction:column; gap:6px; }
-.overdue-banner-item{ display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; text-align:left; background: var(--surface); border:1px solid var(--border-soft); border-radius: var(--radius-md); padding:9px 12px; cursor:pointer; transition: border-color .15s, background .15s; }
-.overdue-banner-item:hover{ border-color: var(--health-poor); background: var(--surface-hover); }
-.overdue-banner-item .t{ font-weight:700; font-size:13px; }
-.overdue-banner-item .d{ font-size:12px; color: var(--health-poor); font-weight:700; flex:none; }
 
 .hero-strip{ margin-bottom: 40px; }
 .hero-strip .kicker{ color: var(--accent); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
@@ -994,12 +918,6 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .lifetime-lock p{ margin:0 0 6px; color: var(--text-muted); font-size:14.5px; line-height:1.65; }
 .lifetime-lock .btn{ gap:8px; }
 
-/* In-app pill (js/main.js syncPlanPill): trial days left / view-only → pricing */
-.plan-pill{ position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:45; display:flex; align-items:center; gap:10px; max-width:calc(100vw - 32px); padding:9px 10px 9px 16px; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-pill); box-shadow: var(--shadow-lg); font-size:12.5px; color: var(--text-muted); text-decoration:none; white-space:nowrap; }
-.plan-pill strong{ background: var(--accent); color: var(--accent-text); padding:5px 12px; border-radius: var(--radius-pill); font-size:12px; }
-.plan-pill.is-readonly{ border-color: var(--accent); color: var(--text); }
-@media (max-width:420px){ .plan-pill{ font-size:11.5px; gap:8px; padding-left:12px; } }
-
 /* ============================================================
    Menus / dropdowns
    ============================================================ */
@@ -1039,19 +957,6 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .help-btn:hover{ background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .help-term{ text-decoration: underline dotted color-mix(in srgb, var(--accent) 70%, transparent); text-underline-offset:3px; cursor:help; }
 
-/* Unlike .help-btn (deliberately quiet, icon-only), this is meant to be
-   noticed — an always-available "replay this section's guide" entry point,
-   same spirit as wepeka.com's own compass-icon "guide" banner. A labeled
-   pill rather than .icon-btn's fixed circle, since a hover-only title on a
-   bare icon is too easy to miss. */
-.section-guide-btn{
-  display:inline-flex; align-items:center; gap:6px; flex:none;
-  padding:7px 13px 7px 11px; border-radius: var(--radius-pill);
-  background: var(--surface); border:1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
-  color: var(--accent); font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap;
-}
-.section-guide-btn svg{ width:14px; height:14px; flex:none; }
-.section-guide-btn:hover{ background: var(--accent-soft); }
 .help-popover{ max-width:280px; padding:12px 14px; cursor:default; }
 .help-popover-title{ font-size:12.5px; font-weight:700; margin-bottom:6px; }
 .help-popover-body{ font-size:12.5px; line-height:1.55; color: var(--text-muted); margin:0; }
@@ -1304,31 +1209,8 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .tour-skip-step[hidden]{ display:none; }
 .tour-overlay.tour-no-dim .tour-dim{ display:none !important; }
 .tour-overlay.tour-quiet{ display:none; }
-/* Explainer videos (js/guide-videos.js): the Video button next to Panduan,
-   the closable widget on a tour's first step, and the modal player. */
-.section-guide-actions{ display:inline-flex; align-items:center; gap:6px; flex:none; }
 .section-video-btn{ color: var(--text); border-color: var(--border); }
-.guide-video-frame{ position:relative; width:100%; aspect-ratio:16/9; border-radius: var(--radius-md); overflow:hidden; background: var(--surface-2); border:1px solid var(--border); }
-.guide-video-frame video, .guide-video-frame iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; background:#000; }
-.guide-video-frame.is-placeholder{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; padding:10px; background: radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 16%, var(--surface-2)), var(--surface-2)); }
-.guide-video-play{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--accent); color: var(--accent-text); }
-.guide-video-frame.is-compact .guide-video-play{ width:34px; height:34px; }
-.guide-video-ph-text{ display:flex; flex-direction:column; gap:2px; font-size:12px; color: var(--text-muted); }
-.guide-video-ph-text b{ color: var(--text); font-size:12.5px; }
 
-/* The explainer modal's ending: three answers, shown once the video is over
-   or skipped (js/guide-videos.js openGuideVideo). */
-/* [hidden] is only display:none at UA weight — a class that sets display
-   would silently win, so both toggled blocks say it themselves. */
-.guide-video-skip{ display:flex; justify-content:flex-end; margin-top:10px; }
-.guide-video-skip[hidden], .guide-video-choices[hidden]{ display:none; }
-.guide-video-choices{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); animation: reveal-up .22s ease-out both; }
-.guide-video-choices-head{ margin:0 0 10px; font-size:13px; font-weight:600; }
-.guide-video-choice-row{ display:flex; flex-wrap:wrap; gap:8px; }
-.guide-video-choice-row .btn{ flex:1 1 auto; justify-content:center; }
-@media (max-width: 560px){ .guide-video-choice-row .btn{ flex:1 1 100%; } }
-@media (prefers-reduced-motion: reduce){ .guide-video-choices{ animation:none; } }
-.guide-video-note{ font-size:12.5px; color: var(--text-muted); margin:12px 0 0; line-height:1.55; }
 body.tour-active .consultant-fab{ display:none; }
 @media (max-width: 720px){
   .tour-tooltip{ padding:16px; }
@@ -1342,9 +1224,6 @@ body.tour-active .consultant-fab{ display:none; }
 .dropzone.drag{ border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
 .dropzone svg{ width:26px; height:26px; margin: 0 auto 10px; color: var(--text-faint); }
 .dropzone strong{ color: var(--text); }
-.screenshot-preview{ position:relative; border-radius: var(--radius-md); overflow:hidden; border:1px solid var(--border); }
-.screenshot-preview img{ width:100%; max-height: 260px; object-fit:cover; }
-.screenshot-preview .remove{ position:absolute; top:8px; right:8px; }
 .ocr-status{ display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius: var(--radius-md); background: var(--surface-2); font-size:13px; color: var(--text-muted); margin-top:12px; }
 .spinner{ width:16px; height:16px; border-radius:50%; border:2px solid var(--border); border-top-color: var(--accent); animation: spin .7s linear infinite; flex:none; }
 @keyframes spin{ to{ transform: rotate(360deg); } }
@@ -1397,16 +1276,7 @@ body.tour-active .consultant-fab{ display:none; }
 .cal-timeline-label{ width:140px; flex:none; font-size:11.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cal-timeline-track{ position:relative; flex:1; height:8px; background: var(--surface-2); border-radius:999px; }
 .cal-timeline-bar{ position:absolute; top:0; bottom:0; background: var(--brand-tint); border-radius:999px; min-width:8px; }
-
-/* Content Bank — a slide-in drag source panel, not a modal, so the
-   calendar underneath stays fully interactive for dropping onto. */
-.content-bank{ position:fixed; top:0; right:0; bottom:0; width:300px; background: var(--bg-raised); border-left:1px solid var(--border); box-shadow: var(--shadow-lg); z-index:90; display:flex; flex-direction:column; animation: bankIn .2s ease-out; }
 @keyframes bankIn{ from{ transform: translateX(100%); } to{ transform: translateX(0); } }
-.content-bank-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 14px; font-weight:800; font-size:14px; border-bottom:1px solid var(--border); }
-.content-bank-list{ flex:1; overflow-y:auto; padding:0 14px 20px; }
-.content-bank-group{ margin-bottom:16px; }
-.content-bank-group-head{ font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color: var(--text-faint); margin-bottom:8px; }
-.content-bank-group .bank-item{ width:100%; margin-bottom:6px; box-sizing:border-box; white-space:normal; }
 .auto-schedule-list{ max-height:50vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
 .auto-schedule-row{ display:flex; align-items:center; gap:12px; padding:9px 4px; border-bottom:1px solid var(--border-soft); }
 .auto-schedule-row:last-child{ border-bottom:none; }
@@ -1448,11 +1318,8 @@ body.tour-active .consultant-fab{ display:none; }
 .list-editor-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border-soft); }
 .list-editor-row:last-child{ border-bottom:none; }
 .list-editor-row .row-label{ flex:1; font-weight:600; font-size:13.5px; }
-.formula-box{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13.5px; }
-.formula-vars{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
 .var-chip{ font-size:11px; font-weight:700; padding:4px 9px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); cursor:pointer; font-family: ui-monospace, monospace; }
 .var-chip:hover{ color: var(--accent); }
-.formula-preview{ margin-top:10px; font-size:12.5px; color: var(--text-muted); }
 
 /* ============================================================
    Toast
@@ -1599,26 +1466,13 @@ body.tour-active .consultant-fab{ display:none; }
   .topbar-sep{ display:none; }
   .brand-switch{ order:1; max-width: 200px; }
   .brand-mark{ order:0; }
-  /* Safety net, not the primary fix: if the icon row still doesn't fit
-     even after #mode-toggle-btn collapses to icon-only below, wrap to a
-     second line instead of clipping off-screen (the actual bug this
-     guarded against — see #mode-toggle-btn's own comment). */
+  /* If the icon row still doesn't fit, wrap to a second line instead of
+     clipping off-screen. */
   .topbar-right{ order:2; flex-wrap: wrap; row-gap:8px; justify-content:flex-end; }
   .tabs{ order:3; flex:1 1 100%; width:100%; overflow-x:auto; min-width:0; }
   main.view{ padding: 24px 16px 60px; }
   .hero-strip h1{ font-size:32px; }
   .drawer{ width:100%; }
-}
-/* #mode-toggle-btn reuses .brand-switch (icon + text pill), which is wider
-   than the plain .icon-btn glyphs beside it — on a narrow phone the combined
-   row (back-to-site text + 5 buttons) overflowed the viewport and clipped
-   this button off-screen entirely. Collapsing it to icon-only here, same
-   footprint as its neighbors, is the actual fix; .topbar-right's wrap above
-   is just a fallback. */
-@media (max-width: 560px){
-  .back-to-site{ display:none; }
-  #mode-toggle-btn{ padding: 8px; gap:0; }
-  #mode-toggle-btn span{ display:none; }
 }
 
 /* Campaign Journey — horizontal node/branch map, not a table. Reuses
@@ -1856,23 +1710,6 @@ body.tour-active .consultant-fab{ display:none; }
   .bb-hub-grid{ grid-template-columns: 1fr; }
 }
 
-/* Beginner Home's 3 app cards (js/views/beginner-home.js) — same door
-   pattern as the Brand Builder hub above, just 3-up and with a locked
-   state for apps that depend on an earlier one being done first. */
-.beginner-apps-grid{ grid-template-columns: repeat(3,1fr); }
-@media (max-width: 900px){ .beginner-apps-grid{ grid-template-columns: 1fr !important; } }
-
-/* A finished app's compact row in the "Selesai" list — same rhythm as
-   .top-content-row, but a real <a> (the whole row navigates to that app so
-   it can still be edited) with an explicit "Edit" affordance at the end
-   instead of the big card's icon/progress-bar/CTA stack. */
-.beginner-app-done-row{ display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border-soft); color:inherit; text-decoration:none; cursor:pointer; }
-.beginner-app-done-row:last-child{ border-bottom:none; }
-.beginner-app-done-icon{ width:32px; height:32px; border-radius:9px; background: var(--health-good-soft); color: var(--health-good); display:flex; align-items:center; justify-content:center; flex:none; }
-.beginner-app-done-row .t{ font-weight:700; font-size:13.5px; }
-.beginner-app-done-edit{ display:flex; align-items:center; gap:4px; font-size:12.5px; font-weight:700; color: var(--accent); flex:none; }
-.beginner-app-done-row:hover .beginner-app-done-edit{ text-decoration:underline; }
-
 /* Plays once, the first time this row appears right after an app finishes —
    the entrance itself (fading/sliding in) plus a green pulse so the "this
    card just moved down here" transition actually reads as a transition,
@@ -1882,8 +1719,6 @@ body.tour-active .consultant-fab{ display:none; }
   60%{ opacity:1; transform: translateY(0); background: var(--health-good-soft); }
   100%{ opacity:1; transform: translateY(0); background: transparent; }
 }
-.beginner-app-done-row-celebrate{ animation: beginner-done-row-in 1.1s ease-out; border-radius: var(--radius-md); }
-@media (prefers-reduced-motion: reduce){ .beginner-app-done-row-celebrate{ animation:none; } }
 
 /* Callout bubble pointing at whatever app just unlocked — position:fixed,
    placed in JS from the target's getBoundingClientRect() (see
@@ -1908,11 +1743,7 @@ body.tour-active .consultant-fab{ display:none; }
 .brand-analytics-card{ transition: opacity .15s, transform .15s; }
 .brand-analytics-card.dragging{ opacity:.35; }
 .brand-analytics-card-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
-.brand-analytics-card-title-row{ display:flex; align-items:center; gap:6px; min-width:0; }
 .brand-analytics-card-title{ font-size:13px; font-weight:700; color: var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.brand-analytics-drag-handle{ flex:none; display:flex; color: var(--text-faint); cursor:grab; touch-action:none; margin-left:-4px; }
-.brand-analytics-drag-handle:hover{ color: var(--text-muted); }
-.brand-analytics-drag-handle:active{ cursor:grabbing; }
 .bb-hub-door-locked{ cursor:not-allowed; opacity:.5; pointer-events:none; }
 .bb-hub-door-locked .bb-hub-icon{ background: var(--surface-2); color: var(--text-faint); }
 
@@ -1924,29 +1755,6 @@ body.tour-active .consultant-fab{ display:none; }
   100%{ transform:scale(1); border-color: var(--border); box-shadow:none; }
 }
 .bb-hub-door-celebrate{ animation: bb-hub-celebrate 1.1s ease-out; }
-/* The explicit "here's exactly what to click" line — the whole card is
-   already a link to this same href, this just makes that obvious instead
-   of making someone guess what happens when they click the card. */
-.beginner-app-cta{ display:flex; align-items:center; gap:6px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border-soft); font-size:12.5px; font-weight:700; color: var(--accent); width:100%; }
-.beginner-app-cta svg{ flex:none; }
-
-/* Brand Builder hub — stage stepper cards (js/views/brand-builder.js) */
-.bb-stage-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:12px; }
-.bb-stage-card{ display:flex; align-items:flex-start; gap:12px; text-decoration:none; color:inherit; cursor:pointer; transition: border-color .15s, transform .15s; }
-.bb-stage-card:hover{ border-color: var(--accent); }
-.bb-stage-num{ flex:none; width:26px; height:26px; border-radius:50%; background: var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:800; color: var(--text-muted); }
-.bb-stage-done .bb-stage-num{ background: var(--health-good-soft); border-color: var(--health-good); color: var(--health-good); }
-.bb-stage-progress .bb-stage-num{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.bb-stage-soon{ opacity:.55; cursor:not-allowed; }
-.bb-stage-locked{ opacity:.5; cursor:not-allowed; }
-.bb-stage-locked:hover{ border-color: var(--border); }
-.bb-stage-locked .bb-stage-num{ background: var(--surface-2); border-color: var(--border); color: var(--text-faint); }
-.bb-stage-body{ flex:1; min-width:0; }
-.bb-stage-label{ font-size:13px; font-weight:700; margin-bottom:3px; }
-.bb-stage-desc{ font-size:11.5px; color: var(--text-muted); line-height:1.5; }
-.bb-stage-status{ flex:none; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; padding:3px 8px; border-radius:999px; background: var(--surface-2); color: var(--text-faint); align-self:flex-start; }
-.bb-stage-status-done{ background: var(--health-good-soft); color: var(--health-good); }
-.bb-stage-status-progress{ background: var(--accent-soft); color: var(--accent); }
 
 /* Live brand-application mockups — plain CSS, no image generation, driven
    entirely by --bb-* custom properties set on .bb-mockup-stage so every
@@ -2410,16 +2218,6 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .dna-funnel3-num{ width:22px; height:22px; border-radius:50%; background: var(--accent-soft); color: var(--accent); font-family: var(--font-display); font-weight:800; font-size:11.5px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
 @media (max-width:640px){ .dna-funnel3{ grid-template-columns:1fr; } }
 
-/* Brand Health strip — four diagnosis-and-action indicators above the
-   command center, reusing .health-badge (defined with dashboard.js's
-   stats below) rather than a new visual system. */
-.brand-health-strip{ display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:20px; }
-.brand-health-item{ display:flex; flex-direction:column; gap:8px; align-items:flex-start; border:1px solid var(--border); border-radius: var(--radius-md); padding:14px 16px; transition: border-color .15s; }
-.brand-health-item:not(.glass-card){ background: var(--surface); }
-.brand-health-item:hover{ border-color: var(--brand-tint); }
-.brand-health-label{ font-size:11.5px; color: var(--text-muted); font-weight:700; }
-@media (max-width:760px){ .brand-health-strip{ grid-template-columns: repeat(2,1fr); } }
-
 /* ============================================================
    Brand Home command center — four widgets shaped to hint at what each
    does (a ring for progress, a mini journey for campaigns, swatches for
@@ -2441,55 +2239,15 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .brand-widget h3{ font-size:16px; margin:0 0 3px; }
 .brand-widget p{ font-size:12.5px; color: var(--text-muted); margin:0; }
 
-.widget-dna{ --w-accent: var(--accent); grid-column: span 2; display:flex; align-items:center; gap:18px; }
-.widget-dna .ring-wrap{ position:relative; width:72px; height:72px; flex:none; }
-.widget-dna .ring-wrap svg{ width:100%; height:100%; transform:rotate(-90deg); }
-.widget-dna .ring-track{ fill:none; stroke:var(--border); stroke-width:7; }
-.widget-dna .ring-fill{ fill:none; stroke:var(--w-accent); stroke-width:7; stroke-linecap:round; transition: stroke-dasharray .4s ease; }
-.widget-dna .ring-pct{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-weight:800; font-size:15px; color:var(--w-accent); }
-
-.widget-campaign{ --w-accent: var(--mofu); grid-column: span 2; }
-.widget-campaign .icon-wrap{ width:44px; height:44px; border-radius:12px; background: color-mix(in srgb, var(--w-accent) 16%, transparent); color: var(--w-accent); display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
-.widget-campaign .mini-journey{ display:flex; align-items:center; margin:16px 0 14px; }
-.widget-campaign .mj-dot{ width:11px; height:11px; border-radius:50%; background:var(--surface-2); border:2px solid var(--border); flex:none; transition: background .2s, border-color .2s; }
-.widget-campaign .mj-dot.filled{ background:var(--w-accent); border-color:var(--w-accent); }
-.widget-campaign .mj-line{ flex:1; height:2px; background:var(--border); min-width:8px; transition: background .2s; }
-.widget-campaign .mj-line.filled{ background:var(--w-accent); }
-
 .widget-guidelines{ grid-column: span 2; }
-.widget-guidelines .swatch-row{ display:flex; gap:6px; margin:16px 0 12px; }
 .widget-guidelines .swatch{ width:24px; height:24px; border-radius:7px; flex:none; border:1px solid rgba(255,255,255,.08); }
 .widget-guidelines .aa-preview{ position:absolute; top:18px; right:20px; font-size:26px; font-weight:800; color: color-mix(in srgb, var(--brand-tint) 45%, transparent); }
-
-.widget-content-os{ --w-accent: var(--info); grid-column: span 2; display:flex; align-items:center; gap:20px; }
-.widget-content-os .stack{ position:relative; width:52px; height:52px; flex:none; }
-.widget-content-os .stack-card{ position:absolute; inset:0; border-radius:10px; border:1px solid var(--border); background:var(--surface-2); box-shadow: 0 3px 8px rgba(0,0,0,.35); }
-.widget-content-os .stack-card:nth-child(1){ transform: rotate(-9deg) translate(-3px,2px); }
-.widget-content-os .stack-card:nth-child(2){ transform: rotate(5deg) translate(2px,-1px); }
-.widget-content-os .stack-card:nth-child(3){ background: color-mix(in srgb, var(--w-accent) 16%, var(--surface)); border-color: var(--w-accent); display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-weight:800; color:var(--w-accent); font-size:15px; }
-
-/* Featured widgets — the 3 real, working apps (Brand Builder, Campaigns,
-   Content OS), each permanently tinted in its own --w-accent instead of the
-   plain hover-only tint every other widget uses, so they read as the actual
-   destinations on this page. Sales stays untinted/plain on purpose — it's a
-   "Coming soon" placeholder, not yet a real app to point at. */
-.widget-featured{ padding:28px; min-height:132px; border-width:1.5px; border-color: color-mix(in srgb, var(--w-accent, var(--brand-tint)) 55%, var(--border)); background: color-mix(in srgb, var(--w-accent, var(--brand-tint)) 7%, var(--surface)); }
-.widget-featured:hover{ border-color: var(--w-accent, var(--brand-tint)); }
-.widget-featured h3{ font-size:19px; }
-.widget-featured p{ font-size:13.5px; }
-.widget-featured.widget-content-os .stack{ width:64px; height:64px; }
-.widget-featured.widget-content-os .stack-card:nth-child(3){ font-size:18px; }
 /* .glass-card's --surface becomes a near-transparent white for the frosted
    look, so re-mixing a widget's own accent straight into var(--surface)
    (above) would wash the tile out almost to nothing. Re-tint into the same
    dark glass gradient instead so these keep their per-app accent identity
    while sitting on the same frosted-dark base as every other box. */
 .brand-widget.glass-card{ background: linear-gradient(135deg, rgba(46,38,66,.72) 0%, rgba(22,19,32,.78) 55%, rgba(12,11,18,.82) 100%); }
-.widget-featured.glass-card{ background: linear-gradient(135deg, color-mix(in srgb, var(--w-accent, var(--brand-tint)) 20%, rgba(46,38,66,.72)) 0%, rgba(22,19,32,.78) 55%, rgba(12,11,18,.82) 100%); border-color: color-mix(in srgb, var(--w-accent, var(--brand-tint)) 55%, rgba(255,255,255,.14)); }
-.widget-featured.glass-card:hover{ border-color: var(--w-accent, var(--brand-tint)); }
-
-.widget-sales{ --w-accent: var(--health-good); grid-column: span 2; display:flex; align-items:center; gap:18px; }
-.widget-sales .folder-badge{ width:50px; height:50px; border-radius:12px; background: color-mix(in srgb, var(--w-accent) 14%, transparent); color: var(--w-accent); display:flex; align-items:center; justify-content:center; flex:none; }
 
 @media (max-width: 760px){
   .brand-widget-grid{ grid-template-columns: 1fr; }
@@ -2581,18 +2339,6 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
   --wa-bubble-text: #111b21;
   --wa-meta: rgba(17,27,33,.5);
 }
-
-/* Home entry points: Advanced widget (Copy Studio + Sales share the
-   campaign row, one column each) and Guided's "Alat cepat" row. */
-.widget-copy{ --w-accent: var(--copy); grid-column: span 1; display:flex; flex-direction:column; align-items:flex-start; gap:14px; }
-.widget-copy .copy-badge{ width:46px; height:46px; border-radius:12px; background: color-mix(in srgb, var(--w-accent) 16%, transparent); color: var(--w-accent); display:flex; align-items:center; justify-content:center; flex:none; }
-.brand-widget-grid .widget-sales{ grid-column: span 1; flex-direction:column; align-items:flex-start; }
-.beginner-quick-tool{ display:flex; align-items:center; gap:14px; color:inherit; text-decoration:none; transition: border-color .15s, transform .15s; }
-.beginner-quick-tool:hover{ border-color: color-mix(in srgb, var(--copy) 60%, var(--border)); transform: translateY(-1px); }
-.beginner-quick-tool .ti{ flex:1; min-width:0; }
-.beginner-quick-tool .t{ font-weight:700; font-size:14.5px; }
-.beginner-quick-tool .m{ font-size:12.5px; color: var(--text-muted); margin-top:2px; }
-.beginner-quick-tool-icon{ width:40px; height:40px; border-radius:11px; background: color-mix(in srgb, var(--copy) 16%, transparent); color: var(--copy); display:flex; align-items:center; justify-content:center; flex:none; }
 
 /* Page layout: form on the left, results on the right; stacked on narrow screens. */
 .copy-nudge{ margin:-4px 0 18px; }
@@ -2703,24 +2449,10 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .cp-story-sticker{ align-self:center; margin:0 0 8px; max-width:92%; display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 12px; border-radius:12px; background:#fff; color:#111; font-size:11.5px; font-weight:700; line-height:1.3; text-align:center; text-shadow:none; box-shadow:0 4px 14px rgba(0,0,0,.35); }
 .cp-story-sticker-kind{ font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#7a6ff0; }
 
-
 /* ---- Teleprompter fill light (14 Sep 2026) ---- */
 .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .tp-head-actions{ display:flex; align-items:center; gap:4px; }
 .tp-overlay{ --tp-light:#fff; transition: background .25s; }
-.tp-overlay.tp-light-on{ background: var(--tp-light); backdrop-filter:none; padding:20px; }
-.tp-overlay.tp-light-on .tp-panel{ width:min(620px, 56vw); height:min(560px, 70vh); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-@media (max-width:720px){ .tp-overlay.tp-light-on .tp-panel{ width:min(560px, 78vw); height:min(480px, 58vh); } }
-.tp-light-toggle.is-on{ background: var(--accent); color: var(--accent-text, #fff); border-color: var(--accent); }
-.tp-light-controls{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:10px 22px 14px; border-top:1px dashed var(--border); flex:none; }
-.tp-light-controls[hidden]{ display:none; }
-.tp-light-value{ font-variant-numeric: tabular-nums; min-width:4ch; text-align:right; color: var(--text); }
-.tp-light-colors{ display:flex; align-items:center; gap:8px; }
-.tp-swatch{ position:relative; width:26px; height:26px; border-radius:50%; border:2px solid var(--border); background: var(--swatch); cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; color:#333; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
-.tp-swatch:hover{ border-color: var(--text-muted); }
-.tp-swatch[aria-checked="true"], .tp-swatch.is-active{ border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), inset 0 0 0 1px rgba(0,0,0,.08); }
-.tp-swatch-custom input[type=color]{ position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; border:0; padding:0; }
-.tp-light-hint{ font-size:11.5px; color: var(--text-faint); flex-basis:100%; }
 
 /* ---- Event setup wizard (15 Sep 2026) ---- */
 .ev-wizard .copy-q{ font-size:19px; }
@@ -2857,7 +2589,6 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .nav-return button:hover{ text-decoration:underline; }
 @keyframes nav-return-in{ 0%{ transform:translateY(-100%); opacity:0; } 100%{ transform:translateY(0); opacity:1; } }
 @media (prefers-reduced-motion: reduce){ .nav-return{ animation:none; } }
-.bank-item.is-highlight{ outline:2px solid var(--accent); outline-offset:1px; }
 .cd-profile-card{ margin-bottom:24px; }
 @media (max-width:720px){
   .cd-row{ grid-template-columns:18px 1fr; }
@@ -2957,13 +2688,6 @@ a.journey-step:hover .journey-edit{ text-decoration:underline; }
   .journey-step-current .journey-edit{ display:none; }
   .journey-step-current .journey-text .m{ display:block; }
 }
-/* The mode pill keeps its text on phones ("Pemula"/"Pro" is the one label
-   a beginner must be able to read) — overrides the icon-only collapse
-   above. Fits now that the pill is the only text item in .topbar-right. */
-@media (max-width: 560px){
-  #mode-toggle-btn.mode-toggle{ padding: 8px 11px; gap:6px; }
-  #mode-toggle-btn.mode-toggle span{ display:inline; font-size:12px; }
-}
 
 /* Campaign detail: mission tree (pohon progres) back on level campaigns */
 .cd-tree-scroll{ overflow-x:auto; scrollbar-width:none; }
@@ -2986,15 +2710,11 @@ a.journey-step:hover .journey-edit{ text-decoration:underline; }
 
 /* Daily AI meter (topbar) */
 .ai-usage{ display:inline-flex; align-items:center; gap:7px; height:34px; padding:0 11px; border-radius: var(--radius-pill); border:1px solid var(--border); background: var(--surface); color: var(--text-muted); font: inherit; font-size:12px; font-weight:700; cursor:pointer; flex:none; }
-.ai-usage:hover{ background: var(--surface-hover); color: var(--text); }
-.ai-usage svg{ flex:none; color: var(--accent); }
 .ai-usage-bar{ position:relative; width:46px; height:6px; border-radius:999px; background: var(--surface-2); overflow:hidden; }
 .ai-usage-bar > span{ position:absolute; inset:0 auto 0 0; background: var(--accent); border-radius:999px; transition: width .3s; }
 .ai-usage-bar.is-low > span{ background: var(--health-average); }
 .ai-usage-bar.is-out > span{ background: var(--health-poor); }
-.ai-usage-text{ font-variant-numeric: tabular-nums; white-space:nowrap; }
 @media (max-width: 560px){
-  .ai-usage{ padding:0 9px; gap:5px; }
   .ai-usage-bar{ width:34px; }
 }
 
@@ -3082,44 +2802,11 @@ main.view.view-leave{ opacity:0; transform: translateY(-6px); transition: opacit
   .ocr-status:has(.spinner) span{ animation:none; color: var(--text-muted); background:none; -webkit-background-clip:initial; }
   .btn-primary:hover{ transform:none; }
   main.view.view-leave{ transition:none; }
-  .welcome-splash-text, .guide-fab-menu{ animation:none; }
 }
-
-/* Welcome splash (once per login) */
-.welcome-splash{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background: var(--bg); color: var(--text); z-index:5; }
-.welcome-splash-text{ display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; animation: welcome-in 1.9s ease-in-out both; }
-.welcome-splash-kicker{ font-size:12.5px; letter-spacing:.22em; text-transform:uppercase; color: var(--text-muted); font-weight:700; }
-.welcome-splash-name{ font-family: var(--font-display); font-weight:900; font-size:30px; letter-spacing:-.01em; }
 @keyframes welcome-in{ 0%{ opacity:0; transform: translateY(8px); } 22%{ opacity:1; transform:none; } 78%{ opacity:1; transform:none; } 100%{ opacity:0; transform: translateY(-6px); } }
-
-/* Floating Panduan button (bottom-left; AI Consultant sits bottom-right) */
-.guide-fab{ position:fixed; left:24px; bottom:24px; z-index:65; display:inline-flex; align-items:center; gap:8px; height:44px; padding:0 16px 0 13px; border-radius:999px; border:1px solid var(--border); background: var(--bg-raised); color: var(--text); font: inherit; font-size:13px; font-weight:800; cursor:pointer; box-shadow: var(--shadow-lg); transition: transform .15s ease, border-color .2s, background .2s; }
-.guide-fab svg{ color: var(--accent); flex:none; }
-.guide-fab:hover{ transform: translateY(-2px); border-color: var(--accent); }
-.guide-fab:active{ transform: scale(.96); }
-.guide-fab.is-open{ border-color: var(--accent); background: var(--accent-soft); }
-body.tour-active .guide-fab{ display:none; }
-.guide-fab-menu{ position:fixed; left:24px; bottom:78px; z-index:66; width:min(300px, calc(100vw - 48px)); padding:8px; background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); animation: panel-in .2s cubic-bezier(.2,.8,.2,1) both; }
-.guide-fab-menu-head{ font-size:11.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); padding:8px 10px 6px; }
-.guide-fab-item{ display:flex; align-items:center; gap:12px; width:100%; padding:10px 10px; border:0; background:none; border-radius: var(--radius-md); color: var(--text); font: inherit; text-align:left; cursor:pointer; }
-.guide-fab-item:hover{ background: var(--surface-2); }
-.guide-fab-item-icon{ flex:none; width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; background: var(--accent-soft); color: var(--accent); }
-.guide-fab-item-text{ display:flex; flex-direction:column; gap:1px; min-width:0; }
-.guide-fab-item-text b{ font-size:13.5px; }
-.guide-fab-item-text span{ font-size:12px; color: var(--text-muted); }
 @media (max-width: 720px){
-  .guide-fab{ left:16px; bottom:16px; height:40px; padding:0 13px 0 11px; font-size:12.5px; }
-  .guide-fab-menu{ left:16px; bottom:66px; }
   .consultant-fab{ right:16px; bottom:16px; }
 }
-
-
-/* ===== Revisi 15 Sep 2026 ===== */
-
-/* Welcome splash: Wepeka logo lockup instead of the word "Brandlab" */
-.welcome-splash-logo{ display:flex; align-items:center; gap:16px; font-family: var(--font-display); font-weight:900; font-size:34px; letter-spacing:-.01em; }
-.welcome-splash-logo .brand-logo{ height:36px; }
-.welcome-splash-logo .brand-mark-divider{ height:30px; }
 
 /* Visible back button (js/back-link.js) */
 .page-back-btn{ display:inline-flex; align-items:center; gap:6px; padding:6px 13px 6px 9px; border-radius: var(--radius-pill); border:1px solid var(--border); background: var(--surface); color: var(--text); font-size:13px; font-weight:700; letter-spacing:0; text-transform:none; text-decoration:none; line-height:1.2; transition: border-color .15s, background .15s; }
@@ -3146,17 +2833,6 @@ body:has(#consultant-panel:not([hidden])) .consultant-fab-hint, body.tour-active
 @keyframes fab-hint-in{ from{ opacity:0; transform: translateX(8px); } to{ opacity:1; transform:none; } }
 @media (max-width: 640px){ .consultant-fab-hint{ right:66px; bottom:20px; font-size:11.5px; padding:6px 10px; max-width:calc(100vw - 230px); } }
 
-.menu.mode-pop{ width:320px; max-width:calc(100vw - 16px); padding:14px; cursor:default; }
-.mode-pop-card{ border:1px solid var(--border); border-radius: var(--radius-md); padding:10px 12px; margin-top:8px; }
-.mode-pop-card.is-current{ border-color: var(--accent); background: var(--accent-soft); }
-.mode-pop-card-head{ display:flex; align-items:center; gap:6px; font-size:13px; }
-.mode-pop-card-head svg{ color: var(--accent); flex:none; }
-.mode-pop-card-head em{ margin-left:auto; font-style:normal; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color: var(--accent); }
-.mode-pop-card p{ font-size:12px; line-height:1.5; color: var(--text-muted); margin:4px 0 0; }
-.menu.mode-pop .mode-pop-switch{ justify-content:center; margin-top:12px; background: var(--accent); color: var(--accent-text); font-weight:700; }
-.menu.mode-pop .mode-pop-switch:hover{ filter: brightness(1.05); background: var(--accent); }
-.mode-pop-note{ font-size:11.5px; color: var(--text-faint); margin:8px 0 0; text-align:center; }
-
 /* Warning box (brand description, unfinished logo) */
 .warn-box{ display:flex; gap:10px; align-items:flex-start; padding:10px 12px; margin:8px 0 10px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--health-poor) 11%, transparent); border:1px solid color-mix(in srgb, var(--health-poor) 45%, transparent); font-size:12.5px; line-height:1.55; color: var(--text); }
 .warn-box svg{ flex:none; color: var(--health-poor); margin-top:2px; }
@@ -3174,31 +2850,10 @@ body:has(#consultant-panel:not([hidden])) .consultant-fab-hint, body.tour-active
 .cal-cell.is-past{ background-image: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--text) 5%, transparent) 7px 14px); cursor:not-allowed; }
 .cal-cell.is-past .cal-date{ opacity:.5; }
 .cal-cell.is-past .cal-item{ cursor:pointer; }
-.content-bank-group.is-overdue .content-bank-group-head{ color: var(--health-poor); }
-.cad-card{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 14px; padding:12px 14px; border-radius: var(--radius-md); background: var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.cad-card > svg{ color: var(--accent); flex:none; }
-.cad-card > div{ flex:1; min-width:200px; }
-.cad-card b{ display:block; font-size:13.5px; }
-.cad-card span{ font-size:12.5px; color: var(--text-muted); }
 .cad-tip{ margin:0 0 18px; padding:12px 14px; border-radius: var(--radius-md); background: var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .cad-tip-head{ display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:6px; }
 .cad-tip-head svg{ color: var(--accent); flex:none; }
 .cad-tip p{ font-size:12.5px; line-height:1.6; color: var(--text-muted); margin:0 0 10px; }
-
-/* "Where do I find this number?" (js/howto.js) */
-.howto{ margin:0 0 14px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.howto > summary{ cursor:pointer; padding:10px 12px; font-size:12.5px; font-weight:700; color: var(--accent); list-style:none; }
-.howto > summary::-webkit-details-marker{ display:none; }
-.howto > summary::before{ content:"💡 "; }
-.howto-body{ display:grid; grid-template-columns: minmax(0,1fr) 210px; gap:14px; padding:0 12px 12px; align-items:start; }
-.howto-steps{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.7; color: var(--text-muted); }
-.howto-steps b{ color: var(--text); }
-.howto-phone{ border:1px solid var(--border); border-radius:18px; padding:10px; background: var(--bg); font-size:11.5px; }
-.howto-phone-caption{ font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color: var(--text-faint); text-align:center; margin-bottom:6px; }
-.howto-phone-head{ font-weight:800; margin-bottom:8px; }
-.howto-phone-row{ display:flex; justify-content:space-between; gap:8px; padding:6px 8px; border-radius:8px; margin-bottom:4px; }
-.howto-phone-row.is-mark{ background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-@media (max-width: 560px){ .howto-body{ grid-template-columns: minmax(0,1fr); } }
 
 /* Brand Guidelines — moodboard explainer + example */
 .mb-explain{ margin-top:18px; padding:12px 14px; border-radius: var(--radius-md); background: var(--surface); border:1px solid var(--border); }
@@ -3226,7 +2881,6 @@ body:has(#consultant-panel:not([hidden])) .consultant-fab-hint, body.tour-active
 @media (max-width: 560px){
   .mb-prompt-head{ flex-wrap:wrap; }
 }
-
 
 /* Brand Guidelines — tone of voice */
 .tov-axis{ margin-bottom:18px; }
@@ -3350,3 +3004,23 @@ tr.is-archived td{ opacity:.55; }
 .goal-remind .goal-eval-item b{ display:flex; align-items:center; gap:6px; }
 .goal-remind ul{ margin:6px 0 0; padding-left:18px; font-size:12.5px; color: var(--text-muted); line-height:1.6; }
 .goal-remind em{ font-style:normal; color: var(--health-average); font-size:11.5px; }
+
+/* Topbar ⋯ menu (js/layout.js appMenuHTML) */
+.menu.app-menu{ min-width:250px; }
+.menu-ai-row .ai-usage-bar{ margin-left:auto; }
+
+/* Locked nav tabs (Pemula, until the brand identity is done — js/layout.js) */
+.tab.is-locked{ color: var(--text-faint); cursor:not-allowed; }
+.tab.is-locked:hover{ background:transparent; color: var(--text-faint); }
+
+/* Home hero: Brand DNA / Brand Book progress rows (js/views/home.js) */
+.identity-rows{ display:flex; flex-direction:column; gap:8px; width:100%; max-width:520px; margin-top:4px; }
+.identity-row{ display:grid; grid-template-columns: 22px minmax(0,1fr) minmax(90px,140px) auto; align-items:center; gap:10px; font-size:13px; font-weight:700; }
+.identity-row-icon{ width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--surface-2); color: var(--text-muted); }
+.identity-row.is-done .identity-row-icon{ background: var(--health-good-soft); color: var(--health-good); }
+.identity-row-bar{ position:relative; height:6px; border-radius:999px; background: var(--surface-2); overflow:hidden; }
+.identity-row-bar > span{ position:absolute; inset:0 auto 0 0; background: var(--accent); border-radius:999px; transition: width .3s; }
+.identity-row.is-done .identity-row-bar > span{ background: var(--health-good); }
+.identity-row-value{ font-variant-numeric: tabular-nums; color: var(--text-muted); font-size:12.5px; min-width:44px; text-align:right; }
+.identity-row.is-done .identity-row-value{ color: var(--health-good); }
+@media (max-width: 560px){ .identity-row{ grid-template-columns: 22px minmax(0,1fr) auto; } .identity-row-bar{ display:none; } }

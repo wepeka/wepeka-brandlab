@@ -3,22 +3,18 @@ import { t, getLang } from "./i18n.js";
 // <html lang> follows the chosen language (screen readers, hyphenation, spellcheck).
 document.documentElement.lang = getLang();
 import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
-import { unmountGuideFab } from "./guide-fab.js";
 import { noteNavigation } from "./nav-context.js";
 import { getBrand, initStore, listBrands } from "./store.js";
+import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { toast } from "./dom.js";
-import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
+import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated } from "./account.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
-import { maybeShowBrandlabIntro } from "./brandlab-intro.js";
-import { maybeAutoPlayVideo } from "./guide-videos.js";
-import { maybeShowProactiveNotif } from "./proactive-notif.js";
-import { hasTourRun } from "./tour.js";
-import { maybeShowModeReminder } from "./mode-reminder.js";
+import { clearPageGuide } from "./section-guide.js";
 import { getMode, hasChosenMode } from "./mode.js";
 import { renderModePicker } from "./mode-picker.js";
 // Every other view is loaded lazily (dynamic import, inside renderRoute)
@@ -40,7 +36,7 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "list", contentId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/?$/))) return { view: "content-os", brandId: m[1], sub: "list" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/?$/))) return { view: "content-os", brandId: m[1], sub: "dashboard" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/?$/))) return { view: "content-os", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/([^/]+)\/?$/))) return { view: "campaigns", brandId: m[1], campaignId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/builder\/([^/]+)\/?$/))) return { view: "builder", brandId: m[1], stage: m[2] };
@@ -51,8 +47,6 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "copy", brandId: m[1] };
-  // Analytics was folded into Content OS's Dashboard sub-tab — old links still land somewhere useful.
-  if ((m = h.match(/^\/brand\/([^/]+)\/analytics\/?$/))) return { view: "content-os", brandId: m[1], sub: "dashboard" };
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
@@ -69,56 +63,12 @@ function showLoading() {
 
 function teardownApp() {
   storeReady = false;
-  welcomeShownThisBoot = false;
   // Signing out and into another account in the same tab is a fresh first
-  // open for that account — it gets its own picker (and its own video).
+  // open for that account — it gets its own picker.
   modePickerShown = false;
   delete app.dataset.shellKey;
-  unmountGuideFab();
-  syncPlanPill(null);
+  clearPageGuide();
   if (cleanup) { cleanup(); cleanup = null; }
-}
-
-// The one always-visible way from inside the app to the pricing page, shown
-// only to accounts that have something to decide: a running trial (days
-// left) or a read-only account (ended trial / lapsed subscription).
-function syncPlanPill(account) {
-  let pill = document.getElementById("plan-pill");
-  const onPricing = location.hash.startsWith("#/pricing");
-  const readOnly = isReadOnly(account);
-  // (A running trial is already covered by the topbar plan badge.)
-  if (!account || onPricing || !readOnly) {
-    pill?.remove();
-    return;
-  }
-  if (!pill) {
-    pill = document.createElement("a");
-    pill.id = "plan-pill";
-    pill.href = "#/pricing";
-    document.body.appendChild(pill);
-  }
-  pill.className = `plan-pill ${readOnly ? "is-readonly" : ""}`;
-  const label = readOnly
-    ? t(isTrial(account) ? "app.plan.trialEnded" : "app.plan.readonly")
-    : t("app.plan.trialLeft", { days: trialDaysLeft(account) });
-  pill.innerHTML = `<span>${label}</span><strong>${t("app.plan.choose")}</strong>`;
-}
-
-// "Welcome to Brandlab" — a quiet, centred splash right after login (once
-// per boot; reset on logout so the next login gets it again). Colours come
-// from the theme tokens, so it's white-on-black in dark mode and the
-// reverse in light. Resolves when the fade-out is done.
-let welcomeShownThisBoot = false;
-function showWelcomeSplash() {
-  app.innerHTML = `
-    <div class="welcome-splash" role="status" aria-live="polite">
-      <div class="welcome-splash-text">
-        <span class="welcome-splash-kicker">${t("splash.welcome")}</span>
-        <span class="welcome-splash-logo"><img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" /><span class="brand-mark-divider"></span><span>Brandlab</span></span>
-      </div>
-    </div>`;
-  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  return new Promise((resolve) => setTimeout(resolve, reduced ? 900 : 1900));
 }
 
 function lockedScreenHTML(email) {
@@ -191,8 +141,7 @@ function onAccountChange(user, account) {
   // Trial or paid plan, status "active" or "readonly" (an ended trial or a
   // lapsed subscription can still view its data — firestore.rules blocks
   // writes at the database level, this just lets the app render normally
-  // either way; the pill is how they get to the pricing page from here).
-  syncPlanPill(account);
+  // either way; the topbar plan badge is how they reach pricing from here).
   if (!storeReady) {
     showLoading();
     initStore(user.uid).then(async () => {
@@ -206,34 +155,16 @@ function onAccountChange(user, account) {
       // fresh one, and leave the first run awaiting a click on buttons that
       // no longer exist (so its "play the Kenalan video" never ran).
       const firstEverOpen = !hasChosenMode() && !modePickerShown;
-      if (!welcomeShownThisBoot) {
-        welcomeShownThisBoot = true;
-        await showWelcomeSplash();
-      }
       if (firstEverOpen) {
         modePickerShown = true;
         app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
         await renderModePicker(document.getElementById("mode-root"));
-        // Picking a mode is the first thing anyone does here — the "Kenalan
-        // sama Brandlab" video plays right after it, once ever. Nothing
-        // happens while that video has no src yet (js/guide-videos.js).
-        maybeAutoPlayVideo("kenalan");
       }
       storeReady = true;
       firstRouteAfterBoot = true;
-      // The mode picker (just shown above, first-ever open only) already
-      // carries the intro pitch above its two cards and marks introSeenAt
-      // itself — showing the modal again right after would just repeat it.
-      // From the next login on, the modal carries the tour offer itself
-      // ("Mulai tur (disarankan)") until the tour has been taken.
-      if (!firstEverOpen) {
-        maybeShowBrandlabIntro({ offerTour: !hasTourRun() });
-        // 7: at most one banner per boot — proactive (overdue/streak) wins
-        // when there's something real to say; the mode-switch nudge only
-        // gets a turn when there isn't, so the two never stack.
-        const shownProactive = maybeShowProactiveNotif();
-        if (!shownProactive) maybeShowModeReminder();
-      }
+      // That picker is the only thing that ever interrupts a boot. No
+      // splash, no intro modal, no banners — the route paints straight away
+      // and the home hero says what to do next.
       renderRoute();
       // Weekly Instagram insights refresh for published content. Loaded
       // lazily (same reason every view is) and a few seconds after first
@@ -268,14 +199,13 @@ async function renderRoute() {
   if (!storeReady) return;
   const token = ++renderToken;
   if (cleanup) { cleanup(); cleanup = null; }
-  syncPlanPill(getCachedAccount());
+  clearPageGuide();
 
   // Pricing, reached from inside the app (trial/read-only pill, or an
   // upgrade). The store stays loaded — leaving this hash just rebuilds the
   // shell, no second boot.
   if (location.hash.startsWith("#/pricing")) {
     delete app.dataset.shellKey;
-    unmountGuideFab();
     app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
     renderPricingScreen(document.getElementById("pricing-root"), { account: getCachedAccount(), user: lastUser, backHref: "#/" });
     window.scrollTo(0, 0);
@@ -299,11 +229,13 @@ async function renderRoute() {
     return;
   }
 
-  // Same brand + same mode = same topbar: keep it in place and only swap
-  // the page underneath (short fade-out, then the new page fades in), so a
-  // tab click doesn't flash the whole chrome. Anything else (entering a
-  // brand, leaving it, switching mode) rebuilds the shell.
-  const shellKey = `${route.brandId || ""}|${getMode()}`;
+  // Same brand + same mode + same lock state = same topbar: keep it in
+  // place and only swap the page underneath (short fade-out, then the new
+  // page fades in), so a tab click doesn't flash the whole chrome. Anything
+  // else (entering a brand, leaving it, switching mode, the Pemula tabs
+  // unlocking after the identity is done) rebuilds the shell.
+  const brandForShell = route.brandId ? getBrand(route.brandId) : null;
+  const shellKey = `${route.brandId || ""}|${getMode()}|${brandForShell && identityDone(brandForShell) ? 1 : 0}`;
   let viewRoot = document.getElementById("view-root");
   if (viewRoot && app.dataset.shellKey === shellKey) {
     viewRoot.classList.add("view-leave");
@@ -324,7 +256,7 @@ async function renderRoute() {
 
   const view = await (
     {
-      home: () => (getMode() === "guided" ? import("./views/beginner-home.js") : import("./views/brand-home.js")),
+      home: () => import("./views/home.js"),
       dna: () => import("./views/brand-dna.js"),
       builder: () => import("./views/brand-builder.js"),
       campaigns: () => import("./views/campaigns.js"),

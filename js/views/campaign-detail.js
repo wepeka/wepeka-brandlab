@@ -5,7 +5,6 @@
 // content exists for it (activities). Numbers are never typed into the
 // page: they're read through js/campaign-metrics.js, and the only manual
 // entry is the "Catat angka" sheet for things the app can't observe.
-import { howToHTML } from "../howto.js";
 import { backLinkHTML } from "../back-link.js";
 import {
   getBrand, listContent, createContent, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
@@ -21,13 +20,11 @@ import { nextActions } from "../next-action.js";
 import { go } from "../nav-context.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
-import { openCelebration } from "../celebrate.js";
 import { toast, formatNumber, qs, qsa, openMenu, closeMenu, escapeHtml as esc } from "../dom.js";
 import { brainstormCampaignIdeas, suggestPhaseContent, generateCampaignPlaybook, generateIdeaBubbles, AiApiError, hasAiKey } from "../ai.js";
 import { openInsightsModal } from "./insights-modal.js";
 import { openQuickFillModal } from "./content-list.js";
-import { sectionGuideButtonHTML } from "../section-guide.js";
-import { wireGuideButton } from "../guides/common.js";
+import { setPageGuide } from "../section-guide.js";
 import { startCampaignDetailGuide } from "../guides/campaign-guide.js";
 import { getMode } from "../mode.js";
 import { isTourDemo, demoBrainstormIdeas, demoPhaseContent, DEMO_TOAST } from "../tour-demo.js";
@@ -46,8 +43,13 @@ const WIDGET_LEGACY_FIELD = { plan: "planCollapsed", ideas: "ideasCollapsed", sa
 // "eventSales" is new (no legacy boolean field to fall back to — it never
 // existed before the shared array), so it isn't a WIDGET_LEGACY_FIELD key.
 const CAMPAIGN_WIDGET_KEYS = [...Object.keys(WIDGET_LEGACY_FIELD), "eventSales"];
+// Rencana starts collapsed on a campaign nobody has toggled yet — the
+// mission panel below is the working surface, the plan is reference.
+function effectiveCollapsed(campaign) {
+  return campaign.widgetsCollapsed || ["plan"];
+}
 function isWidgetCollapsed(campaign, key) {
-  return (campaign.widgetsCollapsed || []).includes(key) || !!campaign[WIDGET_LEGACY_FIELD[key]];
+  return effectiveCollapsed(campaign).includes(key) || !!campaign[WIDGET_LEGACY_FIELD[key]];
 }
 
 export function paintDetail(root, brandId, brand, campaign, state, refresh, { openEdit } = {}) {
@@ -75,19 +77,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
         completeCampaignStage(campaign.id, stage.index);
         state.stageIndex = Math.min(stage.index + 1, stages.length - 1);
         state.advancing = false;
-        toast(t("camp.detail.levelDone", { n: stage.index + 1, name: stage.name }));
-        openCelebration(nextStage
-          ? {
-              eyebrow: esc(t("camp.detail.celebrateEyebrow", { n: doneStage.index + 1 })),
-              title: esc(t("camp.detail.celebrateTitle", { name: doneStage.name })),
-              sub: esc(`${t("camp.detail.celebrateNext", { n: nextStage.index + 1, name: nextStage.name })} ${nextStage.tagline || ""}`.trim()),
-            }
-          : {
-              final: true,
-              eyebrow: esc(t("celebrate.finalEyebrow")),
-              title: esc(t("celebrate.finalTitle", { name: campaign.name || "" })),
-              sub: esc(t("camp.detail.celebrateAll")),
-            });
+        toast(nextStage ? t("camp.detail.levelDone", { n: stage.index + 1, name: stage.name }) : t("celebrate.finalTitle", { name: campaign.name || "" }));
       });
     }
   }
@@ -101,13 +91,11 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${sectionGuideButtonHTML("campaign-detail")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}</div>
         <h1>${esc(campaign.name || t("camp.untitled"))}</h1>
         <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}</p>
       </div>
       <div class="cd-head-actions" style="flex:none;">
-        <button class="btn btn-secondary btn-sm" id="cd-pdf">${icon("download", { size: 14 })}${t("share.report.button")}</button>
-        <button class="btn ${guided ? "btn-ghost btn-sm" : "btn-secondary btn-sm"}" id="edit-campaign">${icon("edit", { size: 14 })}${t("common.edit")}</button>
         <button class="icon-btn" id="cd-more" aria-label="${t("camp.detail.more")}" style="width:36px;height:36px;">${icon("dots", { size: 16 })}</button>
       </div>
     </div>
@@ -116,7 +104,6 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     ${headline ? headlineHTML(headline, stageRead, stage) : ""}
     ${pendingEngagementHTML(campaignPendingEngagement(campaign, ctx))}
     ${isLadder ? levelGateHTML(campaign, stage, stageRead, ctx) : ""}
-    ${brainstormBarHTML()}
     ${nextActionHTML(actions)}
     ${ideasWidgetHTML(campaign, state)}
     ${salesWidgetHTML(brandId, campaign, brand)}
@@ -157,12 +144,9 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
 
     ${(campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead) : ""}
     ${activitiesHTML(acts, brandId, guided)}
-    ${isWindow && campaign.eventPlan ? eventScoreHTML(campaign, stages, ctx) : ""}
   `;
 
-  wireGuideButton(root, "campaign-detail", () => startCampaignDetailGuide(brandId, campaign.id));
-  qs("#edit-campaign", root)?.addEventListener("click", () => openEdit?.());
-  qs("#cd-pdf", root)?.addEventListener("click", () => openCampaignReport({ brand, campaign, stages, ctx }));
+  setPageGuide(() => startCampaignDetailGuide(brandId, campaign.id));
   qsa("[data-cd-delegated]", root).forEach((a) =>
     a.addEventListener("click", (e) => {
       e.preventDefault();
@@ -172,7 +156,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   qsa("[data-cd-ms-posts]", root).forEach((btn) =>
     btn.addEventListener("click", () => openPostList(stageRead.readings[Number(btn.dataset.cdMsPosts)], { brandId, ctx, ctxLabel, campaign, stage }))
   );
-  qs("#cd-more", root)?.addEventListener("click", (e) => openMoreMenu(e.currentTarget, { brandId, campaign, stage, ctx, refresh, state, guided }));
+  qs("#cd-more", root)?.addEventListener("click", (e) => openMoreMenu(e.currentTarget, { brandId, brand, campaign, stage, stages, ctx, refresh, state, guided, openEdit }));
   qs("#cd-add-milestone", root)?.addEventListener("click", async () => {
     const isNumber = await confirmDialog({ title: t("camp.detail.addMilestone"), message: t("camp.detail.addMilestoneKindQ"), confirmLabel: t("camp.detail.addNumber"), cancelLabel: t("camp.detail.addCheck") });
     await addMilestoneFlow(isNumber ? "number" : "check", { campaign, stage, refresh });
@@ -654,15 +638,6 @@ function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
 
 // The one AI helper of this page, where nobody has to hunt for it: right
 // under the headline number, full width, in the accent colour.
-function brainstormBarHTML() {
-  return `
-    <button type="button" class="cd-brainstorm-bar" id="cd-brainstorm" data-cd-brainstorm>
-      <span class="cd-brainstorm-icon">${icon("bulb", { size: 20 })}</span>
-      <span class="cd-brainstorm-text"><b>${t("camp.detail.brainstorm")}</b><small>${t("camp.detail.brainstormSub")}</small></span>
-      <span class="cd-brainstorm-go">${icon("sparkle", { size: 13 })}${t("camp.detail.brainstormGo")}${icon("arrowRight", { size: 14 })}</span>
-    </button>`;
-}
-
 function nextActionHTML(actions) {
   if (!actions.length) return "";
   const [first, ...rest] = actions;
@@ -1009,23 +984,6 @@ function remindersHTML(stage, stageRead, goal) {
 }
 
 const EVENT_CATEGORY_LABELS = Object.fromEntries(["AWARENESS", "CONTENT", "CONVERSION", "ENGAGEMENT", "ATTENDANCE", "IMPACT"].map((k) => [k, t(`camp.detail.cat.${k}`)]));
-function eventScoreHTML(campaign, stages, ctx) {
-  const totals = {};
-  stages.forEach((stage) =>
-    stage.milestones.forEach((m) => {
-      if (m.notApplicable || !m.target || !m.category || !EVENT_CATEGORY_LABELS[m.category]) return;
-      const r = readMilestone(m, ctx, stage);
-      const total = (totals[m.category] ||= { target: 0, actual: 0 });
-      total.target += m.target;
-      total.actual += Math.min(r.current, m.target * 3);
-    })
-  );
-  const tiles = Object.entries(totals).map(([cat, v]) => `<div class="stat"><div class="label">${EVENT_CATEGORY_LABELS[cat]}</div><div class="value">${v.target ? Math.round((v.actual / v.target) * 100) : 0}%</div><div class="text-faint" style="font-size:11px;">${formatNumber(v.actual)} / ${formatNumber(v.target)}</div></div>`);
-  return tiles.length ? `<div class="section-title" style="margin-top:24px;"><h2>${t("camp.detail.eventScore")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.detail.eventScoreSub")}</span></div><div class="stat-grid">${tiles.join("")}</div>` : "";
-}
-
-// ---------- Actions ----------
-
 function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel }) {
   const base = { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null };
   switch (cta.type) {
@@ -1073,8 +1031,6 @@ function openManualSheet({ campaign, stage, ctx, refresh, focusId = null }) {
     wide: true,
     bodyHTML: `
       <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("camp.detail.sheetIntro")}</p>
-      ${howToHTML("insights")}
-      ${howToHTML("post")}
       ${readings
         .map((r) => {
           const m = r.milestone;
@@ -1254,7 +1210,7 @@ async function addMilestoneFlow(kind, { campaign, stage, refresh }) {
   refresh();
 }
 
-function openMoreMenu(btn, { brandId, campaign, stage, ctx, refresh, state, guided }) {
+function openMoreMenu(btn, { brandId, brand, campaign, stage, stages, ctx, refresh, state, guided, openEdit }) {
   const rect = btn.getBoundingClientRect();
   const menu = openMenu(btn, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 260) });
   if (!menu) return;
@@ -1265,6 +1221,9 @@ function openMoreMenu(btn, { brandId, campaign, stage, ctx, refresh, state, guid
   // deliberately stays hidden in guided mode for a cleaner card, but this
   // page is the one place a campaign should always be deletable from.
   menu.innerHTML = `
+    <button data-act="edit">${icon("edit", { size: 14 })}${t("common.edit")}</button>
+    <button data-act="pdf">${icon("download", { size: 14 })}${t("share.report.button")}</button>
+    <div class="menu-divider"></div>
     ${guided ? "" : `<button data-act="add-check">${icon("plus", { size: 14 })}${t("camp.detail.addCheck")}</button>
     <button data-act="add-number">${icon("plus", { size: 14 })}${t("camp.detail.addNumber")}</button>`}
     ${canForce ? `<button data-act="force">${icon("check", { size: 14 })}${t("camp.detail.forceNext")}</button>` : ""}
@@ -1276,7 +1235,13 @@ function openMoreMenu(btn, { brandId, campaign, stage, ctx, refresh, state, guid
     const act = ev.target.closest("[data-act]")?.dataset.act;
     if (!act) return;
     closeMenu();
-    if (act === "add-check" || act === "add-number") {
+    if (act === "edit") {
+      openEdit?.();
+      return;
+    } else if (act === "pdf") {
+      openCampaignReport({ brand, campaign, stages, ctx });
+      return;
+    } else if (act === "add-check" || act === "add-number") {
       await addMilestoneFlow(act === "add-check" ? "check" : "number", { campaign, stage, refresh });
       return;
     } else if (act === "force") {

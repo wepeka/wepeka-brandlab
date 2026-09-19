@@ -1,7 +1,7 @@
 // "Konsultasi AI" — a floating chat panel, reachable from any page inside
 // a brand (mounted once into document.body from layout.js's wireShell, so
 // it survives the #app innerHTML getting torn down on every in-brand
-// navigation — same reason js/proactive-notif.js's banner also lives
+// navigation — same reason the topbar itself lives
 // outside #app). Grounded in three things at once: this brand's own DNA,
 // the marketing/branding frameworks every other AI feature here already
 // leans on (js/ai.js's MARKETING_FRAMEWORKS_CONTEXT), and a live snapshot
@@ -12,11 +12,12 @@ import { getBrand, getSettings, listContent, listCampaigns, listOverdueAndDueSoo
 import { campaignStages, activeStageIndex, readStage, campaignHeadline } from "./campaign-metrics.js";
 import { nextActions } from "./next-action.js";
 import { computeContentMetrics } from "./formulas.js";
-import { brandDnaCompleteness } from "./views/brand-home.js";
+import { brandDnaCompleteness } from "./brand-progress.js";
 import { askBrandConsultant, hasAiKey, AiApiError, CONSULTANT_ROUTES } from "./ai.js";
 import { icon } from "./icons.js";
 import { qs, escapeHtml, formatPercent, toast } from "./dom.js";
 import { mountAiFeedback } from "./ai-feedback.js";
+import { readFlag, writeFlag } from "./seen-flags.js";
 
 // brandId -> [{ role: "user"|"assistant", text }]. Session-only (resets on
 // reload) — a full persisted chat log is a bigger feature than "ask a
@@ -369,6 +370,14 @@ function togglePanel(brandId, open) {
   if (open) renderPanel(brandId);
 }
 
+const HINT_SEEN_PREFIX = "contentos:fab-hint-seen:";
+
+// Opened from the topbar "?" popover (js/layout.js) — the FAB itself is
+// still the everyday way in.
+export function openConsultantPanel() {
+  if (mountedBrandId) togglePanel(mountedBrandId, true);
+}
+
 export function mountConsultantPanel(brandId) {
   if (!brandId) return unmountConsultantPanel();
   if (mountedBrandId === brandId) return;
@@ -384,16 +393,20 @@ export function mountConsultantPanel(brandId) {
   fab.addEventListener("click", () => togglePanel(brandId, !isOpen));
   document.body.appendChild(fab);
 
-  // A speech bubble beside the round button — people didn't realize the
-  // orange chat circle was an AI they could ask. Hidden while the panel is
-  // open or a tour is running (css).
-  const hint = document.createElement("button");
-  hint.type = "button";
-  hint.id = "consultant-fab-hint";
-  hint.className = "consultant-fab-hint";
-  hint.textContent = t("consultant.fabHint");
-  hint.addEventListener("click", () => togglePanel(brandId, true));
-  document.body.appendChild(hint);
+  // A speech bubble beside the round button, shown once per account so
+  // people learn the orange chat circle is an AI they can ask — then it
+  // stays out of the way. Hidden while the panel is open or a tour is
+  // running (css).
+  if (!readFlag(HINT_SEEN_PREFIX, "consultant")) {
+    const hint = document.createElement("button");
+    hint.type = "button";
+    hint.id = "consultant-fab-hint";
+    hint.className = "consultant-fab-hint";
+    hint.textContent = t("consultant.fabHint");
+    hint.addEventListener("click", () => togglePanel(brandId, true));
+    document.body.appendChild(hint);
+    writeFlag(HINT_SEEN_PREFIX, "consultant");
+  }
 
   const panel = document.createElement("div");
   panel.id = "consultant-panel";

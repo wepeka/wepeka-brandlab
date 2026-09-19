@@ -16,38 +16,12 @@ export default {
   "cnt.editor.guidedStatusLabel": { en: "How far along is it?", id: "Sampai mana prosesnya?" },
 
   // ── Content OS hub
-  "cnt.os.guidedCrumb": { en: "Content", id: "Konten" },
   "cnt.os.tour.title": { en: "Content", id: "Konten" },
   "cnt.os.tour.body": { en: "Four tabs: write content, schedule it, see all your content, and a summary of the results. All of this brand's content lives here.", id: "Empat tab: tulis konten, atur jadwalnya, lihat semua konten, dan ringkasan hasilnya. Semua konten brand ini ada di sini." },
-  "cnt.os.tour.bodyGuided": { en: "Three tabs: write content, schedule it, and see all your content. All of this brand's content lives here.", id: "Tiga tab: tulis konten, atur jadwalnya, dan lihat semua konten. Semua konten brand ini ada di sini." },
-  "cnt.os.guidedTab.creator": { en: "Write content", id: "Tulis konten" },
-  "cnt.os.guidedTab.calendar": { en: "Schedule", id: "Jadwal" },
-  "cnt.os.guidedTab.list": { en: "All content", id: "Semua konten" },
-  "cnt.os.guidedTab.dashboard": { en: "Summary", id: "Ringkasan" },
 
   // ── Dashboard
-  "cnt.dash.formatsSuffix": { en: "/Formats", id: "/Format" },
-  "cnt.dash.otherPlatform": { en: "Other", id: "Lainnya" },
-  "cnt.dash.unspecifiedFormat": { en: "Unspecified", id: "Belum ditentukan" },
-  "cnt.dash.empty.eyebrow": { en: "No performance data yet", id: "Belum ada data performa" },
-  "cnt.dash.empty.title": { en: "All the numbers below are still empty — that's normal.", id: "Semua angka di bawah masih kosong — itu normal." },
-  "cnt.dash.empty.body": { en: "Charts and content health ratings light up once there's <b>published</b> content with its numbers filled in (views, likes, reach). Publish your first piece, then fill in its numbers from the content list.", id: "Grafik dan penilaian kesehatan konten baru muncul setelah ada konten <b>terbit</b> yang sudah diisi angkanya (views, likes, reach). Terbitkan konten pertamamu, lalu isi angkanya dari daftar konten." },
-  "cnt.dash.empty.openCreator": { en: "Open Creator Studio", id: "Buka Creator Studio" },
-  "cnt.dash.empty.fillData": { en: "Fill in content numbers", id: "Isi angka konten" },
-  "cnt.dash.profile.title": { en: "Instagram profile", id: "Profil Instagram" },
-  "cnt.dash.profile.recorded": { en: "Recorded {age}", id: "Dicatat {age}" },
-  "cnt.dash.profile.fromApi": { en: " from the API", id: " dari API" },
-  "cnt.dash.profile.stale": { en: "may have changed", id: "mungkin sudah berubah" },
-  "cnt.dash.profile.never": { en: "Not recorded yet. Campaigns with a followers goal use this number.", id: "Belum pernah dicatat. Angka followers ini dipakai campaign yang mengejar followers." },
-  "cnt.dash.profile.update": { en: "Update insights", id: "Perbarui Insights" },
-  "cnt.dash.profile.fill": { en: "Add insights", id: "Isi Insights" },
-  "cnt.dash.profile.followers": { en: "Followers", id: "Followers" },
-  "cnt.dash.profile.change": { en: "Change", id: "Perubahan" },
-  "cnt.dash.profile.reach30": { en: "Reach (30 days)", id: "Reach 30 hari" },
-  "cnt.dash.profile.visits": { en: "Profile visits", id: "Kunjungan profil" },
 
   // ── Calendar
-  "cal.bank.showAll": { en: "Show all content", id: "Tampilkan semua konten" },
   "cal.eventDay": { en: "Event day", id: "Hari-H" },
   "cal.eventDayTitle": { en: "Event day: {names}", id: "Hari-H: {names}" },
   "cal.eventFallback": { en: "Event", id: "Event" },
@@ -129,6 +103,4 @@ export default {
 
   // ── Sales (placeholder page)
   "sales.eyebrow": { en: "Sales Tracker", id: "Sales Tracker" },
-  "sales.comingSoon": { en: "Coming soon", id: "Segera hadir" },
-  "sales.body": { en: "Track transactions, revenue, products or services sold, customers, and payments — and eventually connect them back to the campaigns and content that actually drove the sale.", id: "Catat transaksi, pendapatan, produk/jasa yang terjual, pelanggan, dan pembayaran — lalu nantinya hubungkan ke campaign dan konten yang benar-benar menghasilkan penjualan itu." },
 };

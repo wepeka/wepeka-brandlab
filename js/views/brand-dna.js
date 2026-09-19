@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality } from "../store.js";
-import { linesToList, listToLines, toast, qs, qsa, escapeHtml } from "../dom.js";
+import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { COLOR_FEELINGS, feelingLabel, personalityProfile } from "../brandbook-data.js";
@@ -8,9 +8,9 @@ import { suggestBrandDnaOptions, generateOneLiner, AiApiError, hasAiKey, generat
 import { getMode } from "../mode.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
-import { sectionGuideButtonHTML, wireSectionGuideButton } from "../section-guide.js";
-import { maybeAutoPlayVideo } from "../guide-videos.js";
-import { brandDnaCompleteness } from "./brand-home.js";
+import { setPageGuide } from "../section-guide.js";
+import { runSpotlightTour } from "../tour.js";
+import { brandDnaCompleteness } from "../brand-progress.js";
 import { markDnaJustCompleted } from "./brand-builder.js";
 import { t } from "../i18n.js";
 
@@ -242,9 +242,7 @@ export function render(root, { brandId, step }) {
   // the button below, and only after a confirmation that says out loud
   // it's better to answer one by one.
   refresh();
-  // One-time explainer for this page; the Video button in the page head
-  // above replays it afterwards (js/guide-videos.js).
-  maybeAutoPlayVideo("brand-dna");
+  setPageGuide(() => runSpotlightTour(TOUR_STEPS));
   return () => {};
 }
 
@@ -289,7 +287,7 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}/builder`, t("nav.builder"))} · ${t("dna.eyebrowWizard")}${helpButtonHTML("brand-dna")}${sectionGuideButtonHTML("brand-dna")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}/builder`, t("nav.builder"))} · ${t("dna.eyebrowWizard")}${helpButtonHTML("brand-dna")}</div>
         <h1>${brand.name}</h1>
       </div>
     </div>
@@ -300,48 +298,26 @@ function paint(root, brandId, brand, state, refresh) {
       <div style="height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-bottom:24px;">
         <div style="height:100%;background:var(--accent);width:${Math.round(((state.stepIndex + 1) / total) * 100)}%;transition:width .2s;"></div>
       </div>
-      ${isReview ? "" : aiFillCardHTML(state)}
       ${isReview ? reviewHTML(state) : stepHTML(step, state, brandId)}
     </div>
   `;
 
   wireHelpButtons(root);
-  wireSectionGuideButton(root, "brand-dna", TOUR_STEPS);
   if (!isReview) wireStep(root, brandId, brand, state, refresh);
   else wireReview(root, brandId, brand, state, refresh);
-  wireAiFill(root, brandId, brand, state, refresh);
 }
 
 // ---------- "AI isi semua" ----------
-// The Pemula shortcut: one click drafts every unanswered field from the
-// business description (js/ai.js generateBrandDnaDraft), saves it, and
-// lands on Review — where every field is editable — instead of walking
-// 8 steps of questions. Answers the owner already wrote are never
-// overwritten; the button says so.
+// One row in the Review screen's ⋯ menu: drafts every unanswered field
+// from the business description (js/ai.js generateBrandDnaDraft), saves
+// it, and re-renders Review — where every field is editable. Answers the
+// owner already wrote are never overwritten.
 function countAnswered(answers) {
   return ["targetAudience", "problemSolved", "differentiation", "mission", "callToAction", "successOutcome", "failureOutcome", "tagline"].filter((k) => (answers[k] || "").trim()).length;
 }
 
-function aiFillCardHTML(state) {
-  const answered = countAnswered(state.answers);
-  const compact = state.stepIndex > 0;
-  return `
-    <div class="card dark-surface dna-ai-fill ${compact ? "is-compact" : ""}" id="dna-ai-fill-card">
-      <div class="dna-ai-fill-icon">${icon("bot", { size: 18 })}</div>
-      <div class="dna-ai-fill-text">
-        <div class="t">${answered ? t("dna.aiFill.titleRest") : t("dna.aiFill.titleAll")}</div>
-        <div class="m">${answered ? t("dna.aiFill.bodyRest", { count: answered }) : t("dna.aiFill.bodyAll")}</div>
-        <div id="dna-ai-fill-status"></div>
-      </div>
-      <button type="button" class="btn ${compact ? "btn-secondary btn-sm" : "btn-primary"}" id="dna-ai-fill">${icon("sparkle", { size: 14 })}${answered ? t("dna.aiFill.btnRest") : t("dna.aiFill.btnAll")}</button>
-    </div>
-  `;
-}
-
-function wireAiFill(root, brandId, brand, state, refresh) {
-  const btn = qs("#dna-ai-fill", root);
-  if (!btn) return;
-  btn.addEventListener("click", async () => {
+async function runAiFill(root, brandId, brand, state, refresh) {
+  {
     const ai = getSettings().ai || {};
     const statusEl = qs("#dna-ai-fill-status", root);
     if (!hasAiKey(ai)) {
@@ -361,8 +337,7 @@ function wireAiFill(root, brandId, brand, state, refresh) {
       cancelLabel: t("dna.aiFill.confirm.no"),
     });
     if (!ok) return;
-    btn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${t("dna.aiFill.working")}</span></div>`;
+    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("dna.aiFill.working")}</span></div>`;
     try {
       const draft = await generateBrandDnaDraft(ai, { brand, answers: state.answers });
       Object.entries(draft).forEach(([k, v]) => {
@@ -380,10 +355,9 @@ function wireAiFill(root, brandId, brand, state, refresh) {
       toast(t("dna.aiFill.done"));
       refresh();
     } catch (e) {
-      statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeHtml(e.message) : t("dna.ai.error")}</span></div>`;
-      btn.disabled = false;
+      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeHtml(e.message) : t("dna.ai.error")}</span></div>`;
     }
-  });
+  }
 }
 
 // A step's required field(s) must all be non-empty before Next is
@@ -1175,10 +1149,10 @@ function reviewHTML(state) {
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-8">
         <button type="button" class="btn btn-secondary" id="wiz-back">${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="dna-reset">${icon("refresh", { size: 13 })}${t("dna.reset.btn")}</button>
+        <button type="button" class="icon-btn" id="dna-more" title="${t("common.more")}" aria-label="${t("common.more")}">${icon("dots", { size: 16 })}</button>
+        <div id="dna-ai-fill-status"></div>
       </div>
       <div class="flex gap-8">
-        <button type="button" class="btn btn-secondary" id="wiz-pdf">${icon("download", { size: 14 })}${t("dna.review.downloadPdf")}</button>
         ${homeReady ? `<button type="button" class="btn btn-secondary" id="wiz-home">${icon("check", { size: 14 })}${t("guidelines.backHome")}</button>` : ""}
         <button type="button" class="btn btn-primary" id="wiz-save">${icon("check", { size: 15 })}${t("dna.review.save")}</button>
       </div>
@@ -1219,15 +1193,15 @@ function wireReview(root, brandId, brand, state, refresh) {
     // confirmation that anything changed. The completion flag is only set
     // on a real 100%, so the celebration only plays when this save is what
     // pushed it there, not on every save. Pemula (3.3): straight back to
-    // Beranda, the map every step returns to — beginner-home.js reads the
+    // Beranda, the map every step returns to — home.js reads the
     // same flag for its own toast. Pro: unchanged, back to the hub.
     const { filled, total } = brandDnaCompleteness(state.answers);
     if (total && filled >= total) markDnaJustCompleted(brandId);
     location.hash = getMode() === "guided" ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`;
   });
-  // Reset lived on the Brand Builder group page, which is gone now that
-  // Brand DNA is one flow — it belongs with the answers it clears.
-  qs("#dna-reset", root)?.addEventListener("click", async () => {
+  // The ⋯ menu: fill the blanks with AI, download the PDF, reset — the
+  // rare actions, out of the way of Back/Save.
+  const resetDna = async () => {
     const ok = await confirmDialog({
       title: t("dna.reset.title"),
       message: t("dna.reset.message"),
@@ -1247,11 +1221,33 @@ function wireReview(root, brandId, brand, state, refresh) {
     });
     toast(t("dna.reset.done"));
     location.hash = `#/brand/${brandId}/builder`;
-  });
-  qs("#wiz-pdf", root).addEventListener("click", () => {
+  };
+  const downloadPdf = () => {
     captureReview(root, state);
     state.answers.oneLiner = qs("#ans-oneLiner", root)?.value.trim() || state.answers.oneLiner;
     openBrandDnaPdf(brand, state.answers);
+  };
+  const moreBtn = qs("#dna-more", root);
+  moreBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const rect = moreBtn.getBoundingClientRect();
+    const menu = openMenu(moreBtn, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 240) });
+    if (!menu) return;
+    const unanswered = 8 - countAnswered(state.answers);
+    menu.innerHTML = `
+      ${unanswered > 0 ? `<button type="button" data-act="ai">${icon("sparkle", { size: 15 })}${t("dna.aiFill.btnRest")}</button>` : ""}
+      <button type="button" data-act="pdf">${icon("download", { size: 15 })}${t("dna.review.downloadPdf")}</button>
+      <div class="menu-divider"></div>
+      <button type="button" class="danger" data-act="reset">${icon("refresh", { size: 15 })}${t("dna.reset.btn")}</button>
+    `;
+    menu.addEventListener("click", (ev) => {
+      const act = ev.target.closest("[data-act]")?.dataset.act;
+      if (!act) return;
+      closeMenu();
+      if (act === "ai") runAiFill(root, brandId, brand, state, refresh);
+      else if (act === "pdf") downloadPdf();
+      else if (act === "reset") resetDna();
+    });
   });
 
   const oneLinerBtn = qs("#gen-oneliner", root);

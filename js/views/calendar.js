@@ -1,5 +1,4 @@
 import { getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, listRoutineTemplate, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
-import { getMode } from "../mode.js";
 import { icon, platformIcon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
@@ -10,8 +9,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
 import { consumeNavContext } from "../nav-context.js";
 import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
-import { sectionGuideButtonHTML } from "../section-guide.js";
-import { wireGuideButton } from "../guides/common.js";
+import { setPageGuide } from "../section-guide.js";
 import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calendar-guide.js";
 
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -83,18 +81,17 @@ function holidayForDate(dateISO) {
 }
 
 export function render(root, { brandId }) {
-  const state = { view: "month", cursor: new Date(), bankOpen: false, highlightId: null, bankCampaignId: null };
-  // Arriving from a campaign ("Jadwalkan …"): open the bank on that piece
-  // (or jump to its month if it already has a date), scoped to the campaign.
+  const state = { view: "month", cursor: new Date(), highlightId: null };
+  // Arriving from a campaign ("Jadwalkan …"): jump to that piece's month,
+  // or — when it has no date yet — open its editor so the date can be set.
   const navCtx = consumeNavContext();
+  const refresh = () => paint(root, brandId, state, refresh);
   if (navCtx) {
     const c = navCtx.contentId ? getContent(navCtx.contentId) : null;
     state.highlightId = navCtx.contentId || null;
-    state.bankCampaignId = navCtx.campaignId || null;
     if (c?.scheduleDate || c?.publishedDate) state.cursor = new Date((c.scheduleDate || c.publishedDate) + "T00:00:00");
-    else if (navCtx.intent === "schedule" || navCtx.contentId || navCtx.campaignId) state.bankOpen = true;
+    else if (c) setTimeout(() => openContentEditor({ brandId, contentId: c.id, onSaved: refresh }), 0);
   }
-  const refresh = () => paint(root, brandId, state, refresh);
   refresh();
   // Once per mount — paint() runs again on every db:change.
   startCalendarGuideOnMount(brandId);
@@ -112,64 +109,6 @@ function itemsForBrand(brandId) {
     if (!c.scheduleDate) return false;
     return c.scheduleDate >= todayISO;
   });
-}
-
-// Everything with no date yet, grouped by how far along it is — the
-// "backlog" you drag out of and onto a day. Dropping just sets a date; it
-// doesn't touch status, same as dragging an already-scheduled item.
-const BANK_GROUPS = [
-  { labelKey: "calendar.bank.drafting", statuses: ["idea", "draft"] },
-  { labelKey: "calendar.bank.execution", statuses: ["production"] },
-  { labelKey: "calendar.bank.editing", statuses: ["editing"] },
-  { labelKey: "calendar.bank.readyToUpload", statuses: ["scheduled"] },
-];
-
-function contentBankHTML(brandId, state = {}) {
-  const campaign = state.bankCampaignId ? listCampaigns(brandId).find((c) => c.id === state.bankCampaignId) : null;
-  // Content whose date passed without being published drops off the grid
-  // (itemsForBrand) — it used to vanish from the Bank too, so it looked
-  // lost. It now sits at the top of the Bank, ready to be dragged onto a
-  // new (today-or-later) date.
-  const todayISO = localISODate();
-  const pool = listContent(brandId).filter((c) => (!campaign || c.campaignId === campaign.id) && c.status !== "published" && !c.publishedDate);
-  const overdue = pool.filter((c) => c.scheduleDate && c.scheduleDate < todayISO);
-  const unscheduled = pool.filter((c) => !c.scheduleDate);
-  const groups = [
-    ...(overdue.length ? [{ labelKey: "calendar.bank.overdue", items: overdue, overdue: true }] : []),
-    ...BANK_GROUPS.map((g) => ({ ...g, items: unscheduled.filter((c) => g.statuses.includes(c.status)) })).filter((g) => g.items.length),
-  ];
-  return `
-    <div class="content-bank" id="content-bank">
-      <div class="content-bank-head">
-        <span>${t("calendar.bank.title")}</span>
-        <button class="icon-btn" id="close-bank" aria-label="${t("common.close")}" style="width:26px;height:26px;">${icon("x", { size: 13 })}</button>
-      </div>
-      <p class="text-faint" style="font-size:11.5px;padding:0 14px;margin:8px 0 12px;">${t("calendar.bank.hint")}</p>
-      ${campaign ? `<div class="flex items-center gap-6" style="padding:0 14px;margin:-4px 0 10px;"><span class="tag">${escapeHtml(campaign.name)}</span><button type="button" class="icon-btn" id="bank-clear-campaign" title="${t("cal.bank.showAll")}" style="width:22px;height:22px;">${icon("x", { size: 11 })}</button></div>` : ""}
-      <div class="content-bank-list">
-        ${
-          groups.length
-            ? groups
-                .map(
-                  (g) => `
-          <div class="content-bank-group ${g.overdue ? "is-overdue" : ""}">
-            <div class="content-bank-group-head">${t(g.labelKey)} <span class="text-faint">${g.items.length}</span></div>
-            ${g.items
-              .map(
-                (c) => `
-              <div class="cal-item bank-item ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="true" data-id="${c.id}" title="${escapeHtml(c.title)}">
-                <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>${escapeHtml(c.title || t("common.untitled"))}
-              </div>`
-              )
-              .join("")}
-          </div>`
-                )
-                .join("")
-            : `<div class="table-empty" style="padding:24px 16px;">${t("calendar.bank.empty")}</div>`
-        }
-      </div>
-    </div>
-  `;
 }
 
 // Turns this brand's standing weekly routine into plain-language rules the
@@ -299,59 +238,6 @@ function openAutoScheduleConfirm(proposed, refresh) {
   });
 }
 
-// There's no Google Calendar account to push into from a zero-backend app
-// with no OAuth — a standard .ics file is the no-auth-needed equivalent:
-// Google Calendar imports it directly (Settings → Import & export), and so
-// does every other calendar app.
-function icsEscape(s) {
-  return String(s || "").replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
-}
-function icsDate(dateISO) {
-  return dateISO.replace(/-/g, "");
-}
-function icsDateNext(dateISO) {
-  const d = new Date(`${dateISO}T00:00:00`);
-  d.setDate(d.getDate() + 1);
-  return iso(d).replace(/-/g, "");
-}
-function exportBrandICS(brandId, brandName, items) {
-  if (!items.length) {
-    toast(t("calendar.ics.empty"));
-    return;
-  }
-  const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-  const events = items
-    .map((c) => {
-      const dateISO = c.scheduleDate || c.publishedDate;
-      const summary = `${c.funnel ? `[${c.funnel}] ` : ""}${c.title || t("common.untitled")}`;
-      const desc = [c.platform, c.format, STATUS_LABELS[c.status]].filter(Boolean).join(" · ");
-      return [
-        "BEGIN:VEVENT",
-        `UID:${c.id}@wepekabrandlab`,
-        `DTSTAMP:${stamp}`,
-        `DTSTART;VALUE=DATE:${icsDate(dateISO)}`,
-        `DTEND;VALUE=DATE:${icsDateNext(dateISO)}`,
-        `SUMMARY:${icsEscape(summary)}`,
-        `DESCRIPTION:${icsEscape(desc)}`,
-        "END:VEVENT",
-      ].join("\r\n");
-    })
-    .join("\r\n");
-  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Wepeka Brandlab//Content Calendar//EN", "CALSCALE:GREGORIAN", events, "END:VCALENDAR"].join("\r\n");
-  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${brandName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-calendar.ics`;
-  a.click();
-  URL.revokeObjectURL(url);
-  toast(t("calendar.ics.done"));
-}
-
-// The exact date span the current view shows — the month grid's padded 42
-// cells (so "clear" matches what's actually on screen, including the
-// neighboring-month days peeking in at the edges), the week's 7 days, or
-// the single day.
 function visibleRangeISO(state) {
   const d = state.cursor;
   if (state.view === "month") {
@@ -369,29 +255,6 @@ function visibleRangeISO(state) {
   return { start: iso(d), end: iso(d) };
 }
 
-// Bulk version of "Remove from calendar" (openCalItemMenu) — clears the
-// scheduled date of everything visible on the current view so it drops back
-// into the Content Bank. Never touches already-published content: that's
-// history, not a schedule to clear.
-async function clearCalendarForView(brandId, state, refresh) {
-  const { start, end } = visibleRangeISO(state);
-  const targets = listContent(brandId).filter((c) => c.status !== "published" && c.scheduleDate && c.scheduleDate >= start && c.scheduleDate <= end);
-  if (!targets.length) {
-    toast(t("calendar.clear.empty"));
-    return;
-  }
-  const ok = await confirmDialog({
-    title: t("calendar.clear.title"),
-    message: t("calendar.clear.msg", { count: targets.length }),
-    confirmLabel: t("calendar.clear.confirm"),
-    danger: true,
-  });
-  if (!ok) return;
-  targets.forEach((c) => updateContent(c.id, { scheduleDate: "" }));
-  toast(t("calendar.clear.done", { count: targets.length }));
-  refresh();
-}
-
 function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) { location.hash = "#/"; return; }
@@ -402,15 +265,11 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}${sectionGuideButtonHTML("calendar")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">
-        <button class="btn btn-secondary" id="toggle-bank">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}</button>
-        <button class="btn btn-secondary" id="edit-cadence" title="${t("calendar.editCadenceBtn")}">${icon("gear", { size: 15 })}${t("calendar.editCadenceBtn")}</button>
-        <button class="btn btn-secondary" id="ai-autoschedule">${icon("bot", { size: 15 })}${t("calendar.autoscheduleBtn")}</button>
-        <button class="btn btn-secondary" id="clear-calendar">${icon("trash", { size: 15 })}${t(`calendar.clear.btn.${state.view}`)}</button>
-        ${getMode() === "guided" ? "" : `<button class="btn btn-secondary" id="export-gcal" title="${t("calendar.exportGcalTitle")}">${icon("download", { size: 15 })}${t("calendar.exportGcalBtn")}</button>`}
+        <button class="icon-btn" id="cal-more" aria-label="${t("common.more")}" title="${t("common.more")}">${icon("dots", { size: 16 })}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
       </div>
     </div>
@@ -421,36 +280,35 @@ function paint(root, brandId, state, refresh) {
         <button class="icon-btn" id="cal-next" aria-label="${t("calendar.nextPeriod")}">${icon("chevronRight", { size: 16 })}</button>
         <button class="btn btn-secondary btn-sm" id="cal-today">${t("calendar.today")}</button>
       </div>
-      <div class="segmented" style="width:220px;">
-        ${["month", "week", "day"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${t(`calendar.view.${v}`)}</button>`).join("")}
+      <div class="segmented" style="width:150px;">
+        ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${t(`calendar.view.${v}`)}</button>`).join("")}
       </div>
     </div>
-    ${
-      brand.contentCadence?.configured
-        ? ""
-        : `<div class="cad-card">
-             ${icon("calendar", { size: 18 })}
-             <div><b>${t("calendar.cadenceCard.title")}</b><span>${t("calendar.cadenceCard.body")}</span></div>
-             <button type="button" class="btn btn-primary btn-sm" id="cadence-card-cta">${t("calendar.cadenceCard.cta")}</button>
-           </div>`
-    }
     <div id="cal-body"></div>
-    ${state.bankOpen ? contentBankHTML(brandId, state) : ""}
   `;
 
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
-  qs("#ai-autoschedule").addEventListener("click", () => runAutoSchedule(brandId, refresh));
-  qs("#edit-cadence").addEventListener("click", () => openContentCadenceSetup(brand));
-  qs("#cadence-card-cta")?.addEventListener("click", () => openContentCadenceSetup(brand));
-  qs("#export-gcal")?.addEventListener("click", () => exportBrandICS(brandId, brand.name, items));
-  qs("#clear-calendar").addEventListener("click", () => clearCalendarForView(brandId, state, refresh));
+  // The ⋯ menu: the two setup-ish jobs (AI auto-schedule, the weekly work
+  // rhythm) — used once in a while, not every visit.
+  qs("#cal-more").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 240) });
+    if (!menu) return;
+    menu.innerHTML = `
+      <button data-act="autoschedule" id="ai-autoschedule">${icon("bot", { size: 15 })}${t("calendar.autoscheduleBtn")}</button>
+      <button data-act="cadence" id="edit-cadence">${icon("gear", { size: 15 })}${t("calendar.editCadenceBtn")}</button>
+    `;
+    menu.addEventListener("click", (ev) => {
+      const act = ev.target.closest("[data-act]")?.dataset.act;
+      if (!act) return;
+      closeMenu();
+      if (act === "autoschedule") runAutoSchedule(brandId, refresh);
+      else if (act === "cadence") openContentCadenceSetup(brand);
+    });
+  });
   wireHelpButtons(root);
-  wireGuideButton(root, "calendar", () => startCalendarGuide(brandId));
-
-  qs("#toggle-bank").addEventListener("click", () => { state.bankOpen = !state.bankOpen; paint(root, brandId, state, refresh); });
-  const closeBankBtn = qs("#close-bank");
-  if (closeBankBtn) closeBankBtn.addEventListener("click", () => { state.bankOpen = false; paint(root, brandId, state, refresh); });
-  qs("#bank-clear-campaign")?.addEventListener("click", () => { state.bankCampaignId = null; paint(root, brandId, state, refresh); });
+  setPageGuide(() => startCalendarGuide(brandId));
   qs("#cal-prev").addEventListener("click", () => { step(state, -1); paint(root, brandId, state, refresh); });
   qs("#cal-next").addEventListener("click", () => { step(state, 1); paint(root, brandId, state, refresh); });
   qs("#cal-today").addEventListener("click", () => { state.cursor = new Date(); paint(root, brandId, state, refresh); });
@@ -460,16 +318,6 @@ function paint(root, brandId, state, refresh) {
   if (state.view === "month") renderMonth(body, brandId, state, items, campaigns, campaignById, refresh);
   else renderAgenda(body, brandId, state, items, campaignById, refresh);
 
-  qsa(".bank-item", root).forEach((el) => {
-    el.addEventListener("dragstart", (e) => {
-      e.dataTransfer.setData("text/plain", el.dataset.id);
-      e.dataTransfer.effectAllowed = "move";
-    });
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openContentEditor({ brandId, contentId: el.dataset.id, onSaved: refresh });
-    });
-  });
 }
 
 function periodLabel(state) {

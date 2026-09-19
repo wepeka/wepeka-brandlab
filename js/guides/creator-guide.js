@@ -218,7 +218,6 @@ export function startCreatorGuide(brandId) {
 export function startCreatorGuideOnMount(brandId) {
   startGuideOnMount({
     pendingKey: "creator",
-    autoplayKey: "creator",
     build: () => buildCreatorSteps({ brandId }),
     options: creatorTourOptions(brandId),
   });

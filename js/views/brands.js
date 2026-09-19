@@ -1,15 +1,12 @@
 import {
   listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent,
-  listOverdueAndDueSoon,
 } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, resizeImageFile, formatDate, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
+import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
 import { canUseInstagramApi } from "../account.js";
 import { testFacebookConnection } from "../facebook.js";
-import { testAdsConnection } from "../ads.js";
-import { startOnboardingTour } from "../tour.js";
 import { canCreateBrand, getCachedAccount } from "../account.js";
 import { getMode } from "../mode.js";
 import { getSettings } from "../store.js";
@@ -41,16 +38,9 @@ function paint(root, refresh) {
         <p>${guided ? t("brands.first.subGuided") : t("brands.first.subPro")}</p>
         <button type="button" class="btn btn-primary journey-hero-cta" id="add-brand">${t("brands.first.cta")}${icon("arrowRight", { size: 15 })}</button>
         <div class="journey-hero-note">${guided ? t("brands.first.noteGuided") : t("brands.first.notePro")}</div>
-        ${
-          // Pemula: Beranda + the brand form are the onboarding — no separate
-          // tour offer needed here. Pro still gets one, since there's no
-          // guided journey walking them through it otherwise.
-          guided ? "" : `<button type="button" class="btn btn-ghost btn-sm" id="start-tour" style="margin-top:2px;">${icon("play", { size: 13 })}${t("brands.first.tour")}</button>`
-        }
       </section>
     `;
     qs("#add-brand").addEventListener("click", () => openBrandModal({ onSaved: refresh }));
-    qs("#start-tour")?.addEventListener("click", () => startOnboardingTour());
     return;
   }
 
@@ -71,8 +61,6 @@ function paint(root, refresh) {
         <h3>${t("brands.add")}</h3>
       </button>
     </div>
-    ${overdueRemindersHTML()}
-    ${weeklyWorkHTML(brands)}
   `;
 
   const dragState = wireBrandGridDrag(qs("#brand-grid"));
@@ -83,32 +71,6 @@ function paint(root, refresh) {
   });
   qs("#add-brand-quick")?.addEventListener("click", () => {
     openBrandModal({ onSaved: refresh });
-  });
-
-  // Read-only reflection of real progress — clicking opens the content in
-  // Creator to actually do the work there. It's not a shortcut to instantly
-  // flip status from the home page; it just confirms itself and drops off
-  // this list once you've genuinely advanced it.
-  qsa(".weekly-work-row", root).forEach((row) => {
-    row.addEventListener("click", () => {
-      location.hash = `#/brand/${row.dataset.brandId}/content-os/creator/${row.dataset.taskId}`;
-    });
-  });
-
-  qsa("[data-weekly-toggle]", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const brand = brands.find((b) => b.id === btn.dataset.weeklyToggle);
-      if (!brand) return;
-      updateBrand(brand.id, { weeklyCollapsed: !brand.weeklyCollapsed });
-      refresh();
-    });
-  });
-
-  qsa("[data-overdue-work]", root).forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      location.hash = `#/brand/${btn.dataset.brandId}/content-os/creator/${btn.dataset.overdueWork}`;
-    });
   });
 
   qsa(".brand-tile:not(.brand-tile-add)").forEach((card) => {
@@ -170,108 +132,6 @@ function paint(root, refresh) {
   });
 }
 
-// Derived straight from real content status across every brand — not a
-// separate task list to keep in sync by hand. No checkbox: this is a
-// read-only mirror of real progress, and it drops off the list on its own
-// once the actual status is advanced from Creator — not from clicking here.
-// Same content the Calendar just stopped showing (scheduleDate passed,
-// still not published) — surfaced here instead, front and center, so it
-// doesn't just quietly disappear.
-function overdueRemindersHTML() {
-  const { overdue } = listOverdueAndDueSoon();
-  if (!overdue.length) return "";
-  return `
-    <div class="card overdue-card" style="margin-bottom:28px;">
-      <div class="page-eyebrow" style="margin-bottom:14px;color:var(--health-poor);">${icon("info", { size: 13 })} ${t("notif.overdue")}</div>
-      <div>${overdue.map(overdueRow).join("")}</div>
-    </div>
-  `;
-}
-
-function overdueRow(item) {
-  return `
-    <div class="overdue-row">
-      <div class="ti" style="flex:1;min-width:0;">
-        <div class="t">${escapeText(item.content.title || t("common.untitled"))} <span class="text-faint">— ${escapeText(item.brand.name)}</span></div>
-        <div class="m">${t("brands.overdue.row", { date: formatDate(item.content.scheduleDate) })}</div>
-      </div>
-      <button type="button" class="btn btn-secondary btn-sm" data-overdue-work="${item.content.id}" data-brand-id="${item.brand.id}" style="flex:none;">${t("brands.overdue.cta")}</button>
-    </div>
-  `;
-}
-
-const WEEKLY_STAGE_VERB = { production: t("brands.verb.production"), editing: t("brands.verb.editing"), scheduled: t("brands.verb.scheduled") };
-
-// Grouped per brand (not one flat mixed list) — running several brands
-// made it hard to tell whose work was whose at a glance. Each group opens
-// and closes on its own, persisted on the brand itself (brand.weeklyCollapsed)
-// so a brand you're not actively juggling right now can stay tucked away.
-function weeklyWorkHTML(brands) {
-  const groups = brands
-    .map((brand) => {
-      const tasks = listContent(brand.id)
-        .map((c) => ({ verb: WEEKLY_STAGE_VERB[c.status], content: c }))
-        .filter((x) => x.verb);
-      tasks.sort((a, b) => (a.content.scheduleDate || "9999").localeCompare(b.content.scheduleDate || "9999"));
-      return { brand, tasks };
-    })
-    .filter((g) => g.tasks.length);
-  if (!groups.length) return "";
-  // The brand with the soonest due date leads — whoever needs attention
-  // first across the whole account, not alphabetical order.
-  groups.sort((a, b) => (a.tasks[0].content.scheduleDate || "9999").localeCompare(b.tasks[0].content.scheduleDate || "9999"));
-  const totalCount = groups.reduce((n, g) => n + g.tasks.length, 0);
-  return `
-    <div class="weekly-work-card">
-      <div class="weekly-work-backdrop" aria-hidden="true"><div class="weekly-work-glow"></div></div>
-      <div class="weekly-work-head">
-        <div class="weekly-work-head-icon">${icon("calendar", { size: 18 })}</div>
-        <div>
-          <h2>${t("brands.weekly.title")}</h2>
-          <p>${t("brands.weekly.hint2", { count: totalCount })}</p>
-        </div>
-      </div>
-      <div class="weekly-work-groups">${groups.map(weeklyWorkGroupHTML).join("")}</div>
-    </div>
-  `;
-}
-
-function weeklyWorkGroupHTML(group) {
-  const collapsed = !!group.brand.weeklyCollapsed;
-  return `
-    <div class="weekly-work-group ${collapsed ? "is-collapsed" : ""}">
-      <button type="button" class="weekly-work-group-head" data-weekly-toggle="${group.brand.id}">
-        ${avatarHTML(group.brand, "width:26px;height:26px;font-size:11px;flex:none;")}
-        <span class="weekly-work-group-name">${escapeText(group.brand.name)}</span>
-        <span class="weekly-work-group-count">${group.tasks.length}</span>
-        ${icon("chevronDown", { size: 14 })}
-      </button>
-      ${collapsed ? "" : `<div class="weekly-work-rows">${group.tasks.map((task) => weeklyWorkRow(task, group.brand.id)).join("")}</div>`}
-    </div>`;
-}
-
-function weeklyWorkRow(task, brandId) {
-  return `
-    <div class="weekly-work-row" data-task-id="${task.content.id}" data-brand-id="${brandId}">
-      <span class="weekly-work-verb">${task.verb}</span>
-      <span class="weekly-work-title">${escapeText(task.content.title || t("common.untitled"))}</span>
-      ${task.content.scheduleDate ? `<span class="weekly-work-date">${formatDate(task.content.scheduleDate)}</span>` : ""}
-    </div>
-  `;
-}
-
-// Click-and-drag panning for the brand row, for mouse users (touch/trackpad
-// already scroll it natively via overflow-x). Returns a small state object
-// so click handlers on the tiles can check `wasDragged` and skip navigating
-// when the mouseup that ended the drag happened to land on a tile — without
-// this, dragging left the row instead behaves like an accidental click.
-//
-// mousemove/mouseup have to live on `window` (a fast drag can leave the
-// grid's own bounds), but `paint()` re-renders this whole page on every
-// refresh() and would otherwise pile up a fresh pair of window-level
-// listeners each time with nothing ever removing the previous pair — so
-// the previous call's listeners are explicitly torn down before attaching
-// the new ones.
 let brandGridDragCleanup = null;
 function wireBrandGridDrag(grid) {
   brandGridDragCleanup?.();
@@ -367,7 +227,6 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     color: brand?.color || "",
     instagram: brand?.instagram || { accessToken: "", igUserId: "", username: "", connectedAt: null },
     facebook: brand?.facebook || { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null },
-    ads: brand?.ads || { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null },
     aiVoiceGuide: brand?.aiVoiceGuide || "",
     businessDescription: brand?.businessDescription || "",
   };
@@ -462,19 +321,6 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       <div id="fb-status" style="margin:10px 0;font-size:12.5px;">${draft.facebook.pageName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.facebook.pageName) })}</span>` : ""}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="fb-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
 
-      <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ads.title")}</div>
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ads.intro")}</p>
-      <div class="field">
-        <label>Ad Account ID</label>
-        <input class="input" id="ads-account-id" placeholder="${t("integr.ads.accountPh")}" value="${(draft.ads.adAccountId || "").replace(/"/g, "&quot;")}" />
-      </div>
-      <div class="field" style="margin-bottom:0;">
-        <label>${t("integr.ads.token")}</label>
-        ${passwordFieldHTML("ads-token", { placeholder: "EAA...", value: draft.ads.adsAccessToken })}
-      </div>
-      <div id="ads-status" style="margin:10px 0;font-size:12.5px;">${draft.ads.accountName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.ads.accountName) })}</span>` : ""}</div>
-      <button type="button" class="btn btn-secondary btn-sm" id="ads-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
       `
           : guided
             ? ""
@@ -558,24 +404,6 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
           statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeText(e.message)}</span>`;
         }
       });
-
-      el.querySelector("#ads-test")?.addEventListener("click", async () => {
-        const adAccountId = el.querySelector("#ads-account-id").value.trim();
-        const adsAccessToken = el.querySelector("#ads-token").value.trim();
-        const statusEl = el.querySelector("#ads-status");
-        if (!adAccountId || !adsAccessToken) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">${t("integr.bothRequired")}</span>`;
-          return;
-        }
-        statusEl.innerHTML = `<span class="text-muted">${t("integr.testing")}</span>`;
-        try {
-          const accountName = await testAdsConnection({ adAccountId, adsAccessToken });
-          draft.ads = { adAccountId, adsAccessToken, accountName, connectedAt: Date.now() };
-          statusEl.innerHTML = `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(accountName) })}</span>`;
-        } catch (e) {
-          statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeText(e.message)}</span>`;
-        }
-      });
     },
   });
 
@@ -643,15 +471,11 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     const facebook = fbPageIdEl
       ? { ...draft.facebook, pageId: fbPageIdEl.value.trim(), pageAccessToken: overlay.querySelector("#fb-token").value.trim() }
       : draft.facebook;
-    const adsAccountIdEl = overlay.querySelector("#ads-account-id");
-    const ads = adsAccountIdEl
-      ? { ...draft.ads, adAccountId: adsAccountIdEl.value.trim(), adsAccessToken: overlay.querySelector("#ads-token").value.trim() }
-      : draft.ads;
     const aiVoiceGuide = overlay.querySelector("#brand-ai-voice").value;
     const businessDescription = overlay.querySelector("#brand-description").value;
     const color = overlay.querySelector("#brand-color").value;
     if (brand) {
-      updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
+      updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription });
       toast(t("brands.form.updated"));
     } else {
       const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });

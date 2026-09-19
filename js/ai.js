@@ -503,42 +503,6 @@ function dataUrlToInlinePart(dataUrl) {
   return { inlineData: { mimeType: match[1], data: match[2] } };
 }
 
-// Image generation is a separate, paid-only Gemini capability (confirmed
-// against the real API: the free tier's quota for it is 0, unlike text
-// generation which is free) — needs billing enabled on the same Google
-// Cloud project the API key belongs to. Returns a data: URL ready to use
-// directly as a thumbnail.
-export async function generateThumbnail(ai, { title, idea, brandGuidelines, logoDataUrl }) {
-  if (ai.provider !== "gemini") throw new AiApiError(t("ai.error.thumbGeminiOnly"));
-  if (!ai.geminiApiKey) throw new AiApiError(t("ai.error.noKey", { provider: "Gemini" }));
-
-  const prompt = [
-    "Generate a single eye-catching vertical (9:16) thumbnail image for a short-form social video.",
-    "No readable body text baked into the image except a short punchy title treatment if it fits naturally.",
-    title ? `Video title: ${title}` : "",
-    idea ? `Video is about: ${idea}` : "",
-    brandGuidelines ? `Match this brand's visual/voice style: ${brandGuidelines}` : "",
-    logoDataUrl ? "A reference logo/mascot image is attached — let its colors and character inform the thumbnail's style, without just pasting the logo flat onto the image." : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const parts = [{ text: prompt }];
-  const logoPart = dataUrlToInlinePart(logoDataUrl);
-  if (logoPart) parts.push(logoPart);
-
-  const json = await fetchJson(`${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${encodeURIComponent(ai.geminiApiKey)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts }] }),
-  }, "Gemini");
-  // eslint-disable-next-line no-console
-  console.log("[AI] generateThumbnail →", JSON.stringify(json).slice(0, 400));
-  const responseParts = json.candidates?.[0]?.content?.parts || [];
-  const imagePart = responseParts.find((p) => p.inlineData?.data);
-  if (!imagePart) throw new AiApiError(t("ai.error.noImage"));
-  return `data:${imagePart.inlineData.mimeType || "image/png"};base64,${imagePart.inlineData.data}`;
-}
 
 // Assembles a brand's structured identity into one labeled context block —
 // the shared replacement for every AI feature independently doing its own
@@ -868,84 +832,7 @@ export async function generateBrandDnaDraft(ai, { brand, answers = {} }) {
   return out;
 }
 
-// Powers the Brand Builder's Naming stage, for the "belum punya nama"
-// branch — brainstorms real, usable name candidates (not generic
-// descriptive phrases) from whatever brand context already exists, each
-// with a short reason so the owner can judge fit at a glance instead of
-// just a bare word list.
-export async function suggestBrandNames(ai, { brand, keywords, strategy = "curiosity", avoid = [], count = 6 }) {
-  const strategyRule =
-    strategy === "descriptive"
-      ? "Every name must be DESCRIPTIVE of what this business sells or does — someone hearing it should instantly understand roughly what category it's in, the way 'Burger King' says burgers or 'Kopi Kenangan' says coffee. Don't make it vague, abstract, or a generic category label with no personality (e.g. avoid 'Kursus Bahasa Inggris Terbaik')."
-      : "Every name must be a short, distinctive, slightly unexpected WORD OR COINED NAME that does NOT describe the product — it should make someone curious enough to ask 'ini apaan ya?' the first time they hear it. Use a genuine mix of techniques across the options: some invented/repurposed single words, and at least one or two PORTMANTEAUS — a new word blended from two real, meaningful words tied to the brand (e.g. combining a fragment of each into one new word, the way a real coined brand name often works), not just a bare unmodified real word.";
-  const system = [
-    "You help a small business owner brainstorm a real, usable brand/business name — not a slogan or a description of what they do.",
-    "HARD RULE, more important than anything else here: the owner wants a genuinely NEW, ORIGINAL name — never one that's already taken. Before including any name, check it from your own knowledge: is it identical to, a trivial respelling of, or an obvious minor tweak of (extra/dropped letter, added generic suffix, swapped word order, etc.) any real company/brand/product name you know of, in any country or industry? If there's ANY real match or close call, throw it out and think of a genuinely different one instead — do not output it, not even with a caveat. Every single name you return must feel like it does not already belong to someone else.",
-    `Suggest ${count} distinct name candidates, all following this ONE chosen naming angle (the owner already picked it, don't mix in other angles): ${strategyRule} Each name must also be short — 3 spoken syllables/pronunciation units or fewer is ideal, never more than 4 — easy to say out loud and easy to spell back after hearing it once.`,
-    "For each name, give one short reason (max 12 words) tying it to THIS brand's own context below — what it evokes and why it fits, not generic naming advice.",
-    "The names themselves should match the language/style a small local business in this context would actually use — Indonesian names are fine and often fit better than English ones; don't force English.",
-    `${outputLanguageRule()} This applies to each reason; the names themselves follow the naming rules above.`,
-    keywords ? `The owner wants these words/ideas reflected if it fits naturally (not literally required in every option): ${keywords}` : "",
-    NATURAL_WRITING_CONTEXT,
-    buildBrandContext(brand),
-    avoid.length ? `Already suggested, don't repeat these (write genuinely different names):\n${avoid.map((a) => `- ${a}`).join("\n")}` : "",
-    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"options": [{"name": "...", "reason": "..."}]} — exactly ${count} items.`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
 
-  const raw = await callModel(ai, system, "Suggest brand name candidates based on the context above.", 700);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    const options = Array.isArray(parsed.options) ? parsed.options.filter((o) => o?.name) : [];
-    if (!options.length) throw new Error("empty");
-    return options;
-  } catch {
-    throw new AiApiError(t("ai.error.readNames"));
-  }
-}
-
-// Second half of the Naming stage: once a name is picked (typed as an
-// existing name, or chosen from suggestBrandNames above), check whether
-// it's actually easy to SAY — big, memorable brands consistently trim long
-// names down to a tight, spoken-in-one-breath nickname (think how often a
-// long company name gets shortened to just initials or one short piece of
-// it), and this does the same judgment call for the owner's own name.
-// "Pronunciation units" deliberately isn't strict linguistic syllable
-// counting — an initialism said letter-by-letter counts one unit per
-// letter, matching how a person actually says it out loud.
-export async function checkBrandNameLength(ai, { name, brand }) {
-  const system = [
-    "You evaluate how easy a brand name is to say out loud in one breath, the way a small business owner would judge it — not a linguistics exercise.",
-    "Break the name into its PRONUNCIATION UNITS: the chunks a person actually says out loud one at a time — normal syllables for a spoken word, or one unit per letter for an initialism said letter-by-letter (e.g. an acronym like 'KFC' said 'kay-ef-si' is 3 units). Write the breakdown lowercase with hyphens between units, matching how it's actually said.",
-    "3 units or fewer is ideal. More than 4 is genuinely too long and hurts recall — flag it as too long. Exactly 4 is borderline: only flag it if it doesn't already feel snappy said out loud.",
-    "If it's too long, suggest 3 short alternative names the way real brands trim a long name into a tight, memorable one — initials, a distinctive shortened piece of the original, or a short nickname a customer would naturally call it. Each MUST still clearly connect back to the original name, never a random unrelated new name. Give each a one-line reason and its own pronunciation breakdown the same way.",
-    "If it's already short enough, return an empty alternatives array — don't invent alternatives it doesn't need.",
-    "Separately, from your own general knowledge only (you have no live internet or trademark-registry access, and your training data has a cutoff — never imply otherwise): does this name closely match an existing well-known brand you recognize, or is it a generic word/name pattern that's extremely common in this industry? If so, write ONE short heads-up sentence naming the concern (e.g. which brand it resembles, or why it's overused) so the owner knows to double-check manually (Google, Instagram, DJKI/trademark search) before committing — this is a possibility flag, never a definitive 'taken' or 'available' verdict. If nothing stands out, leave it as an empty string.",
-    `${outputLanguageRule()} This applies to each alternative's reason and to similarNote; breakdowns just mirror how the name is said.`,
-    buildBrandContext(brand),
-    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"units": <number>, "breakdown": "...", "tooLong": <boolean>, "alternatives": [{"name": "...", "breakdown": "...", "reason": "..."}], "similarNote": "..."}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const raw = await callModel(ai, system, `Name to evaluate: ${name}`, 500);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (typeof parsed.units !== "number") throw new Error("bad shape");
-    return {
-      units: parsed.units,
-      breakdown: parsed.breakdown || "",
-      tooLong: !!parsed.tooLong,
-      alternatives: Array.isArray(parsed.alternatives) ? parsed.alternatives.filter((a) => a?.name) : [],
-      similarNote: parsed.similarNote || "",
-    };
-  } catch {
-    throw new AiApiError(t("ai.error.readNameCheck"));
-  }
-}
 
 // The Review step's headline deliverable — a single StoryBrand-style
 // "one-liner" (problem the customer has -> what this brand does about it ->
@@ -977,49 +864,6 @@ export async function generateOneLiner(ai, { brand, answers = {} }) {
   return raw.trim();
 }
 
-// Drafts an entire campaign — including goals for its enabled journey
-// phases — from one plain-language goal, using the brand's full context so
-// a Gen Z fashion brand's launch plan reads differently from a B2B
-// service's, instead of a generic template with the brand's name swapped
-// in. Never applied silently — the caller opens this in the same
-// review-before-save modal used for manual campaign creation.
-// `enabledPhases`: the subset of CAMPAIGN_PHASE_TEMPLATE this campaign
-// actually uses (Website/Event/Community only if the brand has/plans that
-// infrastructure) — matched back by name, not position, since the enabled
-// set varies per campaign.
-export async function generateCampaignPlan(ai, { brand, objectiveText, objective, enabledPhases, socialPlatforms = [] }) {
-  const system = [
-    "You draft a marketing campaign plan for a specific brand, tailored to that brand's actual character, audience, and products — not a generic template.",
-    buildBrandContext(brand),
-    MARKETING_FRAMEWORKS_CONTEXT,
-    NATURAL_WRITING_CONTEXT,
-    socialPlatforms.length ? `Social platforms this brand actively uses: ${socialPlatforms.join(", ")}.` : "",
-    `This campaign's journey uses exactly these phases, in this order — write a specific \`goal\` for each: what it should accomplish for THIS campaign, for THIS brand, not a generic definition of the phase:\n${enabledPhases.map((p) => `- ${p.name}: ${p.description}`).join("\n")}`,
-    "The \"cta\" field is a short call-to-action phrase reused everywhere this campaign shows up — flyers, website, bio link, story stickers — so it must be extremely short: 2-4 words, imperative, like \"Join now!\", \"Daftar sekarang!\", or \"Grab yours today\". Never a sentence or an explanation.",
-    outputLanguageRule(),
-    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"name": "...", "targetAudience": "...", "problemOrOpportunity": "...", "insight": "...", "bigIdea": "...", "keyMessage": "...", "offer": "...", "cta": "...", "channels": ["...", "..."], "phases": [{"name": "...", "goal": "..."}, ...]} — phases array MUST have exactly ${enabledPhases.length} items, one per phase listed above, "name" matching those exactly, same order.`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const user = [`Campaign objective category: ${objective}`, `What the user said they want: ${objectiveText}`].join("\n");
-
-  const raw = await callModel(ai, system, user, 1200);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    const goalByName = {};
-    (parsed.phases || []).forEach((p) => { if (p?.name) goalByName[p.name.toLowerCase()] = p.goal || ""; });
-    const phases = enabledPhases.map((p) => ({ name: p.name, goal: goalByName[p.name.toLowerCase()] || "" }));
-    return {
-      name: parsed.name || "", targetAudience: parsed.targetAudience || "", problemOrOpportunity: parsed.problemOrOpportunity || "",
-      insight: parsed.insight || "", bigIdea: parsed.bigIdea || "", keyMessage: parsed.keyMessage || "",
-      offer: parsed.offer || "", cta: parsed.cta || "", channels: Array.isArray(parsed.channels) ? parsed.channels : [], phases,
-    };
-  } catch {
-    throw new AiApiError(t("ai.error.readCampaignPlan"));
-  }
-}
 
 // Campaign-level sibling of suggestPhaseContent below — for campaigns whose
 // content isn't bucketed into phases at all (Grow Social Media's

@@ -1,13 +1,11 @@
-import { getBrand, listContent, getContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, combinePlatformMetrics, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
-import { getMode } from "../mode.js";
+import { getBrand, listContent, getContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
 import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { confirmDialog, openModal, closeOverlay } from "../modals.js";
-import { openCelebration } from "../celebrate.js";
 import { openInstagramImportPicker } from "./instagram-import.js";
-import { openFacebookImportPicker } from "./facebook-import.js";
+import { openReportModal } from "./report.js";
 import { syncInstagramPerformance } from "../instagram-sync.js";
 import { canUseInstagramApi } from "../account.js";
 import { analyzeScreenshot } from "../ocr.js";
@@ -15,30 +13,19 @@ import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { consumeNavContext } from "../nav-context.js";
 
-// Opening the Content tab asks "what do you want to check?" first (three
-// big choices) instead of dropping straight into a raw table. Ideas/drafts
-// are meant to be worked on in the Creator tab — this is where you check
-// what's live vs. still in progress.
+// One table, three quick views: everything, what's live, what's still in
+// progress. Ideas/drafts are worked on in Creator — this is where you check
+// what's out vs. still coming, and fill in how the live pieces performed.
 const VIEWS = [
-  { key: "all", labelKey: "contentList.views.all", icon: "grid", test: () => true },
-  { key: "published", labelKey: "contentList.views.published", icon: "check", test: (s) => s === "published" },
-  { key: "drafts", labelKey: "contentList.views.drafts", icon: "edit", test: (s) => s !== "published" },
-];
-
-// Which platforms' numbers get summed into the Views/Engagement columns —
-// separate from row filtering. Defaults to every platform that can actually
-// report numbers today (TikTok has no fetch integration yet, so it stays
-// out of the default combine even though it's listed for the future).
-const METRIC_PLATFORMS = [
-  { key: "instagram", label: "Instagram" },
-  { key: "facebook", label: "Facebook" },
-  { key: "tiktok", label: "TikTok", disabled: true },
+  { key: "all", labelKey: "contentList.views.all", test: () => true },
+  { key: "published", labelKey: "contentList.views.published", test: (s) => s === "published" },
+  { key: "drafts", labelKey: "contentList.views.drafts", test: (s) => s !== "published" },
 ];
 
 export function render(root, { brandId }) {
-  const state = { view: null, selectMode: false, search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", sort: "updated", dir: "desc", selected: new Set(), metricPlatforms: new Set(["instagram", "facebook"]) };
-  // Arriving from a campaign: skip the chooser, filter to that campaign,
-  // and for "Isi performa" open Quick Fill on the piece straight away.
+  const state = { view: "all", search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", sort: "updated", dir: "desc" };
+  // Arriving from a campaign: filter to that campaign, and for "Isi
+  // performa" open Quick Fill on the piece straight away.
   const navCtx = consumeNavContext();
   if (navCtx?.campaignId) {
     state.campaignId = navCtx.campaignId;
@@ -54,20 +41,6 @@ export function render(root, { brandId }) {
   const refresh = () => paint(root, brandId, state, refresh);
   refresh();
   return onChange(refresh);
-}
-
-// A row's performance, recombined from just the selected platforms — falls
-// back to the saved combined total for content that has no per-platform
-// breakdown yet (manual entry, OCR, or old data from before this existed),
-// so switching the platform filter never blanks out numbers that just
-// haven't been broken down.
-function displayPerformance(c, metricPlatforms) {
-  const byPlatform = c.performanceByPlatform;
-  const hasBreakdown = byPlatform && Object.values(byPlatform).some((p) => p && Object.keys(p).length);
-  if (!hasBreakdown) return c.performance;
-  const subset = {};
-  Object.entries(byPlatform).forEach(([key, val]) => { if (metricPlatforms.has(key)) subset[key] = val; });
-  return { ...c.performance, ...combinePlatformMetrics(subset) };
 }
 
 // Groups Published content by how long ago it went live — a 60-item flat
@@ -100,59 +73,8 @@ function paint(root, brandId, state, refresh) {
     location.hash = "#/";
     return;
   }
-  if (!state.view) {
-    renderChooser(root, brandId, state, refresh, brand);
-    return;
-  }
-  renderTable(root, brandId, state, refresh, brand);
-}
-
-function renderChooser(root, brandId, state, refresh, brand) {
-  const all = listContent(brandId);
-  const counts = {
-    all: all.length,
-    published: all.filter((c) => c.status === "published").length,
-    drafts: all.filter((c) => c.status !== "published").length,
-  };
-
-  root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}</div>
-        <h1>${brand.name}</h1>
-      </div>
-      <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("contentList.newContent")}</button>
-    </div>
-    <p class="page-sub" style="margin-bottom:24px;">${t("contentList.chooserSub")}</p>
-    <div class="content-view-grid">
-      ${VIEWS.map(
-        (v) => `
-        <button class="content-view-card" data-view="${v.key}">
-          <div class="icon-wrap">${icon(v.icon, { size: 24 })}</div>
-          <h3>${t(v.labelKey)}</h3>
-          <p>${t("contentList.pieceCount", { count: counts[v.key] })}</p>
-        </button>`
-      ).join("")}
-    </div>
-  `;
-
-  wireHelpButtons(root);
-
-  qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
-  qsa("[data-view]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.view = btn.dataset.view;
-      paint(root, brandId, state, refresh);
-    });
-  });
-}
-
-function renderTable(root, brandId, state, refresh, brand) {
   const settings = getSettings();
-  let items = listContent(brandId).map((c) => {
-    const perf = displayPerformance(c, state.metricPlatforms);
-    return { c, perf, m: computeContentMetrics({ ...c, performance: perf }, settings) };
-  });
+  let items = listContent(brandId).map((c) => ({ c, perf: c.performance, m: computeContentMetrics(c, settings) }));
 
   const activeView = VIEWS.find((v) => v.key === state.view) || VIEWS[0];
   items = items.filter((x) => activeView.test(x.c.status));
@@ -181,86 +103,34 @@ function renderTable(root, brandId, state, refresh, brand) {
     return 0;
   });
 
-  // Drop selections for items no longer visible/existing, so the bulk bar
-  // count never lies about what's actually selectable right now.
-  const visibleIds = new Set(items.map((x) => x.c.id));
-  [...state.selected].forEach((id) => { if (!visibleIds.has(id)) state.selected.delete(id); });
-
   const campaignsById = new Map(listCampaigns(brandId).map((c) => [c.id, c]));
-  // "Filter" button badge only counts what's inside that consolidated panel
-  // (Funnel/Format/Platform/Age) — Campaign has its own always-visible
-  // dropdown, so it isn't double-counted there, but it does still count
-  // toward whether "Clear filters" shows up and what it resets.
+  // "Filter" badge only counts what's inside that panel (Funnel/Format/
+  // Platform/Age) — Campaign has its own always-visible dropdown.
   const panelFilterCount = (state.funnel ? 1 : 0) + (state.format ? 1 : 0) + (state.platform ? 1 : 0) + (state.age ? 1 : 0);
   const activeFilters = panelFilterCount + (state.campaignId ? 1 : 0);
   const igAllowed = canUseInstagramApi();
   const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
   const igUnavailableNote = igAllowed ? t("contentList.connectInEditBrand") : t("contentList.comingSoon");
-  const fbConfigured = !!(brand.facebook?.pageId && brand.facebook?.pageAccessToken);
   const allContentCount = listContent(brandId, { includeArchived: true }).length;
   const isPublishedView = state.view === "published";
+  const staleQueue = listContent(brandId).filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
 
-  // Best performers + who needs a fresh number — both only mean anything
-  // once something's actually published, so both stay scoped to that tab
-  // rather than cluttering the Drafts/All views.
-  const publishedAll = isPublishedView ? listContent(brandId).filter((c) => c.status === "published") : [];
-  const topPerformers = publishedAll
-    .map((c) => ({ c, m: computeContentMetrics(c, settings) }))
-    .filter((x) => x.m.health === "good")
-    .sort((a, b) => (b.m.engagementRate ?? 0) - (a.m.engagementRate ?? 0))
-    .slice(0, 3);
-  const staleQueue = publishedAll.filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
-
-  // Pemula: the list is for finding and opening content. Import, bulk
-  // select, metric-platform switch, top-performer tiles and the ⋯ menu are
-  // Pro tooling — hidden here, unchanged there.
-  const guided = getMode() === "guided";
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow"><a href="#" id="back-to-chooser" style="color:inherit;">${t("contentList.backToChooser")}</a></div>
+        <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}</div>
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8">
-        ${
-          isPublishedView
-            ? `<button class="btn btn-secondary" id="update-engagement">${icon("chart", { size: 15 })}${t("contentList.updateEngagement")}${staleQueue.length ? ` <span class="notif-badge" style="position:static;margin-left:2px;">${staleQueue.length}</span>` : ""}</button>`
-            : ""
-        }
-        ${guided ? "" : `<button class="btn btn-secondary" id="import-content">${icon("refresh", { size: 15 })}${t("contentList.importContent")}${icon("chevronDown", { size: 12 })}</button>
-        <button class="icon-btn" id="more-actions" aria-label="${t("contentList.moreActions")}" title="${t("contentList.moreActions")}">${icon("dots", { size: 16 })}</button>`}
+        <button class="icon-btn" id="more-actions" aria-label="${t("contentList.moreActions")}" title="${t("contentList.moreActions")}">${icon("dots", { size: 16 })}${staleQueue.length ? `<span class="notif-badge">${staleQueue.length}</span>` : ""}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("contentList.newContent")}</button>
       </div>
     </div>
 
-    <div class="flex items-center gap-10" style="margin-bottom:16px;">
-      <div class="segmented" style="width:fit-content;">
+    <div class="toolbar">
+      <div class="segmented" style="width:fit-content;flex:none;">
         ${VIEWS.map((v) => `<button data-view="${v.key}" class="${state.view === v.key ? "active" : ""}">${t(v.labelKey)}</button>`).join("")}
       </div>
-      ${guided ? "" : `<button class="btn ${state.selectMode ? "btn-primary" : "btn-secondary"} btn-sm" id="toggle-select">${icon("check", { size: 13 })}${state.selectMode ? t("contentList.doneSelecting") : t("contentList.select")}</button>`}
-    </div>
-
-    ${
-      topPerformers.length && !guided
-        ? `<div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.topPerformers")}</div>
-           <div class="flex gap-10" style="margin-bottom:20px;flex-wrap:wrap;">
-             ${topPerformers
-               .map(
-                 ({ c, m }) => `
-               <div class="card glass-card card-tight top-performer-card" data-open-content="${c.id}" style="cursor:pointer;flex:1;min-width:200px;">
-                 <div class="flex items-center justify-between" style="margin-bottom:4px;">
-                   <span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span>
-                   <span class="health-badge health-good"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>
-                 </div>
-                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(c.title || t("common.untitled"))}</div>
-               </div>`
-               )
-               .join("")}
-           </div>`
-        : ""
-    }
-
-    <div class="toolbar">
       <div class="search-box">
         ${icon("search", { size: 16 })}
         <input class="input" id="search" placeholder="${t("contentList.searchPlaceholder")}" value="${state.search}" />
@@ -270,16 +140,7 @@ function renderTable(root, brandId, state, refresh, brand) {
         ${[...campaignsById.values()].map((c) => `<option value="${c.id}" ${state.campaignId === c.id ? "selected" : ""}>${escapeText(c.name || t("common.untitled"))}</option>`).join("")}
       </select>
       <button type="button" class="btn btn-secondary btn-sm" id="filter-toggle">${icon("filter", { size: 13 })}${t("contentList.filter")}${panelFilterCount ? ` <span class="notif-badge" style="position:static;margin-left:2px;">${panelFilterCount}</span>` : ""}${icon("chevronDown", { size: 12 })}</button>
-      ${guided ? "" : `<button type="button" class="btn btn-secondary btn-sm" id="metric-platform-toggle">${icon("layers", { size: 13 })}${metricPlatformLabel(state.metricPlatforms)}${icon("chevronDown", { size: 12 })}</button>`}
       ${activeFilters ? `<button class="btn btn-ghost btn-sm" id="clear-filters">${icon("x", { size: 13 })}${t("contentList.clearFilters")}</button>` : ""}
-      ${
-        state.selectMode && state.selected.size
-          ? `<div class="flex items-center gap-8" style="margin-left:auto;">
-               <span class="text-muted" style="font-size:12.5px;">${t("contentList.selectedCount", { count: state.selected.size })}</span>
-               <button class="btn btn-danger btn-sm" id="bulk-delete">${icon("trash", { size: 13 })}${t("contentList.deleteSelected")}</button>
-             </div>`
-          : ""
-      }
     </div>
 
     <div class="table-wrap">
@@ -287,22 +148,18 @@ function renderTable(root, brandId, state, refresh, brand) {
         <table class="data-table">
           <thead>
             <tr>
-              ${state.selectMode ? `<th style="width:36px;"><input type="checkbox" id="select-all-rows" ${items.length && items.every((x) => state.selected.has(x.c.id)) ? "checked" : ""} /></th>` : ""}
               <th data-sort="title">${t("contentList.th.title")}</th>
               <th>${t("contentList.th.platformFormat")}</th>
               <th>${t("contentList.th.campaign")}</th>
-              <th>${t("contentList.th.funnel")}</th>
               <th>${t("contentList.th.status")}</th>
               <th data-sort="date">${t("contentList.th.date")}</th>
               <th data-sort="views">${t("contentList.th.views")}</th>
               <th data-sort="er">${t("contentList.th.engagement")}</th>
-              <th>${t("contentList.th.followerConv")}</th>
-              <th>${t("contentList.th.health")}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            ${items.length ? items.map((x) => rowHTML(x, state.selected.has(x.c.id), state.selectMode, campaignsById)).join("") : ""}
+            ${items.length ? items.map((x) => rowHTML(x, campaignsById)).join("") : ""}
           </tbody>
         </table>
       </div>
@@ -310,58 +167,34 @@ function renderTable(root, brandId, state, refresh, brand) {
     </div>
   `;
 
-  qs("#back-to-chooser").addEventListener("click", (e) => {
-    e.preventDefault();
-    state.view = null;
-    paint(root, brandId, state, refresh);
-  });
-
+  wireHelpButtons(root);
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
 
-  qs("#import-content")?.addEventListener("click", (e) => {
+  // The ⋯ menu: the occasional jobs — refresh numbers, import, report,
+  // wipe — out of the way of the everyday "find it and open it".
+  qs("#more-actions").addEventListener("click", (e) => {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
-    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: rect.left });
+    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 260) });
     if (!menu) return;
     menu.innerHTML = `
-      <button data-import="instagram" ${igConfigured ? "" : "disabled"}>${platformIcon("instagram")}${t("contentList.importInstagram")}${igConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span>`}</button>
-      <button data-import="facebook" ${fbConfigured ? "" : "disabled"}>${platformIcon("facebook")}${t("contentList.importFacebook")}${fbConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${t("contentList.connectInEditBrand")}</span>`}</button>
-      <button data-import="tiktok" disabled>${platformIcon("tiktok")}${t("contentList.importTiktok")} <span class="text-faint" style="font-size:11px;">${t("contentList.comingSoon")}</span></button>
-    `;
-    menu.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const target = ev.target.closest("[data-import]:not(:disabled)");
-      if (!target) return;
-      closeMenu();
-      if (target.dataset.import === "instagram") openInstagramImportPicker(brandId, refresh);
-      else if (target.dataset.import === "facebook") openFacebookImportPicker(brandId, refresh);
-    });
-  });
-
-  qs("#toggle-select")?.addEventListener("click", () => {
-    state.selectMode = !state.selectMode;
-    if (!state.selectMode) state.selected.clear();
-    paint(root, brandId, state, refresh);
-  });
-
-  qs("#more-actions")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 220) });
-    if (!menu) return;
-    menu.innerHTML = `
-      ${
-        igConfigured
-          ? `<button data-act="refresh-all">${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")}</button>`
-          : `<button data-act="refresh-all-disabled" disabled title="${igAllowed ? t("contentList.connectIgFirst") : ""}">${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")} <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span></button>`
-      }
+      <button data-act="update-engagement">${icon("chart", { size: 15 })}${t("contentList.updateEngagement")}${staleQueue.length ? ` <span class="notif-badge" style="position:static;margin-left:auto;">${staleQueue.length}</span>` : ""}</button>
+      <button data-act="import-ig" ${igConfigured ? "" : "disabled"}>${platformIcon("instagram")}${t("contentList.importInstagram")}${igConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span>`}</button>
+      <button data-act="refresh-all" ${igConfigured ? "" : "disabled"}>${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")}</button>
+      <button data-act="report">${icon("download", { size: 15 })}${t("home.report")}</button>
       <div class="menu-divider"></div>
       <button data-act="delete-all" class="danger">${icon("trash", { size: 15 })}${t("contentList.deleteAllContent", { count: allContentCount })}</button>
     `;
     menu.addEventListener("click", async (ev) => {
       ev.stopPropagation();
+      const act = ev.target.closest("[data-act]:not(:disabled)")?.dataset.act;
+      if (!act) return;
       closeMenu();
-      if (ev.target.closest("[data-act='delete-all']")) {
+      if (act === "update-engagement") openEngagementQueueList({ brandId, allQueue: staleQueue, refresh });
+      else if (act === "import-ig") openInstagramImportPicker(brandId, refresh);
+      else if (act === "refresh-all") await refreshExistingInstagram(brandId, brand.instagram, refresh);
+      else if (act === "report") openReportModal(brandId);
+      else if (act === "delete-all") {
         if (!allContentCount) { toast(t("contentList.nothingToDelete"), "error"); return; }
         const ok = await confirmDialog({
           title: t("contentList.deleteAllTitle"),
@@ -373,8 +206,6 @@ function renderTable(root, brandId, state, refresh, brand) {
           listContent(brandId, { includeArchived: true }).forEach((c) => deleteContent(c.id));
           toast(t("contentList.allContentDeleted"));
         }
-      } else if (ev.target.closest("[data-act='refresh-all']")) {
-        await refreshExistingInstagram(brandId, brand.instagram, refresh);
       }
     });
   });
@@ -388,31 +219,6 @@ function renderTable(root, brandId, state, refresh, brand) {
       qs("#search").selectionStart = qs("#search").selectionEnd = state.search.length;
     }, 200)
   );
-  qs("#metric-platform-toggle")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: rect.left });
-    if (!menu) return;
-    menu.innerHTML = `
-      <div style="padding:6px 14px 8px;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--text-faint);">${t("contentList.combineFrom")}</div>
-      ${METRIC_PLATFORMS.map(
-        (p) => `
-        <label class="menu-checkbox-row ${p.disabled ? "disabled" : ""}">
-          <input type="checkbox" data-metric-platform="${p.key}" ${state.metricPlatforms.has(p.key) ? "checked" : ""} ${p.disabled ? "disabled" : ""} />
-          ${p.label}${p.disabled ? ` <span class="text-faint" style="font-size:11px;">${t("contentList.comingSoon")}</span>` : ""}
-        </label>`
-      ).join("")}
-    `;
-    menu.addEventListener("click", (ev) => ev.stopPropagation());
-    qsa("[data-metric-platform]", menu).forEach((cb) => {
-      cb.addEventListener("change", () => {
-        const key = cb.dataset.metricPlatform;
-        if (cb.checked) state.metricPlatforms.add(key);
-        else state.metricPlatforms.delete(key);
-        paint(root, brandId, state, refresh);
-      });
-    });
-  });
   qsa("[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.view = btn.dataset.view;
@@ -427,8 +233,7 @@ function renderTable(root, brandId, state, refresh, brand) {
     e.stopPropagation();
     openFilterPanel(e.currentTarget, { state, isPublishedView, settings, onChange: () => paint(root, brandId, state, refresh) });
   });
-  const clearBtn = qs("#clear-filters");
-  if (clearBtn) clearBtn.addEventListener("click", () => {
+  qs("#clear-filters")?.addEventListener("click", () => {
     state.funnel = "";
     state.format = "";
     state.platform = "";
@@ -446,77 +251,23 @@ function renderTable(root, brandId, state, refresh, brand) {
     });
   });
 
-  const selectAllBox = qs("#select-all-rows");
-  if (selectAllBox) {
-    selectAllBox.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (e.target.checked) items.forEach((x) => state.selected.add(x.c.id));
-      else items.forEach((x) => state.selected.delete(x.c.id));
-      paint(root, brandId, state, refresh);
-    });
-  }
-
-  qsa("[data-row-checkbox]").forEach((cb) => {
-    cb.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (cb.checked) state.selected.add(cb.dataset.id);
-      else state.selected.delete(cb.dataset.id);
-      paint(root, brandId, state, refresh);
-    });
-  });
-
-  const bulkDeleteBtn = qs("#bulk-delete");
-  if (bulkDeleteBtn) {
-    bulkDeleteBtn.addEventListener("click", async () => {
-      const count = state.selected.size;
-      const ok = await confirmDialog({
-        title: t("contentList.deleteItemsTitle", { count }),
-        message: t("common.noUndo"),
-        confirmLabel: t("common.delete"),
-        danger: true,
-      });
-      if (ok) {
-        state.selected.forEach((id) => deleteContent(id));
-        toast(t("contentList.itemsDeleted", { count }));
-        state.selected.clear();
-      }
-    });
-  }
-
   qsa("tr[data-id]").forEach((tr) => {
     tr.addEventListener("click", (e) => {
-      if (e.target.closest("[data-row-menu]") || e.target.closest(".menu") || e.target.closest("[data-row-checkbox]")) return;
+      if (e.target.closest("[data-row-menu]") || e.target.closest(".menu")) return;
       const item = items.find((x) => x.c.id === tr.dataset.id)?.c;
       if (!item) return;
       if (item.status === "published") {
         // Once a piece is published there's nothing left to write — the one
         // thing someone clicking it almost always wants is to fill in how it
-        // performed, not re-open the metadata form. Metadata (platform,
-        // campaign, ads) is still one click away via the row's "..." menu.
+        // performed. Metadata is one click away via the row's "..." menu.
         openQuickFillModal({ c: item, onSaved: refresh });
       } else if (item.status !== "archived") {
-        // Still-in-progress content (idea/draft/production/editing/scheduled)
-        // is written and moved forward in Creator Studio, not here — same
-        // routing "This Week's Work" already uses elsewhere in the app.
+        // Still-in-progress content is written and moved forward in Creator.
         location.hash = `#/brand/${brandId}/content-os/creator/${tr.dataset.id}`;
       } else {
         openContentEditor({ brandId, contentId: tr.dataset.id, onSaved: refresh });
       }
     });
-  });
-
-  qsa("[data-open-content]").forEach((card) => {
-    // Top-performer cards only ever show published content — same "fill in
-    // performance, not metadata" default as a published row above.
-    card.addEventListener("click", () => {
-      const item = items.find((x) => x.c.id === card.dataset.openContent)?.c;
-      if (item?.status === "published") openQuickFillModal({ c: item, onSaved: refresh });
-      else openContentEditor({ brandId, contentId: card.dataset.openContent, onSaved: refresh });
-    });
-  });
-
-  qs("#update-engagement")?.addEventListener("click", () => {
-    openEngagementQueueList({ brandId, allQueue: staleQueue, refresh });
   });
 
   qsa("[data-quick-fill]").forEach((btn) => {
@@ -559,25 +310,20 @@ function renderTable(root, brandId, state, refresh, brand) {
   });
 }
 
-function rowHTML({ c, perf, m }, selected, selectMode, campaignsById) {
-  // Views/Engagement/Follower Conv./Health only mean anything once
-  // something has actually been posted — showing them for an idea or draft
-  // just implies data that doesn't exist yet.
+function rowHTML({ c, perf, m }, campaignsById) {
+  // Views/Engagement only mean anything once something has actually been
+  // posted — showing them for an idea or draft implies data that isn't there.
   const isPublished = c.status === "published";
   const campaign = c.campaignId ? campaignsById.get(c.campaignId) : null;
   return `
     <tr data-id="${c.id}">
-      ${selectMode ? `<td onclick="event.stopPropagation()"><input type="checkbox" data-row-checkbox data-id="${c.id}" ${selected ? "checked" : ""} /></td>` : ""}
       <td class="cell-title">${escapeText(c.title || t("common.untitled"))}</td>
-      <td class="cell-muted"><span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span>${c.trialReel ? ` <span class="tag" style="font-size:10px;">${t("contentList.trialReel")}</span>` : ""}<div class="text-faint" style="font-size:11.5px;margin-top:2px;">${c.format || "—"}</div></td>
+      <td class="cell-muted"><span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${c.format || "—"}</div></td>
       <td class="cell-muted">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaign.name || t("common.untitled"))}</span>` : "—"}</td>
-      <td><span class="tag tag-${c.funnel.toLowerCase()}">${c.funnel}</span></td>
       <td><span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span></td>
       <td class="cell-muted">${formatDate(c.scheduleDate || c.publishedDate)}</td>
       <td class="cell-muted">${isPublished ? formatNumber(perf.views) : "—"}</td>
-      <td class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</td>
-      <td class="cell-muted">${isPublished ? formatPercent(m.followerConversionRate) : "—"}</td>
-      <td>${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${HEALTH_LABEL[m.health]}</span>` : `<span class="health-badge health-none">—</span>`}</td>
+      <td>${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
       <td onclick="event.stopPropagation()">
         <div class="flex gap-4">
           ${isPublished ? `<button type="button" class="icon-btn" data-quick-fill="${c.id}" aria-label="${t("contentList.fillEngagement")}" title="${t("contentList.fillEngagement")}" style="width:30px;height:30px;">${icon("chart", { size: 15 })}</button>` : ""}
@@ -735,10 +481,7 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     toast(t("contentList.qf.updatedToast", { title: c.title || t("common.untitled") }));
     const updated = computeContentMetrics({ ...c, performance }, settings);
     if (!wasGood && updated.erRating === "good") {
-      openCelebration({
-        title: escapeText(t("celebrate.erWinTitle")),
-        sub: escapeText(t("celebrate.erWinSub", { title: c.title || t("common.untitled"), er: Math.round((updated.engagementRate || 0) * 10) / 10 })),
-      });
+      toast(t("celebrate.erWinTitle"));
     }
     onSaved?.();
   });
@@ -806,14 +549,6 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
     state.age = e.target.value;
     onChange();
   });
-}
-
-function metricPlatformLabel(metricPlatforms) {
-  const active = METRIC_PLATFORMS.filter((p) => !p.disabled && metricPlatforms.has(p.key));
-  const allSelectable = METRIC_PLATFORMS.filter((p) => !p.disabled);
-  if (active.length === allSelectable.length) return t("contentList.mp.allPlatforms");
-  if (active.length === 0) return t("contentList.mp.noPlatforms");
-  return active.map((p) => p.label).join(" + ");
 }
 
 // Re-fetches metrics for content already tracked here (platform Instagram +

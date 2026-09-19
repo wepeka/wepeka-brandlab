@@ -8,8 +8,8 @@ import { getBrand, listCampaigns, getSettings } from "../store.js";
 import { icon } from "../icons.js";
 import { escapeHtml, toast, qs, qsa, avatarHTML } from "../dom.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
-import { maybeShowSectionTour, sectionGuideButtonHTML, wireSectionGuideButton } from "../section-guide.js";
-import { maybeAutoPlayVideo } from "../guide-videos.js";
+import { setPageGuide } from "../section-guide.js";
+import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
 import { generateCopy, rewriteCopy, hasAiKey, buildFullContext, campaignSummaryLine, AiApiError } from "../ai.js";
 import { mountAiFeedback } from "../ai-feedback.js";
@@ -152,10 +152,7 @@ export function render(root, { brandId }) {
     },
   };
   paint(ctx);
-  // One help thing at a time: when the explainer video takes this visit,
-  // the page tour sits it out and waits for its own next chance.
-  // The video offers the tour itself, so it never also auto-plays behind it.
-  if (!maybeAutoPlayVideo("copy")) maybeShowSectionTour("copy-studio", TOUR_STEPS);
+  setPageGuide(() => runSpotlightTour(TOUR_STEPS));
   return () => {
     ctx.dead = true;
   };
@@ -175,7 +172,7 @@ function paint(ctx) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}${sectionGuideButtonHTML("copy-studio")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}</div>
         <h1>${escapeHtml(brand.name)}</h1>
         <p class="page-sub">${t("copy.sub")}</p>
       </div>
@@ -187,7 +184,6 @@ function paint(ctx) {
     </div>
   `;
   wireHelpButtons(root);
-  wireSectionGuideButton(root, "copy-studio", TOUR_STEPS);
   wireForm(ctx, guided);
   paintResults(ctx);
 }

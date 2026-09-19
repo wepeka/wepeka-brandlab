@@ -1,15 +1,17 @@
 import { icon } from "./icons.js";
 import { listBrands, getBrand, listOverdueAndDueSoon } from "./store.js";
 import { logout } from "./auth.js";
-import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, qs, qsa, openMenu, closeMenu } from "./dom.js";
+import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
 import { getMode, toggleMode } from "./mode.js";
 import { t } from "./i18n.js";
-import { mountConsultantPanel, unmountConsultantPanel } from "./consultant-panel.js";
+import { mountConsultantPanel, unmountConsultantPanel, openConsultantPanel } from "./consultant-panel.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
-import { getCachedAccount, isLifetime, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
+import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod } from "./ai-usage.js";
-import { mountGuideFab } from "./guide-fab.js";
+import { getPageGuide } from "./section-guide.js";
+import { identityDone } from "./brand-progress.js";
+import { startOnboardingTour } from "./tour.js";
 
 // Avoid re-sampling the same logo's color every navigation — it's not
 // going to change until the avatar itself does.
@@ -47,44 +49,22 @@ async function applyBrandTint(brand) {
   }
 }
 
-// Brand DNA and Brand Guidelines no longer get their own top-level tabs —
-// both now live inside Brand Builder's stage hub (js/views/brand-builder.js
-// links out to their existing routes/screens, which still work standalone,
-// just aren't separately advertised in the nav anymore). See BUILDER_ABSORBED_VIEWS
-// below for the "still highlight Brand Builder as active" handling.
-// "sales" has no tab of its own: Sales Tracker (js/views/sales.js) is opened
-// from its widget next to Copy Studio on the brand home (brand-home.js) and
-// from "Alat cepat" on the Pemula home (beginner-home.js).
+// The only place the shell reads the experience mode. Everything else in
+// this file is identical for Pemula and Pro.
+const MODE_CONFIG = {
+  guided: { bell: false, lockTabs: true },
+  advanced: { bell: true, lockTabs: false },
+};
+const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
+
+// One tab row for both modes. `matches` = which route views light a tab up
+// (Brand DNA / Guidelines live under Brand; Copy Studio under Konten).
+// Sales Tracker and Copy Studio have no tab — they're in the ⋯ menu.
 const TABS = [
-  { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home" },
-  { key: "builder", labelKey: "nav.builder", icon: "sparkle", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder" },
-  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns" },
-  { key: "content-os", labelKey: "nav.contentOs", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os" },
-];
-
-// Pemula mode gets four tabs, plain words, no product names: Beranda
-// (the step-by-step journey), Campaign (#9: kept in the toolbar too, not
-// only reachable through a Beranda journey card), Brand (Builder/DNA/
-// Guidelines), Konten (Content OS). Sales Tracker isn't shown at all —
-// it's "coming soon" and one more thing to wonder about. Everything is
-// still reachable by URL; this only trims what's advertised in the nav.
-// `matches` = which route views light this tab up (copy studio → Konten).
-const GUIDED_TABS = [
-  { key: "home", label: t("nav.home"), icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
-  { key: "campaigns", label: t("app.tab.campaign"), icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns"] },
-  { key: "builder", label: t("app.tab.brand"), icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
-  { key: "content-os", label: t("app.tab.content"), icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os", "copy"] },
-];
-
-// Shown as a dropdown (not a full page navigation) when the gear icon is
-// clicked from inside a brand — the settings someone reaches for most
-// often while working on a brand, plus one way out to everything else.
-// Deep-links straight to that panel via #/settings/:panel (see
-// parseRoute in main.js) instead of always landing on "benchmarks".
-const SETTINGS_SHORTCUTS = [
-  { panel: "ai", icon: "bot", labelKey: "settings.panel.ai" },
-  { panel: "brands", icon: "users", labelKey: "settings.panel.brands" },
-  { panel: "account", icon: "gear", labelKey: "settings.panel.account" },
+  { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
+  { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
+  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns"], gated: true },
+  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os", "copy"], gated: true },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -114,24 +94,27 @@ function notifPanelHTML({ overdue, dueToday, dueSoon }) {
   `;
 }
 
-// Brand DNA/Guidelines pages are reached through Brand Builder's stage
-// cards now (no tab of their own) — keep the Builder tab visibly active
-// while the user is on either, so the nav doesn't go blank.
-const BUILDER_ABSORBED_VIEWS = ["dna", "guidelines"];
+function bellHTML() {
+  const { overdue } = listOverdueAndDueSoon();
+  return `
+    <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="${t("topbar.notifications")}" aria-label="${t("topbar.notifications")}">
+      ${icon("bell", { size: 17 })}
+      ${overdue.length ? `<span class="notif-badge">${overdue.length > 9 ? "9+" : overdue.length}</span>` : ""}
+    </button>`;
+}
 
 export function shellHTML({ brandId, active }) {
   const brand = brandId ? getBrand(brandId) : null;
-  const guided = getMode() === "guided";
-  const activeTabKey = BUILDER_ABSORBED_VIEWS.includes(active) ? "builder" : active;
 
+  // Pemula: Campaign and Konten stay visible but locked until the brand
+  // identity is done — the tab is a promise of what comes next, the lock
+  // says why it isn't open yet.
+  const lock = brand && modeConfig().lockTabs && !identityDone(brand);
   const tabsHTML = brand
-    ? guided
-      ? GUIDED_TABS.map(
-          (tab) => `<a class="tab ${tab.matches.includes(active) ? "active" : ""}" href="${tab.path(brand.id)}" data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(tab.icon, { size: 16 })}${tab.label}</a>`
-        ).join("")
-      : TABS.map(
-          (tab) => `<a class="tab ${activeTabKey === tab.key ? "active" : ""}" href="${tab.path(brand.id)}" data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(tab.icon, { size: 16 })}${t(tab.labelKey)}</a>`
-        ).join("")
+    ? TABS.map((tab) => {
+        const locked = lock && tab.gated;
+        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" href="${locked ? "#" : tab.path(brand.id)}" ${locked ? `data-locked-tab title="${t("nav.locked")}"` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(locked ? "lock" : tab.icon, { size: 16 })}${t(tab.labelKey)}</a>`;
+      }).join("")
     : "";
 
   const brandSwitchHTML = brand
@@ -142,11 +125,9 @@ export function shellHTML({ brandId, active }) {
        </button>`
     : "";
 
-  const { overdue } = listOverdueAndDueSoon();
-
   return `
     <header class="topbar">
-      <a class="brand-mark" href="#/">
+      <a class="brand-mark" href="#/" title="${t("nav.allBrands")}">
         <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
         <span class="brand-mark-divider"></span>
         Brandlab
@@ -154,25 +135,10 @@ export function shellHTML({ brandId, active }) {
       ${brand ? `<div class="topbar-sep"></div>${brandSwitchHTML}` : ""}
       ${brand ? `<nav class="tabs">${tabsHTML}</nav>` : ""}
       <div class="topbar-right">
-        ${guided ? "" : `<a class="back-to-site" href="https://wepeka.com" target="_blank" rel="noopener noreferrer">${icon("chevronLeft", { size: 13 })}${t("topbar.backToSite")}</a>`}
-        <button class="icon-btn" id="theme-toggle-btn" title="${t("topbar.toggleTheme")}" aria-label="${t("topbar.toggleTheme")}">
-          ${icon(getTheme() === "light" ? "sun" : "moon", { size: 17 })}
-        </button>
-        <button class="brand-switch mode-toggle" id="mode-toggle-btn" title="${modeToggleTitle(getMode())}" aria-label="${t("mode.toggleTitle")}">
-          ${modeToggleInnerHTML(getMode())}
-        </button>
         ${planBadgeHTML()}
-        <button class="ai-usage" id="ai-usage-btn" title="${t("app.aiUsage.title")}" aria-label="${t("app.aiUsage.title")}">${aiUsagePillInnerHTML()}</button>
-        <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="${t("topbar.notifications")}" aria-label="${t("topbar.notifications")}">
-          ${icon("bell", { size: 17 })}
-          ${overdue.length ? `<span class="notif-badge">${overdue.length > 9 ? "9+" : overdue.length}</span>` : ""}
-        </button>
-        ${
-          brand
-            ? `<button class="icon-btn" id="settings-menu-btn" title="${t("topbar.settings")}" aria-label="${t("topbar.settings")}" data-tour="settings">${icon("gear", { size: 18 })}</button>`
-            : `<a class="icon-btn" href="#/settings" title="${t("topbar.settings")}" aria-label="${t("topbar.settings")}" data-tour="settings">${icon("gear", { size: 18 })}</a>`
-        }
-        <button class="icon-btn" id="logout-btn" title="${t("topbar.logout")}" aria-label="${t("topbar.logout")}">${icon("logout", { size: 17 })}</button>
+        ${modeConfig().bell ? bellHTML() : ""}
+        <button class="icon-btn" id="help-btn" title="${t("topbar.help")}" aria-label="${t("topbar.help")}">${icon("help", { size: 18 })}</button>
+        <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" data-tour="settings">${icon("dots", { size: 18 })}</button>
       </div>
     </header>
     ${returnChipHTML()}
@@ -184,12 +150,9 @@ export function shellHTML({ brandId, active }) {
 // main.js renderRoute): re-point the active tab and refresh the
 // "← Kembali ke ..." chip without touching the rest of the topbar.
 export function updateShellForRoute({ active }) {
-  const guided = getMode() === "guided";
-  const activeTabKey = BUILDER_ABSORBED_VIEWS.includes(active) ? "builder" : active;
   qsa(".topbar .tabs .tab").forEach((a) => {
-    const key = a.dataset.tabKey;
-    const on = guided ? !!GUIDED_TABS.find((tab) => tab.key === key)?.matches.includes(active) : key === activeTabKey;
-    a.classList.toggle("active", on);
+    const tab = TABS.find((x) => x.key === a.dataset.tabKey);
+    a.classList.toggle("active", !!tab?.matches.includes(active));
   });
   const oldChip = qs(".nav-return");
   const html = returnChipHTML();
@@ -204,36 +167,33 @@ export function updateShellForRoute({ active }) {
   }
 }
 
-// Plan status in the topbar — always a link to the pricing page. Lifetime
-// accounts just see what they own; everyone else sees their plan plus an
-// "Upgrade" nudge (a trial shows its days left, read-only says so).
+// Plan status in the topbar, only when there's a decision to make: a
+// running trial (days left) or a read-only account (ended trial / lapsed
+// plan). Paid and lifetime accounts see nothing here — the plan is in
+// Settings → Akun.
 function planBadgeHTML() {
   const account = getCachedAccount();
   if (!account) return "";
-  const lifetime = isLifetime(account);
-  const plan = String(account.plan || "");
-  const label = lifetime
-    ? t("app.plan.lifetime")
-    : isReadOnly(account)
-      ? t("app.plan.viewOnly")
-      : isTrial(account)
-        ? t("app.plan.trialShort", { days: trialDaysLeft(account) })
-        : t(`app.plan.name.${plan}`) === `app.plan.name.${plan}` ? plan : t(`app.plan.name.${plan}`);
-  return `<a class="plan-badge ${lifetime ? "is-lifetime" : ""}" href="#/pricing" title="${t("app.plan.badgeTitle")}">
-    ${icon(lifetime ? "sparkle" : "arrowUp", { size: 13 })}<span>${label}</span>${lifetime ? "" : `<strong>${t("app.plan.upgrade")}</strong>`}
+  const readOnly = isReadOnly(account);
+  const trial = isTrial(account);
+  if (!readOnly && !trial) return "";
+  const label = readOnly
+    ? t(trial ? "app.plan.trialEnded" : "app.plan.readonly")
+    : t("app.plan.trialShort", { days: trialDaysLeft(account) });
+  return `<a class="plan-badge ${readOnly ? "is-readonly" : ""}" href="#/pricing" title="${t("app.plan.badgeTitle")}">
+    ${icon("arrowUp", { size: 13 })}<span>${label}</span><strong>${t("app.plan.upgrade")}</strong>
   </a>`;
 }
 
-// Daily AI meter in the topbar — every account sees how much of today's
-// quota is used, before they hit the wall mid-task. Re-rendered on every
-// db:change (the count lives in settings, so each AI call bumps it live).
-function aiUsagePillInnerHTML() {
+// Daily AI meter — one row inside the ⋯ menu, so people see how much of
+// today's quota is used before they hit the wall mid-task.
+function aiUsageRowHTML() {
   const used = aiUsageToday();
   const limit = aiDailyLimit();
-  if (limit === Infinity) return `${icon("bot", { size: 13 })}<span class="ai-usage-text">AI ${used}</span>`;
+  if (limit === Infinity) return `${icon("bot", { size: 15 })}<span>AI · ${used}</span>`;
   const pct = Math.min(100, Math.round((used / limit) * 100));
   const tone = pct >= 100 ? "is-out" : pct >= 80 ? "is-low" : "";
-  return `${icon("bot", { size: 13 })}<span class="ai-usage-bar ${tone}"><span style="width:${pct}%"></span></span><span class="ai-usage-text">${used}/${limit}</span>`;
+  return `${icon("bot", { size: 15 })}<span>AI · ${used}/${limit}</span><span class="ai-usage-bar ${tone}"><span style="width:${pct}%"></span></span>`;
 }
 
 function aiUsagePopoverHTML() {
@@ -251,41 +211,39 @@ function aiUsagePopoverHTML() {
   `;
 }
 
-let aiUsageRefresh = null;
-
-// The toggle shows the mode you're IN ("Pemula"). Clicking it no longer
-// flips the mode on the spot — it opens a small explainer of both modes
-// with the switch button inside, so people learn the difference (and that
-// the switch exists at all).
-function modeToggleTitle() {
-  return t("mode.toggleTitle");
-}
-function openModeExplainer(btn) {
-  const rect = btn.getBoundingClientRect();
-  const pop = openMenu(btn, { className: "mode-pop", top: rect.bottom + 8, left: Math.max(8, Math.min(rect.left - 120, window.innerWidth - 340)) });
-  if (!pop) return;
-  const current = getMode();
-  const other = current === "guided" ? "advanced" : "guided";
-  const card = (mode) => `
-    <div class="mode-pop-card ${mode === current ? "is-current" : ""}">
-      <div class="mode-pop-card-head">${icon(mode === "guided" ? "target" : "sparkle", { size: 13 })}<b>${t(`mode.${mode}.name`)}</b>${mode === current ? `<em>${t("mode.current")}</em>` : ""}</div>
-      <p>${t(`mode.${mode}.desc`)}</p>
-    </div>`;
-  pop.innerHTML = `
-    <div class="help-popover-title">${t("mode.popTitle")}</div>
-    ${card("guided")}
-    ${card("advanced")}
-    <button type="button" class="mode-pop-switch" data-mode-switch>${t("mode.switchTo", { mode: t(`mode.${other}.name`) })}</button>
-    <p class="mode-pop-note">${t("mode.note")}</p>
+// The ⋯ menu: everything that used to be its own topbar button (mode,
+// theme, AI meter, settings, logout) plus the two tools without a tab.
+function appMenuHTML(brandId) {
+  const mode = getMode();
+  const other = mode === "guided" ? "advanced" : "guided";
+  const pro = mode === "advanced";
+  return `
+    <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
+    <button type="button" data-act="theme">${icon(getTheme() === "light" ? "moon" : "sun", { size: 15 })}${t("topbar.toggleTheme")}</button>
+    <button type="button" class="menu-ai-row" data-act="ai">${aiUsageRowHTML()}</button>
+    ${
+      brandId
+        ? `<div class="menu-divider"></div>
+           <button type="button" data-go="#/brand/${brandId}/copy">${icon("edit", { size: 15 })}${t("menu.copyStudio")}</button>
+           ${pro ? `<button type="button" data-go="#/brand/${brandId}/sales">${icon("chart", { size: 15 })}${t("nav.sales")}</button>` : ""}`
+        : ""
+    }
+    <div class="menu-divider"></div>
+    <button type="button" data-go="#/settings/brands">${icon("users", { size: 15 })}${t("settings.panel.brands")}</button>
+    <button type="button" data-go="#/settings">${icon("gear", { size: 15 })}${t("topbar.settings")}</button>
+    <button type="button" data-act="logout">${icon("logout", { size: 15 })}${t("topbar.logout")}</button>
   `;
-  pop.querySelector("[data-mode-switch]").addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    closeMenu();
-    toggleMode();
-  });
 }
-function modeToggleInnerHTML(mode) {
-  return `${icon(mode === "guided" ? "target" : "sparkle", { size: 14 })}<span>${t(`mode.${mode}.name`)}</span>`;
+
+// The ? popover: the single entry point to every kind of help. At most
+// three rows — this page's guide (when the view registered one, see
+// js/section-guide.js setPageGuide), the AI consultant, the intro tour.
+function helpMenuHTML(brandId) {
+  return `
+    ${getPageGuide() ? `<button type="button" data-act="page">${icon("target", { size: 15 })}${t("help.pageGuide")}</button>` : ""}
+    ${brandId ? `<button type="button" data-act="consultant">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
+    <button type="button" data-act="tour">${icon("play", { size: 15 })}${t("help.tour")}</button>
+  `;
 }
 
 // "← Kembali ke Campaign X" while a cross-feature trip (js/nav-context.js)
@@ -295,85 +253,90 @@ function returnChipHTML() {
   return r ? `<div class="nav-return"><button type="button" id="nav-return-btn">${icon("chevronLeft", { size: 13 })}${escapeHtml(r.label ? t("common.backTo", { label: r.label }) : t("common.back"))}</button></div>` : "";
 }
 
+function menuBelow(btn, { className = "", width = 240 } = {}) {
+  const rect = btn.getBoundingClientRect();
+  return openMenu(btn, { className, top: rect.bottom + 8, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)) });
+}
+
 export function wireShell({ brandId }) {
   qs("#nav-return-btn")?.addEventListener("click", () => {
     const r = returnTo();
     clearNavContext();
     if (r) location.hash = r.hash;
   });
-  qs("#logout-btn")?.addEventListener("click", async () => {
-    await logout();
-    location.hash = "";
-    location.reload();
-  });
 
   applyBrandTint(brandId ? getBrand(brandId) : null);
 
+  qsa("[data-locked-tab]").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      toast(t("home.next.lockedToast"));
+    })
+  );
+
   if (brandId) mountConsultantPanel(brandId);
   else unmountConsultantPanel();
-  mountGuideFab();
 
-  qs("#theme-toggle-btn")?.addEventListener("click", (e) => {
-    const next = toggleTheme();
-    e.currentTarget.innerHTML = icon(next === "light" ? "sun" : "moon", { size: 17 });
+  const helpBtn = qs("#help-btn");
+  helpBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = menuBelow(helpBtn, { width: 220 });
+    if (!menu) return;
+    menu.innerHTML = helpMenuHTML(brandId);
+    menu.addEventListener("click", (ev) => {
+      const target = ev.target.closest("[data-act]");
+      if (!target) return;
+      closeMenu();
+      const act = target.dataset.act;
+      if (act === "page") getPageGuide()?.();
+      else if (act === "consultant") openConsultantPanel();
+      else if (act === "tour") startOnboardingTour();
+    });
   });
 
-  qs("#mode-toggle-btn")?.addEventListener("click", (e) => {
+  const menuBtn = qs("#app-menu-btn");
+  menuBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
-    openModeExplainer(e.currentTarget);
-  });
-
-  const usageBtn = qs("#ai-usage-btn");
-  if (aiUsageRefresh) window.removeEventListener("db:change", aiUsageRefresh);
-  aiUsageRefresh = () => { if (usageBtn?.isConnected) usageBtn.innerHTML = aiUsagePillInnerHTML(); };
-  window.addEventListener("db:change", aiUsageRefresh);
-  usageBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const rect = usageBtn.getBoundingClientRect();
-    const pop = openMenu(usageBtn, { className: "help-popover", top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 300) });
-    if (pop) pop.innerHTML = aiUsagePopoverHTML();
+    const menu = menuBelow(menuBtn, { className: "app-menu", width: 250 });
+    if (!menu) return;
+    menu.innerHTML = appMenuHTML(brandId);
+    menu.addEventListener("click", async (ev) => {
+      const go = ev.target.closest("[data-go]");
+      if (go) {
+        location.hash = go.dataset.go;
+        closeMenu();
+        return;
+      }
+      const target = ev.target.closest("[data-act]");
+      if (!target) return;
+      const act = target.dataset.act;
+      closeMenu();
+      if (act === "mode") toggleMode();
+      else if (act === "theme") toggleTheme();
+      else if (act === "ai") {
+        const pop = menuBelow(menuBtn, { className: "help-popover", width: 280 });
+        if (pop) pop.innerHTML = aiUsagePopoverHTML();
+      } else if (act === "logout") {
+        await logout();
+        location.hash = "";
+        location.reload();
+      }
+    });
   });
 
   const bellBtn = qs("#notif-bell-btn");
-  if (bellBtn) {
-    bellBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const rect = bellBtn.getBoundingClientRect();
-      const panel = openMenu(bellBtn, { className: "notif-panel", top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 360) });
-      if (!panel) return;
-      const due = listOverdueAndDueSoon();
-      panel.innerHTML = notifPanelHTML(due);
-      panel.addEventListener("click", (ev) => {
-        const target = ev.target.closest("[data-go]");
-        if (!target) return;
-        location.hash = `#/brand/${target.dataset.go}`;
-        closeMenu();
-      });
+  bellBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const panel = menuBelow(bellBtn, { className: "notif-panel", width: 360 });
+    if (!panel) return;
+    panel.innerHTML = notifPanelHTML(listOverdueAndDueSoon());
+    panel.addEventListener("click", (ev) => {
+      const target = ev.target.closest("[data-go]");
+      if (!target) return;
+      location.hash = `#/brand/${target.dataset.go}`;
+      closeMenu();
     });
-  }
-
-  const settingsBtn = qs("#settings-menu-btn");
-  if (settingsBtn) {
-    settingsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const rect = settingsBtn.getBoundingClientRect();
-      const menu = openMenu(settingsBtn, { top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 220) });
-      if (!menu) return;
-      // Pemula: no AI-key shortcut (the key is global and already active).
-      const shortcuts = getMode() === "guided" ? SETTINGS_SHORTCUTS.filter((s) => s.panel !== "ai") : SETTINGS_SHORTCUTS;
-      menu.innerHTML = `
-        ${shortcuts.map((s) => `<button data-panel="${s.panel}">${icon(s.icon, { size: 15 })}${t(s.labelKey)}</button>`).join("")}
-        <div class="menu-divider"></div>
-        <button data-panel="">${icon("gear", { size: 15 })}${t("topbar.settings")}</button>
-      `;
-      menu.addEventListener("click", (ev) => {
-        const target = ev.target.closest("[data-panel]");
-        if (!target) return;
-        location.hash = target.dataset.panel ? `#/settings/${target.dataset.panel}` : "#/settings";
-        closeMenu();
-      });
-    });
-  }
+  });
 
   const btn = qs("#brand-switch-btn");
   if (!btn) return;

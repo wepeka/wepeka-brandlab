@@ -5,20 +5,19 @@ import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { generateScript, generateThumbnail, AiApiError, hasAiKey, buildFullContext, buildBrandContext, campaignSummaryLine } from "../ai.js";
+import { generateScript, AiApiError, hasAiKey, buildFullContext, campaignSummaryLine } from "../ai.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
 import { funnelFieldHTML, wireFunnelField, statusLabel } from "../funnel-field.js";
-import { sectionGuideButtonHTML } from "../section-guide.js";
-import { wireGuideButton } from "../guides/common.js";
+import { setPageGuide } from "../section-guide.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
 import { wireMic } from "../voice-input.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
-// openNewContentPlatformPicker) share their writing: whatever gets written
+// the content drawer) share their writing: whatever gets written
 // on one — title, idea, script, caption, goal, campaign — is copied onto
 // the other, so the TikTok half never sits blank. This used to happen only
 // once, when the old edit drawer saved. Platform-specific fields (status,
@@ -118,7 +117,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     return;
   }
 
-  const state = { funnel: content.funnel || "TOFU", duration: DURATION_OPTIONS[0].val, effort: "easy" };
+  const state = { funnel: content.funnel || "TOFU", duration: DURATION_OPTIONS[0].val };
   // #6/#7: once every field this modal is for has a "used" click (any
   // batch — Generate More gives independent alternatives, not a pipeline,
   // so a script from batch 1 + a caption from batch 2 still counts), the
@@ -149,49 +148,13 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
         lite
           ? ""
           : `
-      ${funnelFieldHTML({ id: "ai-funnel", value: state.funnel, fieldStyle: "margin-bottom:14px;" })}
-      <div class="field" style="margin-bottom:14px;" id="ai-funnel-followup"></div>
-      <div class="field" style="margin-bottom:14px;">
-        <label>${t("cr.ai.effort")}</label>
-        <div class="chip-select" id="ai-effort-chips">
-          <button type="button" data-val="easy" class="${state.effort === "easy" ? "active" : ""}">${t("cr.ai.effort.easy")}</button>
-          <button type="button" data-val="involved" class="${state.effort === "involved" ? "active" : ""}">${t("cr.ai.effort.involved")}</button>
-        </div>
-      </div>
-      <div class="field" style="margin-bottom:14px;">
-        <details id="ai-brief-details">
-          <summary style="cursor:pointer;font-size:13px;font-weight:600;">${t("cr.ai.briefToggle")}</summary>
-          <div style="margin-top:8px;">
-            <textarea class="textarea" id="ai-brief" style="min-height:70px;" placeholder="${t("cr.ai.briefPh")}"></textarea>
-          </div>
-        </details>
-      </div>
-      ${
-        // 6.1: Pemula gets prompt + funnel (+ its MOFU/BOFU follow-up) only
-        // — Duration/Goal/Article are Pro-only detail fields from here on.
-        // genParams() below already reads all three with `?.`, so leaving
-        // them out of the DOM entirely (not just visually hidden) needs no
-        // other change.
-        getMode() !== "guided"
-          ? `
       <div class="field" style="margin-bottom:14px;">
         <label>${t("cr.ai.duration")}</label>
         <div class="chip-select" id="ai-duration-chips">
           ${DURATION_OPTIONS.map((d) => `<button type="button" data-val="${d.val}" class="${state.duration === d.val ? "active" : ""}">${d.label}</button>`).join("")}
         </div>
         <input class="input" id="ai-duration-custom" style="margin-top:8px;${state.duration === "Custom" ? "" : "display:none;"}" placeholder="${t("cr.ai.durationPh")}" />
-      </div>
-      <div class="field" style="margin-bottom:14px;">
-        <label>${t("cr.ai.goal")}</label>
-        <input class="input" id="ai-goal" placeholder="${t("cr.ai.goalPh")}" />
-      </div>
-
-      <div class="field" style="margin-bottom:14px;">
-        <label>${t("cr.ai.article")}</label>
-        <textarea class="textarea" id="ai-article" style="min-height:70px;" placeholder="${t("cr.ai.articlePh")}"></textarea>
       </div>`
-          : ""
-      }`
       }
 
       <button type="button" class="btn btn-primary btn-block" id="ai-generate">${icon("bot", { size: 14 })}${t("cr.ai.generate")}</button>
@@ -209,34 +172,6 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
 
   const micBtn = overlay.querySelector("#ai-mic");
   if (micBtn) wireMic(micBtn, overlay.querySelector("#ai-prompt"));
-
-  function renderFunnelFollowup() {
-    const el = overlay.querySelector("#ai-funnel-followup");
-    if (!el) return;
-    if (state.funnel === "MOFU") {
-      el.innerHTML = `<label>${t("cr.ai.mofuLabel")}</label><input class="input" id="ai-mofu-goal" placeholder="${t("cr.ai.mofuPh")}" />`;
-    } else if (state.funnel === "BOFU") {
-      el.innerHTML = `<label>${t("cr.ai.bofuLabel")}</label><input class="input" id="ai-bofu-offer" placeholder="${t("cr.ai.bofuPh")}" />`;
-    } else {
-      el.innerHTML = "";
-    }
-  }
-  renderFunnelFollowup();
-  wireFunnelField(overlay, "ai-funnel", (funnel) => {
-    state.funnel = funnel;
-    renderFunnelFollowup();
-  });
-
-  // #5: "gampang dieksekusi" vs "agak niat" — how much production effort
-  // the suggested content should assume, independent of funnel stage (a
-  // TOFU piece can still be a bigger production, a BOFU piece can still be
-  // a single quick take).
-  overlay.querySelectorAll("#ai-effort-chips button").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.effort = btn.dataset.val;
-      overlay.querySelectorAll("#ai-effort-chips button").forEach((b) => b.classList.toggle("active", b === btn));
-    });
-  });
 
   const customDurationInput = overlay.querySelector("#ai-duration-custom");
   overlay.querySelectorAll("#ai-duration-chips button").forEach((btn) => {
@@ -263,14 +198,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       platform: content.platform,
       format: content.format,
       funnel: state.funnel,
-      effort: state.effort,
-      brief: overlay.querySelector("#ai-brief")?.value.trim(),
       prompt,
       duration: state.duration === "Custom" ? customDurationInput?.value.trim() : state.duration,
-      goal: overlay.querySelector("#ai-goal")?.value.trim(),
-      mofuGoal: overlay.querySelector("#ai-mofu-goal")?.value.trim(),
-      bofuOffer: overlay.querySelector("#ai-bofu-offer")?.value.trim(),
-      articleText: overlay.querySelector("#ai-article")?.value.trim(),
       // Full brand context (DNA + personality + tone of voice + visual
       // guidelines + active campaigns) instead of just the legacy
       // aiVoiceGuide string — see ai.js buildFullContext.
@@ -463,69 +392,17 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
 // it directly (e.g. from the "Edit in Creator" button on a published item);
 // otherwise this list only shows what's still in progress, sorted so the
 // most time-sensitive piece is first.
-// Asked once, right before the blank editor opens — which platform is this
-// for? "Mirror" is the one case that isn't just a pre-filled field: it
-// creates two linked content records (Instagram + TikTok) up front from the
-// same idea, sharing a mirrorGroupId, instead of making the user duplicate
-// the piece by hand after the fact.
-function openNewContentPlatformPicker({ brandId, onCreated, defaults = {} }) {
-  const overlay = openModal({
-    title: t("cr.picker.title"),
-    bodyHTML: `
-      <div class="content-view-grid">
-        <button type="button" class="content-view-card" data-platform-pick="Instagram">
-          <div class="icon-wrap">${platformIcon("instagram")}</div>
-          <h3>Instagram</h3>
-          <p>${t("cr.picker.igDesc")}</p>
-        </button>
-        <button type="button" class="content-view-card" data-platform-pick="TikTok">
-          <div class="icon-wrap">${platformIcon("tiktok")}</div>
-          <h3>TikTok</h3>
-          <p>${t("cr.picker.ttDesc")}</p>
-        </button>
-        <button type="button" class="content-view-card" data-platform-pick="mirror">
-          <div class="icon-wrap">${icon("layers", { size: 20 })}</div>
-          <h3>${t("cr.picker.mirror")}</h3>
-          <p>${t("cr.picker.mirrorDesc")}</p>
-        </button>
-      </div>
-    `,
-  });
-  qsa("[data-platform-pick]", overlay).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      closeOverlay(overlay);
-      const pick = btn.dataset.platformPick;
-      // #4: the piece is created and selected, landing straight on the
-      // drafting panel's own title/idea/script/caption fields — someone can
-      // just type, or reach for the AI button (big one up top, or the small
-      // bot icon per field) whenever they want it. The AI generator used to
-      // pop open automatically on every new piece, which meant "just write
-      // it myself" wasn't an option until you closed a modal first.
-      if (pick === "mirror") {
-        const mirrorGroupId = `mirror-${Date.now()}`;
-        const igItem = createContent(brandId, { ...defaults, platform: "Instagram", mirrorGroupId, status: "idea" });
-        createContent(brandId, { ...defaults, platform: "TikTok", mirrorGroupId, status: "idea" });
-        toast(t("cr.picker.mirrorCreated"));
-        onCreated?.(igItem.id);
-      } else {
-        const item = createContent(brandId, { ...defaults, platform: pick, status: "idea" });
-        onCreated?.(item.id);
-      }
-    });
-  });
-}
-
 export function render(root, { brandId, initialContentId }) {
   const state = { selectedId: initialContentId || null, collapsedGroups: new Set() };
-  // Konten Baru → pick platform → content is created and selected, opening
-  // straight on its drafting panel (manual fields, AI is opt-in — see #4).
+  // Konten Baru → the same content drawer every other screen uses; the
+  // new piece is then selected here, opening straight on its drafting panel.
   state.startNewContent = (defaults = {}) =>
-    openNewContentPlatformPicker({
+    openContentEditor({
       brandId,
-      defaults,
-      onCreated: (id) => {
-        state.selectedId = id;
-        toast(t("creator.newContentCreated"));
+      defaults: { status: "idea", ...defaults },
+      onSaved: () => {
+        const newest = [...listContent(brandId)].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+        if (newest) state.selectedId = newest.id;
         refresh();
       },
     });
@@ -614,7 +491,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${getMode() === "guided" ? t("cr.eyebrowGuided") : "Creator Studio — Mission"}${helpButtonHTML("creator")}${sectionGuideButtonHTML("creator")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${getMode() === "guided" ? t("cr.eyebrowGuided") : "Creator Studio — Mission"}${helpButtonHTML("creator")}</div>
         <h1>${brand.name}</h1>
       </div>
       <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
@@ -638,7 +515,7 @@ function paint(root, brandId, state, refresh) {
   `;
 
   wireHelpButtons(root);
-  wireGuideButton(root, "creator", () => startCreatorGuide(brandId));
+  setPageGuide(() => startCreatorGuide(brandId));
 
   qs("#new-content").addEventListener("click", () => state.startNewContent());
   const emptyNewBtn = qs("#new-content-empty");
@@ -873,39 +750,6 @@ function paint(root, brandId, state, refresh) {
       toast(t("cr.copyFail"), "error");
     }
   });
-
-  const aiThumbGenReady = qs("#ai-thumb-gen-ready", root);
-  if (aiThumbGenReady) {
-    aiThumbGenReady.addEventListener("click", async () => {
-      const ai = getSettings().ai || {};
-      const statusEl = qs("#ready-thumb-status", root);
-      if (ai.provider !== "gemini" || !ai.geminiApiKey) {
-        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 15 })}<span>${t("cr.thumb.needGemini")}</span></div>`;
-        return;
-      }
-      aiThumbGenReady.disabled = true;
-      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("cr.thumb.generating")}</span></div>`;
-      try {
-        const dataUrl = await generateThumbnail(ai, {
-          title: selected.title,
-          idea: selected.idea,
-          brandGuidelines: buildBrandContext(brand),
-          logoDataUrl: brand?.logoAssets?.[0]?.dataUrl,
-        });
-        updateContent(selected.id, { thumbnail: dataUrl });
-        const img = qs("#ready-thumb-img", root);
-        if (img) {
-          img.src = dataUrl;
-          img.style.display = "block";
-        }
-        statusEl.innerHTML = `<div class="ocr-status">${icon("check", { size: 15 })}<span>${t("cr.thumb.done")}</span></div>`;
-      } catch (err) {
-        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 15 })}<span>${escapeHtml(err.message || t("cr.thumb.fail"))}${/quota|billing|429/i.test(err.message || "") ? ` ${t("cr.thumb.billing")}` : ""}</span></div>`;
-      } finally {
-        aiThumbGenReady.disabled = false;
-      }
-    });
-  }
 
   const stageBackBtn = qs("#stage-back", root);
   if (stageBackBtn) {
@@ -1154,23 +998,12 @@ function editingPanel(c) {
 
 function readyToUploadPanel(c) {
   const up = c.uploadedPlatforms || {};
-  // 6.4: same gate as content-editor.js's #ai-thumb-gen — the button
-  // always failed without a Gemini key configured.
-  const ai = getSettings().ai || {};
-  const canGenThumb = ai.provider === "gemini" && !!ai.geminiApiKey;
   return `
     <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:16px;">${escapeHtml(c.title || t("common.untitled"))}</div>
 
-      <div class="field" style="margin-bottom:6px;">
-        <div class="creator-field-head">
-          <label style="margin-bottom:0;">${t("cr.f.thumbnail")}</label>
-          ${canGenThumb ? `<button type="button" class="chip-icon-btn" id="ai-thumb-gen-ready" aria-label="${t("cr.thumb.aria")}" title="${t("cr.thumb.aria")}">${icon("bot", { size: 15 })}</button>` : ""}
-        </div>
-        ${c.thumbnail ? `<img class="thumb-preview" id="ready-thumb-img" src="${c.thumbnail}" />` : `<img class="thumb-preview" id="ready-thumb-img" style="display:none;" />`}
-        <div id="ready-thumb-status" style="margin-top:6px;"></div>
-      </div>
+      ${c.thumbnail ? `<img class="thumb-preview" src="${c.thumbnail}" alt="" />` : ""}
 
       ${
         c.caption
@@ -1239,7 +1072,6 @@ function draftingPanel(c, campaigns) {
           </div>
         </div>
         <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}">${c.script || ""}</textarea>
-        <button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>
       </div>
       <div class="field">
         <div class="creator-field-head">

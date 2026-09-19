@@ -23,10 +23,6 @@
 //                  gate, so the user can work undisturbed (e.g. reading terms)
 //   nextLabel      text for the Lanjut button on this step
 //
-// A tour used to carry the page's explainer video inside its first tooltip.
-// It doesn't any more: the video now plays by itself the first time someone
-// opens the page (js/guide-videos.js maybeAutoPlayVideo) and the Video button
-// next to Panduan replays it, so the tour is just the walkthrough again.
 import { icon } from "./icons.js";
 import { listBrands, getSettings, updateSettings } from "./store.js";
 import { getCachedAccount, isReadOnly } from "./account.js";
@@ -138,11 +134,6 @@ export function isTourActive() {
 // onFinish(reason): "done" (reached the end) or "closed" (Tutup tur / Esc).
 // A route change tears a page-scoped tour down without calling onFinish.
 export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {}) {
-  // A guide video has the screen (js/guide-videos.js). It offers "masih mau
-  // tur website" as one of its own three answers, so a tour must never start
-  // behind it. Declining rather than queueing keeps the caller's "not seen
-  // yet" mark intact, so an automatic guide still gets its turn next visit.
-  if (document.querySelector("[data-guide-video-modal]")) return false;
   if (activeTourTeardown && activeTourKeepsOnNavigate && !keepOnNavigate) return false;
   if (activeTourTeardown) activeTourTeardown();
   activeTourKeepsOnNavigate = keepOnNavigate;

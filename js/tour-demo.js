@@ -113,25 +113,6 @@ export async function demoGenerateScript({ only } = {}) {
   };
 }
 
-// Same shape as ai.js generateCampaignPlan, plus `demo: true` so the review
-// modal skips the 👍/👎 feedback strip (sample output must never land in the
-// aiFeedback eval set).
-export async function demoCampaignPlan({ brand, objectiveText, enabledPhases = [] } = {}) {
-  await wait();
-  return {
-    demo: true,
-    name: t("demo.plan.name", { name: brand?.name || "" }).trim(),
-    targetAudience: brand?.brandDNA?.targetAudience || t("demo.plan.audience"),
-    problemOrOpportunity: objectiveText || "",
-    insight: t("demo.plan.insight"),
-    bigIdea: t("demo.plan.bigIdea"),
-    keyMessage: t("demo.plan.keyMessage"),
-    offer: "",
-    cta: t("demo.plan.cta"),
-    channels: ["Instagram Reels", "TikTok"],
-    phases: enabledPhases.map((p) => ({ name: p.name, goal: t("demo.plan.phaseGoal", { phase: p.name }) })),
-  };
-}
 
 // Same shape as ai.js generateCopy ({ variants: [{ parts, note }] }). A
 // testimonial is echoed back word for word, same rule as the real prompt.

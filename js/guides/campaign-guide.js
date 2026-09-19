@@ -262,19 +262,15 @@ export function startCampaignDetailGuide(brandId, campaignId) {
 export function startCampaignListGuideOnMount(brandId) {
   startGuideOnMount({
     pendingKey: "campaigns",
-    autoplayKey: "campaign-list",
     build: () => buildCampaignListSteps({ brandId }),
     options: listTourOptions(),
-    autoplay: false,
   });
 }
 
 export function startCampaignDetailGuideOnMount(brandId, campaignId) {
   startGuideOnMount({
     pendingKey: "campaign-detail",
-    autoplayKey: "campaign-detail",
     build: () => buildCampaignDetailSteps({ brandId, campaignId }),
     options: detailTourOptions(brandId, campaignId),
-    autoplay: false,
   });
 }

@@ -4,11 +4,10 @@
 // tour the next page should start (sessionStorage), since a route change
 // always tears the current tour down.
 import { runSpotlightTour, isTourActive, tourRichText } from "../tour.js";
-import { maybeShowSectionTour, guideSeen, markGuideSeen } from "../section-guide.js";
+import { guideSeen, markGuideSeen } from "../section-guide.js";
 import { openModal, closeOverlay } from "../modals.js";
-import { listBrands } from "../store.js";
 import { icon } from "../icons.js";
-import { qs, qsa, escapeHtml, toast } from "../dom.js";
+import { qs, escapeHtml } from "../dom.js";
 import { getCachedAccount, isReadOnly } from "../account.js";
 import { readFlag } from "../seen-flags.js";
 import { t } from "../i18n.js";
@@ -91,31 +90,22 @@ export function waitForIdle(hash = location.hash) {
   });
 }
 
-// Mount-time entry: a pending chain request starts the tour in either mode;
-// otherwise, when `autoplay` is true, it autoplays once, Guided only
-// (section-guide's seen flag under `autoplayKey`). `build` is called at
-// start time so steps read fresh data.
-// `autoplay: false` (Kalender, Campaign) keeps only the forced path — the
-// tour still opens from the pending-tour chain or the Panduan button
-// (wireGuideButton), it just never pops up on its own when the page mounts.
-export async function startGuideOnMount({ pendingKey, autoplayKey, build, options, autoplay = true }) {
-  const forced = consumePendingTour(pendingKey);
+// Mount-time entry: starts the tour only when the previous page asked for
+// it through the "lanjut ke …?" chain (setPendingTour). Nothing autoplays
+// on its own; the page's own guide is offered from the topbar "?" instead
+// (js/section-guide.js setPageGuide). `build` is called at start time so
+// steps read fresh data.
+export async function startGuideOnMount({ pendingKey, build, options }) {
+  if (!consumePendingTour(pendingKey)) return;
   const hash = location.hash;
   // Let the page finish its first paint (and any modal it opens on mount)
   // before deciding the page is idle.
   await new Promise((r) => setTimeout(r, 200));
   if (!(await waitForIdle(hash))) {
-    if (forced) setPendingTour(pendingKey);
+    setPendingTour(pendingKey);
     return;
   }
-  if (forced) runSpotlightTour(build(), options);
-  else if (autoplay) maybeShowSectionTour(autoplayKey, build(), options);
-}
-
-// Button half: the always-visible "Panduan" pill (sectionGuideButtonHTML)
-// replays the guide in either mode, building steps at click time.
-export function wireGuideButton(root, key, start) {
-  qs(`[data-section-guide-btn="${key}"]`, root)?.addEventListener("click", () => start());
+  runSpotlightTour(build(), options);
 }
 
 // Akun readonly (lapsed plan) can open every guide, but a step that needs a
@@ -159,39 +149,4 @@ export function showTourRecap({ title, body }) {
   const overlay = closingModal({ title, body, footHTML: `<button class="btn btn-primary" data-tour-recap-ok>${t("guide.recapOk")}</button>` });
   qs("[data-tour-recap-ok]", overlay).addEventListener("click", () => closeOverlay(overlay));
   return overlay;
-}
-
-// Settings → Akun: guides live on brand pages, so pick a brand first when
-// there's more than one.
-export function replayGuideForBrand({ startKey, path }) {
-  const brands = listBrands();
-  const go = (brandId) => {
-    setPendingTour(startKey);
-    const hash = path(brandId);
-    if (location.hash === hash) window.dispatchEvent(new HashChangeEvent("hashchange"));
-    else location.hash = hash;
-  };
-  if (!brands.length) {
-    toast(t("guide.needBrand"), "error");
-    return;
-  }
-  if (brands.length === 1) {
-    go(brands[0].id);
-    return;
-  }
-  const overlay = openModal({
-    title: t("guide.pickBrand.title"),
-    bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 12px;">${t("guide.pickBrand.sub")}</p>
-      <div class="flex" style="flex-direction:column;gap:8px;">
-        ${brands.map((b) => `<button type="button" class="btn btn-secondary" data-guide-brand="${escapeHtml(b.id)}" style="justify-content:flex-start;">${escapeHtml(b.name || t("guide.noName"))}</button>`).join("")}
-      </div>
-    `,
-  });
-  qsa("[data-guide-brand]", overlay).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      closeOverlay(overlay);
-      go(btn.dataset.guideBrand);
-    })
-  );
 }

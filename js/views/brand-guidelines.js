@@ -10,14 +10,13 @@ import {
   TONE_AXES, toneAxisDisplayLabel, toneExampleDisplay,
   feelingLabel, directionLabel, directionDescription,
 } from "../brandbook-data.js";
-import { checkPersonalityConsistency } from "../consistency-engine.js";
 import { isBrandBuilderComplete, markBuilderJustCompleted, markVisualBasicsJustDone } from "./brand-builder.js";
 import { generateValueProposition, generateColorEssence, detectToneOfVoice, hasAiKey, AiApiError } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
-import { sectionGuideButtonHTML, wireSectionGuideButton } from "../section-guide.js";
-import { maybeAutoPlayVideo } from "../guide-videos.js";
+import { setPageGuide } from "../section-guide.js";
+import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
 import { getCachedAccount, currentUid, isAdmin } from "../account.js";
 import { payPlan } from "./pricing.js";
@@ -56,11 +55,28 @@ const TYPE_SPACING_DEFAULTS = {
 const MOCKUP_RENDERERS = {
   social: socialPostMockup,
   "business-card": businessCardMockup,
-  website: websiteHeroMockup,
-  packaging: packagingMockup,
-  poster: posterMockup,
-  ad: digitalAdMockup,
 };
+
+const BOOK_W = 1123;
+const BOOK_H = 794;
+const BOOK_ROLES = ["primary", "secondary", "accent", "background", "text"];
+const BOOK_INK = "#1a1816";
+
+// The book's art styles. "classic" is free; the rest are one-time Rp 20rb
+// unlocks per account (api/_plans.js BOOK_STYLE_ADDONS — keep in sync; the
+// price here is display only, the charge is looked up server-side). Every
+// style renders the SAME page sequence and content — a style is a CSS skin
+// (.bbk-style-<key> on the sheet) plus its own display typeface, so a
+// locked style can be previewed with the brand's real data before buying.
+// `fonts` is a Google Fonts css2 family query; `photo` = takes a background
+// photo (a.bookPhoto).
+const BOOK_STYLES = [
+  { key: "classic", free: true },
+  { key: "pop", payKey: "bookstyle-pop", price: 20000, fonts: "Barlow+Condensed:wght@600;800" },
+  { key: "scrap", payKey: "bookstyle-scrap", price: 20000, fonts: "Archivo:ital,wght@1,800&family=Caveat:wght@700" },
+  { key: "photo", payKey: "bookstyle-photo", price: 20000, fonts: "DM+Serif+Display:ital@0;1", photo: true },
+];
+const BOOK_STYLE_KEYS = BOOK_STYLES.map((s) => s.key);
 
 const loadedFonts = new Set();
 function ensureGoogleFont(family) {
@@ -158,9 +174,7 @@ export function render(root, { brandId, section }) {
   };
   const refresh = () => paint(root, brandId, brand, state, refresh);
   refresh();
-  // One-time explainer for this page; the Video button in the page head
-  // replays it afterwards (js/guide-videos.js).
-  maybeAutoPlayVideo("brand-guidelines");
+  setPageGuide(() => runSpotlightTour(TOUR_STEPS));
   return () => {};
 }
 
@@ -171,15 +185,20 @@ export function render(root, { brandId, section }) {
 // gate. Keeps the URL hash in sync too, so a direct link from the hub
 // (or a page reload) lands on the exact section clicked instead of always
 // restarting at Foundation.
+// Pemula sees only the two sections the identity gate needs (Warna, Font)
+// plus Review; Pro sees the whole book. Every section stays reachable by
+// URL in both modes — this only decides which tabs are advertised and
+// where Back/Next go.
+const GUIDED_STEPS = ["color", "typography"];
+function visibleStepIndexes() {
+  return STEPS.map((s, i) => i).filter((i) => getMode() !== "guided" || GUIDED_STEPS.includes(STEPS[i].key));
+}
+
 function sectionTabsHTML(state, a) {
   const isReview = state.stepIndex >= STEPS.length;
-  // Revisi: Pemula gets the WHOLE Brand Guidelines, same as Pro. Hiding
-  // everything but Warna and Font made the two modes describe two
-  // different products — someone in Pemula finished "Brand Guidelines"
-  // without ever being shown Logo, Arah Visual, Tone or the Brand Book
-  // they were promised. Same tabs, same steps, same Review for both.
+  const visible = visibleStepIndexes();
   const tabs = [
-    ...STEPS.map((s) => ({ key: s.key, label: s.title, index: STEPS.indexOf(s), done: isStepFilled(s.key, a, state) })),
+    ...STEPS.filter((s, i) => visible.includes(i)).map((s) => ({ key: s.key, label: s.title, index: STEPS.indexOf(s), done: isStepFilled(s.key, a, state) })),
     { key: "review", label: t("guidelines.step.review"), index: STEPS.length, done: false },
   ];
   return `
@@ -233,7 +252,7 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}${sectionGuideButtonHTML("brand-guidelines")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}</div>
         <h1>${brand.name}</h1>
       </div>
       ${guidelinesProgressHTML(state)}
@@ -250,7 +269,6 @@ function paint(root, brandId, brand, state, refresh) {
   `;
 
   wireHelpButtons(root);
-  wireSectionGuideButton(root, "brand-guidelines", TOUR_STEPS);
   wireTabs(root, state, refresh);
   if (!isReview) wireStep(root, brandId, brand, state, refresh);
   else wireReview(root, brandId, brand, state, refresh);
@@ -305,7 +323,7 @@ function navHTML(state) {
   const homeReady = isStepFilled("color", state.answers, state) && isStepFilled("typography", state.answers, state);
   return `
     <div class="flex items-center justify-between" style="margin-top:20px;">
-      <button type="button" class="btn btn-secondary" id="wiz-back" ${state.stepIndex === 0 ? "disabled" : ""}>${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
+      <button type="button" class="btn btn-secondary" id="wiz-back" ${state.stepIndex <= visibleStepIndexes()[0] ? "disabled" : ""}>${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
       <div class="flex gap-8">
         ${homeReady ? `<button type="button" class="btn btn-secondary" id="wiz-home">${icon("check", { size: 14 })}${t("guidelines.backHome")}</button>` : ""}
         <button type="button" class="btn btn-primary" id="wiz-next">${t("guidelines.next")}${icon("chevronRight", { size: 14 })}</button>
@@ -338,24 +356,20 @@ function stepHTML(step, state, brand) {
 
 function wireStep(root, brandId, brand, state, refresh) {
   const step = STEPS[state.stepIndex];
+  // Back/Next walk the visible sections only (Pemula: Warna → Font → Review).
   qs("#wiz-back", root)?.addEventListener("click", () => {
-    state.stepIndex = Math.max(0, state.stepIndex - 1);
+    const prev = visibleStepIndexes().filter((i) => i < state.stepIndex).pop();
+    state.stepIndex = prev ?? state.stepIndex;
     refresh();
   });
   qs("#wiz-next", root)?.addEventListener("click", () => {
     if (qs("#wiz-next", root).disabled) return;
-    state.stepIndex += 1;
+    const next = visibleStepIndexes().find((i) => i > state.stepIndex);
+    state.stepIndex = next ?? STEPS.length;
     refresh();
   });
   qs("#wiz-home", root)?.addEventListener("click", () => goHomeFromGuidelines(brandId, state));
 
-  qs("[data-dismiss-consistency]", root)?.addEventListener("click", (e) => {
-    const id = e.currentTarget.dataset.dismissConsistency;
-    const dismissed = new Set(brand.brandBuilder.consistencyDismissed || []);
-    dismissed.add(id);
-    updateBrand(brandId, { brandBuilder: { ...brand.brandBuilder, consistencyDismissed: [...dismissed] } });
-    refresh();
-  });
 
   // Sections are now visited independently (no forced order, no single
   // continuous session ending in one Review "Save") — so every field
@@ -683,25 +697,6 @@ function wireLogoStep(root, state, refresh) {
   });
 }
 
-// Non-blocking nudge from the Consistency Engine (js/consistency-engine.js):
-// shown only once the Brand Builder Personality stage has established a
-// character and one of the feeling(s) picked here (color allows more than
-// one — the most severe conflict wins, not every one) drifts from it.
-// Dismissible per exact combination via brand.brandBuilder.
-// consistencyDismissed; never blocks picking whatever the user wants.
-function worstConsistencyBannerHTML(brand, feelings, label) {
-  const personalityFeeling = brand.brandBuilder?.personality?.feeling;
-  if (!personalityFeeling) return "";
-  const dismissed = brand.brandBuilder?.consistencyDismissed || [];
-  const warnings = feelings
-    .map((f) => checkPersonalityConsistency(personalityFeeling, f, label))
-    .filter((w) => w && !dismissed.includes(w.id));
-  if (!warnings.length) return "";
-  const worst = warnings.find((w) => w.level === "strong") || warnings[0];
-  return `<div class="hint" style="margin-bottom:14px;border-color:${worst.level === "strong" ? "var(--health-poor)" : "var(--border)"};" data-consistency-warning="${worst.id}">${icon("info", { size: 12 })}<span>${escapeHtml(worst.message)}</span><button type="button" class="icon-btn" data-dismiss-consistency="${worst.id}" title="${t("common.close")}" style="margin-left:auto;flex:none;">${icon("x", { size: 11 })}</button></div>`;
-}
-
-// ---------- Step 3: Color System ----------
 function colorStepHTML(state, brand) {
   const a = state.answers;
   const formula = a.colorFormula || "";
@@ -714,7 +709,6 @@ function colorStepHTML(state, brand) {
 
     <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">${t("bg.color.pickFeeling")}</div>
     <div class="bb-chip-row" style="margin-bottom:10px;">${chips}</div>
-    ${worstConsistencyBannerHTML(brand, a.colorFeelings, "warna")}
 
     <details class="mb-explain" style="margin-bottom:16px;">
       <summary>${icon("gear", { size: 14 })}${t("bg.color.manualDetails")}</summary>
@@ -1051,64 +1045,7 @@ function typographyStepHTML(state, brand) {
     ${uploadRow("secondary", t("bg.type.secondary"))}
     ${uploadRow("accent", t("bg.type.accent"))}
     ${extraFontsHTML(a)}
-    ${trackingKerningLeadingHTML(a)}
     ${navHTML(state, !isStepFilled("typography", a))}
-  `;
-}
-
-const SPACING_ROLE_LABEL_KEY = { primary: "bg.type.roleHeading", secondary: "bg.type.roleBody", accent: "bg.type.roleAccent" };
-
-// "Tracking, Kerning & Leading" — Leading (line-height) and Tracking
-// (letter-spacing) are real per-role numbers someone can set, each
-// starting at TYPE_SPACING_DEFAULTS' recommended value and editable via
-// slider with a live preview underneath. Kerning is called out by name
-// (matches how brand-book decks label this trio) but isn't a number to
-// set — it's the font's own automatic letter-pair adjustment
-// (`font-kerning: normal`, already on for every specimen in this app);
-// said plainly here instead of faking a slider for it.
-function trackingKerningLeadingHTML(a) {
-  const roles = ["primary", "secondary", "accent"].filter((r) => a.fonts[r]);
-  if (!roles.length) return "";
-  return `
-    <div class="card dark-surface" style="margin:18px 0;">
-      <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">Tracking, Kerning &amp; Leading</div>
-      <p class="text-faint" style="font-size:11px;line-height:1.6;margin:0 0 14px;">${t("bg.type.tklBody")}</p>
-      ${roles.map((r) => spacingRoleHTML(r, a)).join("")}
-    </div>
-  `;
-}
-
-function spacingRoleHTML(role, a) {
-  const sp = a.typeSpacing[role];
-  const rec = TYPE_SPACING_DEFAULTS[role];
-  const family = a.fonts[role];
-  return `
-    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border-soft);">
-      <div style="font-size:11.5px;font-weight:700;margin-bottom:10px;">${t(SPACING_ROLE_LABEL_KEY[role])} — ${escapeHtml(family)}</div>
-      <div class="flex gap-16" style="flex-wrap:wrap;">
-        <div style="flex:1;min-width:180px;">
-          <div class="flex items-center justify-between" style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">
-            <span>${t("bg.type.leading")}</span>
-            <span class="flex items-center gap-6">
-              <input type="number" min="1" max="2.2" step="0.05" value="${sp.lineHeight}" data-spacing-num-role="${role}" data-spacing-num-prop="lineHeight" class="input" style="width:56px;padding:2px 6px;font-size:11px;text-align:right;" />
-              <span class="text-faint" id="spacing-rec-${role}-lineHeight">${t("bg.type.rec", { value: rec.lineHeight })}</span>
-            </span>
-          </div>
-          <input type="range" min="1" max="2.2" step="0.05" value="${sp.lineHeight}" data-spacing-role="${role}" data-spacing-prop="lineHeight" style="width:100%;accent-color:var(--accent);" />
-        </div>
-        <div style="flex:1;min-width:180px;">
-          <div class="flex items-center justify-between" style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">
-            <span>${t("bg.type.tracking")}</span>
-            <span class="flex items-center gap-6">
-              <input type="number" min="-0.05" max="0.15" step="0.005" value="${sp.letterSpacing}" data-spacing-num-role="${role}" data-spacing-num-prop="letterSpacing" class="input" style="width:64px;padding:2px 6px;font-size:11px;text-align:right;" />
-              <span class="text-faint" id="spacing-rec-${role}-letterSpacing">${t("bg.type.rec", { value: rec.letterSpacing })}</span>
-            </span>
-          </div>
-          <input type="range" min="-0.05" max="0.15" step="0.005" value="${sp.letterSpacing}" data-spacing-role="${role}" data-spacing-prop="letterSpacing" style="width:100%;accent-color:var(--accent);" />
-        </div>
-      </div>
-      <p id="spacing-preview-${role}" style="font-family:'${family}';font-size:${role === "secondary" ? "13.5px" : "20px"};line-height:${sp.lineHeight};letter-spacing:${sp.letterSpacing}em;margin:10px 0 0;padding:10px 12px;background:var(--surface-2);border-radius:var(--radius-md);">${t("bg.type.pangram")}</p>
-    </div>
   `;
 }
 
@@ -1153,7 +1090,6 @@ function fontRecommenderHTML(state, brand) {
       </div>
       <div style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${t("bg.type.vibes")}</div>
       <div class="bb-chip-row">${chips}</div>
-      ${worstConsistencyBannerHTML(brand, a.typographyFeelings, "typography")}
       <div style="font-size:11.5px;font-weight:700;margin:6px 0 8px;">${t("bg.type.sectorQ")}</div>
       <div class="bb-chip-row" style="margin-bottom:${category ? "14px" : "0"};">
         ${FONT_CATEGORY_SECTORS.map((s) => `<label class="checkbox-chip"><input type="radio" name="font-sector" data-sector value="${escapeHtml(s.sector)}" ${state.fontRecommenderSector === s.sector ? "checked" : ""} />${escapeHtml(s.sector)}</label>`).join("")}
@@ -1268,37 +1204,6 @@ function wireTypographyStep(root, state, refresh) {
       state.answers.extraFonts = state.answers.extraFonts.filter((_, i) => i !== Number(btn.dataset.removeExtraFont));
       refresh();
     });
-  });
-  // Slider and number input both control the same value and stay in sync
-  // with each other (direct DOM writes on every tick/keystroke, not a full
-  // refresh() — re-rendering mid-drag or mid-typing would rebuild the
-  // inputs themselves and interrupt the gesture/cursor) and only persist
-  // once the user actually lets go (slider `change`) or leaves the field
-  // (number `change`).
-  const applySpacing = (role, prop, v) => {
-    state.answers.typeSpacing[role][prop] = v;
-    const slider = qs(`[data-spacing-role="${role}"][data-spacing-prop="${prop}"]`, root);
-    if (slider) slider.value = v;
-    const num = qs(`[data-spacing-num-role="${role}"][data-spacing-num-prop="${prop}"]`, root);
-    if (num && document.activeElement !== num) num.value = v;
-    const preview = qs(`#spacing-preview-${role}`, root);
-    if (preview) preview.style[prop === "lineHeight" ? "lineHeight" : "letterSpacing"] = prop === "lineHeight" ? v : `${v}em`;
-  };
-  qsa("[data-spacing-role]", root).forEach((slider) => {
-    const role = slider.dataset.spacingRole;
-    const prop = slider.dataset.spacingProp;
-    slider.addEventListener("input", () => applySpacing(role, prop, Number(slider.value)));
-    slider.addEventListener("change", () => refresh());
-  });
-  qsa("[data-spacing-num-role]", root).forEach((num) => {
-    const role = num.dataset.spacingNumRole;
-    const prop = num.dataset.spacingNumProp;
-    num.addEventListener("input", () => {
-      const v = Number(num.value);
-      if (Number.isNaN(v)) return;
-      applySpacing(role, prop, v);
-    });
-    num.addEventListener("change", () => refresh());
   });
 }
 
@@ -1739,89 +1644,6 @@ function businessCardMockup(answers, brand) {
   `;
 }
 
-function websiteHeroMockup(answers, brand) {
-  return `
-    <div>
-      <div class="bb-mockup-label">${t("bbdata.app.website")}</div>
-      <div class="bb-mockup bb-mockup-website">
-        <div class="bb-mockup-browser-bar"><span class="bb-mockup-browser-dot"></span><span class="bb-mockup-browser-dot"></span><span class="bb-mockup-browser-dot"></span></div>
-        <div class="bb-mockup-website-body">
-          <div class="bb-mockup-headline" style="font-size:17px;">${escapeHtml(brand.brandDNA.tagline || brand.name)}</div>
-          <div class="bb-mockup-body">${escapeHtml((brand.brandDNA.positioning || "").slice(0, 70))}</div>
-          <div class="bb-mockup-cta">${t("bg.mock.getStarted")}</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function packagingMockup(answers, brand) {
-  return `
-    <div>
-      <div class="bb-mockup-label">${t("bbdata.app.packaging")}</div>
-      <div class="bb-mockup bb-mockup-packaging" style="background:var(--bb-bg);">
-        ${answers.logo.dataUrl ? `<img src="${answers.logo.dataUrl}" style="height:30px;object-fit:contain;" alt="" />` : ""}
-        <div class="bb-mockup-headline" style="font-size:14px;">${escapeHtml(brand.name)}</div>
-        <div class="bb-mockup-body">${escapeHtml((brand.brandDNA.productsServices || [])[0] || "")}</div>
-      </div>
-    </div>
-  `;
-}
-
-function posterMockup(answers, brand) {
-  return `
-    <div>
-      <div class="bb-mockup-label">${t("bbdata.app.poster")}</div>
-      <div class="bb-mockup bb-mockup-poster" style="background:var(--bb-primary);">
-        <div class="bb-mockup-headline" style="font-size:24px;color:var(--bb-bg);">${escapeHtml(brand.brandDNA.tagline || brand.name)}</div>
-        <div class="bb-mockup-chip">${escapeHtml(brand.brandDNA.callToAction || t("bg.mock.learnMore"))}</div>
-      </div>
-    </div>
-  `;
-}
-
-function digitalAdMockup(answers, brand) {
-  return `
-    <div>
-      <div class="bb-mockup-label">${t("bbdata.app.ad")}</div>
-      <div class="bb-mockup bb-mockup-ad" style="background:var(--bb-bg);">
-        <div class="bb-mockup-headline" style="font-size:14px;">${escapeHtml(brand.brandDNA.tagline || brand.name)}</div>
-        <div class="bb-mockup-cta">${escapeHtml(brand.brandDNA.callToAction || t("bg.mock.orderNow"))}</div>
-      </div>
-    </div>
-  `;
-}
-
-// ---------- Brand Book pages (review screen + PDF) ----------
-// Every page is a fixed A4-landscape artboard (BOOK_W x BOOK_H px, the
-// same ratio as 297x210mm) laid out like a slide, not a flowing document:
-// on screen the whole artboard is scaled down to fit its container
-// (fitBrandBook), in the PDF it's captured 1:1 — so what's reviewed is
-// exactly what's downloaded, page for page. Three things make a book look
-// made for THIS brand instead of a template with the name swapped in:
-// headings/body are set in the brand's own chosen fonts, every surface is
-// colored from the brand's own palette (--bb-* vars), and the palette
-// itself runs down the edge of every page as a "spine".
-const BOOK_W = 1123;
-const BOOK_H = 794;
-const BOOK_ROLES = ["primary", "secondary", "accent", "background", "text"];
-const BOOK_INK = "#1a1816";
-
-// The book's art styles. "classic" is free; the rest are one-time Rp 20rb
-// unlocks per account (api/_plans.js BOOK_STYLE_ADDONS — keep in sync; the
-// price here is display only, the charge is looked up server-side). Every
-// style renders the SAME page sequence and content — a style is a CSS skin
-// (.bbk-style-<key> on the sheet) plus its own display typeface, so a
-// locked style can be previewed with the brand's real data before buying.
-// `fonts` is a Google Fonts css2 family query; `photo` = takes a background
-// photo (a.bookPhoto).
-const BOOK_STYLES = [
-  { key: "classic", free: true },
-  { key: "pop", payKey: "bookstyle-pop", price: 20000, fonts: "Barlow+Condensed:wght@600;800" },
-  { key: "scrap", payKey: "bookstyle-scrap", price: 20000, fonts: "Archivo:ital,wght@1,800&family=Caveat:wght@700" },
-  { key: "photo", payKey: "bookstyle-photo", price: 20000, fonts: "DM+Serif+Display:ital@0;1", photo: true },
-];
-const BOOK_STYLE_KEYS = BOOK_STYLES.map((s) => s.key);
 function bookStyleOf(a) {
   return BOOK_STYLES.find((s) => s.key === a.bookStyle) || BOOK_STYLES[0];
 }

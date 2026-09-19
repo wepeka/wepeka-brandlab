@@ -299,7 +299,7 @@ function defaultDB() {
       ai: { provider: "anthropic", anthropicApiKey: "", geminiApiKey: "", deepseekApiKey: "" },
       // "guided" is the default for every account that never picked a
       // mode: a brand owner opening Brandlab for the first time lands on the
-      // simplified step-by-step Home (js/views/beginner-home.js), not the
+      // simplified step-by-step Home (js/views/home.js), not the
       // widget/analytics dashboard. "advanced" is today's full app and is
       // one topbar click away (js/mode.js) — the choice is stored
       // account-wide, so the internal team only ever flips it once.

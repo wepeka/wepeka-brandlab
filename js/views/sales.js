@@ -74,10 +74,7 @@ function paint(root, brandId, state, refresh) {
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("sales.eyebrow")}${helpButtonHTML("sales")}</div>
         <h1>${esc(brand.name)}</h1>
       </div>
-      ${active.length ? `<div class="flex items-center gap-8">
-        <button class="btn btn-secondary" id="st-xlsx">${icon("download", { size: 15 })}${t("sales.export.excel")}</button>
-        <button class="btn btn-secondary" id="st-pdf">${icon("layers", { size: 15 })}${t("sales.export.pdf")}</button>
-      </div>` : ""}
+      ${active.length ? `<button class="btn btn-secondary" id="st-xlsx">${icon("download", { size: 15 })}${t("sales.export.excel")}</button>` : ""}
     </div>
     <p class="page-sub" style="margin-bottom:22px;">${t("sales.sub")}</p>
     ${active.length ? `
@@ -365,7 +362,6 @@ function wire(root, brandId, state, refresh, { brand, tracker, campaign, unit })
     downloadBlob(buildXlsx(exportSheets(getBrand(brandId), unit)), `sales-${slug(brand.name)}-${localISODate()}.xlsx`);
     toast(t("sales.export.excelDone"));
   });
-  qs("#st-pdf", root)?.addEventListener("click", () => openPdfPreview(getBrand(brandId), unit));
 
   qs("#st-advice-go", root)?.addEventListener("click", async () => {
     const ai = getSettings().ai || {};
@@ -482,47 +478,4 @@ function exportSheets(brand, unit) {
       ],
     },
   ];
-}
-
-// Same printable-sheet mechanism as the content report (js/views/report.js):
-// a white .report-sheet inside a modal, and the browser's own "Save as PDF".
-function openPdfPreview(brand, unit) {
-  const tracker = getTracker(brand);
-  const month = monthRange();
-  const totals = trackerTotals(tracker, month);
-  const stats = productStats(tracker, month).filter((s) => !s.product.archived || s.sold);
-  const byId = Object.fromEntries(tracker.products.map((p) => [p.id, p]));
-  const recent = [...tracker.entries].sort((a, b) => (b.date === a.date ? b.at - a.at : b.date < a.date ? -1 : 1)).slice(0, 40);
-  const stat = (label, value) => `<div class="report-stat"><div class="report-stat-label">${label}</div><div class="report-stat-value">${value}</div></div>`;
-  const overlay = openModal({
-    title: t("sales.export.pdfTitle"),
-    wide: true,
-    bodyHTML: `<div class="report-preview-wrap"><div class="report-sheet">
-      <div class="report-header">
-        ${avatarHTML(brand, "width:48px;height:48px;border-radius:12px;font-size:19px;")}
-        <div><div class="report-brand">${esc(brand.name)}</div><div class="report-title">${t("sales.export.reportTitle")}</div></div>
-        <div class="report-range">${esc(formatDate(month.from))} – ${esc(formatDate(localISODate()))}<div class="report-generated">${t("sales.export.manualNote")}</div></div>
-      </div>
-      <div class="report-stat-grid">
-        ${stat(t("sales.stat.monthSold"), `${formatNumber(totals.rangeQty)} ${esc(unit)}`)}
-        ${stat(t("sales.stat.monthRevenue"), rp(totals.rangeRevenue))}
-        ${stat(t("sales.export.salesCount"), formatNumber(totals.rangeCount))}
-        ${stat(t("sales.stat.allSold"), `${formatNumber(totals.sold)} ${esc(unit)}`)}
-        ${stat(t("sales.stat.allRevenue"), rp(totals.revenue))}
-        ${stat(t("sales.export.repeatReferral"), `${formatNumber(totals.repeatCount)} / ${formatNumber(totals.referralCount)}`)}
-      </div>
-      <div class="report-section-title">${t("sales.products.title")}</div>
-      <table class="report-table"><thead><tr><th>${t("sales.col.product")}</th><th>${t("sales.col.price")}</th><th>${t("sales.col.month")}</th><th>${t("sales.col.sold", { unit })}</th><th>${t("sales.col.revenue")}</th></tr></thead>
-        <tbody>${stats.map((s) => `<tr><td>${esc(s.product.name)}</td><td>${rp(s.product.price)}</td><td>${formatNumber(s.rangeQty)}</td><td>${formatNumber(s.sold)}</td><td>${rp(s.loggedRevenue)}</td></tr>`).join("")}</tbody></table>
-      <div class="report-section-title">${t("sales.export.recent", { count: recent.length })}</div>
-      ${recent.length ? `<table class="report-table"><thead><tr><th>${t("sales.log.date")}</th><th>${t("sales.col.product")}</th><th>${t("sales.export.qty", { unit })}</th><th>${t("sales.export.revenue")}</th><th>${t("sales.log.note")}</th></tr></thead>
-        <tbody>${recent.map((e) => `<tr><td>${esc(formatDate(e.date))}</td><td>${esc(byId[e.productId]?.name || "—")}</td><td>${formatNumber(e.qty)}</td><td>${rp(e.amount)}</td><td>${esc([e.repeat ? t("sales.tag.repeat") : "", e.referral ? t("sales.tag.referral") : "", e.note].filter(Boolean).join(" · "))}</td></tr>`).join("")}</tbody></table>` : `<p class="report-empty">${t("sales.history.empty")}</p>`}
-      <div class="report-footer">${t("sales.export.footer")}</div>
-    </div></div>`,
-    footHTML: `<button class="btn btn-primary" id="st-print">${icon("download", { size: 14 })}${t("rep.downloadPdf")}</button>`,
-  });
-  qs("#st-print", overlay).addEventListener("click", () => {
-    toast(t("rep.pdfHint"));
-    setTimeout(() => window.print(), 400);
-  });
 }
