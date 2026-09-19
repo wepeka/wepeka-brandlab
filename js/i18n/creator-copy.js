@@ -160,6 +160,17 @@ export default {
   "tp.pause": { en: "Pause", id: "Jeda" },
   "tp.speed": { en: "Speed", id: "Kecepatan" },
   "tp.size": { en: "Text size", id: "Ukuran teks" },
+  "tp.lightTitle": { en: "Turn the screen into a light for shooting", id: "Layar jadi lampu buat syuting" },
+  "tp.light": { en: "Light", id: "Lampu" },
+  "tp.brightness": { en: "Brightness", id: "Kecerahan" },
+  "tp.lightColor": { en: "Light color", id: "Warna lampu" },
+  "tp.customColor": { en: "Other color", id: "Warna lain" },
+  "tp.lightHint": { en: "Turn your phone/laptop screen brightness all the way up, then point it at your face.", id: "Naikkan kecerahan layar HP/laptop ke maksimal, lalu hadapkan ke wajah." },
+  "tp.color.white": { en: "White", id: "Putih" },
+  "tp.color.warm": { en: "Warm", id: "Hangat" },
+  "tp.color.cool": { en: "Cool", id: "Dingin" },
+  "tp.color.pink": { en: "Pink", id: "Pink" },
+  "tp.color.green": { en: "Green", id: "Hijau" },
 
   // ---------- Funnel field (js/funnel-field.js) ----------
   "funnel.stage": { en: "Funnel stage", id: "Tahap funnel" },
