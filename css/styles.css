@@ -496,6 +496,21 @@ main.view.wide{ max-width: 1440px; }
 .dash-widget-collapse-btn{ width:26px; height:26px; flex:none; color: rgba(245,243,255,.6); }
 .dash-widget-collapse-btn:hover{ background: rgba(255,255,255,.09); color:#fff; }
 
+/* Home Companion card (js/views/home.js, R5 — Brief Revisi 2 fase 4): a
+   daily-greeting chat, reusing the Consultant FAB's bubble language
+   (.consultant-msg) so the two "AI talks to you" surfaces feel like one
+   voice instead of two different widgets. */
+.companion-thread{ display:flex; flex-direction:column; gap:8px; }
+.companion-thread:empty{ display:none; }
+.companion-error{ margin:8px 0 0; font-size:12px; color: var(--health-poor); }
+.companion-composer{ display:flex; align-items:center; gap:8px; margin-top:12px; }
+.companion-composer .input{ flex:1; min-width:0; }
+.companion-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.companion-log{ margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+.companion-log-title{ margin:0 0 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); }
+.companion-log-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 0; }
+.companion-log-text{ font-size:12px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
 /* Collapsed state matches the same glass family, just as a single row — an
    icon badge, the title, and a real one-line summary of what's hidden (not
    a bare pill), so tidying up never means losing track of what's there. */

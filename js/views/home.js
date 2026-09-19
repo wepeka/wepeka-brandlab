@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, addBrandNote, addBrandLogEntry, ackBrandEvent, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
@@ -15,6 +15,10 @@ import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analyti
 import { openReportModal } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
+import { computeSignals, pulseTextFor } from "../brand-pulse.js";
+import { companionReply, hasAiKey, AiApiError } from "../ai.js";
+import { wireMic } from "../voice-input.js";
+import { go } from "../nav-context.js";
 
 // The brand's home, one file for both modes. The page answers one question
 // — "sekarang ngapain?" — with one hero card and one button:
@@ -95,6 +99,186 @@ function buildSteps(brandId, brand, campaigns, content) {
   return { steps, currentIndex, doneCount: steps.filter((s) => s.done).length, identityDone };
 }
 
+// ---------- Companion (R5, Brief Revisi 2 fase 4) ----------
+// A daily "what happened today?" — not a report, a friend checking in.
+// Greets once a day (brand.companion.lastAskedAt), then every reply the
+// owner types becomes a brand.developmentLog note (js/store.js
+// addBrandNote) plus one short AI reply (js/ai.js companionReply) that
+// every other AI feature's context picks up through js/brand-pulse.js
+// pulseText from then on.
+
+// Which signal kinds get a quick-action button, in priority order — same
+// four the brief calls out, first match wins for the greeting's "yang aku
+// lihat" line too so the two never disagree about what's most notable.
+const COMPANION_ACTION_KINDS = ["viral", "follower-jump", "sales-down", "streak-break"];
+const GREETING_PRIORITY = ["viral", "sales-down", "follower-jump", "follower-drop", "engagement-drop", "streak-break", "top-format", "sales-up", "stale-campaign", "overdue", "cross"];
+
+function pickTopSignal(signals) {
+  for (const kind of GREETING_PRIORITY) {
+    const hit = signals.find((s) => s.kind === kind);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function greetingSentence(brand, now) {
+  const h = now.getHours();
+  const key = h < 11 ? "companion.greeting.morning" : h < 17 ? "companion.greeting.afternoon" : "companion.greeting.evening";
+  return t(key, { brand: esc(brand.name) });
+}
+
+// [[idea:Title|why]] and [[ask:Question]] — the two directives
+// companionReply's system prompt is allowed to use (js/ai.js). A minimal,
+// self-contained parser rather than importing consultant-panel.js's
+// (that generalizes into its own js/ai-directives.js in fase 5, shared with
+// the Brainstorm chat — not built yet).
+function parseCompanionReply(raw) {
+  let text = raw || "";
+  let idea = null;
+  let ask = null;
+  text = text.replace(/\[\[idea:([^|\]]+)\|([^\]]+)\]\]/i, (_, title, why) => {
+    idea = { title: title.trim(), why: why.trim() };
+    return "";
+  });
+  text = text.replace(/\[\[ask:([^\]]+)\]\]/i, (_, q) => {
+    ask = q.trim();
+    return "";
+  });
+  return { text: text.trim(), idea, ask };
+}
+
+function companionBubbleHTML(role, html) {
+  return `<div class="consultant-msg consultant-msg-${role}">${html}</div>`;
+}
+
+function companionActionsHTML(signals, content, brandId) {
+  const picks = COMPANION_ACTION_KINDS.map((kind) => signals.find((s) => s.kind === kind)).filter(Boolean).slice(0, 2);
+  if (!picks.length) return "";
+  const buttons = picks.map((s) => {
+    if (s.kind === "viral") {
+      const c = content.find((x) => x.id === s.refs.contentId);
+      const seed = t("companion.seed.viral", { title: esc(c?.title || t("pulse.untitledContent")) });
+      return `<button type="button" class="btn btn-secondary btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 13 })}${t("companion.action.similarContent")}</button>`;
+    }
+    if (s.kind === "follower-jump") {
+      const seed = t("companion.seed.followerJump", { platform: esc(s.refs.platform || "") });
+      return `<button type="button" class="btn btn-secondary btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 13 })}${t("companion.action.rideMomentum")}</button>`;
+    }
+    if (s.kind === "sales-down") {
+      return `<a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/sales">${icon("chart", { size: 13 })}${t("companion.action.openSales")}</a>`;
+    }
+    // streak-break
+    return `<a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/content-os/creator">${icon("edit", { size: 13 })}${t("companion.action.openCreator")}</a>`;
+  });
+  return `<div class="companion-actions">${buttons.join("")}</div>`;
+}
+
+function companionLogHTML(log) {
+  const recent = [...(log || [])].sort((a, b) => b.at - a.at).slice(0, 3);
+  if (!recent.length) return "";
+  const rows = recent
+    .map(
+      (e) => `
+      <div class="companion-log-row" data-companion-log-row="${e.id}">
+        <span class="companion-log-text">${esc(e.title || "")}</span>
+        ${!e.ack ? `<button type="button" class="chip-icon-btn" data-companion-ack="${e.id}" aria-label="${t("common.close")}" title="${t("common.close")}">${icon("x", { size: 12 })}</button>` : ""}
+      </div>`
+    )
+    .join("");
+  return `<div class="companion-log"><p class="companion-log-title">${t("companion.log.title")}</p>${rows}</div>`;
+}
+
+function companionWidgetHTML(brand, { signals, content, now, pending, error }) {
+  const today = localISODate(now);
+  const askedToday = brand.companion?.lastAskedAt === today;
+  const log = brand.developmentLog || [];
+  const lastEntry = [...log].sort((a, b) => b.at - a.at)[0];
+
+  let threadHTML;
+  if (!askedToday) {
+    const top = pickTopSignal(signals);
+    const observation = top ? top.title : t("companion.observation.quiet");
+    threadHTML = companionBubbleHTML("assistant", `${greetingSentence(brand, now)} ${esc(observation)}`);
+  } else if (lastEntry) {
+    const html = lastEntry.source === "note" ? esc(lastEntry.title) : esc(lastEntry.title);
+    threadHTML = companionBubbleHTML(lastEntry.source === "note" ? "user" : "assistant", html);
+  } else {
+    threadHTML = "";
+  }
+  if (pending) threadHTML += companionBubbleHTML("assistant", `<span class="typing-dots" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span>`);
+
+  const weekAgo = now.getTime() - 7 * 86400000;
+  const newThisWeek = log.filter((e) => e.at >= weekAgo).length;
+
+  return {
+    bodyHTML: `
+      <div class="companion-thread">${threadHTML}</div>
+      ${error ? `<p class="companion-error">${esc(error)}</p>` : ""}
+      <div class="companion-composer">
+        <input type="text" class="input" id="companion-input" placeholder="${esc(askedToday ? t("companion.askAgain") : t("companion.placeholder"))}" ${pending ? "disabled" : ""} />
+        <button type="button" class="chip-icon-btn" id="companion-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
+        <button type="button" class="btn btn-primary btn-sm" id="companion-send" ${pending ? "disabled" : ""}>${t("companion.send")}</button>
+      </div>
+      ${companionActionsHTML(signals, content, brand.id)}
+      ${companionLogHTML(log)}
+    `,
+    summary: newThisWeek ? t("companion.log.summary", { n: newThisWeek }) : t("companion.observation.quiet"),
+  };
+}
+
+function wireCompanion(root, { brandId, brand, content, signals, state, refresh }) {
+  const input = qs("#companion-input", root);
+  const sendBtn = qs("#companion-send", root);
+  const micBtn = qs("#companion-mic", root);
+  if (micBtn && input) wireMic(micBtn, input);
+
+  const send = async (textArg) => {
+    const text = (textArg ?? input?.value ?? "").trim();
+    if (!text || state.companionPending) return;
+    state.companionPending = true;
+    state.companionError = "";
+    refresh();
+    addBrandNote(brandId, text);
+    updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
+    try {
+      const ai = getSettings().ai || {};
+      if (!hasAiKey(ai)) throw new AiApiError(t("companion.aiUnavailable"));
+      const fresh = getBrand(brandId);
+      const pulseText = pulseTextFor(fresh, { content, campaigns: listCampaigns(brandId), settings: getSettings() });
+      const raw = await companionReply(ai, { brand: fresh, pulseText, note: text });
+      const { text: cleanText, idea, ask } = parseCompanionReply(raw);
+      const pieces = [cleanText];
+      if (idea) pieces.push(`💡 <b>${esc(idea.title)}</b> — ${esc(idea.why)}`);
+      if (ask) pieces.push(`<button type="button" class="consultant-starter" data-companion-followup="${esc(ask)}">${esc(ask)}</button>`);
+      addBrandLogEntry(brandId, { kind: "companion-reply", source: "ai", title: cleanText || raw, detail: cleanText || raw });
+    } catch (e) {
+      state.companionError = e instanceof AiApiError ? e.message : t("companion.saveFailed");
+    } finally {
+      state.companionPending = false;
+      refresh();
+    }
+  };
+
+  sendBtn?.addEventListener("click", () => send());
+  input?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); send(); }
+  });
+  qsa("[data-companion-followup]", root).forEach((btn) =>
+    btn.addEventListener("click", () => send(btn.dataset.companionFollowup))
+  );
+  qsa("[data-companion-ack]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      ackBrandEvent(brandId, btn.dataset.companionAck);
+      refresh();
+    })
+  );
+  qsa("[data-companion-go]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      go(`#/brand/${brandId}/brainstorm`, { seed: btn.dataset.companionSeed, fromLabel: brand.name });
+    })
+  );
+}
+
 function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) {
@@ -120,6 +304,11 @@ function paint(root, brandId, state, refresh) {
     .slice(0, 5);
   const scheduleRows = scheduleRowsHTML(brandOverdue, upNext);
   const collapsed = new Set(brand.homeCollapsed || []);
+  // Computed once per paint, reused by both the greeting/action buttons
+  // below and — a beat later — the buildFullContext of anything the
+  // Companion's own reply triggers (js/brand-pulse.js pulseTextFor).
+  const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
+  const companion = companionWidgetHTML(brand, { signals, content, now: new Date(), pending: !!state.companionPending, error: state.companionError });
 
   root.innerHTML = `
     <div class="page-head">
@@ -132,6 +321,12 @@ function paint(root, brandId, state, refresh) {
     </div>
 
     ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : identityHeroHTML(brandId, brand)}
+
+    ${
+      collapsed.has("companion")
+        ? widgetCollapsedHTML("companion", "chat", t("home.companion.title"), companion.summary)
+        : widgetCardHTML("companion", "chat", t("home.companion.title"), companion.bodyHTML)
+    }
 
     ${stepsHTML(journey, cfg.lockNext, identityJustDone)}
 
@@ -150,6 +345,7 @@ function paint(root, brandId, state, refresh) {
 
   wireHelpButtons(root);
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
+  if (!collapsed.has("companion")) wireCompanion(root, { brandId, brand, content, signals, state, refresh });
   if (cfg.analytics) {
     wireAnalyticsSection(root, state, refresh);
     qs("#home-report", root)?.addEventListener("click", () => openReportModal(brandId));

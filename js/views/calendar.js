@@ -4,6 +4,7 @@ import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { suggestSchedule, hasAiKey } from "../ai.js";
+import { pulseTextFor } from "../brand-pulse.js";
 import { t, getLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -183,6 +184,7 @@ async function runAutoSchedule(brandId, refresh) {
       routineNotes: routineNotesForBrand(brandId),
       brand,
       campaigns,
+      pulseText: pulseTextFor(brand, { content: listContent(brandId), campaigns, settings: getSettings() }),
     });
     const proposed = unscheduled
       .filter((c) => schedule.has(c.id))

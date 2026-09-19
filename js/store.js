@@ -592,6 +592,56 @@ export function insightsBaseline(brand, platform, atMs) {
   return before.length ? before[before.length - 1] : hist[0];
 }
 
+// ---------- Brand Pulse: development log (js/brand-pulse.js) ----------
+// A short, capped timeline of "what's happening" — auto-detected signals,
+// the owner's own notes (the Home Companion card's "hari ini ada kejadian
+// apa?"), and the AI's replies to them. Feeds js/brand-pulse.js
+// buildPulseText, which every AI feature reads so recommendations stay
+// aware of what's actually going on, not just static brand facts. Short
+// strings only, no content bodies or dataUrls — the whole log stays a tiny
+// fraction of the brand doc. `brand.companion = { lastAskedAt }` (a plain
+// ISO date, no dedicated helper needed) tracks whether today's greeting has
+// already been asked, written straight through updateBrand.
+export const DEVELOPMENT_LOG_CAP = 80;
+export function addBrandLogEntry(brandId, { kind, source = "auto", title, detail = "", refs = {}, key = null, at = Date.now() }) {
+  const b = getBrand(brandId);
+  if (!b) return null;
+  const entry = { id: uid(), at, kind, source, title, detail, refs, key: key || `${kind}:${uid()}`, ack: false };
+  const log = [...(b.developmentLog || []), entry].slice(-DEVELOPMENT_LOG_CAP);
+  updateBrand(brandId, { developmentLog: log });
+  return entry;
+}
+// Bulk version for js/brand-pulse.js computeSignals() output: dedupes by
+// `key` (a freshly computed signal for the same key replaces the stale
+// logged one instead of piling up every time the pulse runs), sorts by
+// `at`, caps at 80. Entries not carrying a `key` from computeSignals are
+// never produced here — this is for automatic signals only, not notes.
+export function appendBrandEvents(brandId, events) {
+  const b = getBrand(brandId);
+  if (!b || !events?.length) return b?.developmentLog || [];
+  const existingKeys = new Set((b.developmentLog || []).map((e) => e.key).filter(Boolean));
+  // A still-true condition (e.g. the same streak-break) recomputes with a
+  // brand-new `at` (now) and `key` (same isoWeek) on every pulse run — if
+  // that replaced the already-logged entry, it would keep jumping back to
+  // "most recent", undoing an owner's ack and crowding out real
+  // conversation (notes/AI replies) from the top of the log. Once a key is
+  // logged this week, leave it alone; only a genuinely new key gets added.
+  const fresh = events.filter((s) => s.key && !existingKeys.has(s.key));
+  if (!fresh.length) return b.developmentLog || [];
+  const additions = fresh.map((s) => ({ id: uid(), at: s.at, kind: s.kind, source: "auto", title: s.title, detail: s.detail || "", refs: s.refs || {}, key: s.key, ack: false }));
+  const log = [...(b.developmentLog || []), ...additions].sort((a, b2) => a.at - b2.at).slice(-DEVELOPMENT_LOG_CAP);
+  updateBrand(brandId, { developmentLog: log });
+  return log;
+}
+export function addBrandNote(brandId, text) {
+  return addBrandLogEntry(brandId, { kind: "note", source: "note", title: text, detail: text, key: `note:${uid()}` });
+}
+export function ackBrandEvent(brandId, id) {
+  const b = getBrand(brandId);
+  if (!b) return;
+  const log = (b.developmentLog || []).map((e) => (e.id === id ? { ...e, ack: true } : e));
+  updateBrand(brandId, { developmentLog: log });
+}
 export function archiveBrand(id, archived = true) {
   return updateBrand(id, { archived });
 }

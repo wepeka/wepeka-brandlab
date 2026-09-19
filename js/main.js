@@ -4,14 +4,14 @@ import { t, getLang } from "./i18n.js";
 document.documentElement.lang = getLang();
 import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
 import { noteNavigation } from "./nav-context.js";
-import { getBrand, initStore, listBrands } from "./store.js";
+import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { toast } from "./dom.js";
-import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated } from "./account.js";
+import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly } from "./account.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -67,6 +67,7 @@ function teardownApp() {
   // Signing out and into another account in the same tab is a fresh first
   // open for that account — it gets its own picker.
   modePickerShown = false;
+  pulsedBrands.clear();
   delete app.dataset.shellKey;
   clearPageGuide();
   if (cleanup) { cleanup(); cleanup = null; }
@@ -180,6 +181,17 @@ function onAccountChange(user, account) {
       setTimeout(() => {
         import("./instagram-sync.js")
           .then((m) => m.maybeAutoSyncInstagram())
+          .then(() => {
+            // Fresh view/engagement numbers can flip a Brand Pulse signal —
+            // re-run it for whichever brand is on screen now (the sync
+            // itself may have touched several; only the visible one needs
+            // its signals current right away).
+            const brandId = parseRoute(location.hash).brandId;
+            if (brandId) {
+              pulsedBrands.delete(brandId);
+              runPulseOnce(brandId);
+            }
+          })
           .catch((e) => console.warn("Instagram auto-sync unavailable", e));
       }, 8000);
     });
@@ -202,6 +214,30 @@ let renderToken = 0;
 let firstRouteAfterBoot = false;
 // One mode picker per boot, no matter how many account snapshots land.
 let modePickerShown = false;
+
+// Brand Pulse (js/brand-pulse.js): computed once per brand per session (this
+// Set guards repeats — every AI feature reads the result through
+// brand.developmentLog, not by recomputing it itself, so re-running this on
+// every navigation would be pure waste), then again after the weekly
+// Instagram auto-sync updates this brand's content performance — fresh
+// view/engagement numbers can flip a "viral" or "engagement-drop" signal
+// that wasn't true a moment ago. Skipped for read-only accounts, which
+// can't write the result anywhere (js/store.js updateBrand would no-op
+// against Firestore rules anyway).
+const pulsedBrands = new Set();
+async function runPulseOnce(brandId) {
+  if (pulsedBrands.has(brandId) || isReadOnly(getCachedAccount())) return;
+  pulsedBrands.add(brandId);
+  const brand = getBrand(brandId);
+  if (!brand) return;
+  try {
+    const { computeSignals } = await import("./brand-pulse.js");
+    const signals = computeSignals({ brand, content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
+    if (signals.length) appendBrandEvents(brandId, signals);
+  } catch (e) {
+    console.warn("[brand pulse] unavailable", e);
+  }
+}
 
 async function renderRoute() {
   if (!storeReady) return;
@@ -236,6 +272,7 @@ async function renderRoute() {
     location.hash = "#/";
     return;
   }
+  if (route.brandId) runPulseOnce(route.brandId);
 
   // Same brand + same mode + same lock state = same topbar: keep it in
   // place and only swap the page underneath (short fade-out, then the new

@@ -435,7 +435,7 @@ function rebalanceWeeklyFunnelMix(map, items, startDate) {
 // "upload daily", "MOFU on Tuesdays") — read as instructions, not decoration.
 // items: [{ id, title, funnel, status }]. Returns a Map of id -> "YYYY-MM-DD";
 // any id the model didn't return just stays unscheduled rather than guessing.
-export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, routineNotes = [], brand, campaigns = [] }) {
+export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, routineNotes = [], brand, campaigns = [], pulseText = "" }) {
   if (!items.length) return new Map();
   const readiness = { editing: 1, scheduled: 0, production: 2, draft: 3, idea: 4 };
   // brand/campaigns are optional — omitting them keeps this behaving
@@ -443,7 +443,7 @@ export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, ro
   // caller (calendar.js) also tags each item with a `campaignPhase` label
   // so the model can see which items share a campaign window without
   // suggestSchedule needing to know anything about phase shapes itself.
-  const contextBlock = brand ? buildFullContext(brand, { campaigns }) : "";
+  const contextBlock = brand ? buildFullContext(brand, { campaigns, pulseText }) : "";
   const system = [
     "You are a social media content calendar planner.",
     contextBlock,
@@ -647,11 +647,15 @@ function daysUntil(dateStr) {
 // layer any AI feature can pull from instead of assembling its own
 // campaign summary inline. Archived campaigns are left out; they're not
 // live strategy anymore.
-export function buildFullContext(brand, { campaigns = [] } = {}) {
+// `pulseText` (js/brand-pulse.js buildPulseText — a caller-computed block of
+// "what's happening in this brand right now") is the third and last part,
+// so every feature built on top of buildFullContext picks it up for free.
+export function buildFullContext(brand, { campaigns = [], pulseText = "" } = {}) {
   const active = campaigns.filter((c) => c.status !== "archived");
   const parts = [
     buildBrandContext(brand),
     active.length ? `Active campaigns:\n${active.map((c) => campaignSummaryLine(c, brand)).join("\n")}` : "",
+    pulseText || "",
   ];
   return parts.filter(Boolean).join("\n\n");
 }
@@ -905,7 +909,7 @@ export async function brainstormCampaignIdeas(ai, { brand, campaign, mission, ex
 // isn't a piece of content at all (an activity, a promo tactic). Kept
 // deliberately few — a handful of ideas worth actually doing beats a wall
 // of them nobody will execute.
-export async function generateIdeaBubbles(ai, { brand, campaign, track, existingIdeas = [], extra = "" }) {
+export async function generateIdeaBubbles(ai, { brand, campaign, track, existingIdeas = [], extra = "", pulseText = "" }) {
   const framing = {
     social: "Suggest short content/post ideas for this brand's social media — one-liners a creator could turn straight into a Reels/carousel/story concept.",
     community: "Suggest short community activity ideas — things to DO with the community beyond posting content (meetups, challenges, collabs, member spotlights, giveaways, referral pushes).",
@@ -920,6 +924,7 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
   const system = [
     `You brainstorm SHORT idea bubbles for a brand's marketing campaign. ${framing}`,
     buildBrandContext(brand),
+    pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     campaignSummaryLine(campaign, brand),
@@ -951,7 +956,7 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
 // this brand should actually sell — plus concrete non-content activities
 // per level. `levels` = [{ index, name, description, targets: ["..."] }].
 // Returns { concept: { title, summary, howToRun: [] }, levels: [{ index, activities: [{ title, how, type }] }] }.
-export async function generateCampaignPlaybook(ai, { brand, campaign, track, levels, extra = "" }) {
+export async function generateCampaignPlaybook(ai, { brand, campaign, track, levels, extra = "", pulseText = "" }) {
   const brief = {
     community: [
       "You are a community strategist. Design this brand's community and how to run it.",
@@ -972,6 +977,7 @@ export async function generateCampaignPlaybook(ai, { brand, campaign, track, lev
   const system = [
     ...brief,
     buildBrandContext(brand),
+    pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     campaignSummaryLine(campaign, brand),
@@ -1003,10 +1009,11 @@ export async function generateCampaignPlaybook(ai, { brand, campaign, track, lev
 // Suggests 2-3 content ideas for one specific campaign phase — given what's
 // already been made for it, so it doesn't repeat itself. Returns ideas only;
 // the caller decides whether to turn one into an actual Content item.
-export async function suggestPhaseContent(ai, { brand, campaign, phase, existingTitles = [] }) {
+export async function suggestPhaseContent(ai, { brand, campaign, phase, existingTitles = [], pulseText = "" }) {
   const system = [
     "You suggest short-form content ideas for one specific phase of a marketing campaign, tailored to the brand's actual character and audience.",
     buildBrandContext(brand),
+    pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     campaignSummaryLine(campaign, brand),
@@ -1124,13 +1131,14 @@ export const CONSULTANT_ROUTES = [
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
-export async function askBrandConsultant(ai, { brand, snapshotText, history = [], question }) {
+export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question }) {
   const routesList = CONSULTANT_ROUTES.map((r) => `${r.key} = ${r.label}`).join(", ");
   const system = [
     "You are a practical branding & marketing consultant embedded inside this brand's own tool.",
     outputLanguageRule(),
     "You give specific, actionable advice grounded in THIS brand's actual context and data below — never generic marketing platitudes. When the brand's tracked data below is relevant to the question, cite the actual numbers (e.g. 'ada 3 konten overdue', 'engagement rate rata-rata 2.1%') instead of speaking abstractly.",
     buildBrandContext(brand),
+    pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     snapshotText ? `Live tracked data for this brand right now:\n${snapshotText}` : "",
@@ -1154,11 +1162,11 @@ export async function askBrandConsultant(ai, { brand, snapshotText, history = []
 // the rules below keep the model from inventing anything beyond them (no
 // ads metrics, no conversion rates, no market data).
 // Returns { summary, actions: [{ title, why, how }] }.
-export async function suggestSalesActions(ai, { brand, snapshotText, campaigns = [] }) {
+export async function suggestSalesActions(ai, { brand, snapshotText, campaigns = [], pulseText = "" }) {
   const system = [
     "You are a practical sales & marketing advisor for a small business, embedded inside this brand's own sales tracker.",
     outputLanguageRule(),
-    buildFullContext(brand, { campaigns }),
+    buildFullContext(brand, { campaigns, pulseText }),
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     "Rules about numbers (strict): use ONLY the figures in the sales data the user sends. Never invent or estimate a number that isn't there — no conversion rates, no ROAS/CPC/CPM/CPA, no ad spend, no market size, no competitor figures. This business has no ads or traffic data at all, so never assume any. When you cite a number, cite it exactly as given.",
@@ -1177,6 +1185,29 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
   if (actions.length) return { summary: String(parsed.summary || "").trim(), actions };
   if (!raw.trim()) throw new AiApiError(t("ai.error.emptyResponse"));
   return { summary: raw.trim(), actions: [] };
+}
+
+// The Home Companion card's daily "what happened today?" (js/views/home.js)
+// — a friend's reply to one thing the owner just typed, not a consultant's
+// report. Short on purpose: this fires on every answer, so it has to stay
+// cheap and quick to read. `pulseText` is js/brand-pulse.js buildPulseText,
+// already including the note the owner is replying to (the caller appends
+// it to the brand's development log before calling this) so the model sees
+// it in context alongside everything else going on.
+export async function companionReply(ai, { brand, pulseText = "", note }) {
+  const system = [
+    "You are this brand owner's thinking partner — warm and direct, like a friend who actually pays attention, never a corporate assistant.",
+    outputLanguageRule(),
+    buildBrandContext(brand),
+    pulseText || "",
+    "Reply to what the owner just told you in 2-3 short sentences, conversational, no bullet points, no headers. You may offer ONE concrete, specific suggestion if the note clearly calls for one — never a generic pep talk.",
+    "If the note describes something that could become a piece of content (a moment, a win, a comment, an event), you may end with ONE line in the exact form [[idea:Short title|why this could work]] — only when it's genuinely a good, concrete idea, never by default.",
+    "You may end with ONE follow-up question in the exact form [[ask:Question]], written the way this owner would ask it (short, casual). Only one, and only when a natural follow-up actually exists — not every reply needs one.",
+    "Never invent numbers or events the owner didn't mention and that aren't in the context above.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  return callModel(ai, system, note, 300);
 }
 
 export { AiApiError };

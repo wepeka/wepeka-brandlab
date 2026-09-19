@@ -14,6 +14,7 @@ import { nextActions } from "./next-action.js";
 import { computeContentMetrics } from "./formulas.js";
 import { brandDnaCompleteness } from "./brand-progress.js";
 import { askBrandConsultant, hasAiKey, AiApiError, CONSULTANT_ROUTES } from "./ai.js";
+import { pulseTextFor } from "./brand-pulse.js";
 import { icon } from "./icons.js";
 import { qs, escapeHtml, formatPercent, toast } from "./dom.js";
 import { mountAiFeedback } from "./ai-feedback.js";
@@ -341,7 +342,8 @@ async function sendMessage(brandId, text) {
   try {
     const brand = getBrand(brandId);
     const snapshotText = buildSnapshot(brandId);
-    const reply = await askBrandConsultant(ai, { brand, snapshotText, history: history.slice(0, -1), question: text });
+    const pulseText = pulseTextFor(brand, { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
+    const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: history.slice(0, -1), question: text });
     const { cleanText, nav, drafts, asks } = parseNavDirectives(reply.trim());
     history.push({ role: "assistant", text: cleanText, nav, drafts, asks, question: text });
   } catch (err) {

@@ -4,7 +4,7 @@
 // what to say) produce three variants, each previewed in the shape of the
 // real thing. Nothing is saved (user's call, 14 Sep 2026): state lives only
 // while this page is open, which is also why it never repaints on db:change.
-import { getBrand, listCampaigns, getSettings } from "../store.js";
+import { getBrand, listCampaigns, listContent, getSettings } from "../store.js";
 import { icon } from "../icons.js";
 import { escapeHtml, toast, qs, qsa, avatarHTML } from "../dom.js";
 import { backLinkHTML } from "../back-link.js";
@@ -14,6 +14,7 @@ import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
 import { generateCopy, rewriteCopy, hasAiKey, buildFullContext, campaignSummaryLine, AiApiError } from "../ai.js";
+import { pulseTextFor } from "../brand-pulse.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { wireMic } from "../voice-input.js";
 import { isTourDemo, demoGenerateCopy, demoRewriteCopy, DEMO_TOAST } from "../tour-demo.js";
@@ -509,7 +510,7 @@ async function runGenerate(ctx) {
     if (demo) toast(DEMO_TOAST);
     const { variants } = demo
       ? await demoGenerateCopy({ brand, ...params })
-      : await generateCopy(ai, { ...params, brandContext: buildFullContext(brand, { campaigns }) });
+      : await generateCopy(ai, { ...params, brandContext: buildFullContext(brand, { campaigns, pulseText: pulseTextFor(brand, { content: listContent(brandId), campaigns, settings: getSettings() }) }) });
     if (ctx.dead) return;
     state.variants = variants.map((v) => ({ parts: v.parts, note: v.note || "", demo, rated: false, editing: false, busy: false }));
     state.lastParams = params;
@@ -545,7 +546,10 @@ async function runRewrite(ctx, index, rewriteKey) {
     const next = demo
       ? await demoRewriteCopy({ parts: v.parts, note: v.note, label: rewriteLabel(rewrite.key).toLowerCase() })
       : await rewriteCopy(ai, {
-          brandContext: buildFullContext(brand, { campaigns: listCampaigns(brandId) }),
+          brandContext: buildFullContext(brand, {
+            campaigns: listCampaigns(brandId),
+            pulseText: pulseTextFor(brand, { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() }),
+          }),
           format: params.format,
           customFormat: params.customFormat,
           threadMode: params.threadMode,

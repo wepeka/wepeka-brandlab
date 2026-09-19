@@ -6,6 +6,7 @@ import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { generateScript, AiApiError, hasAiKey, buildFullContext, campaignSummaryLine } from "../ai.js";
+import { pulseTextFor } from "../brand-pulse.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -204,7 +205,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       // Full brand context (DNA + personality + tone of voice + visual
       // guidelines + active campaigns) instead of just the legacy
       // aiVoiceGuide string — see ai.js buildFullContext.
-      brandContext: brand ? buildFullContext(brand, { campaigns: listCampaigns(brand.id) }) : "",
+      brandContext: brand ? buildFullContext(brand, { campaigns: listCampaigns(brand.id), pulseText: pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() }) }) : "",
       campaignLine: linkedCampaignLine(),
       ...extra,
     };

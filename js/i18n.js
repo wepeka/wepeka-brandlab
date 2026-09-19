@@ -11,6 +11,7 @@ import guides from "./i18n/guides.js";
 import app_shell from "./i18n/app-shell.js";
 import content from "./i18n/content.js";
 import ai from "./i18n/ai.js";
+import brand_pulse from "./i18n/brand-pulse.js";
 
 const KEY = "wepeka-lang";
 
@@ -495,6 +496,7 @@ const EXTRA = {
   "app-shell": app_shell,
   "content": content,
   "ai": ai,
+  "brand-pulse": brand_pulse,
 };
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 

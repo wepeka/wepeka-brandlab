@@ -7,7 +7,7 @@
 // entry is the "Catat angka" sheet for things the app can't observe.
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, listContent, createContent, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
+  getBrand, listContent, listCampaigns, createContent, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
 } from "../store.js";
@@ -22,6 +22,7 @@ import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
 import { toast, formatNumber, qs, qsa, openMenu, closeMenu, escapeHtml as esc } from "../dom.js";
 import { brainstormCampaignIdeas, suggestPhaseContent, generateCampaignPlaybook, generateIdeaBubbles, AiApiError, hasAiKey } from "../ai.js";
+import { pulseTextFor } from "../brand-pulse.js";
 import { openInsightsModal } from "./insights-modal.js";
 import { openQuickFillModal } from "./content-list.js";
 import { setPageGuide } from "../section-guide.js";
@@ -532,7 +533,8 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
     btn.disabled = true;
     statusEl.innerHTML = `<div class="ocr-status" style="margin:6px 0;"><div class="spinner"></div><span>${t("camp.ideas.thinking")}</span></div>`;
     try {
-      const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, existingIdeas: (campaign.ideas || []).map((i) => i.text) });
+      const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
+      const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, existingIdeas: (campaign.ideas || []).map((i) => i.text), pulseText });
       // Whatever was still showing (not yet kept) drops into the collapsed
       // history instead of being silently replaced — same pattern as the
       // brainstorm modal and Creator's AI panel.
@@ -615,7 +617,8 @@ function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
     statusEl.innerHTML = `<div class="ocr-status" style="margin-bottom:10px;"><div class="spinner"></div><span>${t("camp.plan.thinking")}</span></div>`;
     try {
       const levels = stages.map((s) => ({ index: s.index, name: s.name, description: s.description, targets: s.milestones.filter((m) => m.required !== false && !m.notApplicable).map((m) => `${m.label}${m.target ? ` ${m.target} ${m.unit || ""}` : ""}`) }));
-      const result = await generateCampaignPlaybook(ai, { brand, campaign, track: campaign.goalPlan.track, levels, extra: qs("#cd-plan-context", root)?.value.trim() || "" });
+      const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
+      const result = await generateCampaignPlaybook(ai, { brand, campaign, track: campaign.goalPlan.track, levels, extra: qs("#cd-plan-context", root)?.value.trim() || "", pulseText });
       updateCampaign(campaign.id, { aiPlan: { ...result, generatedAt: Date.now() } });
       toast(t("camp.plan.saved"));
       refresh();
@@ -1326,7 +1329,7 @@ function openBrainstormModal({ brandId, brand, campaign, stage, refresh, ctxLabe
       if (demo) toast(DEMO_TOAST);
       let ideas;
       if (demo) ({ ideas } = await demoBrainstormIdeas({ brand, campaign, mission: stage?.raw || null }));
-      else if (stage?.kind === "phase") ideas = await suggestPhaseContent(ai, { brand, campaign, phase: stage.raw, existingTitles });
+      else if (stage?.kind === "phase") ideas = await suggestPhaseContent(ai, { brand, campaign, phase: stage.raw, existingTitles, pulseText: pulseTextFor(brand, { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() }) });
       else ({ ideas } = await brainstormCampaignIdeas(ai, { brand, campaign, mission: stage?.kind === "level" ? stage.raw : stage ? { name: stage.name, description: stage.dateLabel ? `Fase ${stage.name} (${stage.dateLabel})` : stage.description, tagline: "" } : null, existingTitles }));
       statusEl.innerHTML = "";
       // Newest batch of ideas renders open up top; whatever was showing

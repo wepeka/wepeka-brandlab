@@ -9,7 +9,7 @@
 // Logging and export are free for every account; the AI advice follows the
 // same Lifetime gate as Copy Studio. Still 100% manual entry — the page
 // says so, and nothing here asks for or shows ads metrics.
-import { getBrand, listCampaigns, getSettings, unitLabel, localISODate, updateBrand } from "../store.js";
+import { getBrand, listCampaigns, listContent, getSettings, unitLabel, localISODate, updateBrand } from "../store.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import {
   getTracker, addProduct, updateProduct, logSale, deleteSale, clearAllSales, saveAdvice, productStats, trackerTotals, monthRange, weeklySeries,
@@ -17,6 +17,7 @@ import {
 } from "../sales-tracker.js";
 import { salesModel } from "../goal-plan.js";
 import { suggestSalesActions, hasAiKey, AiApiError } from "../ai.js";
+import { pulseTextFor } from "../brand-pulse.js";
 import { buildXlsx, downloadBlob } from "../xlsx-lite.js";
 import { getCachedAccount, isLifetime } from "../account.js";
 import { backLinkHTML } from "../back-link.js";
@@ -375,7 +376,9 @@ function wire(root, brandId, state, refresh, { brand, tracker, campaign, unit })
     refresh();
     try {
       const fresh = getBrand(brandId);
-      const advice = await suggestSalesActions(ai, { brand: fresh, snapshotText: salesSnapshotText(fresh, { unit }), campaigns: listCampaigns(brandId) });
+      const salesCampaigns = listCampaigns(brandId);
+      const pulseText = pulseTextFor(fresh, { content: listContent(brandId), campaigns: salesCampaigns, settings: getSettings() });
+      const advice = await suggestSalesActions(ai, { brand: fresh, snapshotText: salesSnapshotText(fresh, { unit }), campaigns: salesCampaigns, pulseText });
       saveAdvice(brandId, advice);
     } catch (e) {
       state.adviceError = e instanceof AiApiError ? e.message : t("sales.advice.err");
