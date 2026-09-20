@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, addBrandNote, addBrandLogEntry, removeBrandLogEntry, clearBrandLog, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS, createContent, getCompanionThread, ensureCompanionThread, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
@@ -16,7 +16,9 @@ import { openReportModal } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { computeSignals, pulseTextFor } from "../brand-pulse.js";
-import { companionReply, hasAiKey, AiApiError } from "../ai.js";
+import { companionChat, recapCompanion, hasAiKey, AiApiError } from "../ai.js";
+import { aiLimitReached } from "../ai-usage.js";
+import { parseDirectives, renderLightMarkdown } from "../ai-directives.js";
 import { wireMic } from "../voice-input.js";
 import { go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -100,19 +102,35 @@ function buildSteps(brandId, brand, campaigns, content) {
   return { steps, currentIndex, doneCount: steps.filter((s) => s.done).length, identityDone };
 }
 
-// ---------- Companion (R5, Brief Revisi 2 fase 4) ----------
-// A daily "what happened today?" — not a report, a friend checking in.
-// Greets once a day (brand.companion.lastAskedAt), then every reply the
-// owner types becomes a brand.developmentLog note (js/store.js
-// addBrandNote) plus one short AI reply (js/ai.js companionReply) that
-// every other AI feature's context picks up through js/brand-pulse.js
-// pulseText from then on.
+// ---------- Companion / Teman Brand ----------
+// A real chat with the brand, not a log. Three layers, on purpose:
+//
+//   1. The chat itself — a rolling per-brand thread in the brainstorms/
+//      collection (js/store.js getCompanionThread). Raw, deletable per
+//      message, and read by exactly one AI call: companionChat, the
+//      Companion's own reply. Nothing else in the app ever sees it, so an
+//      offhand vent stays between the owner and this card.
+//   2. Moments — what a recap (js/ai.js recapCompanion) pulls out of that
+//      chat: the few brand-relevant things that happened (a sales spike,
+//      an offer, a VIP customer…), each ticked by the owner on the recap
+//      card before it enters brand.developmentLog (source "moment").
+//   3. Brand memory — moments + auto signals, the only thing
+//      js/brand-pulse.js buildPulseText renders into every other AI
+//      feature's context. "Kelola" opens it for deleting.
+//
+// The recap is never triggered silently: a nudge bubble when the owner
+// comes back to un-recapped chat, and a "Rangkum" button — one tap, one AI
+// call, and the owner sees exactly what would be remembered before it is.
 
 // Which signal kinds get a quick-action button, in priority order — same
 // four the brief calls out, first match wins for the greeting's "yang aku
 // lihat" line too so the two never disagree about what's most notable.
 const COMPANION_ACTION_KINDS = ["viral", "follower-jump", "sales-down", "streak-break"];
 const GREETING_PRIORITY = ["viral", "sales-down", "follower-jump", "follower-drop", "engagement-drop", "streak-break", "top-format", "sales-up", "stale-campaign", "overdue", "cross"];
+const HISTORY_FOR_MODEL = 16;
+const MOMENTS_SHOWN = 3;
+const RECAP_MAX_MOMENTS = 6;
+const MEMORY_MODAL_LIMIT = 40;
 
 function pickTopSignal(signals) {
   for (const kind of GREETING_PRIORITY) {
@@ -128,28 +146,147 @@ function greetingSentence(brand, now) {
   return t(key, { brand: esc(brand.name) });
 }
 
-// [[idea:Title|why]] and [[ask:Question]] — the two directives
-// companionReply's system prompt is allowed to use (js/ai.js). A minimal,
-// self-contained parser rather than importing consultant-panel.js's
-// (that generalizes into its own js/ai-directives.js in fase 5, shared with
-// the Brainstorm chat — not built yet).
-function parseCompanionReply(raw) {
-  let text = raw || "";
-  let idea = null;
-  let ask = null;
-  text = text.replace(/\[\[idea:([^|\]]+)\|([^\]]+)\]\]/i, (_, title, why) => {
-    idea = { title: title.trim(), why: why.trim() };
-    return "";
-  });
-  text = text.replace(/\[\[ask:([^\]]+)\]\]/i, (_, q) => {
-    ask = q.trim();
-    return "";
-  });
-  return { text: text.trim(), idea, ask };
+const dayKey = (ms) => localISODate(new Date(ms));
+function dayLabel(iso, todayIso) {
+  if (iso === todayIso) return t("companion.day.today");
+  const y = new Date(todayIso + "T00:00:00");
+  y.setDate(y.getDate() - 1);
+  if (iso === localISODate(y)) return t("companion.day.yesterday");
+  return formatDate(iso);
+}
+const daySeparatorHTML = (label) => `<div class="companion-day">${esc(label)}</div>`;
+
+function bubbleHTML(role, inner, { msgId = "", extraClass = "" } = {}) {
+  const del = role === "user" && msgId
+    ? `<button type="button" class="companion-msg-del" data-companion-msg-delete="${msgId}" aria-label="${t("companion.msg.delete")}" title="${t("companion.msg.delete")}">${icon("trash", { size: 11 })}</button>`
+    : "";
+  return `<div class="consultant-msg consultant-msg-${role}${extraClass ? ` ${extraClass}` : ""}"${msgId ? ` data-companion-msg="${msgId}"` : ""}>${inner}${del}</div>`;
 }
 
-function companionBubbleHTML(role, html) {
-  return `<div class="consultant-msg consultant-msg-${role}">${html}</div>`;
+const typingHTML = () => bubbleHTML("assistant", `<span class="typing-dots" aria-label="${t("companion.typing")}"><i></i><i></i><i></i></span>`, { extraClass: "consultant-msg-pending" });
+
+// [[idea:…]] from a reply → a card with a real way to act on it. Once
+// "Bikin di Creator" has run, the card remembers the draft it made
+// (idea.contentId, patched into the message) so a reload doesn't offer to
+// create it twice.
+function ideaCardsHTML(ideas, msgId) {
+  return (ideas || [])
+    .map((idea, i) => {
+      const seed = t("companion.moment.seed", { title: idea.title, detail: idea.why });
+      const create = idea.contentId
+        ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content-os/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("companion.idea.openDraft")}</a>`
+        : `<button type="button" class="btn btn-secondary btn-sm" data-companion-idea-create="${msgId}:${i}">${icon("edit", { size: 12 })}${t("companion.idea.create")}</button>`;
+      return `
+        <div class="companion-idea">
+          <div>💡 <b>${esc(idea.title)}</b> — ${esc(idea.why)}</div>
+          <div class="companion-actions" style="margin-top:8px;">
+            ${create}
+            <button type="button" class="btn btn-ghost btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 12 })}${t("companion.idea.brainstorm")}</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+}
+
+function asksHTML(asks) {
+  if (!asks?.length) return "";
+  return `<div class="consultant-starters" style="margin-top:8px;">${asks.map((q) => `<button type="button" class="consultant-starter" data-companion-followup="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+}
+
+// The recap card: what the model thinks is worth remembering, as a
+// checklist the owner decides on. Undecided → checkboxes + Simpan/Buang;
+// decided → a one-line record of what happened, so the thread keeps its
+// history without offering the same choice twice.
+function recapCardHTML(recap, msgId) {
+  const moments = recap.moments || [];
+  if (recap.decided) {
+    const line = moments.length === 0 ? t("companion.recap.empty") : recap.savedCount ? t("companion.recap.decidedSaved", { n: recap.savedCount }) : t("companion.recap.decidedNone");
+    return `<div class="companion-recap is-decided"><span class="text-faint" style="font-size:11.5px;">${icon("check", { size: 11 })} ${esc(line)}</span></div>`;
+  }
+  return `
+    <div class="companion-recap">
+      <p class="companion-recap-pick">${t("companion.recap.pick")}</p>
+      ${moments
+        .map(
+          (m, i) => `
+        <label class="companion-recap-item">
+          <input type="checkbox" checked data-recap-pick="${i}" />
+          <span class="companion-recap-body">
+            <span class="tag">${t(`companion.moment.kind.${m.kind}`)}</span>
+            <b>${esc(m.title)}</b>${m.detail ? `<span class="text-muted"> — ${esc(m.detail)}</span>` : ""}
+          </span>
+        </label>`
+        )
+        .join("")}
+      <div class="companion-actions" style="margin-top:10px;">
+        <button type="button" class="btn btn-primary btn-sm" data-companion-recap-save="${msgId}">${icon("check", { size: 12 })}${t("companion.recap.save")}</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-companion-recap-discard="${msgId}">${t("companion.recap.discard")}</button>
+      </div>
+    </div>`;
+}
+
+function messageHTML(m, { isLast }) {
+  if (m.role === "user") return bubbleHTML("user", `<span class="companion-user-text">${esc(m.text)}</span>`, { msgId: m.id });
+  const blocks = m.blocks || {};
+  const inner = [
+    m.text ? `<div class="consultant-md">${renderLightMarkdown(m.text)}</div>` : "",
+    blocks.recap ? recapCardHTML(blocks.recap, m.id) : "",
+    ideaCardsHTML(blocks.ideas, m.id),
+    isLast ? asksHTML(blocks.asks) : "",
+  ].join("");
+  return bubbleHTML("assistant", inner, { msgId: m.id });
+}
+
+function threadHTML({ brand, thread, signals, now, state }) {
+  const todayIso = localISODate(now);
+  const msgs = [...(thread?.messages || [])].sort((a, b) => a.at - b.at);
+  const older = msgs.filter((m) => dayKey(m.at) !== todayIso);
+  const todayMsgs = msgs.filter((m) => dayKey(m.at) === todayIso);
+  const lastId = msgs[msgs.length - 1]?.id;
+  const parts = [];
+
+  if (older.length) {
+    if (!state.companionShowAll) {
+      parts.push(`<button type="button" class="companion-older-toggle" data-companion-toggle-older>${icon("chevronDown", { size: 12 })}${t("companion.showOlder", { n: older.length })}</button>`);
+    } else {
+      parts.push(`<button type="button" class="companion-older-toggle" data-companion-toggle-older>${icon("chevronDown", { size: 12 })}${t("companion.hideOlder")}</button>`);
+      let day = "";
+      older.forEach((m) => {
+        const d = dayKey(m.at);
+        if (d !== day) { day = d; parts.push(daySeparatorHTML(dayLabel(d, todayIso))); }
+        parts.push(messageHTML(m, { isLast: m.id === lastId }));
+      });
+    }
+  }
+
+  parts.push(daySeparatorHTML(dayLabel(todayIso, todayIso)));
+
+  // Deterministic, never persisted: today's "hey, what happened?" plus the
+  // single most notable auto signal. Disappears once the owner has said
+  // something today (companion.lastAskedAt).
+  if (brand.companion?.lastAskedAt !== todayIso) {
+    const top = pickTopSignal(signals);
+    parts.push(bubbleHTML("assistant", `${greetingSentence(brand, now)} ${esc(top ? top.title : t("companion.observation.quiet"))}`));
+  }
+
+  // Also deterministic: chat since the last recap that the owner hasn't
+  // come back to yet → offer the recap, one tap. Only when there's nothing
+  // from today, so it never interrupts a conversation in progress.
+  const since = brand.companion?.lastRecapAt || 0;
+  const unrecapped = msgs.filter((m) => m.role === "user" && m.at > since).length;
+  if (unrecapped && !todayMsgs.some((m) => m.role === "user") && !state.companionPending) {
+    parts.push(
+      bubbleHTML(
+        "assistant",
+        `${esc(t("companion.recap.nudge", { n: unrecapped }))}<div class="companion-actions" style="margin-top:8px;"><button type="button" class="btn btn-secondary btn-sm" data-companion-recap>${icon("sparkle", { size: 12 })}${t("companion.recap.button")}</button></div>`
+      )
+    );
+  }
+
+  todayMsgs.forEach((m) => parts.push(messageHTML(m, { isLast: m.id === lastId })));
+  if (state.companionNotice) parts.push(bubbleHTML("assistant", esc(state.companionNotice)));
+  if (state.companionPending) parts.push(typingHTML());
+  return parts.join("");
 }
 
 function companionActionsHTML(signals, content, brandId) {
@@ -158,11 +295,11 @@ function companionActionsHTML(signals, content, brandId) {
   const buttons = picks.map((s) => {
     if (s.kind === "viral") {
       const c = content.find((x) => x.id === s.refs.contentId);
-      const seed = t("companion.seed.viral", { title: esc(c?.title || t("pulse.untitledContent")) });
+      const seed = t("companion.seed.viral", { title: c?.title || t("pulse.untitledContent") });
       return `<button type="button" class="btn btn-secondary btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 13 })}${t("companion.action.similarContent")}</button>`;
     }
     if (s.kind === "follower-jump") {
-      const seed = t("companion.seed.followerJump", { platform: esc(s.refs.platform || "") });
+      const seed = t("companion.seed.followerJump", { platform: s.refs.platform || "" });
       return `<button type="button" class="btn btn-secondary btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 13 })}${t("companion.action.rideMomentum")}</button>`;
     }
     if (s.kind === "sales-down") {
@@ -174,109 +311,122 @@ function companionActionsHTML(signals, content, brandId) {
   return `<div class="companion-actions">${buttons.join("")}</div>`;
 }
 
-// Every row gets a real delete (js/store.js removeBrandLogEntry) — not the
-// old ack-only ×. Deleting is what actually stops an entry from reaching
-// js/brand-pulse.js buildPulseText and, through it, any AI feature's
-// context; acking only hid the nag. "Kelola" opens the full history
-// (openBrandMemoryModal) for anything that's scrolled out of these 3 —
-// the whole reason this exists is so an accidental "curhat" can actually
-// be found and removed, not just the newest ones.
-function companionLogHTML(log) {
-  const sorted = [...(log || [])].sort((a, b) => b.at - a.at);
-  if (!sorted.length) return "";
-  const recent = sorted.slice(0, 3);
-  const rows = recent
+// The newest saved moments, each with its action (if the recap gave it one)
+// and a real delete — plus "Kelola" for the full brand memory.
+function momentActionHTML(m, brandId) {
+  const action = m.refs?.action;
+  if (!action) return "";
+  const label = t(`companion.moment.action.${action}`);
+  if (action === "brainstorm") {
+    const seed = t("companion.moment.seed", { title: m.title, detail: m.detail || "" });
+    return `<button type="button" class="companion-moment-action" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${label}${icon("arrowRight", { size: 11 })}</button>`;
+  }
+  const href = action === "sales" ? `#/brand/${brandId}/sales` : `#/brand/${brandId}/content-os/creator`;
+  return `<a class="companion-moment-action" href="${href}">${label}${icon("arrowRight", { size: 11 })}</a>`;
+}
+
+function momentsStripHTML(log, brandId) {
+  const moments = (log || []).filter((e) => e.source === "moment").sort((a, b) => b.at - a.at).slice(0, MOMENTS_SHOWN);
+  const rows = moments
     .map(
-      (e) => `
-      <div class="companion-log-row" data-companion-log-row="${e.id}">
-        <span class="companion-log-text">${esc(e.title || "")}</span>
-        <button type="button" class="chip-icon-btn" data-companion-delete="${e.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
+      (m) => `
+      <div class="companion-moment-row">
+        <span class="tag">${t(`companion.moment.kind.${m.kind}`)}</span>
+        <span class="companion-moment-text" title="${esc(m.detail || m.title)}">${esc(m.title)}</span>
+        ${momentActionHTML(m, brandId)}
+        <button type="button" class="chip-icon-btn" data-companion-delete="${m.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
       </div>`
     )
     .join("");
   return `
-    <div class="companion-log">
-      <div class="companion-log-head">
-        <p class="companion-log-title">${t("companion.log.title")}</p>
-        <button type="button" class="link" id="companion-manage" style="font-size:11px;">${t("companion.log.manage")}</button>
+    <div class="companion-moments">
+      <div class="companion-moments-head">
+        <p class="companion-moments-title">${t("companion.moments.title")}</p>
+        <button type="button" class="link" id="companion-manage" style="font-size:11px;">${t("companion.moments.manage")}</button>
       </div>
-      ${rows}
+      ${rows || `<p class="text-faint" style="font-size:12px;margin:0;">${t("companion.memory.empty")}</p>`}
     </div>`;
 }
 
-function companionWidgetHTML(brand, { signals, content, now, pending, error }) {
-  const today = localISODate(now);
-  const askedToday = brand.companion?.lastAskedAt === today;
+function companionWidgetHTML(brand, { thread, signals, content, now, state }) {
   const log = brand.developmentLog || [];
-  const lastEntry = [...log].sort((a, b) => b.at - a.at)[0];
-
-  // Not just !askedToday: brand memory can be cleared (js/store.js
-  // clearBrandLog, from the "Brand memory" modal) without ever touching
-  // companion.lastAskedAt, and an empty log has nothing to show as a
-  // "last entry" bubble either way — fall back to the greeting whenever
-  // there's genuinely nothing to continue from.
-  const showGreeting = !askedToday || !lastEntry;
-  let threadHTML;
-  if (showGreeting) {
-    const top = pickTopSignal(signals);
-    const observation = top ? top.title : t("companion.observation.quiet");
-    threadHTML = companionBubbleHTML("assistant", `${greetingSentence(brand, now)} ${esc(observation)}`);
-  } else if (lastEntry) {
-    const isNote = lastEntry.source === "note";
-    let html = esc(lastEntry.title);
-    if (!isNote && lastEntry.refs?.idea) {
-      html += `<div class="companion-idea">💡 <b>${esc(lastEntry.refs.idea.title)}</b> — ${esc(lastEntry.refs.idea.why)}</div>`;
-    }
-    if (!isNote && lastEntry.refs?.ask) {
-      html += `<button type="button" class="consultant-starter" data-companion-followup="${esc(lastEntry.refs.ask)}">${esc(lastEntry.refs.ask)}</button>`;
-    }
-    threadHTML = companionBubbleHTML(isNote ? "user" : "assistant", html);
-  } else {
-    threadHTML = "";
-  }
-  if (pending) threadHTML += companionBubbleHTML("assistant", `<span class="typing-dots" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span>`);
-
+  const since = brand.companion?.lastRecapAt || 0;
+  const unrecapped = (thread?.messages || []).filter((m) => m.role === "user" && m.at > since).length;
+  const quotaOut = aiLimitReached();
+  const busy = !!state.companionPending;
   const weekAgo = now.getTime() - 7 * 86400000;
-  const newThisWeek = log.filter((e) => e.at >= weekAgo).length;
+  const momentsThisWeek = log.filter((e) => e.source === "moment" && e.at >= weekAgo).length;
 
+  const thread_ = threadHTML({ brand, thread, signals, now, state }).replaceAll("__BRAND__", brand.id);
   return {
+    extraHead: unrecapped && !busy ? `<button type="button" class="btn btn-secondary btn-sm" data-companion-recap>${icon("sparkle", { size: 12 })}${t("companion.recap.button")}</button>` : "",
     bodyHTML: `
-      <div class="companion-thread">${threadHTML}</div>
-      ${error ? `<p class="companion-error">${esc(error)}</p>` : ""}
+      <div class="companion-thread" id="companion-thread">${thread_}</div>
+      ${state.companionError ? `<p class="companion-error">${esc(state.companionError)}</p>` : ""}
+      ${quotaOut ? `<p class="companion-error">${t("companion.quotaReached")}</p>` : ""}
       <div class="companion-composer">
-        <input type="text" class="input" id="companion-input" placeholder="${esc(showGreeting ? t("companion.placeholder") : t("companion.askAgain"))}" ${pending ? "disabled" : ""} />
-        <button type="button" class="chip-icon-btn" id="companion-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
-        <button type="button" class="btn btn-primary btn-sm" id="companion-send" ${pending ? "disabled" : ""}>${t("companion.send")}</button>
+        <input type="text" class="input" id="companion-input" placeholder="${esc(t("companion.placeholder"))}" value="${esc(state.companionDraft || "")}" ${busy || quotaOut ? "disabled" : ""} />
+        <button type="button" class="chip-icon-btn" id="companion-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}" ${busy || quotaOut ? "disabled" : ""}>${icon("mic", { size: 15 })}</button>
+        <button type="button" class="btn btn-primary btn-sm" id="companion-send" ${busy || quotaOut ? "disabled" : ""}>${t("companion.send")}</button>
       </div>
       ${companionActionsHTML(signals, content, brand.id)}
-      ${companionLogHTML(log)}
+      ${momentsStripHTML(log, brand.id)}
     `,
-    summary: newThisWeek ? t("companion.log.summary", { n: newThisWeek }) : t("companion.observation.quiet"),
+    summary: momentsThisWeek ? t("companion.moments.summary", { n: momentsThisWeek }) : t("companion.observation.quiet"),
   };
 }
 
+// What the model returned → what we're willing to store. Unknown kinds
+// become "other", unknown actions are dropped, strings are cut to the
+// lengths the prompt promised, empties vanish. Nothing here is trusted
+// past this point.
+function validateRecap(moments) {
+  return (Array.isArray(moments) ? moments : [])
+    .map((m) => ({
+      kind: MOMENT_KINDS.includes(m?.kind) ? m.kind : "other",
+      title: String(m?.title || "").trim().slice(0, 80),
+      detail: String(m?.detail || "").trim().slice(0, 160),
+      action: MOMENT_ACTIONS.includes(m?.action) ? m.action : null,
+    }))
+    .filter((m) => m.title)
+    .slice(0, RECAP_MAX_MOMENTS);
+}
+
 function wireCompanion(root, { brandId, brand, content, signals, state, refresh }) {
+  const threadEl = qs("#companion-thread", root);
+  if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
   const input = qs("#companion-input", root);
   const sendBtn = qs("#companion-send", root);
   const micBtn = qs("#companion-mic", root);
   if (micBtn && input) wireMic(micBtn, input);
+  // A Firestore snapshot mid-sentence repaints the card; keep what's typed.
+  input?.addEventListener("input", () => { state.companionDraft = input.value; });
+
+  const pulseNow = () => pulseTextFor(getBrand(brandId), { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
 
   const send = async (textArg) => {
     const text = (textArg ?? input?.value ?? "").trim();
     if (!text || state.companionPending) return;
     state.companionPending = true;
     state.companionError = "";
+    state.companionNotice = "";
+    state.companionDraft = "";
     refresh();
-    addBrandNote(brandId, text);
+    const thread = ensureCompanionThread(brandId);
+    appendBrainstormMessage(thread.id, { role: "user", text });
     updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
     try {
       const ai = getSettings().ai || {};
-      if (!hasAiKey(ai)) throw new AiApiError(t("companion.aiUnavailable"));
-      const fresh = getBrand(brandId);
-      const pulseText = pulseTextFor(fresh, { content, campaigns: listCampaigns(brandId), settings: getSettings() });
-      const raw = await companionReply(ai, { brand: fresh, pulseText, note: text });
-      const { text: cleanText, idea, ask } = parseCompanionReply(raw);
-      addBrandLogEntry(brandId, { kind: "companion-reply", source: "ai", title: cleanText || raw, detail: cleanText || raw, refs: { idea: idea || null, ask: ask || null } });
+      if (!hasAiKey(ai)) {
+        state.companionNotice = t("companion.aiUnavailable");
+        return;
+      }
+      const msgs = getCompanionThread(brandId)?.messages || [];
+      // Everything before the message just appended, most recent first cut.
+      const history = msgs.slice(0, -1).filter((m) => m.text).slice(-HISTORY_FOR_MODEL).map((m) => ({ role: m.role, text: m.text }));
+      const raw = await companionChat(ai, { brand: getBrand(brandId), pulseText: pulseNow(), history, message: text });
+      const { cleanText, ideas, asks } = parseDirectives(raw.trim());
+      appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas, asks } });
     } catch (e) {
       state.companionError = e instanceof AiApiError ? e.message : t("companion.saveFailed");
     } finally {
@@ -285,12 +435,95 @@ function wireCompanion(root, { brandId, brand, content, signals, state, refresh 
     }
   };
 
+  const recap = async () => {
+    if (state.companionPending) return;
+    const thread = getCompanionThread(brandId);
+    const since = getBrand(brandId)?.companion?.lastRecapAt || 0;
+    const slice = (thread?.messages || []).filter((m) => m.at > since && !m.blocks?.recap && m.text);
+    if (!slice.some((m) => m.role === "user")) return;
+    state.companionPending = true;
+    state.companionError = "";
+    state.companionNotice = "";
+    refresh();
+    try {
+      const ai = getSettings().ai || {};
+      if (!hasAiKey(ai)) throw new AiApiError(t("companion.aiUnavailable"));
+      const { summary, moments } = await recapCompanion(ai, {
+        brand: getBrand(brandId),
+        pulseText: pulseNow(),
+        messages: slice.map((m) => ({ role: m.role, text: m.text })),
+        today: localISODate(),
+        kinds: MOMENT_KINDS,
+        actions: MOMENT_ACTIONS,
+      });
+      const valid = validateRecap(moments);
+      // Covered messages count as recapped from here on, whatever the owner
+      // decides on the card — the nudge shouldn't keep asking about them.
+      const now = Date.now();
+      appendBrainstormMessage(thread.id, { role: "assistant", text: summary, at: now, blocks: { recap: { moments: valid, decided: valid.length === 0, savedCount: 0 } } });
+      updateBrand(brandId, { companion: { ...(getBrand(brandId)?.companion || {}), lastRecapAt: now } });
+    } catch (e) {
+      state.companionError = e instanceof AiApiError ? e.message : t("companion.recap.failed");
+    } finally {
+      state.companionPending = false;
+      refresh();
+    }
+  };
+
+  const decideRecap = (msgId, save) => {
+    const thread = getCompanionThread(brandId);
+    const msg = thread?.messages?.find((m) => m.id === msgId);
+    const recapBlock = msg?.blocks?.recap;
+    if (!recapBlock || recapBlock.decided) return;
+    let picked = [];
+    if (save) {
+      const bubble = qs(`[data-companion-msg="${msgId}"]`, root);
+      const checked = new Set(qsa("[data-recap-pick]", bubble).filter((el) => el.checked).map((el) => Number(el.dataset.recapPick)));
+      picked = recapBlock.moments.filter((_, i) => checked.has(i));
+      if (picked.length) addBrandMoments(brandId, picked);
+    }
+    updateBrainstormMessage(thread.id, msgId, { blocks: { ...msg.blocks, recap: { ...recapBlock, decided: true, savedCount: picked.length } } });
+    toast(picked.length ? t("companion.recap.saved", { n: picked.length }) : t("companion.recap.discarded"));
+    refresh();
+  };
+
   sendBtn?.addEventListener("click", () => send());
   input?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); send(); }
   });
-  qsa("[data-companion-followup]", root).forEach((btn) =>
-    btn.addEventListener("click", () => send(btn.dataset.companionFollowup))
+  qsa("[data-companion-followup]", root).forEach((btn) => btn.addEventListener("click", () => send(btn.dataset.companionFollowup)));
+  qsa("[data-companion-recap]", root).forEach((btn) => btn.addEventListener("click", recap));
+  qsa("[data-companion-recap-save]", root).forEach((btn) => btn.addEventListener("click", () => decideRecap(btn.dataset.companionRecapSave, true)));
+  qsa("[data-companion-recap-discard]", root).forEach((btn) => btn.addEventListener("click", () => decideRecap(btn.dataset.companionRecapDiscard, false)));
+  qsa("[data-companion-toggle-older]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.companionShowAll = !state.companionShowAll;
+      refresh();
+    })
+  );
+  qsa("[data-companion-msg-delete]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const thread = getCompanionThread(brandId);
+      if (thread) removeBrainstormMessage(thread.id, btn.dataset.companionMsgDelete);
+      refresh();
+    })
+  );
+  qsa("[data-companion-idea-create]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const [msgId, idx] = btn.dataset.companionIdeaCreate.split(":");
+      const thread = getCompanionThread(brandId);
+      const msg = thread?.messages?.find((m) => m.id === msgId);
+      const idea = msg?.blocks?.ideas?.[Number(idx)];
+      if (!idea || idea.contentId) return;
+      // Linked to the brand's active campaign so it counts there right away
+      // (same as the Consultant FAB's "Buatkan draft").
+      const active = listCampaigns(brandId).find((c) => c.status !== "archived");
+      const item = createContent(brandId, { title: idea.title, funnel: "TOFU", campaignId: active?.id || "", idea: t("companion.idea.fromChat", { why: idea.why }) });
+      const ideas = msg.blocks.ideas.map((x, i) => (i === Number(idx) ? { ...x, contentId: item.id } : x));
+      updateBrainstormMessage(thread.id, msgId, { blocks: { ...msg.blocks, ideas } });
+      toast(t("companion.idea.created", { title: idea.title }));
+      refresh();
+    })
   );
   qsa("[data-companion-delete]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
@@ -306,16 +539,20 @@ function wireCompanion(root, { brandId, brand, content, signals, state, refresh 
   );
 }
 
-// Full history, past the 3 rows the card itself shows — so an accidental
-// "curhat" that's already scrolled out of view can still be found and
-// deleted. Says plainly what this log is (fed to every AI feature's
-// context via js/brand-pulse.js) and what deleting does and doesn't undo.
-const MEMORY_MODAL_LIMIT = 40;
+// Brand memory in full: every moment and auto signal past the 3 the card
+// shows, each deletable, plus the chat's own "delete everything" — kept
+// apart on purpose so it's clear which one AI features read (memory) and
+// which one only the Companion does (chat).
 function openBrandMemoryModal(brandId, { refresh }) {
+  const sourceTag = (e) => {
+    if (e.source === "moment") return t(`companion.moment.kind.${MOMENT_KINDS.includes(e.kind) ? e.kind : "other"}`);
+    if (e.source === "auto") return t("pulse.log.auto");
+    return t("pulse.log.legacy");
+  };
   const paintList = () => {
     const brand = getBrand(brandId);
     const log = [...(brand?.developmentLog || [])].sort((a, b) => b.at - a.at).slice(0, MEMORY_MODAL_LIMIT);
-    const SOURCE_LABEL = { auto: t("pulse.log.auto"), note: t("pulse.log.note"), ai: t("pulse.log.ai") };
+    const msgCount = getCompanionThread(brandId)?.messages?.length || 0;
     return `
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("companion.memory.intro")}</p>
       ${
@@ -323,18 +560,23 @@ function openBrandMemoryModal(brandId, { refresh }) {
           ? log
               .map(
                 (e) => `
-              <div class="companion-log-row" data-memory-row="${e.id}">
-                <div style="min-width:0;">
-                  <span class="tag" style="margin-right:6px;">${SOURCE_LABEL[e.source] || e.source}</span>
-                  <span class="companion-log-text" style="white-space:normal;">${esc(e.title || "")}</span>
+              <div class="companion-moment-row" data-memory-row="${e.id}">
+                <div style="min-width:0;flex:1;">
+                  <span class="tag" style="margin-right:6px;">${sourceTag(e)}</span>
+                  <span class="companion-moment-text" style="white-space:normal;">${esc(e.title || "")}${e.source === "moment" && e.detail ? `<span class="text-muted"> — ${esc(e.detail)}</span>` : ""}</span>
                   <div class="text-faint" style="font-size:11px;margin-top:2px;">${esc(formatDate(new Date(e.at).toISOString().slice(0, 10)))}</div>
                 </div>
                 <button type="button" class="icon-btn" data-memory-delete="${e.id}" aria-label="${t("common.delete")}" style="width:28px;height:28px;flex:none;">${icon("trash", { size: 13 })}</button>
               </div>`
               )
               .join("")
-          : `<div class="table-empty" style="padding:20px;">${t("companion.log.empty")}</div>`
+          : `<div class="table-empty" style="padding:20px;">${t("companion.memory.empty")}</div>`
       }
+      <div class="companion-moments" style="margin-top:18px;">
+        <p class="companion-moments-title">${t("companion.memory.chatSection")}</p>
+        <p class="text-muted" style="font-size:12.5px;margin:0 0 10px;">${t("companion.memory.chatNote", { n: msgCount })}</p>
+        <button type="button" class="btn btn-secondary btn-sm" id="memory-clear-chat" ${msgCount ? "" : "disabled"}>${icon("trash", { size: 12 })}${t("companion.chat.clear")}</button>
+      </div>
     `;
   };
 
@@ -345,17 +587,32 @@ function openBrandMemoryModal(brandId, { refresh }) {
     footHTML: `<button type="button" class="btn btn-secondary" id="memory-clear-all">${icon("trash", { size: 13 })}${t("companion.memory.clearAll")}</button>`,
   });
 
-  const wireRows = () => {
+  const wireBody = () => {
     qsa("[data-memory-delete]", overlay).forEach((btn) =>
       btn.addEventListener("click", () => {
         removeBrandLogEntry(brandId, btn.dataset.memoryDelete);
         overlay.querySelector(".modal-body").innerHTML = paintList();
-        wireRows();
+        wireBody();
         refresh();
       })
     );
+    overlay.querySelector("#memory-clear-chat")?.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: t("companion.chat.clearConfirm.title"),
+        message: t("companion.chat.clearConfirm.body"),
+        confirmLabel: t("companion.chat.clear"),
+        danger: true,
+      });
+      if (!ok) return;
+      const thread = getCompanionThread(brandId);
+      if (thread) updateBrainstorm(thread.id, { messages: [] });
+      overlay.querySelector(".modal-body").innerHTML = paintList();
+      wireBody();
+      refresh();
+      toast(t("companion.chat.cleared"));
+    });
   };
-  wireRows();
+  wireBody();
 
   overlay.querySelector("#memory-clear-all")?.addEventListener("click", async () => {
     const ok = await confirmDialog({
@@ -366,7 +623,6 @@ function openBrandMemoryModal(brandId, { refresh }) {
     });
     if (!ok) return;
     clearBrandLog(brandId);
-    updateBrand(brandId, { companion: { lastAskedAt: null } });
     closeOverlay(overlay);
     refresh();
     toast(t("companion.memory.cleared"));
@@ -402,7 +658,7 @@ function paint(root, brandId, state, refresh) {
   // below and — a beat later — the buildFullContext of anything the
   // Companion's own reply triggers (js/brand-pulse.js pulseTextFor).
   const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
-  const companion = companionWidgetHTML(brand, { signals, content, now: new Date(), pending: !!state.companionPending, error: state.companionError });
+  const companion = companionWidgetHTML(brand, { thread: getCompanionThread(brandId), signals, content, now: new Date(), state });
 
   root.innerHTML = `
     <div class="page-head">
@@ -419,7 +675,7 @@ function paint(root, brandId, state, refresh) {
     ${
       collapsed.has("companion")
         ? widgetCollapsedHTML("companion", "chat", t("home.companion.title"), companion.summary)
-        : widgetCardHTML("companion", "chat", t("home.companion.title"), companion.bodyHTML)
+        : widgetCardHTML("companion", "chat", t("home.companion.title"), companion.bodyHTML, { extraHead: companion.extraHead })
     }
 
     ${stepsHTML(journey, cfg.lockNext, identityJustDone)}

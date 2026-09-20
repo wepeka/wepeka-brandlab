@@ -73,8 +73,8 @@ const HELP_CONTENT = {
     en: { title: "Copy Studio", body: "Short ready-to-use copy: Threads posts, Story captions, WhatsApp broadcasts, feed captions. Pick a format and goal, say what you want to get across, and AI writes 3 options in this brand's voice. Results aren't saved, so copy them before leaving the page." },
   },
   "home": {
-    id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau \"Hari ini\" begitu identitasnya rampung. Di bawahnya ada langkah berikutnya, jadwal, dan (mode Pro) analitik." },
-    en: { title: "Home", body: "The top card always tells you the one thing to do now — your unfinished brand identity, or \"Today\" once that's done. Below it are the next step, your schedule, and (Pro mode) analytics." },
+    id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau \"Hari ini\" begitu identitasnya rampung. Di bawahnya: Teman Brand (ceritain kejadian di brand-mu seperti chat; tekan Rangkum supaya AI mengubahnya jadi momentum yang kamu pilih untuk diingat semua fitur AI), langkah berikutnya, jadwal, dan (mode Pro) analitik." },
+    en: { title: "Home", body: "The top card always tells you the one thing to do now — your unfinished brand identity, or \"Today\" once that's done. Below it: the Companion (tell it what happened in your brand, chat-style; hit Recap so AI turns it into moments you pick for every AI feature to remember), the next step, your schedule, and (Pro mode) analytics." },
   },
   "tools": {
     id: { title: "Alat", body: "Tiga alat pendukung di luar Campaign dan Konten: Brainstorm buat mikirin ide bareng AI, Copy Studio buat tulisan pendek siap pakai, dan Sales Tracker buat catat penjualan. Selalu terbuka, nggak nunggu identitas brand selesai." },

@@ -245,6 +245,11 @@ function defaultDB() {
     // shooting/editing/upload entries auto-confirm from real content
     // activity that day, "custom" ones are checked off by hand each day.
     routineTemplate: [],
+    // Chat threads with their own doc each (see "Brainstorm threads" below):
+    // the Home Companion's per-brand thread now, Brainstorm partner threads
+    // next. Never inside the brand doc — a message shouldn't rewrite a doc
+    // that carries the logo dataUrl.
+    brainstorms: [],
     settings: {
       platforms: [
         { id: "instagram", name: "Instagram" },
@@ -364,7 +369,7 @@ let ownerUid = null;
 export function initStore(uid) {
   ownerUid = uid;
   return new Promise((resolve) => {
-    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, settings: false };
+    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, brainstorms: false, settings: false };
     const checkReady = () => {
       if (Object.values(ready).every(Boolean)) resolve();
     };
@@ -412,6 +417,13 @@ export function initStore(uid) {
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
     }, onErr("routineTemplate", "routine"));
+
+    onSnapshot(mine("brainstorms"), (snap) => {
+      db.brainstorms = snap.docs.map((d) => d.data());
+      ready.brainstorms = true;
+      checkReady();
+      window.dispatchEvent(new CustomEvent("db:change"));
+    }, onErr("brainstorms", "brainstorms"));
 
     // One settings doc per account (not shared globally) — platforms,
     // formats, thresholds etc. are this account's own, never visible to
@@ -593,16 +605,23 @@ export function insightsBaseline(brand, platform, atMs) {
 }
 
 // ---------- Brand Pulse: development log (js/brand-pulse.js) ----------
-// A short, capped timeline of "what's happening" — auto-detected signals,
-// the owner's own notes (the Home Companion card's "hari ini ada kejadian
-// apa?"), and the AI's replies to them. Feeds js/brand-pulse.js
+// A short, capped timeline of "what's happening" — auto-detected signals
+// plus the "moments" the owner confirmed from a Companion recap (a sales
+// spike, an offer, a VIP customer…). Feeds js/brand-pulse.js
 // buildPulseText, which every AI feature reads so recommendations stay
-// aware of what's actually going on, not just static brand facts. Short
-// strings only, no content bodies or dataUrls — the whole log stays a tiny
-// fraction of the brand doc. `brand.companion = { lastAskedAt }` (a plain
-// ISO date, no dedicated helper needed) tracks whether today's greeting has
-// already been asked, written straight through updateBrand.
+// aware of what's actually going on, not just static brand facts. What is
+// deliberately NOT here: the raw Companion chat — that lives in its own
+// brainstorms/ thread (below) and only the Companion itself reads it, so
+// an offhand vent never reaches Creator or Copy Studio unless the owner
+// turned it into a moment on purpose. Short strings only, no content
+// bodies or dataUrls — the whole log stays a tiny fraction of the brand
+// doc. `brand.companion = { lastAskedAt: "YYYY-MM-DD", lastRecapAt: ms }`
+// is written straight through updateBrand.
 export const DEVELOPMENT_LOG_CAP = 80;
+// What a recap is allowed to file a moment under (js/ai.js recapCompanion
+// is told the same list; js/views/home.js validates against it).
+export const MOMENT_KINDS = ["sales-spike", "offer", "vip", "collab", "launch", "complaint", "event", "other"];
+export const MOMENT_ACTIONS = ["content", "brainstorm", "sales"];
 export function addBrandLogEntry(brandId, { kind, source = "auto", title, detail = "", refs = {}, key = null, at = Date.now() }) {
   const b = getBrand(brandId);
   if (!b) return null;
@@ -633,22 +652,31 @@ export function appendBrandEvents(brandId, events) {
   updateBrand(brandId, { developmentLog: log });
   return log;
 }
-export function addBrandNote(brandId, text) {
-  return addBrandLogEntry(brandId, { kind: "note", source: "note", title: text, detail: text, key: `note:${uid()}` });
-}
-export function ackBrandEvent(brandId, id) {
+// The moments an owner ticked on a Companion recap card, in one write so
+// the brand doc is rewritten once per recap, not once per moment. Each
+// `{ kind, title, detail, action }` is already validated by the caller.
+export function addBrandMoments(brandId, moments) {
   const b = getBrand(brandId);
-  if (!b) return;
-  const log = (b.developmentLog || []).map((e) => (e.id === id ? { ...e, ack: true } : e));
+  if (!b || !moments?.length) return [];
+  const at = Date.now();
+  const additions = moments.map((m, i) => ({
+    id: uid(),
+    at: at + i,
+    kind: m.kind,
+    source: "moment",
+    title: m.title,
+    detail: m.detail || "",
+    refs: { action: m.action || null },
+    key: `moment:${uid()}`,
+    ack: false,
+  }));
+  const log = [...(b.developmentLog || []), ...additions].slice(-DEVELOPMENT_LOG_CAP);
   updateBrand(brandId, { developmentLog: log });
+  return additions;
 }
-// Actually removes one entry — unlike ackBrandEvent (which only dismisses
-// an auto-signal's nag in the UI), this takes it out of developmentLog for
-// good, so it's also gone from js/brand-pulse.js buildPulseText the very
-// next time any AI feature reads this brand's pulse. Used when an owner
-// typed something into the Home Companion they didn't mean to keep (an
-// accidental vent, a note about something private) and wants it forgotten,
-// not just marked read. Does not un-send anything already sent to an AI
+// Takes one entry out of developmentLog for good, so it's also gone from
+// js/brand-pulse.js buildPulseText the very next time any AI feature reads
+// this brand's pulse. Does not un-send anything already sent to an AI
 // provider in a past request — only stops it being sent again.
 export function removeBrandLogEntry(brandId, id) {
   const b = getBrand(brandId);
@@ -664,19 +692,89 @@ export function removeBrandLogEntry(brandId, id) {
 export function clearBrandLog(brandId) {
   updateBrand(brandId, { developmentLog: [] });
 }
+
+// ---------- Brainstorm threads (brainstorms/ collection) ----------
+// One doc per chat thread: { id, ownerId, brandId, campaignId, contentId,
+// title, mode, messages, ideas, proposal, createdAt, updatedAt }. `mode`
+// is "companion" for the Home Companion's single rolling thread per brand
+// (id = companionThreadId(brandId), so no lookup table is needed) and
+// "chat" | "plan" for Brainstorm partner threads (R4, next). messages are
+// { id, role: "user"|"assistant", text, at, blocks? } — `blocks` keeps the
+// parsed directive output (ideas, asks, a recap card…) so the cards survive
+// a reload without re-parsing or re-asking the model. Capped: the oldest
+// messages drop off; anything worth keeping past that has become a moment.
+export const THREAD_MESSAGE_CAP = 80;
+
+export function listBrainstorms(brandId) {
+  return (db.brainstorms || []).filter((b) => b.brandId === brandId).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+export function getBrainstorm(id) {
+  return (db.brainstorms || []).find((b) => b.id === id) || null;
+}
+export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, contentId = null } = {}) {
+  const now = Date.now();
+  const thread = { id, ownerId: ownerUid, brandId, campaignId, contentId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
+  db.brainstorms = [...(db.brainstorms || []).filter((b) => b.id !== id), thread];
+  persist(() => setDoc(doc(fdb, "brainstorms", id), thread));
+  return thread;
+}
+function saveBrainstorm(next) {
+  db.brainstorms = (db.brainstorms || []).map((b) => (b.id === next.id ? next : b));
+  persist(() => setDoc(doc(fdb, "brainstorms", next.id), next));
+  return next;
+}
+export function updateBrainstorm(id, patch) {
+  const cur = getBrainstorm(id);
+  if (!cur) return null;
+  return saveBrainstorm({ ...cur, ...patch, updatedAt: Date.now() });
+}
+export function appendBrainstormMessage(id, { role, text, at = Date.now(), blocks = null }) {
+  const cur = getBrainstorm(id);
+  if (!cur) return null;
+  const msg = { id: uid(), role, text, at, ...(blocks ? { blocks } : {}) };
+  saveBrainstorm({ ...cur, messages: [...(cur.messages || []), msg].slice(-THREAD_MESSAGE_CAP), updatedAt: at });
+  return msg;
+}
+// Patches one message in place (e.g. marking a recap card as decided).
+export function updateBrainstormMessage(id, msgId, patch) {
+  const cur = getBrainstorm(id);
+  if (!cur) return null;
+  return saveBrainstorm({ ...cur, messages: (cur.messages || []).map((m) => (m.id === msgId ? { ...m, ...patch } : m)), updatedAt: Date.now() });
+}
+export function removeBrainstormMessage(id, msgId) {
+  const cur = getBrainstorm(id);
+  if (!cur) return null;
+  return saveBrainstorm({ ...cur, messages: (cur.messages || []).filter((m) => m.id !== msgId), updatedAt: Date.now() });
+}
+export function deleteBrainstorm(id) {
+  db.brainstorms = (db.brainstorms || []).filter((b) => b.id !== id);
+  persist(() => deleteDoc(doc(fdb, "brainstorms", id)));
+}
+export function companionThreadId(brandId) {
+  return `companion-${brandId}`;
+}
+export function getCompanionThread(brandId) {
+  return getBrainstorm(companionThreadId(brandId));
+}
+export function ensureCompanionThread(brandId) {
+  return getCompanionThread(brandId) || createBrainstorm(brandId, { id: companionThreadId(brandId), mode: "companion", title: "" });
+}
 export function archiveBrand(id, archived = true) {
   return updateBrand(id, { archived });
 }
 export function deleteBrand(id) {
   const removedContentIds = db.content.filter((c) => c.brandId === id).map((c) => c.id);
   const removedCampaignIds = (db.campaigns || []).filter((c) => c.brandId === id).map((c) => c.id);
+  const removedThreadIds = (db.brainstorms || []).filter((b) => b.brandId === id).map((b) => b.id);
   db.brands = db.brands.filter((b) => b.id !== id);
   db.content = db.content.filter((c) => c.brandId !== id);
   db.campaigns = (db.campaigns || []).filter((c) => c.brandId !== id);
+  db.brainstorms = (db.brainstorms || []).filter((b) => b.brandId !== id);
   persist(async () => {
     await deleteDoc(doc(fdb, "brands", id));
     await Promise.all(removedContentIds.map((cid) => deleteDoc(doc(fdb, "content", cid))));
     await Promise.all(removedCampaignIds.map((cid) => deleteDoc(doc(fdb, "campaigns", cid))));
+    await Promise.all(removedThreadIds.map((tid) => deleteDoc(doc(fdb, "brainstorms", tid))));
   });
 }
 
@@ -2018,11 +2116,13 @@ export async function importJSON(json) {
   next.content = (next.content || []).map((c) => ({ ...c, ownerId: ownerUid }));
   next.campaigns = (next.campaigns || []).map((c) => ({ ...c, ownerId: ownerUid }));
   next.routineTemplate = (next.routineTemplate || []).map((r) => ({ ...r, ownerId: ownerUid }));
+  next.brainstorms = (next.brainstorms || []).map((b) => ({ ...b, ownerId: ownerUid }));
   await commitInChunks([
     ...next.brands.map((b) => ({ type: "set", ref: doc(fdb, "brands", b.id), data: b })),
     ...next.content.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
     ...next.campaigns.map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
     ...next.routineTemplate.map((r) => ({ type: "set", ref: doc(fdb, "routineTemplate", r.id), data: r })),
+    ...next.brainstorms.map((b) => ({ type: "set", ref: doc(fdb, "brainstorms", b.id), data: b })),
     { type: "set", ref: doc(fdb, "settings", ownerUid), data: next.settings },
   ]);
   db = next;

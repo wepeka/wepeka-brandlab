@@ -496,23 +496,50 @@ main.view.wide{ max-width: 1440px; }
 .dash-widget-collapse-btn{ width:26px; height:26px; flex:none; color: rgba(245,243,255,.6); }
 .dash-widget-collapse-btn:hover{ background: rgba(255,255,255,.09); color:#fff; }
 
-/* Home Companion card (js/views/home.js, R5 — Brief Revisi 2 fase 4): a
-   daily-greeting chat, reusing the Consultant FAB's bubble language
-   (.consultant-msg) so the two "AI talks to you" surfaces feel like one
-   voice instead of two different widgets. */
-.companion-thread{ display:flex; flex-direction:column; gap:8px; }
+/* Home Companion card (js/views/home.js) — a real chat thread, reusing the
+   Consultant FAB's bubble language (.consultant-msg) so the two "AI talks
+   to you" surfaces feel like one voice instead of two different widgets.
+   Under the thread: the composer, then the moments strip (what's in brand
+   memory) — visibly separate from the chat it came from. */
+.companion-thread{ display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto; padding:2px 4px 2px 0; scroll-behavior:smooth; }
 .companion-thread:empty{ display:none; }
+.companion-thread .consultant-msg{ position:relative; white-space:normal; }
+.companion-user-text{ white-space:pre-wrap; }
+.companion-thread .consultant-md p{ margin:0 0 6px; }
+.companion-thread .consultant-md p:last-child{ margin-bottom:0; }
+.companion-day{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; text-align:center; color: var(--text-faint); margin:4px 0 2px; }
+.companion-older-toggle{ align-self:center; display:inline-flex; align-items:center; gap:5px; border:0; background:transparent; color: var(--text-faint); font: inherit; font-size:11.5px; font-weight:700; cursor:pointer; padding:4px 8px; border-radius: var(--radius-pill); }
+.companion-older-toggle:hover{ color: var(--accent); background: var(--surface-2); }
+.companion-msg-del{ position:absolute; left:-26px; top:50%; transform:translateY(-50%); width:22px; height:22px; border:0; border-radius:50%; background:transparent; color: var(--text-faint); display:grid; place-items:center; cursor:pointer; opacity:0; transition: opacity .15s; }
+.consultant-msg-user:hover .companion-msg-del, .companion-msg-del:focus-visible{ opacity:1; }
+.companion-msg-del:hover{ color: var(--health-poor); background: var(--surface-2); }
+@media (hover:none){ .companion-msg-del{ opacity:.6; } }
 .companion-error{ margin:8px 0 0; font-size:12px; color: var(--health-poor); }
 .companion-composer{ display:flex; align-items:center; gap:8px; margin-top:12px; }
 .companion-composer .input{ flex:1; min-width:0; }
 .companion-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-.companion-log{ margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
-.companion-log-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
-.companion-log-head .companion-log-title{ margin:0; }
-.companion-log-title{ margin:0 0 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); }
-.companion-log-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 0; }
-.companion-log-text{ font-size:12px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .companion-idea{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
+.companion-idea .companion-actions{ margin-top:8px; }
+.companion-recap{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
+.companion-recap.is-decided{ margin-top:6px; padding-top:6px; }
+.companion-recap-pick{ margin:0 0 6px; font-size:11.5px; color: var(--text-muted); }
+.companion-recap-item{ display:flex; align-items:flex-start; gap:8px; padding:5px 0; cursor:pointer; }
+.companion-recap-item input[type=checkbox]{ margin:3px 0 0; width:14px; height:14px; flex:none; accent-color: var(--accent); }
+.companion-recap-body{ min-width:0; line-height:1.45; }
+.companion-recap-body .tag{ margin-right:6px; vertical-align:1px; }
+.companion-moments{ margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+.companion-moments-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.companion-moments-head .companion-moments-title{ margin:0; }
+.companion-moments-title{ margin:0 0 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); }
+.companion-moment-row{ display:flex; align-items:center; gap:8px; padding:4px 0; }
+.companion-moment-row .tag{ flex:none; }
+.companion-moment-text{ flex:1; min-width:0; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.companion-moment-action{ flex:none; display:inline-flex; align-items:center; gap:3px; border:0; background:transparent; color: var(--accent); font: inherit; font-size:11.5px; font-weight:700; cursor:pointer; padding:2px 4px; text-decoration:none; }
+.companion-moment-action:hover{ text-decoration:underline; }
+@media (max-width:720px){
+  .companion-thread{ max-height:260px; }
+  .companion-thread .consultant-msg{ max-width:92%; }
+}
 
 /* Collapsed state matches the same glass family, just as a single row — an
    icon badge, the title, and a real one-line summary of what's hidden (not
@@ -2713,7 +2740,7 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 }
 
 /* Beranda hero: the one thing to do now */
-.journey-hero{ padding: 30px 30px 26px; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 18px 50px color-mix(in srgb, var(--accent) 12%, transparent); display:flex; flex-direction:column; align-items:flex-start; gap:10px; }
+.journey-hero{ margin-bottom:28px; padding: 30px 30px 26px; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 18px 50px color-mix(in srgb, var(--accent) 12%, transparent); display:flex; flex-direction:column; align-items:flex-start; gap:10px; }
 .journey-hero-eyebrow{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:12px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--accent); }
 .journey-hero-time{ display:inline-flex; align-items:center; gap:5px; color: var(--text-faint); letter-spacing:0; text-transform:none; font-weight:700; font-size:12.5px; }
 .journey-hero h2{ font-size: 30px; line-height:1.1; margin:0; }
@@ -2761,7 +2788,7 @@ a.journey-step:hover .journey-edit{ text-decoration:underline; }
 .guided-first-brand{ max-width: 640px; margin: 24px auto 0; }
 
 @media (max-width: 720px){
-  .journey-hero{ padding: 22px 20px 20px; }
+  .journey-hero{ margin-bottom:20px; padding: 22px 20px 20px; }
   .journey-hero h2{ font-size: 24px; }
   .journey-hero-cta{ width:100%; justify-content:center; }
   .journey-step{ padding: 12px 10px; gap:10px; }

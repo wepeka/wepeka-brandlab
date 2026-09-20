@@ -1187,27 +1187,59 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
   return { summary: raw.trim(), actions: [] };
 }
 
-// The Home Companion card's daily "what happened today?" (js/views/home.js)
-// — a friend's reply to one thing the owner just typed, not a consultant's
-// report. Short on purpose: this fires on every answer, so it has to stay
-// cheap and quick to read. `pulseText` is js/brand-pulse.js buildPulseText,
-// already including the note the owner is replying to (the caller appends
-// it to the brand's development log before calling this) so the model sees
-// it in context alongside everything else going on.
-export async function companionReply(ai, { brand, pulseText = "", note }) {
+// The Home Companion chat (js/views/home.js) — a friend's reply to what the
+// owner just said, in the flow of a real conversation, not a consultant's
+// report. Short on purpose: this fires on every message, so it has to stay
+// cheap and quick to read. `history` is the recent thread (the raw chat —
+// the only AI call that ever sees it), `pulseText` is js/brand-pulse.js
+// buildPulseText: the moments the owner already confirmed plus auto
+// signals, so the reply knows what's in motion without re-reading the chat.
+export async function companionChat(ai, { brand, pulseText = "", history = [], message }) {
   const system = [
-    "You are this brand owner's thinking partner — warm and direct, like a friend who actually pays attention, never a corporate assistant.",
+    "You are this brand owner's thinking partner — warm and direct, like a friend who actually pays attention, never a corporate assistant and never a coach lecturing them.",
     outputLanguageRule(),
     buildBrandContext(brand),
     pulseText || "",
-    "Reply to what the owner just told you in 2-3 short sentences, conversational, no bullet points, no headers. You may offer ONE concrete, specific suggestion if the note clearly calls for one — never a generic pep talk.",
-    "If the note describes something that could become a piece of content (a moment, a win, a comment, an event), you may end with ONE line in the exact form [[idea:Short title|why this could work]] — only when it's genuinely a good, concrete idea, never by default.",
-    "You may end with ONE follow-up question in the exact form [[ask:Question]], written the way this owner would ask it (short, casual). Only one, and only when a natural follow-up actually exists — not every reply needs one.",
-    "Never invent numbers or events the owner didn't mention and that aren't in the context above.",
+    "Reply to the owner's latest message in 2-3 short sentences, conversational, no bullet points, no headers. React to what they actually said. You may offer ONE concrete, specific suggestion if it clearly calls for one — never a generic pep talk.",
+    "If they mention something personal or just vent, respond like a friend would (briefly, kindly) and don't turn it into marketing advice.",
+    "If what they said could become a piece of content (a moment, a win, a customer story, an event), you may end with ONE line in the exact form [[idea:Short title|why this could work]] — only when it's genuinely a good, concrete idea, never by default.",
+    "You may end with ONE follow-up question in the exact form [[ask:Question]], written the way this owner would ask it (short, casual). Only one, and only when a natural follow-up actually exists.",
+    "Never invent numbers or events the owner didn't mention and that aren't in the context above. Never mention or explain the [[...]] lines.",
   ]
     .filter(Boolean)
     .join("\n\n");
-  return callModel(ai, system, note, 300);
+  const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Friend"}: ${h.text}`).join("\n\n");
+  const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
+  return callModel(ai, system, user, 350);
+}
+
+// Turns a stretch of Companion chat into "moments" — the few brand-relevant,
+// actionable things that happened (a sales spike, an offer, a VIP customer,
+// a collab, a complaint…) as short structured items the owner then ticks
+// before they enter brand memory (js/store.js addBrandMoments). This is the
+// one place raw chat becomes something other AI features can read, so it's
+// told to leave personal venting and anything not about the brand out
+// entirely. Returns { summary, moments: [{ kind, title, detail, action }] }
+// — the view validates kinds/lengths (js/views/home.js validateRecap).
+export async function recapCompanion(ai, { brand, pulseText = "", messages = [], today, kinds = [], actions = [] }) {
+  const system = [
+    "You read a short chat between a small-business brand owner and their AI companion, and extract the brand-relevant moments worth remembering as short structured notes.",
+    outputLanguageRule(),
+    buildBrandContext(brand),
+    pulseText ? `Already in the brand's memory (do NOT repeat these as new moments):\n${pulseText}` : "",
+    `Today is ${today}.`,
+    "A moment is something that happened to THIS BRAND that could shape what content or campaign comes next: unusually high or low sales, an offer or proposal received, a notable or VIP customer, a collaboration, a launch, a complaint or problem, an event. Only include things the owner actually said — never infer or invent.",
+    "Leave out entirely: personal feelings, venting, private or family matters, health, anything not about the brand, and the companion's own replies. If the owner said nothing brand-relevant, return an empty moments list.",
+    `Respond with ONLY a JSON object: {"summary": "one warm sentence in the owner's language recapping what they shared", "moments": [{"kind": one of ${kinds.map((k) => `"${k}"`).join(", ")}, "title": "max 80 chars, concrete, in the owner's language", "detail": "max 160 chars: the specifics the owner gave (numbers, names, dates) or empty string", "action": null or one of ${actions.map((a) => `"${a}"`).join(", ")} — "content" when it's worth making a post about, "brainstorm" when it needs thinking through (an offer, a collab, a launch), "sales" when it's about sales numbers}]}`,
+    "At most 6 moments. No markdown, no commentary outside the JSON.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const transcript = messages.map((m) => `${m.role === "user" ? "Owner" : "Companion"}: ${m.text}`).join("\n\n");
+  const raw = await callModel(ai, system, `Chat to recap:\n\n${transcript}`, 700);
+  const obj = parseJsonObject(raw);
+  if (!obj || typeof obj !== "object") throw new AiApiError(t("ai.error.unreadable"));
+  return { summary: String(obj.summary || "").trim(), moments: Array.isArray(obj.moments) ? obj.moments : [] };
 }
 
 export { AiApiError };

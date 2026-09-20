@@ -350,28 +350,30 @@ export function computeSignals({ brand, content = [], campaigns = [], settings, 
 }
 
 // Merges freshly computed `signals` (may not be persisted yet) with the
-// brand's persisted `log` (brand.developmentLog — includes past auto
-// signals plus owner notes and AI replies computeSignals can't regenerate),
-// dedupes by `key` (the fresher copy of a repeated signal wins), sorts
-// newest first, and renders a short block ready to paste into an AI prompt.
-// "" when there's nothing to say — callers skip the section entirely then.
+// brand's persisted `log` (brand.developmentLog — past auto signals plus
+// the moments the owner confirmed from Companion recaps), dedupes by `key`
+// (the fresher copy of a repeated signal wins), sorts newest first, and
+// renders a short block ready to paste into an AI prompt. Only `auto` and
+// `moment` sources are rendered: the raw Companion chat never goes through
+// here (it lives in its own thread), and any leftover `note`/`ai` entries
+// from the earlier design are skipped so they stop reaching AI features
+// even before the owner deletes them from Brand memory. "" when there's
+// nothing to say — callers skip the section entirely then.
+const PULSE_SOURCES = new Set(["auto", "moment"]);
 export function buildPulseText(signals = [], log = [], { limit = 8 } = {}) {
   const byKey = new Map();
-  (log || []).forEach((entry) => { if (entry?.key) byKey.set(entry.key, entry); });
+  (log || []).forEach((entry) => { if (entry?.key && PULSE_SOURCES.has(entry.source || "auto")) byKey.set(entry.key, entry); });
   (signals || []).forEach((s) => { if (s?.key) byKey.set(s.key, { ...s, source: s.source || "auto" }); });
   const merged = [...byKey.values()].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, limit);
   if (!merged.length) return "";
   const now = new Date();
   const lines = merged.map((entry) => {
-    const source = entry.source || "auto";
-    if (source === "auto") {
+    if ((entry.source || "auto") === "auto") {
       const when = daysAgoLabel(entry.at, now);
       return `[${t("pulse.log.auto")}] ${when}: ${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
     }
     const iso = new Date(entry.at).toISOString().slice(0, 10);
-    const label = source === "note" ? t("pulse.log.note") : t("pulse.log.ai");
-    const text = entry.detail || entry.title || "";
-    return `[${label}] ${iso}: "${text}"`;
+    return `[${t("pulse.log.moment")}] ${iso}: ${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
   });
   return [t("pulse.header"), ...lines, t("pulse.footer")].join("\n");
 }

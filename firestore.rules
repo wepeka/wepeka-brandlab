@@ -95,6 +95,14 @@ service cloud.firestore {
       allow create: if isOwner(request.resource.data) && accountActive();
       allow update, delete: if isOwner(resource.data) && accountActive();
     }
+    // Chat threads (the Home "Teman Brand" companion thread today; the
+    // Brainstorm partner's threads next) — one doc per thread so a message
+    // never rewrites the brand doc. Same owner isolation as everything else.
+    match /brainstorms/{id} {
+      allow read: if isOwner(resource.data);
+      allow create: if isOwner(request.resource.data) && accountActive();
+      allow update, delete: if isOwner(resource.data) && accountActive();
+    }
 
     // Shared AI config (provider + API keys) that every account uses —
     // Wepeka pays for AI usage, customers never bring their own key. Any

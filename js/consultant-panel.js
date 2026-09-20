@@ -15,6 +15,7 @@ import { computeContentMetrics } from "./formulas.js";
 import { brandDnaCompleteness } from "./brand-progress.js";
 import { askBrandConsultant, hasAiKey, AiApiError, CONSULTANT_ROUTES } from "./ai.js";
 import { pulseTextFor } from "./brand-pulse.js";
+import { parseDirectives, renderLightMarkdown } from "./ai-directives.js";
 import { icon } from "./icons.js";
 import { qs, escapeHtml, formatPercent, toast } from "./dom.js";
 import { mountAiFeedback } from "./ai-feedback.js";
@@ -70,84 +71,6 @@ function buildSnapshot(brandId) {
   ].join("\n");
 }
 
-// The consultant is told (see js/ai.js's askBrandConsultant system prompt)
-// to end a reply with one [[goto:KEY]] per screen it's pointing the user
-// at. Pulling those out of the raw text turns "buka Content OS" from
-// something you have to go find in the nav yourself into an actual button —
-// same reason the answer here doesn't just say "check the calendar" without
-// a way to click straight to it.
-// Same idea for [[draft:FUNNEL|Title]] — a content piece the consultant
-// just recommended becomes a one-click "Buatkan draft" button instead of
-// something the user has to retype into Creator.
-// And [[ask:Question]] — the follow-ups the consultant thinks this user
-// would want next, so the starter chips aren't only a first-message thing:
-// after every answer there's still something to tap instead of an empty box.
-function parseNavDirectives(rawText) {
-  const nav = [];
-  const drafts = [];
-  const asks = [];
-  const cleanText = rawText
-    .replace(/\[\[goto:campaign:([A-Za-z0-9_-]+)\]\]/g, (_, id) => {
-      if (!nav.some((n) => n.key === `campaign:${id}`)) nav.push({ key: `campaign:${id}`, label: t("cons.nav.campaign"), path: `campaigns/${id}` });
-      return "";
-    })
-    .replace(/\[\[open:insights\]\]/gi, () => {
-      if (!nav.some((n) => n.key === "insights")) nav.push({ key: "insights", label: t("cons.nav.insights"), open: "insights" });
-      return "";
-    })
-    .replace(/\[\[goto:([a-z-]+)\]\]/gi, (_, key) => {
-      const route = CONSULTANT_ROUTES.find((r) => r.key === key.toLowerCase());
-      if (route && !nav.some((n) => n.key === route.key)) nav.push({ ...route, label: t(`cons.route.${route.key}`) });
-      return "";
-    })
-    .replace(/\[\[ask:([^\]\n]+)\]\]/gi, (_, q) => {
-      const clean = q.trim();
-      if (clean && asks.length < 3 && !asks.includes(clean)) asks.push(clean.slice(0, 120));
-      return "";
-    })
-    .replace(/\[\[draft:([a-z]+)\|([^\]\n]+)\]\]/gi, (_, funnel, title) => {
-      const f = funnel.toUpperCase();
-      const clean = title.trim();
-      if (clean && drafts.length < 3 && !drafts.some((d) => d.title === clean)) {
-        drafts.push({ funnel: (FUNNELS || []).includes(f) ? f : "TOFU", title: clean.slice(0, 140), contentId: null });
-      }
-      return "";
-    })
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return { cleanText, nav, drafts, asks };
-}
-
-// The model answers in light markdown (bold, italics, numbered/bulleted
-// lists) even when asked not to — render that subset after escaping,
-// instead of showing raw asterisks to the user. Anything else stays
-// literal text.
-function renderLightMarkdown(text) {
-  const esc = escapeHtml(text);
-  const lines = esc.split("\n");
-  const out = [];
-  let list = null; // "ol" | "ul"
-  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
-  const inline = (s) => s
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, "$1<em>$2</em>");
-  lines.forEach((raw) => {
-    const line = raw.trimEnd();
-    const ol = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
-    const ul = line.match(/^\s*[-•]\s+(.*)$/);
-    if (ol || ul) {
-      const kind = ol ? "ol" : "ul";
-      if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; }
-      out.push(`<li>${inline(ol ? ol[2] : ul[1])}</li>`);
-      return;
-    }
-    closeList();
-    if (!line.trim()) { out.push("<br>"); return; }
-    out.push(`<p>${inline(line)}</p>`);
-  });
-  closeList();
-  return out.join("").replace(/(<br>)+$/, "").replace(/^(<br>)+/, "");
-}
 
 function messageHTML(h, index, isLast = false) {
   const navHTML = h.nav?.length
@@ -344,7 +267,7 @@ async function sendMessage(brandId, text) {
     const snapshotText = buildSnapshot(brandId);
     const pulseText = pulseTextFor(brand, { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
     const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: history.slice(0, -1), question: text });
-    const { cleanText, nav, drafts, asks } = parseNavDirectives(reply.trim());
+    const { cleanText, nav, drafts, asks } = parseDirectives(reply.trim());
     history.push({ role: "assistant", text: cleanText, nav, drafts, asks, question: text });
   } catch (err) {
     history.push({ role: "assistant", text: err instanceof AiApiError ? t("cons.error", { message: err.message }) : t("cons.errorGeneric") });
