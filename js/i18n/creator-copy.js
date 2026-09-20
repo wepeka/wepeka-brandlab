@@ -350,13 +350,6 @@ export default {
   // ---------- Tour sample output (js/tour-demo.js) ----------
   "demo.toast": { en: "Tour mode: this is a sample AI result — no tokens used.", id: "Mode tur: ini contoh hasil AI, nggak makan token." },
   "demo.yourBrand": { en: "your brand", id: "brand kamu" },
-  "demo.ideas.focus": { en: "Fits the \"{mission}\" level.", id: "Cocok buat level \"{mission}\"." },
-  "demo.idea1.title": { en: "Sample: Behind the scenes at {name}", id: "Contoh: Behind the scene {name}" },
-  "demo.idea1.angle": { en: "Show your everyday work so people get to know who's behind {name}.", id: "Tunjukin proses kerja sehari-hari biar orang kenal siapa di balik {name}." },
-  "demo.idea2.title": { en: "Sample: 3 common mistakes", id: "Contoh: 3 kesalahan yang sering terjadi" },
-  "demo.idea2.angle": { en: "A short explainer on the problem your customers run into most, ending with a call to follow.", id: "Edukasi singkat soal masalah yang paling sering dialami pelangganmu, tutup dengan ajakan follow." },
-  "demo.idea3.title": { en: "Sample: Answer one question from your DMs", id: "Contoh: Jawab satu pertanyaan dari DM" },
-  "demo.idea3.angle": { en: "Take one real customer question and answer it in 30 seconds.", id: "Ambil satu pertanyaan asli dari pelanggan dan jawab dalam 30 detik." },
   "demo.phase.fallback": { en: "this phase", id: "fase ini" },
   "demo.phase1.title": { en: "Sample: Quick intro for {phase}", id: "Contoh: Kenalan singkat buat {phase}" },
   "demo.phase1.angle": { en: "One short video explaining why people should care about this brand right now.", id: "Satu video pendek yang jelasin kenapa orang perlu peduli sama brand ini sekarang." },

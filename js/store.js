@@ -693,6 +693,25 @@ export function clearBrandLog(brandId) {
   updateBrand(brandId, { developmentLog: [] });
 }
 
+// ---------- Brand ideas (brand.ideas[]) ----------
+// Ideas the Brainstorm partner produced outside any campaign — same shape
+// as campaign.ideas ({ id, text, description, source, createdAt }) so the
+// two lists read the same everywhere. Capped so the brand doc stays small.
+export const BRAND_IDEAS_CAP = 100;
+export function addBrandIdea(brandId, { text, description = "", source = "brainstorm" }) {
+  const b = getBrand(brandId);
+  const clean = String(text || "").trim();
+  if (!b || !clean) return null;
+  const idea = { id: uid(), text: clean.slice(0, 140), description: String(description || "").trim().slice(0, 400), source, createdAt: Date.now() };
+  updateBrand(brandId, { ideas: [...(b.ideas || []), idea].slice(-BRAND_IDEAS_CAP) });
+  return idea;
+}
+export function removeBrandIdea(brandId, id) {
+  const b = getBrand(brandId);
+  if (!b) return;
+  updateBrand(brandId, { ideas: (b.ideas || []).filter((i) => i.id !== id) });
+}
+
 // ---------- Brainstorm threads (brainstorms/ collection) ----------
 // One doc per chat thread: { id, ownerId, brandId, campaignId, contentId,
 // title, mode, messages, ideas, proposal, createdAt, updatedAt }. `mode`
@@ -711,9 +730,9 @@ export function listBrainstorms(brandId) {
 export function getBrainstorm(id) {
   return (db.brainstorms || []).find((b) => b.id === id) || null;
 }
-export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, contentId = null } = {}) {
+export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, stageId = null, contentId = null } = {}) {
   const now = Date.now();
-  const thread = { id, ownerId: ownerUid, brandId, campaignId, contentId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
+  const thread = { id, ownerId: ownerUid, brandId, campaignId, stageId, contentId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
   db.brainstorms = [...(db.brainstorms || []).filter((b) => b.id !== id), thread];
   persist(() => setDoc(doc(fdb, "brainstorms", id), thread));
   return thread;

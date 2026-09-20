@@ -50,7 +50,7 @@ export function parseDirectives(rawText) {
     .replace(/\[\[idea:([^|\]\n]+)\|([^\]\n]+)\]\]/gi, (_, title, why) => {
       const cleanTitle = title.trim().slice(0, 140);
       if (cleanTitle && ideas.length < MAX_IDEAS && !ideas.some((i) => i.title === cleanTitle)) {
-        ideas.push({ title: cleanTitle, why: why.trim().slice(0, 240) });
+        ideas.push({ title: cleanTitle, why: why.trim().slice(0, 400) });
       }
       return "";
     })

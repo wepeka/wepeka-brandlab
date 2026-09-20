@@ -541,6 +541,54 @@ main.view.wide{ max-width: 1440px; }
   .companion-thread .consultant-msg{ max-width:92%; }
 }
 
+/* Brainstorm partner (js/views/brainstorm.js): threads rail | chat | saved
+   ideas. Same bubble language as the Consultant FAB and the Companion. */
+.bs-layout{ display:grid; grid-template-columns: 230px minmax(0,1fr) 270px; gap:20px; align-items:start; min-width:0; }
+.bs-chat, .bs-ideas, .bs-threads{ min-width:0; }
+.bs-threads{ position:sticky; top:84px; }
+.bs-threads-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; list-style:none; padding:4px 0 10px; }
+.bs-threads-head::-webkit-details-marker{ display:none; }
+.bs-threads-title{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); }
+.bs-thread-list{ display:flex; flex-direction:column; gap:4px; max-height:60vh; overflow-y:auto; }
+.bs-thread-item{ display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:100%; text-align:left; padding:9px 11px; border-radius: var(--radius-md); border:1px solid transparent; background:transparent; color: var(--text); font: inherit; cursor:pointer; }
+.bs-thread-item:hover{ background: var(--surface-2); }
+.bs-thread-item.is-active{ background: var(--surface-2); border-color: var(--accent); }
+.bs-thread-title{ font-size:12.5px; font-weight:600; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.bs-thread-meta{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color: var(--text-faint); }
+.bs-chat{ display:flex; flex-direction:column; min-height:480px; margin:0; }
+.bs-scope{ display:flex; align-items:center; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:12px; flex-wrap:wrap; }
+.bs-scope-chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius: var(--radius-pill); background: var(--surface-2); border:1px solid var(--border); font-size:12px; font-weight:700; }
+.bs-messages{ flex:1; display:flex; flex-direction:column; gap:10px; overflow-y:auto; max-height: calc(100vh - 380px); min-height:300px; padding:2px 4px 2px 0; scroll-behavior:smooth; }
+.bs-messages .consultant-msg{ white-space:normal; max-width:88%; }
+.bs-messages .consultant-md p{ margin:0 0 8px; }
+.bs-messages .consultant-md p:last-child{ margin-bottom:0; }
+.bs-user-text{ white-space:pre-wrap; }
+.bs-card{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
+.bs-card-text{ line-height:1.5; }
+.bs-card-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
+.bs-feedback-slot:empty{ display:none; }
+.bs-composer{ display:flex; align-items:flex-end; gap:8px; margin-top:12px; }
+.bs-input{ flex:1; min-width:0; resize:none; min-height:40px; max-height:160px; border:1px solid var(--border); background: var(--surface-2); border-radius: var(--radius-md); padding:9px 12px; font: inherit; font-size:13.5px; color: var(--text); line-height:1.45; }
+.bs-input:focus{ outline:none; border-color: var(--accent); }
+.bs-composer-foot{ display:flex; justify-content:flex-end; margin-top:6px; }
+.bs-ideas{ position:sticky; top:84px; margin:0; }
+.bs-ideas-head h2{ display:flex; align-items:center; gap:6px; font-size:14px; margin:0; }
+.bs-saved-idea{ padding:10px 0; border-top:1px solid var(--border); }
+.bs-saved-idea:first-of-type{ margin-top:8px; }
+.bs-saved-text{ font-size:12.5px; line-height:1.45; }
+@media (max-width:1100px){
+  .bs-layout{ grid-template-columns: minmax(0,1fr) 260px; }
+  .bs-threads{ grid-column: 1 / -1; position:static; }
+  .bs-thread-list{ flex-direction:row; flex-wrap:wrap; max-height:none; }
+  .bs-thread-item{ width:auto; max-width:260px; }
+}
+@media (max-width:760px){
+  .bs-layout{ grid-template-columns: minmax(0,1fr); }
+  .bs-ideas{ position:static; }
+  .bs-messages{ max-height:none; min-height:240px; }
+  .bs-messages .consultant-msg{ max-width:94%; }
+}
+
 /* Collapsed state matches the same glass family, just as a single row — an
    icon badge, the title, and a real one-line summary of what's hidden (not
    a bare pill), so tidying up never means losing track of what's there. */

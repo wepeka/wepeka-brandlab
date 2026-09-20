@@ -49,6 +49,8 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "copy", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "tools", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/([^/]+)\/?$/))) return { view: "brainstorm", brandId: m[1], threadId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/?$/))) return { view: "brainstorm", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
@@ -299,7 +301,7 @@ async function renderRoute() {
     await new Promise((r) => setTimeout(r, 110));
     if (token !== renderToken) return;
     updateShellForRoute({ brandId: route.brandId, active: route.view });
-    viewRoot.className = `view view-${route.view} ${route.view === "content-os" ? "wide" : ""}`;
+    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "brainstorm" ? "wide" : ""}`;
     viewRoot.innerHTML = "";
     void viewRoot.offsetWidth;
     viewRoot.classList.add("view-enter");
@@ -321,6 +323,7 @@ async function renderRoute() {
       sales: () => import("./views/sales.js"),
       copy: () => import("./views/copy-studio.js"),
       tools: () => import("./views/tools.js"),
+      brainstorm: () => import("./views/brainstorm.js"),
       "content-os": () => import("./views/content-os.js"),
       settings: () => import("./views/settings.js"),
     }[route.view] || (() => import("./views/brands.js"))
@@ -347,6 +350,9 @@ async function renderRoute() {
     case "copy":
     case "tools":
       cleanup = view.render(viewRoot, { brandId: route.brandId });
+      break;
+    case "brainstorm":
+      cleanup = view.render(viewRoot, { brandId: route.brandId, threadId: route.threadId || null });
       break;
     case "content-os":
       cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });

@@ -1,8 +1,7 @@
 // Tools hub (R2, Brief Revisi 2 fase 2): the front door for the app-shaped
 // features that used to hide inside the ⋯ menu — Copy Studio and the Sales
-// Tracker — plus the entry point for the Brainstorm partner (R4, not built
-// yet: its card links out already so it "just works" the moment that route
-// exists, but wears a "Coming soon" badge until then). Never gated by mode
+// Tracker — plus the front door of the Brainstorm partner
+// (js/views/brainstorm.js). Never gated by mode
 // or by brand identity — unlike Campaign/Konten, there's nothing here that
 // needs the brand's DNA filled in first.
 import { backLinkHTML } from "../back-link.js";
@@ -65,7 +64,6 @@ function paint(root, brand) {
         iconName: "chat",
         label: t("tools.card.brainstorm.title"),
         desc: t("tools.card.brainstorm.desc"),
-        badge: t("tools.card.comingSoon"),
         primary: true,
       })}
       ${toolCardHTML({

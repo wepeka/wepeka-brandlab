@@ -81,6 +81,11 @@ const HELP_CONTENT = {
     en: { title: "Tools", body: "Three supporting tools outside Campaigns and Content: Brainstorm to think through ideas with AI, Copy Studio for quick ready-to-use copy, and the Sales Tracker to log sales. Always open, no need to finish your brand identity first." },
   },
 
+  "brainstorm": {
+    id: { title: "Brainstorm", body: "Teman berpikir, bukan mesin ide. Ceritakan yang lagi kamu pikirin — AI bertanya dulu seperlunya, menawarkan 2-3 arah dengan plus-minusnya, lalu menandai ide yang kalian sepakati supaya bisa disimpan atau langsung jadi draft di Creator. Buru-buru? Tombol \"Ide sekarang\" melewati diskusi dan langsung memberi tiga ide." },
+    en: { title: "Brainstorm", body: "A thinking partner, not an idea machine. Tell it what's on your mind — the AI asks what it needs, offers 2-3 directions with trade-offs, then marks the ideas you land on together so you can save them or draft them in Creator. In a hurry? \"Ideas now\" skips the discussion and gives three ideas right away." },
+  },
+
   // Key terms — shown next to the words themselves.
   "term-brand-dna": {
     id: { title: "Brand DNA itu apa?", body: "Fondasi brand kamu dalam kata-kata: siapa pelanggannya, masalah apa yang kamu selesaikan, kenapa mereka harus percaya dan pilih kamu, sampai tagline. Semua fitur AI dan campaign membaca dari sini." },

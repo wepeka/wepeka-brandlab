@@ -7,7 +7,7 @@
 // entry is the "Catat angka" sheet for things the app can't observe.
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, listContent, listCampaigns, createContent, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
+  getBrand, listContent, listCampaigns, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
 } from "../store.js";
@@ -21,7 +21,7 @@ import { go } from "../nav-context.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
 import { toast, formatNumber, qs, qsa, openMenu, closeMenu, escapeHtml as esc } from "../dom.js";
-import { brainstormCampaignIdeas, suggestPhaseContent, generateCampaignPlaybook, generateIdeaBubbles, AiApiError, hasAiKey } from "../ai.js";
+import { generateCampaignPlaybook, generateIdeaBubbles, AiApiError, hasAiKey } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openInsightsModal } from "./insights-modal.js";
 import { openQuickFillModal } from "./content-list.js";
@@ -30,7 +30,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { startCampaignDetailGuide } from "../guides/campaign-guide.js";
 import { getMode } from "../mode.js";
-import { isTourDemo, demoBrainstormIdeas, demoPhaseContent, DEMO_TOAST } from "../tour-demo.js";
+import { isTourDemo, DEMO_TOAST } from "../tour-demo.js";
 import { STATUS_LABELS_GUIDED } from "../funnel-field.js";
 import { t } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
@@ -214,7 +214,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   );
   qs("[data-cd-insights]", root)?.addEventListener("click", () => run({ type: "insights" }));
   qs("#cd-manual-all", root)?.addEventListener("click", () => openManualSheet({ campaign, stage, ctx, refresh }));
-  qsa("[data-cd-brainstorm]", root).forEach((btn) => btn.addEventListener("click", () => openBrainstormModal({ brandId, brand, campaign, stage, refresh, ctxLabel })));
+  qsa("[data-cd-brainstorm]", root).forEach((btn) => btn.addEventListener("click", () => goBrainstorm({ brandId, campaign, stage, ctxLabel })));
   qs("#cd-new-content", root)?.addEventListener("click", () => run({ type: "new-content" }));
   qsa("[data-cd-open-content]", root).forEach((row) =>
     row.addEventListener("click", () => run({ type: "creator", contentId: row.dataset.cdOpenContent, intent: "continue" }))
@@ -449,6 +449,7 @@ function ideasWidgetHTML(campaign, state) {
         <input class="input" id="cd-idea-input" maxlength="140" placeholder="${esc(t(`camp.ideas.placeholder.${track || "default"}`))}" />
         <button type="button" class="btn btn-primary btn-sm" id="cd-idea-add">${icon("plus", { size: 13 })}${t("camp.ideas.add")}</button>
         <button type="button" class="btn btn-secondary btn-sm" id="cd-idea-ai">${icon("sparkle", { size: 13 })}${t(`camp.ideas.aiBtn.${track || "default"}`)}</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="cd-idea-discuss" title="${esc(t("camp.ideas.discussTitle"))}">${icon("chat", { size: 13 })}${t("camp.ideas.discuss")}</button>
       </div>
       <div id="cd-idea-status"></div>
       ${suggestions.length ? `<div class="cd-idea-bubbles cd-idea-suggestions" id="cd-idea-suggestions">${suggestions.map((idea, i) => suggestionBubble(idea, i)).join("")}</div>` : `<div id="cd-idea-suggestions"></div>`}
@@ -521,6 +522,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
       addIdea(idea.text, "ai", idea.description || "");
     })
   );
+  qs("#cd-idea-discuss", root)?.addEventListener("click", () => go(`#/brand/${brand.id}/brainstorm`, { fromLabel: campaign.name, campaignId: campaign.id, mode: "chat" }));
   qs("#cd-idea-ai", root).addEventListener("click", async () => {
     const ai = getSettings().ai || {};
     const btn = qs("#cd-idea-ai", root);
@@ -915,7 +917,7 @@ function activitiesHTML(acts, brandId, guided) {
         ${PIPELINE.map((p) => `<button type="button" class="cd-pipe ${counts[p.key] ? "" : "is-zero"}" data-cd-pipeline="${p.key}"><b>${counts[p.key]}</b>${p.label}</button>`).join("")}
       </div>`}
       <div class="cd-activity-actions">
-        <button type="button" class="btn btn-secondary btn-sm glow" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 13 })}${t("camp.detail.brainstorm")}</button>
+        <button type="button" class="btn btn-secondary btn-sm glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 13 })}${t("camp.detail.brainstorm")}</button>
         <button type="button" class="btn btn-primary btn-sm" id="cd-new-content">${icon("plus", { size: 13 })}${t("camp.detail.newContent")}</button>
       </div>
       ${
@@ -990,6 +992,14 @@ function remindersHTML(stage, stageRead, goal) {
 }
 
 const EVENT_CATEGORY_LABELS = Object.fromEntries(["AWARENESS", "CONTENT", "CONVERSION", "ENGAGEMENT", "ATTENDANCE", "IMPACT"].map((k) => [k, t(`camp.detail.cat.${k}`)]));
+// Every "brainstorm" door on this page opens the Brainstorm partner
+// (js/views/brainstorm.js) scoped to this campaign and stage — a
+// conversation first, ideas once they've been talked through, instead of
+// the old modal that generated a list on the spot.
+function goBrainstorm({ brandId, campaign, stage, ctxLabel, seed = "" }) {
+  go(`#/brand/${brandId}/brainstorm`, { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null, mode: "chat", seed });
+}
+
 function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel }) {
   const base = { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null };
   switch (cta.type) {
@@ -1018,7 +1028,7 @@ function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh,
       return;
     }
     case "brainstorm":
-      openBrainstormModal({ brandId, brand, campaign, stage: stages[cta.stageIndex ?? stage?.index] || stage, refresh, ctxLabel });
+      goBrainstorm({ brandId, campaign, stage: stages[cta.stageIndex ?? stage?.index] || stage, ctxLabel });
       return;
     default:
   }
@@ -1281,122 +1291,3 @@ function openMoreMenu(btn, { brandId, brand, campaign, stage, stages, ctx, refre
 
 // ---------- Brainstorm (ideas → linked content, straight to Creator) ----------
 
-function openBrainstormModal({ brandId, brand, campaign, stage, refresh, ctxLabel }) {
-  const saved = [];
-  const isPhaseLike = stage && stage.kind !== "level";
-  const overlay = openModal({
-    title: t("camp.bs.title"),
-    wide: true,
-    bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${esc(t("camp.bs.intro", { campaign: campaign.name || t("camp.untitled"), stage: stage ? `${t(stage.kind === "level" ? "camp.bs.stageLevel" : "camp.bs.stagePhase", { name: stage.name })}${stage.dateLabel ? ` (${stage.dateLabel})` : ""}` : "" }))}</p>
-      <button type="button" class="btn btn-secondary btn-sm" id="brainstorm-ai">${icon("bot", { size: 13 })}${t("camp.bs.askAi")}</button>
-      <div id="brainstorm-ai-status" style="margin-top:10px;"></div>
-      <div style="margin-top:4px;">
-        <div id="brainstorm-ai-current"></div>
-        <details class="ai-history" id="brainstorm-ai-history" hidden>
-          <summary>${t("cr.ai.previousGenerated")} (<span id="brainstorm-ai-history-count">0</span>)</summary>
-          <div id="brainstorm-ai-history-list"></div>
-        </details>
-      </div>
-      <div class="divider" style="margin:18px 0;"></div>
-      <div class="page-eyebrow" style="margin-bottom:10px;">${t("camp.bs.ownIdea")}</div>
-      <div class="field"><input class="input" id="bs-title" placeholder="${esc(t("camp.bs.titlePh"))}" /></div>
-      <div class="field" style="margin-bottom:10px;"><textarea class="textarea" id="bs-idea" style="min-height:56px;" placeholder="${esc(t("camp.bs.notePh"))}"></textarea></div>
-      <button type="button" class="btn btn-primary btn-sm" id="bs-add-manual">${icon("plus", { size: 13 })}${t("camp.bs.saveIdea")}</button>
-    `,
-    footHTML: `<button class="btn btn-secondary" id="brainstorm-done">${t("camp.bs.done")}</button>`,
-  });
-  const linkFields = { campaignId: campaign.id, campaignPhaseId: isPhaseLike ? stage.id : "", status: "idea" };
-  const save = ({ title, idea }) => {
-    const item = createContent(brandId, { ...linkFields, title, idea });
-    saved.push(item.id);
-    return item;
-  };
-
-  qs("#brainstorm-ai", overlay).addEventListener("click", async () => {
-    const ai = getSettings().ai || {};
-    const statusEl = qs("#brainstorm-ai-status", overlay);
-    const demo = isTourDemo();
-    if (!hasAiKey(ai) && !demo) {
-      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">${t("camp.bs.noKey")}</div>`;
-      return;
-    }
-    const aiBtn = qs("#brainstorm-ai", overlay);
-    aiBtn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("camp.bs.thinking")}</span></div>`;
-    try {
-      const existingTitles = listContent(brandId).filter((c) => c.campaignId === campaign.id).map((c) => c.title).filter(Boolean);
-      if (demo) toast(DEMO_TOAST);
-      let ideas;
-      if (demo) ({ ideas } = await demoBrainstormIdeas({ brand, campaign, mission: stage?.raw || null }));
-      else if (stage?.kind === "phase") ideas = await suggestPhaseContent(ai, { brand, campaign, phase: stage.raw, existingTitles, pulseText: pulseTextFor(brand, { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() }) });
-      else ({ ideas } = await brainstormCampaignIdeas(ai, { brand, campaign, mission: stage?.kind === "level" ? stage.raw : stage ? { name: stage.name, description: stage.dateLabel ? `Fase ${stage.name} (${stage.dateLabel})` : stage.description, tagline: "" } : null, existingTitles }));
-      statusEl.innerHTML = "";
-      // Newest batch of ideas renders open up top; whatever was showing
-      // before (still pick-able — its own "Save idea" buttons keep working
-      // after the move) drops into the collapsed history instead of just
-      // being overwritten and lost on every re-ask. Each batch wires its
-      // own buttons against its own `ideas` array (a closure, not a shared
-      // one) so an old batch's button can never grab the wrong idea after a
-      // newer generate has replaced the outer variable.
-      const currentWrap = qs("#brainstorm-ai-current", overlay);
-      const prevBatch = currentWrap.firstElementChild;
-      if (prevBatch) {
-        const historyDetails = qs("#brainstorm-ai-history", overlay);
-        const historyList = qs("#brainstorm-ai-history-list", overlay);
-        historyList.insertBefore(prevBatch, historyList.firstChild);
-        historyDetails.hidden = false;
-        qs("#brainstorm-ai-history-count", overlay).textContent = String(historyList.children.length);
-      }
-      const batchEl = document.createElement("div");
-      batchEl.className = "ai-batch";
-      batchEl.innerHTML = (ideas || [])
-        .map(
-          (idea, i) => `
-        <div class="card card-tight" style="margin-bottom:8px;padding:12px;">
-          <div style="font-weight:700;font-size:13.5px;margin-bottom:3px;">${esc(idea.title)}</div>
-          <div class="text-muted" style="font-size:12.5px;margin-bottom:8px;">${esc(idea.angle)}${idea.format ? ` · ${esc(idea.format)}` : ""}</div>
-          <button type="button" class="btn btn-secondary btn-sm" data-use-brainstorm-idea="${i}">${icon("plus", { size: 12 })}${t("camp.bs.saveIdea")}</button>
-        </div>`
-        )
-        .join("");
-      currentWrap.appendChild(batchEl);
-      batchEl.querySelectorAll("[data-use-brainstorm-idea]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const idea = ideas[Number(btn.dataset.useBrainstormIdea)];
-          save({ title: idea.title, idea: idea.angle });
-          btn.textContent = t("camp.bs.saved");
-          btn.disabled = true;
-        });
-      });
-    } catch (e) {
-      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? esc(e.message) : t("camp.aiFailed")}</span></div>`;
-    } finally {
-      aiBtn.disabled = false;
-    }
-  });
-
-  qs("#bs-add-manual", overlay).addEventListener("click", () => {
-    const titleEl = qs("#bs-title", overlay);
-    const ideaEl = qs("#bs-idea", overlay);
-    const title = titleEl.value.trim();
-    if (!title) {
-      toast(t("camp.bs.titleRequired"), "error");
-      return;
-    }
-    save({ title, idea: ideaEl.value.trim() });
-    toast(t("camp.bs.savedToIdeas", { title }));
-    titleEl.value = "";
-    ideaEl.value = "";
-    titleEl.focus();
-  });
-
-  qs("#brainstorm-done", overlay).addEventListener("click", () => {
-    closeOverlay(overlay);
-    refresh?.();
-    // Straight to the first idea just saved — not an empty Creator.
-    if (saved.length) go(`#/brand/${brandId}/content-os/creator/${saved[0]}`, { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null, contentId: saved[0], intent: "continue" });
-  });
-}
-
-export { openBrainstormModal };

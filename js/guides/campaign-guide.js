@@ -21,7 +21,6 @@ import {
   startGuideOnMount,
 } from "./common.js";
 
-const aiOn = () => hasAiKey(getSettings().ai || {});
 const has = (sel) => () => !!qs(sel);
 
 // ---------- C1 · Bikin campaign (list) ----------
@@ -131,6 +130,9 @@ export function buildCampaignListSteps({ brandId }) {
 // ---------- C2 · Kerjakan level (detail) ----------
 
 // Shared by the mission and event shapes — both have "Brainstorm Konten".
+// The button leaves this page (it opens the Brainstorm partner scoped to
+// this campaign), so the tour only points at the door — no gating on what
+// happens inside.
 function brainstormSteps() {
   return [
     // 7
@@ -138,33 +140,7 @@ function brainstormSteps() {
       selector: "#cd-brainstorm",
       title: t("guide.camp.brainstorm.title"),
       body: t("guide.camp.brainstorm.body"),
-      interactive: { type: "click" },
-    },
-    // 8 — gate waits for the ideas to come back
-    {
-      selector: "#brainstorm-ai",
-      title: t("guide.camp.askAi.title"),
-      body: t("guide.camp.askAi.body"),
-      interactive: { type: "until", predicate: has("[data-use-brainstorm-idea]") },
-      hint: t("guide.camp.askAi.hint"),
       skippable: true,
-    },
-    // 9
-    {
-      selector: "[data-use-brainstorm-idea]",
-      showIf: has("[data-use-brainstorm-idea]"),
-      title: t("guide.camp.saveIdea.title"),
-      body: t("guide.camp.saveIdea.body"),
-      interactive: { type: "clickAny" },
-      skippable: true,
-      write: true,
-    },
-    // Tanpa AI (atau AI dilewati): jalur tulis manual di modal yang sama
-    {
-      selector: "#bs-title",
-      showIf: () => !!qs("#bs-title") && !qs("[data-use-brainstorm-idea]"),
-      title: t("guide.camp.manual.title"),
-      body: t("guide.camp.manual.body") + (aiOn() ? "" : " " + t("guide.camp.manual.aiOff")),
     },
   ];
 }

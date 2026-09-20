@@ -35,6 +35,8 @@ export default {
   "ai.route.calendar": { en: "Calendar", id: "Kalender" },
   "ai.route.sales": { en: "Sales Tracker", id: "Sales Tracker" },
   "ai.route.copy": { en: "Copy Studio", id: "Copy Studio" },
+  "ai.route.brainstorm": { en: "Brainstorm", id: "Brainstorm" },
+  "ai.route.tools": { en: "Tools", id: "Alat" },
   "ai.route.home": { en: "Brand Home", id: "Beranda Brand" },
 
   // js/ai-feedback.js

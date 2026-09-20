@@ -12,6 +12,7 @@ import app_shell from "./i18n/app-shell.js";
 import content from "./i18n/content.js";
 import ai from "./i18n/ai.js";
 import brand_pulse from "./i18n/brand-pulse.js";
+import brainstorm from "./i18n/brainstorm.js";
 
 const KEY = "wepeka-lang";
 
@@ -472,7 +473,6 @@ const CORE = {
   // Tools hub (js/views/tools.js) — Brief Revisi 2 fase 2
   "tools.eyebrow": { en: "Tools", id: "Alat" },
   "tools.sub": { en: "Everything that isn't Campaigns or Content — your thinking partner, quick copy, and sales log.", id: "Semua yang bukan Campaign atau Konten — teman brainstorm, tulisan cepat, dan catatan penjualan." },
-  "tools.card.comingSoon": { en: "Coming soon", id: "Segera hadir" },
   "tools.card.brainstorm.title": { en: "Brainstorm", id: "Brainstorm" },
   "tools.card.brainstorm.desc": { en: "Think out loud with an AI partner — turn a rough idea into a plan, then a measurable campaign.", id: "Ngobrol bareng AI buat mikirin ide — dari obrolan santai jadi rencana, lalu campaign yang terukur." },
   "tools.card.copy.title": { en: "Copy Studio", id: "Copy Studio" },
@@ -497,6 +497,7 @@ const EXTRA = {
   "content": content,
   "ai": ai,
   "brand-pulse": brand_pulse,
+  "brainstorm": brainstorm,
 };
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 

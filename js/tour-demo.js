@@ -72,21 +72,6 @@ export async function demoSuggestSchedule({ items, startDate, daysAhead = 21, ca
   return map;
 }
 
-// Same shape as ai.js brainstormCampaignIdeas.
-export async function demoBrainstormIdeas({ brand, mission } = {}) {
-  await wait();
-  const name = brand?.name || t("demo.yourBrand");
-  const focus = mission?.name ? ` ${t("demo.ideas.focus", { mission: mission.name })}` : "";
-  return {
-    demo: true,
-    ideas: [
-      { title: t("demo.idea1.title", { name }), angle: `${t("demo.idea1.angle", { name })}${focus}`, format: "Reels" },
-      { title: t("demo.idea2.title"), angle: t("demo.idea2.angle"), format: "Carousel" },
-      { title: t("demo.idea3.title"), angle: t("demo.idea3.angle"), format: "Reels" },
-    ],
-  };
-}
-
 // Same shape as ai.js suggestPhaseContent (array of ideas).
 export async function demoPhaseContent({ phase } = {}) {
   await wait();

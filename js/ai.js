@@ -869,43 +869,10 @@ export async function generateOneLiner(ai, { brand, answers = {} }) {
 }
 
 
-// Campaign-level sibling of suggestPhaseContent below — for campaigns whose
-// content isn't bucketed into phases at all (Grow Social Media's
-// autoLinkAllContent ladder has none), ideas are scoped to the campaign's
-// whole objective and, if given, whichever mission is currently active —
-// so a brand-new account and one already chasing "Build Advocacy" get
-// genuinely different suggestions from the same button.
-export async function brainstormCampaignIdeas(ai, { brand, campaign, mission, existingTitles = [] }) {
-  const system = [
-    "You brainstorm short-form content ideas for a brand's marketing campaign, tailored to the brand's actual character and audience.",
-    buildBrandContext(brand),
-    MARKETING_FRAMEWORKS_CONTEXT,
-    NATURAL_WRITING_CONTEXT,
-    campaignSummaryLine(campaign, brand),
-    mission ? `This campaign is currently working on: "${mission.name}" — ${mission.description}${mission.tagline ? ` (${mission.tagline})` : ""}. Ideas should help move the needle on THIS stage specifically, not the campaign in general.` : "",
-    existingTitles.length ? `Content already made for this campaign (don't repeat these ideas):\n${existingTitles.map((t) => `- ${t}`).join("\n")}` : "",
-    "Suggest 3-4 NEW content ideas.",
-    outputLanguageRule(),
-    'Respond ONLY with valid JSON, no markdown fences: {"ideas": [{"title": "...", "angle": "1-2 sentences", "format": "e.g. Reels, Carousel, Story"}, ...]}',
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const raw = await callModel(ai, system, "Suggest the ideas now.", 800);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    return { ideas: (parsed.ideas || []).slice(0, 4).map((i) => ({ title: i.title || "", angle: i.angle || "", format: i.format || "" })) };
-  } catch {
-    throw new AiApiError(t("ai.error.readIdeas"));
-  }
-}
-
 // Short "idea bubble" suggestions for the campaign's Ideas widget
 // (js/views/campaign-detail.js ideasWidgetHTML) — a short phrase PLUS a
 // one-line explanation (shown when the bubble/card is opened), not the
-// longer structured {title,angle,format} cards brainstormCampaignIdeas
-// returns, and tailored per track since a community/sales idea usually
+// longer structured cards the old brainstorm modal used to get, and tailored per track since a community/sales idea usually
 // isn't a piece of content at all (an activity, a promo tactic). Kept
 // deliberately few — a handful of ideas worth actually doing beats a wall
 // of them nobody will execute.
@@ -1128,6 +1095,8 @@ export const CONSULTANT_ROUTES = [
   { key: "calendar", label: t("ai.route.calendar"), path: "content-os/calendar" },
   { key: "sales", label: t("ai.route.sales"), path: "sales" },
   { key: "copy", label: t("ai.route.copy"), path: "copy" },
+  { key: "brainstorm", label: t("ai.route.brainstorm"), path: "brainstorm" },
+  { key: "tools", label: t("ai.route.tools"), path: "tools" },
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
@@ -1240,6 +1209,49 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
   const obj = parseJsonObject(raw);
   if (!obj || typeof obj !== "object") throw new AiApiError(t("ai.error.unreadable"));
   return { summary: String(obj.summary || "").trim(), moments: Array.isArray(obj.moments) ? obj.moments : [] };
+}
+
+// The Brainstorm partner (js/views/brainstorm.js) — a thinking partner,
+// not a generator. In "chat" mode it asks before it suggests, offers
+// directions with trade-offs, and only marks an idea [[idea:…]] once the
+// conversation has actually landed on one; "ideas" mode is the owner's
+// explicit "just give me ideas now" button, so it hands over three
+// concrete ones right away. Either way the raw conversation is the
+// context — the brand, its campaigns, and its pulse ride along through
+// buildFullContext, plus whatever the thread is scoped to.
+export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, savedIdeas = [], history = [], message, mode = "chat" }) {
+  const scope = [
+    campaign ? `This conversation is about ONE campaign of the brand:\n${campaignSummaryLine(campaign, brand)}${stageText ? `\nCurrent focus: ${stageText}` : ""}` : "",
+    content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.` : "",
+    savedIdeas.length ? `Ideas already saved from this conversation (build on them, never repeat them):\n${savedIdeas.map((i) => `- ${i}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n\n");
+  const rules = mode === "ideas"
+    ? [
+        "The owner just pressed \"give me ideas now\". Skip the questions this once: open with ONE short sentence, then give exactly 3 concrete, specific ideas, each as its own line in the exact form [[idea:Short title|why it fits THIS brand and how to pull it off, 1-2 sentences]]. Close with one short line offering to dig into whichever they like.",
+      ]
+    : [
+        "Talk like a sharp friend thinking out loud with them — at most 3 short paragraphs, no headers, no long lists.",
+        "If the goal, the audience, or the timeframe of what they're asking about is still unclear, ask ONE focused question before suggesting anything. One question, not a questionnaire.",
+        "Once you understand, offer 2-3 directions with a real trade-off each (what it costs them, what it could bring) rather than one finished answer. Don't hand over a finished list of ideas unless the owner explicitly asks for it ('kasih idenya', 'oke, susun', 'give me the ideas').",
+        "When the conversation lands on a concrete idea the owner seems to want, mark it as a line in the exact form [[idea:Short title|why this works for THIS brand + the first step]] — at most 3 per reply, and only for ideas that came out of the discussion, never as a reflex.",
+        "When an idea is ready to be written as an actual post, add a line [[draft:FUNNEL|Content title]] — FUNNEL is exactly TOFU, MOFU, or BOFU. At most 2 per reply.",
+      ];
+  const system = [
+    "You are the brand owner's brainstorm partner inside their own planning tool. Your job is to help them THINK — sharpen a rough idea, weigh options, and end up with something they actually believe in — not to produce output for them to copy.",
+    outputLanguageRule(),
+    buildFullContext(brand, { campaigns, pulseText }),
+    MARKETING_FRAMEWORKS_CONTEXT,
+    NATURAL_WRITING_CONTEXT,
+    scope,
+    ...rules,
+    "Ground everything in this brand's actual context and data above; when the pulse says something is in motion (a post taking off, a sales dip), use it. Never invent numbers or events.",
+    "End EVERY reply with exactly 2 follow-up lines in the exact form [[ask:…]] — what THIS owner would plausibly say next (their language, short, max ~10 words): one that goes deeper, one that moves toward action. Never repeat an ask already used in this conversation. Never mention or explain the [[...]] lines.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
+  const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
+  return callModel(ai, system, user, 1200);
 }
 
 export { AiApiError };
