@@ -7,11 +7,12 @@ import { noteNavigation } from "./nav-context.js";
 import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
+import { auth } from "./firebase.js";
 import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { toast } from "./dom.js";
-import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly } from "./account.js";
+import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState } from "./account.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -113,6 +114,13 @@ async function boot(user) {
   }
 
   if (subscribedUid === user.uid) return; // account listener already driving this user
+  // Switching straight from one signed-in account to another (no null-user
+  // boot in between — e.g. a Wepeka SSO token for a different person landing
+  // while this tab was already signed in) must not let the new account reuse
+  // the old one's already-`storeReady` render; force initStore() to run again
+  // for the new uid below instead of falling into the `renderRoute()` only
+  // branch in onAccountChange.
+  if (subscribedUid !== null && subscribedUid !== user.uid) storeReady = false;
   subscribedUid = user.uid;
   if (accountUnsub) { accountUnsub(); accountUnsub = null; }
   showLoading();
@@ -126,24 +134,28 @@ async function boot(user) {
 function onAccountChange(user, account) {
   setCachedAccount(account);
 
-  if (!account || isDeactivated(account)) {
+  if (isDeactivated(account)) {
     teardownApp();
     app.innerHTML = lockedScreenHTML(user.email || "");
     document.getElementById("locked-logout")?.addEventListener("click", () => logout());
     return;
   }
 
-  if (account.plan === "free") {
+  const state = accessState(account);
+  // "none" (never claimed a trial / never paid — no accounts/{uid} doc at
+  // all) and "expired" (a lapsed sub or ended trial) both get the same
+  // locked pricing screen now — no more in-app read-only browsing for a
+  // lapsed account (Fase 2 of .claude/handoff-satu-akun.md). Data is never
+  // touched here; it's just not rendered until the account is paid/trial
+  // again.
+  if (state === "none" || state === "expired") {
     teardownApp();
     app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
-    renderPricingScreen(document.getElementById("pricing-root"), { account, user });
+    renderPricingScreen(document.getElementById("pricing-root"), { account, user, locked: true });
     return;
   }
 
-  // Trial or paid plan, status "active" or "readonly" (an ended trial or a
-  // lapsed subscription can still view its data — firestore.rules blocks
-  // writes at the database level, this just lets the app render normally
-  // either way; the topbar plan badge is how they reach pricing from here).
+  // state is "paid" or "trial" — the only two that ever render the app.
   if (!storeReady) {
     showLoading();
     initStore(user.uid).then(async () => {
@@ -363,16 +375,47 @@ async function renderRoute() {
 // which would otherwise flash for a second on every arrival from the site.
 let ssoPending = false;
 
+// Firebase custom tokens are JWTs with an unencrypted `uid` claim in the
+// payload — reading it here (without verifying the signature, which only
+// the server can do) is enough to notice "this token is for someone else"
+// before we sign in with it; the actual sign-in is still verified server-side
+// by signInWithCustomToken.
+function decodeWepekaTokenUid(token) {
+  try {
+    const payload = token.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json).uid || null;
+  } catch {
+    return null;
+  }
+}
+
 async function consumeWepekaToken() {
-  const m = location.hash.match(/^#\/sso\?t=([^&]+)/);
+  const m = location.hash.match(/^#\/sso\?t=([^&]+)(?:&to=([a-z]+))?/);
   if (!m) return;
   ssoPending = true;
   const token = decodeURIComponent(m[1]);
+  // Only "pricing" today — an expired/lapsed account sent back in from
+  // /brandlab/connect?to=pricing (wpk-dp) so it lands straight on the
+  // pricing screen instead of the locked app shell. No authority on its
+  // own; accessState() still decides what actually renders.
+  const to = m[2] === "pricing" ? "pricing" : null;
   history.replaceState(null, "", location.pathname + location.search);
   location.hash = "#/";
   try {
+    // A token minted for a different account than the one already signed
+    // into this tab: tear down that session before switching, so its store
+    // doesn't briefly keep rendering under the new uid.
+    const incomingUid = decodeWepekaTokenUid(token);
+    if (auth.currentUser && incomingUid && auth.currentUser.uid !== incomingUid) {
+      await logout();
+      teardownApp();
+      storeReady = false;
+      subscribedUid = null;
+    }
     await loginWithWepekaToken(token);
     unlockPaywall();
+    if (to === "pricing") location.hash = "#/pricing";
   } catch (err) {
     console.warn("[sso] Wepeka token rejected", err);
     toast(t("auth.wepeka.failed"), "error");

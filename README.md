@@ -23,13 +23,24 @@ Then open `http://localhost:8743`.
 - `js/store.js` — all data (brands, content, settings) — the only place that talks to `localStorage`
 - `js/formulas.js` — the configurable Engagement Rate / Follower Conversion Rate formulas and the health-rating logic
 - `js/ocr.js` — screenshot → metrics extraction (lazy-loads Tesseract.js only when you drop a screenshot)
-- `js/auth.js` — the local login lock (see below)
+- `js/auth.js` — Firebase Auth sign-in (see below)
 - `js/views/*` — one file per screen (login, brands, dashboard, content list, content editor, creator studio, teleprompter, calendar, analytics, settings)
 - `js/main.js` — the router (also gates every route behind login)
 
 ## Login
 
-First visit asks you to set a username and password; every visit after that requires them. **This is a local access lock, not a real authentication system** — the (salted, hashed) credentials live only in this browser's `localStorage`, there's no server to check against, and anyone with access to this browser's storage could reset it. It's meant to keep the workspace from being casually opened by someone else on a shared machine, not to protect sensitive data. Change the password or log out from Settings → Account, or the icon next to the gear in the top bar.
+Real authentication via Firebase Auth (project `wepeka-ba996`) — `js/auth.js`
+wraps the Firebase web SDK (email+password, Google, and the one-time
+custom-token hand-off from wepeka.com's `/brandlab/connect`). Account
+creation happens exclusively on wepeka.com (Community sign-up); this screen
+only ever signs in to a Firebase user that already exists. `js/account.js`
+holds the per-account Firestore doc (`accounts/{uid}`: plan, status,
+30-day trial) — a new one is only ever created server-side (wpk-dp's Admin
+SDK, after the trial starter mission, or this repo's own Midtrans webhook on
+a first-time purchase), never by this client (`firestore.rules`:
+`allow create: if false` on `accounts`). See `.claude/handoff-satu-akun.md`
+for the full "one Wepeka account across both products" design and its
+current rollout status.
 
 ## Creator Studio & Teleprompter
 

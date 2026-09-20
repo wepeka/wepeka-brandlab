@@ -66,6 +66,14 @@ export function renderAuthScreen(root) {
     };
     const hideError = () => { errorEl.style.display = "none"; };
 
+    // Firebase collapses "no such user" and "wrong password" into the same
+    // generic auth/invalid-credential code — this screen is also the ONLY
+    // way in for someone whose real account lives on wepeka.com (Google, or
+    // an email/password set up over there), so a plain "wrong password"
+    // leaves them with no next step. Point at the other two ways in that
+    // are already right there on this same screen.
+    const AMBIGUOUS_CREDENTIAL_CODES = ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"];
+
     async function runAuth(action) {
       submitBtn.disabled = true;
       try {
@@ -74,7 +82,7 @@ export function renderAuthScreen(root) {
         // onAuthChange in main.js picks up the new signed-in state and
         // re-renders (ensureAccountDoc() is a no-op for an existing account).
       } catch (err) {
-        showError(friendlyAuthError(err));
+        showError(AMBIGUOUS_CREDENTIAL_CODES.includes(err?.code) ? t("auth.err.wrongCredentialsHint") : friendlyAuthError(err));
       } finally {
         submitBtn.disabled = false;
       }

@@ -901,3 +901,7 @@ Satu-satunya gap numerik yang jelas dan disepakati: **trial AI credit dulu 5/har
 
 ### Addendum kecil — 17 Sep 2026 (lanjutan): trial credit diturunkan 100 → 60
 User minta angka trial AI credit diturunkan. `PLAN_QUOTA.trial.limit` di `js/ai-usage.js` jadi `60` (tetap `period: "total"`, tidak reset harian). Copy `pricing.faq.trial.a` (en+id) di `js/i18n/app-shell.js` ikut diperbaiki ("60 AI credit buat sepanjang trial"). `node --check` lolos, dicek di browser (`#/pricing`, akun lifetime) tanpa error console.
+
+## Addendum — 20 Sep 2026: handoff "satu akun" (Firebase Auth tunggal, email verified, Brandlab bayar / trial 30 hari)
+
+Audit funnel login kedua produk selesai, keputusan produk sudah dikonfirmasi user, belum ada kode yang diubah. Brief lengkap yang berdiri sendiri: `.claude/handoff-satu-akun.md` (salinan identik di repo wpk-dp `.claude/handoff-satu-akun.md`). Mulai dari Fase 0 (bug mandiri Brandlab: cron expiry, auth create-transaction, webhook, SSO teardown), lalu Fase 1 di wpk-dp.

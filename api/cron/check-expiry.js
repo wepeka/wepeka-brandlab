@@ -29,7 +29,13 @@ export default async function handler(req, res) {
 
   const toFlip = new Map();
   lapsedSubs.docs.forEach((doc) => {
-    if (doc.data().status === "active") toFlip.set(doc.id, doc.ref);
+    const acc = doc.data();
+    // subscriptionExpiresAt is only meaningful for a non-trial plan with a
+    // real (numeric) deadline — a trial account or one with a stray/legacy
+    // non-number value here must never be flipped off this query alone.
+    if (acc.status === "active" && acc.plan !== "trial" && typeof acc.subscriptionExpiresAt === "number") {
+      toFlip.set(doc.id, doc.ref);
+    }
   });
   endedTrials.docs.forEach((doc) => {
     const acc = doc.data();
@@ -37,6 +43,13 @@ export default async function handler(req, res) {
   });
 
   if (!toFlip.size) return res.status(200).json({ ok: true, flipped: 0 });
+
+  // Dry run: report who would flip without writing anything, so a change to
+  // this query can be checked against production data before the next
+  // scheduled run actually touches it.
+  if (req.query?.dryRun === "1") {
+    return res.status(200).json({ ok: true, dryRun: true, wouldFlip: [...toFlip.keys()] });
+  }
 
   // Firestore batches cap at 500 writes.
   const refs = [...toFlip.values()];

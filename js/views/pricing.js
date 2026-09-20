@@ -1,12 +1,16 @@
 // Pricing page. Three audiences land here:
 //  - Logged-out visitors (no `opts.user`) — the marketing page; every CTA
-//    leads to sign-up, which starts the 7-day trial (no card).
-//  - Logged-in accounts that still have to decide — a running trial, an
-//    ended trial / lapsed subscription (read-only), or a legacy "free"
-//    account — reached via #/pricing or main.js's onAccountChange. Same
-//    content plus a "logged in as X" bar, and Buy buttons that pay for real
-//    via Midtrans Snap.
-//  - Paying accounts that want to switch plan.
+//    sends them to wepeka.com (WEPEKA_CONNECT_URL) instead of paying
+//    directly — account creation and the 30-day trial claim both happen
+//    there now (Fase 2 of .claude/handoff-satu-akun.md), never on Brandlab.
+//  - Logged-in accounts with no running access (`opts.locked`, from
+//    main.js's onAccountChange: state "none" or "expired") — an ended
+//    trial, a lapsed subscription, or a Firebase user who's never claimed a
+//    trial at all. There is no read-only in-app browsing anymore; this
+//    screen (with a banner explaining which of those it is) IS what they
+//    see instead of the app. Same content plus a "logged in as X" bar, and
+//    Buy buttons that pay for real via Midtrans Snap.
+//  - Paying/trial accounts that want to switch or add a plan.
 // Payment goes through this repo's own `/api/midtrans/*` Vercel serverless
 // functions (see api/_plans.js for the authoritative price list) since
 // price + "did this actually get paid" can never be trusted to client-side
@@ -18,10 +22,10 @@ import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
-import { WEPEKA_CONNECT_URL } from "../site-links.js";
-import { db as fdb } from "../firebase.js";
+import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL } from "../site-links.js";
+import { db as fdb, auth } from "../firebase.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
-import { isTrial, isReadOnly, trialDaysLeft, TRIAL_DAYS } from "../account.js";
+import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState } from "../account.js";
 
 // Rupiah amounts with the thousands separator of the current language
 // (Rp 300.000 in ID, Rp 300,000 in EN).
@@ -68,10 +72,18 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
   }
   try {
     await loadSnap();
+    // The server derives uid from this token (Authorization header), never
+    // from the request body — see api/midtrans/create-transaction.js.
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) {
+      toast(t("pricing.err.needLogin"), "error");
+      location.hash = "#/login";
+      return;
+    }
     const res = await fetch("/api/midtrans/create-transaction", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid, planKey }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ planKey }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
     const { token } = await res.json();
@@ -219,11 +231,12 @@ function otherPlanHTML(plan, uid) {
 function accountBarHTML(user, account) {
   if (!user) return "";
   let status = t("pricing.loggedInAs", { email: escapeHtml(user.email || "") });
-  if (isTrial(account)) {
-    status += " " + (isReadOnly(account) ? t("pricing.status.trialEnded") : t("pricing.status.trial", { days: trialDaysLeft(account) }));
-  } else if (isReadOnly(account)) {
-    status += " " + t("pricing.status.readonly");
-  } else if (!account || account.plan === "free") {
+  const state = accessState(account);
+  if (state === "trial") {
+    status += " " + t("pricing.status.trial", { days: trialDaysLeft(account) });
+  } else if (state === "expired") {
+    status += " " + (isTrial(account) ? t("pricing.status.trialEnded") : t("pricing.status.readonly"));
+  } else if (state === "none") {
     status += " " + t("pricing.status.none");
   } else {
     status += " " + t("pricing.status.plan", { plan: escapeHtml(String(account.plan)) });
@@ -232,6 +245,26 @@ function accountBarHTML(user, account) {
       <span>${status}</span>
       <button type="button" class="btn btn-ghost btn-sm" id="pricing-logout">${icon("logout", { size: 13 })}${t("topbar.logout")}</button>
     </div>`;
+}
+
+// Shown only when main.js's onAccountChange rendered this screen because the
+// account has no running access (state "none" or "expired") — a distinct,
+// prominent banner above the marketing content explaining why they're here
+// and what to do next, instead of leaving them to infer it from the account
+// bar's one-line status alone.
+function lockedBannerHTML(account) {
+  const state = accessState(account);
+  if (state === "none") {
+    return `<section class="pricing-locked-banner">
+      <h2>${t("pricing.locked.noneTitle")}</h2>
+      <p>${t("pricing.locked.noneBody")}</p>
+      <a class="btn btn-primary pricing-cta" href="${WEPEKA_SITE_URL}/community/brandlab">${t("pricing.locked.claimCta")}</a>
+    </section>`;
+  }
+  return `<section class="pricing-locked-banner">
+    <h2>${t("pricing.locked.expiredTitle")}</h2>
+    <p>${t("pricing.locked.expiredBody")}</p>
+  </section>`;
 }
 
 // "Kurang apa lagi" — the offer stacked against what the same help costs
@@ -262,7 +295,7 @@ function stackHTML(founderPrice) {
     </section>`;
 }
 
-export function render(root, { user, account, backHref } = {}) {
+export function render(root, { user, account, backHref, locked } = {}) {
   const uid = user?.uid || null;
   const canBuyAddons = !!uid && ADDON_ELIGIBLE_PLANS.includes(account?.plan);
   let slots = null;
@@ -290,6 +323,7 @@ export function render(root, { user, account, backHref } = {}) {
 
       ${backHref ? `<a class="hint pricing-back" href="${backHref}">${icon("chevronLeft", { size: 13 })}${t("pricing.back")}</a>` : ""}
       ${accountBarHTML(user, account)}
+      ${locked ? lockedBannerHTML(account) : ""}
 
       <section class="pricing-hero">
         <div class="pricing-hero-main">

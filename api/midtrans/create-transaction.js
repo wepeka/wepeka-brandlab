@@ -2,7 +2,7 @@
 // server-side, from `planKey` alone — the amount is never accepted from the
 // client, same principle wpk-dp's own storefront already uses ("server-
 // authoritative pricing"). See js/views/pricing.js for the caller.
-import { adminDb } from "../_firebaseAdmin.js";
+import { adminDb, requireAuth } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, founderAmount, ADDON_ELIGIBLE_PLANS, SLOT_CAPS, SLOTS_DOC } from "../_plans.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
@@ -14,9 +14,16 @@ const SNAP_API_URL = MIDTRANS_IS_PRODUCTION
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { uid, planKey } = req.body || {};
+  let uid;
+  try {
+    ({ uid } = await requireAuth(req));
+  } catch (err) {
+    return res.status(err.status || 401).json({ error: "Sesi tidak valid — coba login ulang." });
+  }
+
+  const { planKey } = req.body || {};
   const plan = PLANS[planKey] || ADDONS[planKey];
-  if (!uid || typeof uid !== "string" || !plan) {
+  if (!plan) {
     return res.status(400).json({ error: "Paket tidak valid." });
   }
 
@@ -73,6 +80,12 @@ export default async function handler(req, res) {
       console.error("Midtrans create-transaction failed", data);
       return res.status(502).json({ error: "Gagal membuat transaksi pembayaran." });
     }
+    // The webhook trusts THIS record for uid/planKey/amount, keyed on
+    // order_id (which Midtrans's signature does cover) — not custom_field1/2,
+    // which travel unsigned and could otherwise be edited in flight.
+    await adminDb().doc(`payments/${orderId}`).set({
+      uid, planKey, plan: plan.plan || planKey, amount, status: "pending", createdAt: Date.now(),
+    });
     return res.status(200).json({ token: data.token });
   } catch (err) {
     console.error("create-transaction error", err);

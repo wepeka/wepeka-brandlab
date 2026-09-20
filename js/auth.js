@@ -58,14 +58,19 @@ const googleProvider = new GoogleAuthProvider();
 // Google sign-in normally creates a brand-new Firebase user the first time
 // a given Google account is seen — that would let anyone skip wepeka.com
 // registration entirely by just picking "Log in with Google" here. So: if
-// the popup just created a new user, undo it (sign back out) and reject
-// with NEW_GOOGLE_ACCOUNT instead of letting main.js's ensureAccountDoc()
-// give them a fresh trial account. Existing accounts (created via wepeka.com
-// SSO, or a Google sign-in from before this check existed) are unaffected.
+// the popup just created a new user, undo it and reject with
+// NEW_GOOGLE_ACCOUNT instead of letting it through. Existing accounts
+// (created via wepeka.com SSO, or a Google sign-in from before this check
+// existed) are unaffected.
 export async function loginWithGoogle() {
   const result = await signInWithPopup(auth, googleProvider);
   if (getAdditionalUserInfo(result)?.isNewUser) {
-    await signOut(auth);
+    // Delete, not just sign out — a bare signOut would leave an orphan
+    // Firebase user permanently squatting this email with no matching
+    // account, forever. That would break wepeka.com's own sign-up for the
+    // same address later (getUserByEmail finds this dead user instead of
+    // creating the real one) and any later Google sign-in attempt here.
+    await result.user.delete();
     const err = new Error("New Google account, no matching Brandlab account");
     err.code = NEW_GOOGLE_ACCOUNT;
     throw err;

@@ -4,6 +4,7 @@
 // only files under /api (Vercel serverless, server-only) import this.
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 
 function adminApp() {
   if (getApps().length) return getApps()[0];
@@ -20,4 +21,26 @@ function adminApp() {
 
 export function adminDb() {
   return getFirestore(adminApp());
+}
+
+// Verifies the caller's Firebase ID token from the Authorization header and
+// returns its decoded claims (including `uid`). Endpoints that must act on
+// behalf of a specific account (payments, above all) call this instead of
+// trusting a uid the client put in the request body — a body field is just
+// something the browser typed, not proof of who is asking.
+export async function requireAuth(req) {
+  const match = /^Bearer (.+)$/.exec(req.headers.authorization || "");
+  if (!match) {
+    const err = new Error("Missing bearer token");
+    err.status = 401;
+    throw err;
+  }
+  try {
+    return await getAuth(adminApp()).verifyIdToken(match[1]);
+  } catch (cause) {
+    const err = new Error("Invalid or expired token");
+    err.status = 401;
+    err.cause = cause;
+    throw err;
+  }
 }

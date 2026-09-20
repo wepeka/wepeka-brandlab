@@ -11,12 +11,14 @@ import { t } from "./i18n.js";
 
 export const DEFAULT_BRAND_LIMIT = 3;
 
-// Every new account starts here: 7 days, 1 brand, Pro features, no card.
-// When it ends the account goes read-only (data kept, nothing generated or
-// edited) until a plan is bought — there is no permanent free plan.
-// firestore.rules bounds trialEndsAt and the brand limit on create; keep
-// these two numbers in sync with it.
-export const TRIAL_DAYS = 7;
+// A trial account is 30 days, 1 brand, Pro features, no card — but as of
+// Fase 2 (.claude/handoff-satu-akun.md) this app never creates one itself.
+// Only wpk-dp's Admin SDK does, when a Community member claims it after the
+// trial starter mission (see api/community/brandlab-actions.ts#claimTrialAction);
+// firestore.rules' `accounts` collection is `allow create: if false`. Kept
+// here only because trialDaysLeft()/isTrial() below and the pricing page's
+// copy still need the number.
+export const TRIAL_DAYS = 30;
 export const TRIAL_BRAND_LIMIT = 1;
 
 // Wepeka's own internal team account — the only uid allowed to edit the
@@ -36,52 +38,13 @@ export function canUseInstagramApi() {
   return isAdmin(currentUid());
 }
 
-function defaultAccount(user) {
-  return {
-    uid: user.uid,
-    email: user.email || "",
-    displayName: user.displayName || "",
-    // Set once, right here, by ensureAccountDoc's transaction — a short,
-    // memorable, human-referenceable id ("account #14") alongside the long
-    // opaque Firebase uid, which is what actually keys every document.
-    accountNumber: null,
-    username: null,
-    createdAt: Date.now(),
-    plan: "trial",
-    status: "active",
-    brandLimit: TRIAL_BRAND_LIMIT,
-    trialEndsAt: Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
-    subscriptionExpiresAt: null,
-    paidAt: null,
-  };
-}
-
-// Creates accounts/{uid} the first time a given uid ever signs in — every
-// later sign-in (the overwhelming majority of calls, one per login) is a
-// single plain getDoc(), not a transaction: a transaction needs a live
-// round-trip to Firestore's backend and cannot be served from local
-// persistence/cache the way a plain read can, so on a slow, proxied, or
-// otherwise flaky connection it can hang far longer than a normal read
-// would — every returning user would pay that cost on every login for a
-// doc that, 99% of the time, already exists and needs no write at all.
-// The transaction only runs on the genuinely rare path (this uid's very
-// first sign-in ever), and even then only to atomically reserve the next
-// accountNumber from meta/accountCounter so two brand-new signups landing
-// at the same instant can never collide on the same number.
+// A plain read — nothing is created here anymore (Fase 2). Kept as its own
+// function so callers don't have to know that; `boot()` in main.js awaits it
+// before subscribing purely so the very first paint after a fresh sign-in
+// already has a warm local cache instead of a beat of "loading" from
+// subscribeAccount's own first snapshot.
 export async function ensureAccountDoc(user) {
-  const ref = doc(fdb, "accounts", user.uid);
-  const already = await getDoc(ref);
-  if (already.exists()) return;
-
-  const counterRef = doc(fdb, "meta", "accountCounter");
-  await runTransaction(fdb, async (tx) => {
-    const existing = await tx.get(ref);
-    if (existing.exists()) return;
-    const counterSnap = await tx.get(counterRef);
-    const nextNumber = counterSnap.exists() ? counterSnap.data().next || 1 : 1;
-    tx.set(counterRef, { next: nextNumber + 1 }, { merge: true });
-    tx.set(ref, { ...defaultAccount(user), accountNumber: nextNumber });
-  });
+  await getDoc(doc(fdb, "accounts", user.uid));
 }
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
@@ -146,6 +109,27 @@ export function isReadOnly(account) {
 }
 export function isDeactivated(account) {
   return account?.status === "deactivated";
+}
+
+// The one definition of "can this account use Brandlab right now" — mirrors
+// wpk-dp's own brandlabAccess() (src/lib/brandlab-db.ts) exactly; keep the
+// two in sync. See .claude/handoff-satu-akun.md section 5.
+//   "paid"    — plan isn't free/trial, status active, sub not expired
+//   "trial"   — plan is trial, status active, trialEndsAt in the future
+//   "expired" — the doc exists but neither of the above (lapsed sub, ended
+//               trial, readonly/deactivated, or a pre-Fase-2 "free" account)
+//   "none"    — no accounts/{uid} doc at all
+export function accessState(account) {
+  if (!account) return "none";
+  const now = Date.now();
+  if (account.status === "active" && account.plan !== "free" && account.plan !== "trial"
+    && (account.subscriptionExpiresAt == null || Number(account.subscriptionExpiresAt) > now)) {
+    return "paid";
+  }
+  if (account.status === "active" && account.plan === "trial" && Number(account.trialEndsAt) > now) {
+    return "trial";
+  }
+  return "expired";
 }
 // Pay-once plans ("lifetime" is the pre-subscription all-in-one plan). Some
 // tools — Copy Studio — are reserved for these; Wepeka's own team account

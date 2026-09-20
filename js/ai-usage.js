@@ -18,8 +18,8 @@ export const DEFAULT_AI_DAILY_LIMIT = 50;
 // Credits per plan. Subscriptions reset daily; the Founder lifetime plans
 // are a monthly cap instead — a one-time payment can't fund an open-ended
 // daily allowance forever. The trial is neither: it's a single pool for the
-// whole 7-day window (not reset each day), so someone who tries the product
-// hard on day 1 still has real room left on day 2, and the number is big
+// whole 30-day window (not reset each day), so someone who tries the product
+// hard on day 1 still has real room left later, and the number is big
 // enough to actually experience the product rather than feel like a demo.
 // Shown on the pricing page (js/views/pricing.js) — keep the two in sync.
 const PLAN_QUOTA = {
