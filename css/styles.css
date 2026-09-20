@@ -507,9 +507,12 @@ main.view.wide{ max-width: 1440px; }
 .companion-composer .input{ flex:1; min-width:0; }
 .companion-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .companion-log{ margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+.companion-log-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.companion-log-head .companion-log-title{ margin:0; }
 .companion-log-title{ margin:0 0 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); }
 .companion-log-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 0; }
 .companion-log-text{ font-size:12px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.companion-idea{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
 
 /* Collapsed state matches the same glass family, just as a single row — an
    icon badge, the title, and a real one-line summary of what's hidden (not

@@ -642,6 +642,28 @@ export function ackBrandEvent(brandId, id) {
   const log = (b.developmentLog || []).map((e) => (e.id === id ? { ...e, ack: true } : e));
   updateBrand(brandId, { developmentLog: log });
 }
+// Actually removes one entry — unlike ackBrandEvent (which only dismisses
+// an auto-signal's nag in the UI), this takes it out of developmentLog for
+// good, so it's also gone from js/brand-pulse.js buildPulseText the very
+// next time any AI feature reads this brand's pulse. Used when an owner
+// typed something into the Home Companion they didn't mean to keep (an
+// accidental vent, a note about something private) and wants it forgotten,
+// not just marked read. Does not un-send anything already sent to an AI
+// provider in a past request — only stops it being sent again.
+export function removeBrandLogEntry(brandId, id) {
+  const b = getBrand(brandId);
+  if (!b) return;
+  const log = (b.developmentLog || []).filter((e) => e.id !== id);
+  updateBrand(brandId, { developmentLog: log });
+}
+// Wipes the whole development log for this brand — the "forget everything"
+// escape hatch. Auto-detected signals (streak breaks, overdue content, …)
+// can reappear on the next Brand Pulse run if the underlying condition is
+// still true; notes and AI replies never regenerate, so those are gone for
+// good.
+export function clearBrandLog(brandId) {
+  updateBrand(brandId, { developmentLog: [] });
+}
 export function archiveBrand(id, archived = true) {
   return updateBrand(id, { archived });
 }

@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, addBrandNote, addBrandLogEntry, ackBrandEvent, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, addBrandNote, addBrandLogEntry, removeBrandLogEntry, clearBrandLog, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
@@ -19,6 +19,7 @@ import { computeSignals, pulseTextFor } from "../brand-pulse.js";
 import { companionReply, hasAiKey, AiApiError } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { go } from "../nav-context.js";
+import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 
 // The brand's home, one file for both modes. The page answers one question
 // — "sekarang ngapain?" — with one hero card and one button:
@@ -173,19 +174,34 @@ function companionActionsHTML(signals, content, brandId) {
   return `<div class="companion-actions">${buttons.join("")}</div>`;
 }
 
+// Every row gets a real delete (js/store.js removeBrandLogEntry) — not the
+// old ack-only ×. Deleting is what actually stops an entry from reaching
+// js/brand-pulse.js buildPulseText and, through it, any AI feature's
+// context; acking only hid the nag. "Kelola" opens the full history
+// (openBrandMemoryModal) for anything that's scrolled out of these 3 —
+// the whole reason this exists is so an accidental "curhat" can actually
+// be found and removed, not just the newest ones.
 function companionLogHTML(log) {
-  const recent = [...(log || [])].sort((a, b) => b.at - a.at).slice(0, 3);
-  if (!recent.length) return "";
+  const sorted = [...(log || [])].sort((a, b) => b.at - a.at);
+  if (!sorted.length) return "";
+  const recent = sorted.slice(0, 3);
   const rows = recent
     .map(
       (e) => `
       <div class="companion-log-row" data-companion-log-row="${e.id}">
         <span class="companion-log-text">${esc(e.title || "")}</span>
-        ${!e.ack ? `<button type="button" class="chip-icon-btn" data-companion-ack="${e.id}" aria-label="${t("common.close")}" title="${t("common.close")}">${icon("x", { size: 12 })}</button>` : ""}
+        <button type="button" class="chip-icon-btn" data-companion-delete="${e.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
       </div>`
     )
     .join("");
-  return `<div class="companion-log"><p class="companion-log-title">${t("companion.log.title")}</p>${rows}</div>`;
+  return `
+    <div class="companion-log">
+      <div class="companion-log-head">
+        <p class="companion-log-title">${t("companion.log.title")}</p>
+        <button type="button" class="link" id="companion-manage" style="font-size:11px;">${t("companion.log.manage")}</button>
+      </div>
+      ${rows}
+    </div>`;
 }
 
 function companionWidgetHTML(brand, { signals, content, now, pending, error }) {
@@ -194,14 +210,27 @@ function companionWidgetHTML(brand, { signals, content, now, pending, error }) {
   const log = brand.developmentLog || [];
   const lastEntry = [...log].sort((a, b) => b.at - a.at)[0];
 
+  // Not just !askedToday: brand memory can be cleared (js/store.js
+  // clearBrandLog, from the "Brand memory" modal) without ever touching
+  // companion.lastAskedAt, and an empty log has nothing to show as a
+  // "last entry" bubble either way — fall back to the greeting whenever
+  // there's genuinely nothing to continue from.
+  const showGreeting = !askedToday || !lastEntry;
   let threadHTML;
-  if (!askedToday) {
+  if (showGreeting) {
     const top = pickTopSignal(signals);
     const observation = top ? top.title : t("companion.observation.quiet");
     threadHTML = companionBubbleHTML("assistant", `${greetingSentence(brand, now)} ${esc(observation)}`);
   } else if (lastEntry) {
-    const html = lastEntry.source === "note" ? esc(lastEntry.title) : esc(lastEntry.title);
-    threadHTML = companionBubbleHTML(lastEntry.source === "note" ? "user" : "assistant", html);
+    const isNote = lastEntry.source === "note";
+    let html = esc(lastEntry.title);
+    if (!isNote && lastEntry.refs?.idea) {
+      html += `<div class="companion-idea">💡 <b>${esc(lastEntry.refs.idea.title)}</b> — ${esc(lastEntry.refs.idea.why)}</div>`;
+    }
+    if (!isNote && lastEntry.refs?.ask) {
+      html += `<button type="button" class="consultant-starter" data-companion-followup="${esc(lastEntry.refs.ask)}">${esc(lastEntry.refs.ask)}</button>`;
+    }
+    threadHTML = companionBubbleHTML(isNote ? "user" : "assistant", html);
   } else {
     threadHTML = "";
   }
@@ -215,7 +244,7 @@ function companionWidgetHTML(brand, { signals, content, now, pending, error }) {
       <div class="companion-thread">${threadHTML}</div>
       ${error ? `<p class="companion-error">${esc(error)}</p>` : ""}
       <div class="companion-composer">
-        <input type="text" class="input" id="companion-input" placeholder="${esc(askedToday ? t("companion.askAgain") : t("companion.placeholder"))}" ${pending ? "disabled" : ""} />
+        <input type="text" class="input" id="companion-input" placeholder="${esc(showGreeting ? t("companion.placeholder") : t("companion.askAgain"))}" ${pending ? "disabled" : ""} />
         <button type="button" class="chip-icon-btn" id="companion-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
         <button type="button" class="btn btn-primary btn-sm" id="companion-send" ${pending ? "disabled" : ""}>${t("companion.send")}</button>
       </div>
@@ -247,10 +276,7 @@ function wireCompanion(root, { brandId, brand, content, signals, state, refresh 
       const pulseText = pulseTextFor(fresh, { content, campaigns: listCampaigns(brandId), settings: getSettings() });
       const raw = await companionReply(ai, { brand: fresh, pulseText, note: text });
       const { text: cleanText, idea, ask } = parseCompanionReply(raw);
-      const pieces = [cleanText];
-      if (idea) pieces.push(`💡 <b>${esc(idea.title)}</b> — ${esc(idea.why)}`);
-      if (ask) pieces.push(`<button type="button" class="consultant-starter" data-companion-followup="${esc(ask)}">${esc(ask)}</button>`);
-      addBrandLogEntry(brandId, { kind: "companion-reply", source: "ai", title: cleanText || raw, detail: cleanText || raw });
+      addBrandLogEntry(brandId, { kind: "companion-reply", source: "ai", title: cleanText || raw, detail: cleanText || raw, refs: { idea: idea || null, ask: ask || null } });
     } catch (e) {
       state.companionError = e instanceof AiApiError ? e.message : t("companion.saveFailed");
     } finally {
@@ -266,17 +292,85 @@ function wireCompanion(root, { brandId, brand, content, signals, state, refresh 
   qsa("[data-companion-followup]", root).forEach((btn) =>
     btn.addEventListener("click", () => send(btn.dataset.companionFollowup))
   );
-  qsa("[data-companion-ack]", root).forEach((btn) =>
+  qsa("[data-companion-delete]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
-      ackBrandEvent(brandId, btn.dataset.companionAck);
+      removeBrandLogEntry(brandId, btn.dataset.companionDelete);
       refresh();
     })
   );
+  qs("#companion-manage", root)?.addEventListener("click", () => openBrandMemoryModal(brandId, { refresh }));
   qsa("[data-companion-go]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
       go(`#/brand/${brandId}/brainstorm`, { seed: btn.dataset.companionSeed, fromLabel: brand.name });
     })
   );
+}
+
+// Full history, past the 3 rows the card itself shows — so an accidental
+// "curhat" that's already scrolled out of view can still be found and
+// deleted. Says plainly what this log is (fed to every AI feature's
+// context via js/brand-pulse.js) and what deleting does and doesn't undo.
+const MEMORY_MODAL_LIMIT = 40;
+function openBrandMemoryModal(brandId, { refresh }) {
+  const paintList = () => {
+    const brand = getBrand(brandId);
+    const log = [...(brand?.developmentLog || [])].sort((a, b) => b.at - a.at).slice(0, MEMORY_MODAL_LIMIT);
+    const SOURCE_LABEL = { auto: t("pulse.log.auto"), note: t("pulse.log.note"), ai: t("pulse.log.ai") };
+    return `
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("companion.memory.intro")}</p>
+      ${
+        log.length
+          ? log
+              .map(
+                (e) => `
+              <div class="companion-log-row" data-memory-row="${e.id}">
+                <div style="min-width:0;">
+                  <span class="tag" style="margin-right:6px;">${SOURCE_LABEL[e.source] || e.source}</span>
+                  <span class="companion-log-text" style="white-space:normal;">${esc(e.title || "")}</span>
+                  <div class="text-faint" style="font-size:11px;margin-top:2px;">${esc(formatDate(new Date(e.at).toISOString().slice(0, 10)))}</div>
+                </div>
+                <button type="button" class="icon-btn" data-memory-delete="${e.id}" aria-label="${t("common.delete")}" style="width:28px;height:28px;flex:none;">${icon("trash", { size: 13 })}</button>
+              </div>`
+              )
+              .join("")
+          : `<div class="table-empty" style="padding:20px;">${t("companion.log.empty")}</div>`
+      }
+    `;
+  };
+
+  const overlay = openModal({
+    title: t("companion.memory.title"),
+    wide: true,
+    bodyHTML: paintList(),
+    footHTML: `<button type="button" class="btn btn-secondary" id="memory-clear-all">${icon("trash", { size: 13 })}${t("companion.memory.clearAll")}</button>`,
+  });
+
+  const wireRows = () => {
+    qsa("[data-memory-delete]", overlay).forEach((btn) =>
+      btn.addEventListener("click", () => {
+        removeBrandLogEntry(brandId, btn.dataset.memoryDelete);
+        overlay.querySelector(".modal-body").innerHTML = paintList();
+        wireRows();
+        refresh();
+      })
+    );
+  };
+  wireRows();
+
+  overlay.querySelector("#memory-clear-all")?.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: t("companion.memory.clearConfirm.title"),
+      message: t("companion.memory.clearConfirm.body"),
+      confirmLabel: t("companion.memory.clearAll"),
+      danger: true,
+    });
+    if (!ok) return;
+    clearBrandLog(brandId);
+    updateBrand(brandId, { companion: { lastAskedAt: null } });
+    closeOverlay(overlay);
+    refresh();
+    toast(t("companion.memory.cleared"));
+  });
 }
 
 function paint(root, brandId, state, refresh) {
