@@ -575,6 +575,47 @@ function paint(root, brandId, state, refresh) {
     });
   });
 
+  // Carousel: the slide cards replace #f-script. Every edit is written back
+  // as the same flat "Slide N" string, so nothing downstream changes.
+  const slideEditor = qs("#slide-editor", root);
+  if (slideEditor) {
+    const readSlides = () => qsa("[data-slide-text]", root).map((el) => ({ text: el.value }));
+    const commit = (slides, { repaint = false } = {}) => {
+      const script = serializeSlides(slides);
+      if (script !== (selected.script || "")) {
+        updateContent(selected.id, { script });
+        flashSaved();
+      }
+      if (repaint) refresh();
+    };
+    const autosize = (el) => { el.style.height = "auto"; el.style.height = `${Math.max(56, el.scrollHeight)}px`; };
+    qsa("[data-slide-text]", root).forEach((el) => {
+      autosize(el);
+      el.addEventListener("input", () => autosize(el));
+      el.addEventListener("blur", () => commit(readSlides()));
+    });
+    qsa("[data-slide-delete]", root).forEach((btn) =>
+      btn.addEventListener("click", () => commit(readSlides().filter((_, i) => i !== Number(btn.dataset.slideDelete)), { repaint: true }))
+    );
+    qsa("[data-slide-up]", root).forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const i = Number(btn.dataset.slideUp);
+        const slides = readSlides();
+        if (i <= 0) return;
+        [slides[i - 1], slides[i]] = [slides[i], slides[i - 1]];
+        commit(slides, { repaint: true });
+      })
+    );
+    qs("#slide-add", root)?.addEventListener("click", () => {
+      const slides = [...readSlides(), { text: "" }];
+      updateContent(selected.id, { script: serializeSlides(slides) });
+      flashSaved();
+      refresh();
+      const all = qsa("[data-slide-text]", root);
+      all[all.length - 1]?.focus();
+    });
+  }
+
   qs("#f-campaign", root)?.addEventListener("change", (e) => {
     updateContent(selected.id, { campaignId: e.target.value, campaignPhaseId: "" });
     flashSaved();
@@ -622,9 +663,10 @@ function paint(root, brandId, state, refresh) {
         updateContent(selected.id, { caption: captionEl.value });
       } else {
         const scriptEl = qs("#f-script", root);
-        if (!scriptEl) return;
-        scriptEl.value = script ? script : hook + (scriptEl.value ? "\n\n" + scriptEl.value : "");
-        updateContent(selected.id, { script: scriptEl.value, ...(funnel ? { funnel } : {}) });
+        const current = scriptEl ? scriptEl.value : selected.script || "";
+        const next = script ? script : hook + (current ? "\n\n" + current : "");
+        if (scriptEl) scriptEl.value = next;
+        updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}) });
         // A brand-new piece has no title yet — the chosen hook is a good
         // working title, so the sidebar doesn't fill up with t("common.untitled").
         const titleEl = qs("#f-title", root);
@@ -632,6 +674,8 @@ function paint(root, brandId, state, refresh) {
           titleEl.value = hook.split("\n")[0].trim().slice(0, 80);
           updateContent(selected.id, { title: titleEl.value });
         }
+        // Carousel view has slide cards instead of the textarea — repaint them.
+        if (!scriptEl) refresh();
       }
       flashSaved();
     });
@@ -662,9 +706,11 @@ function paint(root, brandId, state, refresh) {
           updateContent(selected.id, { caption: captionEl.value });
         } else {
           const scriptEl = qs("#f-script", root);
-          if (!scriptEl) return;
-          scriptEl.value = script ? script : hook + (scriptEl.value ? "\n\n" + scriptEl.value : "");
-          updateContent(selected.id, { script: scriptEl.value, ...(funnel ? { funnel } : {}) });
+          const current = scriptEl ? scriptEl.value : selected.script || "";
+          const next = script ? script : hook + (current ? "\n\n" + current : "");
+          if (scriptEl) scriptEl.value = next;
+          updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}) });
+          if (!scriptEl) refresh();
         }
         flashSaved();
       },
@@ -954,7 +1000,7 @@ function executionPanel(c) {
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:4px;">${escapeHtml(c.title || t("common.untitled"))}</div>
       <button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>
-      <div class="stage-script-display">${escapeHtml(c.script || t("cr.noScript")).replace(/\n/g, "<br>")}</div>
+      ${isCarouselContent(c) ? slidesReadHTML(c.script) : `<div class="stage-script-display">${escapeHtml(c.script || t("cr.noScript")).replace(/\n/g, "<br>")}</div>`}
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-shot-big">${icon("check", { size: 20 })}${t("cr.doneShooting")}</button>
     </div>
   `;
@@ -1038,6 +1084,78 @@ function readyToUploadPanel(c) {
   `;
 }
 
+// ---- Carousel slides --------------------------------------------------------
+// A carousel is a stack of still slides, not a spoken script, so the Script
+// textarea becomes one card per slide. Storage stays the flat
+// content.script string in the exact "Slide N\n…" shape js/ai.js
+// generateScript already writes for carousels — the teleprompter, the PDF
+// sheet, and every AI prompt keep reading one string, and an AI-generated
+// carousel parses straight back into cards.
+const isCarouselContent = (c) => (c?.format || "").toLowerCase().includes("carousel");
+const SLIDE_MARKER = /^\s*Slide\s+(\d+)\s*:?\s*$/i;
+
+function parseSlides(script) {
+  const text = (script || "").replace(/\r/g, "");
+  if (!text.trim()) return [];
+  const slides = [];
+  let current = null;
+  text.split("\n").forEach((line) => {
+    if (SLIDE_MARKER.test(line)) {
+      current = { text: "" };
+      slides.push(current);
+      return;
+    }
+    if (!current) {
+      current = { text: "" };
+      slides.push(current);
+    }
+    current.text += (current.text ? "\n" : "") + line;
+  });
+  return slides.map((s) => ({ text: s.text.replace(/^\n+|\n+$/g, "") }));
+}
+const serializeSlides = (slides) => slides.map((s, i) => `Slide ${i + 1}\n${(s.text || "").trim()}`).join("\n\n");
+
+function slidesFieldHTML(c) {
+  const slides = parseSlides(c.script);
+  const cards = slides
+    .map(
+      (s, i) => `
+      <div class="slide-card" data-slide="${i}">
+        <div class="slide-card-head">
+          <span class="slide-num">${escapeHtml(t("cr.ai.slideLabel", { n: i + 1 }))}</span>
+          <span class="text-faint" style="font-size:11px;">${i === 0 ? t("cr.f.slideCover") : i === slides.length - 1 && slides.length > 1 ? t("cr.f.slideClose") : ""}</span>
+          <span style="flex:1;"></span>
+          <button type="button" class="chip-icon-btn" data-slide-up="${i}" aria-label="${t("cr.f.slideUp")}" title="${t("cr.f.slideUp")}" ${i === 0 ? "disabled" : ""}>${icon("arrowUp", { size: 12 })}</button>
+          <button type="button" class="chip-icon-btn" data-slide-delete="${i}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
+        </div>
+        <textarea class="textarea slide-text" data-slide-text="${i}" rows="2" placeholder="${escapeHtml(t("cr.f.slidePh"))}">${escapeHtml(s.text)}</textarea>
+      </div>`
+    )
+    .join("");
+  return `
+      <div class="field">
+        <div class="creator-field-head">
+          <label style="margin-bottom:0;">${t("cr.f.slides")}</label>
+          <div class="flex items-center gap-6">
+            <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickCarouselTitle")}">${icon("bot", { size: 15 })}</button>
+          </div>
+        </div>
+        <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("cr.f.slidesHint")}</p>
+        <div class="slide-editor" id="slide-editor">
+          ${cards || `<p class="text-faint" style="font-size:12.5px;margin:0 0 10px;">${t("cr.f.slidesEmpty")}</p>`}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="slide-add">${icon("plus", { size: 13 })}${t("cr.f.addSlide")}</button>
+      </div>`;
+}
+
+function slidesReadHTML(script) {
+  const slides = parseSlides(script);
+  if (!slides.length) return `<div class="stage-script-display">${escapeHtml(t("cr.noScript"))}</div>`;
+  return `<div class="stage-script-display slide-read">${slides
+    .map((s, i) => `<div class="slide-read-card"><span class="slide-num">${escapeHtml(t("cr.ai.slideLabel", { n: i + 1 }))}</span><div>${escapeHtml(s.text).replace(/\n/g, "<br>")}</div></div>`)
+    .join("")}</div>`;
+}
+
 function draftingPanel(c, campaigns) {
   const publishedNote =
     c.status === "published"
@@ -1066,7 +1184,7 @@ function draftingPanel(c, campaigns) {
         <textarea class="textarea" id="f-idea" style="min-height:60px;" placeholder="${t("cr.f.ideaPh")}">${c.idea || ""}</textarea>
       </div>
       ${campaignFunnelFieldsHTML(c, campaigns)}
-      <div class="field">
+      ${isCarouselContent(c) ? slidesFieldHTML(c) : `<div class="field">
         <div class="creator-field-head">
           <label style="margin-bottom:0;">${t("cr.f.script")}</label>
           <div class="flex items-center gap-6">
@@ -1074,7 +1192,7 @@ function draftingPanel(c, campaigns) {
           </div>
         </div>
         <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}">${c.script || ""}</textarea>
-      </div>
+      </div>`}
       <div class="field">
         <div class="creator-field-head">
           <label style="margin-bottom:0;">${t("cr.f.caption")}</label>
