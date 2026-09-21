@@ -49,6 +49,8 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "copy", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "tools", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/goals\/([^/]+)\/?$/))) return { view: "goals", brandId: m[1], goalId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/goals\/?$/))) return { view: "goals", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/([^/]+)\/?$/))) return { view: "brainstorm", brandId: m[1], threadId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/?$/))) return { view: "brainstorm", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
@@ -324,6 +326,7 @@ async function renderRoute() {
       copy: () => import("./views/copy-studio.js"),
       tools: () => import("./views/tools.js"),
       brainstorm: () => import("./views/brainstorm.js"),
+      goals: () => import("./views/goal-roadmap.js"),
       "content-os": () => import("./views/content-os.js"),
       settings: () => import("./views/settings.js"),
     }[route.view] || (() => import("./views/brands.js"))
@@ -353,6 +356,9 @@ async function renderRoute() {
       break;
     case "brainstorm":
       cleanup = view.render(viewRoot, { brandId: route.brandId, threadId: route.threadId || null });
+      break;
+    case "goals":
+      cleanup = view.render(viewRoot, { brandId: route.brandId, goalId: route.goalId || null });
       break;
     case "content-os":
       cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });

@@ -83,7 +83,10 @@ function paintList(root, brandId, brand, refresh) {
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("camp.list.eyebrow")}${helpButtonHTML("campaigns")}${guideVideoButtonHTML("campaigns")}</div>
         <h1>${brand.name}</h1>
       </div>
-      <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
+      <div class="flex gap-8" style="flex-wrap:wrap;">
+        <a class="btn btn-secondary" href="#/brand/${brandId}/goals" id="open-goals">${icon("target", { size: 16 })}${t("roadmap.camp.open")}</a>
+        <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
+      </div>
     </div>
     <p class="page-sub" style="margin-bottom:24px;">${
       getMode() === "guided"

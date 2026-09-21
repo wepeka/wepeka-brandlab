@@ -1,10 +1,11 @@
-import { getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, listRoutineTemplate, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
+import { listGoals, getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, listRoutineTemplate, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { suggestSchedule, hasAiKey } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
+import { goalItems } from "../goal-progress.js";
 import { t, getLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -25,6 +26,31 @@ function sameDay(a, b) { return iso(a) === iso(b); }
 function startOfWeek(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDay()); x.setHours(0, 0, 0, 0); return x; }
 
 const FUNNEL_COLOR = { TOFU: "var(--tofu)", MOFU: "var(--mofu)", BOFU: "var(--bofu)" };
+const GOAL_LANE_COLOR = { event: "var(--accent)", audience: "var(--track-social)", community: "var(--track-community)", rhythm: "var(--text-faint)" };
+
+// Roadmap ke Tujuan (js/goal-progress.js): dated deadlines (checklist
+// milestones + goal tasks) of every live goal, by date. Content slots need no
+// help here — they are ordinary "idea" items on the calendar, tagged fromGoal.
+function goalDeadlines(brandId) {
+  const map = new Map();
+  const today = localISODate();
+  listGoals(brandId).filter((g) => g.status === "active" || g.status === "partial").forEach((g) => {
+    goalItems(g, today).filter((i) => i.kind !== "slot" && i.state !== "done" && i.date).forEach((i) => map.set(i.date, [...(map.get(i.date) || []), i]));
+  });
+  return map;
+}
+// "This week: 3 posts · 1 deadline" for the header chip.
+function goalWeekSummary(brandId) {
+  const today = localISODate();
+  const ws = iso(startOfWeek(new Date()));
+  const we = iso(new Date(new Date(`${ws}T00:00:00`).getTime() + 6 * 86400000));
+  let slots = 0, deadlines = 0, any = false;
+  listGoals(brandId).filter((g) => g.status === "active" || g.status === "partial").forEach((g) => {
+    any = true;
+    goalItems(g, today).forEach((i) => { if (i.date >= ws && i.date <= we && i.state !== "done") { if (i.kind === "slot") slots += 1; else deadlines += 1; } });
+  });
+  return any ? { slots, deadlines } : null;
+}
 
 // Confirmed against the official SKB 3 Menteri 2026 announcement
 // (setneg.go.id) — exact for 2026 only, since Islamic/lunar/Balinese
@@ -264,6 +290,8 @@ function paint(root, brandId, state, refresh) {
   const items = itemsForBrand(brandId);
   const campaigns = listCampaigns(brandId);
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+  const deadlines = goalDeadlines(brandId);
+  const goalWeek = goalWeekSummary(brandId);
 
   root.innerHTML = `
     <div class="page-head">
@@ -283,6 +311,7 @@ function paint(root, brandId, state, refresh) {
         <button class="icon-btn" id="cal-next" aria-label="${t("calendar.nextPeriod")}">${icon("chevronRight", { size: 16 })}</button>
         <button class="btn btn-secondary btn-sm" id="cal-today">${t("calendar.today")}</button>
       </div>
+      ${goalWeek ? `<a class="cal-goalchip" href="#/brand/${brandId}/goals" title="${escapeHtml(t("roadmap.cal.goalChip"))}">${icon("target", { size: 12 })}${t("roadmap.cal.weekChip", { slots: goalWeek.slots, deadlines: goalWeek.deadlines })}</a>` : ""}
       <div class="segmented" style="width:150px;">
         ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${t(`calendar.view.${v}`)}</button>`).join("")}
       </div>
@@ -318,8 +347,8 @@ function paint(root, brandId, state, refresh) {
   qsa("[data-view]").forEach((btn) => btn.addEventListener("click", () => { state.view = btn.dataset.view; paint(root, brandId, state, refresh); }));
 
   const body = qs("#cal-body");
-  if (state.view === "month") renderMonth(body, brandId, state, items, campaigns, campaignById, refresh);
-  else renderAgenda(body, brandId, state, items, campaignById, refresh);
+  if (state.view === "month") renderMonth(body, brandId, state, items, campaigns, campaignById, refresh, deadlines);
+  else renderAgenda(body, brandId, state, items, campaignById, refresh, deadlines);
 
 }
 
@@ -345,7 +374,7 @@ function step(state, dir) {
   state.cursor = d;
 }
 
-function renderMonth(body, brandId, state, items, campaigns, campaignById, refresh) {
+function renderMonth(body, brandId, state, items, campaigns, campaignById, refresh, deadlines = new Map()) {
   const d = state.cursor;
   const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
   const gridStart = startOfWeek(firstOfMonth);
@@ -359,8 +388,10 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
     day.setDate(gridStart.getDate() + i);
     const outside = day.getMonth() !== d.getMonth();
     const dayItems = items.filter((c) => sameDay(new Date(c.scheduleDate || c.publishedDate), day));
-    const shown = dayItems.slice(0, 3);
-    const extra = dayItems.length - shown.length;
+    const dayDeadlines = deadlines.get(iso(day)) || [];
+    const dlShown = dayDeadlines.slice(0, 2);
+    const shown = dayItems.slice(0, 3 - dlShown.length);
+    const extra = dayItems.length - shown.length + (dayDeadlines.length - dlShown.length);
     const holiday = holidayForDate(iso(day));
     const eventNames = eventDays.get(iso(day));
 
@@ -368,13 +399,15 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
       <div class="cal-cell ${outside ? "outside" : ""} ${sameDay(day, today) ? "today" : ""} ${iso(day) < todayISO ? "is-past" : ""} ${holiday ? (holiday.cuti ? "cuti" : "holiday") : ""} ${eventNames ? "event-day" : ""}" data-date="${iso(day)}" ${holiday ? `title="${escapeHtml(holiday.label)}"` : eventNames ? `title="${t("cal.eventDayTitle", { names: escapeHtml(eventNames.join(", ")) })}"` : ""}>
         <div class="cal-date">${day.getDate()}${eventNames ? `<span class="cal-event-star" aria-label="${t("cal.eventDay")}">★</span>` : ""}</div>
         ${holiday ? `<div class="cal-holiday-label">${escapeHtml(holiday.label)}</div>` : ""}
+        ${dlShown.map((d) => `<div class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}" title="${escapeHtml(`${t("roadmap.cal.deadline")}: ${d.label}`)}">${escapeHtml(d.label)}</div>`).join("")}
         ${shown.map((c) => {
           const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
           const itemTitle = campaign ? `${c.title} · ${campaign.name}` : c.title;
+          const isSlot = !!c.fromGoal && c.status === "idea";
           return `
-          <div class="cal-item ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="true" data-id="${c.id}" title="${escapeHtml(itemTitle)}">
+          <div class="cal-item ${isSlot ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="true" data-id="${c.id}" title="${escapeHtml(isSlot ? `${itemTitle} — ${t("roadmap.cal.slot")}` : itemTitle)}">
             <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>
-            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaign.name)}"></span>` : ""}
+            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaign.name)}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
             ${escapeHtml(c.title || t("common.untitled"))}
           </div>`;
         }).join("")}
@@ -456,7 +489,7 @@ function eventDayMarkers(campaigns) {
   return map;
 }
 
-function renderAgenda(body, brandId, state, items, campaignById, refresh) {
+function renderAgenda(body, brandId, state, items, campaignById, refresh, deadlines = new Map()) {
   const d = state.cursor;
   let rangeStart, rangeEnd;
   if (state.view === "week") { rangeStart = startOfWeek(d); rangeEnd = new Date(rangeStart); rangeEnd.setDate(rangeEnd.getDate() + 6); }
@@ -470,8 +503,18 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh) {
     })
     .sort((a, b) => (a.scheduleDate || a.publishedDate).localeCompare(b.scheduleDate || b.publishedDate));
 
-  body.innerHTML = filtered.length
-    ? `<div class="agenda-list">${filtered.map((c) => agendaRow(c, campaignById)).join("")}</div>`
+  const dlRows = [...deadlines.entries()]
+    .filter(([date]) => { const dt = new Date(`${date}T00:00:00`); return dt >= rangeStart && dt <= rangeEnd; })
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .flatMap(([date, list]) => list.map((d) => {
+      const dt = new Date(`${date}T00:00:00`);
+      return `<a class="agenda-row" href="${d.kind === "milestone" ? `#/brand/${brandId}/campaigns/${d.campaignId}` : `#/brand/${brandId}/goals`}">
+        <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0, 3)}</div></div>
+        <div class="ti" style="flex:1;min-width:0;"><div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.label)}</div></div>
+        <span class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}">${t("roadmap.cal.deadline")}</span></a>`;
+    }));
+  body.innerHTML = filtered.length || dlRows.length
+    ? `<div class="agenda-list">${dlRows.join("")}${filtered.map((c) => agendaRow(c, campaignById)).join("")}</div>`
     : `<div class="card glass-card"><div class="table-empty">${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</div></div>`;
 
   qsa("[data-id]", body).forEach((el) => {

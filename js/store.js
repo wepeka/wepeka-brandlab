@@ -457,6 +457,7 @@ export function initStore(uid) {
     // false) until the listener recovers.
     onSnapshot(doc(fdb, "settings", "main"), (snap) => {
       globalAi = snap.exists() ? (snap.data().ai || null) : null;
+      globalBrandsBg = snap.exists() ? (snap.data().brandsBg || null) : null;
       applySettings();
     }, (e) => console.error("Cloud sync (shared AI config) failed", e));
   });
@@ -468,6 +469,9 @@ export function initStore(uid) {
 // persistSettings() never copies the shared keys into settings/{uid}.
 let globalAi = null;
 let personalAi = null;
+// Seasonal background of the all-brands home, also in settings/main
+// (admin-written, read by everyone) — see js/brands-bg.js.
+let globalBrandsBg = null;
 const AI_KEY_FIELD = { anthropic: "anthropicApiKey", gemini: "geminiApiKey", deepseek: "deepseekApiKey" };
 // True when settings/main holds a usable key for its own provider — then it
 // overrides whatever the account set for itself.
@@ -480,6 +484,15 @@ export function getGlobalAiSettings() {
 export function updateGlobalAiSettings(patch) {
   const next = { ...(globalAi || {}), ...patch };
   persist(() => setDoc(doc(fdb, "settings", "main"), { ai: next }, { merge: true }));
+}
+
+export function getGlobalBrandsBg() {
+  return globalBrandsBg ? { ...globalBrandsBg } : null;
+}
+export function updateGlobalBrandsBg(next) {
+  globalBrandsBg = next;
+  persist(() => setDoc(doc(fdb, "settings", "main"), { brandsBg: next }, { merge: true }));
+  window.dispatchEvent(new CustomEvent("db:change"));
 }
 
 export function onChange(fn) {
@@ -712,6 +725,46 @@ export function removeBrandIdea(brandId, id) {
   updateBrand(brandId, { ideas: (b.ideas || []).filter((i) => i.id !== id) });
 }
 
+// ---------- Goals (brand.goals[]) — Roadmap ke Tujuan ----------
+// A goal sits above campaigns: { id, type: "event", name, targetDate,
+// startDate, status, inputs, roadmap, installed, tasks, createdAt,
+// updatedAt }. It lives on the brand doc (like brand.ideas) rather than in
+// its own collection so it needs no Firestore rules change; the roadmap is
+// a few KB. `installed` records which campaigns/content the goal created,
+// so installing again after a failure never duplicates anything (see
+// js/goal-actions.js). Status: draft | installing | partial | active |
+// completed | archived.
+export const GOALS_CAP = 20;
+export const GOAL_STATUSES = ["draft", "installing", "partial", "active", "completed", "archived"];
+export function listGoals(brandId, { includeArchived = false } = {}) {
+  const b = getBrand(brandId);
+  return (b?.goals || []).filter((g) => includeArchived || g.status !== "archived").sort((a, b2) => (a.targetDate || "").localeCompare(b2.targetDate || ""));
+}
+export function getGoal(brandId, id) {
+  return (getBrand(brandId)?.goals || []).find((g) => g.id === id) || null;
+}
+export function createGoal(brandId, data = {}) {
+  const b = getBrand(brandId);
+  if (!b) return null;
+  const now = Date.now();
+  const goal = { id: uid(), type: "event", name: "", targetDate: "", startDate: "", status: "draft", inputs: {}, roadmap: null, installed: { campaigns: {}, slots: {} }, tasks: [], createdAt: now, updatedAt: now, ...data };
+  updateBrand(brandId, { goals: [...(b.goals || []), goal].slice(-GOALS_CAP) });
+  return goal;
+}
+export function updateGoal(brandId, id, patch) {
+  const b = getBrand(brandId);
+  const cur = (b?.goals || []).find((g) => g.id === id);
+  if (!cur) return null;
+  const next = { ...cur, ...patch, updatedAt: Date.now() };
+  updateBrand(brandId, { goals: b.goals.map((g) => (g.id === id ? next : g)) });
+  return next;
+}
+export function deleteGoal(brandId, id) {
+  const b = getBrand(brandId);
+  if (!b) return;
+  updateBrand(brandId, { goals: (b.goals || []).filter((g) => g.id !== id) });
+}
+
 // ---------- Brainstorm threads (brainstorms/ collection) ----------
 // One doc per chat thread: { id, ownerId, brandId, campaignId, contentId,
 // title, mode, messages, ideas, proposal, createdAt, updatedAt }. `mode`
@@ -730,9 +783,9 @@ export function listBrainstorms(brandId) {
 export function getBrainstorm(id) {
   return (db.brainstorms || []).find((b) => b.id === id) || null;
 }
-export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, stageId = null, contentId = null } = {}) {
+export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, stageId = null, contentId = null, goalId = null } = {}) {
   const now = Date.now();
-  const thread = { id, ownerId: ownerUid, brandId, campaignId, stageId, contentId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
+  const thread = { id, ownerId: ownerUid, brandId, campaignId, stageId, contentId, goalId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
   db.brainstorms = [...(db.brainstorms || []).filter((b) => b.id !== id), thread];
   persist(() => setDoc(doc(fdb, "brainstorms", id), thread));
   return thread;
@@ -1627,7 +1680,60 @@ export function eventScaleMultiplier(expectedAudience) {
   return Math.min(30, Math.max(0.1, Math.pow(n / EVENT_REFERENCE_AUDIENCE, 0.85)));
 }
 
-export function buildEventPhases(phaseTemplates, { eventDate, campaignStartDate, scaleId, expectedAudience = null }) {
+// ---- Event size decides how much there is to track ----
+// A 20-person alumni gathering does not need reach, views and mention targets
+// the way a 500-seat launch does. `lean` trims the template to what the size
+// of the event justifies; the owner can still delete or add any milestone.
+//   0  full template (about 100+ attendees, or no size known)
+//   1  small  (31–100): no views / profile-visit / mention / save / comment /
+//      interaction / UGC / feedback numbers, and no optional rate rows
+//   2  tiny   (≤30): only the checklist, registrations, attendance, posts
+//      published, testimonials — plus heavy set-up steps (landing page,
+//      ticketing system, social profile refresh, promo content plan) dropped
+export function eventLeanLevel(expectedAudience, scaleId) {
+  const n = Number(expectedAudience) || 0;
+  if (n > 0) return n <= 30 ? 2 : n <= 100 ? 1 : 0;
+  return scaleId === "small" ? 1 : 0;
+}
+const LEAN1_DROP_UNITS = new Set(["views", "kunjungan", "mention", "save", "komentar", "interaksi", "UGC", "response", "feedback"]);
+const LEAN2_KEEP_UNITS = new Set(["konten", "testimoni", "transaksi", "pendaftar"]);
+const LEAN2_DROP_CHECKS = /landing page|ticketing|profil media sosial|rencana konten/i;
+function leanKeep(m, level) {
+  if (level <= 0) return true;
+  if (m.kind === "check") return level >= 2 ? m.required !== false && !LEAN2_DROP_CHECKS.test(m.label) : true;
+  if (level >= 2 && m.required === false) return false;
+  if (m.attendance || m.regShare || m.category === "ATTENDANCE" || LEAN2_KEEP_UNITS.has(m.unit)) return true;
+  if (level >= 2) return false;
+  return !LEAN1_DROP_UNITS.has(m.unit) && !(m.required === false && m.fixed);
+}
+// Tiny events also skip the funnel: the three middle pre-event phases
+// (Awareness → Consideration → Conversion) fold into one "Pre-event" stretch,
+// with their post count and sign-up target added together.
+function foldMiddlePhases(templates) {
+  const mid = templates.filter((p) => p.offsetFrom !== null && p.offsetTo <= 0 && p.offsetFrom < 0);
+  if (mid.length < 2) return templates;
+  const all = mid.flatMap((p) => p.milestones);
+  const content = all.filter((m) => m.unit === "konten");
+  const regs = all.filter((m) => m.regShare);
+  const merged = [
+    ...all.filter((m) => m.kind === "check"),
+    ...(content.length ? [{ kind: "auto", label: "Terbitkan X konten terkait event", base: content.reduce((a, m) => a + (m.base || 0), 0), unit: "konten", category: "CONTENT" }] : []),
+    ...(regs.length ? [{ kind: "number", label: "Dapatkan X pendaftaran", base: regs.reduce((a, m) => a + (m.base || 0), 0), unit: "pendaftar", category: "CONVERSION", regShare: regs.reduce((a, m) => a + m.regShare, 0) }] : []),
+    ...all.filter((m) => m.kind !== "check" && !m.regShare && m.unit !== "konten"),
+  ];
+  const fold = { name: "Pre-Event", dateLabel: "Pre-Event", offsetFrom: mid[0].offsetFrom, offsetTo: mid[mid.length - 1].offsetTo, milestones: merged };
+  const out = [];
+  templates.forEach((p) => { if (p === mid[0]) out.push(fold); else if (!mid.includes(p)) out.push(p); });
+  return out;
+}
+export function leanEventTemplates(phaseTemplates, level) {
+  if (!level) return phaseTemplates;
+  const trimmed = phaseTemplates.map((p) => ({ ...p, milestones: p.milestones.filter((m) => leanKeep(m, level)) })).filter((p) => p.milestones.length);
+  return level >= 2 ? foldMiddlePhases(trimmed) : trimmed;
+}
+
+export function buildEventPhases(phaseTemplatesFull, { eventDate, campaignStartDate, scaleId, expectedAudience = null }) {
+  const phaseTemplates = leanEventTemplates(phaseTemplatesFull, eventLeanLevel(expectedAudience, scaleId));
   const tier = EVENT_SCALE_TIERS.find((t) => t.id === scaleId) || EVENT_SCALE_TIERS[1];
   const mult = eventScaleMultiplier(expectedAudience) ?? tier.mult;
   const crowd = Number(expectedAudience) > 0 ? Math.round(Number(expectedAudience)) : null;

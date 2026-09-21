@@ -1,12 +1,13 @@
 import {
   getSettings, addPlatform, removePlatform, addFormat, removeFormat,
-  getGlobalAiSettings, updateGlobalAiSettings,
+  getGlobalAiSettings, updateGlobalAiSettings, updateGlobalBrandsBg,
   listBrands, archiveBrand, deleteBrand, listContent,
   exportJSON, importJSON, resetAll, onChange,
 } from "../store.js";
 import { getMode } from "../mode.js";
 import { currentUid, isAdmin } from "../account.js";
 import { testAiConnection } from "../ai.js";
+import { BG_PRESETS, DEFAULT_GLOW, resolveBrandsBg, bgHTML, paintBrandsBg } from "../brands-bg.js";
 import { icon } from "../icons.js";
 import { avatarHTML, qs, qsa, toast, passwordFieldHTML, wirePasswordToggles, escapeHtml } from "../dom.js";
 import { confirmDialog } from "../modals.js";
@@ -28,6 +29,7 @@ const PANELS = [
   { key: "formats", labelKey: "settings.panel.formats", pro: true },
   { key: "data", labelKey: "settings.panel.data", pro: true },
   { key: "ai", labelKey: "settings.panel.ai", admin: true },
+  { key: "bg", labelKey: "settings.panel.bg", admin: true },
 ];
 function visiblePanels() {
   const pro = getMode() === "advanced";
@@ -68,6 +70,7 @@ function paint(root, state, refresh) {
   else if (state.panel === "formats") renderListEditor(content, t("settings.panel.formats"), getSettings().formats, addFormat, removeFormat, t("set.formats.ph"));
   else if (state.panel === "brands") renderBrands(content, refresh);
   else if (state.panel === "ai") renderAi(content);
+  else if (state.panel === "bg") renderBrandsBg(content);
   else if (state.panel === "language") renderLanguage(content);
   else if (state.panel === "data") renderData(content);
   else if (state.panel === "account") renderAccount(content);
@@ -215,6 +218,79 @@ function renderAi(content) {
       statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeHtml(e.message)}</span>`;
     }
   });
+}
+
+// Admin-only: seasonal background of the all-brands home. Writes to
+// settings/main.brandsBg (see js/brands-bg.js); every account picks it up.
+function renderBrandsBg(content) {
+  const draw = () => {
+    const c = resolveBrandsBg();
+    content.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:16px;margin-bottom:6px;">${t("set.bg.title")}</h3>
+        <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.bg.sub")}</p>
+        ${bgHTML("brands-bg-preview")}
+        <div class="field" style="margin-top:16px;">
+          <label>${t("set.bg.preset")}</label>
+          <select class="select" id="bg-preset">
+            ${BG_PRESETS.map((p) => `<option value="${p.key}" ${c.preset === p.key ? "selected" : ""}>${p.label}</option>`).join("")}
+            <option value="custom" ${c.preset === "custom" ? "selected" : ""}>${t("set.bg.custom")}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>${t("set.bg.base")}</label>
+          <div class="flex gap-8">${c.base.map((v, i) => `<input type="color" class="bg-color" data-kind="base" data-i="${i}" value="${v}" />`).join("")}</div>
+        </div>
+        <div class="field">
+          <label>${t("set.bg.blobs")}</label>
+          <div class="flex gap-8">${c.blobs.map((v, i) => `<input type="color" class="bg-color" data-kind="blobs" data-i="${i}" value="${v}" />`).join("")}</div>
+        </div>
+        <div class="field" style="margin-bottom:4px;">
+          <label>${t("set.bg.glow")} — <span id="bg-glow-val">${Math.round(c.glow * 100)}%</span></label>
+          <input type="range" id="bg-glow" min="2" max="50" step="1" value="${Math.round(c.glow * 100)}" style="width:100%;" />
+          <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${t("set.bg.glowHint")}</div>
+        </div>
+        <div class="flex gap-8" style="margin-top:14px;align-items:center;">
+          <button type="button" class="btn btn-secondary btn-sm" id="bg-reset">${t("set.bg.reset")}</button>
+        </div>
+      </div>
+    `;
+    paintBrandsBg(qs(".brands-bg-preview", content), c);
+    const save = (next) => {
+      updateGlobalBrandsBg(next);
+      toast(t("set.bg.saved"));
+    };
+    qs("#bg-preset", content).addEventListener("change", (e) => {
+      const key = e.target.value;
+      if (key === "custom") { save({ preset: "custom", base: c.base, blobs: c.blobs, glow: c.glow }); }
+      else save({ preset: key, glow: c.glow });
+      draw();
+    });
+    // Colour pickers: preview live while dragging, save (and flip to
+    // "custom") only when the picker closes — a write per drag tick would
+    // hammer Firestore.
+    const readColors = () => {
+      const base = [0, 1].map((i) => qs(`.bg-color[data-kind="base"][data-i="${i}"]`, content).value);
+      const blobs = [0, 1, 2].map((i) => qs(`.bg-color[data-kind="blobs"][data-i="${i}"]`, content).value);
+      return { preset: "custom", base, blobs, glow: +qs("#bg-glow", content).value / 100 };
+    };
+    qsa(".bg-color", content).forEach((el) => {
+      el.addEventListener("input", () => paintBrandsBg(qs(".brands-bg-preview", content), resolveBrandsBg(readColors())));
+      el.addEventListener("change", () => { save(readColors()); qs("#bg-preset", content).value = "custom"; });
+    });
+    const glow = qs("#bg-glow", content);
+    glow.addEventListener("input", () => {
+      qs("#bg-glow-val", content).textContent = `${glow.value}%`;
+      const raw = c.preset === "custom" ? readColors() : { preset: c.preset, glow: +glow.value / 100 };
+      paintBrandsBg(qs(".brands-bg-preview", content), resolveBrandsBg({ ...raw, glow: +glow.value / 100 }));
+    });
+    glow.addEventListener("change", () => {
+      const g = +glow.value / 100;
+      save(c.preset === "custom" ? { ...readColors(), glow: g } : { preset: c.preset, glow: g });
+    });
+    qs("#bg-reset", content).addEventListener("click", () => { save({ preset: "default", glow: DEFAULT_GLOW }); draw(); });
+  };
+  draw();
 }
 
 function renderData(content) {

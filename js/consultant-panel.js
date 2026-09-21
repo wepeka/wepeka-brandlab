@@ -1,3 +1,10 @@
+// The floating chat hub — three chats in one panel, switched from a tab bar
+// along the bottom: AI Consultant (the default: grounded answers about this
+// brand's data), Teman Brand (the warm companion that remembers moments) and
+// Brainstorm (ask first, then options). The Home "Teman Brand" widget and the
+// Brainstorm page still exist; the hub reuses the same threads and code
+// (js/views/home.js renderCompanionPane, js/views/brainstorm.js compact).
+//
 // "Konsultasi AI" — a floating chat panel, reachable from any page inside
 // a brand (mounted once into document.body from layout.js's wireShell, so
 // it survives the #app innerHTML getting torn down on every in-brand
@@ -96,24 +103,24 @@ function messageHTML(h, index, isLast = false) {
           .join("")}</div></div>`
       : "";
   const body = h.role === "assistant" ? `<div class="consultant-md">${renderLightMarkdown(h.text)}</div>` : escapeHtml(h.text);
-  return `<div class="consultant-msg consultant-msg-${h.role}" data-consultant-msg="${index}">${body}${navHTML}${draftsHTML}${asksHTML}</div>`;
+  // Thinking about ideas rather than facts? One tap moves the question to the
+  // Brainstorm chat, sentence pre-filled.
+  const handoffHTML = isLast && h.role === "assistant" && h.question
+    ? `<div class="cp-handoff"><button type="button" class="consultant-starter" data-consultant-handoff="${escapeHtml(h.question)}">${icon("bulb", { size: 12 })}${t("chat.handoff.brainstorm")}</button></div>`
+    : "";
+  return `<div class="consultant-msg consultant-msg-${h.role}" data-consultant-msg="${index}">${body}${navHTML}${draftsHTML}${asksHTML}${handoffHTML}</div>`;
 }
 
 // First-message nudges for someone who doesn't yet know what to ask —
 // clicking one sends it as a real question.
 const STARTER_PROMPT_KEYS = ["consultant.starter.performance", "consultant.starter.week", "consultant.starter.quiet", "consultant.starter.level"];
 
-function panelHTML(brandId) {
+// The Consultant chat itself (messages + composer). The frame around it —
+// header, mode tabs — is shellHTML below.
+function consultantPaneHTML(brandId) {
   const brand = getBrand(brandId);
   const history = historyByBrand.get(brandId) || [];
   return `
-    <div class="consultant-panel-head">
-      <div class="flex items-center gap-8">
-        ${icon("chat", { size: 15 })}
-        <span>${t("consultant.title", { brand: escapeHtml(brand?.name || "") })}</span>
-      </div>
-      <button type="button" class="icon-btn" id="consultant-close" aria-label="${t("common.close")}">${icon("x", { size: 14 })}</button>
-    </div>
     <div class="consultant-panel-body" id="consultant-messages">
       ${
         history.length
@@ -127,6 +134,28 @@ function panelHTML(brandId) {
       <button type="button" class="icon-btn" id="consultant-send" aria-label="${t("cons.send")}">${icon("send", { size: 15 })}</button>
     </div>
   `;
+}
+
+// ---- The three chats ----------------------------------------------------
+const MODES = ["consultant", "companion", "brainstorm"];
+const MODE_ICON = { consultant: "bot", companion: "heart", brainstorm: "bulb" };
+let mode = "consultant";
+let paneCleanup = null;
+const brainstormThread = new Map(); // brandId -> open Brainstorm thread, kept while switching tabs
+
+function shellHTML(brandId) {
+  return `
+    <div class="consultant-panel-head cp-head">
+      <div class="cp-head-main">
+        <span class="cp-head-icon">${icon(MODE_ICON[mode], { size: 16 })}</span>
+        <div><b>${t(`chat.mode.${mode}`)}</b><small>${t(`chat.mode.${mode}.sub`)}</small></div>
+      </div>
+      <button type="button" class="icon-btn" id="consultant-close" aria-label="${t("common.close")}">${icon("x", { size: 14 })}</button>
+    </div>
+    <div class="cp-pane" id="cp-pane" data-mode="${mode}"></div>
+    <nav class="cp-tabs" role="tablist" aria-label="${t("chat.tabs.aria")}">
+      ${MODES.map((m) => `<button type="button" role="tab" class="cp-tab ${m === mode ? "is-active" : ""}" data-cp-mode="${m}" data-mode="${m}" aria-selected="${m === mode}">${icon(MODE_ICON[m], { size: 16 })}<span>${t(`chat.mode.${m}`)}</span></button>`).join("")}
+    </nav>`;
 }
 
 function scrollToBottom() {
@@ -175,26 +204,88 @@ export function typewriterReveal(el, { cps = 110, onTick } = {}) {
   typewriterRaf = requestAnimationFrame(frame);
 }
 
-function renderPanel(brandId) {
+// Draws the frame (header + tabs) and mounts whichever chat is active.
+function renderPanel(brandId, { seed = "" } = {}) {
   const panel = qs("#consultant-panel");
   if (!panel) return;
-  panel.innerHTML = panelHTML(brandId);
-  scrollToBottom();
+  paneCleanup?.();
+  paneCleanup = null;
+  panel.dataset.mode = mode;
+  panel.innerHTML = shellHTML(brandId);
   qs("#consultant-close", panel).addEventListener("click", () => togglePanel(brandId, false));
-  const input = qs("#consultant-input", panel);
+  panel.querySelectorAll("[data-cp-mode]").forEach((btn) => btn.addEventListener("click", () => switchMode(brandId, btn.dataset.cpMode)));
+  mountPane(brandId, { seed });
+}
+
+function switchMode(brandId, next, opts = {}) {
+  if (!MODES.includes(next)) return;
+  if (next === mode && !opts.seed) return;
+  mode = next;
+  renderPanel(brandId, opts);
+}
+
+// A failed dynamic import is remembered by the browser for that exact URL, so
+// a second try goes through a different one before giving up.
+async function loadView(path) {
+  try {
+    return await import(path);
+  } catch {
+    return import(`${path}?retry=${Date.now()}`);
+  }
+}
+
+async function mountPane(brandId, { seed = "" } = {}) {
+  const pane = qs("#cp-pane");
+  if (!pane) return;
+  const close = () => togglePanel(brandId, false);
+  if (mode === "consultant") {
+    renderConsultant(brandId);
+    return;
+  }
+  const mine = mode;
+  try {
+    if (mode === "companion") {
+      const { renderCompanionPane } = await loadView("./views/home.js");
+      if (mine !== mode || !qs("#cp-pane")) return;
+      paneCleanup = renderCompanionPane(pane, { brandId, onNavigate: close, onBrainstorm: (text) => switchMode(brandId, "brainstorm", { seed: text }) });
+    } else {
+      const { render } = await loadView("./views/brainstorm.js");
+      if (mine !== mode || !qs("#cp-pane")) return;
+      paneCleanup = render(pane, {
+        brandId, compact: true, seed, threadId: brainstormThread.get(brandId) || null,
+        onThread: (id) => (id ? brainstormThread.set(brandId, id) : brainstormThread.delete(brandId)), onNavigate: close,
+      });
+    }
+  } catch (e) {
+    console.error("Chat hub pane failed", e);
+    pane.innerHTML = `<p class="companion-error" style="margin:16px;">${t("chat.paneFailed")}</p>`;
+  }
+}
+
+// The Consultant chat: messages and composer inside #cp-pane.
+function renderConsultant(brandId) {
+  const pane = qs("#cp-pane");
+  if (!pane || mode !== "consultant") return;
+  pane.innerHTML = consultantPaneHTML(brandId);
+  scrollToBottom();
+  const input = qs("#consultant-input", pane);
   const send = () => sendMessage(brandId, input.value.trim());
-  qs("#consultant-send", panel).addEventListener("click", send);
+  qs("#consultant-send", pane).addEventListener("click", send);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
   input.focus();
 
-  panel.querySelectorAll("[data-consultant-starter]").forEach((btn) => {
+  pane.querySelectorAll("[data-consultant-starter]").forEach((btn) => {
     btn.addEventListener("click", () => sendMessage(brandId, btn.dataset.consultantStarter));
+  });
+  // Hand a question over to the Brainstorm chat with the sentence pre-filled.
+  pane.querySelectorAll("[data-consultant-handoff]").forEach((btn) => {
+    btn.addEventListener("click", () => switchMode(brandId, "brainstorm", { seed: btn.dataset.consultantHandoff }));
   });
 
   const history = historyByBrand.get(brandId) || [];
-  panel.querySelectorAll("[data-consultant-draft]").forEach((btn) => {
+  pane.querySelectorAll("[data-consultant-draft]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const [mi, di] = btn.dataset.consultantDraft.split(":").map(Number);
       const d = history[mi]?.drafts?.[di];
@@ -204,10 +295,10 @@ function renderPanel(brandId) {
       const item = createContent(brandId, { title: d.title, funnel: d.funnel, campaignId: active?.id || "", idea: history[mi].question ? t("cons.draftIdea", { question: history[mi].question }) : "" });
       d.contentId = item.id;
       toast(t("cons.draftSaved", { title: d.title }));
-      renderPanel(brandId);
+      renderConsultant(brandId);
     });
   });
-  panel.querySelectorAll("[data-consultant-open-draft]").forEach((btn) => {
+  pane.querySelectorAll("[data-consultant-open-draft]").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = `#/brand/${brandId}/content-os/creator/${btn.dataset.consultantOpenDraft}`;
       togglePanel(brandId, false);
@@ -217,7 +308,7 @@ function renderPanel(brandId) {
   // hidden again once rated so a re-render doesn't ask twice.
   history.forEach((h, i) => {
     if (h.role !== "assistant" || !h.question || h.rated) return;
-    mountAiFeedback(panel.querySelector(`[data-consultant-msg="${i}"]`), {
+    mountAiFeedback(pane.querySelector(`[data-consultant-msg="${i}"]`), {
       brandId,
       feature: "consultant",
       prompt: { question: h.question, history: history.slice(0, i - 1).map((x) => ({ role: x.role, text: x.text })) },
@@ -226,7 +317,7 @@ function renderPanel(brandId) {
     });
   });
 
-  panel.querySelectorAll("[data-consultant-nav]").forEach((btn) => {
+  pane.querySelectorAll("[data-consultant-nav]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const path = btn.dataset.consultantNav;
       if (path === "__insights") {
@@ -253,7 +344,7 @@ async function sendMessage(brandId, text) {
   const history = historyByBrand.get(brandId) || [];
   history.push({ role: "user", text });
   historyByBrand.set(brandId, history);
-  renderPanel(brandId);
+  renderConsultant(brandId);
   qs(`[data-consultant-msg="${history.length - 1}"]`)?.classList.add("is-new");
   const sendBtn = qs("#consultant-send");
   if (sendBtn) { sendBtn.classList.add("is-sent"); setTimeout(() => sendBtn.classList.remove("is-sent"), 400); }
@@ -262,27 +353,51 @@ async function sendMessage(brandId, text) {
   if (messagesEl) messagesEl.insertAdjacentHTML("beforeend", `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending is-new" id="consultant-pending"><span class="typing-dots" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span></div>`);
   scrollToBottom();
 
+  // The answer fills in as it is written (see js/ai.js callClaudeStream).
+  let streamed = false;
+  let streamTimer = 0;
+  let streamRaw = "";
+  const streamInto = (raw) => {
+    streamed = true;
+    streamRaw = raw;
+    if (streamTimer) return;
+    streamTimer = setTimeout(() => {
+      streamTimer = 0;
+      const bubble = qs("#consultant-pending");
+      if (!bubble) return;
+      let shown = parseDirectives(streamRaw).cleanText;
+      const open = shown.lastIndexOf("[[");
+      if (open !== -1 && !shown.slice(open).includes("]]")) shown = shown.slice(0, open);
+      shown = shown.replace(/\[$/, "").trim();
+      if (!shown) return;
+      bubble.innerHTML = `<div class="consultant-md">${renderLightMarkdown(shown)}</div>`;
+      scrollToBottom();
+    }, 40);
+  };
+
   try {
     const brand = getBrand(brandId);
     const snapshotText = buildSnapshot(brandId);
     const pulseText = pulseTextFor(brand, { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
-    const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: history.slice(0, -1), question: text });
+    const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: history.slice(0, -1), question: text, onText: streamInto });
     const { cleanText, nav, drafts, asks } = parseDirectives(reply.trim());
     history.push({ role: "assistant", text: cleanText, nav, drafts, asks, question: text });
   } catch (err) {
     history.push({ role: "assistant", text: err instanceof AiApiError ? t("cons.error", { message: err.message }) : t("cons.errorGeneric") });
   }
   historyByBrand.set(brandId, history);
-  renderPanel(brandId);
+  if (mode !== "consultant") return; // the owner switched tabs mid-answer: it is waiting when they come back
+  renderConsultant(brandId);
   const newest = qs(`[data-consultant-msg="${history.length - 1}"]`);
   if (newest) {
     newest.classList.add("is-new");
-    typewriterReveal(newest, { onTick: scrollToBottom });
+    // Already visible if it streamed in — only retype a reply that arrived whole.
+    if (!streamed) typewriterReveal(newest, { onTick: scrollToBottom });
   }
   scrollToBottom();
 }
 
-function togglePanel(brandId, open) {
+function togglePanel(brandId, open, { openMode = null, seed = "" } = {}) {
   isOpen = open;
   const panel = qs("#consultant-panel");
   const fab = qs("#consultant-fab");
@@ -292,15 +407,23 @@ function togglePanel(brandId, open) {
     if (open) { panel.classList.remove("is-opening"); void panel.offsetWidth; panel.classList.add("is-opening"); }
   }
   if (fab) fab.classList.toggle("is-open", open);
-  if (open) renderPanel(brandId);
+  if (open) {
+    // The round chat button always opens the AI Consultant; the other two
+    // chats are one tap away on the tab bar (or opened on purpose by a caller).
+    mode = openMode && MODES.includes(openMode) ? openMode : "consultant";
+    renderPanel(brandId, { seed });
+  } else {
+    paneCleanup?.();
+    paneCleanup = null;
+  }
 }
 
 const HINT_SEEN_PREFIX = "contentos:fab-hint-seen:";
 
 // Opened from the topbar "?" popover (js/layout.js) — the FAB itself is
 // still the everyday way in.
-export function openConsultantPanel() {
-  if (mountedBrandId) togglePanel(mountedBrandId, true);
+export function openConsultantPanel({ mode: openMode = null, seed = "" } = {}) {
+  if (mountedBrandId) togglePanel(mountedBrandId, true, { openMode, seed });
 }
 
 export function mountConsultantPanel(brandId) {

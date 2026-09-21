@@ -15,12 +15,13 @@
 // draft in Creator with one click. Route: #/brand/:id/brainstorm[/:threadId].
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, listCampaigns, getCampaign, updateCampaign, listContent, getContent, updateContent, createContent, getSettings, onChange,
+  getBrand, getGoal, listGoals, listCampaigns, getCampaign, formatEventDate, phaseNameLabel, updateCampaign, listContent, getContent, updateContent, createContent, getSettings, onChange,
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, updateBrainstorm, deleteBrainstorm,
   addBrandIdea, removeBrandIdea,
 } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { chatBrainstorm, hasAiKey, AiApiError } from "../ai.js";
+import { eventCampaignFor, openEventPhases, addEventMilestone } from "../goal-actions.js";
 import { aiLimitReached } from "../ai-usage.js";
 import { parseDirectives, renderLightMarkdown } from "../ai-directives.js";
 import { computeSignals, pulseTextFor } from "../brand-pulse.js";
@@ -36,7 +37,7 @@ import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { t } from "../i18n.js";
 
-const HISTORY_FOR_MODEL = 24;
+const HISTORY_FOR_MODEL = 12;
 const TITLE_MAX = 60;
 
 const TOUR_STEPS = [
@@ -46,13 +47,16 @@ const TOUR_STEPS = [
   { selector: ".bs-ideas", title: t("bs.ideas.title"), body: t("bs.tour.ideas") },
 ];
 
-export function render(root, { brandId, threadId = null }) {
+// `compact` mounts just the chat (no threads rail, no saved-ideas column) inside
+// the floating chat panel (js/consultant-panel.js): it never touches the URL or
+// the page's navigation context, and hands the open thread back via onThread.
+export function render(root, { brandId, threadId = null, compact = false, seed = "", onThread = null, onNavigate = null }) {
   const brand = getBrand(brandId);
   if (!brand) {
     location.hash = "#/";
     return () => {};
   }
-  const state = { threadId, scope: {}, draft: "", pending: false, error: "", notice: "", railOpen: false };
+  const state = { threadId, scope: {}, draft: seed || "", pending: false, error: "", notice: "", railOpen: false, compact, onThread, onNavigate };
   const applyNavContext = () => {
     const ctx = consumeNavContext();
     if (!ctx) return;
@@ -60,32 +64,41 @@ export function render(root, { brandId, threadId = null }) {
     // unless we were sent to a specific existing thread.
     if (!threadId) {
       state.threadId = null;
-      state.scope = { campaignId: ctx.campaignId || null, stageId: ctx.stageId || null, contentId: ctx.contentId || null };
+      state.scope = { campaignId: ctx.campaignId || null, stageId: ctx.stageId || null, contentId: ctx.contentId || null, goalId: ctx.goalId || null };
     }
     if (ctx.seed) state.draft = ctx.seed;
   };
-  applyNavContext();
+  if (!compact) applyNavContext();
   if (state.threadId) {
     const th = getBrainstorm(state.threadId);
-    if (th) state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null };
+    if (th) state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null, goalId: th.goalId || null };
     else state.threadId = null;
   }
 
   const refresh = () => paint(root, brandId, state, refresh);
   refresh();
   const onCtx = () => { applyNavContext(); refresh(); };
-  document.addEventListener("nav:context", onCtx);
+  if (!compact) document.addEventListener("nav:context", onCtx);
   const off = onChange(refresh);
   return () => {
-    document.removeEventListener("nav:context", onCtx);
+    if (!compact) document.removeEventListener("nav:context", onCtx);
     off?.();
   };
+}
+
+// The full page keeps its URL in step with the open thread; the compact chat
+// lives in a panel and must leave the address bar alone.
+function syncUrl(state, url) {
+  if (!state.compact) history.replaceState(null, "", url);
 }
 
 // ---- Scope ----------------------------------------------------------------
 
 function scopeInfo(brandId, scope) {
-  const campaign = scope.campaignId ? getCampaign(scope.campaignId) : null;
+  const goal = scope.goalId ? getGoal(brandId, scope.goalId) : null;
+  // A goal's conversation reads its Event campaign too, so the countdown and
+  // phases ride along in the prompt.
+  const campaign = scope.campaignId ? getCampaign(scope.campaignId) : goal?.installed?.campaigns?.event?.id ? getCampaign(goal.installed.campaigns.event.id) : null;
   const content = scope.contentId ? getContent(scope.contentId) : null;
   let stage = null;
   if (campaign) {
@@ -94,10 +107,11 @@ function scopeInfo(brandId, scope) {
   }
   let label;
   if (content) label = t("bs.scope.content", { title: content.title || t("beginner.untitled") });
+  else if (goal) label = t("roadmap.bs.scope", { name: goal.name || t("roadmap.defaultName") });
   else if (campaign) label = t("bs.scope.campaign", { name: campaign.name }) + (stage ? t("bs.scope.stage", { stage: stage.name }) : "");
   else label = t("bs.scope.brand");
   const stageText = stage ? `${stage.kind === "level" ? "Level" : "Phase"} "${stage.name}"${stage.dateLabel ? ` (${stage.dateLabel})` : ""}${stage.description ? ` — ${stage.description}` : ""}` : "";
-  return { campaign, content, stage, label, stageText };
+  return { campaign, content, stage, label, stageText, goal, brandId };
 }
 
 // ---- Threads rail -----------------------------------------------------------
@@ -140,24 +154,52 @@ function starterChips(brandId, brand, info) {
   }
   if (jump) chips.push(t("bs.starter.followerJump", { platform: jump.refs?.platform || "" }));
   if (down) chips.push(t("bs.starter.salesDown"));
+  if (info.goal) return [t("roadmap.bs.starter1"), t("roadmap.bs.starter2"), t("roadmap.bs.starter3")];
   if (!info.campaign && !info.content) chips.push(t("bs.starter.campaign"));
   chips.push(t("bs.starter.content"), t("bs.starter.stuck"));
   return chips.slice(0, 4);
 }
 
-function ideaCardHTML(idea, i, msgId, info) {
-  let action;
-  if (idea.contentId) action = `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content-os/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("bs.idea.openDraft")}</a>`;
-  else if (idea.usedHere) action = `<span class="text-faint" style="font-size:12px;">${icon("check", { size: 12 })} ${t("bs.idea.usedHere")}</span>`;
-  else if (info.content) action = `<button type="button" class="btn btn-secondary btn-sm" data-bs-idea-use="${msgId}:${i}">${icon("check", { size: 12 })}${t("bs.idea.useHere")}</button>`;
-  else action = `<button type="button" class="btn btn-secondary btn-sm" data-bs-idea-draft="${msgId}:${i}">${icon("edit", { size: 12 })}${t("bs.idea.draft")}</button>`;
-  const save = idea.saved
-    ? `<span class="text-faint" style="font-size:12px;">${icon("check", { size: 12 })} ${t("bs.idea.saved")}</span>`
-    : `<button type="button" class="btn btn-ghost btn-sm" data-bs-idea-save="${msgId}:${i}">${icon("bookmark", { size: 12 })}${t("bs.idea.save")}</button>`;
+// A real-world step for an event ("find 6 alumni") — it goes to a milestone of
+// the Event campaign, in the phase the owner picks, not to a content draft.
+function taskCardHTML(task, i, msgId, brandId) {
+  const camp = task.campaignId ? getCampaign(task.campaignId) : null;
+  const phases = camp ? openEventPhases(camp) : [];
+  const want = (task.phase || "").toLowerCase();
+  const pick = phases.find((p) => p.name.toLowerCase() === want)?.id || phases[0]?.id || "";
+  const target = task.target ? t("bs.task.target", { n: task.target, unit: task.unit || "" }).trim() : t("bs.task.check");
+  let actions;
+  if (task.added) actions = `<span class="bs-done">${icon("check", { size: 12 })} ${t("bs.task.added", { phase: esc(task.phaseName || "") })}</span><a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/campaigns/${esc(task.campaignId || "")}">${t("bs.task.open")}</a>`;
+  else if (!phases.length) actions = `<span class="text-faint" style="font-size:12px;">${t("bs.task.noPhase")}</span>`;
+  else actions = `<select class="input bs-task-phase" data-bs-task-phase="${msgId}:${i}" aria-label="${t("bs.task.phase")}">${phases.map((p) => `<option value="${esc(p.id)}" ${p.id === pick ? "selected" : ""}>${esc(phaseNameLabel(p.name))} · ${esc(formatEventDate(p.dateFrom))}–${esc(formatEventDate(p.dateTo))}</option>`).join("")}</select>
+      <button type="button" class="btn btn-primary btn-sm" data-bs-task-add="${msgId}:${i}">${icon("check", { size: 12 })}${t("bs.task.add")}</button>
+      ${task.saved ? `<span class="bs-done">${icon("check", { size: 12 })} ${t("bs.idea.saved")}</span>` : `<button type="button" class="btn btn-secondary btn-sm" data-bs-task-save="${msgId}:${i}">${icon("bookmark", { size: 12 })}${t("bs.idea.save")}</button>`}`;
   return `
-    <div class="bs-card">
-      <div class="bs-card-text">💡 <b>${esc(idea.title)}</b>${idea.why ? ` — ${esc(idea.why)}` : ""}</div>
-      <div class="bs-card-actions">${action}${save}</div>
+    <div class="bs-card bs-opt bs-task">
+      <div class="bs-task-tag">${icon("target", { size: 11 })}${t("bs.task.tag")}</div>
+      <div class="bs-opt-title">${esc(task.title)}</div>
+      ${task.why ? `<div class="bs-opt-why">${esc(task.why)}</div>` : ""}
+      <div class="bs-task-target">${esc(target)}</div>
+      <div class="bs-card-actions">${actions}</div>
+    </div>`;
+}
+
+function ideaCardHTML(idea, i, msgId, info) {
+  // "Pakai ini" turns the option into a draft content item (or adds it to the
+  // content being edited); "Simpan" keeps it in the saved-ideas list for later.
+  let use;
+  if (idea.contentId) use = `<a class="btn btn-primary btn-sm" href="#/brand/__BRAND__/content-os/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("bs.idea.openDraft")}</a>`;
+  else if (idea.usedHere) use = `<span class="bs-done">${icon("check", { size: 12 })} ${t("bs.idea.usedHere")}</span>`;
+  else if (info.content) use = `<button type="button" class="btn btn-primary btn-sm" data-bs-idea-use="${msgId}:${i}">${icon("check", { size: 12 })}${t("bs.idea.useHere")}</button>`;
+  else use = `<button type="button" class="btn btn-primary btn-sm" data-bs-idea-draft="${msgId}:${i}">${icon("check", { size: 12 })}${t("bs.idea.use")}</button><button type="button" class="btn btn-secondary btn-sm" data-bs-idea-script="${msgId}:${i}" title="${esc(t("bs.idea.scriptTitle"))}">${icon("bot", { size: 12 })}${t("bs.idea.script")}</button>`;
+  const save = idea.saved
+    ? `<button type="button" class="bs-done bs-see-saved" data-bs-open-saved>${icon("check", { size: 12 })} ${t("bs.idea.savedSee")}</button>`
+    : `<button type="button" class="btn btn-secondary btn-sm" data-bs-idea-save="${msgId}:${i}">${icon("bookmark", { size: 12 })}${t("bs.idea.save")}</button>`;
+  return `
+    <div class="bs-card bs-opt">
+      <div class="bs-opt-title">${esc(idea.title)}</div>
+      ${idea.why ? `<div class="bs-opt-why">${esc(idea.why)}</div>` : ""}
+      <div class="bs-card-actions">${use}${save}</div>
     </div>`;
 }
 
@@ -177,9 +219,16 @@ function messageHTML(m, { isLast, info }) {
   const b = m.blocks || {};
   const inner = [
     m.text ? `<div class="consultant-md">${renderLightMarkdown(m.text)}</div>` : "",
+    (b.tasks || []).map((task, i) => taskCardHTML(task, i, m.id, info.brandId)).join(""),
     (b.ideas || []).map((idea, i) => ideaCardHTML(idea, i, m.id, info)).join(""),
     (b.drafts || []).map((d, i) => draftCardHTML(d, i, m.id)).join(""),
-    isLast && b.asks?.length ? `<div class="consultant-starters" style="margin-top:8px;">${b.asks.map((q) => `<button type="button" class="consultant-starter" data-bs-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : "",
+    isLast && ((b.ideas || []).length || (b.tasks || []).length)
+      ? `<div class="bs-reply-actions"><button type="button" class="btn btn-ghost btn-sm" data-bs-more>${icon("refresh", { size: 12 })}${t("bs.opt.more")}</button>${(b.ideas || []).filter((x) => !x.saved).length > 1 ? `<button type="button" class="btn btn-ghost btn-sm" data-bs-save-all="${m.id}">${icon("bookmark", { size: 12 })}${t("bs.opt.saveAll")}</button>` : ""}</div>`
+      : "",
+    isLast && b.asks?.length ? `<div class="bs-pick-label">${t("bs.pick.hint")}</div><div class="consultant-starters bs-picks">${b.asks.map((q) => `<button type="button" class="consultant-starter bs-pick" data-bs-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : "",
+    isLast && !(b.ideas || []).length && !(b.drafts || []).length && !(b.tasks || []).length
+      ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-bs-go-ideas>${icon("sparkle", { size: 13 })}${t("bs.go.ideas")}</button><button type="button" class="btn btn-secondary btn-sm" data-bs-answer>${icon("chat", { size: 13 })}${t("bs.go.answer")}</button></div>`
+      : "",
     `<div class="bs-feedback-slot" data-bs-feedback="${m.id}"></div>`,
   ].join("");
   return `<div class="consultant-msg consultant-msg-assistant" data-bs-msg="${m.id}">${inner}</div>`;
@@ -187,13 +236,18 @@ function messageHTML(m, { isLast, info }) {
 
 function chatHTML(brandId, brand, state, info) {
   const msgs = currentMessages(state);
+  const savedCount = savedIdeasList(brandId, state, info).items.length;
   const quotaOut = aiLimitReached();
   const busy = state.pending;
   let body;
   if (!msgs.length) {
     body = `
+      <div class="bs-how">
+        <div class="bs-how-title">${t("bs.how.title")}</div>
+        <ol class="bs-how-steps"><li>${t("bs.how.1")}</li><li>${t("bs.how.2")}</li><li>${t("bs.how.3")}</li></ol>
+      </div>
       <div class="consultant-msg consultant-msg-assistant">${esc(t("bs.intro"))}</div>
-      <div class="consultant-starters">${starterChips(brandId, brand, info).map((q) => `<button type="button" class="consultant-starter" data-bs-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+      <div class="consultant-starters bs-picks">${starterChips(brandId, brand, info).map((q) => `<button type="button" class="consultant-starter bs-pick" data-bs-starter="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
   } else {
     body = msgs.map((m, i) => messageHTML(m, { isLast: i === msgs.length - 1, info })).join("");
   }
@@ -206,6 +260,9 @@ function chatHTML(brandId, brand, state, info) {
         <span class="bs-scope-chip">${icon(info.content ? "edit" : info.campaign ? "bulb" : "target", { size: 12 })}${esc(info.label)}</span>
         <button type="button" class="link" id="bs-scope-change" style="font-size:12px;">${t("bs.scope.change")}</button>
         <span style="flex:1;"></span>
+        ${state.compact
+          ? `<button type="button" class="icon-btn" id="bs-new" aria-label="${t("bs.threads.new")}" title="${t("bs.threads.new")}" ${!state.threadId && !currentMessages(state).length ? "disabled" : ""}>${icon("plus", { size: 14 })}</button><a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/brainstorm" data-bs-full title="${esc(t("bs.saved.open", { n: savedCount }))}">${icon("bookmark", { size: 12 })}${savedCount}</a>`
+          : `<button type="button" class="btn btn-secondary btn-sm" id="bs-open-saved" title="${esc(t("bs.saved.openTitle"))}">${icon("bookmark", { size: 12 })}${t("bs.saved.open", { n: savedCount })}</button>`}
         ${state.threadId ? `<button type="button" class="icon-btn" id="bs-thread-menu" aria-label="${t("common.more")}">${icon("dots", { size: 14 })}</button>` : ""}
       </div>
       <div class="bs-messages" id="bs-messages">${body.replaceAll("__BRAND__", brandId)}</div>
@@ -217,7 +274,7 @@ function chatHTML(brandId, brand, state, info) {
         <button type="button" class="btn btn-primary btn-sm" id="bs-send" ${busy || quotaOut ? "disabled" : ""}>${icon("send", { size: 13 })}${t("bs.send")}</button>
       </div>
       <div class="bs-composer-foot">
-        <button type="button" class="btn btn-ghost btn-sm" id="bs-ideas-now" title="${esc(t("bs.ideasNow.title"))}" ${busy || quotaOut ? "disabled" : ""}>${icon("sparkle", { size: 12 })}${t("bs.ideasNow")}</button>
+        <span class="bs-composer-hint">${t("bs.composer.hint")}</span><button type="button" class="btn btn-ghost btn-sm" id="bs-ideas-now" title="${esc(t("bs.ideasNow.title"))}" ${busy || quotaOut ? "disabled" : ""}>${icon("sparkle", { size: 12 })}${t("bs.ideasNow")}</button>
       </div>
     </section>`;
 }
@@ -256,6 +313,11 @@ function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) return;
   const info = scopeInfo(brandId, state.scope);
+  if (state.compact) {
+    root.innerHTML = `<div class="bs-compact">${chatHTML(brandId, brand, state, info)}</div>`;
+    wire(root, { brandId, brand, state, info, refresh });
+    return;
+  }
   root.innerHTML = `
     <div class="page-head">
       <div>
@@ -279,8 +341,12 @@ function wire(root, { brandId, brand, state, info, refresh }) {
   const messagesEl = qs("#bs-messages", root);
   if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
   const input = qs("#bs-input", root);
-  const autosize = () => { if (!input) return; input.style.height = "auto"; input.style.height = `${Math.min(160, input.scrollHeight)}px`; };
+  // Measured after layout, and only when there is text: right after a repaint
+  // (or inside the floating panel) the box can be laid out at zero width, which
+  // used to leave an empty composer 160px tall.
+  const autosize = () => { if (!input) return; input.style.height = "auto"; if (input.value) input.style.height = `${Math.min(160, input.scrollHeight)}px`; };
   autosize();
+  setTimeout(autosize, 60);
   input?.addEventListener("input", () => { state.draft = input.value; autosize(); });
   input?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -300,11 +366,37 @@ function wire(root, { brandId, brand, state, info, refresh }) {
 
   const ensureThread = (firstText) => {
     if (state.threadId && getBrainstorm(state.threadId)) return getBrainstorm(state.threadId);
-    const th = createBrainstorm(brandId, { mode: "chat", title: firstText.slice(0, TITLE_MAX), campaignId: state.scope.campaignId || null, stageId: state.scope.stageId || null, contentId: state.scope.contentId || null });
+    const th = createBrainstorm(brandId, { mode: "chat", title: firstText.slice(0, TITLE_MAX), campaignId: state.scope.goalId ? null : state.scope.campaignId || null, stageId: state.scope.stageId || null, contentId: state.scope.contentId || null, goalId: state.scope.goalId || null });
     state.threadId = th.id;
+    state.onThread?.(th.id);
     // Keep the URL honest without a hashchange (which would re-render mid-call).
-    history.replaceState(null, "", `#/brand/${brandId}/brainstorm/${th.id}`);
+    syncUrl(state, `#/brand/${brandId}/brainstorm/${th.id}`);
     return th;
+  };
+
+  // The reply shows up word by word: the typing bubble becomes the reply.
+  // Half-written [[…]] lines are hidden until they close, so the owner never
+  // sees raw directive syntax flash by.
+  let streamTimer = 0;
+  let streamRaw = "";
+  const streamInto = (raw) => {
+    streamRaw = raw;
+    if (streamTimer) return;
+    // A plain timer (not requestAnimationFrame): frames stop firing in a
+    // background tab, and the reply should keep filling in regardless.
+    streamTimer = setTimeout(() => {
+      streamTimer = 0;
+      const box = qs("#bs-messages", root);
+      const bubble = box?.querySelector(".consultant-msg-pending");
+      if (!bubble) return;
+      let text = parseDirectives(streamRaw).cleanText;
+      const open = text.lastIndexOf("[[");
+      if (open !== -1 && !text.slice(open).includes("]]")) text = text.slice(0, open);
+      text = text.replace(/\[$/, "").trim();
+      if (!text) return;
+      bubble.innerHTML = `<div class="consultant-md">${renderLightMarkdown(text)}</div>`;
+      box.scrollTop = box.scrollHeight;
+    }, 40);
   };
 
   const send = async (textArg, mode = "chat") => {
@@ -322,9 +414,12 @@ function wire(root, { brandId, brand, state, info, refresh }) {
       if (!hasAiKey(ai)) { state.notice = t("bs.noKey"); return; }
       const all = getBrainstorm(th.id)?.messages || [];
       const history = all.slice(0, -1).filter((m) => m.text).slice(-HISTORY_FOR_MODEL).map((m) => ({ role: m.role, text: m.text }));
-      const savedIdeas = [...(getBrainstorm(th.id)?.ideas || []).map((i) => i.text), ...savedIdeasList(brandId, state, info).items.map((i) => i.text)];
+      // Everything already put in front of the owner counts as "don't repeat".
+      const shown = all.flatMap((m) => (m.blocks?.ideas || []).map((i) => i.title));
+      const savedIdeas = [...new Set([...shown, ...(getBrainstorm(th.id)?.ideas || []).map((i) => i.text), ...savedIdeasList(brandId, state, info).items.map((i) => i.text)])];
       const freshBrand = getBrand(brandId);
       const campaigns = listCampaigns(brandId);
+      const eventCampaign = eventCampaignFor(brandId, { campaignId: state.scope.campaignId, goalId: state.scope.goalId });
       const raw = await chatBrainstorm(ai, {
         brand: freshBrand,
         campaigns,
@@ -332,13 +427,21 @@ function wire(root, { brandId, brand, state, info, refresh }) {
         campaign: info.campaign,
         stageText: info.stageText,
         content: info.content,
+        goalId: state.scope.goalId || null,
+        eventCampaign,
         savedIdeas,
         history,
         message: text,
         mode,
+        turns: all.filter((m) => m.role === "user").length,
+        onText: streamInto,
       });
-      const { cleanText, ideas, drafts, asks } = parseDirectives(raw.trim());
-      appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas, drafts, asks } });
+      const { cleanText, ideas, drafts, asks, tasks } = parseDirectives(raw.trim());
+      // A step can only be filed under an event; without one it is still worth
+      // keeping, so it turns into an ordinary idea.
+      const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
+      const asIdeas = eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why }));
+      appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas: [...ideas, ...asIdeas], drafts, asks, tasks: filed } });
     } catch (e) {
       state.error = e instanceof AiApiError ? e.message : t("bs.failed");
     } finally {
@@ -349,6 +452,34 @@ function wire(root, { brandId, brand, state, info, refresh }) {
 
   qs("#bs-send", root)?.addEventListener("click", () => send());
   qs("#bs-ideas-now", root)?.addEventListener("click", () => send(input?.value.trim() || t("bs.ideasNow.message"), "ideas"));
+  qsa("[data-bs-more]", root).forEach((btn) => btn.addEventListener("click", () => send(t("bs.opt.moreMsg"), "ideas")));
+  // The fork under every question: skip the chat and get ideas now, or answer.
+  qsa("[data-bs-go-ideas]", root).forEach((btn) => btn.addEventListener("click", () => send(t("bs.ideasNow.message"), "ideas")));
+  qsa("[data-bs-answer]", root).forEach((btn) => btn.addEventListener("click", () => {
+    const box = qs("#bs-input", root);
+    if (!box) return;
+    box.placeholder = t("bs.answer.ph");
+    box.focus();
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+  }));
+  // Jump to (and briefly light up) the saved-ideas panel — it sits below the
+  // chat on a phone, so "where did it go?" needs a one-tap answer.
+  const showSaved = () => {
+    const el = qs(".bs-ideas", root);
+    if (!el) {
+      // Compact chat has no saved-ideas column: open the full page instead.
+      if (state.compact) { location.hash = `#/brand/${brandId}/brainstorm`; state.onNavigate?.(); }
+      return;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    el.classList.remove("is-flash"); void el.offsetWidth; el.classList.add("is-flash");
+  };
+  // Any link out of the compact chat (an open draft, a campaign) should also
+  // tuck the floating panel away so the destination is visible.
+  if (state.compact) root.addEventListener("click", (e) => { if (e.target.closest('a[href^="#/"]')) state.onNavigate?.(); });
+  qsa("[data-bs-full]", root).forEach((a) => a.addEventListener("click", () => state.onNavigate?.()));
+  qsa("#bs-open-saved, [data-bs-open-saved]", root).forEach((btn) => btn.addEventListener("click", showSaved));
+  if (state.flash) { state.flash = false; const el = qs(".bs-ideas", root); if (el) { el.classList.add("is-flash"); } }
   qsa("[data-bs-starter]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
       const q = btn.dataset.bsStarter;
@@ -365,17 +496,18 @@ function wire(root, { brandId, brand, state, info, refresh }) {
       const th = getBrainstorm(btn.dataset.bsThread);
       if (!th) return;
       state.threadId = th.id;
-      state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null };
+      state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null, goalId: th.goalId || null };
       state.error = ""; state.notice = "";
-      history.replaceState(null, "", `#/brand/${brandId}/brainstorm/${th.id}`);
+      syncUrl(state, `#/brand/${brandId}/brainstorm/${th.id}`);
       refresh();
     })
   );
   qs("#bs-new", root)?.addEventListener("click", (e) => {
     e.preventDefault();
     state.threadId = null;
+    state.onThread?.(null);
     state.error = ""; state.notice = "";
-    history.replaceState(null, "", `#/brand/${brandId}/brainstorm`);
+    syncUrl(state, `#/brand/${brandId}/brainstorm`);
     refresh();
   });
   qs(".bs-threads", root)?.addEventListener("toggle", (e) => { state.railOpen = e.target.open; });
@@ -386,15 +518,21 @@ function wire(root, { brandId, brand, state, info, refresh }) {
     const r = e.currentTarget.getBoundingClientRect();
     const menu = openMenu(e.currentTarget, { top: r.bottom + 6, left: r.left });
     if (!menu) return;
-    const options = [{ id: "", label: t("bs.scope.brand") }, ...listCampaigns(brandId).filter((c) => c.status !== "archived").map((c) => ({ id: c.id, label: t("bs.scope.campaign", { name: c.name }) }))];
-    menu.innerHTML = `<div class="text-faint" style="font-size:11px;padding:6px 10px 4px;">${t("bs.scope.pickTitle")}</div>` + options.map((o) => `<button type="button" data-scope="${o.id}">${o.id === (state.scope.campaignId || "") && !state.scope.contentId ? icon("check", { size: 12 }) : ""}${esc(o.label)}</button>`).join("");
+    const options = [
+      { id: "", label: t("bs.scope.brand") },
+      ...listGoals(brandId).filter((g) => g.status !== "completed").map((g) => ({ id: `goal:${g.id}`, label: t("roadmap.bs.scope", { name: g.name || t("roadmap.defaultName") }) })),
+      ...listCampaigns(brandId).filter((c) => c.status !== "archived").map((c) => ({ id: c.id, label: t("bs.scope.campaign", { name: c.name }) })),
+    ];
+    const currentScopeId = state.scope.goalId ? `goal:${state.scope.goalId}` : state.scope.campaignId || "";
+    menu.innerHTML = `<div class="text-faint" style="font-size:11px;padding:6px 10px 4px;">${t("bs.scope.pickTitle")}</div>` + options.map((o) => `<button type="button" data-scope="${o.id}">${o.id === currentScopeId && !state.scope.contentId ? icon("check", { size: 12 }) : ""}${esc(o.label)}</button>`).join("");
     menu.querySelectorAll("[data-scope]").forEach((b) =>
       b.addEventListener("click", () => {
         closeMenu();
-        const next = { campaignId: b.dataset.scope || null, stageId: null, contentId: null };
-        const same = (next.campaignId || null) === (state.scope.campaignId || null) && !state.scope.contentId;
+        const pick = b.dataset.scope || "";
+        const next = pick.startsWith("goal:") ? { campaignId: null, stageId: null, contentId: null, goalId: pick.slice(5) } : { campaignId: pick || null, stageId: null, contentId: null, goalId: null };
+        const same = pick === currentScopeId && !state.scope.contentId;
         if (same) return;
-        if (currentMessages(state).length) { state.threadId = null; history.replaceState(null, "", `#/brand/${brandId}/brainstorm`); toast(t("bs.scope.changedNew")); }
+        if (currentMessages(state).length) { state.threadId = null; syncUrl(state, `#/brand/${brandId}/brainstorm`); toast(t("bs.scope.changedNew")); }
         state.scope = next;
         refresh();
       })
@@ -412,7 +550,7 @@ function wire(root, { brandId, brand, state, info, refresh }) {
       if (!ok) return;
       deleteBrainstorm(state.threadId);
       state.threadId = null;
-      history.replaceState(null, "", `#/brand/${brandId}/brainstorm`);
+      syncUrl(state, `#/brand/${brandId}/brainstorm`);
       toast(t("bs.ideas.deleted"));
       refresh();
     });
@@ -423,15 +561,19 @@ function wire(root, { brandId, brand, state, info, refresh }) {
     const [msgId, idx] = ref.split(":");
     const th = getBrainstorm(state.threadId);
     const msg = th?.messages?.find((m) => m.id === msgId);
-    return { th, msg, idx: Number(idx), idea: msg?.blocks?.ideas?.[Number(idx)], draft: msg?.blocks?.drafts?.[Number(idx)] };
+    return { th, msg, idx: Number(idx), idea: msg?.blocks?.ideas?.[Number(idx)], draft: msg?.blocks?.drafts?.[Number(idx)], task: msg?.blocks?.tasks?.[Number(idx)] };
   };
   const patchIdea = (th, msg, idx, patch, key = "ideas") => {
     const list = msg.blocks[key].map((x, i) => (i === idx ? { ...x, ...patch } : x));
     updateBrainstormMessage(th.id, msg.id, { blocks: { ...msg.blocks, [key]: list } });
   };
-  const saveIdea = (th, idea) => {
-    updateBrainstorm(th.id, { ideas: [...(th.ideas || []), { id: `idea-${Date.now()}`, text: idea.title, why: idea.why || "", at: Date.now(), savedTo: info.campaign ? "campaign" : "brand" }] });
-    if (info.campaign) updateCampaign(info.campaign.id, { ideas: [...(info.campaign.ideas || []), { id: `idea-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: idea.title, description: idea.why || "", source: "brainstorm", createdAt: Date.now() }] });
+  // Reads the thread and campaign fresh on every call, so saving several
+  // ideas in a row ("Simpan semua") never overwrites the previous one.
+  const saveIdea = (thId, idea) => {
+    const th = getBrainstorm(thId);
+    const camp = info.campaign ? getCampaign(info.campaign.id) : null;
+    updateBrainstorm(thId, { ideas: [...(th?.ideas || []), { id: `idea-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: idea.title, why: idea.why || "", at: Date.now(), savedTo: camp ? "campaign" : "brand" }] });
+    if (camp) updateCampaign(camp.id, { ideas: [...(camp.ideas || []), { id: `idea-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: idea.title, description: idea.why || "", source: "brainstorm", createdAt: Date.now() }] });
     else addBrandIdea(brandId, { text: idea.title, description: idea.why || "" });
   };
   const draftFrom = ({ title, idea, funnel = "TOFU" }) =>
@@ -448,10 +590,62 @@ function wire(root, { brandId, brand, state, info, refresh }) {
     btn.addEventListener("click", () => {
       const { th, msg, idx, idea } = findIdea(btn.dataset.bsIdeaSave);
       if (!idea || idea.saved) return;
-      saveIdea(th, idea);
+      saveIdea(th.id, idea);
       patchIdea(th, msg, idx, { saved: true });
       toast(t("bs.idea.savedToast", { title: idea.title }));
+      state.flash = true;
       refresh();
+    })
+  );
+  qsa("[data-bs-save-all]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const th = getBrainstorm(state.threadId);
+      const msg = th?.messages?.find((m) => m.id === btn.dataset.bsSaveAll);
+      if (!msg?.blocks?.ideas) return;
+      const todo = msg.blocks.ideas.filter((i) => !i.saved);
+      todo.forEach((idea) => saveIdea(th.id, idea));
+      updateBrainstormMessage(th.id, msg.id, { blocks: { ...msg.blocks, ideas: msg.blocks.ideas.map((i) => ({ ...i, saved: true })) } });
+      toast(t("bs.idea.savedManyToast", { n: todo.length }));
+      state.flash = true;
+      refresh();
+    })
+  );
+  qsa("[data-bs-task-add]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const { th, msg, idx, task } = findIdea(btn.dataset.bsTaskAdd);
+      if (!task || task.added) return;
+      const phaseId = qs(`[data-bs-task-phase="${btn.dataset.bsTaskAdd}"]`, root)?.value || null;
+      const res = addEventMilestone(task.campaignId, { title: task.title, why: task.why, target: task.target, unit: task.unit, phaseId });
+      if (!res.ok) { toast(t("bs.failed"), "error"); return; }
+      patchIdea(th, msg, idx, { added: true, phaseName: phaseNameLabel(res.phase.name) }, "tasks");
+      toast(t("bs.task.toast", { title: task.title, phase: phaseNameLabel(res.phase.name) }));
+      refresh();
+    })
+  );
+  qsa("[data-bs-task-save]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const { th, msg, idx, task } = findIdea(btn.dataset.bsTaskSave);
+      if (!task || task.saved) return;
+      saveIdea(th.id, { title: task.title, why: task.why });
+      patchIdea(th, msg, idx, { saved: true }, "tasks");
+      toast(t("bs.idea.savedToast", { title: task.title }));
+      state.flash = true;
+      refresh();
+    })
+  );
+  // "Buatkan script": a draft, then straight into Creator's AI writer.
+  qsa("[data-bs-idea-script]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const { th, msg, idx, idea } = findIdea(btn.dataset.bsIdeaScript);
+      if (!idea) return;
+      let contentId = idea.contentId;
+      if (!contentId) {
+        const item = draftFrom({ title: idea.title, idea: t("bs.idea.fromChat", { why: idea.why || "" }) });
+        contentId = item.id;
+        patchIdea(th, msg, idx, { contentId });
+      }
+      go(`#/brand/${brandId}/content-os/creator/${contentId}`, { fromLabel: t("bs.eyebrow"), campaignId: info.campaign?.id || null, contentId, intent: "script" });
+      state.onNavigate?.();
     })
   );
   qsa("[data-bs-idea-draft]", root).forEach((btn) =>

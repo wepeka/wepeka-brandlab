@@ -11,15 +11,17 @@ import { FUNNELS } from "./store.js";
 import { CONSULTANT_ROUTES } from "./ai.js";
 import { escapeHtml } from "./dom.js";
 
-export const MAX_ASKS = 3;
+export const MAX_ASKS = 4;
 export const MAX_DRAFTS = 3;
 export const MAX_IDEAS = 3;
+export const MAX_TASKS = 3;
 
 export function parseDirectives(rawText) {
   const nav = [];
   const drafts = [];
   const asks = [];
   const ideas = [];
+  const tasks = [];
   const cleanText = (rawText || "")
     .replace(/\[\[goto:campaign:([A-Za-z0-9_-]+)\]\]/g, (_, id) => {
       if (!nav.some((n) => n.key === `campaign:${id}`)) nav.push({ key: `campaign:${id}`, label: t("cons.nav.campaign"), path: `campaigns/${id}` });
@@ -54,9 +56,21 @@ export function parseDirectives(rawText) {
       }
       return "";
     })
+    // A real-world step for an event, not a piece of content — "find 6
+    // alumni", "book the venue": [[task:Title|why|target|unit|phase]] (every
+    // part after the title is optional).
+    .replace(/\[\[task:([^\]\n]+)\]\]/gi, (_, body) => {
+      const [title = "", why = "", target = "", unit = "", phase = ""] = body.split("|").map((x) => x.trim());
+      const n = Number(String(target).replace(/[^\d.]/g, ""));
+      const clean = title.slice(0, 120);
+      if (clean && tasks.length < MAX_TASKS && !tasks.some((x) => x.title === clean)) {
+        tasks.push({ title: clean, why: why.slice(0, 300), target: Number.isFinite(n) && n > 0 ? Math.round(n) : null, unit: unit.slice(0, 24), phase: phase.slice(0, 40) });
+      }
+      return "";
+    })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas };
+  return { cleanText, nav, drafts, asks, ideas, tasks };
 }
 
 // The model answers in light markdown (bold, italics, numbered/bulleted

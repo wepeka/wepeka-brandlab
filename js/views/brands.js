@@ -13,11 +13,15 @@ import { getSettings } from "../store.js";
 import { hasAiKey, draftBusinessDescription } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
+import { mountBrandsBg } from "../brands-bg.js";
 
 export function render(root) {
   const refresh = () => paint(root, refresh);
   refresh();
-  return () => {}; // no store subscription needed — actions here re-render locally
+  // Full-screen background lives on <body> (see js/brands-bg.js), so it has
+  // to be torn down when this view goes away.
+  const unmountBg = mountBrandsBg();
+  return unmountBg; // no store subscription needed — actions here re-render locally
 }
 
 function paint(root, refresh) {
@@ -31,7 +35,6 @@ function paint(root, refresh) {
   // the onboarding tour (js/tour.js) still finds it.
   if (!brands.length) {
     root.innerHTML = `
-      <div class="brands-bg"><span class="bg-blob bg-blob-1"></span><span class="bg-blob bg-blob-2"></span><span class="bg-blob bg-blob-3"></span></div>
       <section class="card journey-hero guided-first-brand" id="journey-hero">
         <div class="journey-hero-eyebrow"><span class="journey-hero-step">${guided ? t("brands.first.stepGuided") : t("brands.first.stepPro")}</span><span class="journey-hero-time">${icon("clock", { size: 12 })}${t("brands.first.time")}</span></div>
         <h2>${t("brands.first.title")}</h2>
@@ -45,7 +48,6 @@ function paint(root, refresh) {
   }
 
   root.innerHTML = `
-    <div class="brands-bg"><span class="bg-blob bg-blob-1"></span><span class="bg-blob bg-blob-2"></span><span class="bg-blob bg-blob-3"></span></div>
     <div class="hero-strip">
       <div class="kicker">Wepeka Brandlab</div>
       <h1>${guided ? t("brands.hero.titleGuided") : t("brands.hero.titlePro")}</h1>
@@ -480,6 +482,12 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     } else {
       const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
       toast(t("brands.form.created", { name }));
+      // Every new brand, for every account, opens with the intro video —
+      // not only a brand-new account's first boot. Overlays live on <body>,
+      // so it stays put through the route change below.
+      import("../guide-videos.js")
+        .then((m) => m.playNewBrandIntro())
+        .catch((e) => console.warn("new-brand video unavailable", e));
       // Pemula: a brand you just made is obviously the one you want to
       // open — go straight in instead of showing a "pick a brand" page
       // with a single option on it. Beranda takes over from there.

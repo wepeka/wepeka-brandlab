@@ -416,6 +416,12 @@ export function render(root, { brandId, initialContentId }) {
     if (!ctx) return;
     if (ctx.contentId) state.selectedId = ctx.contentId;
     if (ctx.intent === "new-content") setTimeout(() => state.startNewContent(ctx.defaults || {}), 0);
+    // Coming from a Brainstorm idea ("Buatkan script"): open the AI writer.
+    if (ctx.intent === "script" && ctx.contentId) {
+      let tries = 0;
+      const open = () => { const b = root.querySelector("#ai-generate-all"); if (b) b.click(); else if (++tries < 12) setTimeout(open, 150); };
+      setTimeout(open, 200);
+    }
   };
   applyNavContext(consumeNavContext());
   const onNavContext = () => {

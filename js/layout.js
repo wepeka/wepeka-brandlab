@@ -64,7 +64,7 @@ const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
   { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
-  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns"], gated: true },
+  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals"], gated: true },
   { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os"], gated: true },
   { key: "tools", labelKey: "nav.tools", icon: "sparkle", path: (id) => `#/brand/${id}/tools`, tour: "tab-tools", matches: ["tools", "copy", "sales", "brainstorm"] },
 ];

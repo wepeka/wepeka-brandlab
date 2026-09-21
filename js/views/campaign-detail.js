@@ -7,7 +7,7 @@
 // entry is the "Catat angka" sheet for things the app can't observe.
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, listContent, listCampaigns, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
+  getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
 } from "../store.js";
@@ -96,7 +96,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${helpButtonHTML("campaign-detail")}${guideVideoButtonHTML("campaign-detail")}</div>
         <h1>${esc(campaign.name || t("camp.untitled"))}</h1>
-        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}</p>
+        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}${campaign.goalId ? ` · <a class="link" href="#/brand/${brandId}/goals/${campaign.goalId}">${icon("target", { size: 12 })} ${t("roadmap.camp.link")}</a>` : ""}</p>
       </div>
       <div class="cd-head-actions" style="flex:none;">
         <button class="icon-btn" id="cd-more" aria-label="${t("camp.detail.more")}" style="width:36px;height:36px;">${icon("dots", { size: 16 })}</button>
@@ -190,6 +190,19 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       // so it needs an action even once readMilestone() stops handing one out.
       if (r?.action) run({ ...r.action, milestoneId: r.milestone.id });
       else if (r?.milestone.key === "concept" && r.milestone.track === "community") run({ type: "manual", milestoneId: r.milestone.id });
+    })
+  );
+  // Beginner mode has no options menu, so a milestone that doesn't fit this
+  // event gets its own delete button.
+  qsa("[data-cd-ms-del]", root).forEach((btn) =>
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const m = stageRead.readings[Number(btn.dataset.cdMsDel)]?.milestone;
+      if (!m) return;
+      const ok = await confirmDialog({ title: t("camp.detail.deleteMilestoneTitle"), message: t("camp.detail.deleteMilestoneMsg", { name: m.label }), confirmLabel: t("common.delete"), danger: true });
+      if (!ok) return;
+      patchMilestone(campaign, stage, m.id, null);
+      refresh();
     })
   );
   qsa("[data-cd-ms-menu]", root).forEach((btn) =>
@@ -801,11 +814,12 @@ function milestoneRowHTML(r, i, stage, guided) {
       <span class="cd-dot" style="--pct:${Math.round(r.pct * 100)}%"><span></span></span>
       <div class="cd-row-main">
         <div class="cd-row-label">${esc(m.label)}${m.required === false ? ` <span class="text-faint" style="font-weight:500;">${t("camp.optional")}</span>` : ""}</div>
+        ${m.legacy?.dueDate && !r.met ? (() => { const late = m.legacy.dueDate < localISODate(); return `<div class="cd-row-due ${late ? "is-overdue" : ""}">${esc(t(late ? "roadmap.ms.overdue" : "roadmap.ms.due", { date: formatEventDate(m.legacy.dueDate) }))}</div>`; })() : ""}
         ${m.description && !guided ? `<div class="cd-row-desc">${esc(m.description)}</div>` : m.description && guided && !r.auto ? `<div class="cd-row-desc">${esc(m.description)}</div>` : ""}
         <div class="cd-row-source">${source}${r.note ? ` · ${esc(r.note)}` : ""}</div>
       </div>
       <div class="cd-row-value mono">${value}</div>
-      <div class="cd-row-action">${action}${guided ? "" : `<button type="button" class="icon-btn cd-ms-menu" data-cd-ms-menu="${i}" aria-label="${t("camp.detail.msOptions")}" style="width:26px;height:26px;">${icon("dots", { size: 13 })}</button>`}</div>
+      <div class="cd-row-action">${action}${guided ? (!locked && stage.kind !== "level" ? `<button type="button" class="icon-btn cd-ms-del" data-cd-ms-del="${i}" aria-label="${t("roadmap.ms.remove")}" title="${t("roadmap.ms.remove")}" style="width:26px;height:26px;">${icon("trash", { size: 13 })}</button>` : "") : `<button type="button" class="icon-btn cd-ms-menu" data-cd-ms-menu="${i}" aria-label="${t("camp.detail.msOptions")}" style="width:26px;height:26px;">${icon("dots", { size: 13 })}</button>`}</div>
     </div>`;
 }
 
@@ -1163,6 +1177,13 @@ function openMilestoneMenu(btn, reading, { campaign, stage, refresh }) {
 // Writes a milestone change back to whichever legacy container the stage
 // came from (missions / eventPlan.phases / phases). `patch === null` removes.
 function patchMilestone(campaign, stage, milestoneId, patch) {
+  // A template milestone deleted from a campaign that belongs to a goal is
+  // remembered on the goal, so re-plotting the roadmap never brings it back.
+  if (patch === null && campaign.goalId) {
+    const gone = (stage.kind === "window" ? campaign[windowPlanKey(campaign)]?.phases?.find((p) => p.id === stage.id)?.milestones : [])?.find((x) => x.id === milestoneId);
+    const g = gone && !gone.custom ? getGoal(campaign.brandId, campaign.goalId) : null;
+    if (g) updateGoal(campaign.brandId, g.id, { inputs: { ...(g.inputs || {}), removedMilestones: [...new Set([...(g.inputs?.removedMilestones || []), gone.label])] } });
+  }
   const apply = (list) => (patch === null ? list.filter((x) => x.id !== milestoneId) : list.map((x) => (x.id === milestoneId ? { ...x, ...patch } : x)));
   if (stage.kind === "level") {
     updateCampaign(campaign.id, { missions: campaign.missions.map((m, i) => (i === stage.index ? { ...m, milestones: apply(m.milestones) } : m)) });

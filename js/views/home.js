@@ -2,6 +2,7 @@ import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, 
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
+import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { openContentEditor } from "./content-editor.js";
@@ -629,6 +630,36 @@ function openBrandMemoryModal(brandId, { refresh }) {
   });
 }
 
+// The Teman Brand chat on its own, for the floating chat panel
+// (js/consultant-panel.js). Same thread, same recap and moments as the Home
+// widget — just without the page around it.
+export function renderCompanionPane(root, { brandId, onNavigate = null, onBrainstorm = null }) {
+  const state = {};
+  // "Bahas di Brainstorm" buttons switch the panel's tab (with the seed
+  // sentence) instead of navigating to the Brainstorm page.
+  const grab = (e) => {
+    const b = e.target.closest('[data-companion-go="brainstorm"]');
+    if (!b || !onBrainstorm) return;
+    e.stopPropagation();
+    onBrainstorm(b.dataset.companionSeed || "");
+  };
+  root.addEventListener("click", grab, true);
+  const refresh = () => {
+    const brand = getBrand(brandId);
+    if (!brand) return;
+    const content = listContent(brandId);
+    const campaigns = listCampaigns(brandId);
+    const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
+    const c = companionWidgetHTML(brand, { thread: getCompanionThread(brandId), signals, content, now: new Date(), state });
+    root.innerHTML = `<div class="cp-companion">${c.extraHead ? `<div class="cp-companion-actions">${c.extraHead}</div>` : ""}${c.bodyHTML}</div>`;
+    wireCompanion(root, { brandId, brand, content, signals, state, refresh });
+    if (onNavigate) root.querySelectorAll('a[href^="#/"]').forEach((a) => a.addEventListener("click", onNavigate));
+  };
+  refresh();
+  const off = onChange(refresh);
+  return () => { off?.(); root.removeEventListener("click", grab, true); };
+}
+
 function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) {
@@ -659,6 +690,7 @@ function paint(root, brandId, state, refresh) {
   // Companion's own reply triggers (js/brand-pulse.js pulseTextFor).
   const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
   const companion = companionWidgetHTML(brand, { thread: getCompanionThread(brandId), signals, content, now: new Date(), state });
+  const goal = goalWidget({ brandId, brand, campaigns, content, identityDone });
 
   root.innerHTML = `
     <div class="page-head">
@@ -671,6 +703,14 @@ function paint(root, brandId, state, refresh) {
     </div>
 
     ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : identityHeroHTML(brandId, brand)}
+
+    ${
+      goal
+        ? collapsed.has(goal.key)
+          ? widgetCollapsedHTML(goal.key, goal.iconName, goal.title, goal.summary)
+          : widgetCardHTML(goal.key, goal.iconName, goal.title, goal.bodyHTML, { extraHead: goal.extraHead })
+        : ""
+    }
 
     ${
       collapsed.has("companion")
@@ -694,6 +734,7 @@ function paint(root, brandId, state, refresh) {
   `;
 
   wireHelpButtons(root);
+  wireGoalCard(root, { brandId });
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
   if (!collapsed.has("companion")) wireCompanion(root, { brandId, brand, content, signals, state, refresh });
   if (cfg.analytics) {

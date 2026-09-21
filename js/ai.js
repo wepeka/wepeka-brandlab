@@ -79,6 +79,57 @@ async function callClaude(apiKey, system, userPrompt, maxTokens) {
   return json.content?.[0]?.text || "";
 }
 
+// Same request as callClaude, but streamed: onText(fullTextSoFar) fires as
+// tokens arrive so a chat reply shows up word by word instead of after the
+// whole answer is done. Errors are shaped exactly like fetchJson's.
+async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText) {
+  let res;
+  try {
+    res = await fetch(ANTHROPIC_API_BASE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: maxTokens, stream: true, system, messages: [{ role: "user", content: userPrompt }] }),
+    });
+  } catch {
+    throw new AiApiError(t("ai.error.network", { provider: "Claude" }));
+  }
+  if (!res.ok || !res.body) {
+    let message = "";
+    try { message = (await res.json())?.error?.message || ""; } catch { /* not JSON */ }
+    throw new AiApiError(message ? t("ai.error.provider", { provider: "Claude", message }) : t("ai.error.requestFailed", { provider: "Claude", status: res.status }));
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      const line = block.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+        full += ev.delta.text;
+        onText(full);
+      } else if (ev.type === "error") {
+        throw new AiApiError(t("ai.error.provider", { provider: "Claude", message: ev.error?.message || "" }));
+      }
+    }
+  }
+  return full;
+}
+
 async function callGemini(apiKey, system, userPrompt) {
   const json = await fetchJson(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
@@ -126,7 +177,7 @@ export function hasAiKey(ai) {
 // (js/ai-usage.js) is checked and counted: refused before the request when
 // the cap is reached, counted once after a successful response. A failed
 // request never counts.
-async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true } = {}) {
+async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null } = {}) {
   if (countUsage && aiLimitReached()) {
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
@@ -144,8 +195,10 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
     out = await callDeepSeek(ai.deepseekApiKey, system, userPrompt, maxTokens);
   } else {
     if (!ai.anthropicApiKey) throw new AiApiError(t("ai.error.noKey", { provider: "Anthropic" }));
-    out = await callClaude(ai.anthropicApiKey, system, userPrompt, maxTokens);
+    out = onText ? await callClaudeStream(ai.anthropicApiKey, system, userPrompt, maxTokens, onText) : await callClaude(ai.anthropicApiKey, system, userPrompt, maxTokens);
   }
+  // Providers without streaming hand over the finished text in one piece.
+  if (onText && ai.provider !== "anthropic" && out) onText(out);
   if (countUsage) recordAiUsage();
   return out;
 }
@@ -643,6 +696,21 @@ function daysUntil(dateStr) {
   return Math.round(ms / 86400000);
 }
 
+// Roadmap ke Tujuan (js/goal-roadmap.js): the dated goals the owner is
+// working toward, read straight off brand.goals so every AI surface knows a
+// deadline exists and what the plan around it looks like. Plain data only;
+// ai.js never imports the store.
+function goalLine(g) {
+  const r = g.roadmap || {};
+  const lanes = (r.lanes || []).map((l) => `${l.name} ${l.startDate}..${l.endDate}`).join("; ");
+  const flags = (r.warnings || []).filter((w) => w.level === "warn").map((w) => w.code).join(",");
+  return `- id=${g.id} | ${g.name} | date=${g.targetDate} | days left=${Math.max(0, daysUntil(g.targetDate))} | status=${g.status} | expected attendees=${g.inputs?.expectedAudience ?? "?"} | weekly post capacity=${r.capacity?.perWeek ?? "?"} | lanes: ${lanes || "(none)"}${flags ? ` | plan flags: ${flags}` : ""}`;
+}
+function goalsContextBlock(brand) {
+  const goals = (brand?.goals || []).filter((g) => ["draft", "installing", "partial", "active"].includes(g.status)).slice(0, 3);
+  return goals.length ? `Goals (dated targets the owner is working toward; each has a roadmap of lanes and weekly posts):\n${goals.map(goalLine).join("\n")}` : "";
+}
+
 // Extends buildBrandContext with active-campaign awareness — the shared
 // layer any AI feature can pull from instead of assembling its own
 // campaign summary inline. Archived campaigns are left out; they're not
@@ -655,6 +723,7 @@ export function buildFullContext(brand, { campaigns = [], pulseText = "" } = {})
   const parts = [
     buildBrandContext(brand),
     active.length ? `Active campaigns:\n${active.map((c) => campaignSummaryLine(c, brand)).join("\n")}` : "",
+    goalsContextBlock(brand),
     pulseText || "",
   ];
   return parts.filter(Boolean).join("\n\n");
@@ -1100,7 +1169,7 @@ export const CONSULTANT_ROUTES = [
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
-export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question }) {
+export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null }) {
   const routesList = CONSULTANT_ROUTES.map((r) => `${r.key} = ${r.label}`).join(", ");
   const system = [
     "You are a practical branding & marketing consultant embedded inside this brand's own tool.",
@@ -1122,7 +1191,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
   const transcript = history.map((h) => `${h.role === "user" ? "User" : "Consultant"}: ${h.text}`).join("\n\n");
   const user = [transcript, `User: ${question}`].filter(Boolean).join("\n\n");
 
-  return callModel(ai, system, user, 1000);
+  return callModel(ai, system, user, 1000, { onText });
 }
 
 // Sales Tracker's "what should I do with these numbers?" — three concrete
@@ -1211,47 +1280,62 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
   return { summary: String(obj.summary || "").trim(), moments: Array.isArray(obj.moments) ? obj.moments : [] };
 }
 
-// The Brainstorm partner (js/views/brainstorm.js) — a thinking partner,
-// not a generator. In "chat" mode it asks before it suggests, offers
-// directions with trade-offs, and only marks an idea [[idea:…]] once the
-// conversation has actually landed on one; "ideas" mode is the owner's
-// explicit "just give me ideas now" button, so it hands over three
-// concrete ones right away. Either way the raw conversation is the
-// context — the brand, its campaigns, and its pulse ride along through
-// buildFullContext, plus whatever the thread is scoped to.
-export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, savedIdeas = [], history = [], message, mode = "chat" }) {
+// The Brainstorm partner (js/views/brainstorm.js) — a short chat first, ideas
+// second. It asks what kind of content the owner wants (one question at a
+// time, each with tap-to-answer buttons [[ask:…]]) and only shows option
+// cards ([[idea:…]]) once the owner has answered — or pressed "Langsung kasih
+// ide", which is the "ideas" mode. `turns` counts the owner's messages so far.
+// `onText` streams the reply as it is written. The brand, its campaigns and
+// its pulse ride along through buildFullContext, plus whatever the thread is
+// scoped to.
+export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, goalId = null, eventCampaign = null, savedIdeas = [], history = [], message, mode = "chat", turns = 1, onText = null }) {
+  const goal = goalId ? (brand?.goals || []).find((g) => g.id === goalId) : null;
   const scope = [
+    goal ? `This conversation is about ONE goal the owner is working toward — help them think about how to get there:\n${goalLine(goal)}\nYou cannot change the roadmap yourself. When something should change (the date, the weekly posting rhythm, the expected attendance), say exactly what and why, and tell the owner to use "Re-plot" on the roadmap page. Never say the plan has been changed.` : "",
+    eventCampaign ? `EVENT the owner is preparing (its phases; use these exact phase names when you file a step under a phase):\n${campaignSummaryLine(eventCampaign, brand)}\nPhases: ${(eventCampaign.eventPlan?.phases || []).map((p) => `${p.name} (${p.dateFrom}..${p.dateTo})`).join("; ")}\nMilestones already in it (never suggest these again): ${(eventCampaign.eventPlan?.phases || []).flatMap((p) => (p.milestones || []).map((m) => m.label)).slice(0, 40).join("; ")}` : "",
     campaign ? `This conversation is about ONE campaign of the brand:\n${campaignSummaryLine(campaign, brand)}${stageText ? `\nCurrent focus: ${stageText}` : ""}` : "",
     content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.` : "",
-    savedIdeas.length ? `Ideas already saved from this conversation (build on them, never repeat them):\n${savedIdeas.map((i) => `- ${i}`).join("\n")}` : "",
+    savedIdeas.length ? `Ideas already shown or saved in this conversation (never repeat them):\n${savedIdeas.map((i) => `- ${i}`).join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
+  // Talk first, ideas second. The AI asks what the owner wants (with tap-to-
+  // answer buttons, [[ask:…]]) and only puts option cards on the table once
+  // the owner has answered — or pressed "Langsung kasih ide", which is the
+  // "ideas" mode below. `turns` = how many messages the owner has sent in
+  // this thread, this one included.
   const rules = mode === "ideas"
     ? [
-        "The owner just pressed \"give me ideas now\". Skip the questions this once: open with ONE short sentence, then give exactly 3 concrete, specific ideas, each as its own line in the exact form [[idea:Short title|why it fits THIS brand and how to pull it off, 1-2 sentences]]. Close with one short line offering to dig into whichever they like.",
+        "The owner pressed the button to get ideas NOW, so the questions are over. Use everything said in the conversation so far, and the brand data above to fill any gap. Open with ONE short sentence (max 15 words), then exactly 3 concrete suggestions, each as its own line in the exact form [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] (when an event is being prepared, an offline step may be a [[task:…]] line instead and counts as one of the 3). The 3 must take clearly different angles. End with 2 [[ask:…]] lines of next steps (max 5 words each), such as 'Kembangkan yang pertama'.",
       ]
     : [
-        "Talk like a sharp friend thinking out loud with them — at most 3 short paragraphs, no headers, no long lists.",
-        "If the goal, the audience, or the timeframe of what they're asking about is still unclear, ask ONE focused question before suggesting anything. One question, not a questionnaire.",
-        "Once you understand, offer 2-3 directions with a real trade-off each (what it costs them, what it could bring) rather than one finished answer. Don't hand over a finished list of ideas unless the owner explicitly asks for it ('kasih idenya', 'oke, susun', 'give me the ideas').",
-        "When the conversation lands on a concrete idea the owner seems to want, mark it as a line in the exact form [[idea:Short title|why this works for THIS brand + the first step]] — at most 3 per reply, and only for ideas that came out of the discussion, never as a reflex.",
-        "When an idea is ready to be written as an actual post, add a line [[draft:FUNNEL|Content title]] — FUNNEL is exactly TOFU, MOFU, or BOFU. At most 2 per reply.",
+        "REPLY SHAPE (strict): one short sentence reacting to what the owner said (max 20 words), then ONE question, then the [[ask:…]] lines. No headers, no bullet lists, no explanations, no paragraphs. NEVER write [[idea:…]] lines while you are still asking.",
+        "You are having a short chat to work out what content the owner actually wants — do NOT throw ideas at them yet. Ask the single most useful question for where the conversation is: first the kind or goal of the content (educate, sell, entertain, build trust…), then, only if still needed, the audience, format or timing. One question per reply, never two.",
+        "The [[ask:…]] lines are the answers the owner can tap: 3-4 answers, each max 5 words, written the way the owner would say them (e.g. 'Edukasi murid baru', 'Jualan kelas', 'Hiburan ringan'). Make them specific to THIS brand, drawn from the brand data above, not generic.",
+        turns >= 3
+          ? "The owner has now answered enough. THIS reply: one short sentence that sums up what they want, then 2-3 concrete options, each as its own line in the exact form [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] taking clearly different angles (offline steps for an event may be [[task:…]] lines instead). Then 2-3 [[ask:…]] lines of next steps (max 5 words), e.g. 'Kembangkan yang pertama'. Do not ask another question."
+          : turns === 2
+            ? "The owner has answered once. If you now know the kind of content AND who it is for, give the options this reply (one sentence, then 2-3 [[idea:Title|why + first step]] lines of different angles, then [[ask:…]] next steps). Only if one more detail is truly missing, ask it as your last question instead."
+            : "This is the owner's first message: react in one sentence and ask what kind of content or goal they have in mind. Do not give ideas yet.",
+        "When the owner says they will use an idea or picks one, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) so a button to start the draft appears. At most 2 per reply.",
+        "Never repeat an idea that was already shown or saved. Never mention or explain the [[...]] lines.",
       ];
   const system = [
-    "You are the brand owner's brainstorm partner inside their own planning tool. Your job is to help them THINK — sharpen a rough idea, weigh options, and end up with something they actually believe in — not to produce output for them to copy.",
+    "You are the brand owner's brainstorm partner inside their own planning tool: a sharp friend who already knows the brand. Short, warm, to the point — you ask, they answer, then you propose.",
     outputLanguageRule(),
     buildFullContext(brand, { campaigns, pulseText }),
-    MARKETING_FRAMEWORKS_CONTEXT,
+    mode === "ideas" ? MARKETING_FRAMEWORKS_CONTEXT : "",
     NATURAL_WRITING_CONTEXT,
     scope,
     ...rules,
+    eventCampaign
+      ? "NOT EVERYTHING IS CONTENT. An event is mostly real-world work: recruiting people (alumni, speakers, volunteers), booking the venue, finding sponsors or partners, inviting guests, preparing materials, rehearsing. Those are STEPS, each written as its own line in the exact form [[task:Short action without the number (max 8 words)|why or how, one sentence|target number or empty|unit like 'alumni' or empty|phase name from the list above]] — e.g. [[task:Cari alumni untuk jadi pembicara|Mereka bisa cerita pengalaman belajar langsung.|6|alumni|Foundation]]. Content pieces to publish stay [[idea:…]] lines. One suggestion may produce both: the step 'find 6 alumni' and the content idea 'a short video from each alumnus'. Prefer steps whenever the thing to do happens offline. At most 3 [[task:…]] lines per reply."
+      : "There is no event in preparation right now, so do not write [[task:…]] lines; use [[idea:…]] for everything.",
     "Ground everything in this brand's actual context and data above; when the pulse says something is in motion (a post taking off, a sales dip), use it. Never invent numbers or events.",
-    "End EVERY reply with exactly 2 follow-up lines in the exact form [[ask:…]] — what THIS owner would plausibly say next (their language, short, max ~10 words): one that goes deeper, one that moves toward action. Never repeat an ask already used in this conversation. Never mention or explain the [[...]] lines.",
   ]
     .filter(Boolean)
     .join("\n\n");
   const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
   const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, 1200);
+  return callModel(ai, system, user, mode === "ideas" ? 750 : turns >= 2 ? 600 : 300, { onText });
 }
 
 export { AiApiError };

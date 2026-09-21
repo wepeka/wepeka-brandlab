@@ -13,6 +13,8 @@ import content from "./i18n/content.js";
 import ai from "./i18n/ai.js";
 import brand_pulse from "./i18n/brand-pulse.js";
 import brainstorm from "./i18n/brainstorm.js";
+import roadmap from "./i18n/roadmap.js";
+import chat_hub from "./i18n/chat-hub.js";
 
 const KEY = "wepeka-lang";
 
@@ -78,6 +80,7 @@ const CORE = {
   "settings.panel.formats": { en: "Content formats", id: "Format konten" },
   "settings.panel.brands": { en: "Brand management", id: "Kelola Brand" },
   "settings.panel.ai": { en: "AI", id: "AI" },
+  "settings.panel.bg": { en: "Brand background", id: "Background Brand" },
   "settings.panel.language": { en: "Language", id: "Bahasa" },
   "settings.panel.data": { en: "Data", id: "Data" },
   "settings.panel.account": { en: "Account", id: "Akun" },
@@ -498,6 +501,8 @@ const EXTRA = {
   "ai": ai,
   "brand-pulse": brand_pulse,
   "brainstorm": brainstorm,
+  "roadmap": roadmap,
+  "chat-hub": chat_hub,
 };
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 

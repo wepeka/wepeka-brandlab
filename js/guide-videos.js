@@ -5,11 +5,12 @@
 //   - When it ends (or is skipped) the same modal asks what's next, in three
 //     answers: play it again, take the live tour of this page instead, or
 //     "sudah paham".
-// Nothing here plays itself just from navigating to a page — the single
-// exception is the "kenalan" video on a brand-new account's very first open
+// Nothing here plays itself just from navigating to a page. Two exceptions,
+// both the "kenalan" video: a brand-new account's very first open
 // (js/main.js playFirstRunIntro, once ever), which reuses this same modal
 // with its `hint` bubble so the way back ("the Video button lives here from
-// now on") is shown once, not left to be discovered.
+// now on") is shown once, not left to be discovered; and every brand
+// creation, for any account (js/views/brands.js playNewBrandIntro).
 //
 // Three states per entry, set by its `src`:
 //   ""               → silent. Nothing opens, nothing is marked as seen, so
@@ -283,7 +284,25 @@ function hintAfterTour() {
 export function playFirstRunIntro() {
   if (videoSeen("kenalan")) return;
   markVideoSeen("kenalan");
+  introJustPlayed = true;
   openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: true });
+}
+
+// The second autoplay: every time a brand is created, for anyone — not just
+// a brand-new account. Deliberately NOT videoSeen-gated; a new brand is a
+// fresh start, so the "kenalan" video plays again (it can be skipped at once
+// with "Lewati video"). The one exception is a new account's first brand
+// made in the same visit as the first-run intro: that video finished moments
+// ago, so playing it back-to-back would be a repeat, not a welcome. The
+// exception is spent on that one brand — every brand after it plays.
+// No `hint`: the Video button was already pointed out by the first run.
+let introJustPlayed = false;
+export function playNewBrandIntro() {
+  if (introJustPlayed) {
+    introJustPlayed = false;
+    return;
+  }
+  openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: false });
 }
 
 // The "Video" pill next to a page's "?" (js/help.js helpButtonHTML) — same
