@@ -1478,6 +1478,36 @@ body.tour-active .consultant-fab{ display:none; }
 .toast svg{ width:16px; height:16px; }
 
 /* ============================================================
+   Welcome bumper (js/dom.js showWelcomeBumper) — full-screen, once per
+   session, right after landing inside Brandlab. Always dark, regardless of
+   the light/dark theme: a bumper is a moment, not a themed screen.
+   ============================================================ */
+.brandlab-bumper{
+  position:fixed; inset:0; z-index:200; background:#000;
+  display:flex; align-items:center; justify-content:center; padding:32px;
+  cursor:pointer; animation: bumperIn .5s ease-out;
+}
+.brandlab-bumper.is-leaving{ animation: bumperOut .5s ease-in forwards; }
+.brandlab-bumper-inner{ text-align:center; max-width:900px; }
+.brandlab-bumper-line{
+  margin:0; color:#fff; font-family: var(--font-display); font-weight:900;
+  font-size: clamp(28px, 6vw, 64px); line-height:1.15; letter-spacing:-0.01em;
+}
+.brandlab-bumper-line b{ color: var(--accent); font-weight:900; }
+.brandlab-bumper-mark{
+  margin-top: clamp(20px, 3.5vw, 36px); display:flex; align-items:center; justify-content:center;
+  gap: clamp(10px, 1.6vw, 18px); color:#fff; font-family: var(--font-display); font-weight:900;
+  font-size: clamp(22px, 4vw, 40px);
+}
+.brandlab-bumper-mark img{ height: clamp(26px, 4.6vw, 46px); width:auto; display:block; }
+.brandlab-bumper-mark-divider{ width:2px; height: clamp(20px, 3.4vw, 34px); background: rgba(255,255,255,.35); }
+@keyframes bumperIn{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes bumperOut{ from{ opacity:1; } to{ opacity:0; } }
+@media (prefers-reduced-motion: reduce){
+  .brandlab-bumper, .brandlab-bumper.is-leaving{ animation:none; }
+}
+
+/* ============================================================
    Floating progress (minimized long-running work — imports, syncs)
    ============================================================ */
 #progress-root{ position:fixed; top:74px; right:20px; z-index:100; display:flex; flex-direction:column; gap:10px; width:260px; }

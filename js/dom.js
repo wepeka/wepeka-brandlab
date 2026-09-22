@@ -136,6 +136,44 @@ export function toast(message, type = "success") {
   setTimeout(() => el.remove(), 3200);
 }
 
+// Full-screen black "welcome" bumper, shown once right after someone lands
+// inside Brandlab (main.js, on first successful boot of a session — fresh
+// login, Google, or the wepeka.com SSO hand-off). Big greeting line + the
+// actual Wepeka Brandlab logo mark (not the word spelled out), like a splash
+// bumper. Auto-dismisses; a click/tap/Escape/any key skips it early so it
+// never blocks someone in a hurry.
+export function showWelcomeBumper(name) {
+  const el = document.createElement("div");
+  el.className = "brandlab-bumper";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  el.innerHTML = `
+    <div class="brandlab-bumper-inner">
+      <p class="brandlab-bumper-line">${t("app.welcome.line1", { name: `<b>${escapeHtml(name)}</b>` })}</p>
+      <div class="brandlab-bumper-mark">
+        <img src="assets/wepeka-logo.png" alt="Wepeka" />
+        <span class="brandlab-bumper-mark-divider"></span>
+        <span>Brandlab</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(el);
+
+  let done = false;
+  const close = () => {
+    if (done) return;
+    done = true;
+    el.classList.add("is-leaving");
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+    setTimeout(() => el.remove(), 600); // safety net if the animation never fires
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = () => close();
+  el.addEventListener("click", close);
+  document.addEventListener("keydown", onKey);
+  setTimeout(close, 2600);
+}
+
 // A small speech bubble pinned above one element, with an arrow pointing at
 // it — for "the thing you just unlocked is over here" moments, where a toast
 // would say it without showing where. Self-closing after 9s, or on the ✕.

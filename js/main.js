@@ -11,7 +11,7 @@ import { auth } from "./firebase.js";
 import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
-import { toast } from "./dom.js";
+import { toast, showWelcomeBumper } from "./dom.js";
 import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState } from "./account.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
@@ -190,7 +190,7 @@ function onAccountChange(user, account) {
       if (!welcomeShown) {
         welcomeShown = true;
         const name = (user.displayName || user.email?.split("@")[0] || "").trim().split(/\s+/)[0];
-        if (name) toast(t("app.welcome", { name }));
+        if (name) showWelcomeBumper(name);
       }
       if (firstEverOpen) {
         import("./guide-videos.js")

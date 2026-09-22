@@ -4,7 +4,10 @@ export default {
   // ---- App shell (js/main.js, js/layout.js, js/dom.js, js/modals.js) ----
   "app.loading": { en: "Loading…", id: "Memuat…" },
   "app.done": { en: "Done", id: "Selesai" },
-  "app.welcome": { en: "Hi {name}, welcome to Wepeka Brandlab", id: "Hai {name}, selamat datang di Wepeka Brandlab" },
+  // {name} arrives pre-wrapped in <b>...</b> (see showWelcomeBumper) — the
+  // logo mark under this line already says "Wepeka Brandlab", so this is
+  // just the greeting, "welcome to" with nothing after it.
+  "app.welcome.line1": { en: "Hi {name}, welcome to", id: "Hai {name}, selamat datang di" },
   "app.locked.title": { en: "Account deactivated", id: "Akun dinonaktifkan" },
   "app.locked.body": { en: "The account {email} has been deactivated. Contact Wepeka support if this is a mistake.", id: "Akun {email} sedang dinonaktifkan. Hubungi support Wepeka kalau ini keliru." },
   "app.aiUsage.title": { en: "AI usage today", id: "Pemakaian AI hari ini" },
