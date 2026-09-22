@@ -70,8 +70,9 @@ function showLoading() {
 function teardownApp() {
   storeReady = false;
   // Signing out and into another account in the same tab is a fresh first
-  // open for that account — it gets its own picker.
+  // open for that account — it gets its own picker and its own welcome toast.
   modePickerShown = false;
+  welcomeShown = false;
   pulsedBrands.clear();
   delete app.dataset.shellKey;
   clearPageGuide();
@@ -186,6 +187,11 @@ function onAccountChange(user, account) {
       // only a brand-new account then gets the video on top of it, and only
       // the one time (js/guide-videos.js playFirstRunIntro, videoSeen-gated).
       renderRoute();
+      if (!welcomeShown) {
+        welcomeShown = true;
+        const name = (user.displayName || user.email?.split("@")[0] || "").trim().split(/\s+/)[0];
+        if (name) toast(t("app.welcome", { name }));
+      }
       if (firstEverOpen) {
         import("./guide-videos.js")
           .then((m) => m.playFirstRunIntro())
@@ -230,6 +236,9 @@ let renderToken = 0;
 let firstRouteAfterBoot = false;
 // One mode picker per boot, no matter how many account snapshots land.
 let modePickerShown = false;
+// One welcome toast per boot (fresh sign-in, SSO hand-off, or a reload that
+// resumes a persisted session) — not on every account snapshot re-fire.
+let welcomeShown = false;
 
 // Brand Pulse (js/brand-pulse.js): computed once per brand per session (this
 // Set guards repeats — every AI feature reads the result through
