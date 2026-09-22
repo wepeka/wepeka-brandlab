@@ -32,12 +32,11 @@ const CORE = {
   // Topbar / nav (js/layout.js)
   "nav.home": { en: "Home", id: "Beranda" },
   "nav.builder": { en: "Brand Builder", id: "Brand Builder" },
-  "nav.campaigns": { en: "Campaigns", id: "Campaign" },
+  "nav.campaigns": { en: "Goals", id: "Tujuan" },
   "nav.sales": { en: "Sales Tracker", id: "Pelacak Penjualan" },
   "nav.allBrands": { en: "All Brands", id: "Semua Brand" },
   "nav.brand": { en: "Brand", id: "Brand" },
   "nav.content": { en: "Content", id: "Konten" },
-  "nav.tools": { en: "Tools", id: "Alat" },
   "topbar.help": { en: "Help", id: "Bantuan" },
   "topbar.menu": { en: "Menu", id: "Menu" },
   "common.more": { en: "More", id: "Lainnya" },
@@ -45,7 +44,7 @@ const CORE = {
   "contentEditor.advanced": { en: "Advanced", id: "Lanjutan" },
   "menu.modeSwitch": { en: "{current} mode · switch to {other}", id: "Mode {current} · pindah ke {other}" },
   "help.pageGuide": { en: "Guide for this page", id: "Panduan halaman ini" },
-  "help.askAi": { en: "Ask the AI consultant", id: "Tanya AI Konsultan" },
+  "help.askAi": { en: "Ask Brandlab", id: "Tanya Brandlab" },
   "help.tour": { en: "Intro tour", id: "Tur pengenalan" },
   "nav.locked": { en: "Opens once your brand identity is done", id: "Terbuka setelah identitas brand selesai" },
   // Home (js/views/home.js)
@@ -181,6 +180,7 @@ const CORE = {
   "contentOs.tab.list": { en: "Content", id: "Konten" },
   "contentOs.tab.creator": { en: "Creator", id: "Creator" },
   "contentOs.tab.calendar": { en: "Calendar", id: "Kalender" },
+  "contentOs.tab.copy": { en: "Quick copy", id: "Tulisan Cepat" },
   "contentOs.cadence.title": { en: "Set your work schedule", id: "Atur Jadwal Kerja" },
   "contentOs.cadence.sub": { en: "This sets up AI Auto-Schedule in the Calendar for {brand} and fills in the Shoot/Edit/Upload rows in My Routine automatically — set it once here instead of in both places.", id: "Ini sekaligus ngatur Jadwal Otomatis AI di Kalender buat {brand} dan ngisi baris Syuting/Edit/Upload di My Routine otomatis — cukup atur sekali di sini, nggak perlu di dua tempat." },
   "contentOs.cadence.shootLabel": { en: "Which days do you shoot?", id: "Hari apa aja syuting?" },
@@ -473,19 +473,6 @@ const CORE = {
   "guidelines.tone.saved": { en: "Tone of Voice saved", id: "Tone of Voice disimpan" },
   "guidelines.tone.add": { en: "Add", id: "Tambah" },
 
-  // Tools hub (js/views/tools.js) — Brief Revisi 2 fase 2
-  "tools.eyebrow": { en: "Tools", id: "Alat" },
-  "tools.sub": { en: "Everything that isn't Campaigns or Content — your thinking partner, quick copy, and sales log.", id: "Semua yang bukan Campaign atau Konten — teman brainstorm, tulisan cepat, dan catatan penjualan." },
-  "tools.card.brainstorm.title": { en: "Brainstorm", id: "Brainstorm" },
-  "tools.card.brainstorm.desc": { en: "Think out loud with an AI partner — turn a rough idea into a plan, then a measurable campaign.", id: "Ngobrol bareng AI buat mikirin ide — dari obrolan santai jadi rencana, lalu campaign yang terukur." },
-  "tools.card.copy.title": { en: "Copy Studio", id: "Copy Studio" },
-  "tools.card.copy.desc": { en: "Short ready-to-use copy — Threads, Story captions, WhatsApp broadcasts, feed captions.", id: "Tulisan pendek siap pakai — Threads, caption Story, broadcast WhatsApp, caption feed." },
-  "tools.card.sales.title": { en: "Sales Tracker", id: "Pelacak Penjualan" },
-  "tools.card.sales.desc": { en: "Log every sale — totals, weekly trend, and AI advice all follow from it.", id: "Catat tiap penjualan — total, tren mingguan, dan saran AI ngikut dari situ." },
-  "tools.card.sales.status": { en: "{count} sales · {revenue} this month", id: "{count} penjualan · {revenue} bulan ini" },
-  "tools.tour.brainstorm": { en: "Talk through an idea with AI — it turns into saved ideas and, when you're ready, a campaign with real dates and milestones.", id: "Diskusiin ide bareng AI — jadi ide tersimpan, dan kalau udah siap, campaign dengan tanggal dan milestone beneran." },
-  "tools.tour.copy": { en: "Need a caption or broadcast right now? Three ready options in your brand's voice, in under a minute.", id: "Butuh caption atau broadcast sekarang? Tiga pilihan siap pakai dengan gaya bahasa brand-mu, kurang dari semenit." },
-  "tools.tour.sales": { en: "Log a sale in one tap — totals, trend, and your Sales Growth campaign update themselves.", id: "Catat penjualan sekali tap — total, tren, dan campaign Sales Growth ikut ke-update sendiri." },
 };
 
 // Per-area dictionaries (js/i18n/*.js) are merged on top of CORE. Keys are

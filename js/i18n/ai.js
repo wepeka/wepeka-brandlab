@@ -28,7 +28,7 @@ export default {
   "ai.route.dna": { en: "Brand DNA", id: "Brand DNA" },
   "ai.route.guidelines": { en: "Brand Guidelines", id: "Panduan Brand" },
   "ai.route.builder": { en: "Brand Builder", id: "Brand Builder" },
-  "ai.route.campaigns": { en: "Campaigns", id: "Campaign" },
+  "ai.route.campaigns": { en: "Goals", id: "Tujuan" },
   "ai.route.contentOs": { en: "Content OS", id: "Content OS" },
   "ai.route.contentList": { en: "Content List", id: "Daftar Konten" },
   "ai.route.creator": { en: "Creator Studio", id: "Creator Studio" },
@@ -36,7 +36,6 @@ export default {
   "ai.route.sales": { en: "Sales Tracker", id: "Sales Tracker" },
   "ai.route.copy": { en: "Copy Studio", id: "Copy Studio" },
   "ai.route.brainstorm": { en: "Brainstorm", id: "Brainstorm" },
-  "ai.route.tools": { en: "Tools", id: "Alat" },
   "ai.route.home": { en: "Brand Home", id: "Beranda Brand" },
 
   // js/ai-feedback.js

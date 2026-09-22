@@ -3399,30 +3399,60 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cd-ms-del{ color: var(--text-faint); } .cd-ms-del:hover{ color: var(--health-poor); }
 
 /* ============================================================
-   Chat hub (js/consultant-panel.js): AI Consultant · Brand Friend ·
-   Brainstorm in one floating panel, switched from a tab bar at the bottom.
-   Each chat has its own accent: --cp-accent.
+   "Tanya Brandlab" (js/consultant-panel.js): one floating chat in front of
+   three engines. Each reply wears a small engine label; the label (and the
+   idea cards under it) borrow that engine's accent via --cp-accent.
    ============================================================ */
-.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); }
-.consultant-panel[data-mode="companion"]{ --cp-accent: var(--track-community); }
-.consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--track-social); }
+.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; transition: border-color .25s; }
+/* the pinned engine colours the whole panel: header icon, mode chip, user bubbles, send button */
+.consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="companion"]{ --cp-accent: var(--chat-companion); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel:not([data-mode="auto"]) .consultant-panel-head{ background: color-mix(in srgb, var(--cp-accent) 10%, transparent); }
+.consultant-panel:not([data-mode="auto"]) .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
+.consultant-panel .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
 .cp-head{ gap:10px; }
 .cp-head-main{ display:flex; align-items:center; gap:10px; min-width:0; }
 .cp-head-main b{ display:block; font-size:14px; line-height:1.2; }
 .cp-head-main small{ display:block; font-size:11.5px; font-weight:500; color: var(--text-muted); line-height:1.35; margin-top:1px; }
 .cp-head-icon{ flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--cp-accent) 18%, transparent); color: var(--cp-accent); }
 .cp-pane{ flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
-.cp-tabs{ flex:none; display:grid; grid-template-columns: repeat(3, 1fr); border-top:1px solid var(--border); background: var(--bg-raised); padding:6px; gap:4px; }
-.cp-tab{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 4px 7px; border-radius:12px; border:0; background:none; color: var(--text-muted); font-family:inherit; font-size:11.5px; font-weight:700; cursor:pointer; position:relative; transition: background .15s, color .15s; }
-.cp-tab[data-mode="consultant"]{ --t: var(--accent); } .cp-tab[data-mode="companion"]{ --t: var(--track-community); } .cp-tab[data-mode="brainstorm"]{ --t: var(--track-social); }
-.cp-tab:hover{ background: var(--surface-2); color: var(--text); }
-.cp-tab.is-active{ background: color-mix(in srgb, var(--t) 16%, transparent); color: var(--t); }
-.cp-tab.is-active::after{ content:""; position:absolute; top:-7px; left:22%; right:22%; height:3px; border-radius:0 0 3px 3px; background: var(--t); }
-.cp-tab:focus-visible{ outline:2px solid var(--t); outline-offset:-2px; }
 /* the composer follows the chat's own accent */
 .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
-.consultant-panel[data-mode="consultant"] .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; }
-.cp-handoff{ margin-top:8px; }
+/* mode row: pin an engine, or leave it on Otomatis */
+.cp-modes{ flex:none; display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; padding:8px 12px 0; }
+.cp-mode{ display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:6px 4px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family:inherit; font-size:11.5px; font-weight:700; cursor:pointer; --t: var(--accent); transition: background .15s, color .15s, border-color .15s; }
+.cp-mode[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-mode[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-mode[data-engine="companion"]{ --t: var(--chat-companion); }
+.cp-mode{ position:relative; }
+/* hover / focus tooltip: what this mode does, one line */
+.cp-mode-tip{ position:absolute; top:calc(100% + 6px); left:50%; transform: translateX(-50%) translateY(-2px); z-index:5; width:max-content; max-width:220px; padding:7px 10px; border-radius:10px; background: var(--bg-raised); color: var(--text); border:1px solid color-mix(in srgb, var(--t) 45%, var(--border)); box-shadow: var(--shadow-lg); font-size:11.5px; font-weight:500; line-height:1.4; text-align:left; white-space:normal; opacity:0; pointer-events:none; transition: opacity .15s, transform .15s; }
+.cp-mode:first-child .cp-mode-tip{ left:0; transform: translateY(-2px); } .cp-mode:last-child .cp-mode-tip{ left:auto; right:0; transform: translateY(-2px); }
+.cp-mode:hover .cp-mode-tip, .cp-mode:focus-visible .cp-mode-tip{ opacity:1; transform: translateX(-50%) translateY(0); }
+.cp-mode:first-child:hover .cp-mode-tip, .cp-mode:first-child:focus-visible .cp-mode-tip, .cp-mode:last-child:hover .cp-mode-tip, .cp-mode:last-child:focus-visible .cp-mode-tip{ transform: translateY(0); }
+.cp-modes{ overflow:visible; }
+.cp-mode svg{ width:12px; height:12px; flex:none; }
+.cp-mode:hover{ color: var(--text); border-color: var(--t); }
+.cp-mode.is-active{ background: color-mix(in srgb, var(--t) 16%, transparent); border-color: var(--t); color: var(--t); }
+.cp-mode:focus-visible{ outline:2px solid var(--t); outline-offset:1px; }
+/* one reply, one engine label */
+.cp-engine{ display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color: var(--cp-accent); margin-bottom:4px; }
+.cp-engine svg{ width:11px; height:11px; }
+.consultant-msg[data-engine="consultant"]{ --cp-accent: var(--chat-consultant); }
+.consultant-msg[data-engine="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
+.consultant-msg[data-engine="companion"]{ --cp-accent: var(--chat-companion); }
+/* "Bukan ini maksudmu?" — re-answer with another engine, one tap */
+.cp-retry{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-muted); }
+.cp-retry .consultant-starter{ display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:11.5px; }
+.cp-retry .consultant-starter svg{ width:11px; height:11px; }
+.consultant-msg.is-typing .cp-retry, .consultant-msg.is-typing .cp-idea{ display:none; }
+/* idea cards from Brainstorm / the Companion */
+.cp-idea{ margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); white-space:normal; }
+.cp-idea-title{ font-weight:800; font-size:13px; line-height:1.35; }
+.cp-idea-why{ font-size:12px; color: var(--text-muted); margin-top:3px; line-height:1.45; }
+.cp-idea-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.cp-idea .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
+/* "Langsung kasih ide" under the composer */
+.cp-foot{ flex:none; display:flex; justify-content:flex-end; padding:0 14px 10px; margin-top:-4px; }
 /* Teman Brand inside the panel */
 .cp-companion{ flex:1; min-height:0; display:flex; flex-direction:column; padding:10px 14px 12px; overflow:hidden; }
 .cp-companion-actions{ display:flex; justify-content:flex-end; margin-bottom:6px; }
@@ -3443,4 +3473,3 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .bs-compact .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
 @media (max-width: 640px){ .consultant-panel{ width:calc(100vw - 20px); right:10px; height:calc(100vh - 96px); bottom:76px; } }
 .bs-compact #bs-ideas-now{ display:none; } /* the fork under each question already has it */
-.consultant-panel[data-mode="companion"] .consultant-msg-user, .consultant-panel[data-mode="brainstorm"] .consultant-msg-user{ background: color-mix(in srgb, var(--cp-accent) 80%, #000); }

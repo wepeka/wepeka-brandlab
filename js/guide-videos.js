@@ -1,5 +1,6 @@
-// Short explainer videos, one per big page. Every one of them works the same
-// way, on purpose:
+// Short explainer videos, one per app (Brand Builder, Campaign, Content OS,
+// Copy Studio, Sales Tracker) plus the "kenalan" intro. Every one of them
+// works the same way, on purpose:
 //   - Click the "Video" pill next to a page's "?" to open it, any time.
 //   - It can be skipped at any moment ("Lewati video").
 //   - When it ends (or is skipped) the same modal asks what's next, in three
@@ -7,10 +8,17 @@
 //     "sudah paham".
 // Nothing here plays itself just from navigating to a page. Two exceptions,
 // both the "kenalan" video: a brand-new account's very first open
-// (js/main.js playFirstRunIntro, once ever), which reuses this same modal
-// with its `hint` bubble so the way back ("the Video button lives here from
-// now on") is shown once, not left to be discovered; and every brand
-// creation, for any account (js/views/brands.js playNewBrandIntro).
+// (js/main.js playFirstRunIntro, once ever, right after the welcome bumper),
+// which reuses this same modal with its `hint` bubble so the way back ("the
+// Video button lives here from now on") is shown once, not left to be
+// discovered; and every brand creation, for any account
+// (js/views/brands.js playNewBrandIntro).
+//
+// One video per app, many pages per app: a page inside an app (say the
+// Kalender tab of Content OS) opens the app's video *at that page's chapter*
+// (`start`, in seconds), so nobody sits through the Creator part to reach
+// the Kalender part. Chapter times live in GUIDE_TO_VIDEO below and are
+// updated once the recording exists (see .claude/brief-video-panduan.md).
 //
 // Three states per entry, set by its `src`:
 //   ""               → silent. Nothing opens, nothing is marked as seen, so
@@ -36,51 +44,58 @@ import { t } from "./i18n.js";
 export const PLACEHOLDER_SRC = "placeholder";
 const isPlaceholder = (src) => src === PLACEHOLDER_SRC;
 
-// `seconds` is the declared length — kept for when a real video is
-// published (some day it may drive a "estimated remaining" note); not used
-// by anything today.
+// `seconds` is the declared length. For an embed (YouTube/Vimeo) it is also
+// the fallback for "the video has ended", since an iframe can't be watched
+// from here — so keep it equal to the real recording's length.
 export const GUIDE_VIDEOS = {
-  kenalan: { title: t("guide.video.kenalan"), duration: t("guide.video.min", { n: 2 }), seconds: 120, src: PLACEHOLDER_SRC },
-  creator: { title: t("guide.video.creator"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
-  "brand-dna": { title: t("guide.video.brandDna"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
-  "brand-guidelines": { title: t("guide.video.brandGuidelines"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
-  campaign: { title: t("guide.video.campaign"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
-  kalender: { title: t("guide.video.kalender"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
-  "konten-dashboard": { title: t("guide.video.kontenDashboard"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
+  kenalan: { title: t("guide.video.kenalan"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
+  "brand-builder": { title: t("guide.video.brandBuilder"), duration: t("guide.video.min", { n: 2.5 }), seconds: 150, src: PLACEHOLDER_SRC },
+  campaign: { title: t("guide.video.campaign"), duration: t("guide.video.min", { n: 2 }), seconds: 120, src: PLACEHOLDER_SRC },
+  "content-os": { title: t("guide.video.contentOs"), duration: t("guide.video.min", { n: 3 }), seconds: 180, src: PLACEHOLDER_SRC },
   copy: { title: t("guide.video.copy"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
-  tools: { title: t("guide.video.tools"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
-  brainstorm: { title: t("guide.video.brainstorm"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
   sales: { title: t("guide.video.sales"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
 };
 
-// Guide/Panduan key → video key. Content OS shares one Panduan button across
-// its sub-tabs, so it resolves from the current route.
+// Guide/Panduan key → which video, and where in it this page's chapter
+// starts. A bare string means "from the top". Content OS shares one Panduan
+// button across its sub-tabs, so it resolves from the current route.
+// Chapter `start` values are estimates from the brief — set them to the real
+// timestamps after each video is recorded.
 const GUIDE_TO_VIDEO = {
   onboarding: "kenalan",
   home: "kenalan",
-  "brand-builder": "brand-dna",
-  "brand-builder-hub": "brand-dna",
-  "brand-dna": "brand-dna",
-  "brand-guidelines": "brand-guidelines",
+  tools: "kenalan",
+  "brand-builder": "brand-builder",
+  "brand-builder-hub": "brand-builder",
+  "brand-dna": "brand-builder",
+  "brand-guidelines": { video: "brand-builder", start: 80 },
   campaigns: "campaign",
   "campaign-list": "campaign",
-  "campaign-detail": "campaign",
-  calendar: "kalender",
-  creator: "creator",
+  "campaign-detail": { video: "campaign", start: 30 },
+  brainstorm: { video: "campaign", start: 95 },
+  creator: "content-os",
+  calendar: { video: "content-os", start: 80 },
+  "konten-dashboard": { video: "content-os", start: 135 },
   "copy-studio": "copy",
-  tools: "tools",
-  brainstorm: "brainstorm",
   sales: "sales",
 };
 
-export function videoKeyForGuide(guideKey) {
+// → { video, start } for a page, or null when the page has no video.
+export function videoRefForGuide(guideKey) {
+  let key = guideKey;
   if (guideKey === "content-os" || guideKey === "content-list") {
     const hash = typeof location !== "undefined" ? location.hash : "";
-    if (/\/content-os\/creator/.test(hash)) return "creator";
-    if (/\/content-os\/calendar/.test(hash)) return "kalender";
-    return "konten-dashboard";
+    key = /\/content-os\/creator/.test(hash) ? "creator" : /\/content-os\/calendar/.test(hash) ? "calendar" : "konten-dashboard";
   }
-  return GUIDE_TO_VIDEO[guideKey] || null;
+  const ref = GUIDE_TO_VIDEO[key];
+  if (!ref) return null;
+  const out = typeof ref === "string" ? { video: ref, start: 0 } : { video: ref.video, start: Number(ref.start) || 0 };
+  return GUIDE_VIDEOS[out.video] ? out : null;
+}
+
+// Just the video key (kept for callers that only care which video).
+export function videoKeyForGuide(guideKey) {
+  return videoRefForGuide(guideKey)?.video || null;
 }
 
 // "…/watch?v=ID" | "…/ID" | "https://cdn/x.mp4" → what kind of player to build.
@@ -94,14 +109,22 @@ export function parseVideoSrc(src) {
   return { kind: "file", id: "" };
 }
 
-function embedUrl(src) {
+function embedUrl(src, start = 0) {
   const p = parseVideoSrc(src);
-  if (p.kind === "youtube") return `https://www.youtube.com/embed/${p.id}?rel=0`;
-  if (p.kind === "vimeo") return `https://player.vimeo.com/video/${p.id}`;
+  const at = Math.max(0, Math.floor(Number(start) || 0));
+  if (p.kind === "youtube") return `https://www.youtube.com/embed/${p.id}?rel=0${at ? `&start=${at}` : ""}`;
+  if (p.kind === "vimeo") return `https://player.vimeo.com/video/${p.id}${at ? `#t=${at}s` : ""}`;
   return null;
 }
 
-export function guideVideoWidgetHTML(videoKey, { compact = false } = {}) {
+// A plain media file starts at `start` via a media fragment (#t=), which
+// every browser's <video> honours without any script.
+function fileUrl(src, start = 0) {
+  const at = Math.max(0, Math.floor(Number(start) || 0));
+  return at ? `${src}#t=${at}` : src;
+}
+
+export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0 } = {}) {
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return "";
   const size = compact ? " is-compact" : "";
@@ -112,18 +135,20 @@ export function guideVideoWidgetHTML(videoKey, { compact = false } = {}) {
         <div class="guide-video-ph-text"><b>${t("guide.video.pending")}</b><span>${escapeHtml(v.title)} · ${escapeHtml(v.duration)}</span></div>
       </div>`;
   }
-  const embed = embedUrl(v.src);
+  const embed = embedUrl(v.src, start);
   if (embed) {
     return `<div class="guide-video-frame${size}"><iframe src="${escapeHtml(embed)}" title="${escapeHtml(v.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
   }
-  return `<div class="guide-video-frame${size}"><video src="${escapeHtml(v.src)}" controls playsinline preload="metadata"></video></div>`;
+  return `<div class="guide-video-frame${size}"><video src="${escapeHtml(fileUrl(v.src, start))}" controls playsinline preload="metadata"></video></div>`;
 }
 
 // The player, as a modal, in two states: watching (the video plus a Lewati
 // button) and, once it ends or is skipped, the three answers. `onTour` is
 // what "masih mau tur website" runs; by default it presses this page's own
 // Panduan button, which is exactly what the closing bubble will point at.
-export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true } = {}) {
+// `start` (seconds) opens the video at that page's chapter; the replay
+// button starts from the top, so the whole app video is one click away.
+export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, start = 0 } = {}) {
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return null;
   const real = !!v.src && !isPlaceholder(v.src);
@@ -131,7 +156,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true }
     title: v.title,
     wide: true,
     bodyHTML: `
-      <div data-video-stage>${guideVideoWidgetHTML(videoKey)}</div>
+      <div data-video-stage>${guideVideoWidgetHTML(videoKey, { start })}</div>
       <p class="guide-video-note">${real ? t("guide.video.duration", { duration: escapeHtml(v.duration) }) : t("guide.video.pendingNote", { duration: escapeHtml(v.duration) })}</p>
       <div class="guide-video-skip" data-video-skip hidden>
         <button type="button" class="btn btn-ghost btn-sm" data-vc="skip">${t("guide.video.skip")}</button>
@@ -168,7 +193,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true }
     skipRow.hidden = false;
     const el = stage.querySelector("video");
     if (el) el.addEventListener("ended", showChoices, { once: true });
-    else ending = setTimeout(showChoices, Math.max(5, Number(v.seconds) || 60) * 1000);
+    else ending = setTimeout(showChoices, Math.max(5, (Number(v.seconds) || 60) - (Number(start) || 0)) * 1000);
   };
 
   overlay.addEventListener("click", (e) => {
@@ -177,6 +202,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true }
     const what = btn.dataset.vc;
     if (what === "skip") return showChoices();
     if (what === "replay") {
+      start = 0;
       stage.innerHTML = guideVideoWidgetHTML(videoKey);
       stage.querySelector("video")?.play?.().catch(() => {});
       return watchForEnd();
@@ -310,7 +336,7 @@ export function playNewBrandIntro() {
 // no video. Never opens on its own; only a click (via the delegated
 // listener below) or an explicit openGuideVideo() call shows the modal.
 export function guideVideoButtonHTML(guideKey) {
-  if (!videoKeyForGuide(guideKey)) return "";
+  if (!videoRefForGuide(guideKey)) return "";
   return `<button type="button" class="icon-btn help-btn section-video-btn" data-guide-video-btn="${escapeHtml(guideKey)}" title="${t("guide.video.btnTitle")}" aria-label="${t("guide.video.btnTitle")}">${icon("play", { size: 14 })}<span>Video</span></button>`;
 }
 
@@ -321,7 +347,7 @@ if (typeof window !== "undefined" && !window.__guideVideoClickWired) {
   document.addEventListener("click", (e) => {
     const btn = e.target instanceof Element ? e.target.closest("[data-guide-video-btn]") : null;
     if (!btn) return;
-    const key = videoKeyForGuide(btn.dataset.guideVideoBtn);
-    if (key) openGuideVideo(key);
+    const ref = videoRefForGuide(btn.dataset.guideVideoBtn);
+    if (ref) openGuideVideo(ref.video, { start: ref.start });
   });
 }

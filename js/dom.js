@@ -141,8 +141,10 @@ export function toast(message, type = "success") {
 // login, Google, or the wepeka.com SSO hand-off). Big greeting line + the
 // actual Wepeka Brandlab logo mark (not the word spelled out), like a splash
 // bumper. Auto-dismisses; a click/tap/Escape/any key skips it early so it
-// never blocks someone in a hurry.
+// never blocks someone in a hurry. Resolves once the bumper is gone, so the
+// caller can put something right after it (main.js: the "kenalan" video).
 export function showWelcomeBumper(name) {
+  return new Promise((resolve) => {
   const el = document.createElement("div");
   el.className = "brandlab-bumper";
   el.setAttribute("role", "status");
@@ -167,11 +169,13 @@ export function showWelcomeBumper(name) {
     el.addEventListener("animationend", () => el.remove(), { once: true });
     setTimeout(() => el.remove(), 600); // safety net if the animation never fires
     document.removeEventListener("keydown", onKey);
+    setTimeout(resolve, 350); // after the leave animation, so the next thing doesn't pop under it
   };
   const onKey = () => close();
   el.addEventListener("click", close);
   document.addEventListener("keydown", onKey);
   setTimeout(close, 2600);
+  });
 }
 
 // A small speech bubble pinned above one element, with an arrow pointing at

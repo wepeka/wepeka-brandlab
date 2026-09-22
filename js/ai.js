@@ -1163,9 +1163,8 @@ export const CONSULTANT_ROUTES = [
   { key: "creator", label: t("ai.route.creator"), path: "content-os/creator" },
   { key: "calendar", label: t("ai.route.calendar"), path: "content-os/calendar" },
   { key: "sales", label: t("ai.route.sales"), path: "sales" },
-  { key: "copy", label: t("ai.route.copy"), path: "copy" },
+  { key: "copy", label: t("ai.route.copy"), path: "content-os/copy" },
   { key: "brainstorm", label: t("ai.route.brainstorm"), path: "brainstorm" },
-  { key: "tools", label: t("ai.route.tools"), path: "tools" },
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
@@ -1192,6 +1191,28 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
   const user = [transcript, `User: ${question}`].filter(Boolean).join("\n\n");
 
   return callModel(ai, system, user, 1000, { onText });
+}
+
+// "Tanya Brandlab" (js/consultant-panel.js) is one chat box in front of three
+// engines: the Consultant (askBrandConsultant, grounded in live data), the
+// Brainstorm partner (chatBrainstorm) and the Companion (companionChat). When
+// the panel's own keyword rules can't tell which one a message is for, this
+// asks the model — a one-word answer, ~5 tokens, never counted against the
+// owner's AI credits (it isn't a feature, it's the receptionist).
+export async function classifyChatIntent(ai, { message, lastEngine = "" }) {
+  const last = { consultant: "data", brainstorm: "ideas", companion: "friend" }[lastEngine] || "";
+  const system = [
+    "You route ONE message from a small-business brand owner to the right assistant inside their brand tool. Reply with exactly one word and nothing else: data, ideas, or friend.",
+    "data — they ask about their brand's numbers, performance, schedule, campaign progress, strategy, what to do first, how or where to do something in the app, or any question that wants a concrete, factual answer.",
+    "ideas — they want content ideas, topics, angles, hooks, inspiration, or to think through what to make or post next.",
+    "friend — they are venting, sharing how they feel, telling what happened today or in the business without asking for anything, or want encouragement.",
+    last ? `The previous reply came from: ${last}. A short follow-up ("iya", "yang pertama", "ok lanjut", "kenapa?") usually belongs to the same assistant.` : "",
+    "The message may be in Indonesian or English. If genuinely unsure, answer data.",
+  ].filter(Boolean).join("\n");
+  const raw = String(await callModel(ai, system, message, 5, { countUsage: false })).trim().toLowerCase();
+  if (raw.startsWith("idea")) return "brainstorm";
+  if (raw.startsWith("friend")) return "companion";
+  return "consultant";
 }
 
 // Sales Tracker's "what should I do with these numbers?" — three concrete

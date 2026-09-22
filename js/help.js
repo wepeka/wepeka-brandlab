@@ -76,10 +76,6 @@ const HELP_CONTENT = {
     id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau \"Hari ini\" begitu identitasnya rampung. Di bawahnya: Teman Brand (ceritain kejadian di brand-mu seperti chat; tekan Rangkum supaya AI mengubahnya jadi momentum yang kamu pilih untuk diingat semua fitur AI), langkah berikutnya, jadwal, dan (mode Pro) analitik." },
     en: { title: "Home", body: "The top card always tells you the one thing to do now — your unfinished brand identity, or \"Today\" once that's done. Below it: the Companion (tell it what happened in your brand, chat-style; hit Recap so AI turns it into moments you pick for every AI feature to remember), the next step, your schedule, and (Pro mode) analytics." },
   },
-  "tools": {
-    id: { title: "Alat", body: "Tiga alat pendukung di luar Campaign dan Konten: Brainstorm buat mikirin ide bareng AI, Copy Studio buat tulisan pendek siap pakai, dan Sales Tracker buat catat penjualan. Selalu terbuka, nggak nunggu identitas brand selesai." },
-    en: { title: "Tools", body: "Three supporting tools outside Campaigns and Content: Brainstorm to think through ideas with AI, Copy Studio for quick ready-to-use copy, and the Sales Tracker to log sales. Always open, no need to finish your brand identity first." },
-  },
 
   "brainstorm": {
     id: { title: "Brainstorm", body: "Teman berpikir, bukan mesin ide. Ceritakan yang lagi kamu pikirin — AI bertanya dulu seperlunya, menawarkan 2-3 arah dengan plus-minusnya, lalu menandai ide yang kalian sepakati supaya bisa disimpan atau langsung jadi draft di Creator. Buru-buru? Tombol \"Ide sekarang\" melewati diskusi dan langsung memberi tiga ide." },

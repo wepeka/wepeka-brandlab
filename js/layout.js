@@ -58,15 +58,14 @@ const MODE_CONFIG = {
 const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 
 // One tab row for both modes. `matches` = which route views light a tab up
-// (Brand DNA / Guidelines live under Brand; Copy Studio, Sales Tracker and
-// Brainstorm live under the Tools tab, which is never gated — there's
-// nothing there that needs the brand's identity filled in first).
+// (Brand DNA / Guidelines live under Brand; the Sales Tracker, goal roadmap
+// and campaign-scoped Brainstorm light up Tujuan; Copy Studio is a sub-tab of
+// Konten). The Tools tab was removed on 22 Sep 2026 — four tabs, no drawer.
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
   { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
-  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals"], gated: true },
+  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales", "brainstorm"], gated: true },
   { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os"], gated: true },
-  { key: "tools", labelKey: "nav.tools", icon: "sparkle", path: (id) => `#/brand/${id}/tools`, tour: "tab-tools", matches: ["tools", "copy", "sales", "brainstorm"] },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -214,8 +213,8 @@ function aiUsagePopoverHTML() {
 }
 
 // The ⋯ menu: everything that used to be its own topbar button (mode,
-// theme, AI meter, settings, logout). Copy Studio and Sales Tracker moved
-// to the Tools tab (R2, Brief Revisi 2 fase 2) — no longer listed here.
+// theme, AI meter, settings, logout). Copy Studio lives under Konten and the
+// Sales Tracker under Tujuan — neither is listed here.
 function appMenuHTML() {
   const mode = getMode();
   const other = mode === "guided" ? "advanced" : "guided";

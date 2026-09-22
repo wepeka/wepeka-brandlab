@@ -37,6 +37,7 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "list", contentId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/?$/))) return { view: "content-os", brandId: m[1], sub: "list" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/copy\/?$/))) return { view: "content-os", brandId: m[1], sub: "copy" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/?$/))) return { view: "content-os", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/([^/]+)\/?$/))) return { view: "campaigns", brandId: m[1], campaignId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
@@ -47,8 +48,11 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/([^/]+)\/?$/))) return { view: "guidelines", brandId: m[1], section: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "copy", brandId: m[1] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "tools", brandId: m[1] };
+  // Pre-22 Sep 2026 addresses: Copy Studio moved under Konten and the Tools
+  // hub is gone (its other two doors, Sales Tracker and Brainstorm, kept
+  // their own routes under Tujuan).
+  if ((m = h.match(/^\/brand\/([^/]+)\/copy\/?$/))) return { view: "content-os", brandId: m[1], sub: "copy" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/([^/]+)\/?$/))) return { view: "goals", brandId: m[1], goalId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/?$/))) return { view: "goals", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/([^/]+)\/?$/))) return { view: "brainstorm", brandId: m[1], threadId: m[2] };
@@ -187,13 +191,17 @@ function onAccountChange(user, account) {
       // only a brand-new account then gets the video on top of it, and only
       // the one time (js/guide-videos.js playFirstRunIntro, videoSeen-gated).
       renderRoute();
+      let bumper = Promise.resolve();
       if (!welcomeShown) {
         welcomeShown = true;
         const name = (user.displayName || user.email?.split("@")[0] || "").trim().split(/\s+/)[0];
-        if (name) showWelcomeBumper(name);
+        if (name) bumper = showWelcomeBumper(name);
       }
       if (firstEverOpen) {
-        import("./guide-videos.js")
+        // "Hi {nama}, welcome to Brandlab" first, then the kenalan video —
+        // in that order, never both at once.
+        bumper
+          .then(() => import("./guide-videos.js"))
           .then((m) => m.playFirstRunIntro())
           .catch((e) => console.warn("first-run video unavailable", e));
       }
@@ -332,8 +340,6 @@ async function renderRoute() {
       campaigns: () => import("./views/campaigns.js"),
       guidelines: () => import("./views/brand-guidelines.js"),
       sales: () => import("./views/sales.js"),
-      copy: () => import("./views/copy-studio.js"),
-      tools: () => import("./views/tools.js"),
       brainstorm: () => import("./views/brainstorm.js"),
       goals: () => import("./views/goal-roadmap.js"),
       "content-os": () => import("./views/content-os.js"),
@@ -359,8 +365,6 @@ async function renderRoute() {
       cleanup = view.render(viewRoot, { brandId: route.brandId, section: route.section });
       break;
     case "sales":
-    case "copy":
-    case "tools":
       cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
     case "brainstorm":

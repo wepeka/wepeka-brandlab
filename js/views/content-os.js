@@ -3,6 +3,7 @@ import { getBrand } from "../store.js";
 import * as contentListView from "./content-list.js";
 import * as creatorView from "./creator.js";
 import * as calendarView from "./calendar.js";
+import * as copyStudioView from "./copy-studio.js";
 import { openContentEditor } from "./content-editor.js";
 import { t } from "../i18n.js";
 import { setPageGuide } from "../section-guide.js";
@@ -10,14 +11,16 @@ import { runSpotlightTour } from "../tour.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 
-// Umbrella for the content side: Creator Studio, the calendar and the
-// content database live here as sub-tabs — the same three, in the same
+// Umbrella for the content side: Creator Studio, the calendar, the content
+// database and Copy Studio ("Tulisan Cepat": copy you need right now, not
+// scheduled content) live here as sub-tabs — the same four, in the same
 // order, for both modes. Each sub-view keeps its own render(root, {...})
 // signature; this only decides which one mounts from the URL's sub-route.
 const SUB_TABS = [
   { key: "creator", labelKey: "contentOs.tab.creator", path: (id) => `#/brand/${id}/content-os/creator` },
   { key: "calendar", labelKey: "contentOs.tab.calendar", path: (id) => `#/brand/${id}/content-os/calendar` },
   { key: "list", labelKey: "contentOs.tab.list", path: (id) => `#/brand/${id}/content-os/list` },
+  { key: "copy", labelKey: "contentOs.tab.copy", path: (id) => `#/brand/${id}/content-os/copy` },
 ];
 
 // One-step orientation to the tab bar itself, offered from the topbar "?"
@@ -52,6 +55,8 @@ export function render(root, { brandId, sub, contentId }) {
     if (contentId) openContentEditor({ brandId, contentId, onSaved: () => {} });
   } else if (activeSub === "calendar") {
     cleanup = calendarView.render(mount, { brandId });
+  } else if (activeSub === "copy") {
+    cleanup = copyStudioView.render(mount, { brandId });
   } else {
     cleanup = creatorView.render(mount, { brandId, initialContentId: contentId });
   }

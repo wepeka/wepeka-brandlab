@@ -516,7 +516,8 @@ export default {
   "camp.optional": { en: "(optional)", id: "(opsional)" },
 
   // ---------- campaigns.js: list ----------
-  "camp.list.eyebrow": { en: "Campaigns", id: "Campaign" },
+  "camp.list.eyebrow": { en: "Goals", id: "Tujuan" },
+  "camp.list.salesTracker": { en: "Sales Tracker", id: "Pelacak Penjualan" },
   "camp.list.subGuided": { en: "One big goal, broken into small levels. All the content you make counts toward it automatically.", id: "Satu tujuan besar, dipecah jadi level-level kecil. Semua konten yang kamu bikin otomatis dihitung ke sini." },
   "camp.list.subPro": { en: "What this brand is working toward right now — each piece of content is linked to a campaign (and a stage of its journey) so you can see which goal it serves.", id: "Yang lagi dikejar brand ini sekarang — tiap konten dikaitkan ke sebuah campaign (dan tahap perjalanannya) supaya kelihatan tujuan mana yang sedang dilayani." },
   "camp.list.emptyTitle": { en: "No campaigns yet", id: "Belum ada campaign" },

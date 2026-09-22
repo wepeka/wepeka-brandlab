@@ -321,7 +321,7 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/tools`, t("nav.tools"))} · ${t("bs.eyebrow")}${helpButtonHTML("brainstorm")}${guideVideoButtonHTML("brainstorm")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))} · ${t("bs.eyebrow")}${helpButtonHTML("brainstorm")}${guideVideoButtonHTML("brainstorm")}</div>
         <h1>${esc(brand.name)}</h1>
         <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:640px;">${t("bs.sub")}</p>
       </div>

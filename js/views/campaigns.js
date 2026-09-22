@@ -84,6 +84,7 @@ function paintList(root, brandId, brand, refresh) {
         <h1>${brand.name}</h1>
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap;">
+        <a class="btn btn-secondary" href="#/brand/${brandId}/sales" id="open-sales">${icon("chart", { size: 16 })}${t("camp.list.salesTracker")}</a>
         <a class="btn btn-secondary" href="#/brand/${brandId}/goals" id="open-goals">${icon("target", { size: 16 })}${t("roadmap.camp.open")}</a>
         <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
       </div>

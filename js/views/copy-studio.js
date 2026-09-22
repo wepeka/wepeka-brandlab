@@ -7,7 +7,6 @@
 import { getBrand, listCampaigns, listContent, getSettings } from "../store.js";
 import { icon } from "../icons.js";
 import { escapeHtml, toast, qs, qsa, avatarHTML } from "../dom.js";
-import { backLinkHTML } from "../back-link.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
@@ -20,7 +19,6 @@ import { wireMic } from "../voice-input.js";
 import { isTourDemo, demoGenerateCopy, demoRewriteCopy, DEMO_TOAST } from "../tour-demo.js";
 import { COPY_FORMATS, COPY_GOALS, COPY_LENGTHS, COPY_REWRITES, goalByKey, missingRequired, formatLimit, formatByKey, knownCustomFormat } from "../knowledge/copy-formats.js";
 import { t } from "../i18n.js";
-import { getCachedAccount, isLifetime } from "../account.js";
 
 const THREADS_LIMIT = formatByKey("threads").limit;
 const FEED_PREVIEW_CHARS = formatByKey("feed").previewChars; // Instagram's "… lainnya" fold
@@ -119,20 +117,8 @@ export function render(root, { brandId }) {
     location.hash = "#/";
     return () => {};
   }
-  // Copy Studio is a Lifetime-only tool. (The guided tour's demo still walks
-  // through it — that never calls the AI.)
-  if (!isLifetime(getCachedAccount()) && !isTourDemo()) {
-    root.innerHTML = `
-      <div class="lifetime-lock">
-        <div class="lifetime-lock-icon">${icon("lock", { size: 26 })}</div>
-        <span class="lifetime-tag">${icon("sparkle", { size: 12 })}${t("app.lifetimeOnly")}</span>
-        <h1>${t("copy.lock.title")}</h1>
-        <p>${t("copy.lock.body")}</p>
-        <a class="btn btn-primary" href="#/pricing">${t("copy.lock.cta")}${icon("arrowRight", { size: 15 })}</a>
-        <a class="hint" href="#/brand/${brandId}" style="justify-content:center;">${t("copy.lock.back")}</a>
-      </div>`;
-    return () => {};
-  }
+  // Open to every plan (trial included) since 22 Sep 2026 — it used to be
+  // Lifetime-only. Usage is metered by AI credits like every other AI feature.
 
   const ctx = {
     root,
@@ -175,7 +161,7 @@ function paint(ctx) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/tools`, t("nav.tools"))} · ${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}${guideVideoButtonHTML("copy-studio")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}${guideVideoButtonHTML("copy-studio")}</div>
         <h1>${escapeHtml(brand.name)}</h1>
         <p class="page-sub">${t("copy.sub")}</p>
       </div>
