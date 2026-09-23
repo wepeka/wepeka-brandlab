@@ -147,7 +147,7 @@ const starterChip = (q, engine = "") => `<button type="button" class="consultant
 
 function ideaCardHTML(idea, index, j) {
   const act = idea.contentId
-    ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content-os/creator/${escapeHtml(idea.contentId)}">${icon("check", { size: 12 })}${t("chat.idea.openDraft")}</a>`
+    ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content/creator/${escapeHtml(idea.contentId)}">${icon("check", { size: 12 })}${t("chat.idea.openDraft")}</a>`
     : `<button type="button" class="btn btn-primary btn-sm" data-chat-idea-draft="${index}:${j}">${icon("edit", { size: 12 })}${t("chat.idea.draft")}</button>`;
   const save = idea.saved
     ? `<span class="bs-done">${icon("check", { size: 12 })} ${t("chat.idea.saved")}</span>`
@@ -352,7 +352,7 @@ function renderPanel(brandId, { seed = "" } = {}) {
   });
   panel.querySelectorAll("[data-consultant-open-draft]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      location.hash = `#/brand/${brandId}/content-os/creator/${btn.dataset.consultantOpenDraft}`;
+      location.hash = `#/brand/${brandId}/content/creator/${btn.dataset.consultantOpenDraft}`;
       togglePanel(brandId, false);
     });
   });

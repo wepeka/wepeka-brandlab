@@ -233,7 +233,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     row.addEventListener("click", () => run({ type: "creator", contentId: row.dataset.cdOpenContent, intent: "continue" }))
   );
   qsa("[data-cd-pipeline]", root).forEach((chip) =>
-    chip.addEventListener("click", () => go(`#/brand/${brandId}/content-os/list`, { fromLabel: ctxLabel, campaignId: campaign.id, status: chip.dataset.cdPipeline }))
+    chip.addEventListener("click", () => go(`#/brand/${brandId}/content/list`, { fromLabel: ctxLabel, campaignId: campaign.id, status: chip.dataset.cdPipeline }))
   );
   wirePlanRoadmap(root, { brand, campaign, stages, refresh });
   wireIdeasWidget(root, { brand, campaign, refresh, state });
@@ -790,7 +790,7 @@ function openPostList(reading, { brandId, ctx, ctxLabel, campaign, stage }) {
   qsa("[data-post]", overlay).forEach((b) =>
     b.addEventListener("click", () => {
       closeOverlay(overlay);
-      go(`#/brand/${brandId}/content-os/list`, { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null, contentId: b.dataset.post, intent: "performance" });
+      go(`#/brand/${brandId}/content/list`, { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null, contentId: b.dataset.post, intent: "performance" });
     })
   );
 }
@@ -944,7 +944,7 @@ function activitiesHTML(acts, brandId, guided) {
                   <span class="status-pill status-${c.status}" style="padding:2px 8px;"><span class="status-dot"></span>${esc((guided ? STATUS_LABELS_GUIDED : STATUS_LABELS)[c.status] || c.status)}</span>
                 </div>`
               )
-              .join("")}${linked.length > 5 ? `<a class="link" href="#/brand/${brandId}/content-os/list" style="font-size:12.5px;">${t("camp.detail.seeAll", { count: linked.length })}</a>` : ""}</div>`
+              .join("")}${linked.length > 5 ? `<a class="link" href="#/brand/${brandId}/content/list" style="font-size:12.5px;">${t("camp.detail.seeAll", { count: linked.length })}</a>` : ""}</div>`
           : `<p class="text-faint" style="font-size:12.5px;margin:12px 0 0;">${t("camp.detail.noLinked")}</p>`
       }
     </div>`;
@@ -1018,16 +1018,16 @@ function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh,
   const base = { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null };
   switch (cta.type) {
     case "creator":
-      go(`#/brand/${brandId}/content-os/creator/${cta.contentId}`, { ...base, contentId: cta.contentId, intent: cta.intent || "continue" });
+      go(`#/brand/${brandId}/content/creator/${cta.contentId}`, { ...base, contentId: cta.contentId, intent: cta.intent || "continue" });
       return;
     case "new-content":
-      go(`#/brand/${brandId}/content-os/creator`, { ...base, intent: "new-content", defaults: { campaignId: campaign.id, campaignPhaseId: stage?.kind !== "level" ? stage?.id || "" : "", ...(cta.defaults || {}) } });
+      go(`#/brand/${brandId}/content/creator`, { ...base, intent: "new-content", defaults: { campaignId: campaign.id, campaignPhaseId: stage?.kind !== "level" ? stage?.id || "" : "", ...(cta.defaults || {}) } });
       return;
     case "calendar":
-      go(`#/brand/${brandId}/content-os/calendar`, { ...base, contentId: cta.contentId || null, intent: "schedule" });
+      go(`#/brand/${brandId}/content/calendar`, { ...base, contentId: cta.contentId || null, intent: "schedule" });
       return;
     case "performance":
-      go(`#/brand/${brandId}/content-os/list`, { ...base, contentId: cta.contentId, intent: "performance" });
+      go(`#/brand/${brandId}/content/list`, { ...base, contentId: cta.contentId, intent: "performance" });
       return;
     case "insights":
       openInsightsModal({ brandId, onSaved: refresh, reason: t("camp.detail.insightsReason"), platform: campaignPlatform(ctx) });

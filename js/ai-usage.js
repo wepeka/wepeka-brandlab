@@ -11,7 +11,7 @@
 import { getSettings, updateSettings, localISODate } from "./store.js";
 import { getCachedAccount, isAdmin, isReadOnly, currentUid } from "./account.js";
 
-// Accounts from before per-plan quotas (lifetime/builder/content-os/monthly)
+// Accounts from before per-plan quotas (lifetime/builder/content/monthly)
 // keep what they were sold.
 export const DEFAULT_AI_DAILY_LIMIT = 50;
 

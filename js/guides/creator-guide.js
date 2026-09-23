@@ -200,7 +200,7 @@ function creatorTourOptions(brandId) {
           title: t("guide.creator.offer.title"),
           body: t("guide.creator.offer.body", { recap }),
           ctaLabel: t("guide.creator.offer.cta"),
-          hash: `#/brand/${brandId}/content-os/calendar`,
+          hash: `#/brand/${brandId}/content/calendar`,
           startKey: "calendar",
         });
       } else {

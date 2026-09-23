@@ -1,0 +1,4 @@
+# Signed-in app; the public page about Brandlab is https://www.wepeka.com/brandlab
+User-agent: *
+Disallow: /api/
+Allow: /

@@ -47,7 +47,7 @@ export function goalWidget({ brandId, brand, campaigns, content, identityDone = 
 
   const weekRows = pr && !draft
     ? pr.week.filter((i) => i.state !== "done" || i.kind === "task").slice(0, 4).map((i) => {
-        const link = i.kind === "slot" ? `#/brand/${brandId}/content-os/creator/${i.contentId}` : i.kind === "milestone" ? `#/brand/${brandId}/campaigns/${i.campaignId}` : "";
+        const link = i.kind === "slot" ? `#/brand/${brandId}/content/creator/${i.contentId}` : i.kind === "milestone" ? `#/brand/${brandId}/campaigns/${i.campaignId}` : "";
         const check = i.kind === "task"
           ? `<input type="checkbox" data-rg-task="${esc(i.taskId)}" data-rg-goal="${goal.id}" ${i.state === "done" ? "checked" : ""} aria-label="${esc(i.label)}" />`
           : `<span class="rg-box ${i.state === "done" ? "is-done" : ""}"></span>`;

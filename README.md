@@ -58,6 +58,6 @@ Settings → Data → Export JSON. Since everything lives in this browser's loca
 
 This is self-contained (no globals leak outside `#app` / `#toast-root`, no external CSS framework). To fold it into the main site:
 
-1. Drop the `css/`, `js/` folders and this app's markup under a route like `/content-os/`.
+1. Drop the `css/`, `js/` folders and this app's markup under a route like `/brandlab/`.
 2. Or embed it as an `<iframe>` pointed at wherever it's hosted — simplest option, guarantees zero CSS collisions with the main site.
 3. If merging into an existing build pipeline, the only external network calls are Google Fonts (Fraunces + Inter) and, lazily, Tesseract.js from cdnjs when a screenshot is analyzed — swap either for self-hosted copies if needed.

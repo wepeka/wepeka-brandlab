@@ -17,10 +17,10 @@ import { guideVideoButtonHTML } from "../guide-videos.js";
 // order, for both modes. Each sub-view keeps its own render(root, {...})
 // signature; this only decides which one mounts from the URL's sub-route.
 const SUB_TABS = [
-  { key: "creator", labelKey: "contentOs.tab.creator", path: (id) => `#/brand/${id}/content-os/creator` },
-  { key: "calendar", labelKey: "contentOs.tab.calendar", path: (id) => `#/brand/${id}/content-os/calendar` },
-  { key: "list", labelKey: "contentOs.tab.list", path: (id) => `#/brand/${id}/content-os/list` },
-  { key: "copy", labelKey: "contentOs.tab.copy", path: (id) => `#/brand/${id}/content-os/copy` },
+  { key: "creator", labelKey: "contentOs.tab.creator", path: (id) => `#/brand/${id}/content/creator` },
+  { key: "calendar", labelKey: "contentOs.tab.calendar", path: (id) => `#/brand/${id}/content/calendar` },
+  { key: "list", labelKey: "contentOs.tab.list", path: (id) => `#/brand/${id}/content/list` },
+  { key: "copy", labelKey: "contentOs.tab.copy", path: (id) => `#/brand/${id}/content/copy` },
 ];
 
 // One-step orientation to the tab bar itself, offered from the topbar "?"

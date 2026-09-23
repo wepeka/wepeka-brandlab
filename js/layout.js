@@ -65,12 +65,12 @@ const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
   { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
   { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales", "brainstorm"], gated: true },
-  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content-os`, tour: "tab-content-os", matches: ["content-os"], gated: true },
+  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], gated: true },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
   return `
-    <button type="button" class="notif-row" data-go="${brand.id}/content-os/creator/${content.id}">
+    <button type="button" class="notif-row" data-go="${brand.id}/content/creator/${content.id}">
       ${avatarHTML(brand, "width:26px;height:26px;border-radius:7px;font-size:11px;flex:none;")}
       <div class="ti">
         <div class="t">${escapeHtml(content.title || t("common.untitled"))}</div>

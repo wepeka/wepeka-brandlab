@@ -188,7 +188,7 @@ function ideaCardHTML(idea, i, msgId, info) {
   // "Pakai ini" turns the option into a draft content item (or adds it to the
   // content being edited); "Simpan" keeps it in the saved-ideas list for later.
   let use;
-  if (idea.contentId) use = `<a class="btn btn-primary btn-sm" href="#/brand/__BRAND__/content-os/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("bs.idea.openDraft")}</a>`;
+  if (idea.contentId) use = `<a class="btn btn-primary btn-sm" href="#/brand/__BRAND__/content/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("bs.idea.openDraft")}</a>`;
   else if (idea.usedHere) use = `<span class="bs-done">${icon("check", { size: 12 })} ${t("bs.idea.usedHere")}</span>`;
   else if (info.content) use = `<button type="button" class="btn btn-primary btn-sm" data-bs-idea-use="${msgId}:${i}">${icon("check", { size: 12 })}${t("bs.idea.useHere")}</button>`;
   else use = `<button type="button" class="btn btn-primary btn-sm" data-bs-idea-draft="${msgId}:${i}">${icon("check", { size: 12 })}${t("bs.idea.use")}</button><button type="button" class="btn btn-secondary btn-sm" data-bs-idea-script="${msgId}:${i}" title="${esc(t("bs.idea.scriptTitle"))}">${icon("bot", { size: 12 })}${t("bs.idea.script")}</button>`;
@@ -208,7 +208,7 @@ function draftCardHTML(d, i, msgId) {
     <div class="bs-card">
       <div class="bs-card-actions">
         ${d.contentId
-          ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content-os/creator/${esc(d.contentId)}">${icon("check", { size: 12 })}${t("bs.draft.created", { title: esc(d.title) })}</a>`
+          ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content/creator/${esc(d.contentId)}">${icon("check", { size: 12 })}${t("bs.draft.created", { title: esc(d.title) })}</a>`
           : `<button type="button" class="btn btn-secondary btn-sm" data-bs-draft="${msgId}:${i}"><span class="tag tag-${(d.funnel || "tofu").toLowerCase()}">${esc(d.funnel)}</span>${t("bs.draft.create", { title: esc(d.title) })}</button>`}
       </div>
     </div>`;
@@ -644,7 +644,7 @@ function wire(root, { brandId, brand, state, info, refresh }) {
         contentId = item.id;
         patchIdea(th, msg, idx, { contentId });
       }
-      go(`#/brand/${brandId}/content-os/creator/${contentId}`, { fromLabel: t("bs.eyebrow"), campaignId: info.campaign?.id || null, contentId, intent: "script" });
+      go(`#/brand/${brandId}/content/creator/${contentId}`, { fromLabel: t("bs.eyebrow"), campaignId: info.campaign?.id || null, contentId, intent: "script" });
       state.onNavigate?.();
     })
   );
@@ -686,7 +686,7 @@ function wire(root, { brandId, brand, state, info, refresh }) {
       const item = savedIdeasList(brandId, state, info).items.find((i) => i.id === btn.dataset.bsSavedDraft);
       if (!item) return;
       const c = draftFrom({ title: item.text, idea: item.description || "" });
-      go(`#/brand/${brandId}/content-os/creator/${c.id}`, { fromLabel: t("bs.eyebrow"), campaignId: info.campaign?.id || null, contentId: c.id, intent: "continue" });
+      go(`#/brand/${brandId}/content/creator/${c.id}`, { fromLabel: t("bs.eyebrow"), campaignId: info.campaign?.id || null, contentId: c.id, intent: "continue" });
     })
   );
   qsa("[data-bs-saved-delete]", root).forEach((btn) =>

@@ -94,8 +94,8 @@ function buildSteps(brandId, brand, campaigns, content) {
       desc: t("beginner.step.content.desc"),
       done: hasPublished,
       doneNote: hasPublished ? t("brandHome.widget.contentOs.sub", { total: content.length, published: content.filter((c) => c.status === "published").length }) : "",
-      href: unpublished[0] ? `#/brand/${brandId}/content-os/creator/${unpublished[0].id}` : `#/brand/${brandId}/content-os/creator`,
-      editHref: `#/brand/${brandId}/content-os`,
+      href: unpublished[0] ? `#/brand/${brandId}/content/creator/${unpublished[0].id}` : `#/brand/${brandId}/content/creator`,
+      editHref: `#/brand/${brandId}/content`,
       cta: unpublished[0] ? t("beginner.step.content.ctaContinue") : t("beginner.step.content.ctaWrite"),
     },
   ];
@@ -175,7 +175,7 @@ function ideaCardsHTML(ideas, msgId) {
     .map((idea, i) => {
       const seed = t("companion.moment.seed", { title: idea.title, detail: idea.why });
       const create = idea.contentId
-        ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content-os/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("companion.idea.openDraft")}</a>`
+        ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("companion.idea.openDraft")}</a>`
         : `<button type="button" class="btn btn-secondary btn-sm" data-companion-idea-create="${msgId}:${i}">${icon("edit", { size: 12 })}${t("companion.idea.create")}</button>`;
       return `
         <div class="companion-idea">
@@ -307,7 +307,7 @@ function companionActionsHTML(signals, content, brandId) {
       return `<a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/sales">${icon("chart", { size: 13 })}${t("companion.action.openSales")}</a>`;
     }
     // streak-break
-    return `<a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/content-os/creator">${icon("edit", { size: 13 })}${t("companion.action.openCreator")}</a>`;
+    return `<a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/content/creator">${icon("edit", { size: 13 })}${t("companion.action.openCreator")}</a>`;
   });
   return `<div class="companion-actions">${buttons.join("")}</div>`;
 }
@@ -322,7 +322,7 @@ function momentActionHTML(m, brandId) {
     const seed = t("companion.moment.seed", { title: m.title, detail: m.detail || "" });
     return `<button type="button" class="companion-moment-action" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${label}${icon("arrowRight", { size: 11 })}</button>`;
   }
-  const href = action === "sales" ? `#/brand/${brandId}/sales` : `#/brand/${brandId}/content-os/creator`;
+  const href = action === "sales" ? `#/brand/${brandId}/sales` : `#/brand/${brandId}/content/creator`;
   return `<a class="companion-moment-action" href="${href}">${label}${icon("arrowRight", { size: 11 })}</a>`;
 }
 
@@ -725,7 +725,7 @@ function paint(root, brandId, state, refresh) {
         ? collapsed.has("todo")
           ? widgetCollapsedHTML("todo", "calendar", t("brandHome.upNext.title"), t("beginner.todo.summary", { count: Math.min(brandOverdue.length, 3) + upNext.length }))
           : widgetCardHTML("todo", "calendar", t("brandHome.upNext.title"), `<div class="card card-tight guided-checklist" style="margin-bottom:0;">${scheduleRows}</div>`, {
-              extraHead: `<a class="link" href="#/brand/${brandId}/content-os/calendar">${t("brandHome.upNext.calendarLink")}</a>`,
+              extraHead: `<a class="link" href="#/brand/${brandId}/content/calendar">${t("brandHome.upNext.calendarLink")}</a>`,
             })
         : ""
     }
@@ -828,7 +828,7 @@ function todayHeroHTML(brandId, brand, campaigns, content) {
     title = t("beginner.today.fallbackTitle");
     why = t("beginner.today.fallbackWhy");
     cta = t("beginner.step.content.ctaWrite");
-    href = `#/brand/${brandId}/content-os/creator`;
+    href = `#/brand/${brandId}/content/creator`;
   }
   return `
     <section class="card glass-card journey-hero journey-hero-today" id="journey-hero">
@@ -846,11 +846,11 @@ function todayHeroHTML(brandId, brand, campaigns, content) {
 function ctaHref(brandId, campaign, cta) {
   switch (cta.type) {
     case "creator":
-      return `#/brand/${brandId}/content-os/creator/${cta.contentId}`;
+      return `#/brand/${brandId}/content/creator/${cta.contentId}`;
     case "new-content":
-      return `#/brand/${brandId}/content-os/creator`;
+      return `#/brand/${brandId}/content/creator`;
     case "calendar":
-      return `#/brand/${brandId}/content-os/calendar`;
+      return `#/brand/${brandId}/content/calendar`;
     default:
       return `#/brand/${brandId}/campaigns/${campaign.id}`;
   }

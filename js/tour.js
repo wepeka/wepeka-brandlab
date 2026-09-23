@@ -682,7 +682,7 @@ export function startOnboardingTour() {
       selector: ['[data-app="content-os"]', '.brand-widget[data-go="content-os"]'],
       beforeStep: goBrandHome,
       waitTimeout: 6000,
-      title: "Content OS",
+      title: t("cnt.os.tour.title"),
       body: t("tour.onb.contentOs.body"),
     },
     {

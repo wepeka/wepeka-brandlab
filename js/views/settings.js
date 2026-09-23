@@ -315,7 +315,7 @@ function renderData(content) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `content-os-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `brandlab-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   });

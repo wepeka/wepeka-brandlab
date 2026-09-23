@@ -1,5 +1,5 @@
 // Tur B — Kalender (plan-guided-tour-content-os.md §4). Page-scoped guide
-// for #/brand/:id/content-os/calendar, gated on the real actions: open the
+// for #/brand/:id/content/calendar, gated on the real actions: open the
 // Content Bank, drag (or tap a date) to schedule, open/save Jadwal Kerja,
 // run AI Auto-Schedule, switch Bulan/Minggu/Hari.
 import { runSpotlightTour } from "../tour.js";

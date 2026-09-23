@@ -464,7 +464,7 @@ function legendHTML(c) {
 function weekBriefHTML(brandId, pr, today) {
   const rows = pr.week.map((i) => {
     const done = i.state === "done";
-    const link = i.kind === "slot" ? `#/brand/${brandId}/content-os/creator/${i.contentId}` : i.kind === "milestone" ? `#/brand/${brandId}/campaigns/${i.campaignId}` : "";
+    const link = i.kind === "slot" ? `#/brand/${brandId}/content/creator/${i.contentId}` : i.kind === "milestone" ? `#/brand/${brandId}/campaigns/${i.campaignId}` : "";
     const check = i.kind === "task" ? `<input type="checkbox" data-rg-task="${esc(i.taskId)}" ${done ? "checked" : ""} aria-label="${esc(i.label)}" />` : `<span class="rg-box ${done ? "is-done" : ""}"></span>`;
     return `<div class="rg-task rg-task-${i.state}">${check}
       <span class="rg-task-main">${link ? `<a href="${link}">${esc(i.label)}</a>` : esc(i.label)}<small>${esc(t(`roadmap.kind.${i.kind}`))} · ${esc(laneName(pr, i.laneId))}</small></span>
@@ -538,7 +538,7 @@ function weeksHTML(brandId, goal, plan, pr, today) {
       <div class="rg-week-body">${list.map((e) => {
         const live = stateById.get(e.kind === "slot" ? `slot:${e.id}` : e.id);
         const st = live?.state || "later";
-        const link = live?.contentId ? `#/brand/${brandId}/content-os/creator/${live.contentId}` : "";
+        const link = live?.contentId ? `#/brand/${brandId}/content/creator/${live.contentId}` : "";
         const date = live?.date || e.date;
         return `<div class="rg-row rg-row-${e.kind}">
           <span class="rg-row-date"><b>${esc(weekdayShort(date))}</b> ${esc(formatEventDate(date))}</span>

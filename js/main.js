@@ -30,15 +30,23 @@ const app = document.getElementById("app");
 let cleanup = null;
 
 function parseRoute(hash) {
-  const h = (hash || "").replace(/^#/, "") || "/";
+  let h = (hash || "").replace(/^#/, "") || "/";
+  // Pre-23 Sep 2026 addresses used "content-os" for the Konten tab. Rewrite
+  // in place so bookmarks, notifications and shared links keep working, and
+  // fix the address bar without adding a history entry.
+  const modern = h.replace(/\/content-os(?=\/|$)/, "/content");
+  if (modern !== h) {
+    h = modern;
+    if (location.hash !== "#" + h) location.replace("#" + h);
+  }
   let m;
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/creator\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "creator", contentId: m[2] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/creator\/?$/))) return { view: "content-os", brandId: m[1], sub: "creator" };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "list", contentId: m[2] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/list\/?$/))) return { view: "content-os", brandId: m[1], sub: "list" };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/copy\/?$/))) return { view: "content-os", brandId: m[1], sub: "copy" };
-  if ((m = h.match(/^\/brand\/([^/]+)\/content-os\/?$/))) return { view: "content-os", brandId: m[1] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/creator\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "creator", contentId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/creator\/?$/))) return { view: "content-os", brandId: m[1], sub: "creator" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/list\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "list", contentId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/list\/?$/))) return { view: "content-os", brandId: m[1], sub: "list" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/copy\/?$/))) return { view: "content-os", brandId: m[1], sub: "copy" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/?$/))) return { view: "content-os", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/([^/]+)\/?$/))) return { view: "campaigns", brandId: m[1], campaignId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/builder\/([^/]+)\/?$/))) return { view: "builder", brandId: m[1], stage: m[2] };

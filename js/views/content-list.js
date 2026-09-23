@@ -264,7 +264,7 @@ function paint(root, brandId, state, refresh) {
         openQuickFillModal({ c: item, onSaved: refresh });
       } else if (item.status !== "archived") {
         // Still-in-progress content is written and moved forward in Creator.
-        location.hash = `#/brand/${brandId}/content-os/creator/${tr.dataset.id}`;
+        location.hash = `#/brand/${brandId}/content/creator/${tr.dataset.id}`;
       } else {
         openContentEditor({ brandId, contentId: tr.dataset.id, onSaved: refresh });
       }

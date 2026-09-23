@@ -1158,12 +1158,12 @@ export const CONSULTANT_ROUTES = [
   { key: "guidelines", label: t("ai.route.guidelines"), path: "guidelines" },
   { key: "builder", label: t("ai.route.builder"), path: "builder" },
   { key: "campaigns", label: t("ai.route.campaigns"), path: "campaigns" },
-  { key: "content-os", label: t("ai.route.contentOs"), path: "content-os" },
-  { key: "content-list", label: t("ai.route.contentList"), path: "content-os/list" },
-  { key: "creator", label: t("ai.route.creator"), path: "content-os/creator" },
-  { key: "calendar", label: t("ai.route.calendar"), path: "content-os/calendar" },
+  { key: "content-os", label: t("ai.route.contentOs"), path: "content" },
+  { key: "content-list", label: t("ai.route.contentList"), path: "content/list" },
+  { key: "creator", label: t("ai.route.creator"), path: "content/creator" },
+  { key: "calendar", label: t("ai.route.calendar"), path: "content/calendar" },
   { key: "sales", label: t("ai.route.sales"), path: "sales" },
-  { key: "copy", label: t("ai.route.copy"), path: "content-os/copy" },
+  { key: "copy", label: t("ai.route.copy"), path: "content/copy" },
   { key: "brainstorm", label: t("ai.route.brainstorm"), path: "brainstorm" },
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
@@ -1181,7 +1181,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     snapshotText ? `Live tracked data for this brand right now:\n${snapshotText}` : "",
     "Keep answers tight and conversational — a few short paragraphs or a short list, not an essay. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
     "When your answer recommends specific content pieces the user should make, ALSO add one line per piece (at most 3) at the very end, in the exact form [[draft:FUNNEL|Content title]] — FUNNEL is exactly TOFU, MOFU, or BOFU, and the title is a short, concrete content title in the same language as your answer (e.g. [[draft:TOFU|3 kesalahan bikin kopi susu di rumah]]). Only for concrete content ideas you actually recommended, never for general advice. The app turns each one into a \"create draft\" button.",
-    `Whenever your answer tells the user to go do something somewhere in this app, or the user asks where a screen is (e.g. "di mana Content OS", "gimana caranya bikin campaign"), end your reply with one directive per screen you're pointing at, each on its own line, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's id. When the user should refresh their Instagram profile numbers (followers, reach, profile visits), add [[open:insights]]. Put these on their own lines at the very end, after your normal answer text — never inline mid-sentence, never invent a key that isn't in that list, and only include one when you're recommending or naming a specific screen (not for every reply).`,
+    `Whenever your answer tells the user to go do something somewhere in this app, or the user asks where a screen is (e.g. "di mana tab Konten", "gimana caranya bikin campaign"), end your reply with one directive per screen you're pointing at, each on its own line, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's id. When the user should refresh their Instagram profile numbers (followers, reach, profile visits), add [[open:insights]]. Put these on their own lines at the very end, after your normal answer text — never inline mid-sentence, never invent a key that isn't in that list, and only include one when you're recommending or naming a specific screen (not for every reply).`,
     "End EVERY reply with 2 or 3 follow-up questions, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~10 words), about the next thing they'd realistically want to know after your answer, and answerable from this brand's context and data above. The app turns each into a button that asks it for them, so someone who doesn't know what to ask next always has a way forward. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
   ]
     .filter(Boolean)

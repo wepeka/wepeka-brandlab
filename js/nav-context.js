@@ -3,7 +3,7 @@
 // sessionStorage slot the destination consumes on mount — the same
 // mechanism the guided tours already use for their pending-tour key.
 //
-//   go("#/brand/x/content-os/creator", { fromLabel: "Campaign Kopi Senja",
+//   go("#/brand/x/content/creator", { fromLabel: "Campaign Kopi Senja",
 //       campaignId, stageId, contentId, intent: "publish" })
 //
 // While the slot is alive, layout.js shows a "← Kembali ke {fromLabel}"

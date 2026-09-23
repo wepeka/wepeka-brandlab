@@ -29,7 +29,7 @@ export default {
   "ai.route.guidelines": { en: "Brand Guidelines", id: "Panduan Brand" },
   "ai.route.builder": { en: "Brand Builder", id: "Brand Builder" },
   "ai.route.campaigns": { en: "Goals", id: "Tujuan" },
-  "ai.route.contentOs": { en: "Content OS", id: "Content OS" },
+  "ai.route.contentOs": { en: "Content", id: "Konten" },
   "ai.route.contentList": { en: "Content List", id: "Daftar Konten" },
   "ai.route.creator": { en: "Creator Studio", id: "Creator Studio" },
   "ai.route.calendar": { en: "Calendar", id: "Kalender" },

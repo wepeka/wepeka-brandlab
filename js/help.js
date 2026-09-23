@@ -17,8 +17,8 @@ import { getLang } from "./i18n.js";
 // sentences: what it is, then how to use it.
 const HELP_CONTENT = {
   "brand-home": {
-    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, Content OS, Campaign, dan Sales Tracker." },
-    en: { title: "Brand Home", body: "Your starting point every time you open this brand — a quick summary of what needs doing (unfinished Brand DNA, campaigns with no content yet, gaps in your content schedule) plus shortcuts to Brand Builder, Content OS, Campaigns, and the Sales Tracker." },
+    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, tab Konten, Campaign, dan Sales Tracker." },
+    en: { title: "Brand Home", body: "Your starting point every time you open this brand — a quick summary of what needs doing (unfinished Brand DNA, campaigns with no content yet, gaps in your content schedule) plus shortcuts to Brand Builder, the Content tab, Campaigns, and the Sales Tracker." },
   },
   "brand-builder-hub": {
     id: { title: "Brand Builder", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalah, positioning, nama, tagline) dan Brand Guidelines (identitas visual — logo, warna, tipografi, tone of voice). Isi Brand DNA dulu kalau brand ini masih baru, baru lanjut ke Guidelines." },
@@ -37,8 +37,8 @@ const HELP_CONTENT = {
     en: { title: "Creator Studio", body: "Where one piece of content gets written start to finish — hook, script, caption — with AI help that follows this brand's DNA and tone of voice. Click New Content, pick a platform, and the AI helps you draft it right away." },
   },
   "campaigns": {
-    id: { title: "Campaign", body: "Tujuan yang lagi dikejar brand ini sekarang. Tiap milestone tahu sumber angkanya (Content OS, Instagram Insights, performa konten, atau catatanmu) dan kasih satu tombol buat memperbaruinya." },
-    en: { title: "Campaigns", body: "The goal this brand is working toward right now. Every milestone knows where its number comes from (Content OS, Instagram Insights, content performance, or your own notes) and gives you one button to update it." },
+    id: { title: "Campaign", body: "Tujuan yang lagi dikejar brand ini sekarang. Tiap milestone tahu sumber angkanya (tab Konten, Instagram Insights, performa konten, atau catatanmu) dan kasih satu tombol buat memperbaruinya." },
+    en: { title: "Campaigns", body: "The goal this brand is working toward right now. Every milestone knows where its number comes from (the Content tab, Instagram Insights, content performance, or your own notes) and gives you one button to update it." },
   },
   "campaign-detail": {
     id: { title: "Detail Campaign", body: "Dibaca dari atas ke bawah: posisi kamu sekarang (angka utama), apa yang perlu dikerjain (Langkah berikutnya), lalu milestone dan kontennya. Angka nggak pernah diketik manual di sini — semua ada sumbernya, kecuali yang memang cuma kamu yang tahu (dicatat lewat lembar Catat angka)." },
@@ -49,8 +49,8 @@ const HELP_CONTENT = {
     en: { title: "Content", body: "Where you check existing content — everything, what's scheduled, or what's published. To write new content from scratch, use Creator Studio instead." },
   },
   "content-os": {
-    id: { title: "Content OS", body: "Tiga tab buat satu alur: Creator (nulis konten), Kalender (jadwalkan), Konten (cek yang udah ada). Selalu urutan yang sama, di kedua mode." },
-    en: { title: "Content OS", body: "Three tabs for one flow: Creator (write content), Calendar (schedule it), Content (check what's there). Always the same order, in both modes." },
+    id: { title: "Konten", body: "Tiga tab buat satu alur: Creator (nulis konten), Kalender (jadwalkan), Konten (cek yang udah ada). Selalu urutan yang sama, di kedua mode." },
+    en: { title: "Content", body: "Three tabs for one flow: Creator (write content), Calendar (schedule it), Content (check what's there). Always the same order, in both modes." },
   },
   "brand-dna": {
     id: { title: "Brand DNA", body: "Wizard satu pertanyaan per langkah biar nggak kayak ngisi form kosong. Lima langkah pertama itu inti — audiens, masalah, kenapa harus percaya, rencana, dan ajakan bertindak. Jawaban tersimpan tiap kali klik Lanjut, jadi aman ditinggal kapan aja." },

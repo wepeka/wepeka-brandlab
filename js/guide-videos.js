@@ -85,7 +85,7 @@ export function videoRefForGuide(guideKey) {
   let key = guideKey;
   if (guideKey === "content-os" || guideKey === "content-list") {
     const hash = typeof location !== "undefined" ? location.hash : "";
-    key = /\/content-os\/creator/.test(hash) ? "creator" : /\/content-os\/calendar/.test(hash) ? "calendar" : "konten-dashboard";
+    key = /\/content\/creator/.test(hash) ? "creator" : /\/content\/calendar/.test(hash) ? "calendar" : "konten-dashboard";
   }
   const ref = GUIDE_TO_VIDEO[key];
   if (!ref) return null;

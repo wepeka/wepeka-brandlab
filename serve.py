@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Local dev server for Content OS — identical to `python3 -m http.server`
+# Local dev server for Wepeka Brandlab — identical to `python3 -m http.server`
 # except every response gets Cache-Control: no-store. Plain http.server sends
 # no cache header at all, and this browser was still reusing old cached
 # copies of main.js and its dependents across reloads (confirmed directly:
@@ -24,5 +24,5 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
 Handler = functools.partial(NoCacheHandler, directory=".")
 
 with http.server.ThreadingHTTPServer(("", PORT), Handler) as httpd:
-    print(f"Serving Content OS at http://localhost:{PORT} (caching disabled)")
+    print(f"Serving Wepeka Brandlab at http://localhost:{PORT} (caching disabled)")
     httpd.serve_forever()

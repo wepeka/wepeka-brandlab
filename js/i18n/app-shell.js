@@ -35,7 +35,7 @@ export default {
   "brands.first.time": { en: "~2 min", id: "±2 menit" },
   "brands.first.title": { en: "Create your brand first", id: "Bikin brand kamu dulu" },
   "brands.first.subGuided": { en: "Just your business name and 2–3 sentences about what you sell and who it's for. No logo or design needed right now.", id: "Cukup nama usahamu dan 2–3 kalimat soal jualan apa dan buat siapa. Nggak perlu logo, nggak perlu desain apa pun sekarang." },
-  "brands.first.subPro": { en: "One brand = one workspace, with its own Brand Builder, Campaigns, and Content OS. A name and a short description are enough — fill in the rest anytime.", id: "Satu brand = satu ruang kerja: Brand Builder, Campaign, dan Content OS-nya sendiri. Cukup nama dan deskripsi singkat, sisanya bisa diisi kapan aja." },
+  "brands.first.subPro": { en: "One brand = one workspace, with its own Brand Builder, Campaigns, and the Content tab. A name and a short description are enough — fill in the rest anytime.", id: "Satu brand = satu ruang kerja: Brand Builder, Campaign, dan tab Konten-nya sendiri. Cukup nama dan deskripsi singkat, sisanya bisa diisi kapan aja." },
   "brands.first.cta": { en: "Create your first brand", id: "Bikin brand pertama" },
   "brands.first.noteGuided": { en: "You can change everything later. After this, the app shows you the next step, one at a time.", id: "Semua bisa diubah lagi nanti. Setelah ini, sistem yang nunjukin langkah berikutnya satu per satu." },
   "brands.first.notePro": { en: "New to Brandlab? The <b>Guide</b> button in the bottom-left corner is always there.", id: "Belum kenal Brandlab? Tombol <b>Panduan</b> di pojok kiri bawah selalu ada." },
