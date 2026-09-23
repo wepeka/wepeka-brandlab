@@ -95,6 +95,14 @@ service cloud.firestore {
       allow create: if isOwner(request.resource.data) && accountActive();
       allow update, delete: if isOwner(resource.data) && accountActive();
     }
+    // Recurring Content Series ("Content Series Memory") — a reusable AI
+    // context (tone, structure, hooks, CTA) saved once per series and read
+    // back on every new episode. Same owner isolation as everything else.
+    match /series/{id} {
+      allow read: if isOwner(resource.data);
+      allow create: if isOwner(request.resource.data) && accountActive();
+      allow update, delete: if isOwner(resource.data) && accountActive();
+    }
     // Chat threads (the Home "Teman Brand" companion thread today; the
     // Brainstorm partner's threads next) — one doc per thread so a message
     // never rewrites the brand doc. Same owner isolation as everything else.

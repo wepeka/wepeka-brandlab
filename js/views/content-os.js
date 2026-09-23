@@ -4,6 +4,7 @@ import * as contentListView from "./content-list.js";
 import * as creatorView from "./creator.js";
 import * as calendarView from "./calendar.js";
 import * as copyStudioView from "./copy-studio.js";
+import * as seriesView from "./series.js";
 import { openContentEditor } from "./content-editor.js";
 import { t } from "../i18n.js";
 import { setPageGuide } from "../section-guide.js";
@@ -21,6 +22,7 @@ const SUB_TABS = [
   { key: "calendar", labelKey: "contentOs.tab.calendar", path: (id) => `#/brand/${id}/content/calendar` },
   { key: "list", labelKey: "contentOs.tab.list", path: (id) => `#/brand/${id}/content/list` },
   { key: "copy", labelKey: "contentOs.tab.copy", path: (id) => `#/brand/${id}/content/copy` },
+  { key: "series", labelKey: "contentOs.tab.series", path: (id) => `#/brand/${id}/content/series` },
 ];
 
 // One-step orientation to the tab bar itself, offered from the topbar "?"
@@ -57,6 +59,8 @@ export function render(root, { brandId, sub, contentId }) {
     cleanup = calendarView.render(mount, { brandId });
   } else if (activeSub === "copy") {
     cleanup = copyStudioView.render(mount, { brandId });
+  } else if (activeSub === "series") {
+    cleanup = seriesView.render(mount, { brandId });
   } else {
     cleanup = creatorView.render(mount, { brandId, initialContentId: contentId });
   }

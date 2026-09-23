@@ -142,6 +142,25 @@ export function defaultBrandDNA() {
   };
 }
 
+// Series DNA — the same idea as Brand DNA above, one level down: instead
+// of "who is this brand", it's "what does every episode of THIS recurring
+// series have in common". Read by buildSeriesContext (ai.js) and injected
+// as the middle layer between Brand Context and the current topic whenever
+// a piece of content is linked to a series. Mirrors defaultBrandDNA's
+// shape/fallback pattern on purpose — same read-time default-merge in
+// getSeries() below for docs saved before a field existed.
+export function defaultSeriesDNA() {
+  return {
+    // Basic information
+    description: "", mainTopic: "", objective: "", targetAudience: "",
+    platform: "", format: "",
+    // Content style memory
+    tone: "", writingStyle: "", typicalHook: "", storytellingStyle: "",
+    structure: "", averageLength: "", ctaStyle: "", visualStyle: "",
+    thingsToAvoid: "", additionalInstructions: "",
+  };
+}
+
 export function defaultBrandGuidelines() {
   return {
     // dataUrl is the Main logo; secondary/logotype are optional variants
@@ -250,6 +269,13 @@ function defaultDB() {
     // next. Never inside the brand doc — a message shouldn't rewrite a doc
     // that carries the logo dataUrl.
     brainstorms: [],
+    // Recurring Content Series ("Content Series Memory") — a reusable AI
+    // context the owner defines once (e.g. "Bedah Brand": its tone,
+    // structure, hooks, CTA) and every future episode reads from instead of
+    // re-explaining the concept. Flat top-level collection scoped by
+    // brandId, same shape as campaigns/content — never nested inside the
+    // brand doc. See defaultSeriesDNA / buildSeriesContext (ai.js).
+    series: [],
     settings: {
       platforms: [
         { id: "instagram", name: "Instagram" },
@@ -369,7 +395,7 @@ let ownerUid = null;
 export function initStore(uid) {
   ownerUid = uid;
   return new Promise((resolve) => {
-    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, brainstorms: false, settings: false };
+    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, brainstorms: false, series: false, settings: false };
     const checkReady = () => {
       if (Object.values(ready).every(Boolean)) resolve();
     };
@@ -424,6 +450,13 @@ export function initStore(uid) {
       checkReady();
       window.dispatchEvent(new CustomEvent("db:change"));
     }, onErr("brainstorms", "brainstorms"));
+
+    onSnapshot(mine("series"), (snap) => {
+      db.series = snap.docs.map((d) => d.data());
+      ready.series = true;
+      checkReady();
+      window.dispatchEvent(new CustomEvent("db:change"));
+    }, onErr("series", "series"));
 
     // One settings doc per account (not shared globally) — platforms,
     // formats, thresholds etc. are this account's own, never visible to
@@ -783,9 +816,9 @@ export function listBrainstorms(brandId) {
 export function getBrainstorm(id) {
   return (db.brainstorms || []).find((b) => b.id === id) || null;
 }
-export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, stageId = null, contentId = null, goalId = null } = {}) {
+export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, stageId = null, contentId = null, goalId = null, seriesId = null } = {}) {
   const now = Date.now();
-  const thread = { id, ownerId: ownerUid, brandId, campaignId, stageId, contentId, goalId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
+  const thread = { id, ownerId: ownerUid, brandId, campaignId, stageId, contentId, goalId, seriesId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
   db.brainstorms = [...(db.brainstorms || []).filter((b) => b.id !== id), thread];
   persist(() => setDoc(doc(fdb, "brainstorms", id), thread));
   return thread;
@@ -857,6 +890,10 @@ function emptyContent(brandId) {
     brandId,
     campaignId: "",
     campaignPhaseId: "",
+    // Links this piece to a recurring Content Series (see "Content Series"
+    // above) — when set, Creator injects that series' saved DNA/context
+    // into the AI prompt alongside (not instead of) the brand context.
+    seriesId: "",
     title: "",
     idea: "",
     format: "",
@@ -2084,6 +2121,71 @@ export function deleteCampaign(id) {
   db.content.forEach((c) => { if (c.campaignId === id) { c.campaignId = ""; c.campaignPhaseId = ""; } });
   persist(async () => {
     await deleteDoc(doc(fdb, "campaigns", id));
+    await Promise.all(affectedContentIds.map((cid) => setDoc(doc(fdb, "content", cid), getContent(cid))));
+  });
+}
+
+// ---------- Content Series (recurring content memory) ----------
+// A saved, reusable "episode format" — see defaultSeriesDNA above. Same
+// CRUD shape as Campaigns: flat collection, brandId foreign key, no
+// nesting inside the brand doc.
+function emptySeries(brandId) {
+  return {
+    id: uid(),
+    brandId,
+    name: "",
+    dna: defaultSeriesDNA(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+export function listSeries(brandId) {
+  return (db.series || [])
+    .filter((s) => s.brandId === brandId)
+    .map((s) => { if (!s.dna) s.dna = defaultSeriesDNA(); return s; })
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+export function getSeries(id) {
+  const s = (db.series || []).find((s) => s.id === id) || null;
+  if (s && !s.dna) s.dna = defaultSeriesDNA();
+  return s;
+}
+// Matches a series by name against free text (e.g. a brainstorm message)
+// so "Buat Bedah Brand tentang Nike" resolves to the "Bedah Brand" series
+// without the owner having to pick it from a menu first. Whole-word,
+// case-insensitive; the longest matching name wins when more than one
+// series name appears in the text (avoids a short name accidentally
+// matching inside a longer one).
+export function findSeriesByNameInText(brandId, text) {
+  if (!text) return null;
+  const norm = text.toLowerCase();
+  const matches = listSeries(brandId).filter((s) => s.name && norm.includes(s.name.toLowerCase()));
+  if (!matches.length) return null;
+  return matches.sort((a, b) => b.name.length - a.name.length)[0];
+}
+export function createSeries(brandId, data = {}) {
+  const item = { ...emptySeries(brandId), ...data, id: uid(), brandId, ownerId: ownerUid, dna: { ...defaultSeriesDNA(), ...(data.dna || {}) } };
+  db.series = [...(db.series || []), item];
+  persist(() => setDoc(doc(fdb, "series", item.id), item));
+  return item;
+}
+export function updateSeries(id, patch) {
+  const item = getSeries(id);
+  if (!item) return null;
+  if (patch.dna) { item.dna = { ...item.dna, ...patch.dna }; patch = { ...patch, dna: item.dna }; }
+  Object.assign(item, patch, { updatedAt: Date.now() });
+  persist(() => setDoc(doc(fdb, "series", item.id), item));
+  return item;
+}
+export function deleteSeries(id) {
+  db.series = (db.series || []).filter((s) => s.id !== id);
+  // Content linked to a deleted series keeps its script/history, it just
+  // stops reading that series' context on future regenerations — same
+  // unlink-not-delete behavior as deleteCampaign above.
+  const affectedContentIds = db.content.filter((c) => c.seriesId === id).map((c) => c.id);
+  db.content.forEach((c) => { if (c.seriesId === id) c.seriesId = ""; });
+  persist(async () => {
+    await deleteDoc(doc(fdb, "series", id));
     await Promise.all(affectedContentIds.map((cid) => setDoc(doc(fdb, "content", cid), getContent(cid))));
   });
 }

@@ -15,6 +15,7 @@ import brand_pulse from "./i18n/brand-pulse.js";
 import brainstorm from "./i18n/brainstorm.js";
 import roadmap from "./i18n/roadmap.js";
 import chat_hub from "./i18n/chat-hub.js";
+import series from "./i18n/series.js";
 
 const KEY = "wepeka-lang";
 
@@ -181,6 +182,7 @@ const CORE = {
   "contentOs.tab.creator": { en: "Creator", id: "Creator" },
   "contentOs.tab.calendar": { en: "Calendar", id: "Kalender" },
   "contentOs.tab.copy": { en: "Quick copy", id: "Tulisan Cepat" },
+  "contentOs.tab.series": { en: "Series", id: "Series" },
   "contentOs.cadence.title": { en: "Set your work schedule", id: "Atur Jadwal Kerja" },
   "contentOs.cadence.sub": { en: "This sets up AI Auto-Schedule in the Calendar for {brand} and fills in the Shoot/Edit/Upload rows in My Routine automatically — set it once here instead of in both places.", id: "Ini sekaligus ngatur Jadwal Otomatis AI di Kalender buat {brand} dan ngisi baris Syuting/Edit/Upload di My Routine otomatis — cukup atur sekali di sini, nggak perlu di dua tempat." },
   "contentOs.cadence.shootLabel": { en: "Which days do you shoot?", id: "Hari apa aja syuting?" },
@@ -490,6 +492,7 @@ const EXTRA = {
   "brainstorm": brainstorm,
   "roadmap": roadmap,
   "chat-hub": chat_hub,
+  "series": series,
 };
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 

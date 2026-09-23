@@ -222,7 +222,7 @@ export async function testAiConnection(ai) {
 // already accepted. Omit for the original all-three-at-once behavior.
 export async function generateScript(
   ai,
-  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, campaignLine, only }
+  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only }
 ) {
   const wantsHooks = !only || only === "hooks";
   const wantsScript = !only || only === "script";
@@ -264,6 +264,10 @@ export async function generateScript(
     brandContext
       ? `Brand context — write FOR this audience and IN this brand's voice. The tone-of-voice settings, personality traits, and words to avoid below are rules, not suggestions:\n${brandContext}`
       : "No specific brand voice was given — keep it natural and conversational.",
+    // Series Context sits between Brand Context and the current topic: the
+    // brand's own voice always wins on tone conflicts, the series just adds
+    // its recurring concept/structure/hook style on top.
+    seriesContext || "",
     "FACTS ARE FIXED: any number, price, opening hour, place name, or product name that appears in the brand context or the user's input must be repeated exactly as given (e.g. 'jam 1 malam' stays 'jam 1 malam', 'Rp15.000' stays 'Rp15.000') — never round, convert, or paraphrase them, and never invent new figures.",
     articleText && wantsScript ? "An article/reference text is provided below — pull the most relevant, attention-worthy points from it for ISI PEMBAHASAN instead of inventing unrelated content." : "",
     `Respond ONLY with valid JSON, no markdown code fences, exactly this shape: {${responseShape}}`,
@@ -717,6 +721,42 @@ function goalsContextBlock(brand) {
 // live strategy anymore.
 // `pulseText` (js/brand-pulse.js buildPulseText — a caller-computed block of
 // "what's happening in this brand right now") is the third and last part,
+// Series Context — the middle layer between Brand Context and the current
+// topic/request (Brand Context → Series Context → Current Topic). Mirrors
+// buildBrandContext's "one labeled line per filled field" shape so a new
+// episode reads exactly how the series was set up, without the owner
+// re-explaining the concept every time. Only called when a piece of
+// content/conversation is actually linked to a series — an empty return
+// here means "no series", not "series with nothing filled in".
+export function buildSeriesContext(series) {
+  if (!series) return "";
+  const dna = series.dna || {};
+  const lines = [
+    `Series: ${series.name}`,
+    dna.description ? `Concept: ${dna.description}` : "",
+    dna.mainTopic ? `Main topic: ${dna.mainTopic}` : "",
+    dna.objective ? `Objective: ${dna.objective}` : "",
+    dna.targetAudience ? `Series audience: ${dna.targetAudience}` : "",
+    dna.platform ? `Platform: ${dna.platform}` : "",
+    dna.format ? `Format: ${dna.format}` : "",
+    dna.tone ? `Tone of voice for this series: ${dna.tone}` : "",
+    dna.writingStyle ? `Writing style: ${dna.writingStyle}` : "",
+    dna.storytellingStyle ? `Storytelling style: ${dna.storytellingStyle}` : "",
+    dna.structure ? `Usual content structure (follow the shape, not word-for-word):\n${dna.structure}` : "",
+    dna.typicalHook ? `Typical hook style (write a NEW hook in this spirit — never copy it verbatim):\n${dna.typicalHook}` : "",
+    dna.averageLength ? `Average length: ${dna.averageLength}` : "",
+    dna.ctaStyle ? `Typical CTA style (write a NEW closing line in this spirit — never copy it verbatim):\n${dna.ctaStyle}` : "",
+    dna.visualStyle ? `Visual style notes: ${dna.visualStyle}` : "",
+    dna.thingsToAvoid ? `Avoid in this series: ${dna.thingsToAvoid}` : "",
+    dna.additionalInstructions ? `Additional instructions for this series: ${dna.additionalInstructions}` : "",
+  ].filter(Boolean);
+  if (!lines.length) return "";
+  return [
+    `This piece is an episode of the recurring series "${series.name}" — stay consistent with the series concept and style below, but write a genuinely new episode: never reuse the same hook or CTA wording verbatim, and don't make it feel copy-pasted or templated.`,
+    lines.join("\n"),
+  ].join("\n");
+}
+
 // so every feature built on top of buildFullContext picks it up for free.
 export function buildFullContext(brand, { campaigns = [], pulseText = "" } = {}) {
   const active = campaigns.filter((c) => c.status !== "archived");
@@ -1309,13 +1349,16 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
 // `onText` streams the reply as it is written. The brand, its campaigns and
 // its pulse ride along through buildFullContext, plus whatever the thread is
 // scoped to.
-export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, goalId = null, eventCampaign = null, savedIdeas = [], history = [], message, mode = "chat", turns = 1, onText = null }) {
+export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, goalId = null, eventCampaign = null, series = null, savedIdeas = [], history = [], message, mode = "chat", turns = 1, onText = null }) {
   const goal = goalId ? (brand?.goals || []).find((g) => g.id === goalId) : null;
   const scope = [
     goal ? `This conversation is about ONE goal the owner is working toward — help them think about how to get there:\n${goalLine(goal)}\nYou cannot change the roadmap yourself. When something should change (the date, the weekly posting rhythm, the expected attendance), say exactly what and why, and tell the owner to use "Re-plot" on the roadmap page. Never say the plan has been changed.` : "",
     eventCampaign ? `EVENT the owner is preparing (its phases; use these exact phase names when you file a step under a phase):\n${campaignSummaryLine(eventCampaign, brand)}\nPhases: ${(eventCampaign.eventPlan?.phases || []).map((p) => `${p.name} (${p.dateFrom}..${p.dateTo})`).join("; ")}\nMilestones already in it (never suggest these again): ${(eventCampaign.eventPlan?.phases || []).flatMap((p) => (p.milestones || []).map((m) => m.label)).slice(0, 40).join("; ")}` : "",
     campaign ? `This conversation is about ONE campaign of the brand:\n${campaignSummaryLine(campaign, brand)}${stageText ? `\nCurrent focus: ${stageText}` : ""}` : "",
     content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.` : "",
+    series
+      ? `This conversation is about a NEW EPISODE of the owner's recurring series "${series.name}" — every idea/draft you propose must be a fresh episode of it, consistent with the series' saved concept/tone/structure below, not a generic idea:\n${buildSeriesContext(series)}`
+      : "",
     savedIdeas.length ? `Ideas already shown or saved in this conversation (never repeat them):\n${savedIdeas.map((i) => `- ${i}`).join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
   // Talk first, ideas second. The AI asks what the owner wants (with tap-to-

@@ -18,7 +18,9 @@ import {
   getBrand, getGoal, listGoals, listCampaigns, getCampaign, formatEventDate, phaseNameLabel, updateCampaign, listContent, getContent, updateContent, createContent, getSettings, onChange,
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, updateBrainstorm, deleteBrainstorm,
   addBrandIdea, removeBrandIdea,
+  listSeries, getSeries, findSeriesByNameInText,
 } from "../store.js";
+import { openSeriesModal } from "./series.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { chatBrainstorm, hasAiKey, AiApiError } from "../ai.js";
 import { eventCampaignFor, openEventPhases, addEventMilestone } from "../goal-actions.js";
@@ -71,7 +73,7 @@ export function render(root, { brandId, threadId = null, compact = false, seed =
   if (!compact) applyNavContext();
   if (state.threadId) {
     const th = getBrainstorm(state.threadId);
-    if (th) state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null, goalId: th.goalId || null };
+    if (th) state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null, goalId: th.goalId || null, seriesId: th.seriesId || null };
     else state.threadId = null;
   }
 
@@ -100,6 +102,11 @@ function scopeInfo(brandId, scope) {
   // phases ride along in the prompt.
   const campaign = scope.campaignId ? getCampaign(scope.campaignId) : goal?.installed?.campaigns?.event?.id ? getCampaign(goal.installed.campaigns.event.id) : null;
   const content = scope.contentId ? getContent(scope.contentId) : null;
+  // A recurring Content Series ("Bedah Brand" etc.) — set either by picking
+  // it in the scope menu, or auto-detected from the owner's own message
+  // (see detectSeriesScope below) when they just name the series and topic
+  // ("Buat Bedah Brand tentang Nike") without opening the menu first.
+  const series = scope.seriesId ? getSeries(scope.seriesId) : null;
   let stage = null;
   if (campaign) {
     const stages = campaignStages(campaign);
@@ -107,11 +114,22 @@ function scopeInfo(brandId, scope) {
   }
   let label;
   if (content) label = t("bs.scope.content", { title: content.title || t("beginner.untitled") });
+  else if (series) label = t("series.pick", { name: series.name });
   else if (goal) label = t("roadmap.bs.scope", { name: goal.name || t("roadmap.defaultName") });
   else if (campaign) label = t("bs.scope.campaign", { name: campaign.name }) + (stage ? t("bs.scope.stage", { stage: stage.name }) : "");
   else label = t("bs.scope.brand");
   const stageText = stage ? `${stage.kind === "level" ? "Level" : "Phase"} "${stage.name}"${stage.dateLabel ? ` (${stage.dateLabel})` : ""}${stage.description ? ` — ${stage.description}` : ""}` : "";
-  return { campaign, content, stage, label, stageText, goal, brandId };
+  return { campaign, content, stage, series, label, stageText, goal, brandId };
+}
+
+// "Buat Bedah Brand tentang Nike" — the owner never has to open the scope
+// menu and pick "Bedah Brand" first: if the current scope is still the
+// brand-wide default (no campaign/goal/content/series already chosen) and
+// their message names an existing series, that series becomes this
+// (brand-new) thread's scope automatically, same as if they'd picked it.
+function detectSeriesScope(brandId, scope, text) {
+  if (scope.seriesId || scope.campaignId || scope.goalId || scope.contentId) return null;
+  return findSeriesByNameInText(brandId, text);
 }
 
 // ---- Threads rail -----------------------------------------------------------
@@ -257,8 +275,13 @@ function chatHTML(brandId, brand, state, info) {
   return `
     <section class="card glass-card bs-chat">
       <div class="bs-scope">
-        <span class="bs-scope-chip">${icon(info.content ? "edit" : info.campaign ? "bulb" : "target", { size: 12 })}${esc(info.label)}</span>
+        <span class="bs-scope-chip">${icon(info.content ? "edit" : info.series ? "sparkle" : info.campaign ? "bulb" : "target", { size: 12 })}${esc(info.label)}</span>
         <button type="button" class="link" id="bs-scope-change" style="font-size:12px;">${t("bs.scope.change")}</button>
+        ${
+          !state.compact && !info.series
+            ? `<button type="button" class="link" id="bs-save-series" style="font-size:12px;" title="${esc(t("series.saveFromChat.hint"))}">${t("series.saveFromChat")}</button>`
+            : ""
+        }
         <span style="flex:1;"></span>
         ${state.compact
           ? `<button type="button" class="icon-btn" id="bs-new" aria-label="${t("bs.threads.new")}" title="${t("bs.threads.new")}" ${!state.threadId && !currentMessages(state).length ? "disabled" : ""}>${icon("plus", { size: 14 })}</button><a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/brainstorm" data-bs-full title="${esc(t("bs.saved.open", { n: savedCount }))}">${icon("bookmark", { size: 12 })}${savedCount}</a>`
@@ -366,7 +389,15 @@ function wire(root, { brandId, brand, state, info, refresh }) {
 
   const ensureThread = (firstText) => {
     if (state.threadId && getBrainstorm(state.threadId)) return getBrainstorm(state.threadId);
-    const th = createBrainstorm(brandId, { mode: "chat", title: firstText.slice(0, TITLE_MAX), campaignId: state.scope.goalId ? null : state.scope.campaignId || null, stageId: state.scope.stageId || null, contentId: state.scope.contentId || null, goalId: state.scope.goalId || null });
+    // Brand-new thread, still brand-wide scope: check if the owner just
+    // named an existing series in their first message ("Buat Bedah Brand
+    // tentang Nike") instead of picking it from the scope menu.
+    const detected = detectSeriesScope(brandId, state.scope, firstText);
+    if (detected) {
+      state.scope = { ...state.scope, seriesId: detected.id };
+      state.notice = t("series.autoDetected", { name: detected.name });
+    }
+    const th = createBrainstorm(brandId, { mode: "chat", title: firstText.slice(0, TITLE_MAX), campaignId: state.scope.goalId ? null : state.scope.campaignId || null, stageId: state.scope.stageId || null, contentId: state.scope.contentId || null, goalId: state.scope.goalId || null, seriesId: state.scope.seriesId || null });
     state.threadId = th.id;
     state.onThread?.(th.id);
     // Keep the URL honest without a hashchange (which would re-render mid-call).
@@ -408,6 +439,10 @@ function wire(root, { brandId, brand, state, info, refresh }) {
     state.draft = "";
     refresh();
     const th = ensureThread(text);
+    // Read fresh, not the outer `info` closed over at the last paint() —
+    // ensureThread() may have just auto-detected and set state.scope.seriesId
+    // for this very message, and this async call outlives that paint cycle.
+    const activeInfo = scopeInfo(brandId, state.scope);
     appendBrainstormMessage(th.id, { role: "user", text });
     try {
       const ai = getSettings().ai || {};
@@ -424,9 +459,10 @@ function wire(root, { brandId, brand, state, info, refresh }) {
         brand: freshBrand,
         campaigns,
         pulseText: pulseTextFor(freshBrand, { content: listContent(brandId), campaigns, settings: getSettings() }),
-        campaign: info.campaign,
-        stageText: info.stageText,
-        content: info.content,
+        campaign: activeInfo.campaign,
+        stageText: activeInfo.stageText,
+        content: activeInfo.content,
+        series: activeInfo.series,
         goalId: state.scope.goalId || null,
         eventCampaign,
         savedIdeas,
@@ -496,7 +532,7 @@ function wire(root, { brandId, brand, state, info, refresh }) {
       const th = getBrainstorm(btn.dataset.bsThread);
       if (!th) return;
       state.threadId = th.id;
-      state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null, goalId: th.goalId || null };
+      state.scope = { campaignId: th.campaignId || null, stageId: th.stageId || null, contentId: th.contentId || null, goalId: th.goalId || null, seriesId: th.seriesId || null };
       state.error = ""; state.notice = "";
       syncUrl(state, `#/brand/${brandId}/brainstorm/${th.id}`);
       refresh();
@@ -520,16 +556,21 @@ function wire(root, { brandId, brand, state, info, refresh }) {
     if (!menu) return;
     const options = [
       { id: "", label: t("bs.scope.brand") },
+      ...listSeries(brandId).map((s) => ({ id: `series:${s.id}`, label: t("series.pick", { name: s.name }) })),
       ...listGoals(brandId).filter((g) => g.status !== "completed").map((g) => ({ id: `goal:${g.id}`, label: t("roadmap.bs.scope", { name: g.name || t("roadmap.defaultName") }) })),
       ...listCampaigns(brandId).filter((c) => c.status !== "archived").map((c) => ({ id: c.id, label: t("bs.scope.campaign", { name: c.name }) })),
     ];
-    const currentScopeId = state.scope.goalId ? `goal:${state.scope.goalId}` : state.scope.campaignId || "";
+    const currentScopeId = state.scope.seriesId ? `series:${state.scope.seriesId}` : state.scope.goalId ? `goal:${state.scope.goalId}` : state.scope.campaignId || "";
     menu.innerHTML = `<div class="text-faint" style="font-size:11px;padding:6px 10px 4px;">${t("bs.scope.pickTitle")}</div>` + options.map((o) => `<button type="button" data-scope="${o.id}">${o.id === currentScopeId && !state.scope.contentId ? icon("check", { size: 12 }) : ""}${esc(o.label)}</button>`).join("");
     menu.querySelectorAll("[data-scope]").forEach((b) =>
       b.addEventListener("click", () => {
         closeMenu();
         const pick = b.dataset.scope || "";
-        const next = pick.startsWith("goal:") ? { campaignId: null, stageId: null, contentId: null, goalId: pick.slice(5) } : { campaignId: pick || null, stageId: null, contentId: null, goalId: null };
+        const next = pick.startsWith("goal:")
+          ? { campaignId: null, stageId: null, contentId: null, goalId: pick.slice(5), seriesId: null }
+          : pick.startsWith("series:")
+            ? { campaignId: null, stageId: null, contentId: null, goalId: null, seriesId: pick.slice(7) }
+            : { campaignId: pick || null, stageId: null, contentId: null, goalId: null, seriesId: null };
         const same = pick === currentScopeId && !state.scope.contentId;
         if (same) return;
         if (currentMessages(state).length) { state.threadId = null; syncUrl(state, `#/brand/${brandId}/brainstorm`); toast(t("bs.scope.changedNew")); }
@@ -537,6 +578,23 @@ function wire(root, { brandId, brand, state, info, refresh }) {
         refresh();
       })
     );
+  });
+
+  // "Save as Content Series": turn what's being brainstormed right now into
+  // a reusable series — same manual form as Content OS's own Series tab
+  // (js/views/series.js), just reachable without leaving the conversation.
+  // Saving switches this conversation's own scope to the new series, same
+  // as picking it from the scope menu, so the rest of this thread (and every
+  // future "Buat <name> tentang ...") reads its context from here on.
+  qs("#bs-save-series", root)?.addEventListener("click", () => {
+    openSeriesModal({
+      brandId,
+      onSaved: (saved) => {
+        if (!saved) return;
+        state.scope = { campaignId: null, stageId: null, contentId: null, goalId: null, seriesId: saved.id };
+        refresh();
+      },
+    });
   });
 
   qs("#bs-thread-menu", root)?.addEventListener("click", (e) => {
@@ -584,6 +642,10 @@ function wire(root, { brandId, brand, state, info, refresh }) {
       status: "idea",
       campaignId: info.campaign?.id || "",
       campaignPhaseId: info.stage && info.stage.kind !== "level" ? info.stage.id : "",
+      // This conversation is about a series episode → the new content
+      // piece inherits the link, so Creator picks up its Series Context
+      // automatically without the owner re-selecting it.
+      seriesId: info.series?.id || "",
     });
 
   qsa("[data-bs-idea-save]", root).forEach((btn) =>

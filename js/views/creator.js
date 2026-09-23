@@ -1,11 +1,11 @@
-import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, getSettings, onChange, listCampaigns, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
+import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, toast, avatarHTML, qs, qsa } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { generateScript, AiApiError, hasAiKey, buildFullContext, campaignSummaryLine } from "../ai.js";
+import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, campaignSummaryLine } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
@@ -24,7 +24,7 @@ import { wireMic } from "../voice-input.js";
 // the other, so the TikTok half never sits blank. This used to happen only
 // once, when the old edit drawer saved. Platform-specific fields (status,
 // upload checkboxes, thumbnail) stay per record.
-const MIRROR_SHARED_FIELDS = ["title", "idea", "script", "caption", "cta", "reference", "notes", "funnel", "campaignId", "campaignPhaseId"];
+const MIRROR_SHARED_FIELDS = ["title", "idea", "script", "caption", "cta", "reference", "notes", "funnel", "campaignId", "campaignPhaseId", "seriesId"];
 function updateContent(id, patch) {
   storeUpdateContent(id, patch);
   const item = getContent(id);
@@ -206,6 +206,10 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       // guidelines + active campaigns) instead of just the legacy
       // aiVoiceGuide string — see ai.js buildFullContext.
       brandContext: brand ? buildFullContext(brand, { campaigns: listCampaigns(brand.id), pulseText: pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() }) }) : "",
+      // Series Context: only present when this piece is linked to a
+      // recurring series (content.seriesId) — sits between brandContext and
+      // the topic-specific fields below, same seam campaignLine already uses.
+      seriesContext: linkedSeriesContext(),
       campaignLine: linkedCampaignLine(),
       ...extra,
     };
@@ -216,9 +220,14 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     const c = listCampaigns(brand.id).find((x) => x.id === content.campaignId);
     return c ? campaignSummaryLine(c, brand) : "";
   }
+  function linkedSeriesContext() {
+    if (!content.seriesId) return "";
+    const s = getSeries(content.seriesId);
+    return s ? buildSeriesContext(s) : "";
+  }
   // The eval record keeps what the user asked for, not the (large,
   // reconstructible) brand context block.
-  const feedbackPrompt = (p) => ({ ...p, brandContext: undefined });
+  const feedbackPrompt = (p) => ({ ...p, brandContext: undefined, seriesContext: undefined });
 
   let batchCount = 0;
   const runGenerate = async () => {
@@ -482,6 +491,7 @@ function paint(root, brandId, state, refresh) {
   }
   const all = listContent(brandId);
   const campaigns = listCampaigns(brandId);
+  const series = listSeries(brandId);
   const items = all
     .filter((c) => c.status !== "published" || c.id === state.selectedId)
     .sort((a, b) => {
@@ -516,7 +526,7 @@ function paint(root, brandId, state, refresh) {
         </div>
       </div>
       <div class="creator-main">
-        ${selected ? mainPanel(selected, campaigns) : emptyPanel()}
+        ${selected ? mainPanel(selected, campaigns, series) : emptyPanel()}
         <a class="link" href="#/brand/${brandId}/content/calendar" style="display:block;text-align:center;font-size:12.5px;margin-top:4px;">${icon("calendar", { size: 13 })} ${t("cr.openCalendar")}</a>
       </div>
     </div>
@@ -629,6 +639,10 @@ function paint(root, brandId, state, refresh) {
   });
   qs("#f-phase", root)?.addEventListener("change", (e) => {
     updateContent(selected.id, { campaignPhaseId: e.target.value });
+    flashSaved();
+  });
+  qs("#f-series", root)?.addEventListener("change", (e) => {
+    updateContent(selected.id, { seriesId: e.target.value });
     flashSaved();
   });
   const pickFunnel = (funnel) => {
@@ -911,11 +925,11 @@ function stageProgressHTML(c) {
 // Each stage past drafting gets its own minimal, single-purpose panel —
 // once you're shooting or editing, you don't need the whole form, just the
 // script to work from and one big action.
-function mainPanel(c, campaigns) {
+function mainPanel(c, campaigns, series) {
   if (c.status === "production") return executionPanel(c);
   if (c.status === "editing") return editingPanel(c);
   if (c.status === "scheduled") return readyToUploadPanel(c);
-  return draftingPanel(c, campaigns);
+  return draftingPanel(c, campaigns, series);
 }
 
 // Campaign + Funnel Stage, editable right where the writing happens — this
@@ -950,17 +964,36 @@ function campaignFieldHTML(c, campaigns) {
   `;
 }
 
+// Recurring Content Series link — optional, sits right under Campaign since
+// it's the same kind of "what does this piece belong to" decision. Left
+// empty by default (most content isn't part of a series); once picked, its
+// saved DNA/context (js/ai.js buildSeriesContext) rides along on every
+// generate/regenerate for this piece, alongside the brand's own voice.
+function seriesFieldHTML(c, series) {
+  if (!series.length) return "";
+  return `
+    <div class="field">
+      <label>${t("cr.series.label")}</label>
+      <select class="select" id="f-series">
+        <option value="">${t("cr.series.none")}</option>
+        ${series.map((s) => `<option value="${s.id}" ${c.seriesId === s.id ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
+      </select>
+    </div>
+  `;
+}
+
 // Advanced mode keeps the compact TOFU/MOFU/BOFU chip row. Guided mode swaps
 // the jargon for a plain question — same underlying funnel value either way,
 // just asked as "what's this for" instead of assuming the acronyms mean
 // anything to someone new to marketing funnels. Needs its own full-width row
 // (the description text doesn't fit next to Campaign), so guided and
 // advanced get different layouts around the same two fields.
-function campaignFunnelFieldsHTML(c, campaigns) {
+function campaignFunnelFieldsHTML(c, campaigns, series = []) {
   const guided = getMode() === "guided";
   if (guided) {
     return `
       ${campaignFieldHTML(c, campaigns)}
+      ${seriesFieldHTML(c, series)}
       <div id="funnel-goal-wrap">${funnelGoalFieldHTML(c)}</div>
     `;
   }
@@ -969,6 +1002,7 @@ function campaignFunnelFieldsHTML(c, campaigns) {
       ${campaignFieldHTML(c, campaigns)}
       ${funnelFieldHTML({ id: "f-funnel-picker", value: c.funnel })}
     </div>
+    ${seriesFieldHTML(c, series)}
   `;
 }
 
@@ -1162,7 +1196,7 @@ function slidesReadHTML(script) {
     .join("")}</div>`;
 }
 
-function draftingPanel(c, campaigns) {
+function draftingPanel(c, campaigns, series = []) {
   const publishedNote =
     c.status === "published"
       ? `<div class="hint" style="margin:0 0 16px;">${icon("info", { size: 12 })} ${t("cr.publishedNote")}</div>`
@@ -1189,7 +1223,7 @@ function draftingPanel(c, campaigns) {
         <label>${t("cr.f.idea")}</label>
         <textarea class="textarea" id="f-idea" style="min-height:60px;" placeholder="${t("cr.f.ideaPh")}">${c.idea || ""}</textarea>
       </div>
-      ${campaignFunnelFieldsHTML(c, campaigns)}
+      ${campaignFunnelFieldsHTML(c, campaigns, series)}
       ${isCarouselContent(c) ? slidesFieldHTML(c) : `<div class="field">
         <div class="creator-field-head">
           <label style="margin-bottom:0;">${t("cr.f.script")}</label>

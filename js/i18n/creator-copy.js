@@ -101,6 +101,8 @@ export default {
   "cr.campaign.none": { en: "No campaign", id: "Tanpa campaign" },
   "cr.phase.guided": { en: "Which phase? (optional)", id: "Tahap mana? (opsional)" },
   "cr.phase.none": { en: "No phase", id: "Tanpa fase" },
+  "cr.series.label": { en: "Content Series (optional)", id: "Content Series (opsional)" },
+  "cr.series.none": { en: "Not part of a series", id: "Bukan bagian dari series" },
   "cr.funnel.goalSummary": { en: "Goal: {label}", id: "Tujuan: {label}" },
   "cr.funnel.change": { en: "change", id: "ubah" },
 
