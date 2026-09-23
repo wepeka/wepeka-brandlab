@@ -1,4 +1,4 @@
-import { getContent, createContent, updateContent, getSettings, getBrand, localISODate, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, STATUSES, STATUS_LABELS } from "../store.js";
+import { getContent, createContent, updateContent, getSettings, getBrand, localISODate, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, listSeries, STATUSES, STATUS_LABELS } from "../store.js";
 import { icon } from "../icons.js";
 import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, escapeHtml, qs, qsa } from "../dom.js";
@@ -30,13 +30,15 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
       };
   if (draft.campaignId === undefined) draft.campaignId = "";
   if (draft.campaignPhaseId === undefined) draft.campaignPhaseId = "";
+  if (draft.seriesId === undefined) draft.seriesId = "";
 
   const brand = getBrand(brandId);
   const campaigns = listCampaigns(brandId);
+  const series = listSeries(brandId);
 
   const overlay = openDrawer({
     title: existing ? t("contentEditor.editTitle") : t("contentEditor.newTitle"),
-    bodyHTML: bodyTemplate(draft, settings, campaigns),
+    bodyHTML: bodyTemplate(draft, settings, campaigns, series),
     footHTML: `
       <div class="flex items-center gap-8">
         ${existing ? `<button class="btn btn-ghost btn-sm" data-archive>${icon("archive", { size: 14 })}${existing.archived ? t("contentEditor.unarchive") : t("contentEditor.archive")}</button>` : ""}
@@ -62,7 +64,7 @@ function funnelTag(funnel) {
   return `<span class="tag tag-${funnel.toLowerCase()}">${label}</span>`;
 }
 
-function bodyTemplate(draft, settings, campaigns) {
+function bodyTemplate(draft, settings, campaigns, series = []) {
   const buckets = resolveContentBuckets(settings);
   return `
     <div class="editor-tabs">
@@ -118,6 +120,18 @@ function bodyTemplate(draft, settings, campaigns) {
         ${!campaigns.length ? `<div class="text-faint" style="font-size:11px;margin-top:6px;">${t("contentEditor.campaign.noneYet")}</div>` : ""}
         <div id="ai-campaign-status" style="margin-top:6px;"></div>
       </div>
+      ${
+        series.length
+          ? `<div class="field">
+               <label>${t("contentEditor.series.label")}</label>
+               <select class="select" id="f-series">
+                 <option value="">${t("contentEditor.series.none")}</option>
+                 ${series.map((s) => `<option value="${s.id}" ${draft.seriesId === s.id ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
+               </select>
+               <div class="text-faint" style="font-size:11px;margin-top:6px;">${t("contentEditor.series.hint")}</div>
+             </div>`
+          : ""
+      }
       ${funnelFieldHTML({
         id: "f-funnel",
         value: draft.funnel,
@@ -204,6 +218,10 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
     draft.campaignId = e.target.value;
     draft.campaignPhaseId = "";
     refreshPhaseSelect();
+  });
+
+  qs("#f-series", el)?.addEventListener("change", (e) => {
+    draft.seriesId = e.target.value;
   });
 
   const suggestCampaignBtn = qs("#ai-suggest-campaign", el);
@@ -358,6 +376,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
       idea: qs("#f-idea", el).value,
       campaignId: draft.campaignId || "",
       campaignPhaseId: draft.campaignPhaseId || "",
+      seriesId: draft.seriesId || "",
       platform: qs("#f-platform", el).value,
       format: qs("#f-format", el).value,
       funnel: draft.funnel,
