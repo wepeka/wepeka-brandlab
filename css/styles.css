@@ -1157,6 +1157,13 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .creator-item .ti{ flex:1; min-width:0; }
 .creator-item .t{ font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .creator-item .m{ font-size:11.5px; color: var(--text-faint); margin-top:2px; }
+/* Delete on idea/draft rows only (see sidebarRow's `deletable` check) —
+   subtle by default, only steps forward on hover of the row or the button
+   itself so the compact sidebar list doesn't read as button-heavy. */
+.creator-item-delete{ flex:none; width:26px; height:26px; border-radius:8px; border:none; background:transparent; color:var(--text-faint); opacity:0; transition:opacity .12s, color .12s, background .12s; }
+.creator-item:hover .creator-item-delete{ opacity:1; }
+.creator-item-delete:hover{ background: var(--health-poor-soft); color: var(--health-poor); }
+.creator-item-delete svg{ width:13px; height:13px; }
 
 /* Each phase is its own separated, collapsible box — not one continuous
    list — using the CSS grid 1fr/0fr trick to animate to/from auto height

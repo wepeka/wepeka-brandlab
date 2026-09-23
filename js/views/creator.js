@@ -1,4 +1,4 @@
-import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
+import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, toast, avatarHTML, qs, qsa } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
@@ -546,6 +546,25 @@ function paint(root, brandId, state, refresh) {
     });
   });
 
+  qsa("[data-delete-content]", root).forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.deleteContent;
+      const item = getContent(id);
+      const ok = await confirmDialog({
+        title: t("cr.delete.title", { title: escapeHtml(item?.title || t("common.untitled")) }),
+        message: t("common.noUndo"),
+        confirmLabel: t("common.delete"),
+        danger: true,
+      });
+      if (!ok) return;
+      deleteContent(id);
+      if (state.selectedId === id) state.selectedId = null;
+      toast(t("cr.delete.done"));
+      refresh();
+    });
+  });
+
   qsa("[data-toggle-group]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.toggleGroup;
@@ -879,7 +898,14 @@ function groupedSidebarHTML(items, selectedId, collapsedGroups) {
     .join("");
 }
 
+// Deleting is only offered on undrafted-anywhere-else stuff (idea/draft) —
+// once a piece has moved into production/editing/scheduled/published, it
+// likely has real work (shots, edits, a real publish) riding on it, so
+// removing it stays a content-list-only action (js/views/content-list.js's
+// row menu, which also has Archive) rather than a one-click trash icon
+// right in Creator's own sidebar.
 function sidebarRow(c, active) {
+  const deletable = c.status === "idea" || c.status === "draft";
   return `
     <div class="creator-item ${active ? "active" : ""}" data-select="${c.id}">
       <span class="status-pill status-${c.status}" style="padding:3px 8px;"><span class="status-dot"></span></span>
@@ -888,6 +914,11 @@ function sidebarRow(c, active) {
         <div class="m">${c.platform || "—"} · ${formatDate(new Date(c.updatedAt))}</div>
       </div>
       ${dueBadge(c)}
+      ${
+        deletable
+          ? `<button type="button" class="icon-btn creator-item-delete" data-delete-content="${c.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 13 })}</button>`
+          : ""
+      }
     </div>
   `;
 }

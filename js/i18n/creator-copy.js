@@ -103,6 +103,8 @@ export default {
   "cr.phase.none": { en: "No phase", id: "Tanpa fase" },
   "cr.series.label": { en: "Content Series (optional)", id: "Content Series (opsional)" },
   "cr.series.none": { en: "Not part of a series", id: "Bukan bagian dari series" },
+  "cr.delete.title": { en: "Delete \"{title}\"?", id: "Hapus \"{title}\"?" },
+  "cr.delete.done": { en: "Content deleted", id: "Konten dihapus" },
   "cr.funnel.goalSummary": { en: "Goal: {label}", id: "Tujuan: {label}" },
   "cr.funnel.change": { en: "change", id: "ubah" },
 
