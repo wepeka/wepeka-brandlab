@@ -56,6 +56,32 @@ export const GUIDE_VIDEOS = {
   sales: { title: t("guide.video.sales"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
 };
 
+// Published videos come from wpk-dp's admin (Brandlab > Video Panduan),
+// which writes Firestore meta/guideVideos; /api/guide-videos serves it. Each
+// entry there replaces that key's PLACEHOLDER_SRC (and its length), so a
+// video goes live without a deploy. Fetched once per page load; anything
+// failing (offline, local serve.py without /api) just leaves the
+// placeholders in place.
+function durationLabel(sec) {
+  return sec < 120 ? t("guide.video.sec", { n: sec }) : t("guide.video.min", { n: Math.round(sec / 30) / 2 });
+}
+export const guideVideosReady = (typeof fetch === "function" ? fetch("/api/guide-videos") : Promise.reject())
+  .then((r) => (r.ok ? r.json() : {}))
+  .then(({ videos } = {}) => {
+    for (const [key, o] of Object.entries(videos || {})) {
+      const v = GUIDE_VIDEOS[key];
+      if (!v || !o?.src) continue;
+      v.src = o.src;
+      if (o.seconds > 0) {
+        v.seconds = o.seconds;
+        v.duration = durationLabel(o.seconds);
+      }
+    }
+  })
+  .catch(() => {});
+// Wait for the fetch above, but never hold a video back for long on a slow line.
+const whenReady = (ms = 2500) => Promise.race([guideVideosReady, new Promise((r) => setTimeout(r, ms))]);
+
 // Guide/Panduan key → which video, and where in it this page's chapter
 // starts. A bare string means "from the top". Content OS shares one Panduan
 // button across its sub-tabs, so it resolves from the current route.
@@ -152,6 +178,9 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return null;
   const real = !!v.src && !isPlaceholder(v.src);
+  // A chapter start past the end of the actual video (chapter times are set
+  // for the final recordings; a shorter clip may be up) plays from the top.
+  if (Number(v.seconds) > 0 && start >= Number(v.seconds) - 3) start = 0;
   const overlay = openModal({
     title: v.title,
     wide: true,
@@ -192,7 +221,13 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
     if (!real) return showChoices();
     skipRow.hidden = false;
     const el = stage.querySelector("video");
-    if (el) el.addEventListener("ended", showChoices, { once: true });
+    if (el) {
+      // Same guard for a file whose real length is shorter than declared.
+      el.addEventListener("loadedmetadata", () => {
+        if (el.duration && el.currentTime >= el.duration - 1) el.currentTime = 0;
+      }, { once: true });
+      el.addEventListener("ended", showChoices, { once: true });
+    }
     else ending = setTimeout(showChoices, Math.max(5, (Number(v.seconds) || 60) - (Number(start) || 0)) * 1000);
   };
 
@@ -311,7 +346,7 @@ export function playFirstRunIntro() {
   if (videoSeen("kenalan")) return;
   markVideoSeen("kenalan");
   introJustPlayed = true;
-  openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: true });
+  whenReady().then(() => openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: true }));
 }
 
 // The second autoplay: every time a brand is created, for anyone — not just
@@ -328,7 +363,7 @@ export function playNewBrandIntro() {
     introJustPlayed = false;
     return;
   }
-  openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: false });
+  whenReady().then(() => openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: false }));
 }
 
 // The "Video" pill next to a page's "?" (js/help.js helpButtonHTML) — same
@@ -348,6 +383,6 @@ if (typeof window !== "undefined" && !window.__guideVideoClickWired) {
     const btn = e.target instanceof Element ? e.target.closest("[data-guide-video-btn]") : null;
     if (!btn) return;
     const ref = videoRefForGuide(btn.dataset.guideVideoBtn);
-    if (ref) openGuideVideo(ref.video, { start: ref.start });
+    if (ref) whenReady().then(() => openGuideVideo(ref.video, { start: ref.start }));
   });
 }
