@@ -16,6 +16,13 @@
 // price + "did this actually get paid" can never be trusted to client-side
 // JS alone — the amounts below are for display only.
 //
+// The page asks one question — "after the trial, how do you want to
+// continue?" — and offers two answers side by side: a subscription (one
+// card, size and period as toggles) or Founder Lifetime (pay once, join the
+// Founder Circle). Agency-sized plans sit behind a collapsed row so a
+// one-brand owner never sees a Rp 1jt+ number; add-ons only appear for
+// accounts that already pay (they're a second decision, not a first one).
+//
 // Only sell what exists (audited against the source): no one-click IG/FB
 // import, no white-label PDF — the Brand Book PDF carries Wepeka's mark.
 import { icon } from "../icons.js";
@@ -102,27 +109,27 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
 
 // Display mirror of api/_plans.js + js/ai-usage.js's PLAN_QUOTA — keep in
 // sync. planKey sent to the server is `${key}-${billing}` for subscriptions.
-const PRO = { key: "pro", monthly: 99000, yearly: 799000, brands: 3, credits: 60 };
-// Kept purchasable, but deliberately out of the main line of sight — the
-// page's one job is Founder Lifetime; these sit in a collapsed row.
-const OTHER_PLANS = [
-  { key: "starter", monthly: 49000, yearly: 399000, brands: 1, credits: 20 },
-  { key: "studio", monthly: 249000, yearly: 1990000, brands: 10, credits: 200 },
-];
+// The two owner sizes share one card ("1 brand" / "3 brand" toggle); the
+// tier names Starter/Pro never appear on screen.
+const SUBSCRIPTIONS = {
+  1: { key: "starter", monthly: 49000, yearly: 399000, brands: 1, credits: 20 },
+  3: { key: "pro", monthly: 99000, yearly: 799000, brands: 3, credits: 60 },
+};
+const PRO = SUBSCRIPTIONS[3];
+const STUDIO = { key: "studio", monthly: 249000, yearly: 1990000, brands: 10, credits: 200 };
 
 // Two waves inside the same 50 slots (api/_plans.js FOUNDER_TIERS — keep in
 // sync). The page never shows how many are sold, only which wave is open.
-const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 15, people: 15, price: 299000 }, { upTo: 50, people: 35, price: 499000 }], brands: 3, credits: 300, features: ["proForever", "creditsMonth", "consultant", "ocr", "wa", "discord", "badge"] };
-const ULTIMATE = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 800000, brands: 15, credits: 500, features: ["studioForever", "creditsMonth", "community", "metaAds"] };
+const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 15, people: 15, price: 499000 }, { upTo: 50, people: 35, price: 699000 }], brands: 3, credits: 300, features: ["proForever", "contentMonth", "upcoming", "bookStyles", "circle", "review", "badge"] };
+const AGENCY = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 1490000, brands: 15, credits: 500 };
 // Hard caps, mirrored from api/_plans.js SLOT_CAPS.
 const FOUNDER_SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };
-
-// The comparison the hero is built on: what the same Pro feature set costs
-// over this many years, each way of paying for it.
-const LEDGER_YEARS = 3;
+// What the three premium Brand Book styles cost bought one by one
+// (api/_plans.js BOOK_STYLE_ADDONS) — the bundle line on the Founder card.
+const BOOK_STYLES_VALUE = 3 * 20000;
 
 // Rough going rate for a social media agency / freelance manager serving a
-// small business — an anchor for the value stack, shown as "kisaran".
+// small business — the one anchor on the page, shown as "kisaran".
 const AGENCY_MONTHLY = [1500000, 5000000];
 
 // `payKey` add-ons are bought on the spot (api/_plans.js ADDONS — keep in
@@ -137,7 +144,7 @@ const ADDONS = [
 ];
 const ADDON_ELIGIBLE_PLANS = ["founder", "founder-ultimate", "lifetime"];
 
-const FAQ_KEYS = ["trial", "after", "which", "ai", "cancel", "credits", "slots"];
+const FAQ_KEYS = ["trial", "after", "which", "circle", "ai", "cancel", "credits", "slots"];
 
 function waLink(planName, price) {
   const text = encodeURIComponent(t("pricing.wa.message", { plan: planName, price }));
@@ -145,7 +152,7 @@ function waLink(planName, price) {
 }
 
 const check = () => icon("check", { size: 15 });
-const featureVars = (plan, f) => ({ n: f.startsWith("credits") ? plan.credits : plan.brands });
+const featureVars = (plan, f) => (f === "bookStyles" ? { price: rp(BOOK_STYLES_VALUE) } : { n: /credit|content/i.test(f) ? plan.credits : plan.brands });
 const featuresHTML = (plan) => plan.features.map((f) => `<li>${check()}<span>${t(`pricing.f.${f}`, featureVars(plan, f))}</span></li>`).join("");
 
 // Logged in → pay for real. Logged out → wepeka.com (register or log in
@@ -157,6 +164,7 @@ function ctaHTML(planKey, label, uid, cls = "btn-secondary") {
     ? `<button type="button" class="${classes}" data-pay="${planKey}">${label}</button>`
     : `<a class="${classes}" data-plan="${planKey}" href="${WEPEKA_CONNECT_URL}">${label}</a>`;
 }
+const soldOutHTML = (cls = "btn-primary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`;
 
 // Index of the wave currently on sale, from the live sold-count. Unknown
 // count (still loading / read failed) shows the first wave — the amount
@@ -178,37 +186,47 @@ function tiersHTML(open) {
   }).join("")}</div>`;
 }
 
-function ledgerHTML(founderPrice) {
-  const rows = [
-    { key: "monthly", total: PRO.monthly * 12 * LEDGER_YEARS },
-    { key: "yearly", total: PRO.yearly * LEDGER_YEARS },
-    { key: "founder", total: founderPrice, win: true },
-  ];
-  const max = rows[0].total;
+function segHTML(name, options) {
+  return `<div class="pricing-seg" role="group">${options
+    .map((o) => `<button type="button" class="pricing-seg-btn ${o.on ? "is-on" : ""}" data-seg="${name}" data-value="${o.value}" aria-pressed="${o.on}">${o.label}</button>`)
+    .join("")}</div>`;
+}
+
+// One card for both owner sizes: the toggles pick starter/pro and
+// monthly/yearly; the planKey follows.
+function subscriptionCardHTML(sel, uid) {
+  const plan = SUBSCRIPTIONS[sel.brands];
+  const price = sel.yearly ? plan.yearly : plan.monthly;
+  const planKey = `${plan.key}-${sel.yearly ? "yearly" : "monthly"}`;
   return `
-    <div class="pricing-ledger">
-      <p class="pricing-ledger-title">${t("pricing.ledger.title", { years: LEDGER_YEARS })}</p>
-      ${rows.map((r, i) => `
-        <div class="pricing-ledger-row ${r.win ? "is-win" : ""}">
-          <div class="pricing-ledger-head"><span>${t(`pricing.ledger.${r.key}`)}</span><strong>${rp(r.total)}</strong></div>
-          <div class="pricing-ledger-bar"><i style="--w:${Math.max(4, Math.round((r.total / max) * 100))}%;--d:${i * 140}ms"></i></div>
-        </div>`).join("")}
-      <p class="pricing-ledger-save">${t("pricing.ledger.save", { amount: rp(max - founderPrice) })}</p>
-      <p class="pricing-ledger-fine">${t("pricing.ledger.fine", { founder: FOUNDER.credits, pro: PRO.credits })}</p>
+    <div class="pricing-way">
+      <h3 class="pricing-way-name">${t("pricing.way.subscription")}</h3>
+      <div class="pricing-price-row"><span class="pricing-price">${rp(price)}</span><span class="pricing-per">${t(sel.yearly ? "pricing.perYearShort" : "pricing.perMonthShort")}</span></div>
+      <p class="pricing-price-note">${sel.yearly ? t("pricing.sub.yearlySave", { amount: rp(plan.monthly * 12 - plan.yearly) }) : t(`pricing.sub.anchor.${plan.key}`)}</p>
+      ${segHTML("brands", [
+        { value: 1, label: t("pricing.f.brands1"), on: sel.brands === 1 },
+        { value: 3, label: t("pricing.f.brands", { n: 3 }), on: sel.brands === 3 },
+      ])}
+      ${segHTML("period", [
+        { value: "monthly", label: t("pricing.period.monthly"), on: !sel.yearly },
+        { value: "yearly", label: t("pricing.period.yearly"), on: sel.yearly },
+      ])}
+      <p class="pricing-way-credits">${t("pricing.f.contentDay", { n: plan.credits })}</p>
+      ${ctaHTML(planKey, t("pricing.way.subscription.cta"), uid)}
     </div>`;
 }
 
-function payWayHTML({ planKey, kind, price, per, note, credits, win, soldOut }, uid) {
+function founderCardHTML({ open, tier, soldOut }, uid) {
   return `
-    <div class="pricing-way ${win ? "is-win" : ""}">
-      ${win ? `<span class="pricing-ribbon">${t("pricing.bestDeal")}</span>` : ""}
-      <h3 class="pricing-way-name">${t(`pricing.way.${kind}`)}</h3>
-      <div class="pricing-price-row"><span class="pricing-price">${rp(price)}</span><span class="pricing-per">${per}</span></div>
-      <p class="pricing-price-note">${note}</p>
-      <p class="pricing-way-credits">${credits}</p>
-      ${soldOut
-        ? `<button type="button" class="btn btn-primary btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`
-        : ctaHTML(planKey, t(`pricing.way.${kind}.cta`), uid, win ? "btn-primary" : "btn-secondary")}
+    <div class="pricing-way is-win">
+      <span class="pricing-ribbon">${t("pricing.bestDeal")}</span>
+      <span class="pricing-limited">${t("pricing.founder.pill", { cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField] })}</span>
+      <h3 class="pricing-way-name">${t("pricing.way.lifetime")}</h3>
+      <div class="pricing-price-row"><span class="pricing-price">${rp(tier.price)}</span><span class="pricing-per">${t("pricing.payOnce")}</span></div>
+      <p class="pricing-price-note">${t("pricing.way.lifetime.note", { yearly: rp(PRO.yearly), price: rp(tier.price) })}</p>
+      ${tiersHTML(open)}
+      <ul class="pricing-features">${featuresHTML(FOUNDER)}</ul>
+      ${soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary")}
     </div>`;
 }
 
@@ -219,13 +237,35 @@ function otherPlanHTML(plan, uid) {
       <div class="pricing-other-info">
         <strong>${name}</strong>
         <span>${t(`pricing.${plan.key}.who`)}</span>
-        <span class="pricing-other-meta">${t(plan.brands === 1 ? "pricing.f.brands1" : "pricing.f.brands", { n: plan.brands })} · ${t("pricing.f.credits", { n: plan.credits })}</span>
+        <span class="pricing-other-meta">${t("pricing.f.brands", { n: plan.brands })} · ${t("pricing.f.contentDay", { n: plan.credits })}</span>
       </div>
       <div class="pricing-other-actions">
         ${ctaHTML(`${plan.key}-monthly`, t("pricing.perMonth", { price: rp(plan.monthly) }), uid)}
         ${ctaHTML(`${plan.key}-yearly`, t("pricing.perYear", { price: rp(plan.yearly) }), uid)}
       </div>
     </div>`;
+}
+
+// Studio + Agency Lifetime, collapsed: a different buyer (people who run
+// client brands), so their prices stay out of an owner's line of sight.
+function agencyHTML(uid, agencySoldOut) {
+  const perBrand = rp(Math.round(AGENCY.price / AGENCY.brands / 1000) * 1000);
+  return `
+    <details class="pricing-other" id="ultimate">
+      <summary>${t("pricing.agency.title")}${icon("chevronDown", { size: 16 })}</summary>
+      ${otherPlanHTML(STUDIO, uid)}
+      <div class="pricing-other-row">
+        <div class="pricing-other-info">
+          <strong>${t("pricing.founder-ultimate.name")}</strong>
+          <span>${t("pricing.ultimate.sub", { n: AGENCY.brands })}</span>
+          <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentMonth", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
+        </div>
+        <div class="pricing-other-actions">
+          ${agencySoldOut ? soldOutHTML("btn-secondary") : ctaHTML(AGENCY.key, `${rp(AGENCY.price)} · ${t("pricing.payOnce")}`, uid)}
+        </div>
+      </div>
+      <p class="pricing-renew-note">${t("pricing.agency.note")}</p>
+    </details>`;
 }
 
 function accountBarHTML(user, account) {
@@ -267,13 +307,15 @@ function lockedBannerHTML(account) {
   </section>`;
 }
 
-// "Kurang apa lagi" — the offer stacked against what the same help costs
-// elsewhere, ending on the one number they actually pay.
+// "Kurang apa lagi" — the Founder bundle stacked against what the same help
+// costs elsewhere (the agency line is the page's only price anchor), ending
+// on the one number they actually pay.
 function stackHTML(founderPrice) {
   const rows = [
     { key: "agency", value: t("pricing.stack.agency.value", { from: rp(AGENCY_MONTHLY[0]), to: rp(AGENCY_MONTHLY[1]) }), struck: true },
     { key: "consultant", value: t("pricing.stack.included") },
     { key: "tools", value: t("pricing.stack.included") },
+    { key: "circle", value: t("pricing.stack.included") },
     { key: "upcoming", value: t("pricing.stack.included") },
   ];
   return `
@@ -295,21 +337,47 @@ function stackHTML(founderPrice) {
     </section>`;
 }
 
+function addonsHTML(canBuyAddons) {
+  return `
+    <section class="pricing-addons">
+      <h2 class="pricing-section-title">${t("pricing.addons.title")}</h2>
+      <p class="pricing-sub pricing-section-sub">${t("pricing.addons.sub")}</p>
+      <div class="pricing-addon-grid">
+        ${ADDONS.map((a) => {
+          const name = t(`pricing.addons.${a.key}`);
+          const price = a.perMonth ? t("pricing.perMonth", { price: rp(a.price) }) : rp(a.price);
+          const inner = `
+            <span>${name}</span><strong>${price}</strong>
+            ${a.forWho ? `<em>${t(`pricing.addons.for.${a.forWho}`)}${a.save ? ` · ${t("pricing.addons.save", { amount: rp(a.save) })}` : ""}</em>` : ""}`;
+          return a.payKey && canBuyAddons
+            ? `<button type="button" class="pricing-addon" data-pay="${a.payKey}">${inner}</button>`
+            : `<a class="pricing-addon" href="${waLink(name, price)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+        }).join("")}
+      </div>
+    </section>`;
+}
+
 export function render(root, { user, account, backHref, locked } = {}) {
   const uid = user?.uid || null;
   const canBuyAddons = !!uid && ADDON_ELIGIBLE_PLANS.includes(account?.plan);
+  // Add-ons are a second decision: only accounts that already pay see them.
+  const showAddons = !!uid && !["trial", "expired", "none"].includes(accessState(account));
   let slots = null;
+  const sel = { brands: 1, yearly: false };
 
   const paint = () => {
   const open = openTier(slots?.[FOUNDER.slotField]);
   const founderSoldOut = open >= FOUNDER.tiers.length;
   const tier = FOUNDER.tiers[Math.min(open, FOUNDER.tiers.length - 1)];
-  const nextTier = FOUNDER.tiers[open + 1];
-  const months = Math.round(tier.price / PRO.monthly);
-  const ultimateSoldOut = (Number(slots?.[ULTIMATE.slotField]) || 0) >= FOUNDER_SLOT_CAPS[ULTIMATE.slotField];
-  const founderCta = (label, cls) => founderSoldOut
-    ? `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`
-    : ctaHTML(FOUNDER.key, label, uid, cls);
+  const agencySoldOut = (Number(slots?.[AGENCY.slotField]) || 0) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+  const faqVars = {
+    days: TRIAL_DAYS,
+    cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField],
+    first: FOUNDER.tiers[0].people,
+    next: FOUNDER.tiers[1].people,
+    priceFirst: rp(FOUNDER.tiers[0].price),
+    priceNext: rp(FOUNDER.tiers[1].price),
+  };
 
   root.innerHTML = `
     <div class="pricing-shell">
@@ -326,83 +394,32 @@ export function render(root, { user, account, backHref, locked } = {}) {
       ${locked ? lockedBannerHTML(account) : ""}
 
       <section class="pricing-hero">
-        <div class="pricing-hero-main">
-          <span class="pricing-limited">${t("pricing.limited")} · ${t("pricing.founder.pill", { cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField] })}</span>
-          <h1 class="pricing-title">${t("pricing.hero.title")}</h1>
-          <p class="pricing-sub">${t("pricing.hero.sub", { months })}</p>
-          <div class="pricing-hero-price">
-            ${nextTier ? `<span class="pricing-was">${rp(nextTier.price)}</span>` : ""}
-            <span class="pricing-price">${rp(tier.price)}</span>
-            <span class="pricing-per">${t("pricing.payOnce")}</span>
-          </div>
-          ${tiersHTML(open)}
-          ${founderCta(`${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, "btn-primary pricing-hero-cta")}
-          ${uid ? "" : `<p class="pricing-trial-note">${check()}<span>${t("pricing.trialNote", { days: TRIAL_DAYS })}</span></p>`}
-        </div>
-        ${ledgerHTML(tier.price)}
+        <span class="pricing-limited">${t("pricing.limited")} · ${t("pricing.founder.pill", { cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField] })}</span>
+        <h1 class="pricing-title">${t("pricing.hero.title")}</h1>
+        <p class="pricing-sub">${t("pricing.hero.sub")}</p>
+        ${uid ? "" : `<p class="pricing-trial-note">${check()}<span>${t("pricing.trialNote", { days: TRIAL_DAYS })}</span></p>`}
       </section>
-
-      <ul class="pricing-features pricing-hero-features">${featuresHTML(FOUNDER)}</ul>
-
-      ${stackHTML(tier.price)}
 
       <section class="pricing-ways-section">
-        <h2 class="pricing-section-title">${t("pricing.ways.title")}</h2>
-        <p class="pricing-sub pricing-section-sub">${t("pricing.ways.sub", { n: PRO.brands })}</p>
         <div class="pricing-ways">
-          ${payWayHTML({ planKey: "pro-monthly", kind: "monthly", price: PRO.monthly, per: t("pricing.perMonthShort"), note: t("pricing.way.monthly.note", { total: rp(PRO.monthly * 12) }), credits: t("pricing.f.credits", { n: PRO.credits }) }, uid)}
-          ${payWayHTML({ planKey: "pro-yearly", kind: "yearly", price: PRO.yearly, per: t("pricing.perYearShort"), note: t("pricing.way.yearly.note"), credits: t("pricing.f.credits", { n: PRO.credits }) }, uid)}
-          ${payWayHTML({ planKey: FOUNDER.key, kind: "lifetime", price: tier.price, per: t("pricing.payOnce"), note: t("pricing.way.lifetime.note"), credits: t("pricing.f.creditsMonth", { n: FOUNDER.credits }), win: true, soldOut: founderSoldOut }, uid)}
+          ${subscriptionCardHTML(sel, uid)}
+          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid)}
         </div>
-        <details class="pricing-other">
-          <summary>${t("pricing.other.title")}${icon("chevronDown", { size: 16 })}</summary>
-          ${OTHER_PLANS.map((plan) => otherPlanHTML(plan, uid)).join("")}
-          <p class="pricing-renew-note">${t("pricing.renewNote")}</p>
-        </details>
+        <p class="pricing-renew-note pricing-renew-note--plain">${t("pricing.renewNote")}</p>
+        ${agencyHTML(uid, agencySoldOut)}
       </section>
 
-      <section class="pricing-ultimate" id="ultimate">
-        <div class="pricing-ultimate-main">
-          <span class="pricing-ultimate-tag">${t("pricing.ultimate.tag")}</span>
-          <h2 class="pricing-ultimate-title">${t("pricing.founder-ultimate.name")}</h2>
-          <p class="pricing-ultimate-sub">${t("pricing.ultimate.sub", { n: ULTIMATE.brands })}</p>
-          <ul class="pricing-features">${featuresHTML(ULTIMATE)}</ul>
-        </div>
-        <div class="pricing-ultimate-buy">
-          <div class="pricing-ultimate-brands"><strong>${ULTIMATE.brands}</strong><span>${t("pricing.ultimate.brandsLabel")}</span></div>
-          <div class="pricing-price-row"><span class="pricing-price">${rp(ULTIMATE.price)}</span><span class="pricing-per">${t("pricing.payOnce")}</span></div>
-          <p class="pricing-price-note">${t("pricing.ultimate.perBrand", { price: rp(Math.round(ULTIMATE.price / ULTIMATE.brands / 100) * 100) })}</p>
-          <p class="pricing-ultimate-limit">${t("pricing.limited")} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[ULTIMATE.slotField] })}</p>
-          ${ultimateSoldOut
-            ? `<button type="button" class="btn pricing-ultimate-cta btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`
-            : ctaHTML(ULTIMATE.key, t("pricing.choose", { plan: t("pricing.founder-ultimate.name") }), uid, "pricing-ultimate-cta")}
-        </div>
-      </section>
+      ${stackHTML(tier.price)}
       <p class="pricing-founder-note">${t("pricing.founder.note")}</p>
 
-      <section class="pricing-addons">
-        <h2 class="pricing-section-title">${t("pricing.addons.title")}</h2>
-        <p class="pricing-sub pricing-section-sub">${t("pricing.addons.sub")}</p>
-        <div class="pricing-addon-grid">
-          ${ADDONS.map((a) => {
-            const name = t(`pricing.addons.${a.key}`);
-            const price = a.perMonth ? t("pricing.perMonth", { price: rp(a.price) }) : rp(a.price);
-            const inner = `
-              <span>${name}</span><strong>${price}</strong>
-              ${a.forWho ? `<em>${t(`pricing.addons.for.${a.forWho}`)}${a.save ? ` · ${t("pricing.addons.save", { amount: rp(a.save) })}` : ""}</em>` : ""}`;
-            return a.payKey && canBuyAddons
-              ? `<button type="button" class="pricing-addon" data-pay="${a.payKey}">${inner}</button>`
-              : `<a class="pricing-addon" href="${waLink(name, price)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
-          }).join("")}
-        </div>
-      </section>
+      ${showAddons ? addonsHTML(canBuyAddons) : ""}
 
       <section class="pricing-faq">
         <h2 class="pricing-section-title">${t("pricing.faq.title")}</h2>
         ${FAQ_KEYS.map((k, i) => `
           <details class="pricing-faq-item" ${i === 0 ? "open" : ""}>
-            <summary>${t(`pricing.faq.${k}.q`, { days: TRIAL_DAYS })}${icon("chevronDown", { size: 16 })}</summary>
-            <p>${t(`pricing.faq.${k}.a`, { days: TRIAL_DAYS, months })}</p>
+            <summary>${t(`pricing.faq.${k}.q`, faqVars)}${icon("chevronDown", { size: 16 })}</summary>
+            <p>${t(`pricing.faq.${k}.a`, faqVars)}</p>
           </details>`).join("")}
       </section>
 
@@ -421,23 +438,34 @@ export function render(root, { user, account, backHref, locked } = {}) {
   qsa("[data-pay]", root).forEach((btn) => {
     btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid));
   });
+  qsa("[data-seg]", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.seg === "brands") sel.brands = Number(btn.dataset.value);
+      else sel.yearly = btn.dataset.value === "yearly";
+      repaintInPlace();
+    });
+  });
+  };
+
+  const repaintInPlace = () => {
+    const y = window.scrollY;
+    paint();
+    window.scrollTo(0, y);
   };
 
   paint();
 
   // The live sold-count decides which Founder wave is open (and whether
   // anything is sold out) — it is never displayed. Repaint only if it
-  // changes what the page says, so the ledger's entrance doesn't replay.
+  // changes what the page says.
   getDoc(doc(fdb, "meta", "founderSlots"))
     .then((snap) => {
       if (!root.isConnected) return;
       const before = openTier(null);
       slots = snap.exists() ? snap.data() : {};
-      const ultimateGone = (Number(slots[ULTIMATE.slotField]) || 0) >= FOUNDER_SLOT_CAPS[ULTIMATE.slotField];
-      if (openTier(slots[FOUNDER.slotField]) === before && !ultimateGone) return;
-      const y = window.scrollY;
-      paint();
-      window.scrollTo(0, y);
+      const agencyGone = (Number(slots[AGENCY.slotField]) || 0) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+      if (openTier(slots[FOUNDER.slotField]) === before && !agencyGone) return;
+      repaintInPlace();
     })
     .catch((err) => console.warn("Founder slot count unavailable", err));
 }

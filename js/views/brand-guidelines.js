@@ -19,7 +19,7 @@ import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
-import { getCachedAccount, currentUid, isAdmin } from "../account.js";
+import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
 
 const TOUR_STEPS = [
@@ -1651,10 +1651,14 @@ function bookStyleOf(a) {
 
 // accounts/{uid}.bookStyles is only ever written by the Midtrans webhook
 // (firestore.rules lets a user edit nothing but displayName/username), so
-// reading it client-side is safe to gate the download on.
+// reading it client-side is safe to gate the download on. Pay-once plans
+// own every style as part of the bundle (the webhook writes them too; this
+// covers accounts granted by hand from the admin).
 function ownsBookStyle(style) {
   if (style.free || isAdmin(currentUid())) return true;
-  return (getCachedAccount()?.bookStyles || []).includes(style.key);
+  const account = getCachedAccount();
+  if (LIFETIME_PLANS.includes(account?.plan)) return true;
+  return (account?.bookStyles || []).includes(style.key);
 }
 
 const loadedBookStyleFonts = new Set();

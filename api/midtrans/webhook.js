@@ -5,7 +5,7 @@
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, SLOTS_DOC } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC } from "../_plans.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -111,6 +111,7 @@ export default async function handler(req, res) {
       patch.subscriptionExpiresAt = (stillRunning ? current.subscriptionExpiresAt : now) + plan.durationMs;
     } else {
       patch.subscriptionExpiresAt = null;
+      patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
     }
 
     tx.set(accountRef, patch, { merge: true });
