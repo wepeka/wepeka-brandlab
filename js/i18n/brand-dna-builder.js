@@ -178,7 +178,7 @@ export default {
   "beginner.today.eyebrow": { en: "Today", id: "Hari ini" },
   "beginner.today.doIt": { en: "Do it", id: "Kerjakan" },
   "beginner.today.fallbackTitle": { en: "Write your next content", id: "Tulis konten berikutnya" },
-  "beginner.today.fallbackWhy": { en: "Consistency is key. One more piece this week is enough.", id: "Konsisten itu kuncinya. Satu konten lagi minggu ini sudah cukup." },
+  "beginner.today.fallbackWhy": { en: "One more piece this week is enough.", id: "Satu konten lagi minggu ini sudah cukup." },
   "beginner.today.logo.title": { en: "Finish the Brand Book: upload a logo", id: "Lengkapi Brand Book: upload logo" },
   "beginner.today.logo.why": { en: "Your brand doesn't have a logo yet — it's used on business cards, social templates, and everything else visual.", id: "Brand kamu belum punya logo — dipakai di kartu nama, template sosial, dan semua materi visual lainnya." },
   "beginner.today.logo.cta": { en: "Upload logo", id: "Upload logo" },

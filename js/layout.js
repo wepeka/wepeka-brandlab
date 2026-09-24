@@ -6,12 +6,15 @@ import { getTheme, toggleTheme } from "./theme.js";
 import { getMode, toggleMode } from "./mode.js";
 import { t } from "./i18n.js";
 import { mountConsultantPanel, unmountConsultantPanel, openConsultantPanel } from "./consultant-panel.js";
+import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
 import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod } from "./ai-usage.js";
 import { getPageGuide } from "./section-guide.js";
 import { identityDone } from "./brand-progress.js";
 import { startOnboardingTour } from "./tour.js";
+import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
+import { canShowVideo, openIntroVideo } from "./guide-videos.js";
 
 // Avoid re-sampling the same logo's color every navigation — it's not
 // going to change until the avatar itself does.
@@ -58,14 +61,16 @@ const MODE_CONFIG = {
 const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 
 // One tab row for both modes. `matches` = which route views light a tab up
-// (Brand DNA / Guidelines live under Brand; the Sales Tracker, goal roadmap
-// and campaign-scoped Brainstorm light up Tujuan; Copy Studio is a sub-tab of
-// Konten). The Tools tab was removed on 22 Sep 2026 — four tabs, no drawer.
+// (Brand DNA / Guidelines live under Brand; the Sales Tracker and goal
+// roadmap light up Tujuan; Copy Studio is a sub-tab of Konten). The chat's
+// own page (#/brand/:id/chat) belongs to no tab. The Tools tab was removed on 22 Sep 2026 — four tabs, no drawer.
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
   { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
-  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales", "brainstorm"], gated: true },
-  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], gated: true },
+  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales"], gated: true },
+  // Konten is open from day one — try it first; the Konten page itself
+  // asks for Brand DNA to sharpen the results (js/views/content-os.js).
+  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], gated: false },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -104,12 +109,44 @@ function bellHTML() {
     </button>`;
 }
 
+// "Update" — the Pengumuman page (js/views/announcements.js), with a count
+// of what's new since this account last opened it.
+function updatesBtnHTML(active) {
+  const n = unreadCount();
+  return `<a class="icon-btn updates-btn ${active === "announcements" ? "is-active" : ""}" id="updates-btn" href="#/updates" data-tour="updates" title="${t("ann.topbarTitle")}" aria-label="${t("ann.topbarTitle")}">
+      ${icon("megaphone", { size: 17 })}<span class="updates-label">${t("ann.topbar")}</span>
+      <span class="notif-badge updates-badge" ${n ? "" : "hidden"}>${n > 9 ? "9+" : n || ""}</span>
+    </a>`;
+}
+
+// One listener for the whole session: keeps the badge current, and says
+// "Update baru: …" once when a post lands while the app is open.
+let annWired = false;
+const annToasted = new Set();
+const sessionStart = Date.now();
+function wireAnnouncements() {
+  startAnnouncements();
+  if (annWired) return;
+  annWired = true;
+  onAnnouncements(() => {
+    const n = unreadCount();
+    const badge = qs("#updates-btn .updates-badge");
+    if (badge) { badge.hidden = !n; badge.textContent = n > 9 ? "9+" : n ? String(n) : ""; }
+    if (location.hash.startsWith("#/updates") || isAnnouncementAdmin()) return;
+    const seen = announcementsSeenAt();
+    listAnnouncements()
+      .filter((a) => (a.createdAt || 0) > Math.max(seen, sessionStart) && !annToasted.has(a.id))
+      .slice(0, 1)
+      .forEach((a) => { annToasted.add(a.id); toast(t("ann.toast", { title: a.title || "" })); });
+  });
+}
+
 export function shellHTML({ brandId, active }) {
   const brand = brandId ? getBrand(brandId) : null;
 
-  // Pemula: Campaign and Konten stay visible but locked until the brand
-  // identity is done — the tab is a promise of what comes next, the lock
-  // says why it isn't open yet.
+  // Pemula: Campaign stays visible but locked until the brand identity is
+  // done — the tab is a promise of what comes next, the lock says why it
+  // isn't open yet. Konten is open from the start.
   const lock = brand && modeConfig().lockTabs && !identityDone(brand);
   const tabsHTML = brand
     ? TABS.map((tab) => {
@@ -138,6 +175,7 @@ export function shellHTML({ brandId, active }) {
       <div class="topbar-right">
         ${planBadgeHTML()}
         ${modeConfig().bell ? bellHTML() : ""}
+        ${updatesBtnHTML(active)}
         <button class="icon-btn" id="help-btn" title="${t("topbar.help")}" aria-label="${t("topbar.help")}">${icon("help", { size: 18 })}</button>
         <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" data-tour="settings">${icon("dots", { size: 18 })}</button>
       </div>
@@ -229,14 +267,16 @@ function appMenuHTML() {
   `;
 }
 
-// The ? popover: the single entry point to every kind of help. At most
-// three rows — this page's guide (when the view registered one, see
-// js/section-guide.js setPageGuide), the AI consultant, the intro tour.
+// The ? popover: the single entry point to every kind of help — this
+// page's guide (when the view registered one, see js/section-guide.js
+// setPageGuide), the AI chat, the intro video (once it is published), the
+// website tour.
 function helpMenuHTML(brandId) {
   return `
     ${getPageGuide() ? `<button type="button" data-act="page">${icon("target", { size: 15 })}${t("help.pageGuide")}</button>` : ""}
     ${brandId ? `<button type="button" data-act="consultant">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
-    <button type="button" data-act="tour">${icon("play", { size: 15 })}${t("help.tour")}</button>
+    ${canShowVideo("kenalan") ? `<button type="button" data-act="intro">${icon("play", { size: 15 })}${t("help.introVideo")}</button>` : ""}
+    <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
   `;
 }
 
@@ -253,6 +293,7 @@ function menuBelow(btn, { className = "", width = 240 } = {}) {
 }
 
 export function wireShell({ brandId }) {
+  wireAnnouncements();
   qs("#nav-return-btn")?.addEventListener("click", () => {
     const r = returnTo();
     clearNavContext();
@@ -270,6 +311,8 @@ export function wireShell({ brandId }) {
 
   if (brandId) mountConsultantPanel(brandId);
   else unmountConsultantPanel();
+  if (brandId) mountNotesFloat(brandId);
+  else unmountNotesFloat();
 
   const helpBtn = qs("#help-btn");
   helpBtn?.addEventListener("click", (e) => {
@@ -284,6 +327,7 @@ export function wireShell({ brandId }) {
       const act = target.dataset.act;
       if (act === "page") getPageGuide()?.();
       else if (act === "consultant") openConsultantPanel();
+      else if (act === "intro") openIntroVideo();
       else if (act === "tour") startOnboardingTour();
     });
   });

@@ -366,7 +366,9 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
       cleanupInteractive = listen("click", onClick);
     } else if (kind === "input") {
       const minLength = it.minLength ?? 1;
-      const isValid = () => ((resolveTarget(step.selector)?.value || "").trim().length >= minLength);
+      // The target may be a field's wrapper (so the spotlight also covers its
+      // label and AI button) — read the input inside it, not the wrapper.
+      const isValid = () => ((formControlOf(resolveTarget(step.selector))?.value || "").trim().length >= minLength);
       const update = () => {
         nextGated = !isValid();
         nextBtn.disabled = nextGated || transitioning;
@@ -607,14 +609,18 @@ export function startOnboardingTour() {
         selector: ["#brand-desc-field", "#brand-description"],
         title: t("tour.onb.desc.title"),
         body: t("tour.onb.desc.body"),
+        // Not skippable: the form refuses to save a brand without it (20+
+        // characters), so skipping only led to a Save that couldn't work.
         interactive: { type: "input", extraSelectors: ["#brand-description"], minLength: 20 },
-        skippable: true,
       },
       {
         selector: "[data-save]",
         title: t("common.save"),
         body: t("tour.onb.save.body"),
-        interactive: { type: "click" },
+        // Moves on once the brand really exists — a click the form rejects
+        // (missing name, too-short description) keeps the tour here.
+        interactive: { type: "until", predicate: () => listBrands().length > 0 },
+        hint: t("tour.hint.click"),
       }
     );
   } else {
@@ -630,65 +636,100 @@ export function startOnboardingTour() {
     });
   }
 
-  // By the time the in-brand steps run, the user has clicked into whichever
-  // brand they picked — read its id back out of the URL.
+  // The in-brand steps run on the brand the person just opened (the
+  // clickAny gate above) or just created. Pemula lands inside a new brand by
+  // itself; Pro stays on the brand list after saving, so the tour walks in —
+  // otherwise every step below waited for a page that never came.
   const brandBase = () => {
     const m = location.hash.match(/^#\/brand\/([^/]+)/);
     return m ? `#/brand/${m[1]}` : null;
   };
+  const enterBrand = () => {
+    if (brandBase()) return;
+    const newest = [...listBrands()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+    if (newest) location.hash = `#/brand/${newest.id}`;
+  };
+  // Back on the brand's home, with the "langkah berikutnya" list open: once
+  // every step is done it folds into a closed <details>, and a spotlight on
+  // a folded row lands on nothing.
   const goBrandHome = () => {
+    enterBrand();
     const base = brandBase();
     if (base && location.hash !== base) location.hash = base;
+    return new Promise((r) => setTimeout(r, 60)).then(() => {
+      document.querySelector("#beginner-journey.journey-collapsed:not([open])")?.setAttribute("open", "");
+    });
   };
+  const visible = (sel) => [...document.querySelectorAll(sel)].some((el) => el.getClientRects().length > 0);
 
-  // App steps point at the big app card on the brand's home (Guided:
-  // beginner-home [data-app], Advanced: brand-home .brand-widget[data-go]),
-  // not the small topbar tabs. Once inside a brand the tour stays on its
-  // home and explains each card from there — it doesn't walk people into
-  // Builder/Campaign/Content OS one after another; each of those pages has
-  // its own Panduan for when they actually open it.
+  // Once inside a brand the tour stays on its home and explains each app
+  // from its row there — it doesn't walk people through Builder/Campaign/
+  // Konten one after another; each of those pages has its own Video and
+  // Panduan buttons for when they actually open it.
   steps.push(
-    // After creating the first brand (Pemula lands straight inside it) or
-    // clicking one from the list above (the clickAny gate on that step),
-    // everything below is already on the brand's own page — no detour
-    // through the all-brands list's routine card or a second "pick a
-    // brand" step (2.4: that pair used to sit stalled for ~8s waiting for
-    // selectors that no longer exist once inside a brand).
     {
       selector: "#brand-switch-btn",
+      showIf: () => listBrands().length > 0,
+      beforeStep: enterBrand,
+      waitTimeout: 6000,
       title: t("tour.onb.switch.title"),
       body: t("tour.onb.switch.body"),
     },
     {
       selector: '[data-tour="tab-home"]',
+      showIf: () => !!brandBase() || listBrands().length > 0,
       title: t("tour.onb.home.title"),
       body: t("tour.onb.home.body"),
     },
     {
-      selector: ['[data-app="builder"]', '.brand-widget[data-go="builder"]'],
+      selector: '[data-app="builder"]',
+      showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       waitTimeout: 6000,
       title: "Brand Builder",
       body: t("tour.onb.builder.body"),
     },
     {
-      selector: ['[data-app="campaigns"]', '.brand-widget[data-go="campaigns"]'],
+      selector: '[data-app="campaigns"]',
+      showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
-      waitTimeout: 6000,
       title: t("tour.onb.campaigns.title"),
       body: t("tour.onb.campaigns.body"),
     },
     {
-      selector: ['[data-app="content-os"]', '.brand-widget[data-go="content-os"]'],
+      selector: '[data-app="content-os"]',
+      showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
-      waitTimeout: 6000,
       title: t("cnt.os.tour.title"),
       body: t("tour.onb.contentOs.body"),
     },
     {
+      // The two pills next to the page title — how every later question
+      // about a page gets answered.
+      selector: ["[data-page-guide-btn]:not([hidden])", "[data-guide-video-btn]:not([hidden])"],
+      beforeStep: goBrandHome,
+      title: t("tour.onb.help.title"),
+      body: t("tour.onb.help.body"),
+    },
+    {
+      // The round chat button hides during tours (it would sit on top of
+      // tooltips) — except on the step that is about it.
+      selector: "#consultant-fab",
+      beforeStep: () => document.body.classList.add("tour-show-chat"),
+      title: t("tour.onb.chat.title"),
+      body: t("tour.onb.chat.body"),
+    },
+    {
+      // Pro only — Pemula has no bell. Skipped at once instead of waiting.
       selector: '[data-tour="notif-bell"]',
+      showIf: () => { document.body.classList.remove("tour-show-chat"); return visible('[data-tour="notif-bell"]'); },
       title: t("tour.onb.notif.title"),
       body: t("tour.onb.notif.body"),
+    },
+    {
+      selector: '[data-tour="updates"]',
+      title: t("tour.onb.updates.title"),
+      body: t("tour.onb.updates.body"),
     },
     {
       selector: '[data-tour="settings"]',
@@ -697,5 +738,8 @@ export function startOnboardingTour() {
     }
   );
 
-  runSpotlightTour(steps, { keepOnNavigate: true, onFinish: markTourDone });
+  runSpotlightTour(steps, {
+    keepOnNavigate: true,
+    onFinish: () => { document.body.classList.remove("tour-show-chat"); markTourDone(); },
+  });
 }

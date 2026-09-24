@@ -49,4 +49,7 @@ export default {
   // js/voice-input.js
   "ai.voice.unsupported": { en: "Voice input isn't supported in this browser", id: "Input suara nggak didukung di browser ini" },
   "ai.voice.error": { en: "Voice input error: {error}", id: "Input suara bermasalah: {error}" },
+  "ai.auto.reason": { en: "Updated on its own because: {reason}", id: "Diperbarui otomatis karena: {reason}" },
+  "ai.auto.busy": { en: "Something new happened ({reason}) — updating…", id: "Ada kabar baru ({reason}) — lagi memperbarui…" },
+  "ai.auto.today": { en: "updated on its own today", id: "diperbarui otomatis hari ini" },
 };

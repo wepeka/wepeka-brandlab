@@ -18,14 +18,18 @@
 // thousand short rows at most) sits comfortably inside one document.
 //   { model, products: [{ id, name, price, cost, openingSold, discountPct,
 //     discountUntil, archived }], openingRevenue, entries: [{ id, productId,
-//     qty, amount, date, repeat, referral, note, eventId, at }], lastAdvice }
+//     qty, amount, date, repeat, referral, note, eventId, source, at }],
+//     lastAdvice }
+// `source` (optional): where the sale came from — { campaignId, contentId }.
+// Picking a piece of content fills its campaign in too; picking an Event
+// campaign also sets `eventId` (the older field its widget reads).
 // `openingSold` / `openingRevenue`: what was already sold before tracking
 // started (the wizard's "sold so far") — counted in totals, never shown as
 // a dated sale.
 //
 // Still 100% manual entry: there is no sales backend and nothing here reads
 // or asks for ads data.
-import { getBrand, updateBrand, listCampaigns, updateCampaign, localISODate } from "./store.js";
+import { getBrand, updateBrand, listCampaigns, updateCampaign, getContent, listContent, localISODate } from "./store.js";
 
 const DAY = 86400000;
 const uid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -108,15 +112,77 @@ export function mergeProductsFromWizard(brandId, { model, products, openingReven
 // brand that sells at bazaars/launches/pop-ups, tagging a sale with which
 // event it came from is what lets eventSalesStats below answer "this event
 // sold how many of what" on the campaign's own page.
-export function logSale(brandId, { productId, qty = 1, amount = null, date = localISODate(), repeat = false, referral = false, note = "", eventId = null }) {
+export function logSale(brandId, { productId, qty = 1, amount = null, date = localISODate(), repeat = false, referral = false, note = "", eventId = null, source = null }) {
   const tr = getTracker(getBrand(brandId));
   const product = tr.products.find((p) => p.id === productId);
   if (!product) return null;
   const q = Math.max(1, Math.round(num(qty)) || 1);
-  const entry = { id: uid("s"), productId, qty: q, amount: amount === null || amount === "" ? effectivePrice(product, date) * q : Math.max(0, num(amount)), date, repeat: !!repeat, referral: !!referral, note: String(note || "").trim().slice(0, 140), eventId: eventId || null, at: Date.now() };
+  const src = normalizeSource(source, eventId);
+  const entry = { id: uid("s"), productId, qty: q, amount: amount === null || amount === "" ? effectivePrice(product, date) * q : Math.max(0, num(amount)), date, repeat: !!repeat, referral: !!referral, note: String(note || "").trim().slice(0, 140), eventId: eventId || null, ...(src ? { source: src } : {}), at: Date.now() };
   save(brandId, { entries: [...tr.entries, entry] });
   return entry;
 }
+// A sale's origin: a piece of content brings its campaign along; an event
+// is a campaign too. null when nothing was picked ("Gak tahu / campuran").
+function normalizeSource(source, eventId = null) {
+  const contentId = source?.contentId || null;
+  const campaignId = source?.campaignId || (contentId ? getContent(contentId)?.campaignId || null : null) || eventId || null;
+  return contentId || campaignId ? { campaignId, contentId } : null;
+}
+
+// ---------- Where sales come from ----------
+const SOURCE_CONTENT_DAYS = 60;
+// The choices for "Dari mana penjualan ini?": events, other running
+// campaigns, and content published in the last 60 days (newest first).
+export function saleSourceOptions(brandId, now = new Date()) {
+  const campaigns = listCampaigns(brandId).filter((c) => !["archived", "completed"].includes(c.status));
+  const since = localISODate(new Date(now.getTime() - SOURCE_CONTENT_DAYS * DAY));
+  const content = listContent(brandId)
+    .filter((c) => c.status === "published" && (c.publishedDate || "") >= since)
+    .sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""));
+  return {
+    events: campaigns.filter((c) => c.eventPlan).sort((a, b) => (b.eventPlan?.eventDate || "").localeCompare(a.eventPlan?.eventDate || "")),
+    campaigns: campaigns.filter((c) => !c.eventPlan),
+    content,
+  };
+}
+// A sale counts for a campaign when it was tagged with it (or its event).
+const fromCampaign = (e, id) => e.source?.campaignId === id || e.eventId === id;
+function sumEntries(list) {
+  return { count: list.length, qty: list.reduce((a, e) => a + e.qty, 0), revenue: list.reduce((a, e) => a + e.amount, 0) };
+}
+export function campaignSalesStats(brand, campaignId, { days = null, now = new Date() } = {}) {
+  const since = days ? localISODate(new Date(now.getTime() - days * DAY)) : null;
+  return sumEntries(getTracker(brand).entries.filter((e) => fromCampaign(e, campaignId) && (!since || e.date >= since)));
+}
+export function contentSalesStats(brand, contentId, { days = null, now = new Date() } = {}) {
+  const since = days ? localISODate(new Date(now.getTime() - days * DAY)) : null;
+  return sumEntries(getTracker(brand).entries.filter((e) => e.source?.contentId === contentId && (!since || e.date >= since)));
+}
+// Per-source totals over the last `days` — for the AI's sales snapshot.
+// Plain data only: names are looked up by the caller.
+export function salesBySource(brand, { days = SOURCE_CONTENT_DAYS, now = new Date() } = {}) {
+  const since = localISODate(new Date(now.getTime() - days * DAY));
+  const entries = getTracker(brand).entries.filter((e) => e.date >= since);
+  const group = (keyOf) => {
+    const map = new Map();
+    entries.forEach((e) => {
+      const k = keyOf(e);
+      if (!k) return;
+      const row = map.get(k) || { id: k, count: 0, qty: 0, revenue: 0 };
+      row.count += 1; row.qty += e.qty; row.revenue += e.amount;
+      map.set(k, row);
+    });
+    return [...map.values()].sort((a, b) => b.revenue - a.revenue || b.qty - a.qty);
+  };
+  return {
+    byCampaign: group((e) => e.source?.campaignId || e.eventId || null),
+    byContent: group((e) => e.source?.contentId || null),
+    unknown: sumEntries(entries.filter((e) => !e.source && !e.eventId)),
+    total: sumEntries(entries),
+  };
+}
+
 // Event campaigns this brand has (campaign.eventPlan, from the "Event" quick
 // template in js/views/campaigns.js) — most recent event date first, for the
 // "which event was this sale from" picker in the log form.
@@ -129,7 +195,7 @@ export function eventCampaignsForBrand(brandId) {
 // the total, read by campaign-detail.js's event-sales widget.
 export function eventSalesStats(brand, eventId) {
   const tracker = getTracker(brand);
-  const entries = tracker.entries.filter((e) => e.eventId === eventId);
+  const entries = tracker.entries.filter((e) => fromCampaign(e, eventId));
   const byProduct = {};
   entries.forEach((e) => {
     const row = byProduct[e.productId] || (byProduct[e.productId] = { qty: 0, revenue: 0 });
@@ -258,5 +324,14 @@ export function salesSnapshotText(brand, { unit = "" } = {}) {
     "Sold per week, oldest to newest (last 8 weeks): " + weeklySeries(tracker).map((w) => w.qty).join(", "),
   ];
   if (campaign) lines.push(`Sales Growth campaign target: ${campaign.goalPlan.target.sold} total within ${campaign.goalPlan.months} months (started ${localISODate(new Date(campaign.createdAt || Date.now()))}).`);
+  // Where sales came from (only what the owner tagged when logging).
+  const src = salesBySource(brand);
+  if (src.total.count) {
+    const campaignName = (id) => listCampaigns(brand.id).find((c) => c.id === id)?.name || "(deleted campaign)";
+    const contentTitle = (id) => getContent(id)?.title || "(deleted content)";
+    lines.push(`Where sales came from, last ${SOURCE_CONTENT_DAYS} days (tagged by the owner; ${src.unknown.count} of ${src.total.count} sales untagged):`);
+    src.byContent.slice(0, 5).forEach((r) => lines.push(`- content "${contentTitle(r.id)}": ${r.qty} sold, Rp ${r.revenue}`));
+    src.byCampaign.slice(0, 5).forEach((r) => lines.push(`- campaign "${campaignName(r.id)}": ${r.qty} sold, Rp ${r.revenue}`));
+  }
   return lines.join("\n");
 }

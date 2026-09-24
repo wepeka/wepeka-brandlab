@@ -124,6 +124,14 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == 'iSwfTtIQm6VkYoHFbI6wl7BzBF53';
     }
 
+    // Pengumuman (js/announcements.js): what's new in Brandlab. Every
+    // signed-in account reads; only the Wepeka team account (ADMIN_UIDS in
+    // js/account.js — keep in sync) posts, edits or deletes.
+    match /announcements/{id} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == 'iSwfTtIQm6VkYoHFbI6wl7BzBF53';
+    }
+
     // One settings doc per account (doc id == uid) — platforms/formats/
     // thresholds etc. are private to that account, same read/write shape as
     // accounts/{uid} itself. (settings/main above never matches here: no

@@ -14,6 +14,8 @@ import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
 import { generateCopy, rewriteCopy, hasAiKey, buildFullContext, campaignSummaryLine, AiApiError } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
+import { basisHTML } from "../brand-learning.js";
+import { writingRulesOf, writingRulesRowHTML, wireWritingRules, applyFixedHashtags } from "../writing-rules.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { wireMic } from "../voice-input.js";
 import { isTourDemo, demoGenerateCopy, demoRewriteCopy, DEMO_TOAST } from "../tour-demo.js";
@@ -167,12 +169,17 @@ function paint(ctx) {
       </div>
     </div>
     ${voiceNudgeHTML(brand, brandId)}
+    ${writingRulesRowHTML(brand)}
     <div class="copy-layout">
       <div class="card copy-form">${guided ? wizardHTML(state, campaigns) : formHTML(state, campaigns)}</div>
       <div class="copy-results" id="copy-results"></div>
     </div>
   `;
   wireHelpButtons(root);
+  wireWritingRules(root, brandId, () => {
+    const row = root.querySelector("[data-writing-rules]");
+    if (row) { row.outerHTML = writingRulesRowHTML(getBrand(brandId)); wireWritingRules(root, brandId, () => {}); }
+  });
   wireForm(ctx, guided);
   paintResults(ctx);
 }
@@ -498,7 +505,10 @@ async function runGenerate(ctx) {
       ? await demoGenerateCopy({ brand, ...params })
       : await generateCopy(ai, { ...params, brandContext: buildFullContext(brand, { campaigns, pulseText: pulseTextFor(brand, { content: listContent(brandId), campaigns, settings: getSettings() }) }) });
     if (ctx.dead) return;
-    state.variants = variants.map((v) => ({ parts: v.parts, note: v.note || "", demo, rated: false, editing: false, busy: false }));
+    // A feed caption ends with the brand's fixed hashtags (Aturan tulisan),
+    // put on by code — never guessed.
+    const fixed = params.format === "feed" ? writingRulesOf(getBrand(brandId)).hashtags : [];
+    state.variants = variants.map((v) => ({ parts: fixed.length ? v.parts.map((p) => applyFixedHashtags(p, fixed)) : v.parts, note: v.note || "", demo, rated: false, editing: false, busy: false }));
     state.lastParams = params;
   } catch (e) {
     if (ctx.dead) return;
@@ -544,7 +554,8 @@ async function runRewrite(ctx, index, rewriteKey) {
           rewrite: rewrite.key,
         });
     if (ctx.dead) return;
-    v.parts = next.parts;
+    const fixed = params.format === "feed" && !demo ? writingRulesOf(getBrand(brandId)).hashtags : [];
+    v.parts = fixed.length ? next.parts.map((p) => applyFixedHashtags(p, fixed)) : next.parts;
     v.note = next.note ?? v.note;
     v.demo = v.demo || demo;
     v.rated = false;
@@ -594,6 +605,7 @@ function resultsHTML(ctx) {
       ${state.variants.some((v) => v.demo) ? `<span class="tag copy-demo-tag">${t("copy.results.sample")}</span>` : ""}
     </div>
     <p class="copy-results-sub">${t("copy.results.sub")}</p>
+    ${state.variants.some((v) => v.demo) ? "" : basisHTML(brand, { content: listContent(brandId), settings: getSettings() })}
     ${state.variants.map((v, i) => variantHTML(v, i, params, brand)).join("")}
   `;
 }

@@ -6,13 +6,12 @@
 //   - When it ends (or is skipped) the same modal asks what's next, in three
 //     answers: play it again, take the live tour of this page instead, or
 //     "sudah paham".
-// Nothing here plays itself just from navigating to a page. Two exceptions,
-// both the "kenalan" video: a brand-new account's very first open
-// (js/main.js playFirstRunIntro, once ever, right after the welcome bumper),
-// which reuses this same modal with its `hint` bubble so the way back ("the
-// Video button lives here from now on") is shown once, not left to be
-// discovered; and every brand creation, for any account
-// (js/views/brands.js playNewBrandIntro).
+// Nothing here plays itself just from navigating to a page. The one
+// exception is the "kenalan" video on a brand-new account's very first open
+// (js/main.js playFirstRunIntro, once ever, right after the welcome bumper):
+// it autoplays, can be skipped, and ends on the same three answers —
+// "Sudah paham", "Putar ulang video", "Tur website". From then on every page
+// carries a Video button and a Panduan button (guideVideoButtonHTML) instead.
 //
 // One video per app, many pages per app: a page inside an app (say the
 // Kalender tab of Content OS) opens the app's video *at that page's chapter*
@@ -34,7 +33,8 @@ import { icon } from "./icons.js";
 import { escapeHtml, toast, showCalloutBubble } from "./dom.js";
 import { openModal, closeOverlay } from "./modals.js";
 import { getSettings, updateSettings } from "./store.js";
-import { getCachedAccount, isReadOnly } from "./account.js";
+import { getCachedAccount, isReadOnly, isAdmin, currentUid } from "./account.js";
+import { getPageGuide } from "./section-guide.js";
 import { readFlag, writeFlag, clearFlag } from "./seen-flags.js";
 import { t } from "./i18n.js";
 
@@ -50,6 +50,11 @@ const isLive = (key) => {
   const src = GUIDE_VIDEOS[key]?.src;
   return !!src && !isPlaceholder(src);
 };
+// The Wepeka admin account also sees the ones not uploaded yet (as the
+// "video lagi disiapkan" panel), to check where each video will appear and
+// walk the whole flow before the recordings are in.
+const adminPreview = () => isAdmin(currentUid());
+export const canShowVideo = (key) => !!GUIDE_VIDEOS[key] && (isLive(key) || adminPreview());
 
 // `seconds` is the declared length. For an embed (YouTube/Vimeo) it is also
 // the fallback for "the video has ended", since an iframe can't be watched
@@ -89,7 +94,7 @@ export const guideVideosReady = (typeof fetch === "function" ? fetch("/api/guide
     if (typeof document !== "undefined") {
       document.querySelectorAll("[data-guide-video-btn][hidden]").forEach((btn) => {
         const ref = videoRefForGuide(btn.dataset.guideVideoBtn);
-        if (ref && isLive(ref.video)) btn.hidden = false;
+        if (ref && canShowVideo(ref.video)) btn.hidden = false;
       });
     }
   })
@@ -150,11 +155,11 @@ export function parseVideoSrc(src) {
   return { kind: "file", id: "" };
 }
 
-function embedUrl(src, start = 0) {
+function embedUrl(src, start = 0, autoplay = false) {
   const p = parseVideoSrc(src);
   const at = Math.max(0, Math.floor(Number(start) || 0));
-  if (p.kind === "youtube") return `https://www.youtube.com/embed/${p.id}?rel=0${at ? `&start=${at}` : ""}`;
-  if (p.kind === "vimeo") return `https://player.vimeo.com/video/${p.id}${at ? `#t=${at}s` : ""}`;
+  if (p.kind === "youtube") return `https://www.youtube.com/embed/${p.id}?rel=0&playsinline=1${autoplay ? "&autoplay=1" : ""}${at ? `&start=${at}` : ""}`;
+  if (p.kind === "vimeo") return `https://player.vimeo.com/video/${p.id}${autoplay ? "?autoplay=1" : ""}${at ? `#t=${at}s` : ""}`;
   return null;
 }
 
@@ -165,7 +170,11 @@ function fileUrl(src, start = 0) {
   return at ? `${src}#t=${at}` : src;
 }
 
-export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0 } = {}) {
+// `autoplay`: the modal plays the video as soon as it opens — someone who
+// pressed Video (or a new account's intro) came to watch, not to press play
+// a second time. Browsers allow it after a click on the page; where one
+// still blocks it, the player's own play button is right there.
+export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0, autoplay = false } = {}) {
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return "";
   const size = compact ? " is-compact" : "";
@@ -173,14 +182,14 @@ export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0 } = 
     return `
       <div class="guide-video-frame is-placeholder${size}" role="img" aria-label="${t("guide.video.pendingAria", { title: escapeHtml(v.title) })}">
         <div class="guide-video-play">${icon("play", { size: compact ? 16 : 22 })}</div>
-        <div class="guide-video-ph-text"><b>${t("guide.video.pending")}</b><span>${escapeHtml(v.title)} · ${escapeHtml(v.duration)}</span></div>
+        <div class="guide-video-ph-text"><b>${t("guide.video.pending")}</b><span>${escapeHtml(v.title)} · ${escapeHtml(v.duration)}</span>${adminPreview() ? `<small>${t("guide.video.adminPending")}</small>` : ""}</div>
       </div>`;
   }
-  const embed = embedUrl(v.src, start);
+  const embed = embedUrl(v.src, start, autoplay);
   if (embed) {
-    return `<div class="guide-video-frame${size}"><iframe src="${escapeHtml(embed)}" title="${escapeHtml(v.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
+    return `<div class="guide-video-frame${size}"><iframe src="${escapeHtml(embed)}" title="${escapeHtml(v.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`;
   }
-  return `<div class="guide-video-frame${size}"><video src="${escapeHtml(fileUrl(v.src, start))}" controls playsinline preload="metadata"></video></div>`;
+  return `<div class="guide-video-frame${size}"><video src="${escapeHtml(fileUrl(v.src, start))}" controls playsinline preload="metadata"${autoplay ? " autoplay" : ""}></video></div>`;
 }
 
 // The player, as a modal, in two states: watching (the video plus a Lewati
@@ -189,11 +198,14 @@ export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0 } = 
 // Panduan button, which is exactly what the closing bubble will point at.
 // `start` (seconds) opens the video at that page's chapter; the replay
 // button starts from the top, so the whole app video is one click away.
-export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, start = 0 } = {}) {
+export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = null, hint = true, start = 0 } = {}) {
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return null;
   const real = !!v.src && !isPlaceholder(v.src);
-  if (!real) return null;
+  if (!real && !adminPreview()) return null;
+  // "Tur website" for the intro; on a page, that page's own guide when it
+  // has one (it is what the choice runs).
+  const tourText = tourLabel || (onTour === startPageTour && getPageGuide() ? t("guide.video.choices.pageGuide") : t("guide.video.choices.tour"));
   // A chapter start past the end of the actual video (chapter times are set
   // for the final recordings; a shorter clip may be up) plays from the top.
   if (Number(v.seconds) > 0 && start >= Number(v.seconds) - 3) start = 0;
@@ -201,7 +213,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
     title: v.title,
     wide: true,
     bodyHTML: `
-      <div data-video-stage>${guideVideoWidgetHTML(videoKey, { start })}</div>
+      <div data-video-stage>${guideVideoWidgetHTML(videoKey, { start, autoplay: true })}</div>
       <p class="guide-video-note">${real ? t("guide.video.duration", { duration: escapeHtml(v.duration) }) : t("guide.video.pendingNote", { duration: escapeHtml(v.duration) })}</p>
       <div class="guide-video-skip" data-video-skip hidden>
         <button type="button" class="btn btn-ghost btn-sm" data-vc="skip">${t("guide.video.skip")}</button>
@@ -210,7 +222,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
         <p class="guide-video-choices-head">${t("guide.video.choices.head")}</p>
         <div class="guide-video-choice-row">
           <button type="button" class="btn btn-ghost btn-sm" data-vc="replay">${icon("play", { size: 13 })}${t("guide.video.choices.replay")}</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-vc="tour">${icon("target", { size: 13 })}${t("guide.video.choices.tour")}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-vc="tour">${icon("target", { size: 13 })}${escapeHtml(tourText)}</button>
           <button type="button" class="btn btn-primary btn-sm" data-vc="done">${t("guide.video.choices.done")}</button>
         </div>
       </div>
@@ -254,7 +266,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
     if (what === "skip") return showChoices();
     if (what === "replay") {
       start = 0;
-      stage.innerHTML = guideVideoWidgetHTML(videoKey);
+      stage.innerHTML = guideVideoWidgetHTML(videoKey, { autoplay: true });
       stage.querySelector("video")?.play?.().catch(() => {});
       return watchForEnd();
     }
@@ -280,14 +292,20 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
   return overlay;
 }
 
-// "Masih mau tur website": this page's own Panduan button runs the tour that
-// belongs to it, and every page that has a video has one. The very first
-// video plays before any page is on screen (right after the mode picker), so
-// there the global onboarding tour stands in.
-function startPageTour() {
-  const btn = document.querySelector("[data-section-guide-btn]");
-  if (btn) btn.click();
-  else import("./tour.js").then((m) => m.startOnboardingTour()).catch((e) => console.warn("tur tidak bisa dibuka", e));
+// The tour a page's video (and its Panduan button) leads to: the page's own
+// guide (js/section-guide.js setPageGuide) when it registered one, else the
+// website tour.
+export function startPageTour() {
+  const guide = getPageGuide();
+  if (guide) guide();
+  else startWebsiteTour();
+}
+const startWebsiteTour = () => import("./tour.js").then((m) => m.startOnboardingTour()).catch((e) => console.warn("tur tidak bisa dibuka", e));
+
+// The intro video on demand (the topbar "?" menu): same three answers, and
+// "Tur website" runs the website tour.
+export function openIntroVideo() {
+  whenReady().then(() => openGuideVideo("kenalan", { onTour: startWebsiteTour, tourLabel: t("guide.video.choices.tour"), hint: false }));
 }
 
 // ---------- "Already seen" ----------
@@ -361,39 +379,26 @@ function hintAfterTour() {
 export function playFirstRunIntro() {
   if (videoSeen("kenalan")) return;
   markVideoSeen("kenalan");
-  introJustPlayed = true;
   const startTour = () => import("./tour.js").then((m) => m.startOnboardingTour());
   // No published intro yet: go straight to the tour the video would offer.
-  whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: startTour, hint: true }) : startTour()));
+  whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: startTour, tourLabel: t("guide.video.choices.tour"), hint: true }) : startTour()));
 }
 
-// The second autoplay: every time a brand is created, for anyone — not just
-// a brand-new account. Deliberately NOT videoSeen-gated; a new brand is a
-// fresh start, so the "kenalan" video plays again (it can be skipped at once
-// with "Lewati video"). The one exception is a new account's first brand
-// made in the same visit as the first-run intro: that video finished moments
-// ago, so playing it back-to-back would be a repeat, not a welcome. The
-// exception is spent on that one brand — every brand after it plays.
-// No `hint`: the Video button was already pointed out by the first run.
-let introJustPlayed = false;
-export function playNewBrandIntro() {
-  if (introJustPlayed) {
-    introJustPlayed = false;
-    return;
-  }
-  whenReady().then(() => {
-    if (isLive("kenalan")) openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: false });
-  });
-}
-
-// The "Video" pill next to a page's "?" (js/help.js helpButtonHTML) — same
-// icon-button language, so the two read as a pair. Empty when that page has
-// no video. Never opens on its own; only a click (via the delegated
-// listener below) or an explicit openGuideVideo() call shows the modal.
+// The two pills next to a page's "?" (js/help.js helpButtonHTML), same
+// icon-button language so the three read as one group:
+//   Video   — that page's video (at its chapter). Hidden until the video is
+//             published (admins see it anyway, see canShowVideo).
+//   Panduan — that page's spotlight guide, or the website tour where a page
+//             has none. Shown once the page has registered its guide
+//             (js/section-guide.js keeps these in step).
+// Neither opens on its own; only a click (delegated listener below) does.
 export function guideVideoButtonHTML(guideKey) {
   const ref = videoRefForGuide(guideKey);
-  if (!ref) return "";
-  return `<button type="button" class="icon-btn help-btn section-video-btn"${isLive(ref.video) ? "" : " hidden"} data-guide-video-btn="${escapeHtml(guideKey)}" title="${t("guide.video.btnTitle")}" aria-label="${t("guide.video.btnTitle")}">${icon("play", { size: 14 })}<span>Video</span></button>`;
+  const video = ref
+    ? `<button type="button" class="icon-btn help-btn section-video-btn"${canShowVideo(ref.video) ? "" : " hidden"} data-guide-video-btn="${escapeHtml(guideKey)}" title="${t("guide.video.btnTitle")}" aria-label="${t("guide.video.btnTitle")}">${icon("play", { size: 14 })}<span>Video</span></button>`
+    : "";
+  const guide = `<button type="button" class="icon-btn help-btn section-video-btn section-guide-btn"${getPageGuide() ? "" : " hidden"} data-page-guide-btn title="${t("help.pageGuide")}" aria-label="${t("help.pageGuide")}">${icon("target", { size: 14 })}<span>${t("guide.btn")}</span></button>`;
+  return video + guide;
 }
 
 // One delegated listener for every Video button, so pages don't each need
@@ -401,6 +406,8 @@ export function guideVideoButtonHTML(guideKey) {
 if (typeof window !== "undefined" && !window.__guideVideoClickWired) {
   window.__guideVideoClickWired = true;
   document.addEventListener("click", (e) => {
+    const guideBtn = e.target instanceof Element ? e.target.closest("[data-page-guide-btn]") : null;
+    if (guideBtn) { startPageTour(); return; }
     const btn = e.target instanceof Element ? e.target.closest("[data-guide-video-btn]") : null;
     if (!btn) return;
     const ref = videoRefForGuide(btn.dataset.guideVideoBtn);

@@ -18,6 +18,7 @@ import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { qs, qsa, escapeHtml as esc, toast, openMenu, closeMenu, formatNumber } from "../dom.js";
 import { t } from "../i18n.js";
+import { funnelShort } from "../funnel-field.js";
 
 const LANE_COLOR = { event: "var(--accent)", audience: "var(--track-social)", community: "var(--track-community)", rhythm: "var(--text-faint)" };
 const laneColor = (id) => LANE_COLOR[id] || "var(--text-faint)";
@@ -353,7 +354,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
   `;
 
   // ---- wiring
-  qs("#rg-chat", root)?.addEventListener("click", () => go(`#/brand/${brandId}/brainstorm`, { fromLabel: goal.name, goalId: goal.id, mode: "chat", seed: t("roadmap.chat.seed", { name: goal.name || t("roadmap.defaultName") }) }));
+  qs("#rg-chat", root)?.addEventListener("click", () => go(`#/brand/${brandId}/chat`, { fromLabel: goal.name, goalId: goal.id, mode: "chat", seed: t("roadmap.chat.seed", { name: goal.name || t("roadmap.defaultName") }) }));
   qsa("#rg-replan, #rg-refresh", root).forEach((b) => b.addEventListener("click", () => openReplanDialog({ brandId, goal })));
   qsa("[data-rg-push]", root).forEach((b) => b.addEventListener("click", () => openReplanDialog({ brandId, goal, preset: { pushPerWeek: Number(b.dataset.rgPush) } })));
   qs("#rg-cap", root)?.addEventListener("click", () => openReplanDialog({ brandId, goal }));
@@ -543,7 +544,7 @@ function weeksHTML(brandId, goal, plan, pr, today) {
         return `<div class="rg-row rg-row-${e.kind}">
           <span class="rg-row-date"><b>${esc(weekdayShort(date))}</b> ${esc(formatEventDate(date))}</span>
           <i class="rg-lanedot" style="background:${laneColor(e.laneId)}" title="${esc(laneName(pr, e.laneId))}"></i>
-          <span class="rg-row-main">${e.kind === "slot" ? `<span class="tag tag-${(e.funnel || "tofu").toLowerCase()}">${esc(e.funnel)}</span>` : `<span class="rg-kind">${esc(t(`roadmap.kind.${e.kind}`))}</span>`}${link ? `<a href="${link}">${esc(live?.label || e.label)}</a>` : esc(e.label)}</span>
+          <span class="rg-row-main">${e.kind === "slot" ? `<span class="tag tag-${(e.funnel || "tofu").toLowerCase()}">${esc(funnelShort(e.funnel))}</span>` : `<span class="rg-kind">${esc(t(`roadmap.kind.${e.kind}`))}</span>`}${link ? `<a href="${link}">${esc(live?.label || e.label)}</a>` : esc(e.label)}</span>
           ${st === "done" ? `<span class="rg-pill rg-pill-ok">${t("roadmap.ready.done")}</span>` : st === "overdue" ? `<span class="rg-pill rg-pill-bad">${t("roadmap.ready.overdue")}</span>` : ""}
         </div>`;
       }).join("")}</div></details>`;

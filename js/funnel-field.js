@@ -25,6 +25,13 @@ export function statusLabel(status, labels) {
 // next") instead of rendering the full picker above. Falls back to "" for
 // an empty/unrecognized value rather than leaking the raw tofu/mofu/bofu
 // acronym into Pemula copy.
+// The short tag for a funnel stage: plain words in Pemula ("Kenalan",
+// "Yakinkan", "Jualan"), the acronym in Pro.
+export function funnelShort(funnel) {
+  if (!funnel || !FUNNELS.includes(funnel)) return funnel || "";
+  return getMode() === "guided" ? t(`funnel.short.${funnel}`) : funnel;
+}
+
 export function funnelLabel(funnel) {
   if (!funnel || !FUNNELS.includes(funnel)) return "";
   return t(`creator.funnel.guided.${funnel}.title`);

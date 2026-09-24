@@ -13,6 +13,7 @@ import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { consumeNavContext } from "../nav-context.js";
+import { funnelShort } from "../funnel-field.js";
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -501,7 +502,7 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
     <div class="filter-panel-section">
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.funnel")}</div>
       <div class="chip-select" id="fp-funnel">
-        ${FUNNELS.map((f) => `<button type="button" data-val="${f}" class="${state.funnel === f ? "active" : ""}">${f}</button>`).join("")}
+        ${FUNNELS.map((f) => `<button type="button" data-val="${f}" class="${state.funnel === f ? "active" : ""}">${funnelShort(f)}</button>`).join("")}
       </div>
     </div>
     <div class="filter-panel-section">

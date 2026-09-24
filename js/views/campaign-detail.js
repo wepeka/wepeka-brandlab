@@ -7,12 +7,12 @@
 // entry is the "Catat angka" sheet for things the app can't observe.
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
+  getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
 } from "../store.js";
 import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform } from "../campaign-metrics.js";
-import { getTracker, productStats, trackerTotals, eventSalesStats } from "../sales-tracker.js";
+import { getTracker, productStats, trackerTotals, eventSalesStats, campaignSalesStats, contentSalesStats } from "../sales-tracker.js";
 import { computeContentMetrics } from "../formulas.js";
 import { openCampaignReport } from "./campaign-share.js";
 import { evaluateLevel, levelReminders } from "../goal-plan.js";
@@ -20,8 +20,10 @@ import { nextActions } from "../next-action.js";
 import { go } from "../nav-context.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
-import { toast, formatNumber, qs, qsa, openMenu, closeMenu, escapeHtml as esc } from "../dom.js";
-import { generateCampaignPlaybook, generateIdeaBubbles, AiApiError, hasAiKey } from "../ai.js";
+import { toast, formatNumber, formatDate, qs, qsa, openMenu, closeMenu, escapeHtml as esc } from "../dom.js";
+import { generateCampaignPlaybook, generateIdeaBubbles, generateCampaignContentPlan, AiApiError, hasAiKey } from "../ai.js";
+import { staleBecause, mayAutoRefresh, refreshStamp } from "../ai-autorefresh.js";
+import { postingLine, bestPostsLine } from "../brand-learning.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openInsightsModal } from "./insights-modal.js";
 import { openQuickFillModal } from "./content-list.js";
@@ -31,7 +33,7 @@ import { guideVideoButtonHTML } from "../guide-videos.js";
 import { startCampaignDetailGuide } from "../guides/campaign-guide.js";
 import { getMode } from "../mode.js";
 import { isTourDemo, DEMO_TOAST } from "../tour-demo.js";
-import { STATUS_LABELS_GUIDED } from "../funnel-field.js";
+import { STATUS_LABELS_GUIDED, funnelShort } from "../funnel-field.js";
 import { t } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 
@@ -111,6 +113,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     ${ideasWidgetHTML(campaign, state)}
     ${salesWidgetHTML(brandId, campaign, brand)}
     ${eventSalesWidgetHTML(brandId, campaign, brand)}
+    ${sourceSalesHTML(brandId, campaign, brand)}
     ${planRoadmapHTML(campaign, stages, ctx)}
     ${stageNavHTML(stages, state.stageIndex, acts, content, campaign)}
 
@@ -145,7 +148,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       }
     </div>
 
-    ${(campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead) : ""}
+    ${(campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead, ctx) : ""}
     ${activitiesHTML(acts, brandId, guided)}
   `;
 
@@ -229,6 +232,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   qs("#cd-manual-all", root)?.addEventListener("click", () => openManualSheet({ campaign, stage, ctx, refresh }));
   qsa("[data-cd-brainstorm]", root).forEach((btn) => btn.addEventListener("click", () => goBrainstorm({ brandId, campaign, stage, ctxLabel })));
   qs("#cd-new-content", root)?.addEventListener("click", () => run({ type: "new-content" }));
+  qs("#cd-content-plan", root)?.addEventListener("click", () => openContentPlanModal({ brand, campaign, stages, refresh }));
   qsa("[data-cd-open-content]", root).forEach((row) =>
     row.addEventListener("click", () => run({ type: "creator", contentId: row.dataset.cdOpenContent, intent: "continue" }))
   );
@@ -248,6 +252,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       if (c) openQuickFillModal({ c, onSaved: refresh });
     })
   );
+  autoRefreshPlan(root, { brand, campaign, stages, state, refresh });
 }
 
 // ---------- Blocks ----------
@@ -402,6 +407,17 @@ function eventSalesWidgetHTML(brandId, campaign, brand) {
     `, { sub: t("camp.eventSales.sub") });
 }
 
+// ---------- Sales tagged with this campaign ----------
+// One quiet line (not another widget) once the owner has tagged a sale with
+// this campaign — or with one of its posts — in the Sales Tracker. Events
+// already show theirs in the widget above.
+function sourceSalesHTML(brandId, campaign, brand) {
+  if (campaign.eventPlan) return "";
+  const s = campaignSalesStats(brand, campaign.id);
+  if (!s.count) return "";
+  return `<a class="card glass-card card-tight st-campaign cd-source-sales" href="#/brand/${brandId}/sales">${icon("target", { size: 16 })}<span>${t("sales.source.campaignLine", { qty: formatNumber(s.qty), revenue: `Rp ${formatNumber(Math.round(s.revenue))}`, count: s.count })}</span>${icon("arrowRight", { size: 14 })}</a>`;
+}
+
 // ---------- Ide Campaign (bubble idea board) ----------
 // A persistent, always-visible board so the ideas someone already had for
 // this campaign don't live only inside a modal they have to reopen —
@@ -535,7 +551,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
       addIdea(idea.text, "ai", idea.description || "");
     })
   );
-  qs("#cd-idea-discuss", root)?.addEventListener("click", () => go(`#/brand/${brand.id}/brainstorm`, { fromLabel: campaign.name, campaignId: campaign.id, mode: "chat" }));
+  qs("#cd-idea-discuss", root)?.addEventListener("click", () => go(`#/brand/${brand.id}/chat`, { fromLabel: campaign.name, campaignId: campaign.id, mode: "chat" }));
   qs("#cd-idea-ai", root).addEventListener("click", async () => {
     const ai = getSettings().ai || {};
     const btn = qs("#cd-idea-ai", root);
@@ -578,7 +594,11 @@ function planRoadmapHTML(campaign, stages, ctx) {
   // Closable: a widget the user has to look past every time they open the
   // campaign gets closed once they don't need it any more — collapses to a
   // one-line bar with a way back, instead of disappearing for good.
-  if (isWidgetCollapsed(campaign, "plan")) return widgetCollapsedHTML("plan", "layers", t("camp.plan.title"), t("camp.plan.summary", { done: stages.filter((s) => s.state === "completed").length, total: stages.length }));
+  if (isWidgetCollapsed(campaign, "plan")) {
+    const summary = t("camp.plan.summary", { done: stages.filter((s) => s.state === "completed").length, total: stages.length });
+    const autoToday = campaign.aiPlan?.autoReason && campaign.aiPlan.autoDay === localISODate();
+    return widgetCollapsedHTML("plan", "layers", t("camp.plan.title"), autoToday ? `${summary} · ${t("ai.auto.today")}` : summary);
+  }
   const plan = campaign.aiPlan || null;
   const levelHTML = (s) => {
     const read = readStage(s, ctx);
@@ -612,7 +632,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
         <input class="input" id="cd-plan-context" placeholder="${esc(t("camp.plan.contextPh"))}" />
         <button type="button" class="btn ${plan ? "btn-secondary" : "btn-primary"}" id="cd-plan-ai">${icon("sparkle", { size: 14 })}${plan ? t("camp.plan.aiAgain") : t("camp.plan.aiBtn")}</button>
       </div>
-      <div id="cd-plan-status"></div>
+      <div id="cd-plan-status">${campaign.aiPlan?.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: campaign.aiPlan.autoReason }))}</p>` : ""}</div>
       <ol class="cd-plan-levels">${stages.map(levelHTML).join("")}</ol>
     `, { sub: t(`camp.plan.sub.${track}`) });
 }
@@ -633,8 +653,9 @@ function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
     try {
       const levels = stages.map((s) => ({ index: s.index, name: s.name, description: s.description, targets: s.milestones.filter((m) => m.required !== false && !m.notApplicable).map((m) => `${m.label}${m.target ? ` ${m.target} ${m.unit || ""}` : ""}`) }));
       const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
-      const result = await generateCampaignPlaybook(ai, { brand, campaign, track: campaign.goalPlan.track, levels, extra: qs("#cd-plan-context", root)?.value.trim() || "", pulseText });
-      updateCampaign(campaign.id, { aiPlan: { ...result, generatedAt: Date.now() } });
+      const extra = qs("#cd-plan-context", root)?.value.trim() || "";
+      const result = await generateCampaignPlaybook(ai, { brand, campaign, track: campaign.goalPlan.track, levels, extra, pulseText });
+      updateCampaign(campaign.id, { aiPlan: { ...keepAdded(result, campaign.aiPlan), extra, refreshedFor: campaign.aiPlan?.refreshedFor || [], generatedAt: Date.now() } });
       toast(t("camp.plan.saved"));
       refresh();
     } catch (e) {
@@ -655,6 +676,181 @@ function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
       refresh();
     })
   );
+}
+
+// Activities already pushed into a level stay marked after a rewrite.
+function keepAdded(next, prev) {
+  const added = new Set((prev?.levels || []).flatMap((l) => (l.activities || []).filter((a) => a.added).map((a) => `${l.index}:${a.title}`)));
+  if (!added.size) return next;
+  return { ...next, levels: (next.levels || []).map((l) => ({ ...l, activities: (l.activities || []).map((a) => (added.has(`${l.index}:${a.title}`) ? { ...a, added: true } : a)) })) };
+}
+
+// The Rencana playbook, rewritten on its own — free — when an important
+// signal arrived after it was written (js/ai-autorefresh.js: rules and
+// guards). Once per page visit, only for a plan the owner already made.
+async function autoRefreshPlan(root, { brand, campaign, stages, state, refresh }) {
+  const plan = campaign.aiPlan;
+  if (state.autoPlanTried || !plan || campaign.goalPlan?.version !== 3 || stages[0]?.kind !== "level") return;
+  state.autoPlanTried = true;
+  const ai = getSettings().ai || {};
+  const advice = { at: plan.generatedAt, refreshedFor: plan.refreshedFor, autoDay: plan.autoDay };
+  if (!mayAutoRefresh(advice, ai)) return;
+  const content = listContent(brand.id);
+  const campaigns = listCampaigns(brand.id);
+  const signal = staleBecause(advice, { brand, content, campaigns, settings: getSettings() });
+  if (!signal) return;
+  const statusEl = qs("#cd-plan-status", root);
+  if (statusEl) statusEl.innerHTML = `<div class="ocr-status" style="margin-bottom:10px;"><div class="spinner"></div><span>${esc(t("ai.auto.busy", { reason: signal.title }))}</span></div>`;
+  try {
+    const levels = stages.map((s) => ({ index: s.index, name: s.name, description: s.description, targets: s.milestones.filter((m) => m.required !== false && !m.notApplicable).map((m) => `${m.label}${m.target ? ` ${m.target} ${m.unit || ""}` : ""}`) }));
+    const pulseText = pulseTextFor(brand, { content, campaigns, settings: getSettings() });
+    const result = await generateCampaignPlaybook(ai, { brand, campaign, track: campaign.goalPlan.track, levels, extra: plan.extra || "", pulseText, free: true });
+    updateCampaign(campaign.id, { aiPlan: { ...keepAdded(result, plan), extra: plan.extra || "", ...refreshStamp(advice, signal), generatedAt: Date.now() } });
+  } catch {
+    // Keep the old plan quietly; the button still rewrites it by hand.
+  }
+  refresh();
+}
+
+// ---------- "Buat rencana konten" ----------
+// The campaign's next weeks of content in one go: the owner picks how many
+// weeks and posts per week, the AI writes the list in the order the
+// campaign's stages run, the owner unticks what they don't want, and the
+// rest lands in the calendar as ideas on their dates — linked to this
+// campaign (and its phase when the date falls in one). Running it again
+// never duplicates: titles already in this campaign are shown as "sudah
+// ada" and skipped. One credit (the owner clicked).
+const PLAN_PER_WEEK = [2, 3, 4];
+const PLAN_MAX_WEEKS = 12;
+const normTitle = (x) => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
+function addDays(iso, n) {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return localISODate(d);
+}
+// Post i of the plan: week by week, the week's posts spread over its 7 days.
+const planDate = (start, i, perWeek) => addDays(start, Math.floor(i / perWeek) * 7 + Math.round(((i % perWeek) * 7) / perWeek));
+// The stage a date belongs to: a window stage by its dates; a named phase
+// by what the AI wrote; a level has no phase id.
+function stageFor(stages, date, phaseName) {
+  const byDate = stages.find((s) => s.kind === "window" && s.dateFrom && date >= s.dateFrom && date <= s.dateTo);
+  if (byDate) return byDate;
+  const byName = phaseName ? stages.find((s) => s.kind !== "level" && s.name.toLowerCase() === phaseName.toLowerCase()) : null;
+  return byName || null;
+}
+
+function openContentPlanModal({ brand, campaign, stages, refresh }) {
+  const today = localISODate();
+  const start = campaign.startDate && campaign.startDate > today ? campaign.startDate : today;
+  const daysLeft = campaign.endDate && campaign.endDate > start ? (new Date(campaign.endDate) - new Date(start)) / 86400000 : 0;
+  const st = { weeks: daysLeft ? Math.min(PLAN_MAX_WEEKS, Math.max(1, Math.ceil(daysLeft / 7))) : 4, perWeek: 3, start, items: null, busy: false, error: "" };
+  const settings = getSettings();
+  const existing = () => new Set(listContent(brand.id).filter((c) => c.campaignId === campaign.id).map((c) => normTitle(c.title)));
+
+  const formHTML = () => `
+    <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("camp.cplan.intro")}</p>
+    <div class="row-2">
+      <div class="field"><label for="cp-weeks">${t("camp.cplan.weeks")}</label><input class="input" id="cp-weeks" type="number" min="1" max="${PLAN_MAX_WEEKS}" value="${st.weeks}" /></div>
+      <div class="field"><label for="cp-start">${t("camp.cplan.start")}</label><input class="input" id="cp-start" type="date" value="${st.start}" /></div>
+    </div>
+    <div class="field"><label>${t("camp.cplan.perWeek")}</label>
+      <div class="chip-select" id="cp-per">${PLAN_PER_WEEK.map((n) => `<button type="button" data-val="${n}" class="${n === st.perWeek ? "active" : ""}">${t("camp.cplan.perWeekN", { n })}</button>`).join("")}</div>
+    </div>
+    ${st.error ? `<p class="ev-error">${esc(st.error)}</p>` : ""}
+    ${st.busy ? `<div class="ocr-status"><div class="spinner"></div><span>${t("camp.cplan.busy")}</span></div>` : ""}`;
+
+  const listHTML = () => {
+    const have = existing();
+    const rows = st.items.map((it, i) => {
+      const dup = have.has(normTitle(it.title));
+      const stage = stageFor(stages, it.date, it.phase);
+      return `
+      <label class="cp-plan-row ${dup ? "is-dup" : ""}">
+        <input type="checkbox" data-cp-pick="${i}" ${dup ? "disabled" : it.picked === false ? "" : "checked"} />
+        <span class="cp-plan-date">${esc(formatDate(it.date, { year: undefined }))}</span>
+        <span class="cp-plan-body">
+          <b>${esc(it.title)}</b>${dup ? ` <span class="tag">${t("camp.cplan.dup")}</span>` : ""}
+          ${it.angle ? `<span class="text-muted">${esc(it.angle)}</span>` : ""}
+          <span class="cp-plan-tags"><span class="tag tag-${it.funnel.toLowerCase()}">${esc(funnelShort(it.funnel))}</span>${it.format ? `<span class="tag">${esc(it.format)}</span>` : ""}${stage ? `<span class="tag">${esc(stage.name)}</span>` : ""}</span>
+        </span>
+      </label>`;
+    }).join("");
+    return `<p class="text-muted" style="font-size:12.5px;margin:0 0 10px;">${t("camp.cplan.review", { n: st.items.length })}</p><div class="cp-plan-list">${rows}</div>`;
+  };
+
+  const picked = () => st.items ? st.items.filter((it, i) => it.picked !== false && !existing().has(normTitle(it.title))) : [];
+  const footHTML = () => st.items
+    ? `<button type="button" class="btn btn-ghost" id="cp-back">${icon("refresh", { size: 13 })}${t("camp.cplan.again")}</button><button type="button" class="btn btn-primary" id="cp-add" ${picked().length ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("camp.cplan.add", { n: picked().length })}</button>`
+    : `<span class="text-faint" style="font-size:11.5px;margin-right:auto;">${t("camp.cplan.credit")}</span><button type="button" class="btn btn-primary" id="cp-go" ${st.busy ? "disabled" : ""}>${icon("sparkle", { size: 14 })}${t("camp.cplan.go")}</button>`;
+
+  const overlay = openModal({ title: t("camp.cplan.title", { name: campaign.name || "" }), wide: true, bodyHTML: formHTML(), footHTML: footHTML() });
+  const body = overlay.querySelector(".modal-body");
+  const foot = overlay.querySelector(".modal-foot");
+  const paint = () => {
+    body.innerHTML = st.items ? listHTML() : formHTML();
+    if (foot) foot.innerHTML = footHTML();
+    wireIt();
+  };
+  const readForm = () => {
+    st.weeks = Math.min(PLAN_MAX_WEEKS, Math.max(1, Math.round(Number(qs("#cp-weeks", overlay)?.value)) || st.weeks));
+    st.start = qs("#cp-start", overlay)?.value || st.start;
+  };
+  const go = async () => {
+    readForm();
+    const ai = settings.ai || {};
+    if (isTourDemo()) { toast(DEMO_TOAST); return; }
+    if (!hasAiKey(ai)) { st.error = t("camp.bs.noKey"); paint(); return; }
+    st.busy = true; st.error = ""; paint();
+    try {
+      const content = listContent(brand.id);
+      // What already worked: posts the owner tagged sales to, then the
+      // best-engaging published posts.
+      const sold = content.map((c) => ({ c, s: contentSalesStats(brand, c.id) })).filter((x) => x.s.qty).sort((a, b) => b.s.revenue - a.s.revenue).slice(0, 3)
+        .map(({ c, s }) => `"${c.title}" (${c.format || "?"}, ${c.funnel || "?"}) — ${s.qty} sold`);
+      const engaged = content.filter((c) => c.status === "published").map((c) => ({ c, er: computeContentMetrics(c, settings).engagementRate })).filter((x) => x.er !== null && x.er !== undefined).sort((a, b) => b.er - a.er).slice(0, 3)
+        .map(({ c, er }) => `"${c.title}" (${c.format || "?"}, ${c.funnel || "?"}) — engagement ${Number(er).toFixed(1)}%`);
+      const items = await generateCampaignContentPlan(ai, {
+        brand, campaign, weeks: st.weeks, perWeek: st.perWeek, startDate: st.start,
+        stages: stages.map((s) => ({ name: s.name, dateFrom: s.dateFrom, dateTo: s.dateTo, goal: s.description })),
+        formats: (settings.formats || []).map((f) => f.name).filter(Boolean),
+        existingTitles: content.filter((c) => c.campaignId === campaign.id).map((c) => c.title).filter(Boolean),
+        proven: [...sold, ...engaged],
+        pulseText: pulseTextFor(brand, { content, campaigns: listCampaigns(brand.id), settings }),
+      });
+      st.items = items.map((it, i) => ({ ...it, date: planDate(st.start, i, st.perWeek) }));
+    } catch (e) {
+      st.error = e instanceof AiApiError ? e.message : t("camp.cplan.failed");
+    }
+    st.busy = false;
+    paint();
+  };
+  const add = () => {
+    const list = picked();
+    if (!list.length) return;
+    const platform = settings.platforms?.[0]?.name || "";
+    list.forEach((it) => {
+      const stage = stageFor(stages, it.date, it.phase);
+      createContent(brand.id, {
+        title: it.title, idea: it.angle, funnel: it.funnel, format: it.format || "", platform, status: "idea", scheduleDate: it.date,
+        campaignId: campaign.id, campaignPhaseId: stage && stage.kind !== "level" ? stage.id : "", fromCampaignPlan: campaign.id,
+      });
+    });
+    closeOverlay(overlay);
+    toast(t("camp.cplan.added", { n: list.length }));
+    refresh();
+  };
+  const wireIt = () => {
+    qsa("#cp-per button", overlay).forEach((b) => b.addEventListener("click", () => { readForm(); st.perWeek = Number(b.dataset.val); paint(); }));
+    qs("#cp-go", overlay)?.addEventListener("click", go);
+    qs("#cp-back", overlay)?.addEventListener("click", () => { st.items = null; paint(); });
+    qs("#cp-add", overlay)?.addEventListener("click", add);
+    qsa("[data-cp-pick]", overlay).forEach((cb) => cb.addEventListener("change", () => {
+      st.items[Number(cb.dataset.cpPick)].picked = cb.checked;
+      const btn = qs("#cp-add", overlay);
+      if (btn) { btn.disabled = !picked().length; btn.innerHTML = `${icon("calendar", { size: 14 })}${t("camp.cplan.add", { n: picked().length })}`; }
+    }));
+  };
+  wireIt();
 }
 
 // The one AI helper of this page, where nobody has to hunt for it: right
@@ -932,6 +1128,7 @@ function activitiesHTML(acts, brandId, guided) {
       </div>`}
       <div class="cd-activity-actions">
         <button type="button" class="btn btn-secondary btn-sm glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 13 })}${t("camp.detail.brainstorm")}</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="cd-content-plan" title="${esc(t("camp.cplan.btnTitle"))}">${icon("calendar", { size: 13 })}${t("camp.cplan.btn")}</button>
         <button type="button" class="btn btn-primary btn-sm" id="cd-new-content">${icon("plus", { size: 13 })}${t("camp.detail.newContent")}</button>
       </div>
       ${
@@ -956,7 +1153,16 @@ function activitiesHTML(acts, brandId, guided) {
 // level has to be finished before the next one opens and lists, from the
 // level's own numbers, why it isn't done yet (goal-plan.js evaluateLevel).
 // The disclaimer the user agreed to in the wizard stays readable here.
-function growBrandStatusHTML(campaign, stage, stageRead) {
+// Under a generic fix, the brand's own numbers that back it up.
+function evalDataLine(key, ctx) {
+  if (!ctx) return "";
+  if (key === "lowResponse") return bestPostsLine(ctx.content, ctx.settings) || "";
+  if (key === "reach") return bestPostsLine(ctx.content, ctx.settings, { one: true }) || "";
+  if (key === "gaps" || key === "uploads") return postingLine(ctx.content, ctx.settings) || "";
+  return "";
+}
+
+function growBrandStatusHTML(campaign, stage, stageRead, ctx = null) {
   const plan = campaign.goalPlan;
   const v = plan.vision || {};
   const visionLine = [v.scale ? t(`goal.vision.${v.scale}`) : "", v.text || ""].filter(Boolean).join(" — ");
@@ -976,7 +1182,7 @@ function growBrandStatusHTML(campaign, stage, stageRead) {
              <p class="goal-pace-line">${esc(t("goal.status.overdueBody", { name: stage.name, est: ev.estWeeks, weeks: ev.weeks }))}</p>
              <div class="goal-eval">
                <div class="goal-pace-vision-label">${t("goal.status.evalLabel")}</div>
-               ${ev.reasons.map((r) => `<div class="goal-eval-item"><b>${esc(t(`goal.eval.${r.key}.title`, r.vars))}</b><span>${esc(t(`goal.eval.${r.key}.fix`, r.vars))}</span></div>`).join("")}
+               ${ev.reasons.map((r) => { const data = evalDataLine(r.key, ctx); return `<div class="goal-eval-item"><b>${esc(t(`goal.eval.${r.key}.title`, r.vars))}</b><span>${esc(t(`goal.eval.${r.key}.fix`, r.vars))}</span>${data ? `<span class="goal-eval-data">${icon("chart", { size: 11 })}${esc(data)}</span>` : ""}</div>`; }).join("")}
              </div>`
           : `<p class="goal-pace-line">${esc(t("goal.status.onTime", { est: ev.estWeeks, weeks: ev.weeks }))}</p>`
       }
@@ -1007,11 +1213,11 @@ function remindersHTML(stage, stageRead, goal) {
 
 const EVENT_CATEGORY_LABELS = Object.fromEntries(["AWARENESS", "CONTENT", "CONVERSION", "ENGAGEMENT", "ATTENDANCE", "IMPACT"].map((k) => [k, t(`camp.detail.cat.${k}`)]));
 // Every "brainstorm" door on this page opens the Brainstorm partner
-// (js/views/brainstorm.js) scoped to this campaign and stage — a
+// (js/consultant-panel.js) scoped to this campaign and stage — a
 // conversation first, ideas once they've been talked through, instead of
 // the old modal that generated a list on the spot.
 function goBrainstorm({ brandId, campaign, stage, ctxLabel, seed = "" }) {
-  go(`#/brand/${brandId}/brainstorm`, { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null, mode: "chat", seed });
+  go(`#/brand/${brandId}/chat`, { fromLabel: ctxLabel, campaignId: campaign.id, stageId: stage?.id || null, mode: "chat", seed });
 }
 
 function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel }) {

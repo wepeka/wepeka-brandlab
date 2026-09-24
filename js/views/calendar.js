@@ -14,6 +14,7 @@ import { consumeNavContext } from "../nav-context.js";
 import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
 import { setPageGuide } from "../section-guide.js";
 import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calendar-guide.js";
+import { funnelShort } from "../funnel-field.js";
 
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const dow = () => DOW_KEYS.map((k) => t(`calendar.dow.${k}`));
@@ -240,7 +241,7 @@ function openAutoScheduleConfirm(proposed, refresh) {
           .map(
             (p, i) => `
           <div class="auto-schedule-row">
-            <span class="tag tag-${p.content.funnel.toLowerCase()}">${p.content.funnel}</span>
+            <span class="tag tag-${p.content.funnel.toLowerCase()}">${funnelShort(p.content.funnel)}</span>
             <span class="auto-schedule-title">${escapeHtml(p.content.title || t("common.untitled"))}</span>
             <input class="input" type="date" data-schedule-index="${i}" value="${p.date}" style="width:auto;" />
           </div>`
@@ -533,7 +534,7 @@ function agendaRow(c, campaignById) {
         <div class="text-muted" style="font-size:12.5px;margin-top:2px;">${c.platform || "—"} · ${c.format || "—"}</div>
       </div>
       ${campaign ? `<span class="tag" style="background:color-mix(in srgb, var(--brand-tint) 14%, transparent);color:var(--brand-tint);">${escapeHtml(campaign.name)}</span>` : ""}
-      <span class="tag tag-${c.funnel.toLowerCase()}">${c.funnel}</span>
+      <span class="tag tag-${c.funnel.toLowerCase()}">${funnelShort(c.funnel)}</span>
       <span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span>
     </div>
   `;

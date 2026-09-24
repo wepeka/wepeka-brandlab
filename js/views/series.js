@@ -4,7 +4,7 @@
 // it. Mounted as a Content OS sub-tab (js/views/content-os.js). Series are
 // created/edited here, then linked to a piece in Creator (js/views/
 // creator.js's seriesFieldHTML) or picked/auto-detected in Brainstorm
-// (js/views/brainstorm.js) — see js/store.js's Series CRUD and js/ai.js's
+// (js/consultant-panel.js) — see js/store.js's Series CRUD and js/ai.js's
 // buildSeriesContext for how the saved DNA turns into AI context.
 import { getBrand, listContent, listSeries, getSeries, createSeries, updateSeries, deleteSeries, onChange } from "../store.js";
 import { icon } from "../icons.js";

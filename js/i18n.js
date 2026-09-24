@@ -16,6 +16,7 @@ import brainstorm from "./i18n/brainstorm.js";
 import roadmap from "./i18n/roadmap.js";
 import chat_hub from "./i18n/chat-hub.js";
 import series from "./i18n/series.js";
+import announcements from "./i18n/announcements.js";
 
 const KEY = "wepeka-lang";
 
@@ -44,9 +45,10 @@ const CORE = {
   "contentEditor.tab.schedule": { en: "Schedule", id: "Jadwal" },
   "contentEditor.advanced": { en: "Advanced", id: "Lanjutan" },
   "menu.modeSwitch": { en: "{current} mode · switch to {other}", id: "Mode {current} · pindah ke {other}" },
+  "help.introVideo": { en: "Intro video", id: "Video perkenalan" },
   "help.pageGuide": { en: "Guide for this page", id: "Panduan halaman ini" },
   "help.askAi": { en: "Ask Brandlab", id: "Tanya Brandlab" },
-  "help.tour": { en: "Intro tour", id: "Tur pengenalan" },
+  "help.tour": { en: "Website tour", id: "Tur website" },
   "nav.locked": { en: "Opens once your brand identity is done", id: "Terbuka setelah identitas brand selesai" },
   // Home (js/views/home.js)
   "home.eyebrow": { en: "Home", id: "Beranda" },
@@ -183,6 +185,7 @@ const CORE = {
   "contentOs.tab.calendar": { en: "Calendar", id: "Kalender" },
   "contentOs.tab.copy": { en: "Quick copy", id: "Tulisan Cepat" },
   "contentOs.tab.series": { en: "Series", id: "Series" },
+  "contentOs.tab.brainstorm": { en: "Brainstorm", id: "Brainstorm" },
   "contentOs.cadence.title": { en: "Set your work schedule", id: "Atur Jadwal Kerja" },
   "contentOs.cadence.sub": { en: "This sets up AI Auto-Schedule in the Calendar for {brand} and fills in the Shoot/Edit/Upload rows in My Routine automatically — set it once here instead of in both places.", id: "Ini sekaligus ngatur Jadwal Otomatis AI di Kalender buat {brand} dan ngisi baris Syuting/Edit/Upload di My Routine otomatis — cukup atur sekali di sini, nggak perlu di dua tempat." },
   "contentOs.cadence.shootLabel": { en: "Which days do you shoot?", id: "Hari apa aja syuting?" },
@@ -341,6 +344,9 @@ const CORE = {
 
   // Creator Studio — guided-mode funnel picker (js/views/creator.js)
   "creator.funnel.guidedLabel": { en: "What's this content for?", id: "Tujuan konten ini apa?" },
+  "funnel.short.TOFU": { en: "Get known", id: "Kenalan" },
+  "funnel.short.MOFU": { en: "Build trust", id: "Yakinkan" },
+  "funnel.short.BOFU": { en: "Sell", id: "Jualan" },
   "creator.funnel.guided.TOFU.title": { en: "Introduce your brand to new people", id: "Ngenalin brand ke orang baru" },
   "creator.funnel.guided.TOFU.desc": { en: "Reach people who don't know your brand yet", id: "Fokus jangkau orang yang belum kenal brand kamu" },
   "creator.funnel.guided.MOFU.title": { en: "Inform & build trust", id: "Ngasih info & bangun kepercayaan" },
@@ -496,6 +502,7 @@ const EXTRA = {
   "roadmap": roadmap,
   "chat-hub": chat_hub,
   "series": series,
+  "announcements": announcements,
 };
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 
@@ -504,9 +511,34 @@ export function __i18nSources() {
   return { core: CORE, extra: EXTRA };
 }
 
+// Pemula reads plain words: no "milestone", "engagement" or TOFU/MOFU/BOFU.
+// main.js tells this module which mode is on (i18n.js can't import mode.js
+// — mode.js imports this file). Applied to our own copy only, before the
+// {vars} go in, so names the owner typed are never touched.
+let plainLanguage = () => false;
+export function setPlainLanguageResolver(fn) {
+  plainLanguage = typeof fn === "function" ? fn : () => false;
+}
+const FUNNEL_PLAIN = { id: { TOFU: "Kenalan", MOFU: "Yakinkan", BOFU: "Jualan" }, en: { TOFU: "Get known", MOFU: "Build trust", BOFU: "Sell" } };
+const JARGON = /milestone|engagement|\bTOFU\b|\bMOFU\b|\bBOFU\b/i;
+export function plainWords(str, lang = getLang()) {
+  if (!str || !JARGON.test(str)) return str;
+  const en = lang === "en";
+  const cap = (orig, word) => (orig[0] === orig[0].toUpperCase() ? word[0].toUpperCase() + word.slice(1) : word);
+  // "Target tiap milestone…" would read "Target tiap target"; call it a step there.
+  const hasTarget = /target/i.test(str);
+  return str
+    .replace(/\s*\((?:TOFU|MOFU|BOFU)(?:\s*\/\s*(?:TOFU|MOFU|BOFU))*\)/g, "")
+    .replace(/(?<![{\w])(TOFU|MOFU|BOFU)(?![\w}])/g, (m) => FUNNEL_PLAIN[en ? "en" : "id"][m])
+    .replace(/(?<![{\w])engagement rate(?![\w}])/gi, (m) => cap(m, en ? "interaction rate" : "tingkat interaksi"))
+    .replace(/(?<![{\w])engagement(?![\w}])/gi, (m) => cap(m, en ? "interactions" : "interaksi"))
+    .replace(/(?<![{\w])milestones?(?![\w}])/gi, (m) => cap(m, en ? (/s$/i.test(m) ? "targets" : "target") : hasTarget ? "langkah" : "target"));
+}
+
 export function t(key, vars) {
   const entry = DICT[key];
   let str = entry ? entry[getLang()] || entry.en : key;
+  if (entry && plainLanguage()) str = plainWords(str);
   if (vars) for (const k in vars) str = str.split(`{${k}}`).join(vars[k]);
   return str;
 }

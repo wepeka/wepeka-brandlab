@@ -1,5 +1,7 @@
 import { backLinkHTML } from "../back-link.js";
 import { getBrand } from "../store.js";
+import { brandDnaCompleteness, brandDnaDone } from "../brand-progress.js";
+import { icon } from "../icons.js";
 import * as contentListView from "./content-list.js";
 import * as creatorView from "./creator.js";
 import * as calendarView from "./calendar.js";
@@ -25,6 +27,22 @@ const SUB_TABS = [
   { key: "series", labelKey: "contentOs.tab.series", path: (id) => `#/brand/${id}/content/series` },
 ];
 
+// The Konten tab bar. (The chat, which used to sit here as "Brainstorm",
+// has its own page now: js/views/chat.js.)
+export function contentTabsHTML(brandId, activeSub) {
+  return `<div class="tabs cos-tabs" style="margin:-4px 0 20px;">
+      ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
+    </div>`;
+}
+
+// Konten opens before Brand DNA is done — try it right away — so this slim
+// line says what finishing it buys: sharper AI output.
+function dnaHintHTML(brandId, brand) {
+  if (brandDnaDone(brand)) return "";
+  const dna = brandDnaCompleteness(brand.brandDNA);
+  return `<a class="dna-hint" href="#/brand/${brandId}/dna">${icon("target", { size: 13 })}<span>${t("onb.dna.hint", { filled: dna.filled, total: dna.total })}</span><b>${dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart")}${icon("arrowRight", { size: 12 })}</b></a>`;
+}
+
 // One-step orientation to the tab bar itself, offered from the topbar "?"
 // on the Daftar tab (Creator and Kalender register their own guides).
 function tourSteps() {
@@ -39,12 +57,14 @@ export function render(root, { brandId, sub, contentId }) {
   }
   // The bare URL (and any old /dashboard link) lands on the first tab.
   const activeSub = SUB_TABS.some((x) => x.key === sub) ? sub : "creator";
+  // Creator, Kalender, Konten and Tulisan Cepat draw their own "?" and
+  // "Panduan" next to their title — the ones up here only for Series, which
+  // has none, so a page never shows the same guide twice.
 
   root.innerHTML = `
-    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("nav.content")}${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}</div>
-    <div class="tabs cos-tabs" style="margin:-4px 0 20px;">
-      ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
-    </div>
+    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("nav.content")}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>
+    ${contentTabsHTML(brandId, activeSub)}
+    ${dnaHintHTML(brandId, brand)}
     <div id="cos-mount"></div>
   `;
   wireHelpButtons(root);

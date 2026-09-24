@@ -744,13 +744,20 @@ export function clearBrandLog(brandId) {
 // as campaign.ideas ({ id, text, description, source, createdAt }) so the
 // two lists read the same everywhere. Capped so the brand doc stays small.
 export const BRAND_IDEAS_CAP = 100;
-export function addBrandIdea(brandId, { text, description = "", source = "brainstorm" }) {
+export function addBrandIdea(brandId, { text, description = "", source = "brainstorm", notes = "", hooks = [], threadId = null }) {
   const b = getBrand(brandId);
   const clean = String(text || "").trim();
   if (!b || !clean) return null;
-  const idea = { id: uid(), text: clean.slice(0, 140), description: String(description || "").trim().slice(0, 400), source, createdAt: Date.now() };
+  // A "concept" (Bank Konsep): the plain idea plus optional notes, candidate
+  // hooks and the chat it came from. Old ideas simply lack these fields.
+  const idea = { id: uid(), text: clean.slice(0, 140), description: String(description || "").trim().slice(0, 400), source, createdAt: Date.now(), status: "concept", ...(notes ? { notes: String(notes).trim().slice(0, 1200) } : {}), ...(hooks.length ? { hooks: hooks.map((h) => String(h).trim().slice(0, 200)).filter(Boolean).slice(0, 6) } : {}), ...(threadId ? { threadId } : {}) };
   updateBrand(brandId, { ideas: [...(b.ideas || []), idea].slice(-BRAND_IDEAS_CAP) });
   return idea;
+}
+export function updateBrandIdea(brandId, id, patch) {
+  const b = getBrand(brandId);
+  if (!b) return;
+  updateBrand(brandId, { ideas: (b.ideas || []).map((i) => (i.id === id ? { ...i, ...patch, updatedAt: Date.now() } : i)) });
 }
 export function removeBrandIdea(brandId, id) {
   const b = getBrand(brandId);
@@ -801,9 +808,9 @@ export function deleteGoal(brandId, id) {
 // ---------- Brainstorm threads (brainstorms/ collection) ----------
 // One doc per chat thread: { id, ownerId, brandId, campaignId, contentId,
 // title, mode, messages, ideas, proposal, createdAt, updatedAt }. `mode`
-// is "companion" for the Home Companion's single rolling thread per brand
-// (id = companionThreadId(brandId), so no lookup table is needed) and
-// "chat" | "plan" for Brainstorm partner threads (R4, next). messages are
+// is "companion" / "consult" for the chat's two rolling threads per brand
+// (fixed ids, see companionThreadId / consultThreadId below) and "chat" |
+// "script" for Brainstorm conversations. messages are
 // { id, role: "user"|"assistant", text, at, blocks? } — `blocks` keeps the
 // parsed directive output (ideas, asks, a recap card…) so the cards survive
 // a reload without re-parsing or re-asking the model. Capped: the oldest
@@ -833,10 +840,12 @@ export function updateBrainstorm(id, patch) {
   if (!cur) return null;
   return saveBrainstorm({ ...cur, ...patch, updatedAt: Date.now() });
 }
-export function appendBrainstormMessage(id, { role, text, at = Date.now(), blocks = null }) {
+// `sessionId` ties a message to one "Obrolan" of the chat's Otomatis view
+// (brand.chatSessions) — the same conversation can write to several logs.
+export function appendBrainstormMessage(id, { role, text, at = Date.now(), blocks = null, sessionId = null }) {
   const cur = getBrainstorm(id);
   if (!cur) return null;
-  const msg = { id: uid(), role, text, at, ...(blocks ? { blocks } : {}) };
+  const msg = { id: uid(), role, text, at, ...(blocks ? { blocks } : {}), ...(sessionId ? { sessionId } : {}) };
   saveBrainstorm({ ...cur, messages: [...(cur.messages || []), msg].slice(-THREAD_MESSAGE_CAP), updatedAt: at });
   return msg;
 }
@@ -855,6 +864,14 @@ export function deleteBrainstorm(id) {
   db.brainstorms = (db.brainstorms || []).filter((b) => b.id !== id);
   persist(() => deleteDoc(doc(fdb, "brainstorms", id)));
 }
+// The chat's two rolling threads per brand (js/consultant-panel.js), one per
+// tab that keeps a single continuous log: "companion" (the Teman tab, whose
+// recaps become brand memory) and "consult" (the Konsultan tab, saved only
+// so the same conversation is there on the phone and tomorrow — nothing
+// else in the app reads it). Fixed ids, so no lookup table is needed and
+// two devices never make two of them. ROLLING_THREAD_MODES keeps them out
+// of the Brainstorm conversation list.
+export const ROLLING_THREAD_MODES = ["companion", "consult"];
 export function companionThreadId(brandId) {
   return `companion-${brandId}`;
 }
@@ -863,6 +880,15 @@ export function getCompanionThread(brandId) {
 }
 export function ensureCompanionThread(brandId) {
   return getCompanionThread(brandId) || createBrainstorm(brandId, { id: companionThreadId(brandId), mode: "companion", title: "" });
+}
+export function consultThreadId(brandId) {
+  return `consult-${brandId}`;
+}
+export function getConsultThread(brandId) {
+  return getBrainstorm(consultThreadId(brandId));
+}
+export function ensureConsultThread(brandId) {
+  return getConsultThread(brandId) || createBrainstorm(brandId, { id: consultThreadId(brandId), mode: "consult", title: "" });
 }
 export function archiveBrand(id, archived = true) {
   return updateBrand(id, { archived });

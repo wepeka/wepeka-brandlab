@@ -505,30 +505,19 @@ main.view.wide{ max-width: 1440px; }
 .dash-widget-collapse-btn{ width:26px; height:26px; flex:none; color: rgba(245,243,255,.6); }
 .dash-widget-collapse-btn:hover{ background: rgba(255,255,255,.09); color:#fff; }
 
-/* Home Companion card (js/views/home.js) — a real chat thread, reusing the
-   Consultant FAB's bubble language (.consultant-msg) so the two "AI talks
-   to you" surfaces feel like one voice instead of two different widgets.
-   Under the thread: the composer, then the moments strip (what's in brand
-   memory) — visibly separate from the chat it came from. */
-.companion-thread{ display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto; padding:2px 4px 2px 0; scroll-behavior:smooth; }
-.companion-thread:empty{ display:none; }
-.companion-thread .consultant-msg{ position:relative; white-space:normal; }
-.companion-user-text{ white-space:pre-wrap; }
-.companion-thread .consultant-md p{ margin:0 0 6px; }
-.companion-thread .consultant-md p:last-child{ margin-bottom:0; }
+/* Teman pieces shared by the chat's Teman tab (js/consultant-panel.js), the
+   Home Teman card (js/views/home.js) and the brand-memory modal
+   (js/brand-memory.js): day headings, per-message delete, the recap card,
+   the moments strip. */
 .companion-day{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; text-align:center; color: var(--text-faint); margin:4px 0 2px; }
-.companion-older-toggle{ align-self:center; display:inline-flex; align-items:center; gap:5px; border:0; background:transparent; color: var(--text-faint); font: inherit; font-size:11.5px; font-weight:700; cursor:pointer; padding:4px 8px; border-radius: var(--radius-pill); }
-.companion-older-toggle:hover{ color: var(--accent); background: var(--surface-2); }
+.consultant-msg-user{ position:relative; }
 .companion-msg-del{ position:absolute; left:-26px; top:50%; transform:translateY(-50%); width:22px; height:22px; border:0; border-radius:50%; background:transparent; color: var(--text-faint); display:grid; place-items:center; cursor:pointer; opacity:0; transition: opacity .15s; }
 .consultant-msg-user:hover .companion-msg-del, .companion-msg-del:focus-visible{ opacity:1; }
 .companion-msg-del:hover{ color: var(--health-poor); background: var(--surface-2); }
 @media (hover:none){ .companion-msg-del{ opacity:.6; } }
 .companion-error{ margin:8px 0 0; font-size:12px; color: var(--health-poor); }
-.companion-composer{ display:flex; align-items:center; gap:8px; margin-top:12px; }
-.companion-composer .input{ flex:1; min-width:0; }
 .companion-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-.companion-idea{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
-.companion-idea .companion-actions{ margin-top:8px; }
+.companion-greeting{ font-size:13.5px; line-height:1.55; margin:0; }
 .companion-recap{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
 .companion-recap.is-decided{ margin-top:6px; padding-top:6px; }
 .companion-recap-pick{ margin:0 0 6px; font-size:11.5px; color: var(--text-muted); }
@@ -545,15 +534,11 @@ main.view.wide{ max-width: 1440px; }
 .companion-moment-text{ flex:1; min-width:0; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .companion-moment-action{ flex:none; display:inline-flex; align-items:center; gap:3px; border:0; background:transparent; color: var(--accent); font: inherit; font-size:11.5px; font-weight:700; cursor:pointer; padding:2px 4px; text-decoration:none; }
 .companion-moment-action:hover{ text-decoration:underline; }
-@media (max-width:720px){
-  .companion-thread{ max-height:260px; }
-  .companion-thread .consultant-msg{ max-width:92%; }
-}
 
 /* Brainstorm partner (js/views/brainstorm.js): threads rail | chat | saved
    ideas. Same bubble language as the Consultant FAB and the Companion. */
 .bs-layout{ display:grid; grid-template-columns: 230px minmax(0,1fr) 270px; gap:20px; align-items:start; min-width:0; }
-.bs-chat, .bs-ideas, .bs-threads{ min-width:0; }
+.bs-ideas, .bs-threads{ min-width:0; }
 .bs-threads{ position:sticky; top:84px; }
 .bs-threads-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; list-style:none; padding:4px 0 10px; }
 .bs-threads-head::-webkit-details-marker{ display:none; }
@@ -564,22 +549,8 @@ main.view.wide{ max-width: 1440px; }
 .bs-thread-item.is-active{ background: var(--surface-2); border-color: var(--accent); }
 .bs-thread-title{ font-size:12.5px; font-weight:600; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .bs-thread-meta{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color: var(--text-faint); }
-.bs-chat{ display:flex; flex-direction:column; min-height:480px; margin:0; }
-.bs-scope{ display:flex; align-items:center; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:12px; flex-wrap:wrap; }
 .bs-scope-chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius: var(--radius-pill); background: var(--surface-2); border:1px solid var(--border); font-size:12px; font-weight:700; }
-.bs-messages{ flex:1; display:flex; flex-direction:column; gap:10px; overflow-y:auto; max-height: calc(100vh - 380px); min-height:300px; padding:2px 4px 2px 0; scroll-behavior:smooth; }
-.bs-messages .consultant-msg{ white-space:normal; max-width:88%; }
-.bs-messages .consultant-md p{ margin:0 0 8px; }
-.bs-messages .consultant-md p:last-child{ margin-bottom:0; }
-.bs-user-text{ white-space:pre-wrap; }
-.bs-card{ margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); font-size:12.5px; }
-.bs-card-text{ line-height:1.5; }
 .bs-card-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
-.bs-feedback-slot:empty{ display:none; }
-.bs-composer{ display:flex; align-items:flex-end; gap:8px; margin-top:12px; }
-.bs-input{ flex:1; min-width:0; resize:none; min-height:40px; max-height:160px; border:1px solid var(--border); background: var(--surface-2); border-radius: var(--radius-md); padding:9px 12px; font: inherit; font-size:13.5px; color: var(--text); line-height:1.45; }
-.bs-input:focus{ outline:none; border-color: var(--accent); }
-.bs-composer-foot{ display:flex; justify-content:flex-end; margin-top:6px; }
 .bs-ideas{ position:sticky; top:84px; margin:0; }
 .bs-ideas-head h2{ display:flex; align-items:center; gap:6px; font-size:14px; margin:0; }
 .bs-saved-idea{ padding:10px 0; border-top:1px solid var(--border); }
@@ -587,6 +558,7 @@ main.view.wide{ max-width: 1440px; }
 .bs-saved-text{ font-size:12.5px; line-height:1.45; }
 @media (max-width:1100px){
   .bs-layout{ grid-template-columns: minmax(0,1fr) 260px; }
+  .cp-page[data-mode="consultant"]{ grid-template-columns: minmax(0,1fr); }
   .bs-threads{ grid-column: 1 / -1; position:static; }
   .bs-thread-list{ flex-direction:row; flex-wrap:wrap; max-height:none; }
   .bs-thread-item{ width:auto; max-width:260px; }
@@ -594,8 +566,6 @@ main.view.wide{ max-width: 1440px; }
 @media (max-width:760px){
   .bs-layout{ grid-template-columns: minmax(0,1fr); }
   .bs-ideas{ position:static; }
-  .bs-messages{ max-height:none; min-height:240px; }
-  .bs-messages .consultant-msg{ max-width:94%; }
 }
 
 /* Collapsed state matches the same glass family, just as a single row — an
@@ -1158,6 +1128,9 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .creator-item .ti{ flex:1; min-width:0; }
 .creator-item .t{ font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .creator-item .m{ font-size:11.5px; color: var(--text-faint); margin-top:2px; }
+.fill-marks{ display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
+.fill-mark{ display:inline-flex; opacity:.3; }
+.fill-mark.on{ opacity:1; color: var(--brand-tint); }
 /* Delete on idea/draft rows only (see sidebarRow's `deletable` check) —
    subtle by default, only steps forward on hover of the row or the button
    itself so the compact sidebar list doesn't read as button-heavy. */
@@ -1306,6 +1279,8 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .guide-video-frame.is-compact .guide-video-play{ width:34px; height:34px; }
 .guide-video-ph-text{ display:flex; flex-direction:column; gap:2px; font-size:12px; color: var(--text-muted); }
 .guide-video-ph-text b{ color: var(--text); font-size:12.5px; }
+.guide-video-ph-text small{ margin-top:6px; font-size:11.5px; color: var(--accent); max-width:44ch; line-height:1.4; }
+.section-guide-btn[hidden]{ display:none; }
 
 /* The explainer modal's ending: three answers, shown once the video is over
    or skipped (js/guide-videos.js openGuideVideo). */
@@ -1321,7 +1296,7 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 @media (prefers-reduced-motion: reduce){ .guide-video-choices{ animation:none; } }
 .guide-video-note{ font-size:12.5px; color: var(--text-muted); margin:12px 0 0; line-height:1.55; }
 
-body.tour-active .consultant-fab{ display:none; }
+body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 @media (max-width: 720px){
   .tour-tooltip{ padding:16px; }
   .tour-tooltip p{ margin-bottom:14px; }
@@ -1455,16 +1430,16 @@ body.tour-active .consultant-fab{ display:none; }
 .brandlab-bumper-inner{ text-align:center; max-width:1000px; }
 .brandlab-bumper-line{
   margin:0; color:rgba(255,255,255,.82); font-family: var(--font-body); font-weight:400;
-  font-size: clamp(20px, 3.6vw, 34px); line-height:1.3; letter-spacing:0;
+  font-size: clamp(15px, 2.3vw, 22px); line-height:1.3; letter-spacing:0;
 }
 .brandlab-bumper-line b{ color: var(--accent); font-weight:600; }
 .brandlab-bumper-mark{
-  margin-top: clamp(16px, 3vw, 28px); display:flex; align-items:center; justify-content:center;
-  gap: clamp(14px, 2.2vw, 26px); color:#fff; font-family: var(--font-display); font-weight:900;
-  font-size: clamp(34px, 7.5vw, 84px);
+  margin-top: clamp(12px, 2vw, 20px); display:flex; align-items:center; justify-content:center;
+  gap: clamp(10px, 1.5vw, 18px); color:#fff; font-family: var(--font-display); font-weight:900;
+  font-size: clamp(24px, 4.8vw, 54px);
 }
-.brandlab-bumper-mark img{ height: clamp(40px, 8.6vw, 92px); width:auto; display:block; }
-.brandlab-bumper-mark-divider{ width:3px; height: clamp(30px, 6vw, 66px); background: rgba(255,255,255,.35); }
+.brandlab-bumper-mark img{ height: clamp(28px, 5.5vw, 60px); width:auto; display:block; }
+.brandlab-bumper-mark-divider{ width:2px; height: clamp(20px, 3.8vw, 42px); background: rgba(255,255,255,.35); }
 @keyframes bumperIn{ from{ opacity:0; } to{ opacity:1; } }
 @keyframes bumperOut{ from{ opacity:1; } to{ opacity:0; } }
 @media (prefers-reduced-motion: reduce){
@@ -3329,17 +3304,9 @@ tr.is-archived td{ opacity:.55; }
 .bs-how{ border:1px dashed var(--border); border-radius: var(--radius-md); padding:12px 14px; margin-bottom:4px; }
 .bs-how-title{ font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); margin-bottom:6px; }
 .bs-how-steps{ margin:0; padding-left:18px; font-size:13px; color: var(--text-muted); } .bs-how-steps li{ margin:3px 0; }
-.bs-opt{ border-top:0; margin-top:10px; padding:11px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.bs-opt-title{ font-weight:800; font-size:13.5px; line-height:1.35; }
-.bs-opt-why{ font-size:12.5px; color: var(--text-muted); margin-top:3px; line-height:1.45; }
-.bs-opt .bs-card-actions{ margin-top:10px; }
 .bs-done{ display:inline-flex; align-items:center; gap:5px; font-size:12px; color: var(--health-good); background:none; border:0; padding:0; font-family:inherit; }
 button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
 .bs-reply-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.bs-pick-label{ font-size:11.5px; color: var(--text-faint); margin:10px 0 6px; }
-.bs-picks{ padding-bottom:0; }
-.bs-pick{ font-size:13px; padding:8px 14px; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.bs-composer-foot{ align-items:center; gap:10px; } .bs-composer-hint{ font-size:11px; color: var(--text-faint); margin-right:auto; }
 .bs-ideas.is-flash{ animation: bs-flash 1.4s ease-out 1; }
 @keyframes bs-flash{ 0%{ box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); border-color: var(--accent); } 100%{ box-shadow: 0 0 0 14px transparent; } }
 @media (prefers-reduced-motion: reduce){ .bs-ideas.is-flash{ animation:none; border-color: var(--accent); } }
@@ -3368,27 +3335,31 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
    idea cards under it) borrow that engine's accent via --cp-accent.
    ============================================================ */
 .consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; transition: border-color .25s; }
-/* the pinned engine colours the whole panel: header icon, mode chip, user bubbles, send button */
+/* the open tab colours the whole panel: header icon, tab, user bubbles, send button */
 .consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
 .consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
 .consultant-panel[data-mode="companion"]{ --cp-accent: var(--chat-companion); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
-.consultant-panel:not([data-mode="auto"]) .consultant-panel-head{ background: color-mix(in srgb, var(--cp-accent) 10%, transparent); }
-.consultant-panel:not([data-mode="auto"]) .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
+.consultant-panel .consultant-panel-head{ background: color-mix(in srgb, var(--cp-accent) 10%, transparent); }
+.consultant-panel .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
 .consultant-panel .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
 .cp-head{ gap:10px; }
 .cp-head-main{ display:flex; align-items:center; gap:10px; min-width:0; }
 .cp-head-main b{ display:block; font-size:14px; line-height:1.2; }
-.cp-head-main small{ display:block; font-size:11.5px; font-weight:500; color: var(--text-muted); line-height:1.35; margin-top:1px; }
+.cp-head-main small{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:11.5px; font-weight:500; color: var(--text-muted); line-height:1.35; margin-top:1px; }
 .cp-head-icon{ flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--cp-accent) 18%, transparent); color: var(--cp-accent); }
-.cp-pane{ flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 /* the composer follows the chat's own accent */
 .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
-/* mode row: pin an engine, or leave it on Otomatis */
-.cp-modes{ flex:none; display:grid; grid-template-columns: repeat(4, 1fr); gap:4px; padding:8px 12px 0; }
+/* the three tabs: Konsultan / Brainstorm / Teman */
+.cp-modes{ flex:none; display:grid; grid-template-columns: repeat(var(--n, 4), 1fr); gap:4px; padding:8px 12px 0; }
+/* Pemula: no mode row — only "← Tanya apa saja" when a button elsewhere opened one log */
+.cp-back{ flex:none; display:flex; align-items:center; gap:10px; padding:8px 14px 0; font-size:12px; }
+.cp-back .link{ display:inline-flex; align-items:center; gap:3px; border:0; background:none; padding:0; font:inherit; font-size:12px; font-weight:700; color: var(--cp-accent); cursor:pointer; }
+.cp-back-here{ display:inline-flex; align-items:center; gap:4px; margin-left:auto; font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color: var(--text-faint); }
+.cp-mode:disabled{ cursor:default; opacity:.7; }
 .cp-mode{ display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:6px 4px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family:inherit; font-size:11.5px; font-weight:700; cursor:pointer; --t: var(--accent); transition: background .15s, color .15s, border-color .15s; }
 .cp-mode[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-mode[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-mode[data-engine="companion"]{ --t: var(--chat-companion); }
 .cp-mode{ position:relative; }
-/* hover / focus tooltip: what this mode does, one line */
+/* hover / focus tooltip: what this tab does, one line */
 .cp-mode-tip{ position:absolute; top:calc(100% + 6px); left:50%; transform: translateX(-50%) translateY(-2px); z-index:5; width:max-content; max-width:220px; padding:7px 10px; border-radius:10px; background: var(--bg-raised); color: var(--text); border:1px solid color-mix(in srgb, var(--t) 45%, var(--border)); box-shadow: var(--shadow-lg); font-size:11.5px; font-weight:500; line-height:1.4; text-align:left; white-space:normal; opacity:0; pointer-events:none; transition: opacity .15s, transform .15s; }
 .cp-mode:first-child .cp-mode-tip{ left:0; transform: translateY(-2px); } .cp-mode:last-child .cp-mode-tip{ left:auto; right:0; transform: translateY(-2px); }
 .cp-mode:hover .cp-mode-tip, .cp-mode:focus-visible .cp-mode-tip{ opacity:1; transform: translateX(-50%) translateY(0); }
@@ -3404,36 +3375,486 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .consultant-msg[data-engine="consultant"]{ --cp-accent: var(--chat-consultant); }
 .consultant-msg[data-engine="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
 .consultant-msg[data-engine="companion"]{ --cp-accent: var(--chat-companion); }
-/* "Bukan ini maksudmu?" — re-answer with another engine, one tap */
-.cp-retry{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-muted); }
-.cp-retry .consultant-starter{ display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:11.5px; }
-.cp-retry .consultant-starter svg{ width:11px; height:11px; }
-.consultant-msg.is-typing .cp-retry, .consultant-msg.is-typing .cp-idea{ display:none; }
-/* idea cards from Brainstorm / the Companion */
+/* "Ask this in another tab" — the model's handoff or the keyword hint, one tap */
+.cp-switch{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-muted); }
+.cp-switch .consultant-starter{ display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:11.5px; }
+.cp-switch .consultant-starter svg{ width:11px; height:11px; }
+.consultant-msg.is-typing .cp-switch, .consultant-msg.is-typing .cp-idea{ display:none; }
+/* idea cards (Brainstorm) and moment cards (Teman) */
 .cp-idea{ margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); white-space:normal; }
 .cp-idea-title{ font-weight:800; font-size:13px; line-height:1.35; }
 .cp-idea-why{ font-size:12px; color: var(--text-muted); margin-top:3px; line-height:1.45; }
 .cp-idea-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .cp-idea .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
+/* a moment the Teman offers for brand memory */
+.cp-moment{ border-color: color-mix(in srgb, var(--chat-companion) 45%, var(--border)); }
+.cp-moment-tag{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color: var(--chat-companion); margin-bottom:4px; }
+.cp-moment .cp-idea-title .tag{ margin-right:4px; vertical-align:1px; }
+/* the row under the tabs in Konsultan / Teman: one line about the tab, or the way into brand memory */
+.cp-info{ min-height:30px; }
+.cp-info-text{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color: var(--text-faint); line-height:1.4; }
+.cp-info-text svg{ flex:none; color: var(--cp-accent); }
+.cp-memory-chip{ border:1px solid color-mix(in srgb, var(--cp-accent) 45%, var(--border)); color: var(--cp-accent); cursor:pointer; font-family:inherit; }
+.cp-memory-chip:hover{ background: color-mix(in srgb, var(--cp-accent) 12%, var(--surface-2)); }
 /* "Langsung kasih ide" under the composer */
 .cp-foot{ flex:none; display:flex; justify-content:flex-end; padding:0 14px 10px; margin-top:-4px; }
-/* Teman Brand inside the panel */
-.cp-companion{ flex:1; min-height:0; display:flex; flex-direction:column; padding:10px 14px 12px; overflow:hidden; }
-.cp-companion-actions{ display:flex; justify-content:flex-end; margin-bottom:6px; }
-.cp-companion .companion-thread{ flex:1; min-height:0; max-height:none; }
-.cp-companion .companion-composer{ flex:none; }
-.cp-companion .companion-composer .input{ border-radius:999px; }
-.cp-companion .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
-.cp-companion .companion-actions, .cp-companion .companion-moments{ flex:none; max-height:130px; overflow-y:auto; }
-/* Brainstorm inside the panel */
-.bs-compact{ flex:1; min-height:0; display:flex; flex-direction:column; padding:10px 12px 12px; overflow:hidden; }
-.bs-compact .bs-chat{ flex:1; min-height:0; margin:0; padding:0; border:0; background:none; box-shadow:none; backdrop-filter:none; }
-.bs-compact .bs-chat::before, .bs-compact .bs-chat::after{ display:none; }
-.bs-compact .bs-messages{ max-height:none; min-height:0; flex:1; }
-.bs-compact .bs-messages .consultant-msg{ max-width:96%; }
-.bs-compact .bs-scope{ padding-bottom:8px; margin-bottom:8px; gap:6px; }
-.bs-compact .bs-scope-chip{ max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.bs-compact .bs-composer-foot{ flex-wrap:wrap; }
-.bs-compact .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
-@media (max-width: 640px){ .consultant-panel{ width:calc(100vw - 20px); right:10px; height:calc(100vh - 96px); bottom:76px; } }
-.bs-compact #bs-ideas-now{ display:none; } /* the fork under each question already has it */
+@media (max-width: 640px){ .consultant-panel{ width:calc(100vw - 20px); right:10px; height:calc(100vh - 96px); height:calc(100dvh - 96px); bottom:76px; } }
+
+/* Diskusi dengan AI (Creator) */
+.disc-msgs{ display:flex; flex-direction:column; gap:10px; }
+.disc-msgs .consultant-msg{ white-space:normal; max-width:94%; }
+.disc-rev{ margin-top:10px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background: var(--surface); }
+.disc-rev-text{ white-space:pre-wrap; font-size:12.5px; line-height:1.5; max-height:240px; overflow:auto; }
+.disc-regen{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+
+/* Creator: main AI action + Diskusi side by side */
+.cr-ai-row{ display:flex; gap:8px; }
+.cr-ai-row > .btn:first-child{ flex:1; min-width:0; }
+.cr-ai-row > .btn:not(:first-child){ flex:none; }
+.disc-chips{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+.disc-chips::-webkit-scrollbar{ display:none; }
+.disc-chips .consultant-starter{ flex:none; white-space:nowrap; }
+.disc-chips[hidden]{ display:none; }
+
+/* Coretan: floating notes (js/notes-float.js) + the pad inside (js/scratch-pad.js) */
+.notes-fab{ position:fixed; right:88px; bottom:30px; z-index:65; width:42px; height:42px; border-radius:12px; border:1px solid color-mix(in srgb, #f5c542 55%, var(--border)); background: color-mix(in srgb, #f5c542 22%, var(--bg-raised)); color: var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transform: rotate(-4deg); transition: transform .15s ease; }
+.notes-fab:hover{ transform: rotate(0) scale(1.05); }
+.notes-fab.is-open{ transform:none; background: var(--surface-2); }
+.notes-fab-count{ position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f5c542; color:#1a1a1a; font-size:10.5px; font-weight:800; line-height:18px; text-align:center; }
+.notes-fab-count:empty{ display:none; }
+.notes-float{ position:fixed; right:88px; bottom:84px; z-index:66; width:360px; max-width:calc(100vw - 24px); max-height:min(560px, calc(100vh - 120px)); display:flex; flex-direction:column; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); border:1px solid color-mix(in srgb, #f5c542 45%, var(--border)); border-top:4px solid #f5c542; border-radius:14px; box-shadow: var(--shadow-lg); overflow:hidden; }
+.notes-float[hidden]{ display:none; }
+.notes-head{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px 6px; }
+.notes-title{ display:flex; align-items:center; gap:6px; font-weight:800; font-size:14px; }
+.notes-close{ width:28px; height:28px; }
+.notes-scope{ display:flex; gap:4px; margin:0 12px 6px; padding:3px; border-radius:10px; background: var(--surface-2); }
+.notes-scope button{ flex:1; min-width:0; border:none; background:transparent; color: var(--text-muted); font:inherit; font-size:12px; font-weight:600; padding:5px 8px; border-radius:8px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.notes-scope button.is-active{ background: var(--surface); color: var(--text); }
+.notes-body{ padding:0 12px 12px; overflow:auto; min-height:0; }
+body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
+@media (max-width: 640px){
+  .notes-fab{ right:68px; bottom:16px; width:40px; height:40px; }
+  .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 110px); }
+}
+.scratch-hint{ font-size:11.5px; color: var(--text-faint); margin:0 0 10px; line-height:1.45; }
+.scratch-add{ min-height:0; font-size:13px; margin-bottom:10px; }
+.scratch-foot{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--border-soft); position:sticky; bottom:-12px; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); }
+/* Sticky-note paper colours (light paper, dark ink in both themes) */
+.sn-c-yellow{ --sn-paper:#fff3a8; --sn-edge:#f0d65a; }
+.sn-c-pink{ --sn-paper:#ffd6e3; --sn-edge:#f4a3bd; }
+.sn-c-green{ --sn-paper:#d4f5c9; --sn-edge:#9fdc8b; }
+.sn-c-blue{ --sn-paper:#cfe7ff; --sn-edge:#93c5f5; }
+.sn-c-orange{ --sn-paper:#ffdcb8; --sn-edge:#f5b474; }
+.sn-c-purple{ --sn-paper:#e6d9ff; --sn-edge:#bda4f5; }
+/* Folder list (phone-notes style) */
+.sn-folders{ border:1px solid var(--border-soft); border-radius:12px; overflow:hidden; background: var(--surface); }
+.sn-folder{ display:flex; align-items:center; border-top:1px solid var(--border-soft); }
+.sn-folder:first-child{ border-top:none; }
+.sn-folder-open{ flex:1; min-width:0; display:flex; align-items:center; gap:10px; padding:11px 12px; border:none; background:transparent; color: var(--text); font:inherit; font-size:13.5px; text-align:left; cursor:pointer; }
+.sn-folder-open:hover{ background: var(--surface-hover); }
+.sn-folder-icon{ width:26px; height:26px; flex:none; border-radius:7px; display:flex; align-items:center; justify-content:center; background: var(--sn-paper); color:#3b3200; box-shadow: inset 0 -2px 0 var(--sn-edge); }
+.sn-folder-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.sn-folder-count{ font-size:12px; color: var(--text-faint); }
+.sn-folder-open > svg:last-child{ color: var(--text-faint); flex:none; }
+.sn-folder-menu{ flex:none; width:32px; height:40px; border:none; background:transparent; color: var(--text-faint); cursor:pointer; }
+.sn-folder-menu:hover{ color: var(--text); }
+.sn-new-folder{ display:flex; align-items:center; gap:6px; margin-top:10px; border:none; background:transparent; color: var(--accent); font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:4px 2px; }
+/* Inside a folder */
+.sn-bar{ display:flex; align-items:center; gap:8px; margin:0 0 10px; }
+.sn-back{ display:flex; align-items:center; gap:2px; border:none; background:transparent; color: var(--accent); font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:2px 0; flex:none; }
+.sn-bar-title{ flex:1; min-width:0; text-align:right; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sn-grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px 10px; padding:4px 2px; }
+.sn-note{ position:relative; display:flex; flex-direction:column; min-height:112px; padding:20px 10px 6px; background: var(--sn-paper); color:#2b2400; border-radius:2px 2px 14px 2px; box-shadow: 0 1px 1px rgba(0,0,0,.12), 0 6px 14px -6px rgba(0,0,0,.45); transform: rotate(-1.2deg); transition: transform .15s ease, box-shadow .15s; }
+.sn-note:nth-child(even){ transform: rotate(1.1deg); }
+.sn-note:nth-child(3n){ transform: rotate(-.4deg); }
+.sn-note:hover{ transform: rotate(0) translateY(-2px); box-shadow: 0 2px 2px rgba(0,0,0,.12), 0 10px 18px -6px rgba(0,0,0,.5); z-index:1; }
+.sn-note::before{ content:""; position:absolute; top:-7px; left:50%; width:44px; height:14px; transform: translateX(-50%) rotate(-2deg); background: color-mix(in srgb, #ffffff 55%, transparent); box-shadow: 0 1px 2px rgba(0,0,0,.12); border-radius:2px; }
+.sn-note.is-picked{ outline:2px solid var(--accent); outline-offset:2px; }
+.sn-check{ position:absolute; top:5px; right:6px; display:flex; cursor:pointer; }
+.sn-check input{ width:15px; height:15px; margin:0; accent-color: var(--accent); cursor:pointer; }
+.sn-text{ flex:1; font-size:12.5px; line-height:1.45; white-space:pre-wrap; word-break:break-word; cursor:text; }
+.sn-text .scratch-editbox{ width:100%; min-height:70px; border:none; outline:none; resize:vertical; background: color-mix(in srgb, #ffffff 45%, transparent); color:#2b2400; font:inherit; border-radius:4px; padding:4px; }
+.sn-meta{ display:flex; align-items:center; gap:4px; margin-top:6px; min-height:22px; }
+.sn-tag{ font-size:10px; font-weight:700; color: color-mix(in srgb, #2b2400 70%, transparent); background: color-mix(in srgb, #ffffff 45%, transparent); border-radius:999px; padding:1px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:90px; }
+.sn-act{ width:22px; height:22px; flex:none; border:none; background:transparent; color: color-mix(in srgb, #2b2400 55%, transparent); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:0; transition: opacity .12s; }
+.sn-note:hover .sn-act, .sn-act:focus-visible{ opacity:1; }
+.sn-act:hover{ background: color-mix(in srgb, #000 8%, transparent); color:#2b2400; }
+@media (hover: none){ .sn-act{ opacity:1; } }
+.menu.sn-menu{ z-index:70; }
+.sn-menu-label{ font-size:11px; color: var(--text-faint); padding:4px 10px; }
+.sn-colors{ display:flex; gap:6px; padding:6px 10px; }
+.sn-swatch{ width:20px !important; height:20px; padding:0 !important; border-radius:50% !important; background: var(--sn-paper) !important; border:2px solid var(--sn-edge) !important; }
+.sn-swatch.is-on{ outline:2px solid var(--accent); outline-offset:1px; }
+
+/* Brainstorm: Ide tersimpan — click to expand into a focused view */
+.bs-ideas-toggle{ display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; border:none; background:transparent; color:inherit; font:inherit; padding:0; cursor:pointer; text-align:left; }
+.bs-ideas-expand{ color: var(--text-faint); display:flex; }
+.bs-ideas-toggle:hover .bs-ideas-expand{ color: var(--text); }
+.bs-saved-text[data-bs-saved-open]{ cursor:pointer; }
+.bs-saved-text[data-bs-saved-open]:hover b{ text-decoration: underline; text-underline-offset:2px; }
+.bs-ideas-backdrop{ position:fixed; inset:0; z-index:67; background: rgba(6,5,4,.55); backdrop-filter: blur(3px); }
+.bs-ideas.is-focus{ position:fixed; top:6vh; left:50%; transform:translateX(-50%); width:min(920px, 94vw); max-height:88vh; overflow:auto; z-index:68; padding:22px; animation: bs-focus-in .18s ease-out; }
+.bs-ideas.is-focus .bs-ideas-head h2{ font-size:18px; }
+.bs-ideas.is-focus .bs-saved-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:14px; }
+.bs-ideas.is-focus .bs-saved-idea{ border:1px solid var(--border); border-radius:12px; padding:12px; margin:0; display:flex; flex-direction:column; gap:6px; background: var(--surface); }
+.bs-ideas.is-focus .bs-saved-idea .bs-card-actions{ margin-top:auto; }
+.bs-ideas.is-focus .bs-saved-text{ font-size:13.5px; }
+.bs-saved-notes{ font-size:12.5px; white-space:pre-wrap; color: var(--text-muted); line-height:1.5; }
+.bs-saved-hooks{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.5; }
+@keyframes bs-focus-in{ from{ opacity:0; transform: translateX(-50%) scale(.97); } to{ opacity:1; transform: translateX(-50%) scale(1); } }
+@media (prefers-reduced-motion: reduce){ .bs-ideas.is-focus{ animation:none; } }
+
+/* Tanya Brandlab (js/consultant-panel.js): header actions */
+.cp-head-actions{ display:flex; align-items:center; gap:4px; flex:none; }
+/* What the conversation is about (campaign / series / goal / content) */
+.cp-scope{ flex:none; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 14px 0; font-size:12px; }
+.cp-scope .bs-scope-chip{ font-size:11.5px; padding:4px 10px; max-width:100%; }
+.cp-scope .bs-scope-chip svg{ flex:none; }
+.cp-scope .link{ border:0; background:none; padding:0; font:inherit; font-size:12px; font-weight:700; color: var(--cp-accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+.cp-notice a{ color: var(--cp-accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
+.cp-quota{ flex:none; margin:0; padding:8px 14px 0; font-size:12px; }
+/* Conversation list rows (Brainstorm page): a delete button
+   that shows on hover / keyboard focus, always on touch screens */
+.bs-thread-row{ position:relative; display:flex; min-width:0; }
+.bs-thread-row .bs-thread-item{ padding-right:32px; }
+.bs-thread-meta{ flex-wrap:wrap; row-gap:3px; }
+.bs-thread-meta .tag{ white-space:nowrap; }
+.bs-thread-del{ position:absolute; top:7px; right:6px; opacity:0; color: var(--text-muted); transition: opacity .15s, color .15s, background .15s; }
+.bs-thread-row:hover .bs-thread-del, .bs-thread-row:focus-within .bs-thread-del{ opacity:1; }
+.bs-thread-del:hover{ color: var(--health-poor); background: var(--surface-2); }
+@media (pointer: coarse){ .bs-thread-del{ opacity:1; } }
+.consultant-panel-input textarea{ overflow-y:hidden; }
+.cp-modes{ scroll-padding-right:10px; }
+.consultant-panel-input .cp-mic{ width:32px; height:32px; margin-bottom:2px; color: var(--text-muted); }
+.consultant-panel-input .cp-mic:hover{ background: var(--surface-2); color: var(--text); }
+.consultant-panel-input .cp-mic:disabled{ opacity:.4; cursor:default; }
+.cp-msg-tools{ display:flex; align-items:center; gap:6px; margin-top:6px; }
+.cp-copy{ display:inline-flex; align-items:center; gap:4px; border:0; background:transparent; color: var(--text-faint); font: inherit; font-size:11px; font-weight:700; cursor:pointer; padding:2px 6px; margin-left:-6px; border-radius:6px; }
+.cp-copy:hover{ color: var(--text); background: var(--surface); }
+.cp-copy.is-done{ color: var(--cp-accent); }
+.cp-copy svg{ width:12px; height:12px; }
+.consultant-msg.is-typing .cp-msg-tools{ display:none; }
+@media (max-width: 640px){
+  .cp-modes{ display:flex; overflow-x:auto; gap:6px; padding:8px 10px 2px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .cp-modes::-webkit-scrollbar{ display:none; }
+  .cp-mode{ flex:none; padding:6px 11px; }
+  .cp-mode-tip{ display:none; }
+  .cp-msg-tools .cp-copy{ padding:4px 8px; }
+}
+
+/* ---- Tanya Brandlab at page size — the Brainstorm page ------------------
+   Same chat as the floating panel (js/consultant-panel.js), laid out in the
+   Brainstorm grid: conversations | chat | saved ideas. */
+body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ display:none; }
+.cp-page-chat{ --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; display:flex; flex-direction:column; min-width:0; margin:0; padding:0; height:calc(100vh - 250px); height:calc(100dvh - 250px); min-height:520px; overflow:hidden; }
+.cp-page-chat[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); }
+.cp-page-chat[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
+.cp-page-chat[data-mode="companion"]{ --cp-accent: var(--chat-companion); }
+.cp-page-chat .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
+/* the page grid follows the tab: Brainstorm = rail | chat | ideas, Teman = chat | memory, Konsultan = chat */
+.cp-page[data-mode="consultant"]{ grid-template-columns: minmax(0,1fr); }
+.cp-page[data-mode="companion"]{ grid-template-columns: minmax(0,1fr) 270px; }
+.cp-memory .companion-moment-row{ align-items:flex-start; }
+.cp-memory .companion-moment-row .tag{ margin-top:1px; }
+.cp-memory .bs-card-actions{ margin-top:12px; }
+.cp-page-chat .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
+.cp-page-chat .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
+.cp-page-chat .cp-modes{ padding:14px 18px 0; }
+.cp-page-chat .cp-scope{ padding:10px 18px 10px; border-bottom:1px solid var(--border); }
+.cp-page-chat .consultant-panel-body{ padding:16px 18px; }
+.cp-page-chat .consultant-panel-input{ padding:12px 18px; }
+.cp-page-chat .cp-foot{ padding:0 18px 12px; }
+.cp-page-chat .consultant-msg{ font-size:14px; line-height:1.6; max-width:82%; }
+.cp-scope-spacer{ flex:1; }
+.cp-saved-jump{ display:none; }
+.cp-foot{ align-items:center; gap:10px; }
+.cp-foot-hint{ font-size:11px; color: var(--text-faint); margin-right:auto; }
+/* Answers are HTML (markdown, cards): pre-wrap turned the template's own
+   line breaks into blank gaps between them. User text keeps pre-wrap. */
+.consultant-msg-assistant{ white-space:normal; }
+@media (max-width:760px){
+  .cp-page-chat{ height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:460px; }
+  .cp-page-chat .cp-modes{ padding:10px 10px 2px; }
+  .cp-page-chat .cp-scope, .cp-page-chat .consultant-panel-body, .cp-page-chat .consultant-panel-input{ padding-left:12px; padding-right:12px; }
+  .cp-page-chat .cp-foot{ padding:0 12px 10px; }
+  .cp-page-chat .consultant-msg{ max-width:94%; }
+  .cp-saved-jump{ display:inline-flex; }
+}
+
+/* ---- Pengumuman (js/views/announcements.js) + the topbar "Update" button ---- */
+.updates-btn{ position:relative; width:auto; gap:6px; padding:0 10px; text-decoration:none; }
+.updates-btn .updates-label{ font-size:12.5px; font-weight:700; }
+.updates-btn.is-active{ background: var(--surface-2); color: var(--text); }
+.updates-btn .updates-badge[hidden]{ display:none; }
+@media (max-width:760px){ .updates-btn{ padding:0; width:36px; } .updates-btn .updates-label{ display:none; } }
+.ann-wrap{ max-width:760px; display:flex; flex-direction:column; gap:16px; }
+.ann-list{ display:flex; flex-direction:column; gap:12px; }
+.ann-composer{ display:flex; flex-direction:column; gap:12px; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.ann-composer .field{ margin:0; }
+.ann-composer .field-hint{ font-size:11.5px; color: var(--text-faint); margin:4px 0 0; }
+.ann-composer-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.ann-kinds{ display:flex; flex-wrap:wrap; gap:8px; }
+.ann-kind input{ position:absolute; opacity:0; pointer-events:none; }
+.ann-kind span{ display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); font-size:12.5px; font-weight:700; color: var(--text-muted); cursor:pointer; }
+.ann-kind input:checked + span{ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.ann-kind input:focus-visible + span{ outline:2px solid var(--accent); outline-offset:2px; }
+.ann-composer-actions{ display:flex; justify-content:flex-end; gap:8px; }
+.ann-item{ display:flex; flex-direction:column; gap:8px; }
+.ann-item.is-new{ border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.ann-meta{ display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:12px; }
+.ann-kind-tag{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.02em; background: var(--surface-2); color: var(--text-muted); }
+.ann-kind-feature{ background: var(--accent-soft); color: var(--accent); }
+.ann-kind-fix{ background: color-mix(in srgb, var(--health-good) 16%, transparent); color: var(--health-good); }
+.ann-new{ font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:#fff; background: var(--accent); padding:2px 7px; border-radius:999px; }
+.ann-admin-actions{ margin-left:auto; display:inline-flex; gap:4px; }
+.ann-title{ font-size:17px; margin:0; line-height:1.35; }
+.ann-body{ font-size:14px; line-height:1.6; color: var(--text); }
+.ann-link{ align-self:flex-start; }
+.ann-empty{ display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; color: var(--text-muted); font-size:13.5px; padding:28px 18px; }
+.ann-empty p{ margin:0; }
+/* Creator's AI writer: what it reads from brand memory, with the way to see it */
+.cr-ai-memory{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.cr-ai-memory svg{ flex:none; color: var(--chat-companion, #a855f7); }
+.cr-ai-memory-open{ border:0; background:none; padding:0; font:inherit; font-size:12px; font-weight:700; color: var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+
+/* Tanya Brandlab — Otomatis: the small panel's quick row (Obrolan /
+   Tersimpan / Memori), the page's right column (saved ideas + brand memory
+   stacked), the AI's "keep this idea?" card and its guide line. */
+.cp-quick{ flex:none; display:flex; gap:6px; padding:8px 12px 0; overflow-x:auto; scrollbar-width:none; }
+.cp-quick::-webkit-scrollbar{ display:none; }
+.cp-quick-btn{ flex:none; display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font:inherit; font-size:11.5px; font-weight:700; cursor:pointer; }
+.cp-quick-btn:hover{ color: var(--text); border-color: var(--cp-accent); }
+.cp-quick-btn svg{ width:12px; height:12px; flex:none; }
+.cp-page[data-mode="auto"]{ grid-template-columns: 230px minmax(0,1fr) 270px; }
+.cp-side{ position:sticky; top:84px; display:flex; flex-direction:column; gap:16px; min-width:0; }
+.cp-side .bs-ideas{ position:static; }
+.cp-side .bs-saved-list{ max-height:38vh; overflow-y:auto; }
+.cp-offer{ border-color: color-mix(in srgb, var(--chat-brainstorm, #3b82f6) 45%, var(--border)); }
+.cp-offer-tag{ color: var(--chat-brainstorm, #3b82f6); }
+.cp-guide{ display:flex; align-items:flex-start; gap:6px; margin:10px 0 0; font-size:12px; line-height:1.45; color: var(--text-muted); }
+.cp-guide svg{ flex:none; margin-top:2px; color: var(--cp-accent); }
+@media (max-width:1100px){
+  .cp-page[data-mode="auto"]{ grid-template-columns: minmax(0,1fr) 260px; }
+}
+@media (max-width:760px){
+  .cp-page[data-mode="auto"]{ grid-template-columns: minmax(0,1fr); }
+  .cp-side{ position:static; }
+}
+
+/* A calm reply: one place to go, two follow-ups at most, and the small
+   stuff (copy, 👍/👎, "Bukan ini maksudku") on one faint line. */
+.cp-switch[hidden]{ display:none; }
+.cp-asks{ margin-top:8px; padding-top:0; border-top:0; }
+.cp-asks .consultant-starter{ font-size:12px; padding:5px 11px; }
+.cp-msg-tools{ flex-wrap:wrap; gap:4px 10px; }
+.cp-msg-tools .ai-feedback{ margin:0; padding:0; border:0; display:inline-flex; align-items:center; gap:2px; }
+.cp-msg-tools .ai-feedback-q{ display:none; }
+.cp-msg-tools .ai-feedback-btn{ font-size:12px; padding:2px 4px; opacity:.6; }
+.cp-msg-tools .ai-feedback-btn:hover{ opacity:1; }
+.cp-retry-toggle{ margin-left:auto; }
+
+/* Where sales came from: the tag in the sales log, the line on a campaign
+   and in the content editor. */
+.st-source-tag{ display:inline-flex; align-items:center; gap:3px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }
+.st-source-tag svg{ flex:none; }
+.st-source-line{ display:flex; align-items:center; gap:8px; margin:-8px 0 18px; padding:9px 12px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--health-good, #22c55e) 10%, var(--surface-2)); border:1px solid color-mix(in srgb, var(--health-good, #22c55e) 35%, var(--border)); font-size:12.5px; }
+.st-source-line svg{ flex:none; color: var(--health-good, #22c55e); }
+
+/* "Diperbarui otomatis karena: …" above advice the app refreshed itself */
+.ai-auto-note{ display:flex; align-items:flex-start; gap:6px; margin:0 0 8px; padding:7px 10px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); font-size:12px; line-height:1.45; color: var(--text-muted); }
+.ai-auto-note svg{ flex:none; margin-top:2px; color: var(--accent); }
+/* Campaign "Buat rencana konten": the review list */
+.cp-plan-list{ display:flex; flex-direction:column; gap:2px; max-height:52vh; overflow-y:auto; }
+.cp-plan-row{ display:grid; grid-template-columns: auto 62px minmax(0,1fr); gap:10px; align-items:flex-start; padding:9px 4px; border-top:1px solid var(--border-soft, var(--border)); cursor:pointer; }
+.cp-plan-row:first-child{ border-top:0; }
+.cp-plan-row input{ margin-top:3px; accent-color: var(--accent); }
+.cp-plan-row.is-dup{ opacity:.55; cursor:default; }
+.cp-plan-date{ font-size:12px; font-weight:700; color: var(--text-muted); padding-top:2px; }
+.cp-plan-body{ display:flex; flex-direction:column; gap:3px; min-width:0; font-size:13px; line-height:1.4; }
+.cp-plan-body .text-muted{ font-size:12px; }
+.cp-plan-tags{ display:flex; flex-wrap:wrap; gap:4px; }
+.cp-plan-tags .tag{ font-size:10.5px; }
+
+/* "Dibuat berdasarkan: …" under generated content (js/brand-learning.js) */
+.ai-basis{ margin:0 0 12px; padding:8px 11px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 9%, var(--surface-2)); border:1px dashed color-mix(in srgb, var(--accent) 35%, var(--border)); font-size:12px; line-height:1.5; color: var(--text-muted); }
+.ai-basis b{ color: var(--text); margin-right:2px; }
+/* Level evaluation: the brand's own numbers under a fix */
+.goal-eval-data{ display:flex; align-items:flex-start; gap:5px; margin-top:4px; font-size:12px; color: var(--accent); }
+.goal-eval-data svg{ flex:none; margin-top:2px; }
+/* Home, new brand: start from the problem */
+.problem-hero h2{ font-size:24px; }
+.problem-options{ display:grid; gap:10px; margin-top:16px; align-self:stretch; width:100%; max-width:720px; }
+.problem-option{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px 16px; border-radius: var(--radius-md); border:1px solid var(--border); background: var(--surface-2); color: var(--text); font:inherit; cursor:pointer; transition: border-color .15s, background .15s, transform .15s; }
+.problem-option:hover{ border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); transform: translateY(-1px); }
+.problem-option > svg:last-child{ flex:none; color: var(--text-faint); }
+.problem-option.is-picked{ border-color: var(--accent); }
+.problem-option-icon{ flex:none; width:38px; height:38px; border-radius:11px; display:grid; place-items:center; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.problem-option-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.problem-option-text b{ font-size:15px; }
+.problem-option-text small{ font-size:12.5px; color: var(--text-muted); }
+.dna-nudge{ display:flex; align-items:center; gap:12px; margin:-8px 0 24px; text-decoration:none; color: var(--text); }
+.dna-nudge-icon{ flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background: var(--surface-2); color: var(--accent); }
+.dna-nudge-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.dna-nudge-text b{ font-size:13.5px; }
+.dna-nudge-text small{ font-size:12px; color: var(--text-muted); }
+.dna-nudge-text .identity-row-bar{ max-width:220px; margin-top:3px; }
+.dna-nudge-go{ flex:none; display:inline-flex; align-items:center; gap:4px; font-size:12.5px; font-weight:700; color: var(--accent); }
+@media (max-width:560px){ .dna-nudge{ flex-wrap:wrap; } .dna-nudge-go{ margin-left:44px; } }
+/* Konten page: Brand DNA not done yet */
+.dna-hint{ display:flex; align-items:center; gap:8px; margin:-8px 0 16px; padding:8px 12px; border-radius: var(--radius-md); background: var(--surface-2); border:1px solid var(--border); font-size:12.5px; color: var(--text-muted); text-decoration:none; }
+.dna-hint svg{ flex:none; color: var(--accent); }
+.dna-hint span{ flex:1; min-width:0; }
+.dna-hint b{ flex:none; display:inline-flex; align-items:center; gap:3px; color: var(--accent); }
+.dna-hint:hover{ border-color: var(--accent); }
+
+/* Home head: the report button beside the avatar */
+.home-head-side{ display:flex; align-items:center; gap:14px; flex:none; }
+/* Weekly report reminder (Home) */
+.report-remind{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:-8px 0 24px; }
+.report-remind-icon{ flex:none; width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.report-remind-text{ flex:1; min-width:180px; display:flex; flex-direction:column; gap:2px; }
+.report-remind-text b{ font-size:13.5px; }
+.report-remind-text small{ font-size:12px; color: var(--text-muted); }
+/* Report sheet: extra blocks, and the off-screen A4 pages for the PDF */
+.rp-range{ flex-wrap:wrap; }
+.report-list{ margin:0 0 6px; padding-left:18px; font-size:12.5px; line-height:1.55; color:#33302c; }
+.report-list li{ margin:3px 0; }
+.report-note{ font-size:12px; color:#33302c; margin:8px 0 0; }
+.report-stat small.rep-up{ color:#15803d; font-size:13px; }
+.report-stat small.rep-down{ color:#b91c1c; font-size:13px; }
+.rp-block{ break-inside:avoid; }
+.rp-pdf-host{ position:fixed; left:-10000px; top:0; width:794px; pointer-events:none; }
+.rp-pdf-host .rp-page{ width:794px; height:1123px; max-width:none; border-radius:0; box-shadow:none; padding:48px 52px; overflow:hidden; box-sizing:border-box; }
+/* Aturan tulisan: the one-line summary + the modal's tags */
+.wr-row{ display:flex; align-items:center; gap:8px; width:100%; margin:0 0 14px; padding:9px 12px; border-radius: var(--radius-md); border:1px dashed var(--border); background: var(--surface-2); color: var(--text-muted); font:inherit; font-size:12.5px; text-align:left; cursor:pointer; }
+.wr-row:hover{ border-color: var(--accent); color: var(--text); }
+.wr-row svg{ flex:none; color: var(--accent); }
+.wr-row span{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wr-row b{ flex:none; color: var(--accent); }
+.wr-call-chips{ flex-wrap:wrap; margin-top:8px; }
+.wr-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.wr-tag{ display:inline-flex; align-items:center; gap:4px; padding:4px 6px 4px 10px; border-radius:999px; background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); font-size:12.5px; font-weight:600; }
+.wr-tag button{ border:0; background:none; color: var(--text-muted); cursor:pointer; display:grid; place-items:center; padding:2px; border-radius:50%; }
+.wr-tag button:hover{ color: var(--health-poor); }
+.wr-tag-add{ display:flex; gap:8px; }
+.wr-tag-add .input{ flex:1; min-width:0; }
+.wr-suggest{ display:flex; flex-wrap:wrap; gap:6px; }
+.wr-suggest .consultant-starter{ display:inline-flex; align-items:center; gap:4px; }
+.wr-suggest .consultant-starter.is-added{ opacity:.45; }
+
+/* ============================================================
+   Brand report, redesigned (js/views/report.js): a printed-report look —
+   dark cover band with the Wepeka Brandlab mark, big numbers with change
+   vs the period before, numbered sections, bars, branded footer. Colours
+   are fixed (it's a white sheet in both themes); the brand accent comes in
+   inline. Same markup for the preview and the A4 PDF pages.
+   ============================================================ */
+.report-sheet.rp2{ padding:0 0 4px; overflow:hidden; color:#1c1a17; border-radius:12px; font-family: var(--font-body); }
+.rp2 .rp-block{ break-inside:avoid; }
+.rp2-pad{ padding:14px 36px 2px; }
+.rp2 .rp-block.is-page-top .rp2-pad{ padding-top:30px; }
+/* cover */
+.rp2-hero{ position:relative; overflow:hidden; background:#12110f; color:#fff; padding:24px 36px 22px; }
+.rp2-hero-glow{ position:absolute; right:-120px; top:-140px; width:420px; height:420px; border-radius:50%; background: radial-gradient(circle, rgba(255,165,43,.42), rgba(255,165,43,0) 65%); }
+.rp2-hero-top{ position:relative; display:flex; align-items:center; gap:10px; }
+.rp2-logo{ height:20px; width:auto; display:block; }
+.rp2-divider{ width:1px; height:16px; background: rgba(255,255,255,.28); }
+.rp2-product{ font-weight:800; font-size:14px; letter-spacing:.01em; }
+.rp2-hero-kind{ margin-left:auto; font-size:10.5px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:#ffa52b; border:1px solid rgba(255,165,43,.5); padding:4px 10px; border-radius:999px; }
+.rp2-hero-main{ position:relative; display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin-top:26px; }
+.rp2-eyebrow{ font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color: rgba(255,255,255,.55); }
+.rp2-brand{ font-family: var(--font-display); font-size:34px; line-height:1.05; margin:6px 0 10px; color:#fff; }
+.rp2-period{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600; color: rgba(255,255,255,.85); background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); padding:6px 12px; border-radius:999px; }
+.rp2-hero-avatar .avatar{ box-shadow: 0 0 0 4px rgba(255,255,255,.12), 0 14px 30px rgba(0,0,0,.45); }
+.rp2-hero-meta{ position:relative; margin-top:16px; font-size:10.5px; color: rgba(255,255,255,.45); }
+/* big numbers */
+.rp2-kpis{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+.rp2-kpi{ background:#faf8f5; border:1px solid #ece7e0; border-radius:12px; padding:12px 12px 11px; min-width:0; }
+.rp2-kpi-top{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.rp2-kpi-icon{ width:26px; height:26px; border-radius:8px; display:grid; place-items:center; }
+.rp2-kpi-value{ font-family: var(--font-display); font-size:21px; line-height:1.1; margin-top:10px; color:#1c1a17; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rp2-kpi-label{ font-size:10.5px; font-weight:700; color:#7a736b; margin-top:3px; }
+.rp2-delta{ display:inline-flex; align-items:center; gap:2px; font-size:10.5px; font-weight:800; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+.rp2-delta.is-up{ color:#15803d; background:#dcfce7; }
+.rp2-delta.is-down{ color:#b91c1c; background:#fee2e2; }
+.rp2-delta.is-flat{ color:#6b6560; background:#f0ece6; }
+.rp2-compare{ margin:8px 0 0; font-size:10.5px; color:#9a938b; }
+/* summary callout */
+.rp2-callout{ border-left:4px solid; background:#faf8f5; border-radius: 0 12px 12px 0; padding:12px 16px; }
+.rp2-callout-head{ display:flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; margin-bottom:6px; }
+.rp2-callout p{ margin:4px 0; font-size:12.5px; line-height:1.55; color:#33302c; }
+.rp2-next{ margin-top:10px; padding:9px 12px; border-radius:10px; font-size:12.5px; color:#1c1a17; line-height:1.5; }
+.rp2-next b{ display:inline-flex; align-items:center; gap:4px; margin-right:4px; }
+.rp2-next small{ display:block; color:#6b6560; font-size:11.5px; margin-top:2px; }
+/* section head */
+.rp2-sec{ display:flex; align-items:center; gap:10px; margin:4px 0 10px; }
+.rp2-sec-n{ flex:none; font-family: var(--font-display); font-size:13px; color:#fff; background:#12110f; width:30px; height:30px; border-radius:9px; display:grid; place-items:center; }
+.rp2-sec h3{ margin:0; font-family: var(--font-display); font-size:16px; color:#1c1a17; }
+.rp2-sec p{ margin:1px 0 0; font-size:11px; color:#8a837b; }
+.rp2-sec-line{ flex:1; height:1px; background:#ece7e0; margin-left:6px; }
+/* bars, pills */
+.rp2-bar{ display:block; height:6px; border-radius:999px; background:#f0ece6; overflow:hidden; margin-top:6px; }
+.rp2-bar > span{ display:block; height:100%; border-radius:999px; }
+.rp2-pill{ display:inline-block; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+/* best posts */
+.rp2-rank{ display:flex; flex-direction:column; gap:7px; }
+.rp2-rank-row{ display:grid; grid-template-columns: 28px minmax(0,1fr) 110px; gap:12px; align-items:center; padding:9px 12px; border:1px solid #ece7e0; border-radius:12px; }
+.rp2-rank-n{ width:28px; height:28px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:12px; background:#f0ece6; color:#6b6560; }
+.rp2-rank-title{ font-weight:700; font-size:13px; color:#1c1a17; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rp2-rank-meta{ display:flex; align-items:center; gap:8px; margin-top:3px; font-size:10.5px; color:#8a837b; }
+.rp2-rank-nums{ text-align:right; }
+.rp2-rank-nums b{ display:block; font-family: var(--font-display); font-size:16px; color:#1c1a17; }
+.rp2-rank-nums small{ font-size:10.5px; color:#8a837b; }
+.rp2-empty{ font-size:12.5px; color:#8a837b; margin:0; }
+/* funnel */
+.rp2-stack{ display:flex; height:14px; border-radius:999px; overflow:hidden; gap:2px; }
+.rp2-stack > span{ display:block; }
+.rp2-legend{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px; }
+.rp2-legend-item{ display:flex; flex-direction:column; gap:2px; font-size:11.5px; color:#6b6560; padding-left:14px; position:relative; }
+.rp2-legend-item b{ color:#1c1a17; font-size:12.5px; }
+.rp2-dot{ position:absolute; left:0; top:4px; width:8px; height:8px; border-radius:50%; }
+/* follower cards */
+.rp2-cards{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+.rp2-card{ border:1px solid #ece7e0; border-radius:12px; padding:12px; }
+.rp2-card-label{ font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#8a837b; }
+.rp2-card-value{ font-family: var(--font-display); font-size:22px; color:#1c1a17; margin:4px 0 6px; }
+/* sales */
+.rp2-sales{ display:grid; grid-template-columns: 190px minmax(0,1fr); gap:12px; align-items:stretch; }
+.rp2-sales-total{ border:1px solid; border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+.rp2-sales-total small{ font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#8a837b; }
+.rp2-sales-total b{ font-family: var(--font-display); font-size:22px; color:#1c1a17; }
+.rp2-sales-list{ display:flex; flex-direction:column; gap:9px; justify-content:center; }
+.rp2-sales-row{ display:grid; grid-template-columns: 120px minmax(0,1fr) auto; gap:10px; align-items:center; font-size:12px; }
+.rp2-sales-row .rp2-bar{ margin-top:0; }
+.rp2-sales-name{ font-weight:700; color:#1c1a17; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rp2-sales-num{ color:#6b6560; font-size:11.5px; white-space:nowrap; }
+.rp2-chips{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+.rp2-chips-label{ font-size:11px; font-weight:700; color:#8a837b; }
+.rp2-chip{ font-size:11px; padding:3px 9px; border-radius:999px; background:#f0ece6; color:#33302c; }
+/* campaigns */
+.rp2-camps{ display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+.rp2-camp{ border:1px solid #ece7e0; border-radius:12px; padding:12px 14px; }
+.rp2-camp-head{ display:flex; justify-content:space-between; gap:8px; font-size:13px; color:#1c1a17; }
+.rp2-camp-head span{ font-weight:800; color:#6b6560; font-size:12px; }
+.rp2-camp-stage{ font-size:11px; color:#8a837b; margin-top:2px; }
+.rp2-camp-head-num{ font-size:11px; color:#33302c; margin-top:6px; }
+/* timeline */
+.rp2-timeline{ display:flex; flex-direction:column; gap:7px; }
+.rp2-tl-row{ display:flex; align-items:center; gap:12px; font-size:12.5px; color:#1c1a17; }
+.rp2-tl-date{ flex:none; width:44px; height:44px; border-radius:12px; border:1.5px solid; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; }
+.rp2-tl-date b{ font-family: var(--font-display); font-size:17px; }
+.rp2-tl-date small{ font-size:9.5px; font-weight:800; text-transform:uppercase; color:#8a837b; margin-top:2px; }
+.rp2-tl-title{ flex:1; min-width:0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* notes */
+.rp2-notes{ display:flex; flex-direction:column; gap:7px; }
+.rp2-note{ display:flex; align-items:flex-start; gap:8px; font-size:12.5px; line-height:1.5; color:#33302c; padding:8px 12px; border-radius:10px; background:#faf8f5; }
+.rp2-note svg{ flex:none; margin-top:3px; color:#e11d74; }
+.rp2-note.is-lesson svg{ color:#ca8a04; }
+.rp2-note small{ display:block; color:#8a837b; font-size:11.5px; }
+/* footer */
+.rp2-foot{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:22px 36px 0; padding:12px 0 14px; border-top:1px solid #ece7e0; font-size:10.5px; color:#9a938b; }
+.rp2-foot-mark{ display:inline-flex; align-items:center; gap:7px; background:#12110f; color:#fff; padding:5px 10px; border-radius:999px; font-weight:800; font-size:10.5px; }
+.rp2-foot-mark img{ height:11px; width:auto; }
+/* A4 pages for the PDF: the footer sits at the bottom of each page */
+.rp-pdf-host .rp2.rp-page{ position:relative; padding:0; }
+.rp-pdf-host .rp2.rp-page .rp2-foot{ position:absolute; left:0; right:0; bottom:0; margin:0 36px; }

@@ -21,6 +21,7 @@ import { runSpotlightTour } from "../tour.js";
 import { getMode } from "../mode.js";
 import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
+import { ensurePdfLibs } from "../pdf-libs.js";
 
 const TOUR_STEPS = [
   { selector: ".bb-tab-row", title: t("bg.tour.title"), body: t("bg.tour.body") },
@@ -2743,31 +2744,7 @@ function wireBookStylePicker(root, brandId, state, refresh) {
 // all, so this shouldn't cost anything on every page load. html2canvas
 // rasterizes each artboard, jsPDF assembles them into a real downloadable
 // .pdf directly, no print dialog / "choose Save as PDF" step required.
-const PDF_LIBS = [
-  { ready: () => !!window.html2canvas, src: "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" },
-  { ready: () => !!window.jspdf?.jsPDF, src: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" },
-];
-let pdfLibsLoading = null;
-function ensurePdfLibs() {
-  if (PDF_LIBS.every((l) => l.ready())) return Promise.resolve();
-  if (pdfLibsLoading) return pdfLibsLoading;
-  pdfLibsLoading = Promise.all(
-    PDF_LIBS.filter((l) => !l.ready()).map(
-      (l) =>
-        new Promise((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = l.src;
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        })
-    )
-  ).catch((err) => {
-    pdfLibsLoading = null; // let the next click retry instead of caching the failure
-    throw err;
-  });
-  return pdfLibsLoading;
-}
+// The loader lives in js/pdf-libs.js (shared with the brand report).
 
 // Resolves once an <img> has loaded (or failed). Deliberately not
 // img.decode(): that promise never settles while the tab is in the

@@ -222,7 +222,7 @@ export async function testAiConnection(ai) {
 // already accepted. Omit for the original all-three-at-once behavior.
 export async function generateScript(
   ai,
-  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only }
+  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [] }
 ) {
   const wantsHooks = !only || only === "hooks";
   const wantsScript = !only || only === "script";
@@ -238,7 +238,11 @@ export async function generateScript(
         ? '"slides": [{"slideNumber": 1, "text": "..."}, {"slideNumber": 2, "text": "..."}]'
         : '"script": "HOOK\\n...\\n\\nISI PEMBAHASAN\\n..."'
       : "",
-    wantsCaption ? '"caption": "a short caption for the post, with 3-5 relevant hashtags"' : "",
+    wantsCaption
+      ? hashtags.length
+        ? `"caption": "a short caption for the post, ending with exactly these hashtags and no others: ${hashtags.join(" ")}"`
+        : '"caption": "a short caption for the post, with 3-5 relevant hashtags"'
+      : "",
   ]
     .filter(Boolean)
     .join(", ");
@@ -588,6 +592,10 @@ export function buildBrandContext(brand) {
     dna.values?.length ? `Brand values: ${dna.values.join(", ")}` : "",
     dna.productsServices?.length ? `Products/services: ${dna.productsServices.join(", ")}` : "",
     brand.aiVoiceGuide ? `Voice & tone guide: ${brand.aiVoiceGuide}` : "",
+    // Aturan tulisan (js/writing-rules.js): how customers are addressed, and
+    // the fixed hashtags — set by the owner, never guessed.
+    brand.writingRules?.customerCall ? `Address the customer as "${brand.writingRules.customerCall}" (e.g. "${brand.writingRules.customerCall}, …") whenever the text speaks to them directly — never switch to another form of address.` : "",
+    brand.writingRules?.hashtags?.length ? `Fixed hashtags: ${brand.writingRules.hashtags.join(" ")}. A social media caption ends with exactly these hashtags, in this order, and no other hashtags. Formats that don't use hashtags (WhatsApp, Story text, bios, Threads) get none.` : "",
     ...brandBuilderContextLines(brand),
     ...brandGuidelinesContextLines(brand),
   ].filter(Boolean);
@@ -691,7 +699,11 @@ export function campaignSummaryLine(c, brand) {
   const event = c.eventPlan
     ? ` | EVENT: role=${c.eventPlan.role}${c.eventPlan.participationType ? `(${c.eventPlan.participationType})` : ""}, date=${c.eventPlan.eventDate}, days left=${Math.max(0, daysUntil(c.eventPlan.eventDate))}, location=${c.eventPlan.setup?.eventLocation || "(not set)"}, objectives=${(c.eventPlan.objectives || []).join(", ") || "(none set)"}`
     : "";
-  return `- id=${c.id} | name=${c.name} | objective=${c.objective} | key message=${c.keyMessage || "(none set)"} | audience=${c.targetAudience || brand?.brandDNA?.targetAudience || "(not set)"}${window}${ideas}${event}`;
+  // Sales the owner tagged with this campaign (or its event) in the Sales
+  // Tracker — read straight off the brand doc, like everything else here.
+  const tagged = (brand?.salesTracker?.entries || []).filter((e) => e.source?.campaignId === c.id || e.eventId === c.id);
+  const sales = tagged.length ? ` | sales tagged to this campaign: ${tagged.reduce((a, e) => a + (Number(e.qty) || 0), 0)} sold, Rp ${Math.round(tagged.reduce((a, e) => a + (Number(e.amount) || 0), 0))} in ${tagged.length} logged sales` : "";
+  return `- id=${c.id} | name=${c.name} | objective=${c.objective} | key message=${c.keyMessage || "(none set)"} | audience=${c.targetAudience || brand?.brandDNA?.targetAudience || "(not set)"}${window}${ideas}${event}${sales}`;
 }
 
 function daysUntil(dateStr) {
@@ -1032,7 +1044,9 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
 // this brand should actually sell — plus concrete non-content activities
 // per level. `levels` = [{ index, name, description, targets: ["..."] }].
 // Returns { concept: { title, summary, howToRun: [] }, levels: [{ index, activities: [{ title, how, type }] }] }.
-export async function generateCampaignPlaybook(ai, { brand, campaign, track, levels, extra = "", pulseText = "" }) {
+// `free`: the app refreshed it on its own after a new signal (js/views/
+// campaign-detail.js) — not counted against the owner's credits.
+export async function generateCampaignPlaybook(ai, { brand, campaign, track, levels, extra = "", pulseText = "", free = false }) {
   const brief = {
     community: [
       "You are a community strategist. Design this brand's community and how to run it.",
@@ -1065,7 +1079,7 @@ export async function generateCampaignPlaybook(ai, { brand, campaign, track, lev
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, "Write the plan now.", 2600);
+  const raw = await callModel(ai, system, "Write the plan now.", 2600, { countUsage: !free });
   const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
   try {
     const parsed = JSON.parse(cleaned);
@@ -1111,6 +1125,86 @@ export async function suggestPhaseContent(ai, { brand, campaign, phase, existing
   } catch {
     throw new AiApiError(t("ai.error.readIdeas"));
   }
+}
+
+// Once a month the app (js/main.js → js/brand-learning.js) turns last
+// month's post numbers into 2–4 plain lessons that stay in the brand's
+// memory for good. Started by the app, so free for the owner.
+export async function summarizeMonthLessons(ai, { brand, month, rows }) {
+  const system = [
+    "You read one month of a small brand's own post numbers and write the 2-4 lessons worth remembering for next month's content.",
+    outputLanguageRule(),
+    `Brand: ${brand?.name || ""}.`,
+    "Each lesson is ONE short sentence built on a comparison the numbers actually show (a format vs the others, a funnel stage, a hook style, a topic) with the figure in it — e.g. 'Reels edukasi rata-rata 2x views dibanding foto produk (3.100 vs 1.400).' Never generic advice, never a number that isn't in the data, and skip anything the data is too thin to show.",
+    'Respond ONLY with valid JSON, no markdown fences: {"lessons":["...","..."]}',
+  ].join("\n\n");
+  const table = rows.map((r) => `- "${r.title}" | ${r.format || "?"} | ${r.funnel || "?"} | views ${r.views ?? "?"} | ER ${r.er === null || r.er === undefined ? "?" : Number(r.er).toFixed(1) + "%"}${r.hook ? ` | hook: ${r.hook}` : ""}`).join("\n");
+  const raw = await callModel(ai, system, `Month ${month}, posts:\n${table}`, 500, { countUsage: false });
+  const parsed = parseJsonObject(raw);
+  return (parsed?.lessons || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 4);
+}
+
+// "Sarankan hashtag" in Aturan tulisan (js/writing-rules.js): candidates
+// for the brand's fixed hashtags — the owner picks, nothing is applied on
+// its own. One credit (they clicked).
+export async function suggestHashtags(ai, { brand, pulseText = "", current = [] }) {
+  const system = [
+    "You suggest the fixed hashtags a small brand puts at the end of every Instagram/TikTok caption.",
+    buildBrandContext(brand),
+    pulseText || "",
+    current.length ? `Already chosen (don't repeat): ${current.join(" ")}` : "",
+    "Suggest 12 hashtags: 2-3 for the brand itself (its name or tagline as one tag), 4-5 for its niche/product in the language its audience searches in, 2-3 local (city/region if the context gives one), 1-2 community/audience tags. Real, commonly used tags only; no spaces, no emojis, no generic filler like #love #instagood #fyp.",
+    'Respond ONLY with valid JSON, no markdown fences: {"hashtags":["#...","#..."]}',
+  ].filter(Boolean).join("\n\n");
+  const raw = await callModel(ai, system, "Suggest them now.", 300);
+  const parsed = parseJsonObject(raw);
+  const out = [];
+  (parsed?.hashtags || []).forEach((h) => {
+    const tag = `#${String(h || "").replace(/^#+/, "").replace(/[^\p{L}\p{N}_]/gu, "")}`;
+    if (tag.length > 1 && !out.some((x) => x.toLowerCase() === tag.toLowerCase()) && !current.some((x) => x.toLowerCase() === tag.toLowerCase())) out.push(tag);
+  });
+  if (!out.length) throw new AiApiError(t("ai.error.readIdeas"));
+  return out.slice(0, 12);
+}
+
+// "Buat rencana konten" on a campaign's page (js/views/campaign-detail.js):
+// a whole content plan for the next few weeks, in the order the campaign's
+// stages run, grounded in the brand and in what has already worked
+// (`proven`: short lines about posts that sold or took off). Returns exactly
+// `weeks × perWeek` items, oldest first; the page puts the dates on. One
+// call, counted against the owner's credits (they clicked it).
+export async function generateCampaignContentPlan(ai, { brand, campaign, weeks, perWeek, startDate, stages = [], formats = [], existingTitles = [], proven = [], pulseText = "" }) {
+  const total = weeks * perWeek;
+  const system = [
+    "You plan a campaign's content calendar for a small brand: what to post, week by week, so the campaign moves forward — not a list of random ideas.",
+    outputLanguageRule(),
+    buildBrandContext(brand),
+    pulseText || "",
+    MARKETING_FRAMEWORKS_CONTEXT,
+    NATURAL_WRITING_CONTEXT,
+    `The campaign:\n${campaignSummaryLine(campaign, brand)}\nOffer: ${campaign.offer || "(not set)"}. CTA: ${campaign.cta || "(not set)"}.`,
+    stages.length ? `Its stages, in order (use these exact names in "phase"):\n${stages.map((s) => `- ${s.name}${s.dateFrom ? ` (${s.dateFrom}..${s.dateTo})` : ""}${s.goal ? `: ${s.goal}` : ""}`).join("\n")}` : "",
+    proven.length ? `What already worked for this brand — lean on these patterns (not copies):\n${proven.map((p) => `- ${p}`).join("\n")}` : "",
+    existingTitles.length ? `Content already planned or made for this campaign (never repeat these):\n${existingTitles.slice(0, 40).map((x) => `- ${x}`).join("\n")}` : "",
+    `Plan ${weeks} week(s) starting ${startDate}, ${perWeek} post(s) per week: exactly ${total} items, in posting order. Mix the funnel sensibly across each week (mostly TOFU early on, more MOFU/BOFU as the campaign matures, a BOFU push near the end), and vary the formats.`,
+    formats.length ? `Formats this brand uses (pick from these): ${formats.join(", ")}.` : "",
+    `Respond ONLY with valid JSON, no markdown fences: {"items":[{"week":1,"title":"short concrete content title","angle":"one sentence: what it says and why it fits this week","format":"one of the formats","funnel":"TOFU|MOFU|BOFU","phase":"stage name or empty"}]}`,
+  ].filter(Boolean).join("\n\n");
+  const raw = await callModel(ai, system, "Write the plan now.", Math.min(4000, 400 + total * 110));
+  const parsed = parseJsonObject(raw);
+  const items = (parsed?.items || [])
+    .map((x) => ({
+      week: Math.max(1, Math.round(Number(x?.week)) || 1),
+      title: String(x?.title || "").trim().slice(0, 140),
+      angle: String(x?.angle || "").trim().slice(0, 300),
+      format: String(x?.format || "").trim().slice(0, 40),
+      funnel: ["TOFU", "MOFU", "BOFU"].includes(String(x?.funnel || "").toUpperCase()) ? String(x.funnel).toUpperCase() : "TOFU",
+      phase: String(x?.phase || "").trim().slice(0, 60),
+    }))
+    .filter((x) => x.title)
+    .slice(0, total);
+  if (!items.length) throw new AiApiError(t("ai.error.readIdeas"));
+  return items;
 }
 
 // Powers the Brand Guidelines PDF's "Value Proposition" page — the one
@@ -1208,21 +1302,23 @@ export const CONSULTANT_ROUTES = [
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
-export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null }) {
+export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null, kinds = [] }) {
   const routesList = CONSULTANT_ROUTES.map((r) => `${r.key} = ${r.label}`).join(", ");
   const system = [
     "You are a practical branding & marketing consultant embedded inside this brand's own tool.",
     outputLanguageRule(),
+    "Answer the user's LATEST message and nothing else, reading it in the light of the conversation so far (a short follow-up refers to what was just discussed). The brand data below is background: use only the parts that answer this question. Do not bring up other campaigns, numbers, streaks or problems the user didn't ask about — no 'the rest can wait, but…' add-ons. Only when they ask what to do first or what's most urgent, name the top one or two things.",
     "You give specific, actionable advice grounded in THIS brand's actual context and data below — never generic marketing platitudes. When the brand's tracked data below is relevant to the question, cite the actual numbers (e.g. 'ada 3 konten overdue', 'engagement rate rata-rata 2.1%') instead of speaking abstractly.",
     buildBrandContext(brand),
     pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     snapshotText ? `Live tracked data for this brand right now:\n${snapshotText}` : "",
-    "Keep answers tight and conversational — a few short paragraphs or a short list, not an essay. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
-    "When your answer recommends specific content pieces the user should make, ALSO add one line per piece (at most 3) at the very end, in the exact form [[draft:FUNNEL|Content title]] — FUNNEL is exactly TOFU, MOFU, or BOFU, and the title is a short, concrete content title in the same language as your answer (e.g. [[draft:TOFU|3 kesalahan bikin kopi susu di rumah]]). Only for concrete content ideas you actually recommended, never for general advice. The app turns each one into a \"create draft\" button.",
-    `Whenever your answer tells the user to go do something somewhere in this app, or the user asks where a screen is (e.g. "di mana tab Konten", "gimana caranya bikin campaign"), end your reply with one directive per screen you're pointing at, each on its own line, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's id. When the user should refresh their Instagram profile numbers (followers, reach, profile visits), add [[open:insights]]. Put these on their own lines at the very end, after your normal answer text — never inline mid-sentence, never invent a key that isn't in that list, and only include one when you're recommending or naming a specific screen (not for every reply).`,
-    "End EVERY reply with 2 or 3 follow-up questions, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~10 words), about the next thing they'd realistically want to know after your answer, and answerable from this brand's context and data above. The app turns each into a button that asks it for them, so someone who doesn't know what to ask next always has a way forward. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
+    "Keep it short: lead with the answer in 2-4 sentences, or at most 3 short bullets when listing steps. No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
+    `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
+    "You advise; you do not write content. If the user asks you to come up with content ideas, topics, hooks or angles, do NOT list them — answer in one sentence that says what kind of content the data points to, then end with the line [[handoff:brainstorm]] (the app turns it into a button that asks the Brainstorm tab, which saves ideas and makes drafts). If the user is only venting or telling how they feel with no question in it, reply in one warm sentence and end with [[handoff:companion]]. Never both, and never for an actual question about the brand.",
+    `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
+    "When there is an obvious next question, end with at most 2 follow-ups, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~8 words), answerable from this brand's context and data above. The app turns each into a button. Skip them when the answer is complete on its own. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -1233,19 +1329,19 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
   return callModel(ai, system, user, 1000, { onText });
 }
 
-// "Tanya Brandlab" (js/consultant-panel.js) is one chat box in front of three
-// engines: the Consultant (askBrandConsultant, grounded in live data), the
-// Brainstorm partner (chatBrainstorm) and the Companion (companionChat). When
-// the panel's own keyword rules can't tell which one a message is for, this
-// asks the model — a one-word answer, ~5 tokens, never counted against the
-// owner's AI credits (it isn't a feature, it's the receptionist).
+// "Otomatis" in "Tanya Brandlab" (js/consultant-panel.js): one box in front
+// of the Consultant (askBrandConsultant), the Brainstorm partner
+// (chatBrainstorm) and the Companion (companionChat). When the panel's own
+// keyword rules can't tell which one a message is for, this asks the model —
+// a one-word answer, ~5 tokens, never counted against the owner's AI
+// credits (it isn't a feature, it's the receptionist).
 export async function classifyChatIntent(ai, { message, lastEngine = "" }) {
   const last = { consultant: "data", brainstorm: "ideas", companion: "friend" }[lastEngine] || "";
   const system = [
     "You route ONE message from a small-business brand owner to the right assistant inside their brand tool. Reply with exactly one word and nothing else: data, ideas, or friend.",
     "data — they ask about their brand's numbers, performance, schedule, campaign progress, strategy, what to do first, how or where to do something in the app, or any question that wants a concrete, factual answer.",
     "ideas — they want content ideas, topics, angles, hooks, inspiration, or to think through what to make or post next.",
-    "friend — they are venting, sharing how they feel, telling what happened today or in the business without asking for anything, or want encouragement.",
+    "friend — they tell what happened today or in the business (a sale, a customer, an offer, a problem), vent, share how they feel, or want encouragement, without asking for anything.",
     last ? `The previous reply came from: ${last}. A short follow-up ("iya", "yang pertama", "ok lanjut", "kenapa?") usually belongs to the same assistant.` : "",
     "The message may be in Indonesian or English. If genuinely unsure, answer data.",
   ].filter(Boolean).join("\n");
@@ -1261,7 +1357,9 @@ export async function classifyChatIntent(ai, { message, lastEngine = "" }) {
 // the rules below keep the model from inventing anything beyond them (no
 // ads metrics, no conversion rates, no market data).
 // Returns { summary, actions: [{ title, why, how }] }.
-export async function suggestSalesActions(ai, { brand, snapshotText, campaigns = [], pulseText = "" }) {
+// `free`: a refresh the app started on its own (a new signal) — not counted
+// against the owner's credits.
+export async function suggestSalesActions(ai, { brand, snapshotText, campaigns = [], pulseText = "", free = false }) {
   const system = [
     "You are a practical sales & marketing advisor for a small business, embedded inside this brand's own sales tracker.",
     outputLanguageRule(),
@@ -1275,7 +1373,7 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, `Sales data:\n${snapshotText}`, 1400);
+  const raw = await callModel(ai, system, `Sales data:\n${snapshotText}`, 1400, { countUsage: !free });
   const parsed = parseJsonObject(raw);
   const actions = (parsed?.actions || [])
     .map((a) => ({ title: String(a?.title || "").trim(), why: String(a?.why || "").trim(), how: String(a?.how || "").trim() }))
@@ -1286,14 +1384,18 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
   return { summary: raw.trim(), actions: [] };
 }
 
-// The Home Companion chat (js/views/home.js) — a friend's reply to what the
-// owner just said, in the flow of a real conversation, not a consultant's
-// report. Short on purpose: this fires on every message, so it has to stay
-// cheap and quick to read. `history` is the recent thread (the raw chat —
-// the only AI call that ever sees it), `pulseText` is js/brand-pulse.js
-// buildPulseText: the moments the owner already confirmed plus auto
-// signals, so the reply knows what's in motion without re-reading the chat.
-export async function companionChat(ai, { brand, pulseText = "", history = [], message }) {
+// The Teman tab of the chat (js/consultant-panel.js) — a friend's reply to
+// what the owner just said, in the flow of a real conversation, not a
+// consultant's report. Short on purpose: this fires on every message, so it
+// has to stay cheap and quick to read. `history` is the recent thread (the
+// raw chat — the only AI call that ever sees it), `pulseText` is
+// js/brand-pulse.js buildPulseText: the moments the owner already confirmed
+// plus auto signals, so the reply knows what's in motion without re-reading
+// the chat. When the owner tells it something that happened to the brand,
+// the reply ends with a [[moment:…]] line the app turns into a "save to
+// brand memory" card — that is how the brand's story reaches every other
+// AI feature, one owner-approved note at a time.
+export async function companionChat(ai, { brand, pulseText = "", history = [], message, kinds = [] }) {
   const system = [
     "You are this brand owner's thinking partner — warm and direct, like a friend who actually pays attention, never a corporate assistant and never a coach lecturing them.",
     outputLanguageRule(),
@@ -1301,7 +1403,8 @@ export async function companionChat(ai, { brand, pulseText = "", history = [], m
     pulseText || "",
     "Reply to the owner's latest message in 2-3 short sentences, conversational, no bullet points, no headers. React to what they actually said. You may offer ONE concrete, specific suggestion if it clearly calls for one — never a generic pep talk.",
     "If they mention something personal or just vent, respond like a friend would (briefly, kindly) and don't turn it into marketing advice.",
-    "If what they said could become a piece of content (a moment, a win, a customer story, an event), you may end with ONE line in the exact form [[idea:Short title|why this could work]] — only when it's genuinely a good, concrete idea, never by default.",
+    `If what they said is something that HAPPENED to this brand — a sale or a change in sales, an offer or proposal, a notable customer, a collab, a launch, a complaint or problem, an event, a new product or price — end with ONE line in the exact form [[moment:KIND|short title, max 80 chars, concrete, in the owner's language|the specifics they gave (numbers, names, dates), max 160 chars, or empty]] where KIND is one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"}. The app offers to save it to brand memory (what every other AI feature reads when writing scripts and planning). Only for things that actually happened to the brand — never for feelings, plans, wishes or questions, and never something already in the memory above.`,
+    "If they ask you for content ideas, topics or hooks, don't make them up here: say in one sentence that the Brainstorm tab does that and end with [[handoff:brainstorm]]. If they ask about their numbers, performance, schedule, strategy or how to do something in the app, say in one sentence that the Konsultan tab answers from the data and end with [[handoff:consultant]]. At most one handoff line, and only when they actually asked for that.",
     "You may end with ONE follow-up question in the exact form [[ask:Question]], written the way this owner would ask it (short, casual). Only one, and only when a natural follow-up actually exists.",
     "Never invent numbers or events the owner didn't mention and that aren't in the context above. Never mention or explain the [[...]] lines.",
   ]
@@ -1312,14 +1415,15 @@ export async function companionChat(ai, { brand, pulseText = "", history = [], m
   return callModel(ai, system, user, 350);
 }
 
-// Turns a stretch of Companion chat into "moments" — the few brand-relevant,
+// Turns a stretch of Teman chat into "moments" — the few brand-relevant,
 // actionable things that happened (a sales spike, an offer, a VIP customer,
 // a collab, a complaint…) as short structured items the owner then ticks
-// before they enter brand memory (js/store.js addBrandMoments). This is the
-// one place raw chat becomes something other AI features can read, so it's
-// told to leave personal venting and anything not about the brand out
-// entirely. Returns { summary, moments: [{ kind, title, detail, action }] }
-// — the view validates kinds/lengths (js/views/home.js validateRecap).
+// before they enter brand memory (js/store.js addBrandMoments). Together
+// with the per-message [[moment:…]] line above, this is how raw chat
+// becomes something other AI features can read, so it's told to leave
+// personal venting and anything not about the brand out entirely. Returns
+// { summary, moments: [{ kind, title, detail, action }] } — the caller
+// validates kinds/lengths (js/brand-memory.js validateRecap).
 export async function recapCompanion(ai, { brand, pulseText = "", messages = [], today, kinds = [], actions = [] }) {
   const system = [
     "You read a short chat between a small-business brand owner and their AI companion, and extract the brand-relevant moments worth remembering as short structured notes.",
@@ -1341,7 +1445,7 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
   return { summary: String(obj.summary || "").trim(), moments: Array.isArray(obj.moments) ? obj.moments : [] };
 }
 
-// The Brainstorm partner (js/views/brainstorm.js) — a short chat first, ideas
+// The Brainstorm partner (js/consultant-panel.js) — a short chat first, ideas
 // second. It asks what kind of content the owner wants (one question at a
 // time, each with tap-to-answer buttons [[ask:…]]) and only shows option
 // cards ([[idea:…]]) once the owner has answered — or pressed "Langsung kasih
@@ -1366,20 +1470,24 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
   // the owner has answered — or pressed "Langsung kasih ide", which is the
   // "ideas" mode below. `turns` = how many messages the owner has sent in
   // this thread, this one included.
-  const rules = mode === "ideas"
+  const rules = mode === "plot"
+    ? [
+        "The owner just dumped their raw scratch notes (Coretan) into the chat: unordered, half-formed, maybe contradictory. Your job is to MAP them, not to judge each one.",
+        "Reply in this shape: (1) one or two sentences starting like 'Jadi maumu…' that sum up what they seem to be after, in plain words; (2) a numbered list of the better flow or order — for a campaign, the phases/steps in sequence — each line saying which notes it groups and why it comes at that point; (3) what's missing, overlapping or contradictory, briefly; (4) at most 2 questions that would sharpen it.",
+        "Use their notes, the brand data and (when scoped) the campaign above. Don't drop a note silently: if one doesn't fit, say so. Never invent numbers or facts.",
+        "Only if a concrete content idea clearly falls out of it, add up to 3 [[idea:Short title (max 8 words)|why + first step, max 22 words]] lines. End with 2-3 [[ask:…]] lines (max 5 words each) of next steps, e.g. 'Rapikan jadi rencana', 'Fokus ke langkah 1'.",
+      ]
+    : mode === "ideas"
     ? [
         "The owner pressed the button to get ideas NOW, so the questions are over. Use everything said in the conversation so far, and the brand data above to fill any gap. Open with ONE short sentence (max 15 words), then exactly 3 concrete suggestions, each as its own line in the exact form [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] (when an event is being prepared, an offline step may be a [[task:…]] line instead and counts as one of the 3). The 3 must take clearly different angles. End with 2 [[ask:…]] lines of next steps (max 5 words each), such as 'Kembangkan yang pertama'.",
       ]
     : [
-        "REPLY SHAPE (strict): one short sentence reacting to what the owner said (max 20 words), then ONE question, then the [[ask:…]] lines. No headers, no bullet lists, no explanations, no paragraphs. NEVER write [[idea:…]] lines while you are still asking.",
-        "You are having a short chat to work out what content the owner actually wants — do NOT throw ideas at them yet. Ask the single most useful question for where the conversation is: first the kind or goal of the content (educate, sell, entertain, build trust…), then, only if still needed, the audience, format or timing. One question per reply, never two.",
-        "The [[ask:…]] lines are the answers the owner can tap: 3-4 answers, each max 5 words, written the way the owner would say them (e.g. 'Edukasi murid baru', 'Jualan kelas', 'Hiburan ringan'). Make them specific to THIS brand, drawn from the brand data above, not generic.",
-        turns >= 3
-          ? "The owner has now answered enough. THIS reply: one short sentence that sums up what they want, then 2-3 concrete options, each as its own line in the exact form [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] taking clearly different angles (offline steps for an event may be [[task:…]] lines instead). Then 2-3 [[ask:…]] lines of next steps (max 5 words), e.g. 'Kembangkan yang pertama'. Do not ask another question."
-          : turns === 2
-            ? "The owner has answered once. If you now know the kind of content AND who it is for, give the options this reply (one sentence, then 2-3 [[idea:Title|why + first step]] lines of different angles, then [[ask:…]] next steps). Only if one more detail is truly missing, ask it as your last question instead."
-            : "This is the owner's first message: react in one sentence and ask what kind of content or goal they have in mind. Do not give ideas yet.",
-        "When the owner says they will use an idea or picks one, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) so a button to start the draft appears. At most 2 per reply.",
+        "You are a real thinking partner, not a form to fill in. Answer whatever the owner asks directly, like a knowledgeable friend would: give your honest opinion, weigh angles and trade-offs, push back when something is weak. Length follows the question: a line or two for something simple, a few short paragraphs when they want to dig in. No headers.",
+        "Ask a question only when the answer would truly change what you say, never as a reflex, and never more than one per reply.",
+        "If the owner asks about their numbers, performance, schedule, campaign progress, or where something is in the app, answer briefly from the data above and end with the line [[handoff:consultant]] so they can dig into it in the Konsultan tab. Only then.",
+        "Only write [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] lines when the owner asks for ideas, or when the conversation has clearly landed on something concrete (max 3, clearly different angles; offline steps for an event may be [[task:…]] lines instead). Otherwise write none.",
+        "You may end with at most 2 [[ask:…]] lines: short tap-to-answer follow-ups (max 5 words each) written the way the owner would say them, specific to THIS brand.",
+        "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",
         "Never repeat an idea that was already shown or saved. Never mention or explain the [[...]] lines.",
       ];
   const system = [
@@ -1399,10 +1507,69 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     .join("\n\n");
   const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
   const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, mode === "ideas" ? 750 : turns >= 2 ? 600 : 300, { onText });
+  return callModel(ai, system, user, mode === "ideas" ? 750 : mode === "plot" ? 1400 : 700, { onText });
+}
+
+// "Diskusi dengan AI" beside a script in Creator: a free chat that can see the
+// piece being written (title, idea, format, funnel, script, caption) plus the
+// brand. It answers, critiques and offers other angles, and asks first when
+// it isn't clear what to change. A concrete rewrite comes wrapped in
+// [[revise:script]]…[[/revise]] (or caption), which ai-directives.js turns
+// into an "Apply" card — the model never edits anything itself.
+export async function discussScript(ai, { brand, campaigns = [], pulseText = "", content, series = null, history = [], message, onText = null }) {
+  const isCarousel = (content?.format || "").toLowerCase().includes("carousel");
+  const piece = [
+    `Title: ${content?.title || "(untitled)"}`,
+    `Funnel: ${content?.funnel || "?"} · Format: ${content?.format || "?"} · Platform: ${content?.platform || "?"}`,
+    content?.idea ? `Idea note: ${content.idea}` : "",
+    `CURRENT SCRIPT:\n${(content?.script || "").trim() || "(empty)"}`,
+    `CURRENT CAPTION:\n${(content?.caption || "").trim() || "(empty)"}`,
+  ].filter(Boolean).join("\n");
+  const system = [
+    "You are the brand owner's script partner inside their own planning tool: a sharp editor who already knows the brand. You are discussing ONE piece of content with them.",
+    outputLanguageRule(),
+    buildFullContext(brand, { campaigns, pulseText }),
+    series ? `This piece belongs to the recurring series "${series.name}"; keep to its concept, tone and structure:\n${buildSeriesContext(series)}` : "",
+    NATURAL_WRITING_CONTEXT,
+    `THE PIECE:\n${piece}`,
+    "Answer questions, critique honestly (say WHY something is weak, referring to the actual lines), and propose other angles when asked. Be concrete about this script, not generic. Plain conversational text, short paragraphs, no headers.",
+    "If the owner's direction for a change is not clear yet (which part? more casual? shorter? which angle?), ask ONE short question first instead of rewriting.",
+    `When you have something concrete to change, give the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : 'Keep the script in the fixed format: "HOOK", the 1-2 sentence hook, a blank line, "ISI PEMBAHASAN", the main content.'} Put at most ONE revise block per reply, always with the full text (never a fragment), and keep the words around it to a sentence or two about what changed. Never write a revise block for a mere question or critique, and never mention or explain the [[...]] syntax.`,
+    "Never invent numbers, prices or events that are not in the context above.",
+  ].filter(Boolean).join("\n\n");
+  const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
+  const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
+  return callModel(ai, system, user, 1500, { onText });
 }
 
 export { AiApiError };
+
+// "Simpan diskusi ini jadi konsep" (Bank Konsep): turns a brainstorm chat into
+// a title, angle, key-point notes and 2-3 candidate hooks. It's a system
+// call, not something the owner typed a prompt for, so it doesn't count
+// against their quota. The owner edits the result before it is saved.
+export async function summarizeConcept(ai, { brand, messages = [], scopeText = "" }) {
+  const system = [
+    "You turn a brainstorm conversation between a brand owner and their AI partner into ONE content concept the owner can save and pick up later.",
+    outputLanguageRule(),
+    brand ? buildBrandContext(brand) : "",
+    scopeText ? `The conversation was about: ${scopeText}` : "",
+    "Use only what was actually discussed; never invent facts, numbers or events. Pick the direction the conversation landed on (or the strongest one if it did not land).",
+    'Respond with ONLY a JSON object: {"title": "short concept title, max 8 words", "angle": "the angle in 1-2 sentences", "notes": "the key points to remember, 2-5 short lines separated by newlines", "hooks": ["hook 1", "hook 2", "hook 3"]}. Hooks are 1-sentence scroll-stoppers in the brand\'s voice.',
+    NATURAL_WRITING_CONTEXT,
+  ].filter(Boolean).join("\n\n");
+  const transcript = messages.filter((m) => m.text).slice(-24).map((m) => `${m.role === "user" ? "Owner" : "Partner"}: ${m.text}`).join("\n\n");
+  const raw = await callModel(ai, system, transcript, 700, { countUsage: false });
+  const obj = parseJsonObject(raw);
+  if (!obj || typeof obj !== "object") throw new AiApiError(t("ai.error.unreadable"));
+  const clean = (v) => String(v || "").trim();
+  return {
+    title: clean(obj.title).slice(0, 140),
+    angle: clean(obj.angle).slice(0, 400),
+    notes: clean(Array.isArray(obj.notes) ? obj.notes.join("\n") : obj.notes).slice(0, 1200),
+    hooks: (Array.isArray(obj.hooks) ? obj.hooks : []).map(clean).filter(Boolean).slice(0, 3),
+  };
+}
 
 
 // Turns a brand owner's rough notes ("jual kopi susu, anak kuliah, kediri")

@@ -1,13 +1,14 @@
 // The directive language every chat-style AI surface here shares — the
-// Consultant FAB (js/consultant-panel.js), the Home Companion
-// (js/views/home.js), and the Brainstorm partner next (R4). The model is
-// told to end a reply with lines like [[goto:calendar]], [[draft:TOFU|Judul]],
-// [[ask:Pertanyaan]], [[idea:Judul|kenapa]]; this pulls them out of the raw
-// text so each becomes a real button instead of something the user has to
-// go find in the nav or retype into Creator. One parser, one set of caps,
-// so the three surfaces never drift apart in what they accept.
+// three tabs of "Tanya Brandlab" (js/consultant-panel.js) and Creator's
+// script discussion. The model is told to end a reply with lines like
+// [[goto:calendar]], [[draft:TOFU|Judul]], [[ask:Pertanyaan]],
+// [[idea:Judul|kenapa]], [[moment:offer|Judul|detail]], [[handoff:brainstorm]];
+// this pulls them out of the raw text so each becomes a real button instead
+// of something the user has to go find in the nav or retype into Creator.
+// One parser, one set of caps, so the surfaces never drift apart in what
+// they accept.
 import { t } from "./i18n.js";
-import { FUNNELS } from "./store.js";
+import { FUNNELS, MOMENT_KINDS } from "./store.js";
 import { CONSULTANT_ROUTES } from "./ai.js";
 import { escapeHtml } from "./dom.js";
 
@@ -15,6 +16,9 @@ export const MAX_ASKS = 4;
 export const MAX_DRAFTS = 3;
 export const MAX_IDEAS = 3;
 export const MAX_TASKS = 3;
+export const MAX_MOMENTS = 2;
+export const MAX_SAVES = 2;
+const HANDOFF_TARGETS = ["consultant", "brainstorm", "companion"];
 
 export function parseDirectives(rawText) {
   const nav = [];
@@ -22,7 +26,20 @@ export function parseDirectives(rawText) {
   const asks = [];
   const ideas = [];
   const tasks = [];
+  const revisions = [];
+  const moments = [];
+  const saves = [];
+  let handoff = null;
   const cleanText = (rawText || "")
+    // A rewrite of the script/caption being discussed: multi-line, so it is
+    // pulled out first. An unterminated tag (reply cut off, or still
+    // streaming) is hidden rather than shown raw.
+    .replace(/\[\[revise:(script|caption)\]\]([\s\S]*?)\[\[\/revise\]\]/gi, (_, target, body) => {
+      const text = body.trim();
+      if (text && revisions.length < 2 && !revisions.some((r) => r.target === target.toLowerCase())) revisions.push({ target: target.toLowerCase(), text });
+      return "";
+    })
+    .replace(/\[\[revise:(?:script|caption)\]\][\s\S]*$/i, "")
     .replace(/\[\[goto:campaign:([A-Za-z0-9_-]+)\]\]/g, (_, id) => {
       if (!nav.some((n) => n.key === `campaign:${id}`)) nav.push({ key: `campaign:${id}`, label: t("cons.nav.campaign"), path: `campaigns/${id}` });
       return "";
@@ -68,9 +85,35 @@ export function parseDirectives(rawText) {
       }
       return "";
     })
+    // Something that happened to the brand, offered by the Teman tab for
+    // brand memory: [[moment:KIND|title|detail]] (detail optional). Unknown
+    // kinds become "other"; the owner still has to press "Simpan".
+    .replace(/\[\[moment:([^\]\n]+)\]\]/gi, (_, body) => {
+      const [kind = "", title = "", detail = ""] = body.split("|").map((x) => x.trim());
+      const cleanTitle = title.slice(0, 80);
+      const k = kind.toLowerCase();
+      if (cleanTitle && moments.length < MAX_MOMENTS && !moments.some((m) => m.title === cleanTitle)) {
+        moments.push({ kind: MOMENT_KINDS.includes(k) ? k : "other", title: cleanTitle, detail: detail.slice(0, 160), saved: false, skipped: false });
+      }
+      return "";
+    })
+    // An idea the owner liked, offered for the saved list:
+    // [[save:Title|why]] → "Simpan ke Tersimpan?" (the owner still decides).
+    .replace(/\[\[save:([^|\]\n]+)(?:\|([^\]\n]*))?\]\]/gi, (_, title, why = "") => {
+      const clean = title.trim().slice(0, 140);
+      if (clean && saves.length < MAX_SAVES && !saves.some((x) => x.title === clean)) saves.push({ title: clean, why: (why || "").trim().slice(0, 400), saved: false, skipped: false });
+      return "";
+    })
+    // "This belongs to another tab": one per reply, becomes a button that
+    // asks the same question there.
+    .replace(/\[\[handoff:([a-z]+)\]\]/gi, (_, target) => {
+      const k = target.toLowerCase();
+      if (!handoff && HANDOFF_TARGETS.includes(k)) handoff = k;
+      return "";
+    })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, handoff };
 }
 
 // The model answers in light markdown (bold, italics, numbered/bulleted
@@ -86,18 +129,29 @@ export function renderLightMarkdown(text) {
   const inline = (s) => s
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, "$1<em>$2</em>");
-  lines.forEach((raw) => {
+  const isItem = (l) => /^\s*(\d+)[.)]\s+/.test(l) || /^\s*[-•]\s+/.test(l);
+  lines.forEach((raw, i) => {
     const line = raw.trimEnd();
     const ol = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
     const ul = line.match(/^\s*[-•]\s+(.*)$/);
     if (ol || ul) {
       const kind = ol ? "ol" : "ul";
       if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; }
-      out.push(`<li>${inline(ol ? ol[2] : ul[1])}</li>`);
+      // Keep the model's own number, in case a list does get split.
+      out.push(ol ? `<li value="${ol[1]}">${inline(ol[2])}</li>` : `<li>${inline(ul[1])}</li>`);
       return;
     }
+    // A blank line between two items is still the same list — models
+    // double-space their lists, which used to split them into several with
+    // a wide gap each; the list runs on instead.
+    if (!line.trim() && list) {
+      const next = lines.slice(i + 1).find((l) => l.trim());
+      if (next && isItem(next)) return;
+    }
     closeList();
-    if (!line.trim()) { out.push("<br>"); return; }
+    // Paragraphs and lists carry their own spacing, so one blank line adds
+    // nothing; only a second blank line in a row becomes a visible gap.
+    if (!line.trim()) { if (i > 0 && !lines[i - 1].trim()) out.push("<br>"); return; }
     out.push(`<p>${inline(line)}</p>`);
   });
   closeList();

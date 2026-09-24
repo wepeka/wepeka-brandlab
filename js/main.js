@@ -17,7 +17,11 @@ import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
 import { getMode, hasChosenMode } from "./mode.js";
+import { setPlainLanguageResolver } from "./i18n.js";
 import { renderModePicker } from "./mode-picker.js";
+
+// Pemula reads plain words everywhere (js/i18n.js plainWords).
+setPlainLanguageResolver(() => getMode() === "guided");
 // Every other view is loaded lazily (dynamic import, inside renderRoute)
 // instead of statically here. These used to be static imports — which
 // meant the login screen couldn't paint until the browser had fetched and
@@ -64,11 +68,13 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/([^/]+)\/?$/))) return { view: "goals", brandId: m[1], goalId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/?$/))) return { view: "goals", brandId: m[1] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/([^/]+)\/?$/))) return { view: "brainstorm", brandId: m[1], threadId: m[2] };
-  if ((m = h.match(/^\/brand\/([^/]+)\/brainstorm\/?$/))) return { view: "brainstorm", brandId: m[1] };
+  // The chat's own page. Its old address (under Brainstorm) still works.
+  if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/([^/]+)\/?$/))) return { view: "chat", brandId: m[1], threadId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/?$/))) return { view: "chat", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
+  if (h === "/updates") return { view: "announcements" };
   return { view: "brands" };
 }
 
@@ -90,6 +96,7 @@ function teardownApp() {
   delete app.dataset.shellKey;
   clearPageGuide();
   if (cleanup) { cleanup(); cleanup = null; }
+  import("./announcements.js").then((m) => m.stopAnnouncements()).catch(() => {});
 }
 
 function lockedScreenHTML(email) {
@@ -279,6 +286,19 @@ async function runPulseOnce(brandId) {
   } catch (e) {
     console.warn("[brand pulse] unavailable", e);
   }
+  // Once a month: last month's numbers → lessons kept in brand memory for
+  // good (js/brand-learning.js). The app starts it, so it's free for the
+  // owner — and never for an ended plan, a demo, or without an AI key.
+  try {
+    const [{ maybeMonthlyLessons }, { summarizeMonthLessons, hasAiKey }, { accessState }, { isTourDemo }] = await Promise.all([
+      import("./brand-learning.js"), import("./ai.js"), import("./account.js"), import("./tour-demo.js"),
+    ]);
+    const ai = getSettings().ai || {};
+    const state = accessState(getCachedAccount());
+    await maybeMonthlyLessons(brandId, { ai, summarize: summarizeMonthLessons, allowed: hasAiKey(ai) && (state === "paid" || state === "trial") && !isTourDemo() });
+  } catch (e) {
+    console.warn("[monthly lessons] unavailable", e);
+  }
 }
 
 async function renderRoute() {
@@ -329,7 +349,7 @@ async function renderRoute() {
     await new Promise((r) => setTimeout(r, 110));
     if (token !== renderToken) return;
     updateShellForRoute({ brandId: route.brandId, active: route.view });
-    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "brainstorm" ? "wide" : ""}`;
+    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "chat" ? "wide" : ""}`;
     viewRoot.innerHTML = "";
     void viewRoot.offsetWidth;
     viewRoot.classList.add("view-enter");
@@ -349,7 +369,8 @@ async function renderRoute() {
       campaigns: () => import("./views/campaigns.js"),
       guidelines: () => import("./views/brand-guidelines.js"),
       sales: () => import("./views/sales.js"),
-      brainstorm: () => import("./views/brainstorm.js"),
+      chat: () => import("./views/chat.js"),
+      announcements: () => import("./views/announcements.js"),
       goals: () => import("./views/goal-roadmap.js"),
       "content-os": () => import("./views/content-os.js"),
       settings: () => import("./views/settings.js"),
@@ -376,7 +397,7 @@ async function renderRoute() {
     case "sales":
       cleanup = view.render(viewRoot, { brandId: route.brandId });
       break;
-    case "brainstorm":
+    case "chat":
       cleanup = view.render(viewRoot, { brandId: route.brandId, threadId: route.threadId || null });
       break;
     case "goals":

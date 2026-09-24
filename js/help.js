@@ -78,8 +78,8 @@ const HELP_CONTENT = {
   },
 
   "brainstorm": {
-    id: { title: "Brainstorm", body: "Teman berpikir, bukan mesin ide. Ceritakan yang lagi kamu pikirin — AI bertanya dulu seperlunya, menawarkan 2-3 arah dengan plus-minusnya, lalu menandai ide yang kalian sepakati supaya bisa disimpan atau langsung jadi draft di Creator. Buru-buru? Tombol \"Ide sekarang\" melewati diskusi dan langsung memberi tiga ide." },
-    en: { title: "Brainstorm", body: "A thinking partner, not an idea machine. Tell it what's on your mind — the AI asks what it needs, offers 2-3 directions with trade-offs, then marks the ideas you land on together so you can save them or draft them in Creator. In a hurry? \"Ideas now\" skips the discussion and gives three ideas right away." },
+    id: { title: "Tanya Brandlab", body: "Satu tempat ngobrol dengan AI. Tanya soal brand, minta ide konten, atau cerita kejadian hari ini — AI yang nentuin kamu butuh saran, ide, atau tempat cerita. Kalau ada yang layak disimpan, AI yang nawarin: ide yang kamu suka masuk Tersimpan (bisa jadi draft kapan saja), kejadian penting masuk Memori Brand (dibaca semua fitur AI saat bikin script). Semua obrolan ada di kiri dan bisa dilanjut." },
+    en: { title: "Ask Brandlab", body: "One place to talk to the AI. Ask about your brand, ask for content ideas, or tell it what happened today — it works out whether you need advice, ideas, or someone to tell. When something is worth keeping, the AI offers it: ideas you like go to Saved (a draft whenever you're ready), things that happened go to brand memory (read by every AI feature when it writes). Every conversation is on the left, ready to carry on." },
   },
 
   // Key terms — shown next to the words themselves.

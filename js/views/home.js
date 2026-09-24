@@ -1,7 +1,7 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS, createContent, getCompanionThread, ensureCompanionThread, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
-import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, identityDone as isIdentityDone } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
@@ -13,16 +13,13 @@ import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
-import { openReportModal } from "./report.js";
+import { openReportModal, reportDue, reportReminderHTML, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
-import { computeSignals, pulseTextFor } from "../brand-pulse.js";
-import { companionChat, recapCompanion, hasAiKey, AiApiError } from "../ai.js";
-import { aiLimitReached } from "../ai-usage.js";
-import { parseDirectives, renderLightMarkdown } from "../ai-directives.js";
-import { wireMic } from "../voice-input.js";
-import { go } from "../nav-context.js";
-import { openModal, closeOverlay, confirmDialog } from "../modals.js";
+import { computeSignals, topSignal } from "../brand-pulse.js";
+import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
+import { openConsultantPanel } from "../consultant-panel.js";
+import { postingLine } from "../brand-learning.js";
 
 // The brand's home, one file for both modes. The page answers one question
 // — "sekarang ngapain?" — with one hero card and one button:
@@ -103,43 +100,18 @@ function buildSteps(brandId, brand, campaigns, content) {
   return { steps, currentIndex, doneCount: steps.filter((s) => s.done).length, identityDone };
 }
 
-// ---------- Companion / Teman Brand ----------
-// A real chat with the brand, not a log. Three layers, on purpose:
-//
-//   1. The chat itself — a rolling per-brand thread in the brainstorms/
-//      collection (js/store.js getCompanionThread). Raw, deletable per
-//      message, and read by exactly one AI call: companionChat, the
-//      Companion's own reply. Nothing else in the app ever sees it, so an
-//      offhand vent stays between the owner and this card.
-//   2. Moments — what a recap (js/ai.js recapCompanion) pulls out of that
-//      chat: the few brand-relevant things that happened (a sales spike,
-//      an offer, a VIP customer…), each ticked by the owner on the recap
-//      card before it enters brand.developmentLog (source "moment").
-//   3. Brand memory — moments + auto signals, the only thing
-//      js/brand-pulse.js buildPulseText renders into every other AI
-//      feature's context. "Kelola" opens it for deleting.
-//
-// The recap is never triggered silently: a nudge bubble when the owner
-// comes back to un-recapped chat, and a "Rangkum" button — one tap, one AI
-// call, and the owner sees exactly what would be remembered before it is.
+// ---------- Teman Brand (the Home card) ----------
+// The chat itself lives in the Teman tab of "Tanya Brandlab"
+// (js/consultant-panel.js) — one chat component, never a second copy here.
+// This card is the way in from Home: today's greeting with the one signal
+// that stands out, the quick actions those signals earn, the newest moments
+// in brand memory, and the button that opens the chat on the Teman tab.
+// Brand memory (brand.developmentLog, source "moment") is what every AI
+// feature reads; "Kelola" opens it in full (js/brand-memory.js).
 
-// Which signal kinds get a quick-action button, in priority order — same
-// four the brief calls out, first match wins for the greeting's "yang aku
-// lihat" line too so the two never disagree about what's most notable.
-const COMPANION_ACTION_KINDS = ["viral", "follower-jump", "sales-down", "streak-break"];
-const GREETING_PRIORITY = ["viral", "sales-down", "follower-jump", "follower-drop", "engagement-drop", "streak-break", "top-format", "sales-up", "stale-campaign", "overdue", "cross"];
-const HISTORY_FOR_MODEL = 16;
+// Which signal kinds get a quick-action button, in priority order.
+const COMPANION_ACTION_KINDS = ["content-sales", "viral", "follower-jump", "sales-down", "streak-break"];
 const MOMENTS_SHOWN = 3;
-const RECAP_MAX_MOMENTS = 6;
-const MEMORY_MODAL_LIMIT = 40;
-
-function pickTopSignal(signals) {
-  for (const kind of GREETING_PRIORITY) {
-    const hit = signals.find((s) => s.kind === kind);
-    if (hit) return hit;
-  }
-  return null;
-}
 
 function greetingSentence(brand, now) {
   const h = now.getHours();
@@ -147,153 +119,17 @@ function greetingSentence(brand, now) {
   return t(key, { brand: esc(brand.name) });
 }
 
-const dayKey = (ms) => localISODate(new Date(ms));
-function dayLabel(iso, todayIso) {
-  if (iso === todayIso) return t("companion.day.today");
-  const y = new Date(todayIso + "T00:00:00");
-  y.setDate(y.getDate() - 1);
-  if (iso === localISODate(y)) return t("companion.day.yesterday");
-  return formatDate(iso);
-}
-const daySeparatorHTML = (label) => `<div class="companion-day">${esc(label)}</div>`;
-
-function bubbleHTML(role, inner, { msgId = "", extraClass = "" } = {}) {
-  const del = role === "user" && msgId
-    ? `<button type="button" class="companion-msg-del" data-companion-msg-delete="${msgId}" aria-label="${t("companion.msg.delete")}" title="${t("companion.msg.delete")}">${icon("trash", { size: 11 })}</button>`
-    : "";
-  return `<div class="consultant-msg consultant-msg-${role}${extraClass ? ` ${extraClass}` : ""}"${msgId ? ` data-companion-msg="${msgId}"` : ""}>${inner}${del}</div>`;
-}
-
-const typingHTML = () => bubbleHTML("assistant", `<span class="typing-dots" aria-label="${t("companion.typing")}"><i></i><i></i><i></i></span>`, { extraClass: "consultant-msg-pending" });
-
-// [[idea:…]] from a reply → a card with a real way to act on it. Once
-// "Bikin di Creator" has run, the card remembers the draft it made
-// (idea.contentId, patched into the message) so a reload doesn't offer to
-// create it twice.
-function ideaCardsHTML(ideas, msgId) {
-  return (ideas || [])
-    .map((idea, i) => {
-      const seed = t("companion.moment.seed", { title: idea.title, detail: idea.why });
-      const create = idea.contentId
-        ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("companion.idea.openDraft")}</a>`
-        : `<button type="button" class="btn btn-secondary btn-sm" data-companion-idea-create="${msgId}:${i}">${icon("edit", { size: 12 })}${t("companion.idea.create")}</button>`;
-      return `
-        <div class="companion-idea">
-          <div>💡 <b>${esc(idea.title)}</b> — ${esc(idea.why)}</div>
-          <div class="companion-actions" style="margin-top:8px;">
-            ${create}
-            <button type="button" class="btn btn-ghost btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 12 })}${t("companion.idea.brainstorm")}</button>
-          </div>
-        </div>`;
-    })
-    .join("");
-}
-
-function asksHTML(asks) {
-  if (!asks?.length) return "";
-  return `<div class="consultant-starters" style="margin-top:8px;">${asks.map((q) => `<button type="button" class="consultant-starter" data-companion-followup="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
-}
-
-// The recap card: what the model thinks is worth remembering, as a
-// checklist the owner decides on. Undecided → checkboxes + Simpan/Buang;
-// decided → a one-line record of what happened, so the thread keeps its
-// history without offering the same choice twice.
-function recapCardHTML(recap, msgId) {
-  const moments = recap.moments || [];
-  if (recap.decided) {
-    const line = moments.length === 0 ? t("companion.recap.empty") : recap.savedCount ? t("companion.recap.decidedSaved", { n: recap.savedCount }) : t("companion.recap.decidedNone");
-    return `<div class="companion-recap is-decided"><span class="text-faint" style="font-size:11.5px;">${icon("check", { size: 11 })} ${esc(line)}</span></div>`;
-  }
-  return `
-    <div class="companion-recap">
-      <p class="companion-recap-pick">${t("companion.recap.pick")}</p>
-      ${moments
-        .map(
-          (m, i) => `
-        <label class="companion-recap-item">
-          <input type="checkbox" checked data-recap-pick="${i}" />
-          <span class="companion-recap-body">
-            <span class="tag">${t(`companion.moment.kind.${m.kind}`)}</span>
-            <b>${esc(m.title)}</b>${m.detail ? `<span class="text-muted"> — ${esc(m.detail)}</span>` : ""}
-          </span>
-        </label>`
-        )
-        .join("")}
-      <div class="companion-actions" style="margin-top:10px;">
-        <button type="button" class="btn btn-primary btn-sm" data-companion-recap-save="${msgId}">${icon("check", { size: 12 })}${t("companion.recap.save")}</button>
-        <button type="button" class="btn btn-ghost btn-sm" data-companion-recap-discard="${msgId}">${t("companion.recap.discard")}</button>
-      </div>
-    </div>`;
-}
-
-function messageHTML(m, { isLast }) {
-  if (m.role === "user") return bubbleHTML("user", `<span class="companion-user-text">${esc(m.text)}</span>`, { msgId: m.id });
-  const blocks = m.blocks || {};
-  const inner = [
-    m.text ? `<div class="consultant-md">${renderLightMarkdown(m.text)}</div>` : "",
-    blocks.recap ? recapCardHTML(blocks.recap, m.id) : "",
-    ideaCardsHTML(blocks.ideas, m.id),
-    isLast ? asksHTML(blocks.asks) : "",
-  ].join("");
-  return bubbleHTML("assistant", inner, { msgId: m.id });
-}
-
-function threadHTML({ brand, thread, signals, now, state }) {
-  const todayIso = localISODate(now);
-  const msgs = [...(thread?.messages || [])].sort((a, b) => a.at - b.at);
-  const older = msgs.filter((m) => dayKey(m.at) !== todayIso);
-  const todayMsgs = msgs.filter((m) => dayKey(m.at) === todayIso);
-  const lastId = msgs[msgs.length - 1]?.id;
-  const parts = [];
-
-  if (older.length) {
-    if (!state.companionShowAll) {
-      parts.push(`<button type="button" class="companion-older-toggle" data-companion-toggle-older>${icon("chevronDown", { size: 12 })}${t("companion.showOlder", { n: older.length })}</button>`);
-    } else {
-      parts.push(`<button type="button" class="companion-older-toggle" data-companion-toggle-older>${icon("chevronDown", { size: 12 })}${t("companion.hideOlder")}</button>`);
-      let day = "";
-      older.forEach((m) => {
-        const d = dayKey(m.at);
-        if (d !== day) { day = d; parts.push(daySeparatorHTML(dayLabel(d, todayIso))); }
-        parts.push(messageHTML(m, { isLast: m.id === lastId }));
-      });
-    }
-  }
-
-  parts.push(daySeparatorHTML(dayLabel(todayIso, todayIso)));
-
-  // Deterministic, never persisted: today's "hey, what happened?" plus the
-  // single most notable auto signal. Disappears once the owner has said
-  // something today (companion.lastAskedAt).
-  if (brand.companion?.lastAskedAt !== todayIso) {
-    const top = pickTopSignal(signals);
-    parts.push(bubbleHTML("assistant", `${greetingSentence(brand, now)} ${esc(top ? top.title : t("companion.observation.quiet"))}`));
-  }
-
-  // Also deterministic: chat since the last recap that the owner hasn't
-  // come back to yet → offer the recap, one tap. Only when there's nothing
-  // from today, so it never interrupts a conversation in progress.
-  const since = brand.companion?.lastRecapAt || 0;
-  const unrecapped = msgs.filter((m) => m.role === "user" && m.at > since).length;
-  if (unrecapped && !todayMsgs.some((m) => m.role === "user") && !state.companionPending) {
-    parts.push(
-      bubbleHTML(
-        "assistant",
-        `${esc(t("companion.recap.nudge", { n: unrecapped }))}<div class="companion-actions" style="margin-top:8px;"><button type="button" class="btn btn-secondary btn-sm" data-companion-recap>${icon("sparkle", { size: 12 })}${t("companion.recap.button")}</button></div>`
-      )
-    );
-  }
-
-  todayMsgs.forEach((m) => parts.push(messageHTML(m, { isLast: m.id === lastId })));
-  if (state.companionNotice) parts.push(bubbleHTML("assistant", esc(state.companionNotice)));
-  if (state.companionPending) parts.push(typingHTML());
-  return parts.join("");
-}
-
+// Quick actions the current signals earn (at most two), as buttons only —
+// the card puts them beside "Cerita ke Teman Brand".
 function companionActionsHTML(signals, content, brandId) {
   const picks = COMPANION_ACTION_KINDS.map((kind) => signals.find((s) => s.kind === kind)).filter(Boolean).slice(0, 2);
   if (!picks.length) return "";
-  const buttons = picks.map((s) => {
+  return picks.map((s) => {
+    if (s.kind === "content-sales") {
+      const c = content.find((x) => x.id === s.refs.contentId);
+      const seed = t("companion.seed.contentSales", { title: c?.title || t("pulse.untitledContent") });
+      return `<button type="button" class="btn btn-secondary btn-sm" data-companion-go="brainstorm" data-companion-seed="${esc(seed)}">${icon("bulb", { size: 13 })}${t("companion.action.moreLikeThis")}</button>`;
+    }
     if (s.kind === "viral") {
       const c = content.find((x) => x.id === s.refs.contentId);
       const seed = t("companion.seed.viral", { title: c?.title || t("pulse.untitledContent") });
@@ -308,8 +144,7 @@ function companionActionsHTML(signals, content, brandId) {
     }
     // streak-break
     return `<a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/content/creator">${icon("edit", { size: 13 })}${t("companion.action.openCreator")}</a>`;
-  });
-  return `<div class="companion-actions">${buttons.join("")}</div>`;
+  }).join("");
 }
 
 // The newest saved moments, each with its action (if the recap gave it one)
@@ -326,15 +161,15 @@ function momentActionHTML(m, brandId) {
   return `<a class="companion-moment-action" href="${href}">${label}${icon("arrowRight", { size: 11 })}</a>`;
 }
 
-function momentsStripHTML(log, brandId) {
-  const moments = (log || []).filter((e) => e.source === "moment").sort((a, b) => b.at - a.at).slice(0, MOMENTS_SHOWN);
+function momentsStripHTML(brand) {
+  const moments = savedMoments(brand).slice(0, MOMENTS_SHOWN);
   const rows = moments
     .map(
       (m) => `
       <div class="companion-moment-row">
-        <span class="tag">${t(`companion.moment.kind.${m.kind}`)}</span>
+        <span class="tag">${momentKindLabel(m.kind)}</span>
         <span class="companion-moment-text" title="${esc(m.detail || m.title)}">${esc(m.title)}</span>
-        ${momentActionHTML(m, brandId)}
+        ${momentActionHTML(m, brand.id)}
         <button type="button" class="chip-icon-btn" data-companion-delete="${m.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
       </div>`
     )
@@ -342,190 +177,38 @@ function momentsStripHTML(log, brandId) {
   return `
     <div class="companion-moments">
       <div class="companion-moments-head">
-        <p class="companion-moments-title">${t("companion.moments.title")}</p>
+        <p class="companion-moments-title">${t("companion.memory.title")}</p>
         <button type="button" class="link" id="companion-manage" style="font-size:11px;">${t("companion.moments.manage")}</button>
       </div>
       ${rows || `<p class="text-faint" style="font-size:12px;margin:0;">${t("companion.memory.empty")}</p>`}
     </div>`;
 }
 
-function companionWidgetHTML(brand, { thread, signals, content, now, state }) {
-  const log = brand.developmentLog || [];
-  const since = brand.companion?.lastRecapAt || 0;
-  const unrecapped = (thread?.messages || []).filter((m) => m.role === "user" && m.at > since).length;
-  const quotaOut = aiLimitReached();
-  const busy = !!state.companionPending;
+function companionCardHTML(brand, { signals, content, now }) {
+  const top = topSignal(signals);
+  const unrecapped = unrecappedMessages(brand.id).filter((m) => m.role === "user").length;
   const weekAgo = now.getTime() - 7 * 86400000;
-  const momentsThisWeek = log.filter((e) => e.source === "moment" && e.at >= weekAgo).length;
-
-  const thread_ = threadHTML({ brand, thread, signals, now, state }).replaceAll("__BRAND__", brand.id);
+  const momentsThisWeek = savedMoments(brand).filter((e) => e.at >= weekAgo).length;
   return {
-    extraHead: unrecapped && !busy ? `<button type="button" class="btn btn-secondary btn-sm" data-companion-recap>${icon("sparkle", { size: 12 })}${t("companion.recap.button")}</button>` : "",
+    extraHead: unrecapped ? `<button type="button" class="btn btn-secondary btn-sm" data-companion-open="recap" title="${esc(t("home.companion.unrecapped", { n: unrecapped }))}">${icon("sparkle", { size: 12 })}${t("companion.recap.button")} (${unrecapped})</button>` : "",
     bodyHTML: `
-      <div class="companion-thread" id="companion-thread">${thread_}</div>
-      ${state.companionError ? `<p class="companion-error">${esc(state.companionError)}</p>` : ""}
-      ${quotaOut ? `<p class="companion-error">${t("companion.quotaReached")}</p>` : ""}
-      <div class="companion-composer">
-        <input type="text" class="input" id="companion-input" placeholder="${esc(t("companion.placeholder"))}" value="${esc(state.companionDraft || "")}" ${busy || quotaOut ? "disabled" : ""} />
-        <button type="button" class="chip-icon-btn" id="companion-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}" ${busy || quotaOut ? "disabled" : ""}>${icon("mic", { size: 15 })}</button>
-        <button type="button" class="btn btn-primary btn-sm" id="companion-send" ${busy || quotaOut ? "disabled" : ""}>${t("companion.send")}</button>
+      <p class="companion-greeting">${greetingSentence(brand, now)} <b>${esc(top ? top.title : t("companion.observation.quiet"))}</b></p>
+      <p class="text-muted" style="font-size:12.5px;margin:6px 0 0;">${t("home.companion.sub")}</p>
+      <div class="companion-actions">
+        <button type="button" class="btn btn-primary btn-sm" data-companion-open="companion">${icon("heart", { size: 13 })}${t("home.companion.tell")}</button>
+        ${companionActionsHTML(signals, content, brand.id)}
       </div>
-      ${companionActionsHTML(signals, content, brand.id)}
-      ${momentsStripHTML(log, brand.id)}
+      ${momentsStripHTML(brand)}
     `,
-    summary: momentsThisWeek ? t("companion.moments.summary", { n: momentsThisWeek }) : t("companion.observation.quiet"),
+    summary: momentsThisWeek ? t("companion.moments.summary", { n: momentsThisWeek }) : t("home.companion.summary.empty"),
   };
 }
 
-// What the model returned → what we're willing to store. Unknown kinds
-// become "other", unknown actions are dropped, strings are cut to the
-// lengths the prompt promised, empties vanish. Nothing here is trusted
-// past this point.
-function validateRecap(moments) {
-  return (Array.isArray(moments) ? moments : [])
-    .map((m) => ({
-      kind: MOMENT_KINDS.includes(m?.kind) ? m.kind : "other",
-      title: String(m?.title || "").trim().slice(0, 80),
-      detail: String(m?.detail || "").trim().slice(0, 160),
-      action: MOMENT_ACTIONS.includes(m?.action) ? m.action : null,
-    }))
-    .filter((m) => m.title)
-    .slice(0, RECAP_MAX_MOMENTS);
-}
-
-function wireCompanion(root, { brandId, brand, content, signals, state, refresh }) {
-  const threadEl = qs("#companion-thread", root);
-  if (threadEl) threadEl.scrollTop = threadEl.scrollHeight;
-  const input = qs("#companion-input", root);
-  const sendBtn = qs("#companion-send", root);
-  const micBtn = qs("#companion-mic", root);
-  if (micBtn && input) wireMic(micBtn, input);
-  // A Firestore snapshot mid-sentence repaints the card; keep what's typed.
-  input?.addEventListener("input", () => { state.companionDraft = input.value; });
-
-  const pulseNow = () => pulseTextFor(getBrand(brandId), { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
-
-  const send = async (textArg) => {
-    const text = (textArg ?? input?.value ?? "").trim();
-    if (!text || state.companionPending) return;
-    state.companionPending = true;
-    state.companionError = "";
-    state.companionNotice = "";
-    state.companionDraft = "";
-    refresh();
-    const thread = ensureCompanionThread(brandId);
-    appendBrainstormMessage(thread.id, { role: "user", text });
-    updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
-    try {
-      const ai = getSettings().ai || {};
-      if (!hasAiKey(ai)) {
-        state.companionNotice = t("companion.aiUnavailable");
-        return;
-      }
-      const msgs = getCompanionThread(brandId)?.messages || [];
-      // Everything before the message just appended, most recent first cut.
-      const history = msgs.slice(0, -1).filter((m) => m.text).slice(-HISTORY_FOR_MODEL).map((m) => ({ role: m.role, text: m.text }));
-      const raw = await companionChat(ai, { brand: getBrand(brandId), pulseText: pulseNow(), history, message: text });
-      const { cleanText, ideas, asks } = parseDirectives(raw.trim());
-      appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas, asks } });
-    } catch (e) {
-      state.companionError = e instanceof AiApiError ? e.message : t("companion.saveFailed");
-    } finally {
-      state.companionPending = false;
-      refresh();
-    }
-  };
-
-  const recap = async () => {
-    if (state.companionPending) return;
-    const thread = getCompanionThread(brandId);
-    const since = getBrand(brandId)?.companion?.lastRecapAt || 0;
-    const slice = (thread?.messages || []).filter((m) => m.at > since && !m.blocks?.recap && m.text);
-    if (!slice.some((m) => m.role === "user")) return;
-    state.companionPending = true;
-    state.companionError = "";
-    state.companionNotice = "";
-    refresh();
-    try {
-      const ai = getSettings().ai || {};
-      if (!hasAiKey(ai)) throw new AiApiError(t("companion.aiUnavailable"));
-      const { summary, moments } = await recapCompanion(ai, {
-        brand: getBrand(brandId),
-        pulseText: pulseNow(),
-        messages: slice.map((m) => ({ role: m.role, text: m.text })),
-        today: localISODate(),
-        kinds: MOMENT_KINDS,
-        actions: MOMENT_ACTIONS,
-      });
-      const valid = validateRecap(moments);
-      // Covered messages count as recapped from here on, whatever the owner
-      // decides on the card — the nudge shouldn't keep asking about them.
-      const now = Date.now();
-      appendBrainstormMessage(thread.id, { role: "assistant", text: summary, at: now, blocks: { recap: { moments: valid, decided: valid.length === 0, savedCount: 0 } } });
-      updateBrand(brandId, { companion: { ...(getBrand(brandId)?.companion || {}), lastRecapAt: now } });
-    } catch (e) {
-      state.companionError = e instanceof AiApiError ? e.message : t("companion.recap.failed");
-    } finally {
-      state.companionPending = false;
-      refresh();
-    }
-  };
-
-  const decideRecap = (msgId, save) => {
-    const thread = getCompanionThread(brandId);
-    const msg = thread?.messages?.find((m) => m.id === msgId);
-    const recapBlock = msg?.blocks?.recap;
-    if (!recapBlock || recapBlock.decided) return;
-    let picked = [];
-    if (save) {
-      const bubble = qs(`[data-companion-msg="${msgId}"]`, root);
-      const checked = new Set(qsa("[data-recap-pick]", bubble).filter((el) => el.checked).map((el) => Number(el.dataset.recapPick)));
-      picked = recapBlock.moments.filter((_, i) => checked.has(i));
-      if (picked.length) addBrandMoments(brandId, picked);
-    }
-    updateBrainstormMessage(thread.id, msgId, { blocks: { ...msg.blocks, recap: { ...recapBlock, decided: true, savedCount: picked.length } } });
-    toast(picked.length ? t("companion.recap.saved", { n: picked.length }) : t("companion.recap.discarded"));
-    refresh();
-  };
-
-  sendBtn?.addEventListener("click", () => send());
-  input?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); send(); }
-  });
-  qsa("[data-companion-followup]", root).forEach((btn) => btn.addEventListener("click", () => send(btn.dataset.companionFollowup)));
-  qsa("[data-companion-recap]", root).forEach((btn) => btn.addEventListener("click", recap));
-  qsa("[data-companion-recap-save]", root).forEach((btn) => btn.addEventListener("click", () => decideRecap(btn.dataset.companionRecapSave, true)));
-  qsa("[data-companion-recap-discard]", root).forEach((btn) => btn.addEventListener("click", () => decideRecap(btn.dataset.companionRecapDiscard, false)));
-  qsa("[data-companion-toggle-older]", root).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      state.companionShowAll = !state.companionShowAll;
-      refresh();
-    })
-  );
-  qsa("[data-companion-msg-delete]", root).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const thread = getCompanionThread(brandId);
-      if (thread) removeBrainstormMessage(thread.id, btn.dataset.companionMsgDelete);
-      refresh();
-    })
-  );
-  qsa("[data-companion-idea-create]", root).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const [msgId, idx] = btn.dataset.companionIdeaCreate.split(":");
-      const thread = getCompanionThread(brandId);
-      const msg = thread?.messages?.find((m) => m.id === msgId);
-      const idea = msg?.blocks?.ideas?.[Number(idx)];
-      if (!idea || idea.contentId) return;
-      // Linked to the brand's active campaign so it counts there right away
-      // (same as the Consultant FAB's "Buatkan draft").
-      const active = listCampaigns(brandId).find((c) => c.status !== "archived");
-      const item = createContent(brandId, { title: idea.title, funnel: "TOFU", campaignId: active?.id || "", idea: t("companion.idea.fromChat", { why: idea.why }) });
-      const ideas = msg.blocks.ideas.map((x, i) => (i === Number(idx) ? { ...x, contentId: item.id } : x));
-      updateBrainstormMessage(thread.id, msgId, { blocks: { ...msg.blocks, ideas } });
-      toast(t("companion.idea.created", { title: idea.title }));
-      refresh();
-    })
-  );
+function wireCompanionCard(root, { brandId, refresh }) {
+  // Into the chat: tell the Teman (Otomatis stays on screen, the Teman
+  // answers), recap, or Brainstorm with a seed.
+  qsa("[data-companion-open]", root).forEach((btn) => btn.addEventListener("click", () => openConsultantPanel(btn.dataset.companionOpen === "recap" ? { recap: true } : { engine: "companion" })));
+  qsa("[data-companion-go]", root).forEach((btn) => btn.addEventListener("click", () => openConsultantPanel({ engine: "brainstorm", seed: btn.dataset.companionSeed || "" })));
   qsa("[data-companion-delete]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
       removeBrandLogEntry(brandId, btn.dataset.companionDelete);
@@ -533,131 +216,6 @@ function wireCompanion(root, { brandId, brand, content, signals, state, refresh 
     })
   );
   qs("#companion-manage", root)?.addEventListener("click", () => openBrandMemoryModal(brandId, { refresh }));
-  qsa("[data-companion-go]", root).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      go(`#/brand/${brandId}/brainstorm`, { seed: btn.dataset.companionSeed, fromLabel: brand.name });
-    })
-  );
-}
-
-// Brand memory in full: every moment and auto signal past the 3 the card
-// shows, each deletable, plus the chat's own "delete everything" — kept
-// apart on purpose so it's clear which one AI features read (memory) and
-// which one only the Companion does (chat).
-function openBrandMemoryModal(brandId, { refresh }) {
-  const sourceTag = (e) => {
-    if (e.source === "moment") return t(`companion.moment.kind.${MOMENT_KINDS.includes(e.kind) ? e.kind : "other"}`);
-    if (e.source === "auto") return t("pulse.log.auto");
-    return t("pulse.log.legacy");
-  };
-  const paintList = () => {
-    const brand = getBrand(brandId);
-    const log = [...(brand?.developmentLog || [])].sort((a, b) => b.at - a.at).slice(0, MEMORY_MODAL_LIMIT);
-    const msgCount = getCompanionThread(brandId)?.messages?.length || 0;
-    return `
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("companion.memory.intro")}</p>
-      ${
-        log.length
-          ? log
-              .map(
-                (e) => `
-              <div class="companion-moment-row" data-memory-row="${e.id}">
-                <div style="min-width:0;flex:1;">
-                  <span class="tag" style="margin-right:6px;">${sourceTag(e)}</span>
-                  <span class="companion-moment-text" style="white-space:normal;">${esc(e.title || "")}${e.source === "moment" && e.detail ? `<span class="text-muted"> — ${esc(e.detail)}</span>` : ""}</span>
-                  <div class="text-faint" style="font-size:11px;margin-top:2px;">${esc(formatDate(new Date(e.at).toISOString().slice(0, 10)))}</div>
-                </div>
-                <button type="button" class="icon-btn" data-memory-delete="${e.id}" aria-label="${t("common.delete")}" style="width:28px;height:28px;flex:none;">${icon("trash", { size: 13 })}</button>
-              </div>`
-              )
-              .join("")
-          : `<div class="table-empty" style="padding:20px;">${t("companion.memory.empty")}</div>`
-      }
-      <div class="companion-moments" style="margin-top:18px;">
-        <p class="companion-moments-title">${t("companion.memory.chatSection")}</p>
-        <p class="text-muted" style="font-size:12.5px;margin:0 0 10px;">${t("companion.memory.chatNote", { n: msgCount })}</p>
-        <button type="button" class="btn btn-secondary btn-sm" id="memory-clear-chat" ${msgCount ? "" : "disabled"}>${icon("trash", { size: 12 })}${t("companion.chat.clear")}</button>
-      </div>
-    `;
-  };
-
-  const overlay = openModal({
-    title: t("companion.memory.title"),
-    wide: true,
-    bodyHTML: paintList(),
-    footHTML: `<button type="button" class="btn btn-secondary" id="memory-clear-all">${icon("trash", { size: 13 })}${t("companion.memory.clearAll")}</button>`,
-  });
-
-  const wireBody = () => {
-    qsa("[data-memory-delete]", overlay).forEach((btn) =>
-      btn.addEventListener("click", () => {
-        removeBrandLogEntry(brandId, btn.dataset.memoryDelete);
-        overlay.querySelector(".modal-body").innerHTML = paintList();
-        wireBody();
-        refresh();
-      })
-    );
-    overlay.querySelector("#memory-clear-chat")?.addEventListener("click", async () => {
-      const ok = await confirmDialog({
-        title: t("companion.chat.clearConfirm.title"),
-        message: t("companion.chat.clearConfirm.body"),
-        confirmLabel: t("companion.chat.clear"),
-        danger: true,
-      });
-      if (!ok) return;
-      const thread = getCompanionThread(brandId);
-      if (thread) updateBrainstorm(thread.id, { messages: [] });
-      overlay.querySelector(".modal-body").innerHTML = paintList();
-      wireBody();
-      refresh();
-      toast(t("companion.chat.cleared"));
-    });
-  };
-  wireBody();
-
-  overlay.querySelector("#memory-clear-all")?.addEventListener("click", async () => {
-    const ok = await confirmDialog({
-      title: t("companion.memory.clearConfirm.title"),
-      message: t("companion.memory.clearConfirm.body"),
-      confirmLabel: t("companion.memory.clearAll"),
-      danger: true,
-    });
-    if (!ok) return;
-    clearBrandLog(brandId);
-    closeOverlay(overlay);
-    refresh();
-    toast(t("companion.memory.cleared"));
-  });
-}
-
-// The Teman Brand chat on its own, for the floating chat panel
-// (js/consultant-panel.js). Same thread, same recap and moments as the Home
-// widget — just without the page around it.
-export function renderCompanionPane(root, { brandId, onNavigate = null, onBrainstorm = null }) {
-  const state = {};
-  // "Bahas di Brainstorm" buttons switch the panel's tab (with the seed
-  // sentence) instead of navigating to the Brainstorm page.
-  const grab = (e) => {
-    const b = e.target.closest('[data-companion-go="brainstorm"]');
-    if (!b || !onBrainstorm) return;
-    e.stopPropagation();
-    onBrainstorm(b.dataset.companionSeed || "");
-  };
-  root.addEventListener("click", grab, true);
-  const refresh = () => {
-    const brand = getBrand(brandId);
-    if (!brand) return;
-    const content = listContent(brandId);
-    const campaigns = listCampaigns(brandId);
-    const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
-    const c = companionWidgetHTML(brand, { thread: getCompanionThread(brandId), signals, content, now: new Date(), state });
-    root.innerHTML = `<div class="cp-companion">${c.extraHead ? `<div class="cp-companion-actions">${c.extraHead}</div>` : ""}${c.bodyHTML}</div>`;
-    wireCompanion(root, { brandId, brand, content, signals, state, refresh });
-    if (onNavigate) root.querySelectorAll('a[href^="#/"]').forEach((a) => a.addEventListener("click", onNavigate));
-  };
-  refresh();
-  const off = onChange(refresh);
-  return () => { off?.(); root.removeEventListener("click", grab, true); };
 }
 
 function paint(root, brandId, state, refresh) {
@@ -685,11 +243,9 @@ function paint(root, brandId, state, refresh) {
     .slice(0, 5);
   const scheduleRows = scheduleRowsHTML(brandOverdue, upNext);
   const collapsed = new Set(brand.homeCollapsed || []);
-  // Computed once per paint, reused by both the greeting/action buttons
-  // below and — a beat later — the buildFullContext of anything the
-  // Companion's own reply triggers (js/brand-pulse.js pulseTextFor).
+  // Computed once per paint for the Teman card's greeting and action buttons.
   const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
-  const companion = companionWidgetHTML(brand, { thread: getCompanionThread(brandId), signals, content, now: new Date(), state });
+  const companion = companionCardHTML(brand, { signals, content, now: new Date() });
   const goal = goalWidget({ brandId, brand, campaigns, content, identityDone });
 
   root.innerHTML = `
@@ -697,12 +253,17 @@ function paint(root, brandId, state, refresh) {
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
         <h1>${esc(brand.name)}</h1>
-        <p class="page-sub">${identityDone ? t("beginner.sub.allDone") : t("home.sub.identity")}</p>
+        <p class="page-sub">${identityDone ? t("beginner.sub.allDone") : t("onb.sub.page")}</p>
       </div>
-      ${avatarHTML(brand, "width:64px;height:64px;border-radius:16px;font-size:24px;flex:none;")}
+      <div class="home-head-side">
+        <button type="button" class="btn btn-secondary btn-sm" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}${t("rep.btn")}</button>
+        ${avatarHTML(brand, "width:64px;height:64px;border-radius:16px;font-size:24px;flex:none;")}
+      </div>
     </div>
 
-    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : identityHeroHTML(brandId, brand)}
+    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : `${problemHeroHTML(brand)}${dnaNudgeHTML(brandId, brand)}`}
+
+    ${reportDue(brand, content) ? reportReminderHTML(brand) : ""}
 
     ${
       goal
@@ -718,8 +279,6 @@ function paint(root, brandId, state, refresh) {
         : widgetCardHTML("companion", "chat", t("home.companion.title"), companion.bodyHTML, { extraHead: companion.extraHead })
     }
 
-    ${stepsHTML(journey, cfg.lockNext, identityJustDone)}
-
     ${
       scheduleRows
         ? collapsed.has("todo")
@@ -730,22 +289,34 @@ function paint(root, brandId, state, refresh) {
         : ""
     }
 
-    ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, `<button type="button" class="btn btn-secondary btn-sm" id="home-report">${icon("download", { size: 13 })}${t("home.report")}</button>`) : ""}
+    ${stepsHTML(journey, cfg.lockNext, identityJustDone)}
+
+    ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, "") : ""}
   `;
 
   wireHelpButtons(root);
   wireGoalCard(root, { brandId });
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
-  if (!collapsed.has("companion")) wireCompanion(root, { brandId, brand, content, signals, state, refresh });
-  if (cfg.analytics) {
-    wireAnalyticsSection(root, state, refresh);
-    qs("#home-report", root)?.addEventListener("click", () => openReportModal(brandId));
-  }
+  if (!collapsed.has("companion")) wireCompanionCard(root, { brandId, refresh });
+  if (cfg.analytics) wireAnalyticsSection(root, state, refresh);
+  // One report, for both modes: the page-head button and the weekly nudge.
+  qs("#home-report", root)?.addEventListener("click", () => openReportModal(brandId));
+  qsa("[data-report-open]", root).forEach((b) => b.addEventListener("click", () => openReportModal(brandId, { range: b.dataset.reportOpen })));
+  qs("[data-report-snooze]", root)?.addEventListener("click", () => { snoozeReport(brandId); toast(t("rep.remind.snoozed")); refresh(); });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
 
   qsa("[data-open-content]", root).forEach((el) => {
     el.addEventListener("click", () => openContentEditor({ brandId, contentId: el.dataset.openContent, onSaved: refresh }));
   });
+  // "Apa yang paling bikin kamu pusing?" → three ideas or actions in the
+  // chat, right away, in a fresh conversation.
+  qsa("[data-onb-problem]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.onbProblem;
+      updateBrand(brandId, { onboardingProblem: key, onboardingAt: Date.now() });
+      openConsultantPanel({ engine: "brainstorm", bsMode: "ideas", seed: t(`onb.${key}.msg`), send: true, fresh: true });
+    })
+  );
   qsa("[data-locked-step]", root).forEach((el) => {
     el.addEventListener("click", () => toast(t("home.next.lockedToast")));
   });
@@ -760,42 +331,51 @@ function paint(root, brandId, state, refresh) {
 
 // ---- Hero ------------------------------------------------------------------
 
-function progressRowHTML(label, filled, total, done) {
-  const pct = total ? Math.round((filled / total) * 100) : 0;
+// A new brand starts from what hurts, not from a form: three problems, one
+// tap, three ideas or actions in the chat within a minute. Brand DNA comes
+// after, with the reason spelled out (dnaNudgeHTML).
+const PROBLEMS = [
+  { key: "growth", icon: "chart" },
+  { key: "sales", icon: "target" },
+  { key: "ideas", icon: "bulb" },
+];
+function problemHeroHTML(brand) {
+  const picked = brand.onboardingProblem || "";
   return `
-    <div class="identity-row ${done ? "is-done" : ""}">
-      <span class="identity-row-icon">${icon(done ? "check" : "target", { size: 13 })}</span>
-      <span class="identity-row-label">${esc(label)}</span>
-      <span class="identity-row-bar"><span style="width:${pct}%"></span></span>
-      <span class="identity-row-value">${done ? t("home.identity.done") : `${filled}/${total}`}</span>
-    </div>`;
+    <section class="card glass-card journey-hero problem-hero" id="journey-hero">
+      <div class="journey-hero-eyebrow">
+        <span class="journey-hero-step">${t("onb.eyebrow")}</span>
+        <span class="journey-hero-time">${icon("clock", { size: 12 })}${t("onb.time")}</span>
+      </div>
+      <h2>${t("onb.q")}</h2>
+      <p>${t(picked ? "onb.subAgain" : "onb.sub")}</p>
+      <div class="problem-options">
+        ${PROBLEMS.map((p) => `
+          <button type="button" class="problem-option ${picked === p.key ? "is-picked" : ""}" data-onb-problem="${p.key}">
+            <span class="problem-option-icon">${icon(picked === p.key ? "check" : p.icon, { size: 18 })}</span>
+            <span class="problem-option-text"><b>${t(`onb.${p.key}.label`)}</b><small>${t(`onb.${p.key}.desc`)}</small></span>
+            ${icon("arrowRight", { size: 15 })}
+          </button>`).join("")}
+      </div>
+    </section>`;
 }
 
-function identityHeroHTML(brandId, brand) {
+// Brand DNA, second: small, with the reason — the ideas get sharper.
+function dnaNudgeHTML(brandId, brand) {
   const dna = brandDnaCompleteness(brand.brandDNA);
   const dnaDone = brandDnaDone(brand);
-  const basicsDone = visualBasicsDone(brand);
-  const pro = getMode() === "advanced";
-  const book = pro ? brandBookProgress(brand) : { filled: basicsDone ? 2 : 0, total: 2 };
-  const cta = !dnaDone
-    ? { label: dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart"), href: `#/brand/${brandId}/dna` }
-    : { label: t("home.identity.ctaBook"), href: `#/brand/${brandId}/guidelines/color` };
+  const pct = dna.total ? Math.round((dna.filled / dna.total) * 100) : 0;
+  const href = dnaDone ? `#/brand/${brandId}/guidelines/color` : `#/brand/${brandId}/dna`;
   return `
-    <section class="card glass-card journey-hero" id="journey-hero">
-      <div class="journey-hero-eyebrow">
-        <span class="journey-hero-step">${t("beginner.hero.step", { n: 1, total: 3 })}</span>
-        <span class="journey-hero-time">${icon("clock", { size: 12 })}${t("beginner.minutes", { n: 15 })}</span>
-      </div>
-      <h2>${t("home.identity.title")}</h2>
-      <p>${t("home.identity.desc")}</p>
-      <div class="identity-rows">
-        ${progressRowHTML(t("home.identity.dna"), dna.filled, dna.total, dnaDone)}
-        ${progressRowHTML(pro ? t("home.identity.book") : t("home.identity.bookBasics"), book.filled, book.total, pro ? book.filled === book.total : basicsDone)}
-      </div>
-      <a class="btn btn-primary journey-hero-cta" href="${cta.href}">${esc(cta.label)}${icon("arrowRight", { size: 15 })}</a>
-      <div class="journey-hero-note">${t("beginner.hero.note")}</div>
-    </section>
-  `;
+    <a class="card glass-card card-tight dna-nudge" href="${href}">
+      <span class="dna-nudge-icon">${icon("target", { size: 16 })}</span>
+      <span class="dna-nudge-text">
+        <b>${dnaDone ? t("onb.dna.bookTitle") : t("onb.dna.title")}</b>
+        <small>${dnaDone ? t("onb.dna.bookWhy") : t("onb.dna.why", { filled: dna.filled, total: dna.total })}</small>
+        ${dnaDone ? "" : `<span class="identity-row-bar"><span style="width:${pct}%"></span></span>`}
+      </span>
+      <span class="dna-nudge-go">${dnaDone ? t("home.identity.ctaBook") : dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart")}${icon("arrowRight", { size: 13 })}</span>
+    </a>`;
 }
 
 function todayHeroHTML(brandId, brand, campaigns, content) {
@@ -826,7 +406,9 @@ function todayHeroHTML(brandId, brand, campaigns, content) {
     href = `#/brand/${brandId}/guidelines/logo`;
   } else {
     title = t("beginner.today.fallbackTitle");
-    why = t("beginner.today.fallbackWhy");
+    // What the brand's own numbers say (a posting gap and what it cost last
+    // time, or the format that works) — not a generic pep line.
+    why = postingLine(content, getSettings()) || t("beginner.today.fallbackWhy");
     cta = t("beginner.step.content.ctaWrite");
     href = `#/brand/${brandId}/content/creator`;
   }
@@ -858,36 +440,28 @@ function ctaHref(brandId, campaign, cta) {
 
 // ---- Steps ---------------------------------------------------------------------
 
+// Folded under everything else: the one action up top is what to do now;
+// this is only the map, opened when someone wants it.
 function stepsHTML(journey, lockNext, celebrateIdentity) {
   const total = journey.steps.length;
   const rows = journey.steps.map((s, i) => stepRowHTML(s, i, journey, lockNext, celebrateIdentity)).join("");
-  if (journey.currentIndex === -1) {
-    return `
+  return `
       <details class="card glass-card card-tight journey journey-collapsed" id="beginner-journey">
         <summary>
-          <span class="journey-summary-check">${icon("check", { size: 14 })}</span>
+          <span class="journey-summary-check">${icon(journey.currentIndex === -1 ? "check" : "layers", { size: 14 })}</span>
           <span class="t">${t("beginner.journey.collapsed", { done: journey.doneCount, total })}</span>
           <span class="m">${t("beginner.journey.viewEdit")}</span>
         </summary>
         <div class="journey-list">${rows}</div>
       </details>
-    `;
-  }
-  return `
-    <div class="section-title" style="margin-top:28px;">
-      <h2>${t("home.next.title")}</h2>
-      <span class="text-faint" style="font-size:12px;">${t("beginner.journey.count", { done: journey.doneCount, total })}</span>
-    </div>
-    <div class="card glass-card card-tight journey" id="beginner-journey">
-      <div class="journey-list">${rows}</div>
-    </div>
   `;
 }
 
 function stepRowHTML(s, i, journey, lockNext, celebrateIdentity) {
-  // Pemula: steps after the identity step stay locked until it's done. Pro:
-  // every step is open — "current" is just the first unfinished one.
-  const locked = lockNext && s.key !== "identity" && !journey.identityDone;
+  // Pemula: the Campaign step stays locked until the identity is done;
+  // Konten is open from day one (try first, sharpen with Brand DNA later).
+  // Pro: every step is open — "current" is just the first unfinished one.
+  const locked = lockNext && s.key === "campaign" && !journey.identityDone;
   const state = s.done ? "done" : locked ? "upcoming" : i === journey.currentIndex ? "current" : "open";
   const celebrate = celebrateIdentity && s.key === "identity" ? " journey-step-celebrate" : "";
   const marker = s.done ? icon("check", { size: 13 }) : `<span>${i + 1}</span>`;

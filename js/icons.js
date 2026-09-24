@@ -56,6 +56,7 @@ const PATHS = {
   refresh: `<path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3"/><path d="M18 4v4h-4M6 20v-4h4"/>`,
   bot: `<rect x="4" y="8" width="16" height="12" rx="4"/><circle cx="9" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 8V4.5"/><circle cx="12" cy="3" r="1.1" fill="currentColor" stroke="none"/><path d="M4 13H2M22 13h-2"/>`,
   mic: `<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1"/><path d="M12 18v4M9 22h6"/>`,
+  megaphone: `<path d="M3 11v2a1 1 0 001 1h2l5 4V6L6 10H4a1 1 0 00-1 1z"/><path d="M15 9a4 4 0 010 6"/><path d="M18 6.5a8 8 0 010 11"/>`,
   bell: `<path d="M6 8a6 6 0 0112 0c0 4.5 1.5 6 2.5 7H3.5c1-1 2.5-2.5 2.5-7z"/><path d="M9.5 19a2.5 2.5 0 005 0"/>`,
   palette: `<path d="M12 3a9 9 0 000 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-.9.7-1.6 1.6-1.6H16a5 5 0 005-5c0-3.9-4-6.8-9-6.8z"/><circle cx="7.5" cy="10.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="11" cy="7.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/>`,
   typography: `<path d="M5 20l4.5-14h1l4.5 14"/><path d="M6.5 15h6"/><path d="M17 20V9.5c0-1.4 1.1-2.5 2.5-2.5S22 8.1 22 9.5V10"/><path d="M17 15.5c.6-.8 1.5-1.3 2.5-1.3 1.4 0 2.5 1.1 2.5 2.5S20.9 19.2 19.5 19.2c-1 0-1.9-.5-2.5-1.3"/>`,

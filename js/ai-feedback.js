@@ -3,6 +3,7 @@
 // Every rating lands in Firestore's aiFeedback collection via
 // store.js recordAiFeedback — the raw material for an eval set.
 import { recordAiFeedback } from "./store.js";
+import { rememberTaste } from "./brand-learning.js";
 import { t } from "./i18n.js";
 
 const asText = (v) => (typeof v === "string" ? v : JSON.stringify(v ?? ""));
@@ -24,6 +25,8 @@ export function mountAiFeedback(parent, { brandId = null, feature, prompt = "", 
 
   const send = (rating, note = "") => {
     recordAiFeedback({ brandId, feature, prompt: asText(prompt), output: asText(output), rating, note });
+    // The readable copy the AI learns from (js/brand-learning.js).
+    rememberTaste(brandId, { rating, note, output, feature });
     onRated?.(rating);
     el.innerHTML = `<span class="ai-feedback-thanks">${t("ai.feedback.thanks")}</span>`;
     setTimeout(() => el.remove(), 2500);

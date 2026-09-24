@@ -9,15 +9,16 @@
 // Logging and export are free for every account; the AI advice follows the
 // same Lifetime gate as Copy Studio. Still 100% manual entry — the page
 // says so, and nothing here asks for or shows ads metrics.
-import { getBrand, listCampaigns, listContent, getSettings, unitLabel, localISODate, updateBrand } from "../store.js";
+import { getBrand, listCampaigns, listContent, getContent, getSettings, unitLabel, localISODate, updateBrand } from "../store.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import {
   getTracker, addProduct, updateProduct, logSale, deleteSale, clearAllSales, saveAdvice, productStats, trackerTotals, monthRange, weeklySeries,
-  runningSalesCampaign, salesSnapshotText, activeDiscountPct, effectivePrice, eventCampaignsForBrand,
+  runningSalesCampaign, salesSnapshotText, activeDiscountPct, effectivePrice, saleSourceOptions,
 } from "../sales-tracker.js";
 import { salesModel } from "../goal-plan.js";
 import { suggestSalesActions, hasAiKey, AiApiError } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
+import { staleBecause, mayAutoRefresh, refreshStamp } from "../ai-autorefresh.js";
 import { buildXlsx, downloadBlob } from "../xlsx-lite.js";
 import { getCachedAccount, isLifetime } from "../account.js";
 import { backLinkHTML } from "../back-link.js";
@@ -46,9 +47,10 @@ export function render(root, { brandId }) {
     location.hash = "#/";
     return () => {};
   }
-  const state = { productId: null, showAll: false, adviceBusy: false, adviceError: "", dead: false };
+  const state = { productId: null, showAll: false, adviceBusy: false, adviceError: "", autoTried: false, dead: false };
   const refresh = () => !state.dead && paint(root, brandId, state, refresh);
   refresh();
+  autoRefreshAdvice(brandId, state, refresh);
   return () => {
     state.dead = true;
   };
@@ -68,7 +70,7 @@ function paint(root, brandId, state, refresh) {
   const historyCollapsed = isSectionCollapsed(brandId, "history");
   const hasHistory = tracker.entries.length > 0;
   const collapsed = new Set(brand.salesWidgetsCollapsed || []);
-  const events = eventCampaignsForBrand(brandId);
+  const sources = saleSourceOptions(brandId);
 
   root.innerHTML = `
     <div class="page-head">
@@ -80,7 +82,7 @@ function paint(root, brandId, state, refresh) {
     </div>
     <p class="page-sub" style="margin-bottom:22px;">${t("sales.sub")}</p>
     ${active.length ? `
-      ${quickLogHTML(active, state, unit, events)}
+      ${quickLogHTML(active, state, unit, sources)}
       ${collapsed.has("stats") ? widgetCollapsedHTML("stats", "grid", t("sales.keyStats.title"), t("sales.keyStats.summary", { sold: formatNumber(totals.rangeQty), revenue: rp(totals.rangeRevenue) })) : widgetCardHTML("stats", "grid", t("sales.keyStats.title"), `
         <div class="stat-grid" style="margin-bottom:0;">
           <div class="stat"><div class="label">${t("sales.stat.monthSold")}</div><div class="value">${formatNumber(totals.rangeQty)} <small>${esc(unit)}</small></div><div class="sub">${t("sales.stat.monthSales", { count: totals.rangeCount })}</div></div>
@@ -110,13 +112,44 @@ function paint(root, brandId, state, refresh) {
           ${collapseToggleHTML("st-history-toggle-collapse", historyCollapsed)}
         </div>
       </div>
-      ${historyHTML(tracker, state, historyCollapsed, events)}
+      ${historyHTML(tracker, state, historyCollapsed, brandId)}
     ` : ""}
   `;
 
   wireHelpButtons(root);
   wireWidgetToggle(root, { collapsedList: brand.salesWidgetsCollapsed, save: (next) => updateBrand(brandId, { salesWidgetsCollapsed: next }), refresh });
   wire(root, brandId, state, refresh, { brand, tracker, campaign, unit });
+}
+
+// Saved advice the owner asked for once is rewritten on its own — free —
+// when an important signal (sales up/down, a post that took off or sold…)
+// arrived after it (js/ai-autorefresh.js has the rules and the guards).
+async function autoRefreshAdvice(brandId, state, refresh) {
+  if (state.autoTried) return;
+  state.autoTried = true;
+  const brand = getBrand(brandId);
+  const advice = getTracker(brand).lastAdvice;
+  const ai = getSettings().ai || {};
+  if (!isLifetime(getCachedAccount()) || !mayAutoRefresh(advice, ai)) return;
+  const campaigns = listCampaigns(brandId);
+  const content = listContent(brandId);
+  const signal = staleBecause(advice, { brand, content, campaigns, settings: getSettings() });
+  if (!signal) return;
+  state.adviceBusy = true;
+  state.autoReason = signal.title;
+  refresh();
+  try {
+    const campaign = runningSalesCampaign(brandId);
+    const unit = unitLabel(salesModel(campaign?.goalPlan?.model || getTracker(brand).model).unit);
+    const pulseText = pulseTextFor(brand, { content, campaigns, settings: getSettings() });
+    const next = await suggestSalesActions(ai, { brand, snapshotText: salesSnapshotText(brand, { unit }), campaigns, pulseText, free: true });
+    saveAdvice(brandId, { ...next, ...refreshStamp(advice, signal) });
+  } catch {
+    // Quietly keep the old advice; the owner can still refresh it by hand.
+  }
+  state.adviceBusy = false;
+  state.autoReason = "";
+  refresh();
 }
 
 function emptyHTML() {
@@ -133,7 +166,27 @@ function emptyHTML() {
 // done. Revenue is price × quantity until the user overrides it; date and
 // the two optional flags sit behind "details" so the default path is
 // product → number → save.
-function quickLogHTML(products, state, unit, events = []) {
+// "Dari mana penjualan ini?" — one optional picker for every kind of source
+// (an event, a campaign, a recent post). Value: "c:<campaignId>" or
+// "k:<contentId>"; empty = don't know / a mix.
+function sourcePickerHTML(sources) {
+  const { events, campaigns, content } = sources;
+  if (!events.length && !campaigns.length && !content.length) return "";
+  const group = (label, items) => (items.length ? `<optgroup label="${esc(label)}">${items.join("")}</optgroup>` : "");
+  return `
+        <div class="field" style="margin-top:10px;">
+          <label for="st-source">${t("sales.log.source")}</label>
+          <select class="select input" id="st-source">
+            <option value="">${t("sales.log.sourceNone")}</option>
+            ${group(t("sales.log.sourceEvents"), events.map((ev) => `<option value="c:${ev.id}">${esc(ev.name || "")}${ev.eventPlan?.eventDate ? ` — ${esc(formatDate(ev.eventPlan.eventDate, { year: undefined }))}` : ""}</option>`))}
+            ${group(t("sales.log.sourceCampaigns"), campaigns.map((c) => `<option value="c:${c.id}">${esc(c.name || t("camp.untitled"))}</option>`))}
+            ${group(t("sales.log.sourceContent"), content.map((c) => `<option value="k:${c.id}">${esc(c.title || t("common.untitled"))}${c.publishedDate ? ` — ${esc(formatDate(c.publishedDate, { year: undefined }))}` : ""}</option>`))}
+          </select>
+          <p class="ev-field-hint">${t("sales.log.sourceHint")}</p>
+        </div>`;
+}
+
+function quickLogHTML(products, state, unit, sources) {
   const current = products.find((p) => p.id === state.productId) || products[0];
   const discountPct = activeDiscountPct(current);
   const picker = products.length > 6
@@ -155,15 +208,7 @@ function quickLogHTML(products, state, unit, events = []) {
           <div class="field"><label for="st-date">${t("sales.log.date")}</label><input class="input" type="date" id="st-date" value="${localISODate()}" max="${localISODate()}" /></div>
           <div class="field" style="flex:2;"><label for="st-note">${t("sales.log.note")}</label><input class="input" id="st-note" maxlength="140" autocomplete="off" placeholder="${esc(t("sales.log.notePh"))}" /></div>
         </div>
-        ${events.length ? `
-        <div class="field" style="margin-top:10px;">
-          <label for="st-event">${t("sales.log.event")}</label>
-          <select class="select input" id="st-event">
-            <option value="">${t("sales.log.eventNone")}</option>
-            ${events.map((ev) => `<option value="${ev.id}">${esc(ev.name || "")}${ev.eventPlan?.eventDate ? ` — ${esc(formatDate(ev.eventPlan.eventDate, { year: undefined }))}` : ""}</option>`).join("")}
-          </select>
-          <p class="ev-field-hint">${t("sales.log.eventHint")}</p>
-        </div>` : ""}
+        ${sourcePickerHTML(sources)}
         <div class="flex items-center gap-8" style="flex-wrap:wrap;">
           <label class="checkbox-chip"><input type="checkbox" id="st-repeat" />${t("sales.log.repeat")}</label>
           <label class="checkbox-chip"><input type="checkbox" id="st-referral" />${t("sales.log.referral")}</label>
@@ -202,9 +247,9 @@ function adviceHTML(tracker, state, collapsed) {
   if (collapsed.has("advice")) return widgetCollapsedHTML("advice", "sparkle", t("sales.advice.title"), a ? t("sales.advice.summary", { count: (a.actions || []).length }) : t("sales.advice.summaryEmpty"));
   return widgetCardHTML("advice", "sparkle", `${t("sales.advice.title")}${lifetime ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}`, `
       ${state.adviceBusy
-        ? `<div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("sales.advice.busy")}</span></div>`
+        ? `<div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${state.autoReason ? esc(t("ai.auto.busy", { reason: state.autoReason })) : t("sales.advice.busy")}</span></div>`
         : a
-        ? `<p class="text-faint" style="font-size:11.5px;margin:0 0 6px;">${t("sales.advice.from", { date: formatDate(localISODate(new Date(a.at))) })}</p>
+        ? `${a.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: a.autoReason }))}</p>` : ""}<p class="text-faint" style="font-size:11.5px;margin:0 0 6px;">${t("sales.advice.from", { date: formatDate(localISODate(new Date(a.at))) })}</p>
            ${a.summary ? `<p style="margin:0 0 12px;font-size:13.5px;">${esc(a.summary)}</p>` : ""}
            ${(a.actions || []).map((x, i) => `<div class="st-advice-item"><span class="st-advice-n">${i + 1}</span><div><b>${esc(x.title)}</b>${x.why ? `<span class="st-advice-why">${esc(x.why)}</span>` : ""}${x.how ? `<p>${esc(x.how)}</p>` : ""}</div></div>`).join("")}`
         : `<p class="text-muted" style="font-size:13px;margin:0 0 4px;">${t("sales.advice.intro")}</p>`}
@@ -251,9 +296,21 @@ function productsHTML(stats, campaign, unit, collapsed) {
     </table></div></div>`;
 }
 
-function historyHTML(tracker, state, collapsed, events = []) {
+// The tag a logged sale carries for where it came from: the post's title,
+// else the campaign's (or event's) name.
+function sourceTagHTML(e, brandId) {
+  const contentId = e.source?.contentId;
+  const campaignId = e.source?.campaignId || e.eventId;
+  if (contentId) {
+    const c = getContent(contentId);
+    return c ? ` <span class="tag st-source-tag">${icon("edit", { size: 10 })}${esc(c.title || t("common.untitled"))}</span>` : "";
+  }
+  const camp = campaignId ? listCampaigns(brandId).find((x) => x.id === campaignId) : null;
+  return camp ? ` <span class="tag st-source-tag">${icon(camp.eventPlan ? "calendar" : "target", { size: 10 })}${esc(camp.name || "")}</span>` : "";
+}
+
+function historyHTML(tracker, state, collapsed, brandId) {
   const byId = Object.fromEntries(tracker.products.map((p) => [p.id, p]));
-  const eventById = Object.fromEntries(events.map((ev) => [ev.id, ev]));
   const list = [...tracker.entries].sort((a, b) => (b.date === a.date ? b.at - a.at : b.date < a.date ? -1 : 1));
   const shown = state.showAll ? list : list.slice(0, HISTORY_PAGE);
   if (collapsed) return "";
@@ -262,7 +319,7 @@ function historyHTML(tracker, state, collapsed, events = []) {
       ${shown.length ? shown.map((e) => `
         <div class="st-entry">
           <span class="st-entry-date">${esc(formatDate(e.date, { year: undefined }))}</span>
-          <span class="st-entry-main"><b>${formatNumber(e.qty)}× ${esc(byId[e.productId]?.name || "—")}</b>${e.repeat ? ` <span class="tag">${t("sales.tag.repeat")}</span>` : ""}${e.referral ? ` <span class="tag">${t("sales.tag.referral")}</span>` : ""}${e.eventId && eventById[e.eventId] ? ` <span class="tag">${icon("calendar", { size: 10 })}${esc(eventById[e.eventId].name || "")}</span>` : ""}${e.note ? `<small>${esc(e.note)}</small>` : ""}</span>
+          <span class="st-entry-main"><b>${formatNumber(e.qty)}× ${esc(byId[e.productId]?.name || "—")}</b>${e.repeat ? ` <span class="tag">${t("sales.tag.repeat")}</span>` : ""}${e.referral ? ` <span class="tag">${t("sales.tag.referral")}</span>` : ""}${sourceTagHTML(e, brandId)}${e.note ? `<small>${esc(e.note)}</small>` : ""}</span>
           <span class="st-entry-amount">${rp(e.amount)}</span>
           <button class="icon-btn" data-st-delete="${e.id}" aria-label="${t("common.delete")}" style="width:28px;height:28px;">${icon("trash", { size: 13 })}</button>
         </div>`).join("") : `<div class="table-empty" style="padding:28px;">${t("sales.history.empty")}</div>`}
@@ -318,7 +375,7 @@ function wire(root, brandId, state, refresh, { brand, tracker, campaign, unit })
       productId: state.productId, qty, amount: amountEl.dataset.auto === "1" ? null : toNum(amountEl.value),
       date: qs("#st-date", root)?.value || localISODate(), note: qs("#st-note", root)?.value || "",
       repeat: !!qs("#st-repeat", root)?.checked, referral: !!qs("#st-referral", root)?.checked,
-      eventId: qs("#st-event", root)?.value || null,
+      ...sourceFromPicker(qs("#st-source", root)?.value || "", brandId),
     });
     if (!entry) return;
     toast(t(campaign ? "sales.log.savedSynced" : "sales.log.saved", { qty: formatNumber(entry.qty), name: tracker.products.find((p) => p.id === entry.productId)?.name || "" }));
@@ -379,13 +436,23 @@ function wire(root, brandId, state, refresh, { brand, tracker, campaign, unit })
       const salesCampaigns = listCampaigns(brandId);
       const pulseText = pulseTextFor(fresh, { content: listContent(brandId), campaigns: salesCampaigns, settings: getSettings() });
       const advice = await suggestSalesActions(ai, { brand: fresh, snapshotText: salesSnapshotText(fresh, { unit }), campaigns: salesCampaigns, pulseText });
-      saveAdvice(brandId, advice);
+      saveAdvice(brandId, { ...advice, refreshedFor: getTracker(fresh).lastAdvice?.refreshedFor || [] });
     } catch (e) {
       state.adviceError = e instanceof AiApiError ? e.message : t("sales.advice.err");
     }
     state.adviceBusy = false;
     refresh();
   });
+}
+
+// "c:<id>" / "k:<id>" → logSale's { source, eventId }. An event is a
+// campaign too; its id also goes in eventId, which its widget reads.
+function sourceFromPicker(value, brandId) {
+  if (!value) return {};
+  const [kind, id] = [value.slice(0, 1), value.slice(2)];
+  if (kind === "k") return { source: { contentId: id } };
+  const camp = listCampaigns(brandId).find((c) => c.id === id);
+  return { source: { campaignId: id }, eventId: camp?.eventPlan ? id : null };
 }
 
 const slug = (s) => String(s || "brand").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "brand";
@@ -449,7 +516,8 @@ function openProductModal({ brandId, unit, product = null, onSaved }) {
 function exportSheets(brand, unit) {
   const tracker = getTracker(brand);
   const byId = Object.fromEntries(tracker.products.map((p) => [p.id, p]));
-  const eventById = Object.fromEntries(eventCampaignsForBrand(brand.id).map((ev) => [ev.id, ev]));
+  const campaignName = (id) => listCampaigns(brand.id).find((c) => c.id === id)?.name || "";
+  const sourceText = (e) => (e.source?.contentId ? getContent(e.source.contentId)?.title || "" : campaignName(e.source?.campaignId || e.eventId));
   const yesNo = (v) => (v ? t("sales.export.yes") : "");
   const entries = [...tracker.entries].sort((a, b) => (a.date === b.date ? a.at - b.at : a.date < b.date ? -1 : 1));
   const months = {};
@@ -463,8 +531,8 @@ function exportSheets(brand, unit) {
     {
       name: t("sales.export.sheetSales"),
       rows: [
-        [t("sales.log.date"), t("sales.col.product"), t("sales.export.qty", { unit }), t("sales.export.unitPrice"), t("sales.export.revenue"), t("sales.tag.repeat"), t("sales.tag.referral"), t("sales.log.event"), t("sales.log.note")],
-        ...entries.map((e) => [e.date, byId[e.productId]?.name || "—", e.qty, e.qty ? Math.round(e.amount / e.qty) : 0, e.amount, yesNo(e.repeat), yesNo(e.referral), e.eventId ? eventById[e.eventId]?.name || "" : "", e.note || ""]),
+        [t("sales.log.date"), t("sales.col.product"), t("sales.export.qty", { unit }), t("sales.export.unitPrice"), t("sales.export.revenue"), t("sales.tag.repeat"), t("sales.tag.referral"), t("sales.log.source"), t("sales.log.note")],
+        ...entries.map((e) => [e.date, byId[e.productId]?.name || "—", e.qty, e.qty ? Math.round(e.amount / e.qty) : 0, e.amount, yesNo(e.repeat), yesNo(e.referral), sourceText(e), e.note || ""]),
       ],
     },
     {

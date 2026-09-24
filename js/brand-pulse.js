@@ -16,6 +16,7 @@ import { computeContentMetrics } from "./formulas.js";
 import { crossCampaignInsights } from "./cross-campaign.js";
 import { campaignStages, activeStageIndex, campaignHeadline } from "./campaign-metrics.js";
 import { t } from "./i18n.js";
+import { learningText } from "./brand-learning.js";
 
 const DAY = 86400000;
 
@@ -45,6 +46,9 @@ const SALES_MIN_ENTRIES = 3;
 const SALES_PREVIOUS_WEEKS = 4;
 
 const STREAK_BREAK_MAX_DAYS = 2;
+
+const CONTENT_SALES_WINDOW_DAYS = 30;
+const CONTENT_SALES_MIN_QTY = 2;
 
 // ---------- Small pure helpers ----------
 function median(nums) {
@@ -245,6 +249,37 @@ function signalSales(brand, now) {
   return [];
 }
 
+// A post the owner tagged sales to (Sales Tracker "Dari mana penjualan
+// ini?") — the strongest "make more like this" hint the app has.
+function signalContentSales(brand, content, now) {
+  const since = localISODate(new Date(now.getTime() - CONTENT_SALES_WINDOW_DAYS * DAY));
+  const byContent = new Map();
+  getTracker(brand).entries.forEach((e) => {
+    const id = e.source?.contentId;
+    if (!id || e.date < since) return;
+    const row = byContent.get(id) || { qty: 0, revenue: 0, last: "" };
+    row.qty += e.qty; row.revenue += e.amount; if (e.date > row.last) row.last = e.date;
+    byContent.set(id, row);
+  });
+  const out = [];
+  for (const [id, row] of byContent) {
+    if (row.qty < CONTENT_SALES_MIN_QTY) continue;
+    const c = content.find((x) => x.id === id);
+    if (!c) continue;
+    const at = new Date(row.last + "T12:00:00").getTime();
+    out.push({
+      kind: "content-sales",
+      severity: "good",
+      title: t("pulse.contentSales.title", { title: contentTitle(c) }),
+      detail: t("pulse.contentSales.detail", { qty: row.qty, revenue: Math.round(row.revenue).toLocaleString("id-ID"), days: CONTENT_SALES_WINDOW_DAYS }),
+      refs: { contentId: id },
+      at,
+      key: `content-sales:${id}:${isoWeekKey(at)}`,
+    });
+  }
+  return out;
+}
+
 function signalStreakBreak(content, now) {
   const streak = streakBreakInDays(content, STREAK_BREAK_MAX_DAYS);
   if (!streak) return [];
@@ -342,6 +377,7 @@ export function computeSignals({ brand, content = [], campaigns = [], settings, 
     ...signalEngagementDrop(content, settings, now),
     ...signalFollowers(brand, now),
     ...signalSales(brand, now),
+    ...signalContentSales(brand, content, now),
     ...signalStreakBreak(content, now),
     ...signalOverdue(overdue, now),
     ...signalStaleCampaigns(readings, now),
@@ -383,7 +419,24 @@ export function buildPulseText(signals = [], log = [], { limit = 8 } = {}) {
 // developmentLog lookup + buildPulseText themselves every time. Each caller
 // still computes this once per action (never cached) — the whole pass is
 // synchronous array work over data already in memory, not a network call.
+// Also carries what the brand has learned (js/brand-learning.js: best
+// posts with their hooks, the owner's 👍/👎 taste, monthly lessons), so
+// every AI feature that reads the pulse writes with it.
 export function pulseTextFor(brand, { content = [], campaigns = [], settings } = {}) {
   if (!brand || !settings) return "";
-  return buildPulseText(computeSignals({ brand, content, campaigns, settings }), brand.developmentLog || []);
+  const pulse = buildPulseText(computeSignals({ brand, content, campaigns, settings }), brand.developmentLog || []);
+  const learned = learningText(brand, { content, settings });
+  return [pulse, learned].filter(Boolean).join("\n\n");
+}
+
+// The single most notable signal right now — what the Teman tab's greeting
+// and the Home card's one-liner both mention, in the same order, so the two
+// never disagree about what stands out.
+const TOP_SIGNAL_PRIORITY = ["viral", "content-sales", "sales-down", "follower-jump", "follower-drop", "engagement-drop", "streak-break", "top-format", "sales-up", "stale-campaign", "overdue", "cross"];
+export function topSignal(signals = []) {
+  for (const kind of TOP_SIGNAL_PRIORITY) {
+    const hit = signals.find((s) => s.kind === kind);
+    if (hit) return hit;
+  }
+  return null;
 }

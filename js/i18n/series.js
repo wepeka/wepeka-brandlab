@@ -1,5 +1,5 @@
 // Content Series ("Content Series Memory") — js/views/series.js, plus the
-// "Save as Content Series" flow in Brainstorm (js/views/brainstorm.js).
+// "Save as Content Series" flow in the chat (js/consultant-panel.js).
 export default {
   "store.sync.series": { en: "content series", id: "content series" },
 

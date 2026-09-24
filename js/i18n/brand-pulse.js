@@ -19,6 +19,8 @@ export default {
   "pulse.followerDrop.title": { en: "{platform} followers dropped", id: "Followers {platform} turun" },
   "pulse.followerDrop.detail": { en: "{delta} ({pct}%) since the last check", id: "{delta} ({pct}%) sejak pengecekan terakhir" },
 
+  "pulse.contentSales.title": { en: "\"{title}\" is bringing in sales", id: "\"{title}\" menghasilkan penjualan" },
+  "pulse.contentSales.detail": { en: "{qty} sold, Rp {revenue} tagged to it in the last {days} days — make more like it", id: "{qty} terjual, Rp {revenue} tercatat dari konten ini dalam {days} hari terakhir — bikin lagi yang mirip" },
   "pulse.salesUp.title": { en: "Sales are up this week", id: "Penjualan lagi naik minggu ini" },
   "pulse.salesUp.detail": { en: "+{pct}% vs the past 4 weeks' average", id: "+{pct}% vs rata-rata 4 minggu sebelumnya" },
   "pulse.salesDown.title": { en: "Sales are down this week", id: "Penjualan lagi turun minggu ini" },
@@ -41,6 +43,10 @@ export default {
 
   // Home Companion card (js/views/home.js) — chat thread
   "home.companion.title": { en: "Companion", id: "Teman Brand" },
+  "home.companion.sub": { en: "Tell it what happened today. What matters becomes brand memory — what every AI feature reads when it writes for you.", id: "Ceritakan yang terjadi hari ini. Yang penting masuk Memori Brand — yang dibaca semua fitur AI saat nulis buat kamu." },
+  "home.companion.tell": { en: "Tell the Companion", id: "Cerita ke Teman Brand" },
+  "home.companion.unrecapped": { en: "{n} message(s) not yet in memory — recap them", id: "{n} cerita belum masuk memori — rangkum" },
+  "home.companion.summary.empty": { en: "Nothing in brand memory yet", id: "Memori Brand masih kosong" },
   "companion.greeting.morning": { en: "Morning! What happened with {brand} today?", id: "Pagi! Hari ini ada kejadian apa di {brand}?" },
   "companion.greeting.afternoon": { en: "Hey! Anything new with {brand} today?", id: "Halo! Hari ini ada kejadian apa di {brand}?" },
   "companion.greeting.evening": { en: "Evening! How did {brand} do today?", id: "Malam! Hari ini gimana kabarnya {brand}?" },
@@ -58,6 +64,8 @@ export default {
   "companion.idea.created": { en: "Draft \"{title}\" saved — open it in Creator.", id: "Draft \"{title}\" tersimpan — buka di Creator." },
   "companion.idea.openDraft": { en: "Open draft", id: "Buka draft" },
   "companion.idea.fromChat": { en: "From a chat with the Companion: {why}", id: "Dari obrolan Teman Brand: {why}" },
+  "companion.action.moreLikeThis": { en: "Make more like it", id: "Bikin yang mirip" },
+  "companion.seed.contentSales": { en: "\"{title}\" brought in sales — what should the next one like it be?", id: "\"{title}\" menghasilkan penjualan — konten lanjutan yang mirip bagusnya apa?" },
   "companion.action.similarContent": { en: "Make similar content", id: "Bikin konten serupa" },
   "companion.action.rideMomentum": { en: "Ride the momentum", id: "Manfaatkan momentum" },
   "companion.action.openCreator": { en: "Open Creator", id: "Buka Creator" },

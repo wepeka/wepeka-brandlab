@@ -482,12 +482,6 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     } else {
       const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription });
       toast(t("brands.form.created", { name }));
-      // Every new brand, for every account, opens with the intro video —
-      // not only a brand-new account's first boot. Overlays live on <body>,
-      // so it stays put through the route change below.
-      import("../guide-videos.js")
-        .then((m) => m.playNewBrandIntro())
-        .catch((e) => console.warn("new-brand video unavailable", e));
       // Pemula: a brand you just made is obviously the one you want to
       // open — go straight in instead of showing a "pick a brand" page
       // with a single option on it. Beranda takes over from there.

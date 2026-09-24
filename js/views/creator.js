@@ -1,12 +1,16 @@
-import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
+import { getBrainstorm, createBrainstorm, deleteBrainstorm, appendBrainstormMessage, updateBrainstormMessage, getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, toast, avatarHTML, qs, qsa } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext } from "../nav-context.js";
-import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, campaignSummaryLine } from "../ai.js";
+import { openModal, openDrawer, closeOverlay, confirmDialog } from "../modals.js";
+import { parseDirectives, renderLightMarkdown } from "../ai-directives.js";
+import { generateScript, discussScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, campaignSummaryLine } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
+import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
+import { basisHTML } from "../brand-learning.js";
+import { writingRulesOf, writingRulesRowHTML, wireWritingRules, applyFixedHashtags } from "../writing-rules.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -110,7 +114,7 @@ const DURATION_OPTIONS = [
 // version — just the prompt box (pre-filled from that field) and Generate,
 // skipping funnel/duration/goal/article. The results (hooks + script +
 // caption, each with a Use button) are identical either way.
-function openAiScriptModal(content, brand, onInsert, lite = null) {
+function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
   const ai = getSettings().ai || { provider: "anthropic" };
   const hasKey = hasAiKey(ai);
   const demo = isTourDemo(); // tur → contoh hasil, tanpa token (js/tour-demo.js)
@@ -125,18 +129,26 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
   // so a script from batch 1 + a caption from batch 2 still counts), the
   // panel closes itself. `lite` modals only care about their one field.
   const used = { script: false, caption: false };
+  // The hook the user last hit "Use" on — kept so a script they use *after*
+  // picking a hook gets that hook, instead of overwriting it with its own.
+  let pickedHook = "";
   function maybeAutoClose() {
     const ready = lite ? !!used[lite] : used.script && used.caption;
     if (!ready) return;
     setTimeout(() => closeOverlay(overlay), 1400);
   }
-  const prefill = lite ? content[lite] || content.idea || "" : content.idea || "";
+  const prefill = opts.prompt ?? (lite ? content[lite] || content.idea || "" : content.idea || "");
+  // What the writer reads besides the brand facts: the newest moments in
+  // brand memory (js/brand-pulse.js buildPulseText keeps at most 8 entries).
+  const memoryCount = Math.min(savedMoments(brand).length, 8);
 
   const overlay = openModal({
     title: lite ? t("cr.ai.quickTitle", { field: lite === "script" ? t("cr.f.script") : t("cr.f.caption") }) : t("cr.ai.title"),
     wide: true,
     bodyHTML: `
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("cr.ai.contextNote", { brand: escapeHtml(brand?.name || t("cr.ai.thisBrand")) })}</p>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 6px;">${t("cr.ai.contextNote", { brand: escapeHtml(brand?.name || t("cr.ai.thisBrand")) })}</p>
+      ${brand ? writingRulesRowHTML(brand) : ""}
+      <p class="text-faint cr-ai-memory" style="font-size:12px;margin:0 0 14px;">${icon("heart", { size: 12 })}<span>${memoryCount ? t("cr.ai.memoryNote", { n: memoryCount }) : t("cr.ai.memoryEmpty")}</span> <button type="button" class="link cr-ai-memory-open" id="ai-memory-open">${t("cr.ai.memoryOpen")}</button></p>
 
       <div class="field" style="margin-bottom:14px;">
         <div class="creator-field-head">
@@ -171,6 +183,15 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     footHTML: `<button class="btn btn-secondary" id="ai-close">${t("common.close")}</button>`,
   });
   overlay.querySelector("#ai-close").addEventListener("click", () => closeOverlay(overlay));
+  overlay.querySelector("#ai-memory-open")?.addEventListener("click", () => { if (brand) openBrandMemoryModal(brand.id); });
+  // Aturan tulisan: saved → redraw the row in place (the next generate reads it).
+  const rulesRefresh = () => {
+    const row = overlay.querySelector("[data-writing-rules]");
+    if (!row || !brand) return;
+    row.outerHTML = writingRulesRowHTML(getBrand(brand.id));
+    wireWritingRules(overlay, brand.id, rulesRefresh);
+  };
+  if (brand) wireWritingRules(overlay, brand.id, rulesRefresh);
 
   const micBtn = overlay.querySelector("#ai-mic");
   if (micBtn) wireMic(micBtn, overlay.querySelector("#ai-prompt"));
@@ -211,6 +232,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       // the topic-specific fields below, same seam campaignLine already uses.
       seriesContext: linkedSeriesContext(),
       campaignLine: linkedCampaignLine(),
+      hashtags: writingRulesOf(brand && getBrand(brand.id)).hashtags,
       ...extra,
     };
   }
@@ -241,13 +263,19 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     try {
       const params = genParams();
       if (demo) toast(DEMO_TOAST);
-      const { hooks, script, caption, slides = [] } = demo ? await demoGenerateScript(params) : await generateScript(ai, params);
+      const out = demo ? await demoGenerateScript(params) : await generateScript(ai, params);
+      const { hooks, script, slides = [] } = out;
+      // Fixed hashtags (Aturan tulisan) are put on by code, never guessed.
+      const caption = applyFixedHashtags(out.caption, params.hashtags);
       loadingEl.remove();
       batchCount++;
       const suffix = batchCount > 1 ? ` ${t("cr.ai.batch", { n: batchCount })}` : "";
       const batchEl = document.createElement("div");
       batchEl.className = "ai-batch";
+      // "Dibuat berdasarkan: …" — what the AI leaned on, so the owner sees it
+      // remembered (js/brand-learning.js).
       batchEl.innerHTML = `
+        ${demo || !brand ? "" : basisHTML(brand, { content: listContent(brand.id), settings: getSettings() })}
         <div id="hooks-section"></div>
         <div id="script-section"></div>
         ${
@@ -279,6 +307,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       // Hooks and script each get their own "Regenerate" — asking the AI to
       // redo a hook that isn't landing shouldn't also throw away a script
       // that's already fine, and vice versa.
+      // What the script card was last drawn from, so picking a hook can redraw
+      // it with that hook swapped in (what "Use script" will then insert).
+      let scriptState = null;
       const eyebrowRegenBtn = (label) =>
         `<button type="button" class="icon-btn regen-btn" title="${label}" aria-label="${label}" style="width:22px;height:22px;">${icon("refresh", { size: 12 })}</button>`;
 
@@ -294,7 +325,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
                  (h, i) => `
                <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
                  <span style="font-size:13px;">${escapeHtml(h)}</span>
-                 <button type="button" class="btn btn-secondary btn-sm" data-insert-hook="${i}" style="flex:none;">${t("cr.ai.use")}</button>
+                 <button type="button" class="btn btn-secondary btn-sm${h === pickedHook ? " is-used" : ""}" data-insert-hook="${i}" style="flex:none;">${h === pickedHook ? t("cr.ai.hookUsed") : t("cr.ai.use")}</button>
                </div>`
                )
                .join("")}`
@@ -303,11 +334,19 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
         const cards = el.querySelectorAll("[data-insert-hook]");
         cards.forEach((b) => {
           b.addEventListener("click", () => {
-            onInsert({ hook: list[Number(b.dataset.insertHook)] });
+            const hook = list[Number(b.dataset.insertHook)];
+            if (hook === pickedHook) return;
+            // Cards stay put: the picked one flips to "Dipakai ✓", the rest
+            // remain clickable so the choice can still be swapped.
+            onInsert({ hook, prevHook: pickedHook });
+            pickedHook = hook;
             toast(t("cr.ai.hookInserted"));
-            // Once one hook's picked, the other alternatives for that same
-            // slot are moot — script/caption stay untouched, separate choices.
-            cards.forEach((c) => c.closest(".card")?.remove());
+            cards.forEach((c) => {
+              const on = c === b;
+              c.classList.toggle("is-used", on);
+              c.innerHTML = on ? t("cr.ai.hookUsed") : t("cr.ai.use");
+            });
+            if (scriptState?.text) renderScriptSection(scriptState.text, scriptState.params, scriptState.slides);
           });
         });
         el.querySelector(".regen-btn")?.addEventListener("click", async () => {
@@ -326,7 +365,10 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
       // #1: a Carousel shows its slides one by one (Slide 1, Slide 2, …)
       // instead of one flat script block — `slides` is only non-empty when
       // generateScript() was asked for a carousel format.
-      function renderScriptSection(text, usedParams, slides = []) {
+      function renderScriptSection(rawText, usedParams, rawSlides = []) {
+        scriptState = { text: rawText, params: usedParams, slides: rawSlides };
+        const text = pickedHook ? applyHook(rawText, pickedHook) : rawText;
+        const slides = pickedHook && rawSlides.length ? parseSlides(text).map((s, i) => ({ ...s, slideNumber: i + 1 })) : rawSlides;
         const el = batchEl.querySelector("#script-section");
         const isCarousel = slides.length > 0;
         const label = isCarousel ? t("cr.ai.fullCarousel") : t("cr.ai.fullScript");
@@ -349,11 +391,33 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
                ${eyebrowRegenBtn(regenLabel)}
              </div>
              ${body}
-             <button type="button" class="btn btn-primary btn-block use-script-btn">${useLabel}</button>`
+             <div class="cr-ai-row">
+               <button type="button" class="btn btn-primary use-script-btn">${useLabel}</button>
+               ${demo ? "" : `<button type="button" class="btn btn-secondary discuss-script-btn" title="${escapeHtml(t("cr.disc.title"))}">${icon("chat", { size: 15 })}${t("cr.disc.short")}</button>`}
+             </div>`
           : "";
+        // Same discussion drawer as the editor's, but about the draft shown
+        // here (hook swap included); "Apply" puts the revision straight into
+        // the piece, like "Use script" would.
+        let draft = text;
+        el.querySelector(".discuss-script-btn")?.addEventListener("click", () =>
+          openScriptDiscussion({
+            brand,
+            contentId: content.id,
+            getCurrent: () => ({ ...content, script: draft }),
+            onRegenerate: (kind, guidance) => {
+              overlay.querySelector("#ai-prompt").value = regenPrompt(content.idea, kind, guidance);
+              runGenerate();
+            },
+            applyRevision: (target, value) => {
+              if (target === "script") draft = value;
+              onInsert(target === "caption" ? { caption: value } : { script: value, funnel: state.funnel });
+            },
+          })
+        );
         if (text && !demo) mountAiFeedback(el, { brandId: brand?.id, feature: isCarousel ? "creator-carousel" : "creator-script", prompt: feedbackPrompt(usedParams), output: text });
         el.querySelector(".use-script-btn")?.addEventListener("click", (e) => {
-          onInsert({ script: text, funnel: state.funnel });
+          onInsert({ script: text, hook: pickedHook, funnel: state.funnel });
           toast(isCarousel ? t("cr.ai.carouselInserted") : t("cr.ai.scriptInserted"));
           const b = e.currentTarget;
           b.classList.add("is-used");
@@ -396,6 +460,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null) {
     }
   };
   overlay.querySelector("#ai-generate").addEventListener("click", runGenerate);
+  // Coming from the discussion ("Generate ulang…"): the prompt already holds
+  // the guidance from the chat, so start right away.
+  if (opts.autoRun) runGenerate();
 }
 
 // Creator is the "what still needs to be made" workspace — once something
@@ -688,13 +755,13 @@ function paint(root, brandId, state, refresh) {
     });
   }
 
-  const openAiFor = () => {
+  const openAiFor = (opts = {}) => {
     const current = {
       ...selected,
       idea: qs("#f-idea", root)?.value ?? selected.idea,
       title: qs("#f-title", root)?.value ?? selected.title,
     };
-    openAiScriptModal(current, brand, ({ hook, script, caption, funnel }) => {
+    openAiScriptModal(current, brand, ({ hook, prevHook, script, caption, funnel }) => {
       if (caption !== undefined) {
         const captionEl = qs("#f-caption", root);
         if (!captionEl) return;
@@ -703,7 +770,7 @@ function paint(root, brandId, state, refresh) {
       } else {
         const scriptEl = qs("#f-script", root);
         const current = scriptEl ? scriptEl.value : selected.script || "";
-        const next = script ? script : hook + (current ? "\n\n" + current : "");
+        const next = applyHook(script || current, hook, prevHook);
         if (scriptEl) scriptEl.value = next;
         updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}) });
         // A brand-new piece has no title yet — the chosen hook is a good
@@ -717,11 +784,38 @@ function paint(root, brandId, state, refresh) {
         if (!scriptEl) refresh();
       }
       flashSaved();
-    });
+    }, null, opts);
   };
 
   const aiBtn = qs("#ai-generate-all", root);
-  if (aiBtn) aiBtn.addEventListener("click", openAiFor);
+  if (aiBtn) aiBtn.addEventListener("click", () => openAiFor());
+
+  const discussBtn = qs("#ai-discuss", root);
+  if (discussBtn) {
+    discussBtn.addEventListener("click", () => {
+      const contentId = selected.id;
+      openScriptDiscussion({
+        brand,
+        contentId,
+        getCurrent: () => ({
+          ...(getContent(contentId) || selected),
+          title: qs("#f-title", root)?.value ?? selected.title,
+          idea: qs("#f-idea", root)?.value ?? selected.idea,
+          script: qs("#f-script", root)?.value ?? getContent(contentId)?.script ?? selected.script,
+          caption: qs("#f-caption", root)?.value ?? getContent(contentId)?.caption ?? selected.caption,
+        }),
+        onRegenerate: (kind, guidance) => openAiFor({ prompt: regenPrompt(qs("#f-idea", root)?.value ?? selected.idea, kind, guidance), autoRun: true }),
+        applyRevision: (target, text) => {
+          const el = qs(target === "caption" ? "#f-caption" : "#f-script", root);
+          if (el) el.value = text;
+          updateContent(contentId, { [target]: text });
+          // Carousel scripts have slide cards, not a textarea — repaint them.
+          if (!el) refresh();
+          flashSaved();
+        },
+      });
+    });
+  }
 
   // Quick per-field generate — a stripped-down version of the same modal
   // (just a prompt box, pre-filled from that field), still with the full
@@ -737,7 +831,7 @@ function paint(root, brandId, state, refresh) {
     openAiScriptModal(
       current,
       brand,
-      ({ hook, script, caption, funnel }) => {
+      ({ hook, prevHook, script, caption, funnel }) => {
         if (caption !== undefined) {
           const captionEl = qs("#f-caption", root);
           if (!captionEl) return;
@@ -746,7 +840,7 @@ function paint(root, brandId, state, refresh) {
         } else {
           const scriptEl = qs("#f-script", root);
           const current = scriptEl ? scriptEl.value : selected.script || "";
-          const next = script ? script : hook + (current ? "\n\n" + current : "");
+          const next = applyHook(script || current, hook, prevHook);
           if (scriptEl) scriptEl.value = next;
           updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}) });
           if (!scriptEl) refresh();
@@ -904,6 +998,209 @@ function groupedSidebarHTML(items, selectedId, collapsedGroups) {
 // removing it stays a content-list-only action (js/views/content-list.js's
 // row menu, which also has Archive) rather than a one-click trash icon
 // right in Creator's own sidebar.
+// "Diskusi dengan AI" — a saved chat (brainstorms/ doc, mode "script", one per
+// content) beside the script. The AI can only *suggest*: a rewrite arrives as
+// a revision card, and nothing touches the script until "Apply" is pressed.
+const DISC_HISTORY = 12;
+// The prompt for a regenerate that follows a discussion: the piece's own idea
+// plus what the chat concluded, so the new script/hooks follow it.
+function regenPrompt(idea, kind, guidance) {
+  return [
+    (idea || "").trim(),
+    kind === "hook" ? t("cr.disc.regenPromptHook") : t("cr.disc.regenPromptScript"),
+    guidance,
+  ].filter(Boolean).join("\n\n");
+}
+
+function openScriptDiscussion({ brand, contentId, getCurrent, applyRevision, onRegenerate }) {
+  const ai = getSettings().ai || { provider: "anthropic" };
+  if (!hasAiKey(ai)) {
+    toast(t("cr.ai.needKey"), "error");
+    return;
+  }
+  const threadId = `script-${contentId}`;
+  if (!getBrainstorm(threadId)) createBrainstorm(brand.id, { id: threadId, mode: "script", contentId, title: getCurrent().title || "" });
+  // Previous text per applied revision, so "Undo" works within this session.
+  const undo = new Map();
+  let busy = false;
+  const chips = ["critique", "hook", "angle", "shorter", "brand"];
+
+  const revCards = (m) =>
+    (m.blocks?.revisions || [])
+      .map((r, i) => {
+        const key = `${m.id}:${i}`;
+        const action = r.applied
+          ? undo.has(key)
+            ? `<button type="button" class="btn btn-ghost btn-sm" data-disc-undo="${key}">${t("cr.disc.undo")}</button>`
+            : `<span class="text-faint" style="font-size:12px;">${icon("check", { size: 12 })} ${t("cr.disc.applied")}</span>`
+          : `<button type="button" class="btn btn-primary btn-sm" data-disc-apply="${key}">${r.target === "caption" ? t("cr.disc.applyCaption") : t("cr.disc.applyScript")}</button>`;
+        return `<div class="disc-rev">
+          <div class="page-eyebrow" style="margin-bottom:6px;font-size:11px;">${r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript")}</div>
+          <div class="disc-rev-text">${escapeHtml(r.text)}</div>
+          <div style="margin-top:8px;">${action}</div>
+        </div>`;
+      })
+      .join("");
+  const lastAssistantId = () => {
+    const msgs = getBrainstorm(threadId)?.messages || [];
+    const last = msgs[msgs.length - 1];
+    return last?.role === "assistant" && last.text ? last.id : null;
+  };
+  // Right under the newest reply: the way out of the chat — start a fresh
+  // script or hooks that follow what was just discussed.
+  const regenRow = () => `<div class="disc-regen">
+      <button type="button" class="btn btn-primary btn-sm" data-disc-regen="script">${icon("refresh", { size: 12 })}${t("cr.disc.regenScript")}</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-disc-regen="hook">${icon("refresh", { size: 12 })}${t("cr.disc.regenHook")}</button>
+    </div>`;
+  const msgHTML = (m) =>
+    m.role === "user"
+      ? `<div class="consultant-msg consultant-msg-user">${escapeHtml(m.text)}</div>`
+      : `<div class="consultant-msg consultant-msg-assistant" data-disc-msg="${m.id}">${m.text ? renderLightMarkdown(m.text) : ""}${revCards(m)}${m.id === lastAssistantId() ? regenRow() : ""}<div class="disc-fb" data-disc-fb="${m.id}"></div></div>`;
+
+  const overlay = openDrawer({
+    title: `${t("cr.disc.title")}<button type="button" class="icon-btn" id="disc-clear" style="margin-left:8px;" aria-label="${escapeHtml(t("cr.disc.clear"))}" title="${escapeHtml(t("cr.disc.clear"))}">${icon("trash", { size: 14 })}</button>`,
+    bodyHTML: `<div class="disc-msgs" id="disc-msgs"></div>`,
+    footHTML: `<div style="width:100%;">
+      <div class="consultant-starters disc-chips" id="disc-chips">${chips.map((k) => `<button type="button" class="consultant-starter" data-disc-chip="${k}">${t(`cr.disc.chip.${k}`)}</button>`).join("")}</div>
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <textarea id="disc-input" rows="2" placeholder="${escapeHtml(t("cr.disc.placeholder"))}" style="flex:1;resize:none;"></textarea>
+        <button type="button" class="btn btn-primary" id="disc-send">${t("cr.disc.send")}</button>
+      </div>
+      <p class="text-faint" style="font-size:11px;margin:6px 0 0;">${t("cr.disc.cost")}</p></div>`,
+  });
+  const msgsEl = overlay.querySelector("#disc-msgs");
+  const input = overlay.querySelector("#disc-input");
+  const sendBtn = overlay.querySelector("#disc-send");
+  const scrollDown = () => (msgsEl.parentElement.scrollTop = msgsEl.parentElement.scrollHeight);
+
+  function render(pendingHTML = "") {
+    const msgs = getBrainstorm(threadId)?.messages || [];
+    // Quick chips are for getting started; once talking, the regenerate row
+    // under the newest reply is the next step, so they step aside.
+    overlay.querySelector("#disc-chips").hidden = msgs.length > 0;
+    msgsEl.innerHTML =
+      (msgs.length ? "" : `<div class="consultant-msg consultant-msg-assistant">${escapeHtml(t("cr.disc.intro"))}</div>`) +
+      msgs.map(msgHTML).join("") +
+      (pendingHTML ? `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending" id="disc-pending">${pendingHTML}</div>` : "");
+    const last = msgs[msgs.length - 1];
+    if (last?.role === "assistant" && !last.rated && last.text) {
+      const slot = msgsEl.querySelector(`[data-disc-fb="${last.id}"]`);
+      const prev = msgs[msgs.length - 2];
+      if (slot) mountAiFeedback(slot, { brandId: brand.id, feature: "creator-discuss", prompt: prev?.text || "", output: last.text, onRated: () => updateBrainstormMessage(threadId, last.id, { rated: true }) });
+    }
+    scrollDown();
+  }
+
+  async function send(raw) {
+    const text = (raw || "").trim();
+    if (!text || busy) return;
+    busy = true;
+    sendBtn.disabled = true;
+    input.value = "";
+    const history = (getBrainstorm(threadId)?.messages || []).slice(-DISC_HISTORY);
+    appendBrainstormMessage(threadId, { role: "user", text });
+    render("…");
+    try {
+      const freshBrand = getBrand(brand.id) || brand;
+      const campaigns = listCampaigns(brand.id);
+      const cur = getCurrent();
+      const reply = await discussScript(ai, {
+        brand: freshBrand,
+        campaigns,
+        pulseText: pulseTextFor(freshBrand, { content: listContent(brand.id), campaigns, settings: getSettings() }),
+        content: cur,
+        series: cur.seriesId ? getSeries(cur.seriesId) : null,
+        history,
+        message: text,
+        onText: (soFar) => {
+          const el = msgsEl.querySelector("#disc-pending");
+          if (el) el.innerHTML = renderLightMarkdown(parseDirectives(soFar).cleanText) || "…";
+          scrollDown();
+        },
+      });
+      const parsed = parseDirectives(reply);
+      appendBrainstormMessage(threadId, {
+        role: "assistant",
+        text: parsed.cleanText,
+        blocks: parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : null,
+      });
+    } catch (e) {
+      toast(e instanceof AiApiError ? e.message : t("cr.disc.fail"), "error");
+    } finally {
+      busy = false;
+      sendBtn.disabled = false;
+      render();
+    }
+  }
+
+  const setApplied = (msgId, index, applied) => {
+    const m = (getBrainstorm(threadId)?.messages || []).find((x) => x.id === msgId);
+    if (!m?.blocks?.revisions) return null;
+    const revisions = m.blocks.revisions.map((r, i) => (i === index ? { ...r, applied } : r));
+    updateBrainstormMessage(threadId, msgId, { blocks: { ...m.blocks, revisions } });
+    return m.blocks.revisions[index];
+  };
+  msgsEl.addEventListener("click", (e) => {
+    const applyBtn = e.target.closest("[data-disc-apply]");
+    const undoBtn = e.target.closest("[data-disc-undo]");
+    const regenBtn = e.target.closest("[data-disc-regen]");
+    if (regenBtn) {
+      // Guidance = the owner's last ask + the AI's newest reply, trimmed.
+      const msgs = (getBrainstorm(threadId)?.messages || []).filter((x) => x.text);
+      const guidance = msgs.slice(-2).map((x) => `${x.role === "user" ? "Owner" : "AI"}: ${x.text}`).join("\n").slice(0, 900);
+      closeOverlay(overlay);
+      onRegenerate?.(regenBtn.dataset.discRegen, guidance);
+    } else if (applyBtn) {
+      const [msgId, idx] = applyBtn.dataset.discApply.split(":");
+      const rev = setApplied(msgId, Number(idx), true);
+      if (!rev) return;
+      undo.set(applyBtn.dataset.discApply, getCurrent()[rev.target] || "");
+      applyRevision(rev.target, rev.text);
+      toast(t("cr.disc.appliedToast"));
+      render();
+    } else if (undoBtn) {
+      const key = undoBtn.dataset.discUndo;
+      const [msgId, idx] = key.split(":");
+      const rev = setApplied(msgId, Number(idx), false);
+      if (!rev) return;
+      applyRevision(rev.target, undo.get(key) ?? "");
+      undo.delete(key);
+      toast(t("cr.disc.undone"));
+      render();
+    } else {
+      const starter = e.target.closest("[data-disc-starter]");
+      if (starter) send(starter.dataset.discStarter);
+    }
+  });
+  overlay.querySelector("#disc-clear").addEventListener("click", async () => {
+    if (!(getBrainstorm(threadId)?.messages || []).length) return;
+    const ok = await confirmDialog({ title: t("cr.disc.clearTitle"), message: t("cr.disc.clearBody"), confirmLabel: t("cr.disc.clear"), danger: true });
+    if (!ok) return;
+    deleteBrainstorm(threadId);
+    createBrainstorm(brand.id, { id: threadId, mode: "script", contentId, title: getCurrent().title || "" });
+    undo.clear();
+    render();
+  });
+  overlay.querySelectorAll("[data-disc-chip]").forEach((b) => b.addEventListener("click", () => send(b.textContent)));
+  sendBtn.addEventListener("click", () => send(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send(input.value);
+    }
+  });
+  render();
+  input.focus();
+}
+
+// Two tiny "is it filled in?" marks — Script and Caption — lit when there's
+// real text, dimmed when empty, so the sidebar shows what a piece still needs.
+function fillMarks(c) {
+  const mark = (ic, has, label) =>
+    `<span class="fill-mark${has ? " on" : ""}" title="${escapeHtml(label + " · " + (has ? t("cr.fill.done") : t("cr.fill.empty")))}" aria-label="${escapeHtml(label)}">${icon(ic, { size: 12 })}</span>`;
+  return `<span class="fill-marks">${mark("edit", !!(c.script || "").trim(), t("cr.fill.script"))}${mark("chat", !!(c.caption || "").trim(), t("cr.fill.caption"))}</span>`;
+}
+
 function sidebarRow(c, active) {
   const deletable = c.status === "idea" || c.status === "draft";
   return `
@@ -911,7 +1208,7 @@ function sidebarRow(c, active) {
       <span class="status-pill status-${c.status}" style="padding:3px 8px;"><span class="status-dot"></span></span>
       <div class="ti">
         <div class="t">${escapeHtml(c.title || t("common.untitled"))}</div>
-        <div class="m">${c.platform || "—"} · ${formatDate(new Date(c.updatedAt))}</div>
+        <div class="m">${c.platform || "—"} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
       </div>
       ${dueBadge(c)}
       ${
@@ -1186,6 +1483,28 @@ function parseSlides(script) {
 }
 const serializeSlides = (slides) => slides.map((s, i) => `Slide ${i + 1}\n${(s.text || "").trim()}`).join("\n\n");
 
+// Puts `hook` into a script: swaps the text under the "HOOK" label (up to
+// "ISI PEMBAHASAN"), swaps Slide 1 of a carousel, else puts it on the first
+// line. `prevHook` is the hook this replaces when there's no label to
+// anchor on, so re-picking doesn't stack hooks.
+export function applyHook(script, hook, prevHook = "") {
+  const text = (script || "").replace(/\r/g, "");
+  const h = (hook || "").trim();
+  if (!h) return text;
+  if (!text.trim()) return h;
+  if (/^\s*Slide\s+\d+\s*:?\s*$/im.test(text)) {
+    const slides = parseSlides(text);
+    slides[0].text = h;
+    return serializeSlides(slides);
+  }
+  const label = "^([ \\t]*[*#_>]*[ \\t]*HOOK[ \\t]*[*_:]*[ \\t]*\\n)([\\s\\S]*?)";
+  const labelled = text.match(new RegExp(label + "(?=\\n[ \\t]*\\n[ \\t]*[*#_>]*[ \\t]*ISI PEMBAHASAN)", "i")) || text.match(new RegExp(label + "(?=\\n[ \\t]*\\n|$)", "i"));
+  if (labelled) return labelled[1] + h + text.slice(labelled[0].length);
+  const prev = (prevHook || "").trim();
+  const rest = prev && text.trimStart().startsWith(prev) ? text.trimStart().slice(prev.length).replace(/^\s+/, "") : text;
+  return rest ? h + "\n\n" + rest : h;
+}
+
 function slidesFieldHTML(c) {
   const slides = parseSlides(c.script);
   const cards = slides
@@ -1234,7 +1553,10 @@ function draftingPanel(c, campaigns, series = []) {
       : "";
   return `
     <div class="card glass-card">
-      <button type="button" class="btn btn-primary btn-block" id="ai-generate-all">${icon("bot", { size: 15 })}${t("cr.aiAll")}</button>
+      <div class="cr-ai-row">
+        <button type="button" class="btn btn-primary" id="ai-generate-all">${icon("bot", { size: 15 })}${t("cr.aiAll")}</button>
+        <button type="button" class="btn btn-secondary" id="ai-discuss" title="${escapeHtml(t("cr.disc.title"))}">${icon("chat", { size: 15 })}${t("cr.disc.short")}</button>
+      </div>
       <p class="text-faint" style="font-size:11.5px;text-align:center;margin:6px 0 16px;">${icon("arrowUp", { size: 10 })} ${t("cr.aiAllHint")}</p>
 
       <div class="creator-field-head" style="margin-bottom:18px;">

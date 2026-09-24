@@ -5,8 +5,8 @@
 // while one is registered. main.js clears the registry on every route
 // change, so a page that doesn't register simply has no such row.
 //
-// Nothing here ever starts a tour on its own — the only auto-interruption
-// left in the app is the first-run mode picker (js/mode-picker.js).
+// Nothing here ever starts a tour on its own. Each page with a guide also
+// shows a "Panduan" button next to its Video button.
 import { getSettings, updateSettings } from "./store.js";
 import { getCachedAccount, isReadOnly } from "./account.js";
 import { readFlag, writeFlag } from "./seen-flags.js";
@@ -17,10 +17,19 @@ let pageGuide = null;
 
 export function setPageGuide(start) {
   pageGuide = typeof start === "function" ? start : null;
+  syncGuideButtons();
 }
 
 export function clearPageGuide() {
   pageGuide = null;
+  syncGuideButtons();
+}
+
+// The page's "Panduan" pill (js/guide-videos.js guideVideoButtonHTML) is
+// painted with the page, often just before the page registers its guide.
+function syncGuideButtons() {
+  if (typeof document === "undefined") return;
+  document.querySelectorAll("[data-page-guide-btn]").forEach((b) => { b.hidden = !pageGuide; });
 }
 
 export function getPageGuide() {

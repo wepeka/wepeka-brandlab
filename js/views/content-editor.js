@@ -1,7 +1,8 @@
 import { getContent, createContent, updateContent, getSettings, getBrand, localISODate, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, listSeries, STATUSES, STATUS_LABELS } from "../store.js";
 import { icon } from "../icons.js";
 import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, escapeHtml, qs, qsa } from "../dom.js";
+import { toast, escapeHtml, qs, qsa, formatNumber } from "../dom.js";
+import { contentSalesStats } from "../sales-tracker.js";
 import { classifyFunnel, suggestCampaignFit, hasAiKey } from "../ai.js";
 import { t } from "../i18n.js";
 import { getMode } from "../mode.js";
@@ -54,6 +55,15 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
   overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
 }
 
+// Sales the owner tagged with this post when logging them (Sales Tracker's
+// "Dari mana penjualan ini?"). Nothing when there are none.
+function salesLineHTML(draft) {
+  if (!draft.id || !draft.brandId) return "";
+  const s = contentSalesStats(getBrand(draft.brandId), draft.id);
+  if (!s.count) return "";
+  return `<div class="st-source-line">${icon("target", { size: 13 })}<span>${t("sales.source.contentLine", { qty: formatNumber(s.qty), revenue: `Rp ${formatNumber(Math.round(s.revenue))}`, count: s.count })}</span></div>`;
+}
+
 function statusPill(status) {
   return `<span class="status-pill status-${status}"><span class="status-dot"></span>${statusLabel(status, STATUS_LABELS)}</span>`;
 }
@@ -75,6 +85,7 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
     <div class="flex items-center gap-8" style="margin-bottom:20px;" id="status-row">
       ${statusPill(draft.status)}${funnelTag(draft.funnel)}
     </div>
+    ${salesLineHTML(draft)}
 
     <div class="editor-pane active" data-pane="basic">
       <div class="field">
