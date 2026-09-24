@@ -319,7 +319,7 @@ const CORE = {
   "contentEditor.scheduleDate.label": { en: "Schedule date", id: "Tanggal Jadwal" },
   "contentEditor.publishedDate.label": { en: "Published date", id: "Tanggal Terbit" },
   "contentEditor.publishedUrl.label": { en: "Published URL", id: "URL Terbit" },
-  "contentEditor.publishedUrl.hint": { en: "Publishing straight from here is coming soon — for now, paste the link here once the post is live.", id: "Publish langsung dari sini segera hadir — untuk sekarang, tempel link-nya di sini begitu kontennya sudah tayang." },
+  "contentEditor.publishedUrl.hint": { en: "Paste the link here once the post is live.", id: "Tempel link-nya di sini begitu kontennya sudah tayang." },
   "contentEditor.ai.needsKey": { en: "Add your AI API key in Settings → AI first.", id: "Isi dulu API key AI-mu di Pengaturan → AI." },
   "contentEditor.ai.thinking": { en: "Thinking…", id: "Mikir…" },
   "contentEditor.ai.suggested": { en: "Suggested: {campaign}", id: "Saran: {campaign}" },

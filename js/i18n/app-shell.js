@@ -30,7 +30,7 @@ export default {
   "app.confirm.cta": { en: "Confirm", id: "Konfirmasi" },
 
   // ---- Brands page (js/views/brands.js) ----
-  "brands.first.stepGuided": { en: "Step 1 of 5", id: "Langkah 1 dari 5" },
+  "brands.first.stepGuided": { en: "First step", id: "Langkah pertama" },
   "brands.first.stepPro": { en: "Start here", id: "Mulai di sini" },
   "brands.first.time": { en: "~2 min", id: "±2 menit" },
   "brands.first.title": { en: "Create your brand first", id: "Bikin brand kamu dulu" },
@@ -80,7 +80,7 @@ export default {
   "brands.form.voicePh": { en: "e.g. Relaxed but informative, talks to the reader directly, no jargon, lots of everyday analogies...", id: "misal: Santai tapi informatif, pakai 'kamu', hindari jargon, banyak analogi sehari-hari..." },
   "brands.form.voiceHint": { en: "Fed into the AI Script Generator so hooks, scripts, and captions match this brand's tone, not a generic one. Upload a plain text file to fill this in instead of typing — PDF brandbooks aren't read automatically yet, so copy and paste the relevant text, or export it as .txt first.", id: "Dipakai AI Script Generator supaya hook, naskah, dan caption sesuai gaya bahasa brand ini, bukan gaya umum. Upload file teks biasa untuk mengisinya tanpa mengetik — brandbook PDF belum bisa dibaca otomatis, jadi salin-tempel teks yang relevan, atau ekspor dulu jadi .txt." },
   "brands.form.loaded": { en: "Loaded {name}", id: "{name} dimuat" },
-  "brands.form.connectLater": { en: "Instagram/Facebook/Ads connections come later — save this brand first, then reopen it via Edit brand.", id: "Koneksi Instagram/Facebook/Ads diatur belakangan — simpan brand ini dulu, lalu buka lagi lewat Ubah brand." },
+  "brands.form.connectLater": { en: "Facebook connection is set up later — save this brand first, then reopen it via Edit brand.", id: "Koneksi Facebook diatur belakangan — simpan brand ini dulu, lalu buka lagi lewat Ubah brand." },
   "brands.form.saveNext": { en: "Save & continue", id: "Simpan & lanjut" },
   "brands.form.aiError": { en: "The AI ran into an error — please try again.", id: "AI lagi error — coba lagi, ya." },
   "brands.form.needName": { en: "Enter the brand name first.", id: "Isi nama brand-nya dulu." },

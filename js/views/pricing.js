@@ -38,7 +38,7 @@ import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState } from "../account.js";
 // (Rp 300.000 in ID, Rp 300,000 in EN).
 const rp = (n) => `Rp ${n.toLocaleString(getLang() === "en" ? "en-US" : "id-ID")}`;
 
-const PAYMENT_WA_NUMBER = "62812xxxxxxx"; // TODO: ganti ke nomor WA asli sebelum di-share
+const PAYMENT_WA_NUMBER = "6285196627609"; // Wepeka support (same as wpk-dp src/lib/support.ts)
 
 // TODO: ganti ke Client Key asli dari dashboard Midtrans (Settings → Access
 // Keys). Client key itu bukan rahasia (aman ditaruh di frontend) — Server

@@ -111,7 +111,7 @@ function paint(root, brandId, state, refresh) {
   const activeFilters = panelFilterCount + (state.campaignId ? 1 : 0);
   const igAllowed = canUseInstagramApi();
   const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
-  const igUnavailableNote = igAllowed ? t("contentList.connectInEditBrand") : t("contentList.comingSoon");
+  const igUnavailableNote = t("contentList.connectInEditBrand");
   const allContentCount = listContent(brandId, { includeArchived: true }).length;
   const isPublishedView = state.view === "published";
   const staleQueue = listContent(brandId).filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
@@ -180,8 +180,9 @@ function paint(root, brandId, state, refresh) {
     if (!menu) return;
     menu.innerHTML = `
       <button data-act="update-engagement">${icon("chart", { size: 15 })}${t("contentList.updateEngagement")}${staleQueue.length ? ` <span class="notif-badge" style="position:static;margin-left:auto;">${staleQueue.length}</span>` : ""}</button>
+      ${igAllowed ? `
       <button data-act="import-ig" ${igConfigured ? "" : "disabled"}>${platformIcon("instagram")}${t("contentList.importInstagram")}${igConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span>`}</button>
-      <button data-act="refresh-all" ${igConfigured ? "" : "disabled"}>${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")}</button>
+      <button data-act="refresh-all" ${igConfigured ? "" : "disabled"}>${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")}</button>` : ""}
       <button data-act="report">${icon("download", { size: 15 })}${t("home.report")}</button>
       <div class="menu-divider"></div>
       <button data-act="delete-all" class="danger">${icon("trash", { size: 15 })}${t("contentList.deleteAllContent", { count: allContentCount })}</button>

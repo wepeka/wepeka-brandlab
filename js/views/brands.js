@@ -219,7 +219,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     openModal({
       title: t("brands.limit.title"),
       bodyHTML: `<p style="margin:0 0 4px;">${t("brands.limit.body", { limit })}</p>`,
-      footHTML: `<a class="btn btn-primary" href="https://wa.me/62812xxxxxxx" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`,
+      footHTML: `<a class="btn btn-primary" href="https://wa.me/6285196627609" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`,
     });
     return;
   }
@@ -290,12 +290,12 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       ${
         brand
           ? `
-      <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ig.title")}</div>
       ${
         !canUseInstagramApi()
-          ? `<div class="hint" style="margin:0;">${icon("info", { size: 12 })}<span>${t("integr.ig.soonNote")}</span></div>`
+          ? ""
           : `
+      <div class="divider"></div>
+      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ig.title")}</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ig.intro")}</p>
       <div class="field">
         <label>Instagram Business Account ID</label>
@@ -480,7 +480,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription });
       toast(t("brands.form.updated"));
     } else {
-      const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, ads, aiVoiceGuide, businessDescription });
+      const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription });
       toast(t("brands.form.created", { name }));
       // Every new brand, for every account, opens with the intro video —
       // not only a brand-new account's first boot. Overlays live on <body>,

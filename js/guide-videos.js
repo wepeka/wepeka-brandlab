@@ -43,6 +43,13 @@ import { t } from "./i18n.js";
 // player itself knows to draw the pending panel instead.
 export const PLACEHOLDER_SRC = "placeholder";
 const isPlaceholder = (src) => src === PLACEHOLDER_SRC;
+// Only a video that has actually been published counts. Until then its
+// Video button stays hidden and nothing autoplays — no user ever lands on
+// a "video lagi disiapkan" panel.
+const isLive = (key) => {
+  const src = GUIDE_VIDEOS[key]?.src;
+  return !!src && !isPlaceholder(src);
+};
 
 // `seconds` is the declared length. For an embed (YouTube/Vimeo) it is also
 // the fallback for "the video has ended", since an iframe can't be watched
@@ -76,6 +83,14 @@ export const guideVideosReady = (typeof fetch === "function" ? fetch("/api/guide
         v.seconds = o.seconds;
         v.duration = durationLabel(o.seconds);
       }
+    }
+    // Buttons painted before the list arrived render hidden; show the ones
+    // whose video turned out to be live.
+    if (typeof document !== "undefined") {
+      document.querySelectorAll("[data-guide-video-btn][hidden]").forEach((btn) => {
+        const ref = videoRefForGuide(btn.dataset.guideVideoBtn);
+        if (ref && isLive(ref.video)) btn.hidden = false;
+      });
     }
   })
   .catch(() => {});
@@ -178,6 +193,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, hint = true, 
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return null;
   const real = !!v.src && !isPlaceholder(v.src);
+  if (!real) return null;
   // A chapter start past the end of the actual video (chapter times are set
   // for the final recordings; a shorter clip may be up) plays from the top.
   if (Number(v.seconds) > 0 && start >= Number(v.seconds) - 3) start = 0;
@@ -346,7 +362,9 @@ export function playFirstRunIntro() {
   if (videoSeen("kenalan")) return;
   markVideoSeen("kenalan");
   introJustPlayed = true;
-  whenReady().then(() => openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: true }));
+  const startTour = () => import("./tour.js").then((m) => m.startOnboardingTour());
+  // No published intro yet: go straight to the tour the video would offer.
+  whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: startTour, hint: true }) : startTour()));
 }
 
 // The second autoplay: every time a brand is created, for anyone — not just
@@ -363,7 +381,9 @@ export function playNewBrandIntro() {
     introJustPlayed = false;
     return;
   }
-  whenReady().then(() => openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: false }));
+  whenReady().then(() => {
+    if (isLive("kenalan")) openGuideVideo("kenalan", { onTour: () => import("./tour.js").then((m) => m.startOnboardingTour()), hint: false });
+  });
 }
 
 // The "Video" pill next to a page's "?" (js/help.js helpButtonHTML) — same
@@ -371,8 +391,9 @@ export function playNewBrandIntro() {
 // no video. Never opens on its own; only a click (via the delegated
 // listener below) or an explicit openGuideVideo() call shows the modal.
 export function guideVideoButtonHTML(guideKey) {
-  if (!videoRefForGuide(guideKey)) return "";
-  return `<button type="button" class="icon-btn help-btn section-video-btn" data-guide-video-btn="${escapeHtml(guideKey)}" title="${t("guide.video.btnTitle")}" aria-label="${t("guide.video.btnTitle")}">${icon("play", { size: 14 })}<span>Video</span></button>`;
+  const ref = videoRefForGuide(guideKey);
+  if (!ref) return "";
+  return `<button type="button" class="icon-btn help-btn section-video-btn"${isLive(ref.video) ? "" : " hidden"} data-guide-video-btn="${escapeHtml(guideKey)}" title="${t("guide.video.btnTitle")}" aria-label="${t("guide.video.btnTitle")}">${icon("play", { size: 14 })}<span>Video</span></button>`;
 }
 
 // One delegated listener for every Video button, so pages don't each need

@@ -154,7 +154,7 @@ export default {
   "beginner.tour.hero.title": { en: "Your step right now", id: "Langkah kamu sekarang" },
   "beginner.tour.hero.body": { en: "There's just one thing to do right now. Click the button, finish it, then come back here for the next step.", id: "Cuma satu hal yang perlu kamu kerjain sekarang. Klik tombolnya, kerjain sampai selesai, nanti balik lagi ke sini buat langkah berikutnya." },
   "beginner.tour.journey.title": { en: "Your journey", id: "Perjalanan kamu" },
-  "beginner.tour.journey.body": { en: "Five basic steps, in order from the top. Finished steps get checked off and the next one unlocks automatically. No need to memorize any features.", id: "Lima langkah dasar, urut dari atas. Yang sudah selesai dicentang, langkah berikutnya kebuka otomatis. Nggak perlu hafal fitur apa pun." },
+  "beginner.tour.journey.body": { en: "Three basic steps, in order from the top. Finished steps get checked off and the next one unlocks automatically. No need to memorize any features.", id: "Tiga langkah dasar, urut dari atas. Yang sudah selesai dicentang, langkah berikutnya kebuka otomatis. Nggak perlu hafal fitur apa pun." },
   "beginner.tour.ai.title": { en: "Ask AI", id: "Tanya AI" },
   "beginner.tour.ai.body": { en: "Stuck on any step? Ask here in everyday language. This AI already knows your brand.", id: "Bingung di langkah mana pun? Tanya di sini pakai bahasa sehari-hari. AI ini sudah kenal brand kamu." },
   "beginner.minutes": { en: "~{n} min", id: "±{n} menit" },
