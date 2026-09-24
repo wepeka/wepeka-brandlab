@@ -1,7 +1,7 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
-import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, identityDone as isIdentityDone } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
@@ -253,7 +253,7 @@ function paint(root, brandId, state, refresh) {
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
         <h1>${esc(brand.name)}</h1>
-        <p class="page-sub">${identityDone ? t("beginner.sub.allDone") : t("onb.sub.page")}</p>
+        <p class="page-sub">${identityDone ? t("beginner.sub.allDone") : t("home.sub.identity")}</p>
       </div>
       <div class="home-head-side">
         <button type="button" class="btn btn-secondary btn-sm" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}${t("rep.btn")}</button>
@@ -261,7 +261,7 @@ function paint(root, brandId, state, refresh) {
       </div>
     </div>
 
-    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : `${problemHeroHTML(brand)}${dnaNudgeHTML(brandId, brand)}`}
+    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : identityHeroHTML(brandId, brand)}
 
     ${reportDue(brand, content) ? reportReminderHTML(brand) : ""}
 
@@ -308,15 +308,6 @@ function paint(root, brandId, state, refresh) {
   qsa("[data-open-content]", root).forEach((el) => {
     el.addEventListener("click", () => openContentEditor({ brandId, contentId: el.dataset.openContent, onSaved: refresh }));
   });
-  // "Apa yang paling bikin kamu pusing?" → three ideas or actions in the
-  // chat, right away, in a fresh conversation.
-  qsa("[data-onb-problem]", root).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.onbProblem;
-      updateBrand(brandId, { onboardingProblem: key, onboardingAt: Date.now() });
-      openConsultantPanel({ engine: "brainstorm", bsMode: "ideas", seed: t(`onb.${key}.msg`), send: true, fresh: true });
-    })
-  );
   qsa("[data-locked-step]", root).forEach((el) => {
     el.addEventListener("click", () => toast(t("home.next.lockedToast")));
   });
@@ -331,51 +322,42 @@ function paint(root, brandId, state, refresh) {
 
 // ---- Hero ------------------------------------------------------------------
 
-// A new brand starts from what hurts, not from a form: three problems, one
-// tap, three ideas or actions in the chat within a minute. Brand DNA comes
-// after, with the reason spelled out (dnaNudgeHTML).
-const PROBLEMS = [
-  { key: "growth", icon: "chart" },
-  { key: "sales", icon: "target" },
-  { key: "ideas", icon: "bulb" },
-];
-function problemHeroHTML(brand) {
-  const picked = brand.onboardingProblem || "";
+function progressRowHTML(label, filled, total, done) {
+  const pct = total ? Math.round((filled / total) * 100) : 0;
   return `
-    <section class="card glass-card journey-hero problem-hero" id="journey-hero">
-      <div class="journey-hero-eyebrow">
-        <span class="journey-hero-step">${t("onb.eyebrow")}</span>
-        <span class="journey-hero-time">${icon("clock", { size: 12 })}${t("onb.time")}</span>
-      </div>
-      <h2>${t("onb.q")}</h2>
-      <p>${t(picked ? "onb.subAgain" : "onb.sub")}</p>
-      <div class="problem-options">
-        ${PROBLEMS.map((p) => `
-          <button type="button" class="problem-option ${picked === p.key ? "is-picked" : ""}" data-onb-problem="${p.key}">
-            <span class="problem-option-icon">${icon(picked === p.key ? "check" : p.icon, { size: 18 })}</span>
-            <span class="problem-option-text"><b>${t(`onb.${p.key}.label`)}</b><small>${t(`onb.${p.key}.desc`)}</small></span>
-            ${icon("arrowRight", { size: 15 })}
-          </button>`).join("")}
-      </div>
-    </section>`;
+    <div class="identity-row ${done ? "is-done" : ""}">
+      <span class="identity-row-icon">${icon(done ? "check" : "target", { size: 13 })}</span>
+      <span class="identity-row-label">${esc(label)}</span>
+      <span class="identity-row-bar"><span style="width:${pct}%"></span></span>
+      <span class="identity-row-value">${done ? t("home.identity.done") : `${filled}/${total}`}</span>
+    </div>`;
 }
 
-// Brand DNA, second: small, with the reason — the ideas get sharper.
-function dnaNudgeHTML(brandId, brand) {
+function identityHeroHTML(brandId, brand) {
   const dna = brandDnaCompleteness(brand.brandDNA);
   const dnaDone = brandDnaDone(brand);
-  const pct = dna.total ? Math.round((dna.filled / dna.total) * 100) : 0;
-  const href = dnaDone ? `#/brand/${brandId}/guidelines/color` : `#/brand/${brandId}/dna`;
+  const basicsDone = visualBasicsDone(brand);
+  const pro = getMode() === "advanced";
+  const book = pro ? brandBookProgress(brand) : { filled: basicsDone ? 2 : 0, total: 2 };
+  const cta = !dnaDone
+    ? { label: dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart"), href: `#/brand/${brandId}/dna` }
+    : { label: t("home.identity.ctaBook"), href: `#/brand/${brandId}/guidelines/color` };
   return `
-    <a class="card glass-card card-tight dna-nudge" href="${href}">
-      <span class="dna-nudge-icon">${icon("target", { size: 16 })}</span>
-      <span class="dna-nudge-text">
-        <b>${dnaDone ? t("onb.dna.bookTitle") : t("onb.dna.title")}</b>
-        <small>${dnaDone ? t("onb.dna.bookWhy") : t("onb.dna.why", { filled: dna.filled, total: dna.total })}</small>
-        ${dnaDone ? "" : `<span class="identity-row-bar"><span style="width:${pct}%"></span></span>`}
-      </span>
-      <span class="dna-nudge-go">${dnaDone ? t("home.identity.ctaBook") : dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart")}${icon("arrowRight", { size: 13 })}</span>
-    </a>`;
+    <section class="card glass-card journey-hero" id="journey-hero">
+      <div class="journey-hero-eyebrow">
+        <span class="journey-hero-step">${t("beginner.hero.step", { n: 1, total: 3 })}</span>
+        <span class="journey-hero-time">${icon("clock", { size: 12 })}${t("beginner.minutes", { n: 15 })}</span>
+      </div>
+      <h2>${t("home.identity.title")}</h2>
+      <p>${t("home.identity.desc")}</p>
+      <div class="identity-rows">
+        ${progressRowHTML(t("home.identity.dna"), dna.filled, dna.total, dnaDone)}
+        ${progressRowHTML(pro ? t("home.identity.book") : t("home.identity.bookBasics"), book.filled, book.total, pro ? book.filled === book.total : basicsDone)}
+      </div>
+      <a class="btn btn-primary journey-hero-cta" href="${cta.href}">${esc(cta.label)}${icon("arrowRight", { size: 15 })}</a>
+      <div class="journey-hero-note">${t("beginner.hero.note")}</div>
+    </section>
+  `;
 }
 
 function todayHeroHTML(brandId, brand, campaigns, content) {

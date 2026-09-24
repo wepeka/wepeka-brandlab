@@ -125,26 +125,7 @@ export default {
   "learn.best.one": { en: "Your best recent post: {post}. Make one in the same spirit.", id: "Konten terbaikmu belakangan: {post}. Bikin satu lagi yang senada." },
   "learn.best.many": { en: "Your best posts: {posts}.", id: "Konten terbaikmu: {posts}." },
 
-  // Onboarding: start from the problem (js/views/home.js)
-  "onb.sub.page": { en: "Start with what's bothering you most — the rest can come later.", id: "Mulai dari yang paling bikin pusing — sisanya bisa belakangan." },
-  "onb.eyebrow": { en: "Start here", id: "Mulai dari sini" },
-  "onb.time": { en: "about 1 minute", id: "±1 menit" },
-  "onb.q": { en: "What's bothering you most right now?", id: "Apa yang paling bikin kamu pusing sekarang?" },
-  "onb.sub": { en: "Pick one. You get 3 ideas or actions you can do this week, right away.", id: "Pilih satu. Kamu langsung dapat 3 ide atau langkah yang bisa dikerjakan minggu ini." },
-  "onb.subAgain": { en: "Pick again any time for 3 fresh ideas — your earlier ones are in Saved.", id: "Pilih lagi kapan saja untuk 3 ide baru — yang tadi ada di Tersimpan." },
-  "onb.growth.label": { en: "My Instagram isn't growing", id: "IG-ku gak tumbuh" },
-  "onb.growth.desc": { en: "Few new followers, low reach", id: "Follower baru sedikit, jangkauan kecil" },
-  "onb.growth.msg": { en: "My Instagram isn't growing. Give me 3 content ideas or actions I can do this week to reach new people.", id: "IG-ku gak tumbuh. Kasih 3 ide konten atau langkah yang bisa aku kerjain minggu ini biar menjangkau orang baru." },
-  "onb.sales.label": { en: "Sales are down", id: "Penjualan lagi turun" },
-  "onb.sales.desc": { en: "Fewer orders than before", id: "Order lebih sepi dari biasanya" },
-  "onb.sales.msg": { en: "My sales are down. Give me 3 content ideas or actions I can do this week to bring buyers back.", id: "Penjualanku lagi turun. Kasih 3 ide konten atau langkah yang bisa aku kerjain minggu ini biar pembeli balik lagi." },
-  "onb.ideas.label": { en: "I don't know what to post", id: "Bingung mau bikin konten apa" },
-  "onb.ideas.desc": { en: "Stuck on what to make next", id: "Mentok mau posting apa" },
-  "onb.ideas.msg": { en: "I don't know what to post. Give me 3 content ideas I can make this week.", id: "Aku bingung mau bikin konten apa. Kasih 3 ide konten yang bisa aku bikin minggu ini." },
-  "onb.dna.title": { en: "Make the ideas fit better: fill in your Brand DNA", id: "Biar idenya makin pas: isi Brand DNA" },
-  "onb.dna.why": { en: "{filled}/{total} done. The AI then knows your customers, your voice and what makes you different.", id: "{filled}/{total} terisi. AI jadi tahu pelangganmu, gaya bicaramu, dan bedanya brand-mu." },
-  "onb.dna.bookTitle": { en: "Next: your colours & fonts", id: "Berikutnya: warna & font brand" },
-  "onb.dna.bookWhy": { en: "So every post looks like it comes from the same brand.", id: "Supaya semua konten kelihatan dari brand yang sama." },
+  // Konten page: Brand DNA not done yet (js/views/content-os.js)
   "onb.dna.hint": { en: "Brand DNA {filled}/{total} — fill it in and the AI's results get sharper.", id: "Brand DNA {filled}/{total} — lengkapi biar hasil AI makin tajam." },
 
   // Aturan tulisan (js/writing-rules.js)
