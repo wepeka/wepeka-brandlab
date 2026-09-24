@@ -117,8 +117,36 @@ function ensureCustomFontsFor(a) {
 
 function suggestedApplications(brand) {
   const ids = ["social", "business-card", "website"];
-  if ((brand.brandDNA.productsServices || []).length) ids.push("packaging");
+  if ((brand.brandDNA?.productsServices || []).length) ids.push("packaging");
   return ids;
+}
+
+// A brand's saved guidelines in the shape every step, the preview and the
+// PDF read from.
+function answersFromBrand(brand) {
+  const bg = brand.brandGuidelines || {};
+  return {
+    logo: { hasLogo: bg.logo?.hasLogo ?? null, dataUrl: bg.logo?.dataUrl || "", secondaryDataUrl: bg.logo?.secondaryDataUrl || "", logotypeDataUrl: bg.logo?.logotypeDataUrl || "" },
+    mascots: bg.mascots || [],
+    colorFeelings: bg.colorFeelings || [],
+    colorFormula: bg.colorFormula || "",
+    colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...(bg.colors || {}) },
+    typographyFeelings: bg.typographyFeelings || [],
+    fonts: { primary: "", secondary: "", accent: "", ...(bg.fonts || {}) },
+    customFonts: { ...(bg.customFonts || {}) },
+    extraFonts: bg.extraFonts || [],
+    typeSpacing: {
+      primary: { ...TYPE_SPACING_DEFAULTS.primary, ...(bg.typeSpacing?.primary || {}) },
+      secondary: { ...TYPE_SPACING_DEFAULTS.secondary, ...(bg.typeSpacing?.secondary || {}) },
+      accent: { ...TYPE_SPACING_DEFAULTS.accent, ...(bg.typeSpacing?.accent || {}) },
+    },
+    visualDirection: bg.visualDirection || [],
+    moodboard: bg.moodboard || [],
+    applications: bg.applications?.length ? bg.applications : suggestedApplications(brand),
+    aiCopy: { valueProposition: null, colorEssence: null, ...(bg.aiCopy || {}) },
+    bookStyle: BOOK_STYLE_KEYS.includes(bg.bookStyle) ? bg.bookStyle : "classic",
+    bookPhoto: bg.bookPhoto || "",
+  };
 }
 
 // Maps the URL section a stage card in brand-builder.js links to (e.g.
@@ -139,34 +167,12 @@ export function render(root, { brandId, section }) {
     return () => {};
   }
 
-  const bg = brand.brandGuidelines || {};
   const state = {
     stepIndex: stepIndexForSection(section),
     // Guided mode opens the Typography step on the ready-made
     // recommendations; downloading fonts elsewhere is the Advanced path.
     showFontRecommender: getMode() === "guided",
-    answers: {
-      logo: { hasLogo: bg.logo?.hasLogo ?? null, dataUrl: bg.logo?.dataUrl || "", secondaryDataUrl: bg.logo?.secondaryDataUrl || "", logotypeDataUrl: bg.logo?.logotypeDataUrl || "" },
-      mascots: bg.mascots || [],
-      colorFeelings: bg.colorFeelings || [],
-      colorFormula: bg.colorFormula || "",
-      colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...(bg.colors || {}) },
-      typographyFeelings: bg.typographyFeelings || [],
-      fonts: { primary: "", secondary: "", accent: "", ...(bg.fonts || {}) },
-      customFonts: { ...(bg.customFonts || {}) },
-      extraFonts: bg.extraFonts || [],
-      typeSpacing: {
-        primary: { ...TYPE_SPACING_DEFAULTS.primary, ...(bg.typeSpacing?.primary || {}) },
-        secondary: { ...TYPE_SPACING_DEFAULTS.secondary, ...(bg.typeSpacing?.secondary || {}) },
-        accent: { ...TYPE_SPACING_DEFAULTS.accent, ...(bg.typeSpacing?.accent || {}) },
-      },
-      visualDirection: bg.visualDirection || [],
-      moodboard: bg.moodboard || [],
-      applications: bg.applications?.length ? bg.applications : suggestedApplications(brand),
-      aiCopy: { valueProposition: null, colorEssence: null, ...(bg.aiCopy || {}) },
-      bookStyle: BOOK_STYLE_KEYS.includes(bg.bookStyle) ? bg.bookStyle : "classic",
-      bookPhoto: bg.bookPhoto || "",
-    },
+    answers: answersFromBrand(brand),
     tone: (() => {
       const tv = brand.brandBuilder?.toneOfVoice || {};
       return { formal: tv.formal ?? 50, language: tv.language ?? 50, character: tv.character ?? 50, emotion: tv.emotion ?? 50, avoidWords: [...(tv.avoidWords || [])], source: tv.source || "" };
@@ -2836,6 +2842,17 @@ async function downloadBrandBookPdf(brand, a, onProgress) {
   } finally {
     host.remove();
   }
+}
+
+// The locked pricing screen's "see & download your Brand Book" (an ended
+// trial/plan keeps its data, see js/views/pricing.js): the same preview and
+// PDF, straight from a brand doc, with no store and nothing editable. A
+// premium style the account doesn't own falls back to the free one instead
+// of refusing to open.
+export function openBrandBookReadOnly(brand) {
+  const a = answersFromBrand(brand);
+  if (!ownsBookStyle(bookStyleOf(a))) a.bookStyle = BOOK_STYLES[0].key;
+  openBrandBookPdf(brand, a);
 }
 
 function openBrandBookPdf(brand, a) {

@@ -835,6 +835,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .pricing-locked-banner h2{ margin:0; font-size:20px; line-height:1.25; }
 .pricing-locked-banner p{ margin:0; font-size:13.5px; color: var(--text-muted); max-width:52ch; }
 .pricing-locked-banner .pricing-cta{ width:auto; margin-top:6px; padding:10px 22px; }
+.pricing-locked-banner #locked-book{ margin-top:6px; }
 
 /* Hero — one question ("after the trial, how do you continue?"); the two
    answers are the cards right below it. */

@@ -304,7 +304,49 @@ function lockedBannerHTML(account) {
   return `<section class="pricing-locked-banner">
     <h2>${t("pricing.locked.expiredTitle")}</h2>
     <p>${t("pricing.locked.expiredBody")}</p>
+    <button type="button" class="btn btn-secondary" id="locked-book">${icon("download", { size: 14 })}${t("pricing.locked.bookCta")}</button>
   </section>`;
+}
+
+// An ended trial/plan doesn't render the app, but the Brand Book they built
+// stays theirs: read their brands straight from Firestore (reads stay open to
+// the owner, see firestore.rules) and open the same preview + PDF, read-only.
+// Loaded on click only — most visitors of this screen never press it.
+async function openLockedBrandBook(uid, btn) {
+  if (!uid) return;
+  btn.disabled = true;
+  try {
+    const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js");
+    const snap = await getDocs(query(collection(fdb, "brands"), where("ownerId", "==", uid)));
+    const brands = snap.docs.map((d) => d.data()).filter((b) => !b.archived);
+    if (!brands.length) {
+      toast(t("pricing.locked.bookNone"), "error");
+      return;
+    }
+    const { openBrandBookReadOnly } = await import("./brand-guidelines.js");
+    if (brands.length === 1) {
+      openBrandBookReadOnly(brands[0]);
+      return;
+    }
+    const { openModal, closeOverlay } = await import("../modals.js");
+    const overlay = openModal({
+      title: t("pricing.locked.bookPick"),
+      bodyHTML: `<div class="flex" style="flex-direction:column;gap:8px;">${brands
+        .map((b, i) => `<button type="button" class="btn btn-secondary" data-book="${i}" style="justify-content:flex-start;">${escapeHtml(b.name || "")}</button>`)
+        .join("")}</div>`,
+    });
+    qsa("[data-book]", overlay).forEach((b) => {
+      b.addEventListener("click", () => {
+        closeOverlay(overlay);
+        openBrandBookReadOnly(brands[Number(b.dataset.book)]);
+      });
+    });
+  } catch (err) {
+    console.error("Brand Book unavailable", err);
+    toast(t("pricing.locked.bookFail"), "error");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // "Kurang apa lagi" — the Founder bundle stacked against what the same help
@@ -435,6 +477,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
   `;
 
   qs("#pricing-logout", root)?.addEventListener("click", () => logout());
+  qs("#locked-book", root)?.addEventListener("click", (e) => openLockedBrandBook(uid, e.currentTarget));
   qsa("[data-pay]", root).forEach((btn) => {
     btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid));
   });
