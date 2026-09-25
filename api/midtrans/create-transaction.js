@@ -60,7 +60,10 @@ export default async function handler(req, res) {
     if (plan.tiered) amount = founderAmount(sold);
   }
 
-  const orderId = `brandlab-${uid}-${Date.now()}`;
+  // Midtrans caps order_id at 50 chars: "bl-" + 28-char uid + "-" + base36
+  // timestamp (~9 chars) stays well under it. (The old "brandlab-…-<ms>"
+  // form was 51 and Midtrans refused every transaction.)
+  const orderId = `bl-${uid}-${Date.now().toString(36)}`;
   try {
     const midtransRes = await fetch(SNAP_API_URL, {
       method: "POST",
