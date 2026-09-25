@@ -193,7 +193,11 @@ function onAccountChange(user, account) {
       // second run would wipe the picker the person is looking at, render a
       // fresh one, and leave the first run awaiting a click on buttons that
       // no longer exist (so its "play the Kenalan video" never ran).
-      const firstEverOpen = !hasChosenMode() && !modePickerShown;
+      // Arriving straight at pricing (wepeka.com's /brandlab/connect?to=
+      // pricing — a "buy" CTA, or Midtrans's own reviewers) must land on
+      // pricing, not on the picker: renderRoute() shows the picker instead
+      // the moment they step from pricing into the app itself.
+      const firstEverOpen = !hasChosenMode() && !modePickerShown && !location.hash.startsWith("#/pricing");
       if (firstEverOpen) {
         modePickerShown = true;
         app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
@@ -316,6 +320,15 @@ async function renderRoute() {
     renderPricingScreen(document.getElementById("pricing-root"), { account: getCachedAccount(), user: lastUser, backHref: "#/" });
     window.scrollTo(0, 0);
     return;
+  }
+
+  // A first-ever open that skipped the mode picker at boot (it arrived at
+  // pricing) gets it here, the first time it steps into the app proper.
+  if (!hasChosenMode() && !modePickerShown) {
+    modePickerShown = true;
+    app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
+    await renderModePicker(document.getElementById("mode-root"));
+    if (token !== renderToken) return;
   }
 
   const route = parseRoute(location.hash);
