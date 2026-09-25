@@ -38,8 +38,13 @@ export default async function handler(req, res) {
   const paymentRef = db.doc(`payments/${order_id}`);
   const paymentSnap = await paymentRef.get();
   if (!paymentSnap.exists) {
-    console.error("Midtrans webhook: no pending payment record for", order_id);
-    return res.status(400).json({ error: "Order tidak dikenal." });
+    // Unknown order: nothing to unlock. Answer 200 anyway — the dashboard's
+    // "Test notification URL" button sends a made-up order_id and treats
+    // anything but 2xx as a failed endpoint, and a real stray notification
+    // would just be retried forever otherwise. The signature check above
+    // already proved it came from Midtrans.
+    console.warn("Midtrans webhook: no payment record for", order_id, "- ignored");
+    return res.status(200).json({ ok: true, ignored: "unknown-order" });
   }
   const pending = paymentSnap.data();
 
