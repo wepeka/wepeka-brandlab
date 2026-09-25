@@ -21,6 +21,10 @@ export default async function handler(req, res) {
     return res.status(err.status || 401).json({ error: "Sesi tidak valid — coba login ulang." });
   }
 
+  if (!MIDTRANS_SERVER_KEY) {
+    return res.status(500).json({ error: "MIDTRANS_SERVER_KEY belum diset di Vercel (atau deployment belum di-redeploy setelah diset)." });
+  }
+
   const { planKey } = req.body || {};
   const plan = PLANS[planKey] || ADDONS[planKey];
   if (!plan) {
@@ -77,8 +81,11 @@ export default async function handler(req, res) {
     });
     const data = await midtransRes.json();
     if (!midtransRes.ok) {
-      console.error("Midtrans create-transaction failed", data);
-      return res.status(502).json({ error: "Gagal membuat transaksi pembayaran." });
+      console.error("Midtrans create-transaction failed", midtransRes.status, data);
+      // Surface Midtrans's own reason (never a key) so a misconfigured
+      // dashboard/env is diagnosable from the toast instead of Vercel logs.
+      const reason = Array.isArray(data?.error_messages) ? data.error_messages.join("; ") : data?.status_message || `HTTP ${midtransRes.status}`;
+      return res.status(502).json({ error: `Gagal membuat transaksi pembayaran. Midtrans: ${reason}` });
     }
     // The webhook trusts THIS record for uid/planKey/amount, keyed on
     // order_id (which Midtrans's signature does cover) — not custom_field1/2,
