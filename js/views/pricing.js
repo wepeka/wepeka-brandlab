@@ -40,10 +40,13 @@ const rp = (n) => `Rp ${n.toLocaleString(getLang() === "en" ? "en-US" : "id-ID")
 
 const PAYMENT_WA_NUMBER = "6285196627609"; // Wepeka support (same as wpk-dp src/lib/support.ts)
 
-// TODO: ganti ke Client Key asli dari dashboard Midtrans (Settings → Access
-// Keys). Client key itu bukan rahasia (aman ditaruh di frontend) — Server
-// Key yang harus tetap cuma di env var Vercel, dipakai di api/midtrans/*.
-const MIDTRANS_CLIENT_KEY = "SB-Mid-client-XXXXXXXXXXXXXXXX";
+// Client Key dari dashboard Midtrans (Settings → Access Keys → General
+// Credentials). Client key bukan rahasia (aman di frontend) — Server Key
+// hanya di env var Vercel MIDTRANS_SERVER_KEY, dipakai api/midtrans/*.
+// Saat ini key SANDBOX (dashboard.sandbox.midtrans.com); ketika Midtrans
+// menyetujui akun production: ganti key ini, set MIDTRANS_IS_PRODUCTION
+// true, dan ganti MIDTRANS_SERVER_KEY + MIDTRANS_IS_PRODUCTION di Vercel.
+const MIDTRANS_CLIENT_KEY = "Mid-client-EVWF2l7q9QOMVSjO";
 const MIDTRANS_IS_PRODUCTION = false;
 const MIDTRANS_SNAP_URL = MIDTRANS_IS_PRODUCTION
   ? "https://app.midtrans.com/snap/snap.js"
