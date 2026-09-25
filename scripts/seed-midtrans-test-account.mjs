@@ -49,11 +49,11 @@ const displayName = process.env.SEED_NAME || "Midtrans Reviewer";
 const DELETE = process.argv.includes("--delete");
 const RESET_TRIAL = process.argv.includes("--reset-trial");
 if (!email || (!password && !DELETE && !RESET_TRIAL)) {
-  console.error("Isi SEED_EMAIL dan SEED_PASSWORD (min. 8 karakter) lewat environment. Lihat komentar di atas file ini.");
+  console.error("Isi SEED_EMAIL dan SEED_PASSWORD (min. 6 karakter) lewat environment. Lihat komentar di atas file ini.");
   process.exit(1);
 }
-if (!DELETE && !RESET_TRIAL && password.length < 8) {
-  console.error("SEED_PASSWORD minimal 8 karakter.");
+if (!DELETE && !RESET_TRIAL && password.length < 6) {
+  console.error("SEED_PASSWORD minimal 6 karakter (batas Firebase).");
   process.exit(1);
 }
 
