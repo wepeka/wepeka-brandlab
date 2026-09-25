@@ -230,6 +230,7 @@ export default {
   "pricing.err.createTx": { en: "Couldn't create the transaction.", id: "Gagal membuat transaksi." },
   "pricing.err.start": { en: "Couldn't start the payment.", id: "Gagal memulai pembayaran." },
   "pricing.pay.success": { en: "Payment successful — access will unlock automatically in a few seconds.", id: "Pembayaran berhasil — akses akan terbuka otomatis dalam beberapa detik." },
+  "pricing.pay.activating": { en: "Payment received — setting up your Brandlab…", id: "Pembayaran diterima — menyiapkan Brandlab kamu…" },
   "pricing.pay.pending": { en: "Payment is being processed — access unlocks automatically once it's verified.", id: "Pembayaran sedang diproses — akses terbuka otomatis begitu terverifikasi." },
   "pricing.pay.error": { en: "Payment failed — try again or contact support.", id: "Pembayaran gagal — coba lagi atau hubungi support." },
   "pricing.wa.message": { en: "Hi, I'd like to ask about Wepeka Brandlab — {plan} {price}", id: "Halo, saya mau tanya soal Wepeka Brandlab — {plan} {price}" },

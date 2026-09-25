@@ -7,6 +7,9 @@
 //   SEED_EMAIL=midtrans.test@wepeka.com SEED_PASSWORD='<password pilihanmu>' \
 //     node scripts/seed-midtrans-test-account.mjs
 // Ganti password akun yang sudah ada: tambahkan argumen --reset-password.
+// Kembalikan akun uji ke kondisi "baru" (trial 30 hari, belum pilih mode)
+// supaya demo bayar bisa diulang dari awal:
+//   SEED_EMAIL=... node scripts/seed-midtrans-test-account.mjs --reset-trial
 // Hapus akun uji (Auth user + accounts doc + semua brand miliknya):
 //   SEED_EMAIL=... node scripts/seed-midtrans-test-account.mjs --delete
 //
@@ -44,11 +47,12 @@ const email = (process.env.SEED_EMAIL || "").trim().toLowerCase();
 const password = process.env.SEED_PASSWORD || "";
 const displayName = process.env.SEED_NAME || "Midtrans Reviewer";
 const DELETE = process.argv.includes("--delete");
-if (!email || (!password && !DELETE)) {
+const RESET_TRIAL = process.argv.includes("--reset-trial");
+if (!email || (!password && !DELETE && !RESET_TRIAL)) {
   console.error("Isi SEED_EMAIL dan SEED_PASSWORD (min. 8 karakter) lewat environment. Lihat komentar di atas file ini.");
   process.exit(1);
 }
-if (!DELETE && password.length < 8) {
+if (!DELETE && !RESET_TRIAL && password.length < 8) {
   console.error("SEED_PASSWORD minimal 8 karakter.");
   process.exit(1);
 }
@@ -83,6 +87,25 @@ function loadCredential() {
 initializeApp({ credential: loadCredential() });
 const auth = getAuth();
 const db = getFirestore();
+
+if (RESET_TRIAL) {
+  const u = await auth.getUserByEmail(email);
+  const ref = db.doc(`accounts/${u.uid}`);
+  const acc = (await ref.get()).data();
+  if (!acc || !String(acc.note || "").includes("Akun uji")) {
+    console.error("accounts doc ini TIDAK bertanda akun uji -- dibatalkan demi keamanan.");
+    process.exit(1);
+  }
+  await ref.set({
+    plan: "trial", status: "active", brandLimit: 1, billing: null,
+    trialEndsAt: Date.now() + TRIAL_DAYS * DAY_MS, subscriptionExpiresAt: null, paidAt: null, bookStyles: [],
+  }, { merge: true });
+  // settings/{uid} carries the chosen Pemula/Pro mode -- dropping it brings
+  // back the mode picker + first-run flow on the next open.
+  await db.doc(`settings/${u.uid}`).delete().catch(() => {});
+  console.log(`Akun ${email} dikembalikan ke trial 30 hari (mode belum dipilih).`);
+  process.exit(0);
+}
 
 if (DELETE) {
   let victim = null;

@@ -32,7 +32,7 @@ import { t, getLang } from "../i18n.js";
 import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL } from "../site-links.js";
 import { db as fdb, auth } from "../firebase.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
-import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState } from "../account.js";
+import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } from "../account.js";
 
 // Rupiah amounts with the thousands separator of the current language
 // (Rp 300.000 in ID, Rp 300,000 in EN).
@@ -108,6 +108,28 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
   } catch (err) {
     toast(err.message || t("pricing.err.start"), "error");
   }
+}
+
+// After Snap reports success on the pricing page itself: wait for the
+// webhook to flip accounts/{uid} to a paid state (main.js's onAccountChange
+// re-boots and refreshes the cache), then step into the app — a brand-new
+// buyer lands on the mode picker + first-run flow exactly like a fresh
+// account (renderRoute shows the picker when no mode is chosen yet).
+function enterAppWhenPaid() {
+  toast(t("pricing.pay.activating"));
+  const startedAt = Date.now();
+  const tick = () => {
+    if (accessState(getCachedAccount()) === "paid") {
+      location.hash = "#/";
+      return;
+    }
+    if (Date.now() - startedAt > 90_000) {
+      toast(t("pricing.pay.pending"));
+      return;
+    }
+    setTimeout(tick, 1000);
+  };
+  tick();
 }
 
 // Display mirror of api/_plans.js + js/ai-usage.js's PLAN_QUOTA — keep in
@@ -482,7 +504,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
   qs("#pricing-logout", root)?.addEventListener("click", () => logout());
   qs("#locked-book", root)?.addEventListener("click", (e) => openLockedBrandBook(uid, e.currentTarget));
   qsa("[data-pay]", root).forEach((btn) => {
-    btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid));
+    btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid, { onSuccess: enterAppWhenPaid }));
   });
   qsa("[data-seg]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
