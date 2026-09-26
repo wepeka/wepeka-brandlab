@@ -15,6 +15,29 @@ export function brandDnaCompleteness(dna = {}) {
   return { filled, total: fields.length };
 }
 
+// Which wizard step each counted field lives in (keys of STEPS in
+// js/views/brand-dna.js), in wizard order.
+const DNA_FIELD_STEPS = [
+  ["targetAudience", "audience"], ["problemSolved", "problem"], ["differentiation", "guide"],
+  ["mission", "plan"], ["callToAction", "cta"], ["successOutcome", "stakes"],
+  ["failureOutcome", "stakes"], ["tagline", "identity"],
+];
+
+// The fields still blank, in wizard order — Beranda names them ("Tinggal:
+// tagline") instead of a bare "7/8" nobody can act on.
+export function missingDnaFields(dna = {}) {
+  return DNA_FIELD_STEPS.filter(([f]) => !String(dna[f] || "").trim()).map(([f]) => f);
+}
+
+// Where "Lanjutkan Brand DNA" should land: the first step that still has a
+// blank field, or Review when everything is filled but it's only an AI
+// draft nobody saved yet. Null when there's nothing to resume.
+export function dnaResumeStep(brand = {}) {
+  const missing = missingDnaFields(brand.brandDNA);
+  if (missing.length) return DNA_FIELD_STEPS.find(([f]) => f === missing[0])[1];
+  return brand.brandDNA?.aiDraftPending ? "review" : null;
+}
+
 // "Brand DNA is finished" — every wizard field filled AND the person has
 // saved it themselves. "Isi semua pakai AI" can fill all eight in one click
 // without anyone having read them; that draft carries aiDraftPending until

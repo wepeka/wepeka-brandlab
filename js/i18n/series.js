@@ -1,16 +1,16 @@
 // Content Series ("Content Series Memory") — js/views/series.js, plus the
 // "Save as Content Series" flow in the chat (js/consultant-panel.js).
 export default {
-  "store.sync.series": { en: "content series", id: "content series" },
+  "store.sync.series": { en: "content series", id: "seri konten" },
 
-  "series.tab": { en: "Series", id: "Series" },
-  "series.list.title": { en: "Content Series", id: "Content Series" },
+  "series.tab": { en: "Series", id: "Seri" },
+  "series.list.title": { en: "Content Series", id: "Seri Konten" },
   "series.list.sub": {
     en: "A recurring content concept you set up once — its tone, structure, hooks and CTA are remembered, so a new episode never has to start from scratch.",
     id: "Konsep konten rutin yang kamu atur sekali — tone, struktur, hook, dan CTA-nya diingat, jadi episode baru tidak perlu dijelaskan dari awal lagi.",
   },
-  "series.new": { en: "New Content Series", id: "Content Series Baru" },
-  "series.list.empty.title": { en: "No content series yet", id: "Belum ada content series" },
+  "series.new": { en: "New Content Series", id: "Seri Konten Baru" },
+  "series.list.empty.title": { en: "No content series yet", id: "Belum ada seri konten" },
   "series.list.empty.body": {
     en: "Turn a recurring content idea (like \"Bedah Brand\") into a series — save its concept once, then just say the topic next time.",
     id: "Ubah ide konten rutin (seperti \"Bedah Brand\") jadi series — simpan konsepnya sekali, lain kali cukup sebut topiknya saja.",
@@ -23,7 +23,7 @@ export default {
   },
   "series.deleted": { en: "Series deleted", id: "Series dihapus" },
 
-  "series.edit.title": { en: "Edit Content Series", id: "Edit Content Series" },
+  "series.edit.title": { en: "Edit Content Series", id: "Edit Seri Konten" },
   "series.edit.name": { en: "Series name", id: "Nama series" },
   "series.edit.namePh": { en: "e.g. Bedah Brand", id: "mis. Bedah Brand" },
   "series.edit.nameRequired": { en: "Series needs a name", id: "Series perlu nama" },
@@ -58,7 +58,7 @@ export default {
   "series.edit.avoid": { en: "Things to avoid", id: "Hal yang dihindari" },
   "series.edit.additional": { en: "Additional instructions", id: "Instruksi tambahan" },
 
-  "series.saveFromChat": { en: "Save as Content Series", id: "Simpan sebagai Content Series" },
+  "series.saveFromChat": { en: "Save as Content Series", id: "Simpan sebagai Seri Konten" },
   "series.saveFromChat.hint": {
     en: "Found a content concept worth repeating? Save it once, then just name the topic next time.",
     id: "Nemu konsep konten yang cocok dibikin rutin? Simpan sekali, lain kali cukup sebut topiknya.",

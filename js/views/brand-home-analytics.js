@@ -9,6 +9,8 @@ import { computeContentMetrics } from "../formulas.js";
 import { formatNumber, formatPercent, qs, qsa, openMenu, escapeHtml as escapeText } from "../dom.js";
 import { icon } from "../icons.js";
 import { t } from "../i18n.js";
+import { brandRetentionStats, ratingLabel, retentionVerdict } from "../retention.js";
+import { openConsultantPanel } from "../consultant-panel.js";
 
 export const WIDGET_CATALOG = [
   { key: "growthViews", labelKey: "brandHome.analytics.widget.growthViews" },
@@ -18,18 +20,29 @@ export const WIDGET_CATALOG = [
   { key: "formatBreakdown", labelKey: "brandHome.analytics.widget.formatBreakdown" },
   { key: "funnelBreakdown", labelKey: "brandHome.analytics.widget.funnelBreakdown" },
   { key: "contentHealth", labelKey: "brandHome.analytics.widget.contentHealth" },
+  // Watch-time side (js/retention.js): read from retention-graph
+  // screenshots in Quick Fill, rated with the specialist floors there.
+  { key: "retention", labelKey: "brandHome.analytics.widget.retention" },
+  { key: "retentionRanking", labelKey: "brandHome.analytics.widget.retentionRanking" },
+  { key: "engagementMix", labelKey: "brandHome.analytics.widget.engagementMix" },
 ];
-// Four by default; the rest are one checkbox away in the Customize menu.
-export const DEFAULT_HOME_WIDGETS = ["growthViews", "contentHealth", "topContent", "platformBreakdown"];
+// Five by default; the rest are one checkbox away in the Customize menu.
+export const DEFAULT_HOME_WIDGETS = ["growthViews", "contentHealth", "retention", "topContent", "platformBreakdown"];
 const WIDGET_KEYS = new Set(WIDGET_CATALOG.map((w) => w.key));
 
 // Stored order IS display order (see updateSettings calls below) — a widget
 // missing from the saved array just isn't shown, so re-enabling one always
 // appends it at the end rather than trying to remember its old slot.
 function enabledWidgets() {
-  const saved = getSettings().homeWidgets;
+  const settings = getSettings();
+  const saved = settings.homeWidgets;
   const valid = Array.isArray(saved) ? saved.filter((k) => WIDGET_KEYS.has(k)) : null;
-  return valid && valid.length ? valid : DEFAULT_HOME_WIDGETS;
+  if (!valid || !valid.length) return DEFAULT_HOME_WIDGETS;
+  // A list saved before the retention widget existed shows it once, next to
+  // the others; the first Customize change writes the list back with the
+  // flag, and from then on the owner's choice (on or off) is final.
+  if (!settings.homeWidgetsV2 && !valid.includes("retention")) return [...valid, "retention"];
+  return valid;
 }
 
 // Monday-start week bucket, so "this week" always groups the same regardless
@@ -187,7 +200,7 @@ function widgetHTML(key, data) {
           <div class="rank">${i + 1}</div>
           <div class="ti">
             <div class="t">${escapeText(x.c.title || t("common.untitled"))}</div>
-            <div class="m">${t("bha.views", { count: formatNumber(x.c.performance.views) })}${x.m.engagementRate !== null ? ` · ${formatPercent(x.m.engagementRate)} ER` : ""}</div>
+            <div class="m">${t("bha.views", { count: formatNumber(x.c.performance.views) })}${x.m.engagementRate !== null ? ` · <span title="${t("bha.erTitle")}">${formatPercent(x.m.engagementRate)} ${t("bha.erShort")}</span>` : ""}</div>
           </div>
           ${x.m.health ? `<span class="health-badge health-${x.m.health}"><span class="health-dot"></span></span>` : ""}
         </div>`
@@ -225,6 +238,63 @@ function widgetHTML(key, data) {
         <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-average);display:inline-block;margin-right:6px;"></span>${t("dashboard.average")}</span><span class="v">${average}</span></div>
         <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-poor);display:inline-block;margin-right:6px;"></span>${t("dashboard.underperforming")}</span><span class="v">${poor}</span></div>
       `
+      );
+    }
+    case "retention": {
+      const s = data.retention;
+      if (!s.n) return widgetShellHTML(key, "brandHome.analytics.widget.retention", emptyHTML("retention"));
+      const tile = (k, value, rating, sub) => `
+        <div class="ret-tile ${rating ? `ret-${rating}` : ""}">
+          <div class="ret-tile-v">${value}</div>
+          <div class="ret-tile-k">${t(`ret.kpi.${k}`)}${sub ? ` <span>${sub}</span>` : ""}</div>
+          ${rating ? `<div class="ret-tile-r"><span class="health-dot"></span>${ratingLabel(rating)}</div>` : ""}
+        </div>`;
+      const tiles = [
+        s.hook !== null ? tile("hook", formatPercent(s.hook, 0), s.ratings.hook) : "",
+        s.watch !== null ? tile("watch", formatPercent(s.watch, 0), s.ratings.watch, t("ret.kpi.of")) : "",
+        s.completion !== null ? tile("completion", formatPercent(s.completion, 0), s.ratings.completion) : "",
+      ].filter(Boolean).join("");
+      const note = s.topDiagnosis ? `<p class="ret-note">${t("ret.widget.topDiag")}<b>${t(`ret.diagShort.${s.topDiagnosis}`)}</b> · ${t("ret.widget.n", { n: s.n })}</p>` : `<p class="ret-note">${t("ret.widget.n", { n: s.n })}</p>`;
+      return widgetShellHTML(
+        key,
+        "brandHome.analytics.widget.retention",
+        `<div class="ret-tiles">${tiles}</div>${note}`,
+        `<button type="button" class="btn btn-ghost btn-sm" data-retention-ask>${icon("sparkle", { size: 12 })}${t("ret.widget.askAi")}</button>`
+      );
+    }
+    case "retentionRanking": {
+      const rows = data.retention.rows;
+      if (!rows.length) return widgetShellHTML(key, "brandHome.analytics.widget.retentionRanking", emptyHTML("retention"));
+      const sorted = [...rows].sort((a, b) => (b.a.hookPct ?? -1) - (a.a.hookPct ?? -1)).slice(0, 5);
+      const body = sorted.map((x, i) => {
+        const a = x.a;
+        const bits = [
+          a.hookPct !== null ? `${t("ret.kpi.hook")} ${formatPercent(a.hookPct, 0)}` : "",
+          a.avgWatchPct !== null ? `${t("ret.kpi.watch")} ${formatPercent(a.avgWatchPct, 0)}` : "",
+          a.completionPct !== null ? `${t("ret.kpi.completion")} ${formatPercent(a.completionPct, 0)}` : "",
+        ].filter(Boolean).join(" · ");
+        const verdict = retentionVerdict(a, x.m)[0] || "";
+        return `
+        <div class="top-content-row" data-open-content="${x.c.id}" style="cursor:pointer;">
+          <div class="rank">${i + 1}</div>
+          <div class="ti">
+            <div class="t">${escapeText(x.c.title || t("common.untitled"))}</div>
+            <div class="m">${escapeText(bits)}</div>
+            ${verdict ? `<div class="m ret-row-verdict">${escapeText(verdict)}</div>` : ""}
+          </div>
+          ${a.overall ? `<span class="health-badge health-${a.overall}"><span class="health-dot"></span></span>` : ""}
+        </div>`;
+      }).join("");
+      return widgetShellHTML(key, "brandHome.analytics.widget.retentionRanking", body);
+    }
+    case "engagementMix": {
+      const rows = data.mixRows;
+      if (!rows.length) return widgetShellHTML(key, "brandHome.analytics.widget.engagementMix", emptyHTML("engagementMix"));
+      const max = Math.max(0.5, ...rows.map((r) => r.avg));
+      return widgetShellHTML(
+        key,
+        "brandHome.analytics.widget.engagementMix",
+        rows.map((r) => barRow(t(`ret.mix.${r.key}`), r.avg, max)).join("") + `<p class="ret-note">${t("ret.mix.hint")}</p>`
       );
     }
     default:
@@ -298,7 +368,21 @@ export function analyticsSectionHTML(content, settings, state, extraHeadHTML = "
   withMetrics.forEach((x) => { healthCounts[x.m.health || "none"]++; });
   const evaluated = healthCounts.good + healthCounts.average + healthCounts.poor;
 
-  const data = { trend, topContent, periodOptions, selectedPeriod, platformRows, formatRows, funnelStats, healthCounts, evaluated };
+  const retention = brandRetentionStats(published, settings, computeContentMetrics);
+
+  // Saves / shares / comments / likes as % of reach, averaged per post —
+  // the distribution signals a specialist reads before the headline ER.
+  const mixKeys = [["saveRate", "saves"], ["shareRate", "shares"], ["commentRate", "comments"], ["likeRate", "likes"]];
+  const mixRows = mixKeys
+    .map(([key, metric]) => {
+      const vals = withMetrics
+        .filter((x) => x.c.performance?.reach > 0 && x.c.performance?.[metric] !== null && x.c.performance?.[metric] !== undefined && x.c.performance?.[metric] !== "")
+        .map((x) => (Number(x.c.performance[metric]) / Number(x.c.performance.reach)) * 100);
+      return vals.length ? { key, avg: vals.reduce((a, b) => a + b, 0) / vals.length } : null;
+    })
+    .filter(Boolean);
+
+  const data = { trend, topContent, periodOptions, selectedPeriod, platformRows, formatRows, funnelStats, healthCounts, evaluated, retention, mixRows };
 
   return `
     <div class="section-title">
@@ -319,6 +403,12 @@ function customizeButtonHTML() {
 
 export function wireAnalyticsSection(root, state, refresh) {
   wireCustomizeMenu(root);
+
+  // "Minta saran AI": the one chat, Konsultan engine, reading the same
+  // retention numbers through its snapshot (js/consultant-panel.js).
+  qs("[data-retention-ask]", root)?.addEventListener("click", () => {
+    openConsultantPanel({ seed: t("ret.widget.askAi.seed"), engine: "consultant", send: true });
+  });
 
   const periodSelect = qs("[data-top-content-period]", root);
   if (periodSelect && state) {
@@ -359,7 +449,7 @@ function wireCustomizeMenu(root) {
         } else {
           order = order.filter((k) => k !== key);
         }
-        updateSettings({ homeWidgets: order });
+        updateSettings({ homeWidgets: order, homeWidgetsV2: true });
       });
     });
   });

@@ -67,6 +67,46 @@ export function parseMetricsFromText(text) {
   return found;
 }
 
+// Retention figures Instagram / TikTok print as text next to the graph —
+// "Average watch time 0:07", "Skip rate 38%", "Watch time 2h 14m". The
+// graph itself needs a vision model (js/ai.js extractInsightsFromImage);
+// this is the no-AI fallback.
+function parseSeconds(raw) {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  const clock = s.match(/(\d+):(\d{2})(?::(\d{2}))?/);
+  if (clock) {
+    const parts = clock.slice(1).filter((x) => x !== undefined).map(Number);
+    return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
+  }
+  let total = 0, hit = false;
+  const h = s.match(/(\d+(?:[.,]\d+)?)\s*(?:h|hr|jam)\b/); if (h) { total += parseFloat(h[1].replace(",", ".")) * 3600; hit = true; }
+  const m = s.match(/(\d+(?:[.,]\d+)?)\s*(?:m|min|mnt|menit)\b/); if (m) { total += parseFloat(m[1].replace(",", ".")) * 60; hit = true; }
+  const sec = s.match(/(\d+(?:[.,]\d+)?)\s*(?:s|sec|dtk|detik)\b/); if (sec) { total += parseFloat(sec[1].replace(",", ".")); hit = true; }
+  return hit ? Math.round(total * 10) / 10 : null;
+}
+
+const RETENTION_LABELS = [
+  { key: "avgWatchTimeSec", patterns: [/average watch time/i, /avg\.? watch time/i, /waktu tonton rata-rata/i, /rata-rata waktu tonton/i, /durasi tonton rata-rata/i], parse: parseSeconds },
+  { key: "skipRatePct", patterns: [/skip rate/i, /rasio lewati/i, /tingkat lewati/i, /dilewati/i], parse: (raw) => { const m = raw.match(/(\d+(?:[.,]\d+)?)\s*%/); return m ? parseFloat(m[1].replace(",", ".")) : null; } },
+  { key: "completionPct", patterns: [/watched full video/i, /full video/i, /nonton sampai (?:habis|selesai)/i, /ditonton penuh/i], parse: (raw) => { const m = raw.match(/(\d+(?:[.,]\d+)?)\s*%/); return m ? parseFloat(m[1].replace(",", ".")) : null; } },
+];
+
+export function parseRetentionFromText(text) {
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const found = {};
+  for (let i = 0; i < lines.length; i++) {
+    for (const { key, patterns, parse } of RETENTION_LABELS) {
+      if (found[key] !== undefined || !patterns.some((p) => p.test(lines[i]))) continue;
+      const val = parse(lines[i]) ?? (lines[i + 1] ? parse(lines[i + 1]) : null) ?? (lines[i - 1] ? parse(lines[i - 1]) : null);
+      if (val !== null && val !== undefined) found[key] = val;
+    }
+  }
+  return found;
+}
+
+// Everything readable from one screenshot, shaped like js/ai.js
+// extractInsightsFromImage so both readers plug into the same code.
 export async function analyzeScreenshot(fileOrDataUrl, onProgress) {
   await loadTesseract();
   const result = await window.Tesseract.recognize(fileOrDataUrl, "eng", {
@@ -75,5 +115,5 @@ export async function analyzeScreenshot(fileOrDataUrl, onProgress) {
     },
   });
   const text = result?.data?.text || "";
-  return { text, metrics: parseMetricsFromText(text) };
+  return { text, metrics: parseMetricsFromText(text), retention: parseRetentionFromText(text), source: "ocr" };
 }

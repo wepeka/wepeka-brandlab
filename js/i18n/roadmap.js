@@ -3,9 +3,9 @@
 // Key prefix: roadmap. Shape: "key": { en: "...", id: "..." }. Merged into js/i18n.js.
 export default {
   // ---------- Page / list ----------
-  "roadmap.title": { en: "Goal roadmap", id: "Roadmap ke Tujuan" },
+  "roadmap.title": { en: "Plan toward a date", id: "Rencana menuju tanggal" },
   "roadmap.sub": { en: "Name a goal and its date. BrandLab reads your brand, then plots the campaigns, weekly posts and deadlines that get you there.", id: "Sebut tujuan dan tanggalnya. BrandLab membaca kondisi brand-mu, lalu memetakan campaign, konten mingguan, dan deadline menuju ke sana." },
-  "roadmap.new": { en: "New goal", id: "Tujuan baru" },
+  "roadmap.new": { en: "New dated plan", id: "Rencana baru" },
   "roadmap.defaultName": { en: "My event", id: "Event-ku" },
   "roadmap.guidedOne": { en: "One goal at a time in Beginner mode. Finish or archive the current one first.", id: "Mode Pemula: satu tujuan dulu. Selesaikan atau arsipkan yang sekarang sebelum bikin baru." },
   "roadmap.empty.title": { en: "What are you working toward?", id: "Kamu lagi menuju apa?" },
@@ -29,7 +29,7 @@ export default {
   "roadmap.status.archived": { en: "Archived", id: "Diarsipkan" },
 
   // ---------- Wizard ----------
-  "roadmap.wizard.title": { en: "New goal", id: "Tujuan baru" },
+  "roadmap.wizard.title": { en: "New dated plan", id: "Rencana baru" },
   "roadmap.wizard.step": { en: "Step {n} of {total}", id: "Langkah {n} dari {total}" },
   "roadmap.wizard.q1": { en: "What's the goal?", id: "Apa tujuannya?" },
   "roadmap.wizard.name": { en: "Event name", id: "Nama event" },

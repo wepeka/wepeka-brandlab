@@ -66,6 +66,10 @@ export function render(root) {
   let seenAt = announcementsSeenAt();
   let editingId = null;
   let marked = false;
+  // A connection that never answers (offline, blocked network) used to
+  // leave "Memuat…" up forever. After a while, say so and offer a retry.
+  let slow = false;
+  const slowTimer = setTimeout(() => { slow = true; paint(); }, 12000);
 
   const paint = () => {
     const admin = isAnnouncementAdmin();
@@ -89,7 +93,9 @@ export function render(root) {
           ${status === "error"
             ? `<div class="card ann-empty">${t("ann.error")}</div>`
             : status !== "ready" && !items.length
-              ? `<div class="card ann-empty">${t("app.loading")}</div>`
+              ? slow
+                ? `<div class="card ann-empty"><p>${t("ann.slow")}</p><button type="button" class="btn btn-secondary btn-sm" data-ann-retry>${icon("refresh", { size: 13 })}${t("chat.retry")}</button></div>`
+                : `<div class="card ann-empty">${t("app.loading")}</div>`
               : items.length
                 ? items.map((a) => itemHTML(a, { seenAt, admin })).join("")
                 : `<div class="card ann-empty">${icon("bell", { size: 18 })}<p>${t("ann.empty")}</p></div>`}
@@ -157,5 +163,6 @@ export function render(root) {
 
   paint();
   const off = onAnnouncements(paint);
-  return () => off();
+  root.addEventListener("click", (e) => { if (e.target.closest("[data-ann-retry]")) location.reload(); });
+  return () => { clearTimeout(slowTimer); off(); };
 }

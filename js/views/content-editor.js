@@ -37,7 +37,10 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
   const campaigns = listCampaigns(brandId);
   const series = listSeries(brandId);
 
+  // Any typing/picking inside the drawer counts as unsaved work until Save.
+  let dirty = false;
   const overlay = openDrawer({
+    isDirty: () => dirty,
     title: existing ? t("contentEditor.editTitle") : t("contentEditor.newTitle"),
     bodyHTML: bodyTemplate(draft, settings, campaigns, series),
     footHTML: `
@@ -52,7 +55,10 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
     onMount: (el) => wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns),
   });
 
-  overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
+  const markDirty = (e) => { if (e.isTrusted) dirty = true; };
+  overlay.querySelector(".drawer-body").addEventListener("input", markDirty);
+  overlay.querySelector(".drawer-body").addEventListener("change", markDirty);
+  overlay.querySelector("[data-cancel]").addEventListener("click", () => overlay.requestClose());
 }
 
 // Sales the owner tagged with this post when logging them (Sales Tracker's

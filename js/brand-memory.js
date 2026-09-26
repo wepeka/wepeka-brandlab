@@ -10,7 +10,7 @@
 // bits: the recap validator and the "Memori Brand" modal the chat, the Home
 // card and Creator all open, so there is exactly one place to see and
 // delete what AI keeps reading.
-import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, MOMENT_KINDS, MOMENT_ACTIONS } from "./store.js";
+import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS } from "./store.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { formatDate, escapeHtml as esc, toast, qsa } from "./dom.js";
 import { icon } from "./icons.js";
@@ -51,6 +51,86 @@ export function validateRecap(moments) {
     .slice(0, RECAP_MAX_MOMENTS);
 }
 
+// ---- Writing a moment yourself --------------------------------------------
+//
+// Until now the only way in was waiting for the Teman to propose a card,
+// which owners didn't discover ("cara save memori brand belum jelas"). These
+// two let anyone type a moment straight in, wherever memory is shown (the
+// modal below, the chat page's side column), and saveMemoryText is also
+// what the ♡ on a chat message calls.
+
+// A typed moment → title (first sentence-ish, 80 chars) + detail (the rest).
+export function saveMemoryText(brandId, text, kind = "other") {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  let title = clean;
+  let detail = "";
+  if (clean.length > 80) {
+    const cut = clean.slice(0, 80).search(/[.!?;]\s[^.!?;]*$/);
+    const at = cut > 20 ? cut + 1 : clean.lastIndexOf(" ", 80) > 20 ? clean.lastIndexOf(" ", 80) : 80;
+    title = clean.slice(0, at).trim();
+    detail = clean.slice(at).trim().slice(0, 160);
+  }
+  const [entry] = addBrandMoments(brandId, [{ kind: MOMENT_KINDS.includes(kind) ? kind : "other", title, detail, action: null }]);
+  return entry || null;
+}
+
+// Is this exact text already a saved moment? (so the ♡ can show "saved")
+export function isInMemory(brand, text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return false;
+  return savedMoments(brand).some((m) => clean.startsWith(m.title) && (!m.detail || clean.includes(m.detail)));
+}
+
+export function memoryAddFormHTML() {
+  const kinds = MOMENT_KINDS.map((k) => `<option value="${k}" ${k === "other" ? "selected" : ""}>${esc(momentKindLabel(k))}</option>`).join("");
+  return `
+    <div class="memory-add" data-memory-add>
+      <p class="memory-add-title">${icon("edit", { size: 12 })}${t("chat.memory.add.title")}</p>
+      <textarea class="textarea memory-add-text" rows="2" maxlength="240" placeholder="${esc(t("chat.memory.add.ph"))}"></textarea>
+      <div class="memory-add-row">
+        <label class="memory-add-kind"><span>${t("chat.memory.add.kind")}</span><select class="select">${kinds}</select></label>
+        <button type="button" class="btn btn-primary btn-sm" data-memory-add-save>${icon("heart", { size: 12 })}${t("chat.memory.add.save")}</button>
+      </div>
+      <p class="text-faint memory-add-how">${t("chat.memory.how")}</p>
+    </div>`;
+}
+
+export function wireMemoryAddForm(root, brandId, { onSaved = () => {} } = {}) {
+  root.querySelectorAll("[data-memory-add]").forEach((form) => {
+    const area = form.querySelector("textarea");
+    const btn = form.querySelector("[data-memory-add-save]");
+    const save = () => {
+      const text = area.value.trim();
+      if (!text) { toast(t("chat.memory.add.empty")); area.focus(); return; }
+      const entry = saveMemoryText(brandId, text, form.querySelector("select")?.value || "other");
+      if (!entry) return;
+      area.value = "";
+      toast(t("chat.moment.toast", { title: entry.title }));
+      onSaved(entry);
+    };
+    btn?.addEventListener("click", save);
+    area?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); save(); }
+    });
+  });
+}
+
+// The one explanation of "Ide Konten" vs "Memori Brand", shown wherever the
+// two sit next to each other (chat page side column) or one is opened alone
+// (its modal) — people kept mixing them up.
+export function memoryDiffHTML({ open = false } = {}) {
+  return `
+    <details class="memory-diff" ${open ? "open" : ""}>
+      <summary>${icon("info", { size: 12 })}${t("chat.diff.title")}</summary>
+      <div class="memory-diff-body">
+        <p>${icon("bookmark", { size: 12 })}<span>${t("chat.diff.ideas")}</span></p>
+        <p>${icon("heart", { size: 12 })}<span>${t("chat.diff.memory")}</span></p>
+        <p class="text-faint">${t("chat.diff.example")}</p>
+      </div>
+    </details>`;
+}
+
 // Brand memory in full: every moment and auto signal, each deletable, plus
 // the Teman chat's own "delete everything" — kept apart on purpose so it's
 // clear which one AI features read (memory) and which one only the Teman
@@ -66,7 +146,9 @@ export function openBrandMemoryModal(brandId, { refresh = () => {} } = {}) {
     const log = [...(brand?.developmentLog || [])].sort((a, b) => b.at - a.at).slice(0, MEMORY_MODAL_LIMIT);
     const msgCount = getCompanionThread(brandId)?.messages?.length || 0;
     return `
-      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("companion.memory.intro")}</p>
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 10px;">${t("companion.memory.intro")}</p>
+      ${memoryDiffHTML()}
+      ${memoryAddFormHTML()}
       ${
         log.length
           ? log
@@ -105,6 +187,7 @@ export function openBrandMemoryModal(brandId, { refresh = () => {} } = {}) {
     refresh();
   };
   const wireBody = () => {
+    wireMemoryAddForm(overlay, brandId, { onSaved: () => repaint() });
     qsa("[data-memory-delete]", overlay).forEach((btn) =>
       btn.addEventListener("click", () => {
         removeBrandLogEntry(brandId, btn.dataset.memoryDelete);

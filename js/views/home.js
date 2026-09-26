@@ -1,7 +1,7 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
-import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
@@ -69,7 +69,7 @@ function buildSteps(brandId, brand, campaigns, content) {
       title: t("beginner.step.identity.title"),
       desc: t("beginner.step.identity.desc"),
       done: identityDone,
-      href: dnaDone ? `#/brand/${brandId}/guidelines/color` : `#/brand/${brandId}/dna`,
+      href: dnaDone ? `#/brand/${brandId}/guidelines/color` : dnaHref(brandId, brand),
       editHref: `#/brand/${brandId}/builder`,
       cta: dnaDone ? t("beginner.step.identity.ctaGuidelines") : t("beginner.step.identity.ctaDna"),
     },
@@ -253,7 +253,7 @@ function paint(root, brandId, state, refresh) {
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
         <h1>${esc(brand.name)}</h1>
-        <p class="page-sub">${identityDone ? t("beginner.sub.allDone") : t("home.sub.identity")}</p>
+        <p class="page-sub">${!identityDone ? t("home.sub.identity") : journey.doneCount < journey.steps.length ? t("beginner.sub.identityDone", { n: journey.steps.length - journey.doneCount }) : t("beginner.sub.allDone")}</p>
       </div>
       <div class="home-head-side">
         <button type="button" class="btn btn-secondary btn-sm" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}${t("rep.btn")}</button>
@@ -333,6 +333,23 @@ function progressRowHTML(label, filled, total, done) {
     </div>`;
 }
 
+// Resume where the gap actually is (the first blank answer), not at step 1
+// with six already-answered questions to click through first.
+function dnaHref(brandId, brand) {
+  const step = dnaResumeStep(brand);
+  return step ? `#/brand/${brandId}/dna/${step}` : `#/brand/${brandId}/dna`;
+}
+
+// "Tinggal: tagline" — only once some answers exist and at most 3 are left,
+// so a fresh brand isn't greeted by a list of eight missing things.
+function dnaMissingNoteHTML(brand) {
+  const dna = brand.brandDNA || {};
+  const missing = missingDnaFields(dna);
+  if (!missing.length) return dna.aiDraftPending ? `<div class="journey-hero-missing">${t("home.identity.draftPending")}</div>` : "";
+  if (missing.length > 3) return "";
+  return `<div class="journey-hero-missing">${icon("info", { size: 13 })}${t("home.identity.missing", { list: missing.map((f) => t(`home.identity.field.${f}`)).join(", ") })}</div>`;
+}
+
 function identityHeroHTML(brandId, brand) {
   const dna = brandDnaCompleteness(brand.brandDNA);
   const dnaDone = brandDnaDone(brand);
@@ -340,7 +357,7 @@ function identityHeroHTML(brandId, brand) {
   const pro = getMode() === "advanced";
   const book = pro ? brandBookProgress(brand) : { filled: basicsDone ? 2 : 0, total: 2 };
   const cta = !dnaDone
-    ? { label: dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart"), href: `#/brand/${brandId}/dna` }
+    ? { label: dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart"), href: dnaHref(brandId, brand) }
     : { label: t("home.identity.ctaBook"), href: `#/brand/${brandId}/guidelines/color` };
   return `
     <section class="card glass-card journey-hero" id="journey-hero">
@@ -354,6 +371,7 @@ function identityHeroHTML(brandId, brand) {
         ${progressRowHTML(t("home.identity.dna"), dna.filled, dna.total, dnaDone)}
         ${progressRowHTML(pro ? t("home.identity.book") : t("home.identity.bookBasics"), book.filled, book.total, pro ? book.filled === book.total : basicsDone)}
       </div>
+      ${dnaDone ? "" : dnaMissingNoteHTML(brand)}
       <a class="btn btn-primary journey-hero-cta" href="${cta.href}">${esc(cta.label)}${icon("arrowRight", { size: 15 })}</a>
       <div class="journey-hero-note">${t("beginner.hero.note")}</div>
     </section>

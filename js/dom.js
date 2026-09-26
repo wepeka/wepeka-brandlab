@@ -88,6 +88,26 @@ export function resizeImageFile(file, { maxDimension = 800, quality = 0.85, form
   });
 }
 
+// Shrinks an existing data: URL (a screenshot already resized for the
+// model) to a small JPEG thumbnail — what a chat message keeps in Firestore
+// as "this is the photo you sent" (a few KB) while the full image only ever
+// lives in memory for the one model call.
+export function thumbnailFromDataUrl(dataUrl, { maxDimension = 120, quality = 0.6 } = {}) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve("");
+    img.onload = () => {
+      const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 // Renders a brand's photo if it has one, otherwise its initials — same
 // markup shape (class="avatar") so existing size/radius rules keep working.
 export function avatarHTML(brand, extraStyle = "") {

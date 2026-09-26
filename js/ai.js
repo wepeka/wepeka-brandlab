@@ -14,6 +14,7 @@ import { TONE_AXES, toneAxisLabel, toneExampleMessage, VISUAL_DIRECTIONS } from 
 import { COPY_LENGTHS, COPY_REWRITES, copyFormatRules, formatByKey, goalByKey } from "./knowledge/copy-formats.js";
 import { aiLimitReached, recordAiUsage, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
 import { t, getLang } from "./i18n.js";
+import { isAdmin, currentUid } from "./account.js";
 
 const ANTHROPIC_API_BASE = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = "claude-sonnet-5";
@@ -25,6 +26,15 @@ const DEEPSEEK_MODEL = "deepseek-chat";
 
 class AiApiError extends Error {}
 
+// Provider/setup failures. The Wepeka admin sees the real detail (which
+// provider, the key, the status code) to fix it; everyone else gets the
+// same problem in plain words — a customer can't add an API key (the AI
+// panel in Settings is admin-only) and "Error dari Claude" means nothing
+// to someone who only knows this app as Brandlab.
+function aiSetupError(key, vars = {}) {
+  return new AiApiError(isAdmin(currentUid()) ? t(key, vars) : t(`${key}.user`, vars));
+}
+
 // Shared by every provider call: a network failure, a non-JSON body, or an
 // API error becomes an AiApiError whose message is already in the UI
 // language (the provider's own error text, when it sends one, is kept as-is
@@ -34,17 +44,17 @@ async function fetchJson(url, options, provider) {
   try {
     res = await fetch(url, options);
   } catch {
-    throw new AiApiError(t("ai.error.network", { provider }));
+    throw aiSetupError("ai.error.network", { provider });
   }
   let json;
   try {
     json = await res.json();
   } catch {
-    throw new AiApiError(res.ok ? t("ai.error.badResponse", { provider }) : t("ai.error.requestFailed", { provider, status: res.status }));
+    throw res.ok ? aiSetupError("ai.error.badResponse", { provider }) : aiSetupError("ai.error.requestFailed", { provider, status: res.status });
   }
   if (!res.ok || json?.error) {
     const message = json?.error?.message;
-    throw new AiApiError(message ? t("ai.error.provider", { provider, message }) : t("ai.error.requestFailed", { provider, status: res.status }));
+    throw message ? aiSetupError("ai.error.provider", { provider, message }) : aiSetupError("ai.error.requestFailed", { provider, status: res.status });
   }
   return json;
 }
@@ -60,7 +70,17 @@ export function outputLanguageRule({ keepSourceLanguage = "" } = {}) {
   return keepSourceLanguage ? `${base} Exception: if ${keepSourceLanguage} is clearly written in a different language, keep that language instead.` : base;
 }
 
-async function callClaude(apiKey, system, userPrompt, maxTokens) {
+// One user turn for the Messages API: the screenshots first (so the model
+// reads them before the question), then the text.
+function claudeUserContent(userPrompt, images = []) {
+  if (!images.length) return userPrompt;
+  return [
+    ...images.map((d) => { const m = d.match(/^data:([^;]+);base64,(.+)$/); return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : null; }).filter(Boolean),
+    { type: "text", text: userPrompt },
+  ];
+}
+
+async function callClaude(apiKey, system, userPrompt, maxTokens, { temperature, images = [] } = {}) {
   const json = await fetchJson(ANTHROPIC_API_BASE, {
     method: "POST",
     headers: {
@@ -72,8 +92,9 @@ async function callClaude(apiKey, system, userPrompt, maxTokens) {
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
       max_tokens: maxTokens,
+      ...(temperature !== undefined ? { temperature } : {}),
       system,
-      messages: [{ role: "user", content: userPrompt }],
+      messages: [{ role: "user", content: claudeUserContent(userPrompt, images) }],
     }),
   }, "Claude");
   return json.content?.[0]?.text || "";
@@ -82,7 +103,7 @@ async function callClaude(apiKey, system, userPrompt, maxTokens) {
 // Same request as callClaude, but streamed: onText(fullTextSoFar) fires as
 // tokens arrive so a chat reply shows up word by word instead of after the
 // whole answer is done. Errors are shaped exactly like fetchJson's.
-async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText) {
+async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText, { temperature, images = [] } = {}) {
   let res;
   try {
     res = await fetch(ANTHROPIC_API_BASE, {
@@ -93,15 +114,15 @@ async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText) {
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true",
       },
-      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: maxTokens, stream: true, system, messages: [{ role: "user", content: userPrompt }] }),
+      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: maxTokens, stream: true, ...(temperature !== undefined ? { temperature } : {}), system, messages: [{ role: "user", content: claudeUserContent(userPrompt, images) }] }),
     });
   } catch {
-    throw new AiApiError(t("ai.error.network", { provider: "Claude" }));
+    throw aiSetupError("ai.error.network", { provider: "Claude" });
   }
   if (!res.ok || !res.body) {
     let message = "";
     try { message = (await res.json())?.error?.message || ""; } catch { /* not JSON */ }
-    throw new AiApiError(message ? t("ai.error.provider", { provider: "Claude", message }) : t("ai.error.requestFailed", { provider: "Claude", status: res.status }));
+    throw message ? aiSetupError("ai.error.provider", { provider: "Claude", message }) : aiSetupError("ai.error.requestFailed", { provider: "Claude", status: res.status });
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -123,42 +144,104 @@ async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText) {
         full += ev.delta.text;
         onText(full);
       } else if (ev.type === "error") {
-        throw new AiApiError(t("ai.error.provider", { provider: "Claude", message: ev.error?.message || "" }));
+        throw aiSetupError("ai.error.provider", { provider: "Claude", message: ev.error?.message || "" });
       }
     }
   }
   return full;
 }
 
-async function callGemini(apiKey, system, userPrompt) {
+async function callGemini(apiKey, system, userPrompt, { temperature, images = [] } = {}) {
   const json = await fetchJson(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
-      contents: [{ parts: [{ text: userPrompt }] }],
+      contents: [{ parts: [...images.map(dataUrlToInlinePart).filter(Boolean), { text: userPrompt }] }],
+      ...(temperature !== undefined ? { generationConfig: { temperature } } : {}),
     }),
   }, "Gemini");
   return json.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
 
-async function callDeepSeek(apiKey, system, userPrompt, maxTokens) {
+// `json` asks DeepSeek for its JSON output mode (the prompt must already say
+// "JSON" somewhere, which every structured prompt in this file does) — the
+// reply is then guaranteed to parse instead of occasionally arriving wrapped
+// in prose or fences. `temperature` is the OpenAI-style knob (DeepSeek's
+// default is 1.0, which is too loose for form-filling suggestions).
+function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false } = {}) {
+  return {
+    model: DEEPSEEK_MODEL,
+    max_tokens: maxTokens,
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(json ? { response_format: { type: "json_object" } } : {}),
+    ...(stream ? { stream: true } : {}),
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: userPrompt },
+    ],
+  };
+}
+
+async function callDeepSeek(apiKey, system, userPrompt, maxTokens, opts = {}) {
   const json = await fetchJson(DEEPSEEK_API_BASE, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      max_tokens: maxTokens,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: userPrompt },
-      ],
-    }),
+    body: JSON.stringify(deepSeekBody(system, userPrompt, maxTokens, opts)),
   }, "DeepSeek");
   return json.choices?.[0]?.message?.content || "";
+}
+
+// DeepSeek streamed (OpenAI-style SSE: `data: {...}` lines, `data: [DONE]`
+// at the end) — same contract as callClaudeStream: onText(fullTextSoFar)
+// fires as tokens arrive, so a chat reply shows up word by word.
+async function callDeepSeekStream(apiKey, system, userPrompt, maxTokens, onText, opts = {}) {
+  let res;
+  try {
+    res = await fetch(DEEPSEEK_API_BASE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(deepSeekBody(system, userPrompt, maxTokens, { ...opts, stream: true })),
+    });
+  } catch {
+    throw aiSetupError("ai.error.network", { provider: "DeepSeek" });
+  }
+  if (!res.ok || !res.body) {
+    let message = "";
+    try { message = (await res.json())?.error?.message || ""; } catch { /* not JSON */ }
+    throw message ? aiSetupError("ai.error.provider", { provider: "DeepSeek", message }) : aiSetupError("ai.error.requestFailed", { provider: "DeepSeek", status: res.status });
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, cut).trim();
+      buffer = buffer.slice(cut + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") continue;
+      let ev;
+      try { ev = JSON.parse(payload); } catch { continue; }
+      const delta = ev.choices?.[0]?.delta?.content;
+      if (delta) {
+        full += delta;
+        onText(full);
+      }
+    }
+  }
+  return full;
 }
 
 // Which settings field holds the active key, per provider — the one place
@@ -173,11 +256,23 @@ export function hasAiKey(ai) {
   return !!ai[AI_KEY_FIELD[ai.provider] || "anthropicApiKey"];
 }
 
+// Claude and Gemini read screenshots; DeepSeek's chat model is text-only,
+// so surfaces that take a photo fall back to OCR (js/ocr.js) there.
+export function aiCanSeeImages(ai) {
+  return hasAiKey(ai) && ai.provider !== "deepseek";
+}
+
 // Every text call funnels through here, so this is where the daily quota
 // (js/ai-usage.js) is checked and counted: refused before the request when
 // the cap is reached, counted once after a successful response. A failed
 // request never counts.
-async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null } = {}) {
+// `temperature` / `json` are optional per-call hints (see deepSeekBody);
+// `onText(soFar, { whole })` streams the answer where the provider can, and
+// hands over the finished text in one piece (whole: true) where it can't —
+// the caller decides whether to animate a reply that arrived all at once.
+// `images`: data: URLs sent along with the prompt (Claude / Gemini only —
+// DeepSeek refuses them with a clear error so the caller can OCR instead).
+async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [] } = {}) {
   if (countUsage && aiLimitReached()) {
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
@@ -187,18 +282,26 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
     throw new AiApiError(t(key, { limit }));
   }
   let out;
+  let streamed = false;
   if (ai.provider === "gemini") {
-    if (!ai.geminiApiKey) throw new AiApiError(t("ai.error.noKey", { provider: "Gemini" }));
-    out = await callGemini(ai.geminiApiKey, system, userPrompt);
+    if (!ai.geminiApiKey) throw aiSetupError("ai.error.noKey", { provider: "Gemini" });
+    out = await callGemini(ai.geminiApiKey, system, userPrompt, { temperature, images });
   } else if (ai.provider === "deepseek") {
-    if (!ai.deepseekApiKey) throw new AiApiError(t("ai.error.noKey", { provider: "DeepSeek" }));
-    out = await callDeepSeek(ai.deepseekApiKey, system, userPrompt, maxTokens);
+    if (!ai.deepseekApiKey) throw aiSetupError("ai.error.noKey", { provider: "DeepSeek" });
+    if (images.length) throw aiSetupError("ai.error.noVision", { provider: "DeepSeek" });
+    streamed = !!onText;
+    out = onText
+      ? await callDeepSeekStream(ai.deepseekApiKey, system, userPrompt, maxTokens, onText, { temperature, json })
+      : await callDeepSeek(ai.deepseekApiKey, system, userPrompt, maxTokens, { temperature, json });
   } else {
-    if (!ai.anthropicApiKey) throw new AiApiError(t("ai.error.noKey", { provider: "Anthropic" }));
-    out = onText ? await callClaudeStream(ai.anthropicApiKey, system, userPrompt, maxTokens, onText) : await callClaude(ai.anthropicApiKey, system, userPrompt, maxTokens);
+    if (!ai.anthropicApiKey) throw aiSetupError("ai.error.noKey", { provider: "Anthropic" });
+    streamed = !!onText;
+    out = onText
+      ? await callClaudeStream(ai.anthropicApiKey, system, userPrompt, maxTokens, onText, { temperature, images })
+      : await callClaude(ai.anthropicApiKey, system, userPrompt, maxTokens, { temperature, images });
   }
   // Providers without streaming hand over the finished text in one piece.
-  if (onText && ai.provider !== "anthropic" && out) onText(out);
+  if (onText && !streamed && out) onText(out, { whole: true });
   if (countUsage) recordAiUsage();
   return out;
 }
@@ -856,25 +959,36 @@ export async function suggestCampaignFit(ai, { brand, campaigns, idea, title }) 
 // note, so it says "mereka"; "second-person" for messages aimed AT the
 // customer (CTA, success/failure, purpose as a promise) where StoryBrand's
 // "you, not we" rule applies. Omit for the default (message voice).
-export async function suggestBrandDnaOptions(ai, { brand, question, guide, principle, draftAnswer, priorAnswers = [], avoid = [], count = 3, maxWords, voice }) {
+export async function suggestBrandDnaOptions(ai, { brand, question, guide, principle, draftAnswer, priorAnswers = [], siblingAnswers = [], partRule = "", avoid = [], count = 3, maxWords, voice }) {
   const lengthRule = maxWords
     ? `Every option must be AT MOST ${maxWords} words — read it like a command or a button label, not a sentence. It's a direct call to action: one imperative verb + what they get, nothing else. No setup, no benefit explanation, no "supaya"/"agar" clause tacked on.`
-    : "Every option must be SHORT and PUNCHY — one sentence, ideally under 15 words, never a paragraph.";
+    : partRule
+      ? "Every option is a SHORT FRAGMENT of at most 12 words — the piece that fits in this one box, not a whole sentence. No capital letter at the start, no period at the end."
+      : "Every option must be SHORT and PUNCHY — one sentence, ideally under 15 words, never a paragraph.";
   const voiceRule =
     voice === "third-person"
       ? "VOICE: this question DESCRIBES the customer for the brand's own notes — write about them in the third person ('mereka', 'pelanggan', 'ibu-ibu usia 30-an'), never address them as 'kamu'/'you' and never write it as an ad line."
       : "VOICE: say 'you'/'kamu' more than 'we'/'kami'; the customer is the hero, so keep the brand's own name and self-praise out of the sentence unless the question is specifically about the brand's authority.";
   const system = [
     "You help a small business owner sharpen their own answer to one question in a guided brand-identity questionnaire built on the StoryBrand framework: the CUSTOMER is the hero of their own story (never the brand); the PROBLEM has a concrete external side and the feeling it causes; the BRAND is a GUIDE — shows empathy (understands the hero's exact situation) and authority (has done this before) — but is never the hero itself; the GUIDE hands the hero a simple PLAN; the GUIDE calls the hero to one clear, direct ACTION; and the story ends in either SUCCESS (what the hero concretely gains) or FAILURE (what they concretely risk by doing nothing).",
-    `Given their own draft answer, write ${count} distinct options for how to phrase it better as their real answer. ${lengthRule} But brevity must never cost substance: cut filler, throat-clearing, and generic marketing buzzwords ("solusi terbaik", "kualitas premium", "bersama kami wujudkan", "the best choice", etc) — not the actual StoryBrand thinking the question's guide (below) is asking for. Every option must stay CONCRETE and specific to this brand (a real action, a real detail, a real number from the brand context or draft) — each should still clearly do that framing's job (e.g. name the real problem, keep the customer as hero, make the brand read as guide not hero), just say it tighter and more concrete than the raw draft, never vaguer or more generic. Never generic marketing advice about how to answer.`,
-    "Every option must pass StoryBrand's 'grunt test': a half-distracted person should get it in under 5 seconds. Plain words, zero jargon, sounds like a real person talking — never an ad tagline.",
+    `Given their own draft answer, write ${count} distinct options for how to phrase it better as their real answer — the SAME idea they wrote, said tighter, clearer and more concrete.`,
+    // The #1 complaint about this feature was answers that wandered off into
+    // invented detail. Grounding comes before every style rule on purpose.
+    "GROUNDING — the most important rule: sharpen, never invent. Every concrete detail in an option (a situation, place, number, reason, consequence, product, person) must already appear in their draft, in the brand context, or in what they said in earlier steps. Do NOT add new facts or scenarios to sound richer — if the draft is thin, the option stays short and plain rather than padded with made-up specifics. Keep the draft's meaning: reshape what they wrote, never replace it with a different idea of your own. If the draft already fits the question, the options only tidy the wording.",
+    "THE DRAFT IS THE ANCHOR. Someone comparing the draft and an option must instantly see it is the SAME thought, only sharper — so every option keeps the draft's key word(s) or idea visibly in it. If the draft is a single vague word (e.g. 'identitas', 'lancar', 'murah'), expand THAT word into what it concretely means for this brand's customer, keeping the word itself; never swap it for a different, 'better' idea you would have picked from the brand context. When the draft seems unrelated to the brand or too thin to work with, still stay on the draft's idea (connect it to the brand only where the brand context genuinely supports it) and say so briefly in \"note\".",
+    partRule
+      ? `SCOPE — this is ONE small box inside a bigger sentence, not the whole answer. ${partRule} Write only the piece that belongs in this box; anything that belongs in the other boxes of this question (listed below if already filled) must NOT be repeated here.`
+      : "",
+    lengthRule,
+    "Plain words, zero jargon, sounds like a real person talking — never an ad tagline. It must pass StoryBrand's 'grunt test': a half-distracted person gets it in under 5 seconds.",
+    "Cut filler, throat-clearing and generic marketing buzzwords (\"solusi terbaik\", \"kualitas premium\", \"bersama kami wujudkan\", \"the best choice\", etc). Never write generic marketing advice about how to answer — write the answer itself.",
     voiceRule,
     principle ? `A StoryBrand-specific craft rule applies to THIS question — treat it as the actual bar for a good answer, not just a style note: ${principle}` : "",
-    "Make the options meaningfully different from each other in angle or phrasing — not near-duplicates of the same sentence. None of them should read as filler or padding just to sound more 'complete.'",
+    "Make the options meaningfully different from each other in angle or phrasing — not near-duplicates of the same line. None of them should read as filler or padding just to sound more 'complete.'",
     outputLanguageRule({ keepSourceLanguage: "their draft answer" }),
     NATURAL_WRITING_CONTEXT,
     buildBrandContext(brand),
-    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"options": ["option 1", "option 2", "option 3"]} — exactly ${count} items.`,
+    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"note": "", "options": ["option 1", "option 2", "option 3"]} — exactly ${count} items, every item a non-empty string. "note" is normally an empty string; fill it with ONE short, friendly sentence in the draft's language only when the draft was too thin or vague to sharpen well (e.g. a single word) or doesn't seem to match the brand — tell the owner what to add so the options get more precise. Never put advice in the options themselves.`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -882,21 +996,27 @@ export async function suggestBrandDnaOptions(ai, { brand, question, guide, princ
   const user = [
     `Question: ${question}`,
     guide ? `What this question is really asking: ${guide}` : "",
-    priorAnswers.length ? `\nWhat they've already said in earlier steps:\n${priorAnswers.map((a) => `- ${a}`).join("\n")}` : "",
-    draftAnswer ? `\nTheir own draft answer — sharpen this, don't invent something unrelated:\n${draftAnswer}` : "\nThey haven't written a draft yet — suggest reasonable starting points based on the brand info above.",
+    priorAnswers.length ? `\nWhat they've already said in earlier steps (context only — don't repeat it inside the option):\n${priorAnswers.map((a) => `- ${a}`).join("\n")}` : "",
+    siblingAnswers.length ? `\nOther boxes of this same question, already filled (the option must fit next to these, not repeat them):\n${siblingAnswers.map((a) => `- ${a}`).join("\n")}` : "",
+    draftAnswer ? `\nTheir own draft answer — sharpen this, don't invent something unrelated:\n${draftAnswer}` : "\nThey haven't written a draft yet — suggest reasonable starting points based ONLY on the brand info above (and say nothing the brand info doesn't support).",
     avoid.length ? `\nAlready shown, don't repeat these (write genuinely different options):\n${avoid.map((a) => `- ${a}`).join("\n")}` : "",
   ]
     .filter(Boolean)
     .join("\n");
 
+  let note = "";
   const parseOptions = (raw) => {
     const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
     const parsed = JSON.parse(cleaned);
-    return Array.isArray(parsed.options) ? parsed.options.filter((o) => typeof o === "string" && o.trim()) : [];
+    if (!note && typeof parsed.note === "string") note = parsed.note.trim();
+    return Array.isArray(parsed.options) ? parsed.options.filter((o) => typeof o === "string" && o.trim()).map((o) => o.trim()) : [];
   };
+  // Low-ish temperature: this is form-filling, not brainstorming — the
+  // options should stay on the owner's own idea instead of drifting.
+  const callOpts = { temperature: 0.6, json: true };
   let options;
   try {
-    options = parseOptions(await callModel(ai, system, user, 800));
+    options = parseOptions(await callModel(ai, system, user, 800, callOpts));
     if (!options.length) throw new Error("empty");
   } catch {
     throw new AiApiError(t("ai.error.readOptions"));
@@ -907,14 +1027,17 @@ export async function suggestBrandDnaOptions(ai, { brand, question, guide, princ
   if (options.length < count) {
     try {
       const more = parseOptions(
-        await callModel(ai, system, `${user}\n\nAlready shown, don't repeat these (write genuinely different options):\n${[...avoid, ...options].map((a) => `- ${a}`).join("\n")}`, 800)
+        await callModel(ai, system, `${user}\n\nAlready shown, don't repeat these (write genuinely different options):\n${[...avoid, ...options].map((a) => `- ${a}`).join("\n")}`, 800, callOpts)
       );
       options = [...options, ...more.filter((m) => !options.includes(m))].slice(0, count);
     } catch {
       // keep what we have
     }
   }
-  return options;
+  // `note` (usually "") is the AI's one-line heads-up when the draft was
+  // too thin or off-brand to sharpen well — the picker shows it above the
+  // options so the owner knows what to add instead of just getting odd cards.
+  return { options: options.slice(0, count), note };
 }
 
 // One call that drafts the whole Brand DNA from the business description
@@ -931,6 +1054,7 @@ export async function generateBrandDnaDraft(ai, { brand, answers = {} }) {
   const system = [
     "You draft a complete brand identity ('Brand DNA') for a small business owner, following the StoryBrand framework: the CUSTOMER is the hero (never the brand); the PROBLEM has an external side and the feeling it causes; the BRAND is the GUIDE (empathy + authority), never the hero; the guide gives a simple 3-step PLAN; calls the hero to one direct ACTION; and the story ends in SUCCESS (what the customer concretely gains, including who they become) or FAILURE (what they honestly lose by doing nothing, no fear-mongering).",
     "Write in plain, spoken language. Concrete, specific to THIS business, zero marketing buzzwords ('solusi terbaik', 'kualitas premium', 'nomor satu'). Every line must pass the grunt test: a distracted stranger gets it in 5 seconds.",
+    "GROUNDING: build every field from what the owner actually wrote about the business. Never invent numbers, awards, years of experience, customer counts, prices, locations or guarantees that the description doesn't give — where the description is silent, keep that field general and short rather than making something up. The owner will correct the draft, so an honest plain line beats an impressive invented one.",
     outputLanguageRule(),
     "Field rules: targetAudience = who they are + what they want (third person, 'mereka'), 1-2 sentences. problemSolved = external problem → the feeling it causes, 1-2 sentences. differentiation = why trust and pick this brand, with a concrete proof if the description gives one, 1-2 sentences. mission = the 3-step plan in EXACTLY this format: '1) <aksi> 2) <aksi> 3) <aksi>' — each an action the customer takes or experiences, chronological. callToAction = at most 8 words, starts with an action verb, like a button label. successOutcome and failureOutcome = 1 sentence each. purpose = why this brand exists beyond profit, 1 sentence. vision = concrete long-term picture, 1 sentence. tagline = at most 6 words. oneLiner = ONE sentence, at most 25 words: problem → what the brand does → result. personality = 3 short adjectives. values = 3 short words. productsServices = 1-4 short items.",
     kept.length ? `These fields were already written by the owner — copy them back EXACTLY as given, do not rewrite them: ${kept.join(", ")}.` : "",
@@ -949,7 +1073,7 @@ export async function generateBrandDnaDraft(ai, { brand, answers = {} }) {
     .filter(Boolean)
     .join("\n");
 
-  const parsed = parseJsonObject(await callModel(ai, system, user, 1600));
+  const parsed = parseJsonObject(await callModel(ai, system, user, 1600, { temperature: 0.6, json: true }));
   if (!parsed) throw new AiApiError(t("ai.error.readDnaDraft"));
   const out = {};
   DNA_DRAFT_FIELDS.forEach((k) => { out[k] = typeof parsed[k] === "string" ? parsed[k].trim() : ""; });
@@ -1287,6 +1411,45 @@ export async function generateColorEssence(ai, { brand, colors, colorFeelings = 
 // list so the prompt and the click-to-navigate handler in
 // js/consultant-panel.js both read off the same source of truth. `path` is
 // appended to `#/brand/:id/`; "" means the brand's own home page.
+// How a social media specialist reads short-form video performance — the
+// same floors js/retention.js rates with, so the consultant's words and the
+// app's badges never disagree.
+export const RETENTION_SPECIALIST_CONTEXT = `
+How to read short-form video performance (Reels / TikTok), as a social media specialist would:
+- Hook = % of viewers still watching at second 3 (Instagram shows the inverse as "skip rate"). >=70% strong, 50-70% average, <50% weak: the first 1-3 seconds (first frame, first words, on-screen text) are the problem, not the topic.
+- Average watch time / video length = % of the video watched. By length: <=15s: >=75% strong, >=55% ok; 16-30s: >=60% / >=40%; 31-60s: >=45% / >=30%; >60s: >=35% / >=20%. Above 100% means replays (loops), a very strong sign.
+- Completion (% who reached the end): <=15s: >=45% strong, >=25% ok; 16-30s: >=35% / >=18%; 31-60s: >=25% / >=12%; >60s: >=15% / >=7%.
+- The retention curve's biggest drop tells where to cut: a cliff in the first 3s = hook; a slide in the middle = pacing / no payoff yet, cut the dead air; a drop right before the end = the ending drags or the CTA comes too late.
+- Cross-read with engagement: strong retention + weak engagement = the video asks for nothing (add a reason to save/share/comment); weak hook + strong engagement = the hook speaks to too few people but the content itself lands; views far above reach = replays.
+- Saves and shares per reach are the distribution signals (>=1% of reach each is strong); comments >=0.5% of reach is healthy.
+- Advice must name the specific second / part of the video and the specific change (e.g. "put the result on screen in the first frame", "cut seconds 4-9 where nothing new happens"), never generic "make it more engaging".`;
+
+// Reads one insight screenshot (Instagram / TikTok post insights, or the
+// retention graph) into numbers. Strict JSON out, normalized here so the
+// caller gets the same shape as js/ocr.js analyzeScreenshot. One AI credit
+// per screenshot.
+export async function extractInsightsFromImage(ai, dataUrl) {
+  const system = [
+    "You read screenshots of social media post insights (Instagram Reels/posts, TikTok, Facebook) and return the numbers as JSON. Reply with ONLY a JSON object, no markdown fences, no prose.",
+    'Shape: {"platform":"instagram|tiktok|facebook|other","metrics":{"views":null,"reach":null,"likes":null,"comments":null,"shares":null,"saves":null,"profileVisits":null,"followersGained":null},"retention":{"videoLengthSec":null,"avgWatchTimeSec":null,"skipRatePct":null,"hookPct":null,"completionPct":null,"curve":[]},"confidence":"high|medium|low","notes":""}',
+    "Rules: every value is a plain number or null, never a string. Expand K/M/rb/jt suffixes (12.3K = 12300, 1,2 jt = 1200000). Times like 0:07 or 7s = 7 seconds; 1:05 = 65. Percentages as numbers (38% = 38). Labels may be Indonesian: Ditonton/Tayangan = views, Jangkauan/Akun yang dijangkau = reach, Suka = likes, Komentar = comments, Dibagikan/Kiriman = shares, Disimpan = saves, Kunjungan profil = profileVisits, Mengikuti/Pengikut baru = followersGained, Waktu tonton rata-rata = avgWatchTimeSec, Rasio lewati = skipRatePct.",
+    'Retention graph: x-axis is time in the video, y-axis is the % of viewers still watching. Sample it as curve: [{"sec":0,"pct":100},...] with 6 to 12 evenly spaced points including the last one at the video\'s end. hookPct = the curve\'s value at second 3 (if the graph starts below 100 at 0s, use what it shows). completionPct = the value at the last second. videoLengthSec = where the x-axis ends. If a metric is not in the picture, leave it null, never guess.',
+    "If the picture is not an insights screenshot at all, return every metric null and say why in notes.",
+  ].join("\n");
+  const raw = await callModel(ai, system, "Read this screenshot.", 900, { images: [dataUrl] });
+  const json = parseJsonObject(raw);
+  if (!json || typeof json !== "object") throw new AiApiError(t("ai.error.badExtract"));
+  const n = (v) => (v === null || v === undefined || v === "" || !isFinite(Number(v)) ? null : Number(v));
+  const metrics = {};
+  Object.entries(json.metrics || {}).forEach(([k, v]) => { const x = n(v); if (x !== null) metrics[k] = Math.round(x); });
+  const r = json.retention || {};
+  const retention = {
+    videoLengthSec: n(r.videoLengthSec), avgWatchTimeSec: n(r.avgWatchTimeSec), skipRatePct: n(r.skipRatePct), hookPct: n(r.hookPct), completionPct: n(r.completionPct),
+    curve: Array.isArray(r.curve) ? r.curve.map((p) => ({ sec: n(p?.sec), pct: n(p?.pct) })).filter((p) => p.sec !== null && p.pct !== null) : [],
+  };
+  return { platform: json.platform || "other", metrics, retention, confidence: json.confidence || "medium", notes: String(json.notes || ""), source: "ai" };
+}
+
 export const CONSULTANT_ROUTES = [
   { key: "dna", label: t("ai.route.dna"), path: "dna" },
   { key: "guidelines", label: t("ai.route.guidelines"), path: "guidelines" },
@@ -1302,8 +1465,9 @@ export const CONSULTANT_ROUTES = [
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
-export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null, kinds = [] }) {
+export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null, kinds = [], images = [], imageText = "" }) {
   const routesList = CONSULTANT_ROUTES.map((r) => `${r.key} = ${r.label}`).join(", ");
+  const hasPhoto = images.length > 0 || !!imageText;
   const system = [
     "You are a practical branding & marketing consultant embedded inside this brand's own tool.",
     outputLanguageRule(),
@@ -1312,8 +1476,18 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     buildBrandContext(brand),
     pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
+    RETENTION_SPECIALIST_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     snapshotText ? `Live tracked data for this brand right now:\n${snapshotText}` : "",
+    hasPhoto
+      ? [
+          images.length
+            ? `The user attached ${images.length} screenshot(s) of their own post insights (Instagram / TikTok numbers or a retention graph). Read every number and the graph carefully: K/M/rb/jt suffixes, 0:07 = 7 seconds, Indonesian labels (Ditonton = views, Jangkauan = reach, Disimpan = saves, Dibagikan = shares, Waktu tonton rata-rata = average watch time, Rasio lewati = skip rate). A retention graph's x-axis is time in the video and y-axis is % still watching. When only the graph is shown (no printed numbers), read the values off it: videoLengthSec = where the x-axis ends, hookPct = the curve at second 3, completionPct = the curve at the end, avgWatchTimeSec = the area under the curve (the average of the curve's % over the whole length, times the length, divided by 100).`
+            : `The user attached a screenshot of their post insights; the provider can't see images, so here is the text scanned from it (numbers may be slightly garbled):\n${imageText}`,
+          "Open with ONE short line stating the key numbers you read (so the user can check you read them right), then diagnose like the specialist above: name the exact problem (hook / middle / ending / no ask) with the second it happens, and give 2-3 concrete fixes for the NEXT video. Compare against this brand's tracked averages above when they exist.",
+          "End with ONE line in the exact form [[metrics:key=value;key=value]] listing every number you read, using ONLY these keys: views, reach, likes, comments, shares, saves, profileVisits, followersGained, videoLengthSec, avgWatchTimeSec, hookPct (% still watching at second 3; if the screenshot shows skip rate, hookPct = 100 minus skip rate), completionPct (% who reached the end), skipRatePct. Plain numbers only (12300 not 12.3K, seconds not 0:07). Omit the line entirely if the picture has no such numbers.",
+        ].join("\n")
+      : "",
     "Keep it short: lead with the answer in 2-4 sentences, or at most 3 short bullets when listing steps. No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
     `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
     "You advise; you do not write content. If the user asks you to come up with content ideas, topics, hooks or angles, do NOT list them — answer in one sentence that says what kind of content the data points to, then end with the line [[handoff:brainstorm]] (the app turns it into a button that asks the Brainstorm tab, which saves ideas and makes drafts). If the user is only venting or telling how they feel with no question in it, reply in one warm sentence and end with [[handoff:companion]]. Never both, and never for an actual question about the brand.",
@@ -1326,7 +1500,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
   const transcript = history.map((h) => `${h.role === "user" ? "User" : "Consultant"}: ${h.text}`).join("\n\n");
   const user = [transcript, `User: ${question}`].filter(Boolean).join("\n\n");
 
-  return callModel(ai, system, user, 1000, { onText });
+  return callModel(ai, system, user, hasPhoto ? 1400 : 1000, { onText, images });
 }
 
 // "Otomatis" in "Tanya Brandlab" (js/consultant-panel.js): one box in front

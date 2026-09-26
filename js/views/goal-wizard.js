@@ -36,6 +36,7 @@ import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { toast, formatNumber, qs, qsa, escapeHtml as esc } from "../dom.js";
 import { t } from "../i18n.js";
+import { getMode } from "../mode.js";
 
 const SOCIAL_PLATFORMS = ["instagram", "tiktok", "facebook", "other"];
 const onlyDigits = (v) => String(v ?? "").replace(/[^\d]/g, "");
@@ -251,7 +252,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         </div>
         <div class="goal-product-grid">
           ${field("price", t(`goal.sales.priceQ.${m}`), p.price, { money: true, hint: t("goal.sales.priceHint") })}
-          ${field("cost", t("goal.sales.costQ"), p.cost, { money: true, optional: true, hint: marginHint(p) })}
+          ${getMode() === "guided" ? "" : field("cost", t("goal.sales.costQ"), p.cost, { money: true, optional: true, hint: marginHint(p) })}
           ${field("sold", t(`goal.sales.soldQ.${m}`), p.sold, { hint: t(p.fromTracker ? "goal.sales.soldFromTracker" : "goal.sales.soldHint"), readonly: p.fromTracker })}
           ${field("target", t(`goal.sales.targetQ.${m}`), p.target)}
         </div>
@@ -539,8 +540,16 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     });
     qs("#goal-create", root)?.addEventListener("click", () => {
       if (!state.agreed) return;
-      closeOverlay(overlay);
-      finish();
+      // Build everything first and close only once it worked: closing up
+      // front meant any error halfway left the person staring at an empty
+      // Tujuan list with no message at all.
+      try {
+        finish();
+        closeOverlay(overlay);
+      } catch (e) {
+        console.error("Grow Brand launch failed", e);
+        toast(t("goal.launch.failed"), "error");
+      }
     });
   }
 

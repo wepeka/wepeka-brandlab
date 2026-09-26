@@ -35,7 +35,10 @@ export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = fals
   return overlay;
 }
 
-export function openDrawer({ title, bodyHTML, footHTML = "", onMount }) {
+// `isDirty` (optional): when it returns true, closing without saving (✕,
+// clicking outside, or overlay.requestClose() from a Cancel button) asks
+// first instead of silently throwing the typing away.
+export function openDrawer({ title, bodyHTML, footHTML = "", onMount, isDirty }) {
   const overlay = document.createElement("div");
   overlay.className = "overlay";
   overlay.innerHTML = `
@@ -49,10 +52,17 @@ export function openDrawer({ title, bodyHTML, footHTML = "", onMount }) {
     </div>
   `;
   document.body.appendChild(overlay);
+  overlay.requestClose = async () => {
+    if (isDirty?.()) {
+      const ok = await confirmDialog({ title: t("app.unsaved.title"), message: t("app.unsaved.message"), confirmLabel: t("app.unsaved.discard"), cancelLabel: t("app.unsaved.keep"), danger: true });
+      if (!ok) return;
+    }
+    closeOverlay(overlay);
+  };
   overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay) closeOverlay(overlay);
+    if (e.target === overlay) overlay.requestClose();
   });
-  overlay.querySelector("[data-close]").addEventListener("click", () => closeOverlay(overlay));
+  overlay.querySelector("[data-close]").addEventListener("click", () => overlay.requestClose());
   if (onMount) onMount(overlay);
   return overlay;
 }

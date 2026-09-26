@@ -427,7 +427,7 @@ export default {
   "bg.review.generate": { en: "Generate AI text", id: "Generate isi AI" },
   "bg.review.regenerate": { en: "Regenerate AI text", id: "Generate ulang isi AI" },
   "bg.review.downloadPdf": { en: "Download PDF", id: "Download PDF" },
-  "bg.review.noKey": { en: "Add an AI API key first in Settings → AI.", id: "Tambahin API key AI dulu di Pengaturan → AI." },
+  "bg.review.noKey": { en: "The AI isn't available right now. Try again in a moment — if it keeps happening, message the Wepeka team.", id: "AI-nya lagi belum bisa dipakai. Coba lagi sebentar — kalau masih, kabari tim Wepeka ya." },
   "bg.review.writing": { en: "Writing Value Proposition & Color Essence...", id: "Lagi nulis Value Proposition & Esensi Warna..." },
   "bg.review.generated": { en: "AI text generated", id: "Isi AI berhasil di-generate" },
   "bg.review.generateFail": { en: "Couldn't generate — try again.", id: "Gagal generate — coba lagi." },

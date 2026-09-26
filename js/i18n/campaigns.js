@@ -848,7 +848,7 @@ export default {
   "camp.detail.forceWeeks": { en: "Every target is reached, but the minimum of {min} active weeks isn't met yet ({left} weeks to go).", id: "Semua target udah tercapai, tapi minimal aktif {min} minggu belum terpenuhi ({left} minggu lagi)." },
   "camp.detail.forceOpen": { en: "Some required milestones still aren't reached. This level will be marked done as it is.", id: "Masih ada milestone wajib yang belum tercapai. Level ini akan ditandai selesai apa adanya." },
   "camp.detail.forced": { en: "Level {n} marked as done.", id: "Level {n} ditandai selesai." },
-  "camp.bs.noKey": { en: "Add your AI API key in Settings → AI first.", id: "Tambahin API key AI dulu di Pengaturan → AI." },
+  "camp.bs.noKey": { en: "The AI isn't available right now. Try again in a moment — if it keeps happening, message the Wepeka team.", id: "AI-nya lagi belum bisa dipakai. Coba lagi sebentar — kalau masih, kabari tim Wepeka ya." },
   // ---------- Grow Brand (js/goal-plan.js, js/views/goal-wizard.js) ----------
   "camp.new.tpl.goal": { en: "Grow Brand", id: "Grow Brand" },
   "camp.new.goalDesc": { en: "Deploys up to three campaigns at once — Social Media Growth, Community Growth and Sales Growth, each tracked on its own. Answer a few questions and the system plots the levels and targets from your own numbers.", id: "Menjalankan sampai tiga campaign sekaligus — Social Media Growth, Community Growth, dan Sales Growth, masing-masing dilacak sendiri-sendiri. Jawab beberapa pertanyaan, sistem yang plot level dan target dari angka brand-mu sendiri." },
@@ -1058,6 +1058,7 @@ export default {
   "goal.launch.suggestTarget": { en: "Suggested: ~{n} (about 10% of your social media target)", id: "Saran: ~{n} (sekitar 10% dari target social media-mu)" },
   "goal.launch.previewTitle": { en: "Here's what gets deployed", id: "Ini yang bakal dijalankan" },
   "goal.launch.deploy": { en: "Deploy Grow Brand", id: "Jalankan Grow Brand" },
+  "goal.launch.failed": { en: "Something went wrong while setting this up. Check the Goals tab — if it isn't there, try once more.", id: "Ada masalah pas menyiapkan campaign ini. Cek tab Tujuan — kalau belum muncul, coba sekali lagi." },
   "goal.launch.deployedToastOne": { en: "\"{name}\" is live.", id: "\"{name}\" sudah jalan." },
   "goal.launch.err.followers": { en: "Fill in your followers today (0 is fine) and a target higher than that.", id: "Isi followers hari ini (0 juga boleh) dan target yang lebih tinggi dari itu." },
   "goal.launch.err.members": { en: "Fill in your member count today (0 is fine) and a target higher than that.", id: "Isi jumlah member hari ini (0 juga boleh) dan target yang lebih tinggi dari itu." },

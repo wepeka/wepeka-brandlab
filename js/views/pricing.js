@@ -102,7 +102,7 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
         toast(t("pricing.pay.success"));
         onSuccess?.();
       },
-      onPending: () => toast(t("pricing.pay.pending")),
+      onPending: () => { toast(t("pricing.pay.pending")); showPendingHelp("snap"); },
       onError: () => toast(t("pricing.pay.error"), "error"),
     });
   } catch (err) {
@@ -125,6 +125,7 @@ function enterAppWhenPaid() {
     }
     if (Date.now() - startedAt > 90_000) {
       toast(t("pricing.pay.pending"));
+      showPendingHelp("slow");
       return;
     }
     setTimeout(tick, 1000);
@@ -170,6 +171,23 @@ const ADDONS = [
 const ADDON_ELIGIBLE_PLANS = ["founder", "founder-ultimate", "lifetime"];
 
 const FAQ_KEYS = ["trial", "after", "which", "circle", "ai", "cancel", "credits", "slots"];
+
+// A payment that's taking a while gets a card that stays on screen — what's
+// happening, what to do, and a WhatsApp button — instead of one toast that
+// vanishes and leaves "sudah bayar tapi kok belum masuk?" unanswered.
+function showPendingHelp(kind) {
+  const host = document.querySelector(".pricing-shell");
+  if (!host) return;
+  host.querySelector(".pricing-pending-help")?.remove();
+  const wa = `https://wa.me/${PAYMENT_WA_NUMBER}?text=${encodeURIComponent(t("pricing.pending.waMessage"))}`;
+  host.insertAdjacentHTML("afterbegin", `
+    <div class="pricing-pending-help" role="status">
+      <b>${t(kind === "snap" ? "pricing.pending.snapTitle" : "pricing.pending.slowTitle")}</b>
+      <p>${t(kind === "snap" ? "pricing.pending.snapBody" : "pricing.pending.slowBody")}</p>
+      <a class="btn btn-secondary btn-sm" href="${wa}" target="_blank" rel="noopener">${icon("chat", { size: 13 })}${t("pricing.pending.wa")}</a>
+    </div>`);
+  host.querySelector(".pricing-pending-help").scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function waLink(planName, price) {
   const text = encodeURIComponent(t("pricing.wa.message", { plan: planName, price }));
@@ -465,6 +483,11 @@ export function render(root, { user, account, backHref, locked } = {}) {
         <h1 class="pricing-title">${t("pricing.hero.title")}</h1>
         <p class="pricing-sub">${t("pricing.hero.sub")}</p>
         ${uid ? "" : `<p class="pricing-trial-note">${check()}<span>${t("pricing.trialNote", { days: TRIAL_DAYS })}</span></p>`}
+        ${uid ? "" : `
+          <ul class="pricing-what">
+            ${["dna", "plan", "ai"].map((k) => `<li>${check()}<span>${t(`pricing.what.${k}`)}</span></li>`).join("")}
+          </ul>
+          <a class="pricing-what-link" href="https://www.wepeka.com/brandlab" target="_blank" rel="noopener">${t("pricing.what.more")} ${icon("arrowRight", { size: 13 })}</a>`}
       </section>
 
       <section class="pricing-ways-section">

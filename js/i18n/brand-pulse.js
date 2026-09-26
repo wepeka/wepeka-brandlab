@@ -9,10 +9,10 @@ export default {
   "pulse.viral.detailLow": { en: "{views} views — well above what this brand usually gets", id: "{views} views — jauh di atas biasanya" },
 
   "pulse.topFormat.title": { en: "{format} · {funnel} is this brand's best format right now", id: "{format} · {funnel} lagi jadi format terbaik" },
-  "pulse.topFormat.detail": { en: "{count} posts averaging {er}% ER vs the brand's {brandEr}% average", id: "{count} post rata-rata ER {er}% vs rata-rata brand {brandEr}%" },
+  "pulse.topFormat.detail": { en: "{count} posts averaging {er}% engagement vs the brand's {brandEr}% average", id: "{count} post rata-rata interaksi {er}% vs rata-rata brand {brandEr}%" },
 
   "pulse.engagementDrop.title": { en: "Engagement has been slipping", id: "Engagement lagi turun" },
-  "pulse.engagementDrop.detail": { en: "Last 5 posts averaged {recent}% ER, down from {prev}% before that", id: "5 post terakhir rata-rata ER {recent}%, turun dari {prev}% sebelumnya" },
+  "pulse.engagementDrop.detail": { en: "Last 5 posts averaged {recent}% engagement, down from {prev}% before that", id: "5 post terakhir rata-rata interaksi {recent}%, turun dari {prev}% sebelumnya" },
 
   "pulse.followerJump.title": { en: "{platform} followers jumped", id: "Followers {platform} melonjak" },
   "pulse.followerJump.detail": { en: "+{delta} ({pct}%) since the last check", id: "+{delta} ({pct}%) sejak pengecekan terakhir" },
@@ -106,7 +106,7 @@ export default {
   "companion.moment.action.sales": { en: "Sales Tracker", id: "Sales Tracker" },
   "companion.moment.seed": { en: "{title} — {detail}", id: "{title} — {detail}" },
   "companion.memory.title": { en: "Brand memory", id: "Memori Brand" },
-  "companion.memory.intro": { en: "This is what every AI feature reads as \"what's happening in this brand right now\": the moments you saved from Companion recaps, plus signals the app detects on its own. Your raw chat is never here — only the Companion reads that. Delete anything you don't want AI to keep reading; that stops future reads, it can't un-send something already sent in a past request. A deleted auto-signal can reappear if the condition is still true; a deleted moment never does.", id: "Ini yang dibaca semua fitur AI sebagai \"yang sedang terjadi di brand ini\": momentum yang kamu simpan dari rangkuman Teman Brand, plus sinyal yang dideteksi aplikasi sendiri. Obrolan mentahmu tidak pernah ada di sini — hanya Teman Brand yang membacanya. Hapus apa pun yang tidak mau terus dibaca AI; ini menghentikan pembacaan ke depan, tidak bisa menarik kembali yang sudah terkirim di permintaan sebelumnya. Sinyal otomatis yang dihapus bisa muncul lagi kalau kondisinya masih berlaku; momentum yang dihapus tidak." },
+  "companion.memory.intro": { en: "What's happening in this brand right now — every AI feature (scripts, captions, schedule, campaigns) reads this before writing. It's not a content list: content you want to make goes to Content ideas. Delete anything AI shouldn't keep reading.", id: "Kejadian terbaru brand ini — dibaca semua fitur AI (script, caption, jadwal, campaign) sebelum menulis. Ini bukan daftar konten: konten yang mau kamu bikin masuknya ke Ide Konten. Hapus yang tidak perlu dibaca AI lagi." },
   "companion.memory.empty": { en: "Nothing in brand memory yet.", id: "Memori brand masih kosong." },
   "companion.memory.clearAll": { en: "Delete all memory", id: "Hapus semua memori" },
   "companion.memory.clearConfirm.title": { en: "Delete all brand memory?", id: "Hapus semua memori brand?" },

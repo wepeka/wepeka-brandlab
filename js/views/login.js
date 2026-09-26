@@ -115,7 +115,8 @@ export function renderAuthScreen(root) {
     qs("#forgot-link", root)?.addEventListener("click", async (e) => {
       e.preventDefault();
       const email = qs("#auth-email", root).value.trim();
-      if (!email) return showError(t("auth.forgotNeedEmail", { forgot: t("auth.forgot") }));
+      // No email yet: put the cursor where it goes, so the next step is obvious.
+      if (!email) { qs("#auth-email", root)?.focus(); return showError(t("auth.forgotNeedEmail", { forgot: t("auth.forgot") })); }
       try {
         await resetPassword(email);
         toast(t("auth.resetSent", { email }));

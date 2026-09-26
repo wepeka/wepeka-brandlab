@@ -341,7 +341,7 @@ function defaultDB() {
       // a display preference for whoever's looking, not brand data. Missing
       // entirely (older settings docs) falls back to "show everything" in
       // brand-home-analytics.js rather than needing a migration here.
-      homeWidgets: ["growthViews", "growthEngagement", "topContent", "platformBreakdown", "formatBreakdown", "funnelBreakdown", "contentHealth"],
+      homeWidgets: ["growthViews", "growthEngagement", "retention", "topContent", "platformBreakdown", "formatBreakdown", "funnelBreakdown", "contentHealth"],
     },
   };
 }

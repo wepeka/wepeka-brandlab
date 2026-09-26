@@ -17,6 +17,7 @@ import roadmap from "./i18n/roadmap.js";
 import chat_hub from "./i18n/chat-hub.js";
 import series from "./i18n/series.js";
 import announcements from "./i18n/announcements.js";
+import retention from "./i18n/retention.js";
 
 const KEY = "wepeka-lang";
 
@@ -56,9 +57,19 @@ const CORE = {
   "home.identity.title": { en: "Build your brand identity", id: "Bangun identitas brand" },
   "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Finish this first and the rest opens up on its own.", id: "Brand DNA jadi dasar semua konten dan campaign. Selesaikan ini dulu, sisanya terbuka sendiri." },
   "home.identity.dna": { en: "Brand DNA", id: "Brand DNA" },
-  "home.identity.book": { en: "Brand Book", id: "Brand Book" },
+  "home.identity.book": { en: "Brand Book (colors, fonts, logo…)", id: "Brand Book (warna, font, logo…)" },
   "home.identity.bookBasics": { en: "Colors & fonts", id: "Warna & Font" },
   "home.identity.done": { en: "Done", id: "Selesai" },
+  "home.identity.missing": { en: "Still to fill: {list}", id: "Tinggal diisi: {list}" },
+  "home.identity.draftPending": { en: "All filled by AI — read it once and press Save so it counts as yours.", id: "Semua sudah diisi AI — baca sekali lalu tekan Simpan biar dihitung jawabanmu." },
+  "home.identity.field.targetAudience": { en: "your customer", id: "pelanggan kamu" },
+  "home.identity.field.problemSolved": { en: "their problem", id: "masalah mereka" },
+  "home.identity.field.differentiation": { en: "why trust you", id: "kenapa percaya kamu" },
+  "home.identity.field.mission": { en: "the 3-step plan", id: "rencana 3 langkah" },
+  "home.identity.field.callToAction": { en: "your call to action", id: "ajakan kamu" },
+  "home.identity.field.successOutcome": { en: "what changes for them", id: "hasil buat mereka" },
+  "home.identity.field.failureOutcome": { en: "what they risk", id: "risiko kalau diam" },
+  "home.identity.field.tagline": { en: "tagline", id: "tagline" },
   "home.identity.ctaStart": { en: "Start Brand DNA", id: "Mulai Brand DNA" },
   "home.identity.ctaContinue": { en: "Continue Brand DNA", id: "Lanjutkan Brand DNA" },
   "home.identity.ctaBook": { en: "Set colors & fonts", id: "Lengkapi Warna & Font" },
@@ -145,7 +156,7 @@ const CORE = {
   "calendar.month.9": { en: "October", id: "Oktober" },
   "calendar.month.10": { en: "November", id: "November" },
   "calendar.month.11": { en: "December", id: "Desember" },
-  "calendar.autoschedule.noKey": { en: "Add your AI API key in Settings → AI first.", id: "Tambahkan API key AI di Pengaturan → AI dulu." },
+  "calendar.autoschedule.noKey": { en: "The AI isn't available right now. Try again in a moment — if it keeps happening, message the Wepeka team.", id: "AI-nya lagi belum bisa dipakai. Coba lagi sebentar — kalau masih, kabari tim Wepeka ya." },
   "calendar.autoschedule.nothingToSchedule": { en: "Nothing unscheduled to auto-schedule right now.", id: "Tidak ada konten yang perlu dijadwalkan otomatis sekarang." },
   "calendar.autoschedule.asking": { en: "Asking AI for a schedule for {count} item(s)…", id: "Meminta AI menyusun jadwal untuk {count} konten…" },
   "calendar.autoschedule.noResult": { en: "AI didn't return a usable schedule — try again.", id: "AI tidak mengembalikan jadwal yang bisa dipakai — coba lagi." },
@@ -184,7 +195,7 @@ const CORE = {
   "contentOs.tab.creator": { en: "Creator", id: "Creator" },
   "contentOs.tab.calendar": { en: "Calendar", id: "Kalender" },
   "contentOs.tab.copy": { en: "Quick copy", id: "Tulisan Cepat" },
-  "contentOs.tab.series": { en: "Series", id: "Series" },
+  "contentOs.tab.series": { en: "Series", id: "Seri" },
   "contentOs.tab.brainstorm": { en: "Brainstorm", id: "Brainstorm" },
   "contentOs.cadence.title": { en: "Set your work schedule", id: "Atur Jadwal Kerja" },
   "contentOs.cadence.sub": { en: "This sets up AI Auto-Schedule in the Calendar for {brand} and fills in the Shoot/Edit/Upload rows in My Routine automatically — set it once here instead of in both places.", id: "Ini sekaligus ngatur Jadwal Otomatis AI di Kalender buat {brand} dan ngisi baris Syuting/Edit/Upload di My Routine otomatis — cukup atur sekali di sini, nggak perlu di dua tempat." },
@@ -313,8 +324,8 @@ const CORE = {
   "contentEditor.campaign.aiSuggestDisabled": { en: "Create a campaign first", id: "Bikin campaign dulu" },
   "contentEditor.campaign.none": { en: "No campaign", id: "Tanpa campaign" },
   "contentEditor.phase.none": { en: "No phase", id: "Tanpa fase" },
-  "contentEditor.campaign.noneYet": { en: "No campaigns yet — create one from the Campaigns tab to link content to a goal.", id: "Belum ada campaign — bikin dulu di tab Campaign buat menghubungkan konten ini ke sebuah tujuan." },
-  "contentEditor.series.label": { en: "Content Series (concept)", id: "Content Series (konsep)" },
+  "contentEditor.campaign.noneYet": { en: "No campaigns yet — create one from the Goals tab to link this content to it.", id: "Belum ada campaign — bikin dulu di tab Tujuan buat menghubungkan konten ini ke sana." },
+  "contentEditor.series.label": { en: "Content Series (concept)", id: "Seri Konten (konsep)" },
   "contentEditor.series.none": { en: "Not part of a series", id: "Bukan bagian dari series" },
   "contentEditor.series.hint": { en: "Pick a saved recurring series and this piece writes in that concept's tone, structure and style.", id: "Pilih series rutin yang sudah disimpan, konten ini bakal ditulis pakai tone, struktur, dan gaya dari konsep itu." },
   "contentEditor.funnel.aiDetect": { en: "Detect from caption/idea using AI", id: "Deteksi dari caption/ide pakai AI" },
@@ -323,7 +334,7 @@ const CORE = {
   "contentEditor.publishedDate.label": { en: "Published date", id: "Tanggal Terbit" },
   "contentEditor.publishedUrl.label": { en: "Published URL", id: "URL Terbit" },
   "contentEditor.publishedUrl.hint": { en: "Paste the link here once the post is live.", id: "Tempel link-nya di sini begitu kontennya sudah tayang." },
-  "contentEditor.ai.needsKey": { en: "Add your AI API key in Settings → AI first.", id: "Isi dulu API key AI-mu di Pengaturan → AI." },
+  "contentEditor.ai.needsKey": { en: "The AI isn't available right now. Try again in a moment — if it keeps happening, message the Wepeka team.", id: "AI-nya lagi belum bisa dipakai. Coba lagi sebentar — kalau masih, kabari tim Wepeka ya." },
   "contentEditor.ai.thinking": { en: "Thinking…", id: "Mikir…" },
   "contentEditor.ai.suggested": { en: "Suggested: {campaign}", id: "Saran: {campaign}" },
   "contentEditor.ai.angle": { en: "Angle: {angle}", id: "Angle: {angle}" },
@@ -503,6 +514,7 @@ const EXTRA = {
   "chat-hub": chat_hub,
   "series": series,
   "announcements": announcements,
+  "retention": retention,
 };
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 

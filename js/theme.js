@@ -13,9 +13,16 @@ export function applyTheme(theme = getTheme()) {
   else document.documentElement.removeAttribute("data-theme");
 }
 
+// Switching repaints everything at once: elements carry different
+// background/colour transition speeds, so animating them left a moment of
+// dark text on a still-dark card (unreadable) mid-switch. Transitions are
+// off for the switch itself, back on two frames later.
 export function setTheme(theme) {
   localStorage.setItem(KEY, theme);
+  const root = document.documentElement;
+  root.classList.add("theme-switching");
   applyTheme(theme);
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
 }
 
 export function toggleTheme() {

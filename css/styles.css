@@ -274,6 +274,14 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
   font-size: 13px; font-weight:600;
   max-width: 240px; flex: none;
 }
+/* Base look for every avatarHTML() — it only sets size inline, so any spot
+   without its own .x .avatar rule (Beranda header, brand menu, new-brand
+   preview) used to render a bare floating letter. */
+.avatar{
+  display:flex; align-items:center; justify-content:center; flex:none;
+  background: var(--brand-tint); color: var(--brand-tint-text);
+  font-family: var(--font-display); font-weight:800; object-fit:cover; overflow:hidden;
+}
 .brand-switch .avatar{
   width:22px; height:22px; border-radius:50%; flex:none;
   display:flex; align-items:center; justify-content:center;
@@ -372,6 +380,8 @@ main.view.wide{ max-width: 1440px; }
 .segmented button{ min-width:0; }
 .segmented button{ flex:1; border:0; background:transparent; color: var(--text-muted); padding:8px 12px; border-radius: var(--radius-pill); font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; }
 .segmented button.active{ background: var(--text); color: var(--bg); }
+/* Size each option from its own label: flex:1 (basis 0) split the pill evenly, so "Semua Konten" ran into "Terbit". */
+.segmented button{ flex:1 0 auto; }
 
 .chip-select{ display:flex; flex-wrap:wrap; gap:8px; }
 .chip-select button{ border:1px solid var(--border); background: var(--surface); color: var(--text-muted); padding:8px 14px; border-radius: var(--radius-pill); font-size:12.5px; font-weight:700; cursor:pointer; }
@@ -686,7 +696,7 @@ main.view.wide{ max-width: 1440px; }
    ============================================================ */
 .table-wrap{ border:1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
 table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
-.data-table thead th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color: var(--text-faint); font-weight:700; padding:13px 16px; border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; user-select:none; }
+.data-table thead th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color: var(--text-muted); font-weight:700; padding:13px 16px; border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; user-select:none; }
 .data-table thead th:hover{ color: var(--text-muted); }
 .data-table tbody td{ padding:13px 16px; border-bottom:1px solid var(--border-soft); vertical-align: middle; }
 .data-table tbody tr:last-child td{ border-bottom:none; }
@@ -1410,7 +1420,14 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
    Toast
    ============================================================ */
 .toast-root{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:100; display:flex; flex-direction:column; gap:8px; align-items:center; }
-.toast{ background: var(--bg-raised); border:1px solid var(--border); color: var(--text); padding:12px 18px; border-radius: var(--radius-pill); font-size:13px; font-weight:600; box-shadow: var(--shadow-lg); display:flex; align-items:center; gap:9px; animation: toastIn .16s ease-out; }
+.toast svg{ flex:none; }
+/* Phones: sit above the floating chat/notes buttons (bottom-right) instead of
+   landing on top of the page's main button, and never wider than the screen. */
+@media (max-width: 640px){
+  .toast-root{ bottom: 92px; width: calc(100vw - 32px); }
+  .toast{ width:100%; font-size:13.5px; }
+}
+.toast{ background: var(--bg-raised); border:1px solid var(--border); color: var(--text); padding:12px 18px; border-radius: 16px; max-width: min(440px, calc(100vw - 32px)); line-height:1.4; font-size:13px; font-weight:600; box-shadow: var(--shadow-lg); display:flex; align-items:center; gap:9px; animation: toastIn .16s ease-out; }
 @keyframes toastIn{ from{ opacity:0; transform: translateY(6px); } to{ opacity:1; transform:none; } }
 .toast.success svg{ color: var(--health-good); }
 .toast.error svg{ color: var(--health-poor); }
@@ -1585,6 +1602,12 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
      clipping off-screen. */
   .topbar-right{ order:2; flex-wrap: wrap; row-gap:8px; justify-content:flex-end; }
   .tabs{ order:3; flex:1 1 100%; width:100%; overflow-x:auto; min-width:0; }
+  /* Every brand tab visible at once — the 4th (Konten) used to sit cut off
+     past the right edge with nothing hinting the row scrolls. Equal columns,
+     icon above label, 44px+ tap height. */
+  .topbar .tabs{ display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:4px; margin-left:0; overflow:visible; }
+  .topbar .tab{ flex-direction:column; justify-content:center; gap:3px; padding:7px 4px; min-height:48px; font-size:12px; min-width:0; }
+  .topbar .tab svg{ width:18px; height:18px; }
   main.view{ padding: 24px 16px 60px; }
   .hero-strip h1{ font-size:32px; }
   .drawer{ width:100%; }
@@ -2821,6 +2844,7 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .journey-hero-progress{ display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color: var(--health-good); background: var(--health-good-soft); padding: 7px 12px; border-radius: var(--radius-pill); }
 .journey-hero-cta{ margin-top: 8px; padding: 13px 22px; font-size: 15px; border-radius: var(--radius-pill); }
 .journey-hero-note{ font-size:12px; color: var(--text-faint); }
+.journey-hero-missing{ display:flex; align-items:center; gap:6px; margin:-4px 0 14px; font-size:12.5px; font-weight:700; color: var(--accent); }
 .journey-hero-today{ border-color: var(--border); box-shadow: none; }
 /* Only the light default surface needs its own gradient tint — once
    .glass-card is on the element --surface is already the frosted dark
@@ -3875,3 +3899,123 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 /* A4 pages for the PDF: the footer sits at the bottom of each page */
 .rp-pdf-host .rp2.rp-page{ position:relative; padding:0; }
 .rp-pdf-host .rp2.rp-page .rp2-foot{ position:absolute; left:0; right:0; bottom:0; margin:0 36px; }
+
+/* ============================================================
+   Retention (watch time) — Quick Fill section, Home widgets, chat photos
+   ============================================================ */
+.qe-ret{ margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+.qe-ret-title{ font-weight:800; font-size:13.5px; }
+.qe-ret-verdict{ margin-top:12px; font-size:13px; color: var(--text-muted); }
+.qe-ret-verdict p{ margin:6px 0 0; line-height:1.5; }
+.qe-ret-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.qe-ret-chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius: var(--radius-pill); background: var(--surface-2); font-size:12px; color: var(--text-muted); }
+.qe-ret-chip b{ color: var(--text); font-size:13px; }
+.qe-ret-chip.health-good{ background: color-mix(in srgb, var(--health-good) 14%, transparent); color: var(--health-good); }
+.qe-ret-chip.health-average{ background: color-mix(in srgb, var(--health-average) 14%, transparent); color: var(--health-average); }
+.qe-ret-chip.health-poor{ background: color-mix(in srgb, var(--health-poor) 14%, transparent); color: var(--health-poor); }
+.ret-tiles{ display:grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap:10px; }
+.ret-tile{ padding:12px 12px 10px; border-radius: var(--radius-md); background: var(--surface-2); min-width:0; }
+.ret-tile-v{ font-family: var(--font-display); font-weight:800; font-size:22px; line-height:1.1; letter-spacing:-.01em; }
+.ret-tile-k{ font-size:11.5px; color: var(--text-muted); margin-top:4px; }
+.ret-tile-k span{ color: var(--text-faint); }
+.ret-tile-r{ display:flex; align-items:center; gap:6px; font-size:11px; font-weight:800; margin-top:8px; }
+.ret-good .ret-tile-r{ color: var(--health-good); }
+.ret-average .ret-tile-r{ color: var(--health-average); }
+.ret-poor .ret-tile-r{ color: var(--health-poor); }
+.ret-note{ margin:12px 0 0; font-size:12px; color: var(--text-faint); line-height:1.45; }
+.ret-row-verdict{ color: var(--text-muted) !important; white-space:normal !important; margin-top:3px; }
+/* Chat: attached screenshots (composer strip + inside the sent bubble) */
+.cp-attach{ display:flex; gap:8px; padding:8px 14px 0; flex-wrap:wrap; }
+.cp-attach-item{ position:relative; width:56px; height:56px; border-radius:8px; overflow:hidden; border:1px solid var(--border); background: var(--surface-2); }
+.cp-attach-item img{ width:100%; height:100%; object-fit:cover; display:block; }
+.cp-attach-item button{ position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:999px; border:0; background: rgba(0,0,0,.65); color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+.consultant-panel-input .cp-image{ flex:none; }
+.is-dragging .consultant-panel-input{ outline:2px dashed var(--accent); outline-offset:-4px; }
+.cp-msg-images{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+.cp-msg-images img{ width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid rgba(255,255,255,.35); display:block; }
+.cp-metrics{ margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.cp-metrics-title{ font-weight:800; font-size:12.5px; margin-bottom:6px; }
+.cp-metrics-list{ display:flex; flex-wrap:wrap; gap:6px; }
+.cp-metrics-list span{ font-size:12px; padding:3px 8px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-muted); }
+.cp-metrics-list span b{ color: var(--text); }
+.cp-metrics-actions{ margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; color: var(--text-muted); }
+.cp-pick-list{ display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto; margin-top:10px; }
+.cp-pick-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:9px 10px; border-radius:8px; border:1px solid transparent; background:transparent; color: var(--text); cursor:pointer; font:inherit; }
+.cp-pick-row:hover{ background: var(--surface-2); border-color: var(--border); }
+.cp-pick-row .t{ font-weight:700; font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cp-pick-row .m{ font-size:11.5px; color: var(--text-faint); flex:none; }
+
+/* Brand memory: write-it-yourself form, the ♡ on your own chat message, and
+   the "Ide Konten vs Memori Brand" explainer (js/brand-memory.js). */
+.memory-add{ margin:10px 0 4px; padding:10px; border:1px dashed var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
+.memory-add-title{ display:flex; align-items:center; gap:5px; margin:0 0 6px; font-size:12px; font-weight:700; }
+.memory-add-text{ min-height:54px; font-size:12.5px; resize:vertical; }
+.memory-add-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.memory-add-kind{ display:flex; align-items:center; gap:6px; font-size:11.5px; color: var(--text-muted); }
+.memory-add-kind .select{ width:auto; min-width:120px; padding:4px 28px 4px 8px; font-size:12px; height:auto; }
+.memory-add-how{ font-size:11px; margin:8px 0 0; line-height:1.45; }
+.memory-diff{ margin:0 0 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); font-size:12px; }
+.memory-diff summary{ display:flex; align-items:center; gap:6px; padding:8px 10px; cursor:pointer; font-weight:700; color: var(--text-muted); list-style:none; }
+.memory-diff summary::-webkit-details-marker{ display:none; }
+.memory-diff[open] summary{ color: var(--text); }
+.memory-diff-body{ padding:0 10px 10px; }
+.memory-diff-body p{ display:flex; gap:6px; margin:0 0 6px; line-height:1.45; }
+.memory-diff-body p svg{ flex:none; margin-top:3px; }
+.memory-diff-body p.text-faint{ display:block; margin:4px 0 0; font-size:11.5px; }
+.cp-side > .memory-diff{ margin-bottom:10px; }
+.cp-msg-mem{ position:absolute; left:-26px; top:50%; transform:translateY(-50%); width:22px; height:22px; border:0; border-radius:50%; background:transparent; color: var(--text-faint); display:grid; place-items:center; cursor:pointer; opacity:0; transition: opacity .15s, color .15s; }
+.cp-msg-mem.has-del{ left:-50px; }
+.consultant-msg-user:hover .cp-msg-mem, .cp-msg-mem:focus-visible{ opacity:1; }
+.cp-msg-mem:hover{ color: var(--accent); background: var(--surface-2); }
+.cp-msg-mem.is-saved{ opacity:1; color: var(--accent); cursor:default; }
+.cp-msg-mem.is-saved svg path{ fill: currentColor; }
+@media (hover:none){ .cp-msg-mem{ opacity:.6; } }
+
+/* Brand DNA wizard nav on phones: Kembali + Simpan progress + Lanjut don't
+   fit one 343px row (Lanjut was pushed past the screen edge). Kembali and
+   Lanjut share the first row, Simpan progress drops below. */
+@media (max-width: 520px){
+  .dna-nav{ flex-wrap:wrap; }
+  .dna-nav-right{ display:contents; }
+  .dna-nav-save{ order:3; flex:1 1 100%; text-align:center !important; }
+  .dna-nav #wiz-back{ flex:none; }
+  .dna-nav-next{ flex:1 1 0; min-width:0; }
+  .bb-chip-row{ flex-wrap:wrap; }
+}
+
+/* Pricing (logged out): what Brandlab actually does, before any price. */
+.pricing-what{ list-style:none; padding:0; margin:14px auto 0; display:grid; gap:8px; max-width:520px; text-align:left; }
+.pricing-what li{ display:flex; gap:8px; align-items:flex-start; font-size:13.5px; color: var(--text); line-height:1.45; }
+.pricing-what svg{ flex:none; margin-top:2px; color: var(--accent); }
+.pricing-what-link{ display:inline-flex; align-items:center; gap:5px; margin-top:12px; font-size:13px; font-weight:700; color: var(--accent); }
+.pricing-pending-help{ border:1px solid var(--accent); background: var(--accent-soft); border-radius: var(--radius-lg); padding:16px 18px; margin: 0 auto 18px; max-width:720px; }
+.pricing-pending-help b{ display:block; font-size:14.5px; margin-bottom:4px; }
+.pricing-pending-help p{ margin:0 0 10px; font-size:13px; color: var(--text-muted); line-height:1.5; }
+
+/* Touch screens: every tappable control at least ~40px tall/wide, so a
+   thumb doesn't hit the neighbour (Panduan, Kembali, icon buttons, the
+   pricing toggles were 26–32px). Mouse layouts keep their compact size. */
+@media (pointer: coarse){
+  .btn, .btn-sm{ min-height:40px; }
+  .icon-btn{ min-width:40px; min-height:40px; }
+  .chip-select button, .checkbox-chip{ min-height:40px; }
+  .tab{ min-height:44px; }
+}
+
+/* Konten list on phones: each row becomes a small card (title + actions on
+   top, the rest as label/value lines) instead of a 980px-wide table you have
+   to swipe sideways to read. */
+@media (max-width: 640px){
+  .data-table.cl-cards thead{ display:none; }
+  .data-table.cl-cards, .data-table.cl-cards tbody{ display:block; width:100%; }
+  .data-table.cl-cards tr{ display:grid; grid-template-columns:1fr auto; gap:6px 10px; padding:14px 14px; border-bottom:1px solid var(--border); }
+  .data-table.cl-cards td{ display:block; padding:0; border:none; white-space:normal; }
+  .data-table.cl-cards td.cell-title{ grid-column:1; grid-row:1; font-weight:700; font-size:14px; }
+  .data-table.cl-cards td:last-child{ grid-column:2; grid-row:1; }
+  .data-table.cl-cards td[data-label]{ grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; }
+  .data-table.cl-cards td[data-label]::before{ content: attr(data-label); color: var(--text-faint); font-weight:600; font-size:11.5px; }
+  .data-table.cl-cards td[data-label] .text-faint{ display:inline; margin-left:6px; }
+}
+
+/* See js/theme.js setTheme: no mixed-speed transitions during a theme switch. */
+.theme-switching *, .theme-switching *::before, .theme-switching *::after{ transition:none !important; }

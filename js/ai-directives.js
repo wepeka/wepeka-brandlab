@@ -18,6 +18,10 @@ export const MAX_IDEAS = 3;
 export const MAX_TASKS = 3;
 export const MAX_MOMENTS = 2;
 export const MAX_SAVES = 2;
+// Numbers the consultant read off a screenshot the user sent
+// ([[metrics:views=12300;hookPct=62]]) — become a "save to a post" card.
+export const METRIC_DIRECTIVE_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained", "videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"];
+const RETENTION_DIRECTIVE_KEYS = new Set(["videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"]);
 const HANDOFF_TARGETS = ["consultant", "brainstorm", "companion"];
 
 export function parseDirectives(rawText) {
@@ -30,7 +34,23 @@ export function parseDirectives(rawText) {
   const moments = [];
   const saves = [];
   let handoff = null;
+  let metrics = null;
   const cleanText = (rawText || "")
+    .replace(/\[\[metrics:([^\]\n]+)\]\]/gi, (_, body) => {
+      if (metrics) return "";
+      const perf = {};
+      const retention = {};
+      body.split(/[;,]/).forEach((pair) => {
+        const [k, v] = pair.split("=").map((x) => (x || "").trim());
+        const key = METRIC_DIRECTIVE_KEYS.find((m) => m.toLowerCase() === k.toLowerCase());
+        const n = parseFloat(String(v).replace(/[^\d.-]/g, ""));
+        if (!key || !isFinite(n)) return;
+        if (RETENTION_DIRECTIVE_KEYS.has(key)) retention[key] = n;
+        else perf[key] = Math.round(n);
+      });
+      if (Object.keys(perf).length || Object.keys(retention).length) metrics = { metrics: perf, retention, saved: null };
+      return "";
+    })
     // A rewrite of the script/caption being discussed: multi-line, so it is
     // pulled out first. An unterminated tag (reply cut off, or still
     // streaming) is hidden rather than shown raw.
@@ -113,7 +133,7 @@ export function parseDirectives(rawText) {
     })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, handoff };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, handoff, metrics };
 }
 
 // The model answers in light markdown (bold, italics, numbered/bulleted

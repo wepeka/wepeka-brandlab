@@ -9,6 +9,9 @@ import { openReportModal } from "./report.js";
 import { syncInstagramPerformance } from "../instagram-sync.js";
 import { canUseInstagramApi } from "../account.js";
 import { analyzeScreenshot } from "../ocr.js";
+import { extractInsightsFromImage, aiCanSeeImages, AiApiError } from "../ai.js";
+import { analyzeRetention, retentionVerdict, hasRetentionData, normalizeRetention, ratingLabel } from "../retention.js";
+import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -147,7 +150,7 @@ function paint(root, brandId, state, refresh) {
 
     <div class="table-wrap">
       <div class="table-scroll">
-        <table class="data-table">
+        <table class="data-table cl-cards">
           <thead>
             <tr>
               <th data-sort="title">${t("contentList.th.title")}</th>
@@ -321,12 +324,12 @@ function rowHTML({ c, perf, m }, campaignsById) {
   return `
     <tr data-id="${c.id}">
       <td class="cell-title">${escapeText(c.title || t("common.untitled"))}</td>
-      <td class="cell-muted"><span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${c.format || "—"}</div></td>
-      <td class="cell-muted">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaign.name || t("common.untitled"))}</span>` : "—"}</td>
-      <td><span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span></td>
-      <td class="cell-muted">${formatDate(c.scheduleDate || c.publishedDate)}</td>
-      <td class="cell-muted">${isPublished ? formatNumber(perf.views) : "—"}</td>
-      <td>${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${c.format || "—"}</div></td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaign.name || t("common.untitled"))}</span>` : "—"}</td>
+      <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span></td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf.views) : "—"}</td>
+      <td data-label="${escapeText(t("contentList.th.engagement"))}">${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
       <td onclick="event.stopPropagation()">
         <div class="flex gap-4">
           ${isPublished ? `<button type="button" class="icon-btn" data-quick-fill="${c.id}" aria-label="${t("contentList.fillEngagement")}" title="${t("contentList.fillEngagement")}" style="width:30px;height:30px;">${icon("chart", { size: 15 })}</button>` : ""}
@@ -387,8 +390,38 @@ function openEngagementQueueList({ brandId, allQueue, refresh }) {
 // piece of content. Reused from two places: the queue list above, and the
 // per-row quick-fill icon in the table (rowHTML) for updating any post on
 // the spot, not just ones that showed up as "due."
+// Pro adds the retention section (js/retention.js) under the numbers:
+// the same screenshot drop reads Instagram's / TikTok's retention graph,
+// the four figures stay editable, and a verdict line says what it means.
+const RET_INPUTS = ["videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct"];
+function retentionSectionHTML(ret) {
+  return `
+    <div class="qe-ret" id="qe-ret">
+      <div class="qe-ret-head">
+        <div>
+          <div class="qe-ret-title">${t("ret.qf.section")}</div>
+          <div class="text-faint" style="font-size:12px;">${t("ret.qf.sectionSub")}</div>
+        </div>
+      </div>
+      <div class="metric-grid" style="margin-top:10px;">
+        ${RET_INPUTS.map((k) => `
+          <div class="field metric-field" style="margin-bottom:0;">
+            <label for="qe-ret-${k}">${t(`ret.field.${k}`)}</label>
+            <input class="input" type="number" min="0" step="${k.endsWith("Pct") ? "1" : "0.1"}" id="qe-ret-${k}" value="${ret[k] ?? ""}" placeholder="—" />
+          </div>`).join("")}
+      </div>
+      <div id="qe-ret-verdict" class="qe-ret-verdict"></div>
+    </div>`;
+}
+
 export function openQuickFillModal({ c, onSaved, onBack }) {
   const perf = c.performance || {};
+  const isPro = getMode() === "advanced";
+  const savedRet = normalizeRetention(perf.retention || {});
+  // The curve read off a graph screenshot (not editable by hand) rides
+  // along with the typed numbers on save.
+  let readCurve = savedRet.curve;
+  let readSource = perf.retention?.source || "manual";
   const overlay = openModal({
     title: t("contentList.qf.title"),
     wide: true,
@@ -401,9 +434,9 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
         <label>${t("contentList.qf.screenshotLabel")}</label>
         <div id="qe-dropzone" class="dropzone">
           ${icon("upload")}
-          <div>${t("contentList.qf.dropTitle")}</div>
-          <div class="text-faint" style="font-size:12px;margin-top:4px;">${t("contentList.qf.dropSub")}</div>
-          <input type="file" id="qe-screenshot-file" accept="image/*" style="display:none;" />
+          <div>${t("ret.qf.dropTitle")}</div>
+          <div class="text-faint" style="font-size:12px;margin-top:4px;">${isPro ? t("ret.qf.dropSub") : t("contentList.qf.dropSub")}</div>
+          <input type="file" id="qe-screenshot-file" accept="image/*" multiple style="display:none;" />
         </div>
         <div id="qe-ocr-status" style="margin-top:8px;"></div>
       </div>
@@ -411,11 +444,12 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
         ${METRIC_KEYS.map(
           (m) => `
           <div class="field metric-field" style="margin-bottom:0;">
-            <label>${m.label}</label>
+            <label for="qe-metric-${m.key}">${m.label}</label>
             <input class="input" type="number" min="0" id="qe-metric-${m.key}" value="${perf[m.key] ?? ""}" placeholder="—" />
           </div>`
         ).join("")}
       </div>
+      ${isPro ? retentionSectionHTML(savedRet) : ""}
     `,
     footHTML: `
       ${onBack ? `<button class="btn btn-secondary" id="qe-back">${icon("chevronLeft", { size: 12 })}${t("contentList.qf.backToList")}</button>` : ""}
@@ -438,29 +472,86 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
       dropzone.classList.remove("drag");
     })
   );
-  dropzone.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
-  fileInput.addEventListener("change", (e) => handleFile(e.target.files[0]));
+  dropzone.addEventListener("drop", (e) => handleFiles(e.dataTransfer.files));
+  fileInput.addEventListener("change", (e) => { handleFiles(e.target.files); e.target.value = ""; });
 
-  async function handleFile(file) {
-    if (!file) return;
-    const dataUrl = await resizeImageFile(file, { maxDimension: 1400, format: "image/jpeg", quality: 0.88 });
+  // The retention verdict follows the four inputs live (typed or read).
+  const retInput = (k) => qs(`#qe-ret-${k}`, overlay);
+  const readRetention = () => {
+    if (!isPro) return null;
+    const raw = { curve: readCurve, source: readSource };
+    RET_INPUTS.forEach((k) => { const v = retInput(k)?.value; raw[k] = v === "" || v === undefined ? null : Number(v); });
+    return raw;
+  };
+  const renderVerdict = () => {
+    const box = qs("#qe-ret-verdict", overlay);
+    if (!box) return;
+    const raw = readRetention();
+    const a = analyzeRetention(raw);
+    if (a.diagnosis === "none") { box.innerHTML = `<div class="text-faint" style="font-size:12.5px;">${t("ret.qf.noVerdict")}</div>`; return; }
+    const chip = (key, value, rating) => `<span class="qe-ret-chip ${rating ? `health-${rating}` : ""}"><b>${value}</b>${t(`ret.kpi.${key}`)}${rating ? ` · ${ratingLabel(rating)}` : ""}</span>`;
+    const chips = [
+      a.hookPct !== null ? chip("hook", formatPercent(a.hookPct, 0), a.ratings.hook) : "",
+      a.avgWatchPct !== null ? chip("watch", formatPercent(a.avgWatchPct, 0), a.ratings.watch) : "",
+      a.completionPct !== null ? chip("completion", formatPercent(a.completionPct, 0), a.ratings.completion) : "",
+    ].filter(Boolean).join("");
+    const lines = retentionVerdict(a, computeContentMetrics({ ...c, performance: readPerformance() }, getSettings()));
+    box.innerHTML = `<div class="qe-ret-chips">${chips}</div>${lines.map((l) => `<p>${escapeText(l)}</p>`).join("")}`;
+  };
+  RET_INPUTS.forEach((k) => retInput(k)?.addEventListener("input", renderVerdict));
+  METRIC_KEYS.forEach((m) => qs(`#qe-metric-${m.key}`, overlay)?.addEventListener("input", renderVerdict));
+  renderVerdict();
+
+  function readPerformance() {
+    const performance = { ...perf };
+    METRIC_KEYS.forEach((m) => {
+      const v = qs(`#qe-metric-${m.key}`, overlay).value;
+      performance[m.key] = v === "" ? null : Number(v);
+    });
+    return performance;
+  }
+
+  // Each screenshot is read by the AI when the picked provider can see
+  // images (numbers AND the retention graph), otherwise by OCR (numbers
+  // and the labelled retention figures only). Every number found lands
+  // in its box; nothing typed is overwritten with a blank.
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []).filter((f) => f && f.type.startsWith("image/")).slice(0, 6);
+    if (!files.length) return;
     const statusEl = qs("#qe-ocr-status", overlay);
-    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("contentList.qf.analyzing")}</span></div>`;
-    try {
-      const { metrics } = await analyzeScreenshot(dataUrl, (pct) => {
-        statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("contentList.qf.analyzingPct", { pct })}</span></div>`;
-      });
-      const matched = Object.keys(metrics);
-      matched.forEach((key) => {
-        const input = qs(`#qe-metric-${key}`, overlay);
-        if (input) input.value = metrics[key];
-      });
-      statusEl.innerHTML = matched.length
-        ? `<div class="ocr-status">${icon("check", { size: 14 })}<span>${t("contentList.qf.foundMetrics", { count: matched.length, metricWord: t(matched.length === 1 ? "cnt.metric.one" : "cnt.metric.many") })}</span></div>`
-        : `<div class="ocr-status">${icon("info", { size: 14 })}<span>${t("contentList.qf.noMetricsFound")}</span></div>`;
-    } catch (err) {
-      statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${err.message || t("contentList.qf.analyzeFailed")}</span></div>`;
+    const ai = getSettings().ai || {};
+    const useAi = aiCanSeeImages(ai);
+    let metricsFound = 0;
+    let retFound = false;
+    let lastError = "";
+    for (let i = 0; i < files.length; i++) {
+      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${files.length > 1 ? t("ret.qf.reading", { n: i + 1, total: files.length }) : t("contentList.qf.analyzing")}</span></div>`;
+      try {
+        const dataUrl = await resizeImageFile(files[i], { maxDimension: 1400, format: "image/jpeg", quality: 0.88 });
+        const result = useAi
+          ? await extractInsightsFromImage(ai, dataUrl)
+          : await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("contentList.qf.analyzingPct", { pct })}</span></div>`; });
+        Object.entries(result.metrics || {}).forEach(([key, val]) => {
+          const input = qs(`#qe-metric-${key}`, overlay);
+          if (input && val !== null && val !== undefined) { input.value = val; metricsFound++; }
+        });
+        if (isPro && hasRetentionData(result.retention)) {
+          const r = normalizeRetention(result.retention);
+          RET_INPUTS.forEach((k) => { if (r[k] !== null && retInput(k)) retInput(k).value = k.endsWith("Pct") ? Math.round(r[k]) : Math.round(r[k] * 10) / 10; });
+          if (r.curve.length) readCurve = r.curve;
+          readSource = result.source || (useAi ? "ai" : "ocr");
+          retFound = true;
+        }
+      } catch (err) {
+        lastError = err instanceof AiApiError ? err.message : err?.message || t("contentList.qf.analyzeFailed");
+      }
     }
+    renderVerdict();
+    const how = useAi ? t("ret.qf.readAi") : t("ret.qf.readOcr");
+    const summary = isPro ? t("ret.qf.found", { metrics: metricsFound, ret: retFound ? t("ret.qf.foundRet") : t("ret.qf.noRet") }) : metricsFound ? t("contentList.qf.foundMetrics", { count: metricsFound, metricWord: t(metricsFound === 1 ? "cnt.metric.one" : "cnt.metric.many") }) : t("contentList.qf.noMetricsFound");
+    statusEl.innerHTML = lastError && !metricsFound && !retFound
+      ? `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeText(lastError)}</span></div>`
+      : `<div class="ocr-status">${icon(metricsFound || retFound ? "check" : "info", { size: 14 })}<span>${escapeText(summary)} · ${escapeText(how)}</span></div>`;
   }
 
   qs("#qe-back", overlay)?.addEventListener("click", () => {
@@ -473,11 +564,12 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     // the content's ER rating into "good" — compare before/after so a
     // re-save of an already-good piece doesn't celebrate every time.
     const wasGood = computeContentMetrics(c, settings).erRating === "good";
-    const performance = { ...perf };
-    METRIC_KEYS.forEach((m) => {
-      const v = qs(`#qe-metric-${m.key}`, overlay).value;
-      performance[m.key] = v === "" ? null : Number(v);
-    });
+    const performance = readPerformance();
+    if (isPro) {
+      const raw = readRetention();
+      if (hasRetentionData(raw)) performance.retention = { ...normalizeRetention(raw), analyzedAt: Date.now() };
+      else if (perf.retention) performance.retention = null;
+    }
     performance.confirmedAt = Date.now();
     updateContent(c.id, { performance });
     closeOverlay(overlay);

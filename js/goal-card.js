@@ -26,7 +26,10 @@ export function goalWidget({ brandId, brand, campaigns, content, identityDone = 
   const goal = goals.find((g) => g.status === "active" || g.status === "partial") || goals[0] || null;
 
   if (!goal) {
-    if (!identityDone) return null;
+    // The dated-plan promo waits for the first campaign: before that, Home's
+    // hero already asks "Pilih tujuan", and two big "make a plan" cards
+    // stacked on top of each other left people unsure which one to press.
+    if (!identityDone || !campaigns?.length) return null;
     return {
       key: "goal", iconName: "target", title: t("roadmap.home.promo.title"), summary: t("roadmap.home.promo.summary"), extraHead: "",
       bodyHTML: `<p class="text-muted" style="margin:0 0 12px;font-size:13.5px;">${t("roadmap.home.promo.body")}</p>

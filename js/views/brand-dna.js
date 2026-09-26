@@ -11,7 +11,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
-import { brandDnaCompleteness } from "../brand-progress.js";
+import { brandDnaCompleteness, missingDnaFields } from "../brand-progress.js";
 import { markDnaJustCompleted } from "./brand-builder.js";
 import { t } from "../i18n.js";
 
@@ -55,6 +55,9 @@ const AGE_RANGES = [t("dna.age.0to2"), t("dna.age.3to5"), t("dna.age.6to12"), t(
 // Deliberately few boxes: the old version asked 20+ small questions across
 // 8 steps and several of them overlapped, so people froze or repeated
 // themselves. One or two boxes per step, one idea each.
+// One box of the 3-step Plan (used by all three step boxes below).
+const PLAN_STEP_RULE = "Kotak ini SATU LANGKAH dalam rencana 3 langkah: satu aksi konkret yang dilakukan atau dialami pelanggan, mulai dengan kata kerja (misalnya 'chat WhatsApp buat tanya ukuran'), urut setelah langkah sebelumnya. Bukan hasil akhir, bukan janji, bukan gabungan beberapa langkah.";
+
 const STEPS = [
   {
     key: "audience",
@@ -64,8 +67,14 @@ const STEPS = [
     guide: t("dna.sb7.audience.guide"),
     principle: "Hero didefinisikan dari APA YANG DIA INGINKAN secara konkret, bukan sekadar data demografis. Jawaban akhir harus jelas nyebut satu keinginan atau tujuan spesifik si pelanggan.",
     parts: [
-      { key: "who", label: t("dna.sb7.audience.who"), placeholder: t("dna.sb7.audience.whoPh") },
-      { key: "want", label: t("dna.sb7.audience.want"), placeholder: t("dna.sb7.audience.wantPh") },
+      {
+        key: "who", label: t("dna.sb7.audience.who"), placeholder: t("dna.sb7.audience.whoPh"),
+        aiRule: "Kotak ini cuma SIAPA pelanggannya: satu tipe orang + ciri singkat yang relevan (usia, peran, lokasi, situasi hidup) — bukan apa yang mereka mau, bukan masalahnya. Bentuknya frasa benda yang bisa disambung dengan 'yang pengen …', misalnya 'ibu muda usia 25–35 di Kediri yang kerja kantoran'.",
+      },
+      {
+        key: "want", label: t("dna.sb7.audience.want"), placeholder: t("dna.sb7.audience.wantPh"),
+        aiRule: "Kotak ini cuma APA YANG MEREKA MAU: satu keinginan/tujuan konkret, ditulis supaya nyambung setelah kata 'yang pengen …' (misalnya 'camilan sehat buat anak tanpa harus masak tiap pagi'). Jangan ulang siapa mereka, jangan sebut masalah atau perasaan.",
+      },
     ],
     // These questions describe the customer for the brand's own notes —
     // the AI options must say "mereka", not address the customer.
@@ -86,8 +95,14 @@ const STEPS = [
     guide: t("dna.sb7.problem.guide"),
     principle: "Problem StoryBrand berlapis: masalah eksternal (yang kelihatan) memicu masalah internal (perasaan). Jawaban akhir harus menyambungkan sebab-akibat itu, bukan daftar keluhan terpisah.",
     parts: [
-      { key: "visible", label: t("dna.sb7.problem.visible"), placeholder: t("dna.sb7.problem.visiblePh") },
-      { key: "feel", label: t("dna.sb7.problem.feel"), placeholder: t("dna.sb7.problem.feelPh") },
+      {
+        key: "visible", label: t("dna.sb7.problem.visible"), placeholder: t("dna.sb7.problem.visiblePh"),
+        aiRule: "Kotak ini cuma MASALAH EKSTERNAL yang kelihatan: situasi nyata yang menghalangi pelanggan dapat yang mereka mau (misalnya 'nggak sempat masak tiap pagi'). JANGAN tulis perasaan/emosi di sini — ada kotak sendiri untuk itu — dan jangan ulang siapa pelanggannya. Nanti disambung ke template '{masalah} — dan itu bikin mereka {perasaan}'.",
+      },
+      {
+        key: "feel", label: t("dna.sb7.problem.feel"), placeholder: t("dna.sb7.problem.feelPh"),
+        aiRule: "Kotak ini cuma PERASAAN yang muncul gara-gara masalah di kotak sebelumnya: satu emosi konkret, ditulis supaya nyambung setelah 'dan itu bikin mereka …' (misalnya 'merasa bersalah karena anaknya jajan sembarangan', 'malu kalau ada tamu'). Jangan ulang masalahnya, cukup perasaannya.",
+      },
     ],
     voice: "third-person",
     compose: (p) => {
@@ -107,7 +122,10 @@ const STEPS = [
     guide: t("dna.sb7.guide.guide"),
     principle: "Brand adalah Guide, bukan Hero — meyakinkan lewat Empathy (paham situasi pelanggan) dan Authority (bukti konkret pernah bantu orang lain). Hindari klaim kosong seperti 'terbaik' atau 'nomor satu'.",
     parts: [
-      { key: "empathy", label: t("dna.sb7.guide.empathy"), placeholder: t("dna.sb7.guide.empathyPh") },
+      {
+        key: "empathy", label: t("dna.sb7.guide.empathy"), placeholder: t("dna.sb7.guide.empathyPh"),
+        aiRule: "Kotak ini cuma kalimat EMPATI: brand menunjukkan paham situasi pelanggan (apa yang mereka alami dan rasakan), dari sudut pandang brand, satu kalimat pendek. Bukan bukti/pencapaian (ada kotak bukti sendiri), bukan klaim 'terbaik', bukan kalimat jualan.",
+      },
       { key: "proof", label: t("dna.sb7.guide.proof"), type: "list" },
     ],
     compose: (p) => {
@@ -126,9 +144,9 @@ const STEPS = [
     guide: t("dna.sb7.plan.guide"),
     principle: "Plan yang baik bikin langkah pertama terasa kecil dan rendah risiko. Tiap langkah harus aksi konkret yang dilakukan/dialami pelanggan secara berurutan, bukan hasil akhir atau istilah abstrak.",
     parts: [
-      { key: "step1", label: t("dna.plan.step", { n: 1 }), placeholder: t("dna.plan.step1Ph") },
-      { key: "step2", label: t("dna.plan.step", { n: 2 }), placeholder: t("dna.plan.step2Ph") },
-      { key: "step3", label: t("dna.plan.step", { n: 3 }), placeholder: t("dna.plan.step3Ph") },
+      { key: "step1", label: t("dna.plan.step", { n: 1 }), placeholder: t("dna.plan.step1Ph"), aiRule: PLAN_STEP_RULE },
+      { key: "step2", label: t("dna.plan.step", { n: 2 }), placeholder: t("dna.plan.step2Ph"), aiRule: PLAN_STEP_RULE },
+      { key: "step3", label: t("dna.plan.step", { n: 3 }), placeholder: t("dna.plan.step3Ph"), aiRule: PLAN_STEP_RULE },
     ],
     example: t("dna.plan.example"),
   },
@@ -197,7 +215,9 @@ export function render(root, { brandId, step }) {
   // land here on the exact step that question actually lives in, instead
   // of always restarting at step 0 regardless of which card was clicked —
   // see STAGES' href functions in brand-builder.js.
-  const requestedIndex = step ? STEPS.findIndex((s) => s.key === step) : -1;
+  // "review" (from Beranda, when every box is filled but it's still an
+  // unsaved AI draft) opens the summary screen itself.
+  const requestedIndex = step === "review" ? STEPS.length : step ? STEPS.findIndex((s) => s.key === step) : -1;
   const state = {
     stepIndex: requestedIndex >= 0 ? requestedIndex : 0,
     answers: {
@@ -299,6 +319,7 @@ function paint(root, brandId, brand, state, refresh) {
       <div style="height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-bottom:24px;">
         <div style="height:100%;background:var(--accent);width:${Math.round(((state.stepIndex + 1) / total) * 100)}%;transition:width .2s;"></div>
       </div>
+      ${!isReview && state.stepIndex === 0 && getMode() === "advanced" && countAnswered(state.answers) < 8 ? proBriefHTML() : ""}
       ${isReview ? reviewHTML(state) : stepHTML(step, state, brandId)}
     </div>
   `;
@@ -317,7 +338,22 @@ function countAnswered(answers) {
   return ["targetAudience", "problemSolved", "differentiation", "mission", "callToAction", "successOutcome", "failureOutcome", "tagline"].filter((k) => (answers[k] || "").trim()).length;
 }
 
-async function runAiFill(root, brandId, brand, state, refresh) {
+// Pro shortcut: an agency usually already has a brief. Paste it once and
+// the same "AI isi semua" draft fills every blank box, then Review opens —
+// instead of clicking through seven steps first.
+function proBriefHTML() {
+  return `
+    <details class="card card-tight dna-pro-brief" style="margin-bottom:18px;">
+      <summary style="cursor:pointer;font-weight:700;font-size:13.5px;">${icon("sparkle", { size: 14 })} ${t("dna.proBrief.title")}</summary>
+      <p class="text-faint" style="font-size:12px;margin:8px 0;">${t("dna.proBrief.hint")}</p>
+      <textarea class="textarea" id="dna-pro-brief" rows="5" placeholder="${escapeHtml(t("dna.proBrief.ph"))}"></textarea>
+      <button type="button" class="btn btn-primary btn-sm" id="dna-pro-brief-go" style="margin-top:8px;">${icon("sparkle", { size: 13 })}${t("dna.proBrief.go")}</button>
+      <div id="dna-ai-fill-status"></div>
+    </details>`;
+}
+
+async function runAiFill(root, brandId, brand, state, refresh, { brief = "" } = {}) {
+  if (brief) brand = { ...brand, businessDescription: [brand.businessDescription, brief].filter(Boolean).join("\n\n") };
   {
     const ai = getSettings().ai || {};
     const statusEl = qs("#dna-ai-fill-status", root);
@@ -363,10 +399,13 @@ async function runAiFill(root, brandId, brand, state, refresh) {
 
 // A step's required field(s) must all be non-empty before Next is
 // clickable — per the user's request, this wizard is meant to make someone
-// actually answer each question, not skip through a form. The "identity"
-// step is the one explicit exception (it has its own Skip for now).
+// actually answer each question, not skip through a form. On the
+// "identity" step only the tagline is required — it's one of the eight
+// answers brandDnaDone() counts, so skipping it used to leave Brand DNA at
+// "7/8" forever (and Tujuan locked) with nothing on screen saying why.
+// Name and character stay optional.
 function isStepFilled(step, state) {
-  if (step.key === "identity") return true;
+  if (step.key === "identity") return !!(state.answers.tagline || "").trim();
   if (step.fields) return step.fields.every((f) => !!state.answers[f.field].trim());
   if (step.kind === "compose") {
     // 3.2: filled boxes count as an answer too, not just the combined
@@ -383,7 +422,7 @@ function isStepFilled(step, state) {
 // as its own textarea — so it reads state.answers directly instead of
 // querying a DOM node that doesn't exist for that step.
 function liveStepFilled(step, root, state) {
-  if (step.key === "identity") return true;
+  if (step.key === "identity") return !!qs("#ans-tagline", root)?.value.trim();
   if (step.kind === "funnel3") return !!state.answers[step.field].trim();
   if (step.fields) return step.fields.every((f) => !!qs(`#ans-${f.field}`, root).value.trim());
   if (step.kind === "compose") {
@@ -495,7 +534,7 @@ function stepHTML(step, state, brandId) {
   if (step.kind === "compose") return composeStepHTML(step, state);
   if (step.kind === "funnel3") return funnel3StepHTML(step, state);
 
-  const nav = navHTML(state, !isStepFilled(step, state));
+  const nav = navHTML(state, !isStepFilled(step, state), step.key === "identity" ? t("dna.nav.taglineFirst") : "");
   if (step.key === "identity") {
     return `
       <h2 style="margin-bottom:6px;">${step.title}</h2>
@@ -506,8 +545,9 @@ function stepHTML(step, state, brandId) {
         <a href="#/brand/${brandId}/builder/naming" id="dna-name-tool" style="display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--accent);">${t("dna.sb7.identity.nameTool")}</a>
       </div>
       <div class="field">
-        <label>${t("dna.label.tagline")}</label>
+        <label>${t("dna.label.tagline")} <span class="text-faint" style="font-weight:600;text-transform:none;letter-spacing:0;">${t("dna.identity.taglineRequired")}</span></label>
         <input class="input" id="ans-tagline" placeholder="${escapeHtml(t("dna.identity.taglinePh"))}" value="${escapeHtml(state.answers.tagline)}" />
+        <p class="text-faint" style="font-size:11.5px;margin:6px 0 0;">${t("dna.identity.taglineHint")}</p>
       </div>
       ${personalityFieldHTML(state)}
       ${nav}
@@ -603,18 +643,18 @@ function promptsHTML(prompts) {
   return `<ul class="text-faint" style="font-size:12px;margin:0 0 10px;padding-left:18px;line-height:1.6;">${prompts.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>`;
 }
 
-function navHTML(state, nextDisabled) {
+function navHTML(state, nextDisabled, hint = "") {
   return `
-    <div class="flex items-center justify-between" style="margin-top:8px;gap:12px;">
+    <div class="flex items-center justify-between dna-nav" style="margin-top:8px;gap:12px;">
       <button type="button" class="btn btn-secondary" id="wiz-back" ${state.stepIndex === 0 ? "disabled" : ""}>${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
-      <div class="flex items-center gap-8">
-        <div style="text-align:right;">
+      <div class="flex items-center gap-8 dna-nav-right">
+        <div class="dna-nav-save" style="text-align:right;">
           <button type="button" class="btn btn-ghost btn-sm" id="wiz-save-checkpoint">${icon("check", { size: 13 })}${t("dna.nav.saveProgress")}</button>
           <div id="wiz-save-status" class="text-faint" style="font-size:11px;margin-top:4px;"></div>
         </div>
-        <div style="text-align:right;">
+        <div class="dna-nav-next" style="text-align:right;">
           <button type="button" class="btn btn-primary" id="wiz-next" ${nextDisabled ? "disabled" : ""}>${t("dna.nav.next")}${icon("chevronRight", { size: 14 })}</button>
-          <div id="wiz-next-hint" class="text-faint" style="font-size:11px;margin-top:6px;${nextDisabled ? "" : "display:none;"}">${t("dna.nav.fillFirst")}</div>
+          <div id="wiz-next-hint" class="text-faint" style="font-size:11px;margin-top:6px;${nextDisabled ? "" : "display:none;"}">${hint || t("dna.nav.fillFirst")}</div>
         </div>
       </div>
     </div>
@@ -646,7 +686,7 @@ function optionCardsHTML(options) {
 // actually good; "Coba opsi lain" fetches a fresh batch instead of
 // repeating the same ones. Works on any element with a `.value` — used for
 // the full-size textareas and the small per-box inputs alike.
-async function runSuggestOptions({ brand, question, guide, principle, textarea, statusEl, optionsEl, btn, priorAnswers, count, maxWords, voice }) {
+async function runSuggestOptions({ brand, question, guide, principle, textarea, statusEl, optionsEl, btn, priorAnswers, siblingAnswers = [], partRule = "", count, maxWords, voice }) {
   const draft = textarea.value.trim();
   const ai = getSettings().ai || {};
   const hasKey = hasAiKey(ai);
@@ -658,8 +698,8 @@ async function runSuggestOptions({ brand, question, guide, principle, textarea, 
   btn.disabled = true;
   statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("dna.ai.loadingOptions")}</span></div>`;
   try {
-    const options = await suggestBrandDnaOptions(ai, { brand, question, guide, principle, draftAnswer: draft, priorAnswers, avoid: shownBefore, count: count || 3, maxWords, voice });
-    statusEl.innerHTML = "";
+    const { options, note } = await suggestBrandDnaOptions(ai, { brand, question, guide, principle, draftAnswer: draft, priorAnswers, siblingAnswers, partRule, avoid: shownBefore, count: count || 3, maxWords, voice });
+    statusEl.innerHTML = note ? `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeHtml(note)}</span></div>` : "";
     optionsEl.innerHTML = optionCardsHTML(options);
     const feedbackCtx = { brandId: brand?.id, feature: "brand-dna-options", prompt: { question, draftAnswer: draft, voice, maxWords } };
     mountAiFeedback(optionsEl, { ...feedbackCtx, output: options });
@@ -679,7 +719,7 @@ async function runSuggestOptions({ brand, question, guide, principle, textarea, 
       });
     });
     qs("[data-more-options]", optionsEl)?.addEventListener("click", () =>
-      runSuggestOptions({ brand, question, guide, principle, textarea, statusEl, optionsEl, btn, priorAnswers, count, maxWords, voice })
+      runSuggestOptions({ brand, question, guide, principle, textarea, statusEl, optionsEl, btn, priorAnswers, siblingAnswers, partRule, count, maxWords, voice })
     );
   } catch (e) {
     statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeHtml(e.message) : t("dna.ai.errorShort")}</span></div>`;
@@ -698,6 +738,11 @@ function wireStep(root, brandId, brand, state, refresh) {
     nextBtn.disabled = !filled;
     nextHint.style.display = filled ? "none" : "";
   }
+
+  qs("#dna-pro-brief-go", root)?.addEventListener("click", () => {
+    const brief = qs("#dna-pro-brief", root)?.value.trim() || "";
+    runAiFill(root, brandId, brand, state, refresh, { brief });
+  });
 
   if (step.kind === "compose" || step.kind === "funnel3") {
     wireComposeOrFunnelStep(root, brandId, brand, state, step, refresh, updateNextState);
@@ -836,27 +881,33 @@ function wireComposeOrFunnelStep(root, brandId, brand, state, step, refresh, upd
     const statusEl = qs(`#polish-status-part-${key}`, root);
     const optionsEl = qs(`#polish-options-part-${key}`, root);
     btn.addEventListener("click", () => {
-      // funnel3 boxes (the 3-step Plan) aren't independent questions — each
-      // one only makes sense chained to its siblings, so the AI needs to
-      // see what the OTHER boxes already say, not just this one in
-      // isolation, or it has no way to keep the sequence coherent (e.g.
-      // picking a step 2 that logically follows step 1).
-      const siblingContext =
-        step.kind === "funnel3"
-          ? stepParts(step)
-              .filter((p) => p.key !== key)
-              .map((p) => {
-                const v = qs(`#part-${p.key}`, root)?.value.trim();
-                return v ? `${p.label} (sudah diisi): ${v}` : "";
-              })
-              .filter(Boolean)
-          : [];
+      // A box is never an independent question: the Plan boxes only make
+      // sense chained to their siblings (step 2 follows step 1), and a
+      // compose box fills one slot of a sentence template (the "feeling"
+      // must follow from the "visible problem" next to it). So the AI sees
+      // what the OTHER boxes already say, and a rule for which slot THIS
+      // box is — otherwise it writes the whole answer into one box and the
+      // composed sentence comes out doubled and strange.
+      const siblingAnswers = stepParts(step)
+        .filter((p) => p.key !== key && p.type !== "list")
+        .map((p) => {
+          const v = qs(`#part-${p.key}`, root)?.value.trim();
+          return v ? `${p.label}: ${v}` : "";
+        })
+        .filter(Boolean);
       runSuggestOptions({
         brand,
-        question: step.kind === "funnel3" ? `${part.label} — langkah ke-${partIndex + 1} dari 3 dalam satu rencana kerja sama yang berurutan (bukan pertanyaan berdiri sendiri)` : part.label,
-        guide: step.guide, principle: step.principle, voice: step.voice,
+        question: step.kind === "funnel3" ? `${part.label} — langkah ke-${partIndex + 1} dari 3 dalam satu rencana kerja sama yang berurutan (bukan pertanyaan berdiri sendiri)` : `${step.title} → ${part.label}`,
+        guide: step.guide,
+        // The step-level principle describes the COMBINED answer (e.g. "link
+        // the visible problem to the feeling"); for a single box the slot
+        // rule replaces it, or the AI merges both halves into one box.
+        principle: part.aiRule ? "" : step.principle,
+        partRule: part.aiRule || "",
+        voice: step.voice,
         textarea: input, statusEl, optionsEl, btn,
-        priorAnswers: [...stepAnswerSummaries(state, state.stepIndex), ...siblingContext],
+        priorAnswers: stepAnswerSummaries(state, state.stepIndex),
+        siblingAnswers,
         count: 2,
       });
     });
@@ -1161,6 +1212,17 @@ function reviewHTML(state) {
   `;
 }
 
+// After a save: "selesai" when all eight are in, otherwise name what's
+// still blank — a bare "tersimpan" left people thinking they were done
+// while Beranda still said 7/8.
+function dnaSavedToast(state) {
+  const missing = missingDnaFields(state.answers);
+  // A complete save already gets the "Brand DNA selesai 🎉" celebration on
+  // the page it lands on — one message, not two.
+  if (!missing.length) return;
+  else toast(t("dna.review.savedMissing", { list: missing.map((f) => t(`home.identity.field.${f}`)).join(", ") }), "info");
+}
+
 function wireReview(root, brandId, brand, state, refresh) {
   // Saves exactly like #wiz-save does, then always lands on Beranda —
   // where the journey card it just ticked actually lives.
@@ -1168,7 +1230,7 @@ function wireReview(root, brandId, brand, state, refresh) {
     captureReview(root, state);
     state.answers.oneLiner = qs("#ans-oneLiner", root)?.value.trim() || state.answers.oneLiner;
     persistDna(brandId, state);
-    toast(t("dna.review.savedToast"));
+    dnaSavedToast(state);
     const { filled, total } = brandDnaCompleteness(state.answers);
     if (total && filled >= total) markDnaJustCompleted(brandId);
     location.hash = `#/brand/${brandId}`;
@@ -1188,7 +1250,7 @@ function wireReview(root, brandId, brand, state, refresh) {
     captureReview(root, state);
     state.answers.oneLiner = qs("#ans-oneLiner", root)?.value.trim() || state.answers.oneLiner;
     persistDna(brandId, state);
-    toast(t("dna.review.savedToast"));
+    dnaSavedToast(state);
     // Send them back to the place that actually shows what they just moved
     // — staying on the Review screen after Save left no visible
     // confirmation that anything changed. The completion flag is only set

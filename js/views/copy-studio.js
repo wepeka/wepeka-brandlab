@@ -163,7 +163,7 @@ function paint(ctx) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : "Copy Studio"}${helpButtonHTML("copy-studio")}${guideVideoButtonHTML("copy-studio")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : t("contentOs.tab.copy")}${helpButtonHTML("copy-studio")}${guideVideoButtonHTML("copy-studio")}</div>
         <h1>${escapeHtml(brand.name)}</h1>
         <p class="page-sub">${t("copy.sub")}</p>
       </div>

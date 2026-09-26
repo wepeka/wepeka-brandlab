@@ -12,6 +12,7 @@ export default {
   "ann.new": { en: "New", id: "Baru" },
   "ann.open": { en: "Open", id: "Buka" },
   "ann.empty": { en: "No updates yet. New features and fixes will show up here.", id: "Belum ada pengumuman. Fitur baru dan perbaikan akan muncul di sini." },
+  "ann.slow": { en: "Updates are taking a while to load. Check your internet connection, then try again.", id: "Update-nya lama dimuat. Cek koneksi internet kamu, lalu coba lagi." },
   "ann.error": { en: "Couldn't load the updates. Check your connection and refresh.", id: "Pengumuman gagal dimuat. Cek koneksi lalu refresh halaman." },
   "ann.adminOnly": { en: "Admin only", id: "Hanya admin" },
   "ann.compose.title": { en: "Post an update to every user", id: "Kirim pengumuman ke semua user" },
