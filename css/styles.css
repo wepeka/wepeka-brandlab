@@ -2643,6 +2643,42 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .cd-next-chip{ border:1px solid var(--border); background: transparent; color: var(--text-muted); border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
 .cd-next-chip:hover{ border-color: var(--accent); color: var(--accent); }
 .cd-next-chip.is-info{ cursor:default; border-style:dashed; }
+.cd-brainstorm-card{ margin-top:0; }
+/* Pro: Pulse strip + toolbar + tabs */
+.cd-pulse{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+@media (max-width: 980px){ .cd-pulse{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media (max-width: 480px){ .cd-pulse{ grid-template-columns: 1fr; } }
+.cd-pulse-tile{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); padding:14px 16px; min-height:104px; display:flex; flex-direction:column; gap:6px; }
+.cd-pulse-label{ font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color: var(--text-faint); }
+.cd-pulse-value{ font-family: var(--font-display); font-size:24px; font-weight:700; line-height:1.1; }
+.cd-pulse-value small{ font-size:13px; font-weight:600; color: var(--text-muted); font-family: var(--font-body); }
+.cd-pulse-sub{ font-size:12px; color: var(--text-muted); display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:auto; }
+.cd-pulse-dot{ width:8px; height:8px; border-radius:50%; background: var(--health-good); flex:none; }
+.cd-pulse-dot.is-bad{ background: var(--health-poor); }
+.cd-spark{ position:relative; display:flex; align-items:flex-end; gap:4px; height:38px; padding-top:2px; }
+.cd-spark-bar{ flex:1; min-width:0; border-radius:3px 3px 1px 1px; background: var(--border); transition: height .3s ease; }
+.cd-spark-bar.is-hit{ background: var(--accent); }
+.cd-spark-bar.is-now{ outline:1px dashed var(--text-faint); outline-offset:1px; }
+.cd-spark-target{ position:absolute; left:0; right:0; border-top:1px dashed var(--text-faint); opacity:.7; pointer-events:none; }
+.cd-pulse-next{ border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cd-pulse-next-title{ font-size:13.5px; font-weight:700; line-height:1.3; }
+.cd-pulse-next .btn{ align-self:stretch; justify-content:space-between; margin-top:auto; white-space:normal; text-align:left; line-height:1.25; height:auto; min-height:34px; padding-top:7px; padding-bottom:7px; max-width:100%; }
+.cd-pulse-tile{ min-width:0; }
+.cd-toolbar{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+.cd-tab-widget .dash-widget-collapse-btn{ display:none; }
+.cd-tabs{ display:inline-flex; margin-bottom:16px; }
+.cd-tabs button{ flex:none; display:inline-flex; align-items:center; gap:6px; }
+.cd-tab-count{ font-size:10.5px; font-weight:800; padding:1px 6px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); }
+.cd-tabs button.active .cd-tab-count{ background: color-mix(in srgb, var(--bg) 25%, transparent); color: var(--bg); }
+.cd-bs-ideas{ margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+.cd-bs-ideas-head{ display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; }
+.cd-bs-ideas-head .text-faint{ font-size:12px; margin-left:auto; }
+.cd-guided-intro{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 18px; }
+.cd-guided-intro-item{ display:flex; gap:12px; align-items:flex-start; padding:12px 14px; border:1px dashed var(--border); border-radius:14px; }
+.cd-guided-intro-n{ flex:none; width:24px; height:24px; border-radius:50%; background: var(--accent); color: var(--accent-text); font-weight:800; font-size:12px; display:inline-flex; align-items:center; justify-content:center; }
+.cd-guided-intro-item b{ display:block; font-size:13.5px; margin-bottom:2px; }
+.cd-guided-intro-item p{ margin:0; font-size:12.5px; color: var(--text-muted); }
+@media (max-width: 640px){ .cd-guided-intro{ grid-template-columns:1fr; } }
 .cd-stages{ margin-bottom:4px; }
 .cd-stages .event-phase-pill.is-locked{ opacity:.55; }
 .cd-stages .event-phase-pill.is-past{ opacity:.7; }

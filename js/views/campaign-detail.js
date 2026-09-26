@@ -8,7 +8,7 @@
 import { backLinkHTML } from "../back-link.js";
 import {
   getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
-  formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS,
+  formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS, campaignContentPool,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
 } from "../store.js";
 import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform } from "../campaign-metrics.js";
@@ -54,6 +54,10 @@ function effectiveCollapsed(campaign) {
   return campaign.widgetsCollapsed || ["plan"];
 }
 function isWidgetCollapsed(campaign, key) {
+  // Inside the Pro tabs the tab itself is the "close" — a widget that is
+  // the whole tab (Ide, Rencana) always renders open there. Sales widgets
+  // share the Aktivitas tab with other cards, so they keep their toggle.
+  if (key === "plan" || key === "ideas") return false;
   return effectiveCollapsed(campaign).includes(key) || !!campaign[WIDGET_LEGACY_FIELD[key]];
 }
 
@@ -93,6 +97,22 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   const acts = campaignActivities(campaign, content);
   const ctxLabel = t("camp.detail.ctxLabel", { name: campaign.name || "" }).trim();
 
+  // Pro layout (user ask, 2026-09-26: "simpler, but add something cooler"):
+  // headline → Pulse strip (pace, 8-week rhythm, content & ideas, next
+  // step) → one toolbar (Brainstorm / content plan / new content) → tabs.
+  // Only one tab's widgets are on screen at a time: Target (levels +
+  // milestones + pace), Ide, Rencana (v3 ladders only), Aktivitas
+  // (pipeline, recent content, sales, unfilled engagement). Pemula has no
+  // tabs — its whole page is the Target tab plus the Brainstorm card.
+  const tabs = proTabList(campaign, stages);
+  const tab = guided ? "target" : tabs.includes(state.proTab) ? state.proTab : "target";
+
+  // Pemula layout (user ask, 2026-09-25: "too many buttons"): headline
+  // number → level strip → milestones → one Brainstorm card. Everything
+  // else on this page (next-step card, idea bubbles, sales widgets, AI
+  // plan, pace/rules, activity pipeline + content buttons) is Pro-only.
+  // Milestone rows keep their own action (Isi Insights / Catat / Bikin
+  // konten), so a beginner still has exactly one way to move each target.
   root.innerHTML = `
     <div class="page-head">
       <div>
@@ -105,18 +125,20 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       </div>
     </div>
 
+    ${guided ? guidedIntroHTML() : ""}
     ${state.celebrateIndex !== undefined && state.celebrateIndex !== null && stages[state.celebrateIndex]?.state === "completed" ? celebrateHTML(stages[state.celebrateIndex], stages[state.celebrateIndex + 1]) : ""}
     ${headline ? headlineHTML(headline, stageRead, stage) : ""}
-    ${pendingEngagementHTML(campaignPendingEngagement(campaign, ctx))}
+    ${guided ? "" : pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions })}
+    ${guided ? "" : proToolbarHTML()}
+    ${guided ? "" : proTabsHTML(campaign, stages, acts, tab)}
+    ${tab === "ideas" ? ideasWidgetHTML(campaign, state) : ""}
+    ${tab === "plan" ? planRoadmapHTML(campaign, stages, ctx) : ""}
+    ${tab === "activity" ? `${pendingEngagementHTML(campaignPendingEngagement(campaign, ctx))}${salesWidgetHTML(brandId, campaign, brand)}${eventSalesWidgetHTML(brandId, campaign, brand)}${sourceSalesHTML(brandId, campaign, brand)}${activitiesHTML(acts, brandId, guided)}` : ""}
+    ${tab !== "target" ? "" : `
     ${isLadder ? levelGateHTML(campaign, stage, stageRead, ctx) : ""}
-    ${nextActionHTML(actions)}
-    ${ideasWidgetHTML(campaign, state)}
-    ${salesWidgetHTML(brandId, campaign, brand)}
-    ${eventSalesWidgetHTML(brandId, campaign, brand)}
-    ${sourceSalesHTML(brandId, campaign, brand)}
-    ${planRoadmapHTML(campaign, stages, ctx)}
     ${stageNavHTML(stages, state.stageIndex, acts, content, campaign)}
 
+    ${guided ? `<div class="section-title" style="margin-top:20px;"><h2>${t("camp.guided.msTitle")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.guided.msSub")}</span></div>` : ""}
     <div class="mission-panel cd-panel">
       <div class="mission-panel-head">
         <div>
@@ -131,25 +153,17 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
         </div>
       </div>
       ${
-        // 5.3: Pemula seeing this campaign with zero content linked yet has
-        // nothing to act on in the mission tree/milestones/rules — the
-        // headline above still shows, this just isn't the first thing in
-        // their face. Pro (and Pemula once content exists) unchanged.
-        guided && acts.linked.length === 0
-          ? `<details class="cd-optional">
-               <summary>${t("camp.detail.optionalTargets", { n: stageRead.readings.filter((r) => !r.milestone.notApplicable).length })}</summary>
-               ${isLadder ? missionTreeHTML(stage, stageRead.readings) : ""}
-               ${milestoneListHTML(stageRead.readings, stage, guided)}
-               ${ladderRulesHTML(campaign, stage, guided)}
-             </details>`
-          : `${isLadder ? missionTreeHTML(stage, stageRead.readings) : ""}
-             ${milestoneListHTML(stageRead.readings, stage, guided)}
-             ${ladderRulesHTML(campaign, stage, guided)}`
+        // Pemula: the milestone list IS the page (see the guided layout
+        // note above), so it's always open — the rules/pace/disclaimer
+        // paragraphs stay Pro-only. Pro unchanged.
+        `${isLadder ? missionTreeHTML(stage, stageRead.readings) : ""}
+         ${milestoneListHTML(stageRead.readings, stage, guided)}
+         ${guided ? "" : ladderRulesHTML(campaign, stage, guided)}`
       }
     </div>
 
-    ${(campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead, ctx) : ""}
-    ${activitiesHTML(acts, brandId, guided)}
+    ${!guided && (campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead, ctx) : ""}
+    ${guided ? brainstormCardHTML(campaign, state) : ""}`}
   `;
 
   setPageGuide(() => startCampaignDetailGuide(brandId, campaign.id));
@@ -162,6 +176,12 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   );
   qsa("[data-cd-ms-posts]", root).forEach((btn) =>
     btn.addEventListener("click", () => openPostList(stageRead.readings[Number(btn.dataset.cdMsPosts)], { brandId, ctx, ctxLabel, campaign, stage }))
+  );
+  qsa("[data-cd-tab]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.proTab = btn.dataset.cdTab;
+      refresh();
+    })
   );
   qs("#cd-more", root)?.addEventListener("click", (e) => openMoreMenu(e.currentTarget, { brandId, brand, campaign, stage, stages, ctx, refresh, state, guided, openEdit }));
   qs("#cd-add-milestone", root)?.addEventListener("click", async () => {
@@ -426,6 +446,30 @@ function sourceSalesHTML(brandId, campaign, brand) {
 // (js/ai.js campaignSummaryLine) so later content/plan generation stays
 // aligned with what was already decided, not just what's on this page.
 const IDEA_TRACK_COPY = { social: "social", community: "community", sales: "sales" };
+const ideaTrack = (campaign) => (campaign.eventPlan ? "event" : IDEA_TRACK_COPY[campaign.goalPlan?.track] || "");
+const ideaTrackClass = (campaign) => (ideaTrack(campaign) ? `cd-idea-bubble--${ideaTrack(campaign)}` : "");
+// One kept idea (campaign.ideas[]) — shared by the Pro ideas widget and
+// the Pemula Brainstorm card. Opens like a folder on click: the
+// description (AI's "why", or a note the user adds) stays out of the way
+// until someone wants it, instead of crowding every bubble at a glance.
+function ideaBubbleHTML(idea, state, trackCls) {
+  const open = state.expandedIdeaId === idea.id;
+  return `
+    <div class="cd-idea-bubble ${trackCls} ${open ? "is-open" : ""}" data-idea-id="${idea.id}">
+      <button type="button" class="cd-idea-bubble-head" data-idea-toggle="${idea.id}">
+        ${idea.source === "ai" || idea.source === "brainstorm" ? icon("sparkle", { size: 11 }) : icon("folder", { size: 11 })}
+        <span>${esc(idea.text)}</span>
+        ${icon("chevronDown", { size: 12 })}
+      </button>
+      <button type="button" class="cd-idea-x" data-idea-remove="${idea.id}" aria-label="${t("common.delete")}">${icon("x", { size: 11 })}</button>
+      ${open ? `
+        <div class="cd-idea-desc">
+          ${idea.description ? `<p>${esc(idea.description)}</p>` : `<p class="text-faint">${t("camp.ideas.noDesc")}</p>`}
+          <textarea class="textarea" id="cd-idea-desc-input" placeholder="${esc(t("camp.ideas.descPh"))}">${esc(idea.description || "")}</textarea>
+          <button type="button" class="btn btn-secondary btn-sm" data-idea-save-desc="${idea.id}">${t("camp.ideas.saveDesc")}</button>
+        </div>` : ""}
+    </div>`;
+}
 function ideasWidgetHTML(campaign, state) {
   // Events don't carry a goalPlan (js/store.js buildEventPhases is a
   // separate, date-anchored system) — treat them as their own idea track
@@ -438,28 +482,8 @@ function ideasWidgetHTML(campaign, state) {
   const ideas = campaign.ideas || [];
   if (isWidgetCollapsed(campaign, "ideas")) return widgetCollapsedHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), t("camp.ideas.summary", { count: ideas.length }));
   const suggestions = state.ideaSuggestions || [];
-  const trackCls = track ? `cd-idea-bubble--${track}` : "";
-  // Kept ideas open like a folder on click — the description (AI's "why",
-  // or a note the user adds) stays out of the way until someone wants it,
-  // instead of crowding every bubble at a glance.
-  const bubble = (idea) => {
-    const open = state.expandedIdeaId === idea.id;
-    return `
-    <div class="cd-idea-bubble ${trackCls} ${open ? "is-open" : ""}" data-idea-id="${idea.id}">
-      <button type="button" class="cd-idea-bubble-head" data-idea-toggle="${idea.id}">
-        ${idea.source === "ai" ? icon("sparkle", { size: 11 }) : icon("folder", { size: 11 })}
-        <span>${esc(idea.text)}</span>
-        ${icon("chevronDown", { size: 12 })}
-      </button>
-      <button type="button" class="cd-idea-x" data-idea-remove="${idea.id}" aria-label="${t("common.delete")}">${icon("x", { size: 11 })}</button>
-      ${open ? `
-        <div class="cd-idea-desc">
-          ${idea.description ? `<p>${esc(idea.description)}</p>` : `<p class="text-faint">${t("camp.ideas.noDesc")}</p>`}
-          <textarea class="textarea" id="cd-idea-desc-input" placeholder="${esc(t("camp.ideas.descPh"))}">${esc(idea.description || "")}</textarea>
-          <button type="button" class="btn btn-secondary btn-sm" data-idea-save-desc="${idea.id}">${t("camp.ideas.saveDesc")}</button>
-        </div>` : ""}
-    </div>`;
-  };
+  const trackCls = ideaTrackClass(campaign);
+  const bubble = (idea) => ideaBubbleHTML(idea, state, trackCls);
   // `scope` disambiguates the add button across batches ("cur" for the
   // live one, "h0"/"h1"/… for a history batch) since each batch re-starts
   // its own item indices — without it, adding idea #0 from an older batch
@@ -473,7 +497,7 @@ function ideasWidgetHTML(campaign, state) {
       ${idea.description ? `<p class="cd-idea-suggestion-desc">${esc(idea.description)}</p>` : ""}
     </div>`;
   const history = state.ideaSuggestionHistory || [];
-  return widgetCardHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), `
+  return `<div class="cd-tab-widget">` + widgetCardHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), `
       <div class="cd-ideas-input">
         <input class="input" id="cd-idea-input" maxlength="140" placeholder="${esc(t(`camp.ideas.placeholder.${track || "default"}`))}" />
         <button type="button" class="btn btn-primary btn-sm" id="cd-idea-add">${icon("plus", { size: 13 })}${t("camp.ideas.add")}</button>
@@ -493,29 +517,12 @@ function ideasWidgetHTML(campaign, state) {
       <div class="cd-idea-bubbles" id="cd-idea-kept">
         ${ideas.length ? ideas.map(bubble).join("") : `<p class="text-faint cd-idea-empty">${t(`camp.ideas.empty.${track || "default"}`)}</p>`}
       </div>
-    `, { sub: t(`camp.ideas.sub.${track || "default"}`) });
+    `, { sub: t(`camp.ideas.sub.${track || "default"}`) }) + `</div>`;
 }
 function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
-  const input = qs("#cd-idea-input", root);
-  if (!input) return;
-  const addIdea = (text, source, description = "") => {
-    const clean = text.trim();
-    if (!clean) return;
-    const ideas = [...(campaign.ideas || []), { id: `idea-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: clean, description, source, createdAt: Date.now() }];
-    updateCampaign(campaign.id, { ideas });
-    refresh();
-  };
-  const submit = () => {
-    if (!input.value.trim()) return;
-    addIdea(input.value, "manual");
-  };
-  qs("#cd-idea-add", root).addEventListener("click", submit);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submit();
-    }
-  });
+  // Kept-idea bubbles (open / delete / note) exist in both modes — the
+  // Pemula Brainstorm card lists them too. The input, AI and suggestion
+  // handlers below only exist on the Pro widget.
   qsa("[data-idea-toggle]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
       const id = btn.dataset.ideaToggle;
@@ -539,6 +546,26 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
       refresh();
     })
   );
+  const input = qs("#cd-idea-input", root);
+  if (!input) return;
+  const addIdea = (text, source, description = "") => {
+    const clean = text.trim();
+    if (!clean) return;
+    const ideas = [...(campaign.ideas || []), { id: `idea-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: clean, description, source, createdAt: Date.now() }];
+    updateCampaign(campaign.id, { ideas });
+    refresh();
+  };
+  const submit = () => {
+    if (!input.value.trim()) return;
+    addIdea(input.value, "manual");
+  };
+  qs("#cd-idea-add", root).addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
   qsa("[data-suggestion-add]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
       const [scope, idxStr] = btn.dataset.suggestionAdd.split(":");
@@ -620,7 +647,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
         </div>
       </li>`;
   };
-  return widgetCardHTML("plan", "layers", t("camp.plan.title"), `
+  return `<div class="cd-tab-widget">` + widgetCardHTML("plan", "layers", t("camp.plan.title"), `
       ${plan?.concept?.title ? `
         <div class="cd-plan-concept">
           <div class="page-eyebrow" style="margin-bottom:4px;">${t(`camp.plan.concept.${track}`)}</div>
@@ -634,7 +661,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
       </div>
       <div id="cd-plan-status">${campaign.aiPlan?.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: campaign.aiPlan.autoReason }))}</p>` : ""}</div>
       <ol class="cd-plan-levels">${stages.map(levelHTML).join("")}</ol>
-    `, { sub: t(`camp.plan.sub.${track}`) });
+    `, { sub: t(`camp.plan.sub.${track}`) }) + `</div>`;
 }
 
 function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
@@ -851,23 +878,6 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
     }));
   };
   wireIt();
-}
-
-// The one AI helper of this page, where nobody has to hunt for it: right
-// under the headline number, full width, in the accent colour.
-function nextActionHTML(actions) {
-  if (!actions.length) return "";
-  const [first, ...rest] = actions;
-  return `
-    <div class="card glass-card cd-next" id="cd-next">
-      <div class="page-eyebrow" style="margin-bottom:6px;">${t("camp.detail.nextStep")}</div>
-      <h3 class="cd-next-title">${esc(first.label)}</h3>
-      <p class="cd-next-why">${esc(first.why)}</p>
-      <div class="cd-next-actions">
-        ${first.cta.type !== "info" ? `<button type="button" class="btn btn-primary" data-cd-action="0">${esc(first.cta.label)}${icon("arrowRight", { size: 14 })}</button>` : ""}
-        ${rest.length ? `<span class="cd-next-rest">${t("camp.detail.then")} ${rest.map((a, i) => (a.cta.type !== "info" ? `<button type="button" class="cd-next-chip" data-cd-action="${i + 1}">${esc(a.cta.label || a.label)}</button>` : `<span class="cd-next-chip is-info">${esc(a.label)}</span>`)).join(" · ")}</span>` : ""}
-      </div>
-    </div>`;
 }
 
 // The stage/level strip as a connected path rather than loose buttons —
@@ -1117,6 +1127,153 @@ function ladderRulesHTML(campaign, stage, guided) {
   return `<details class="cd-rules guided-rules"><summary>${t("camp.detail.rules")}</summary>${rules.map((r) => `<p>${esc(r)}</p>`).join("")}</details>`;
 }
 
+// Pemula's one door out of this page: the Brainstorm partner scoped to
+// this campaign (same chat as Pro's "Diskusi dulu" / "Brainstorm konten"
+// buttons — js/views/chat.js is one component, this is just the entry).
+// Keeps #cd-brainstorm so the campaign tour step still finds it.
+// ---------- Pro: Pulse strip, toolbar, tabs ----------
+// Weekly published count for the campaign's content pool over the last
+// `weeks` weeks (oldest → this week). Week buckets end today, so the last
+// bar is the running week.
+function weeklyRhythm(campaign, content, weeks = 8) {
+  const DAY = 86400000;
+  const today = Math.floor(new Date(localISODate() + "T12:00:00").getTime() / DAY);
+  const counts = new Array(weeks).fill(0);
+  campaignContentPool(campaign, content)
+    .filter((c) => c.status === "published" && c.publishedDate && !c.archived)
+    .forEach((c) => {
+      const d = Math.floor(new Date(c.publishedDate + "T12:00:00").getTime() / DAY);
+      const back = today - d;
+      if (back < 0) return;
+      const slot = weeks - 1 - Math.floor(back / 7);
+      if (slot >= 0) counts[slot] += 1;
+    });
+  return counts;
+}
+
+function pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions }) {
+  if (!stage) return "";
+  // Pace tile: levels know a rough duration, events know a date, plain
+  // phase campaigns only know where they are in the sequence.
+  let pace;
+  if (stage.kind === "level" && campaign.goalPlan) {
+    const ev = evaluateLevel({ readings: stageRead.readings, startedAt: stageStartedAt(campaign, stage), estWeeks: stage.raw?.estWeeks || 12, uploadsPerWeek: campaign.goalPlan.uploadsPerWeek });
+    pace = { value: `${t("camp.pulse.week", { n: ev.weeks })} <small>${t("camp.pulse.ofEst", { est: ev.estWeeks })}</small>`, sub: "", status: ev.overdue ? "bad" : "ok", statusLabel: ev.overdue ? t("camp.pulse.overdue") : t("camp.pulse.onTime") };
+  } else if (stage.kind === "window") {
+    const endISO = campaign.eventPlan?.eventDate || campaign.goalPlan?.deadline;
+    const days = endISO ? daysBetween(localISODate(), endISO) : null;
+    pace = { value: days === null ? "—" : days >= 0 ? t("camp.pulse.days", { n: days }) : t("camp.m.daysAgo", { count: -days }), sub: esc(stage.dateLabel || ""), status: days !== null && days < 0 ? "bad" : "ok", statusLabel: stage.state === "current" ? t("camp.detail.inProgress") : stage.state === "past" ? t("camp.detail.past") : t("camp.detail.upcoming") };
+  } else {
+    pace = { value: t("camp.pulse.phase", { n: stage.index + 1, total: stages.length }), sub: esc(stage.name || ""), status: "ok", statusLabel: t("camp.detail.now") };
+  }
+
+  // Rhythm tile: 8 tiny bars, the weekly upload target drawn as a line.
+  const rhythm = weeklyRhythm(campaign, ctx.content);
+  const target = Number(campaign.goalPlan?.uploadsPerWeek) || 0;
+  const max = Math.max(1, target, ...rhythm);
+  const avg = Math.round((rhythm.reduce((a, b) => a + b, 0) / rhythm.length) * 10) / 10;
+  const bars = rhythm.map((n, i) => `<span class="cd-spark-bar ${target && n >= target ? "is-hit" : ""} ${i === rhythm.length - 1 ? "is-now" : ""}" style="height:${Math.max(8, Math.round((n / max) * 100))}%" title="${n}"></span>`).join("");
+  const targetLine = target ? `<span class="cd-spark-target" style="bottom:${Math.round((target / max) * 100)}%"></span>` : "";
+
+  // Content & ideas tile.
+  const published = acts.counts.published || 0;
+  const inProgress = acts.linked.length - published;
+  const ideas = (campaign.ideas || []).length;
+
+  const first = actions[0] || null;
+  return `
+    <div class="cd-pulse">
+      <div class="cd-pulse-tile">
+        <div class="cd-pulse-label">${t("camp.pulse.pace")}</div>
+        <div class="cd-pulse-value">${pace.value}</div>
+        <div class="cd-pulse-sub"><span class="cd-pulse-dot is-${pace.status}"></span>${pace.statusLabel}${pace.sub ? ` · ${pace.sub}` : ""}</div>
+      </div>
+      <div class="cd-pulse-tile">
+        <div class="cd-pulse-label">${t("camp.pulse.rhythm")}</div>
+        <div class="cd-spark" aria-label="${esc(t("camp.pulse.rhythmAria"))}">${targetLine}${bars}</div>
+        <div class="cd-pulse-sub">${target ? t("camp.pulse.rhythmSub", { avg, target }) : t("camp.pulse.rhythmSubNoTarget", { avg })}</div>
+      </div>
+      <div class="cd-pulse-tile">
+        <div class="cd-pulse-label">${t("camp.pulse.content")}</div>
+        <div class="cd-pulse-value">${published} <small>${t("camp.pulse.published")}</small></div>
+        <div class="cd-pulse-sub">${t("camp.pulse.contentSub", { progress: Math.max(0, inProgress), ideas })}</div>
+      </div>
+      ${first ? `
+      <div class="cd-pulse-tile cd-pulse-next" id="cd-next">
+        <div class="cd-pulse-label">${t("camp.detail.nextStep")}</div>
+        <div class="cd-pulse-next-title">${esc(first.label)}</div>
+        ${first.cta.type !== "info" ? `<button type="button" class="btn btn-primary btn-sm" data-cd-action="0">${esc(first.cta.label)}${icon("arrowRight", { size: 13 })}</button>` : `<div class="cd-pulse-sub">${esc(first.why || "")}</div>`}
+      </div>` : ""}
+    </div>`;
+}
+
+// The three ways to make something, in one row — they used to sit at the
+// bottom of the Activity card. Ids unchanged (cd-brainstorm is a tour
+// stop; cd-content-plan / cd-new-content are wired in paintDetail).
+function proToolbarHTML() {
+  return `
+    <div class="cd-toolbar">
+      <button type="button" class="btn btn-primary glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 14 })}${t("camp.toolbar.brainstorm")}</button>
+      <button type="button" class="btn btn-secondary" id="cd-content-plan" title="${esc(t("camp.cplan.btnTitle"))}">${icon("calendar", { size: 14 })}${t("camp.cplan.btn")}</button>
+      <button type="button" class="btn btn-secondary" id="cd-new-content">${icon("plus", { size: 14 })}${t("camp.detail.newContent")}</button>
+    </div>`;
+}
+
+function proTabList(campaign, stages) {
+  const tabs = ["target", "ideas"];
+  if (campaign.goalPlan?.version === 3 && stages[0]?.kind === "level") tabs.push("plan");
+  tabs.push("activity");
+  return tabs;
+}
+function proTabsHTML(campaign, stages, acts, current) {
+  const count = { ideas: (campaign.ideas || []).length, activity: acts.linked.length };
+  return `
+    <div class="segmented cd-tabs" role="tablist">
+      ${proTabList(campaign, stages).map((k) => `<button type="button" role="tab" aria-selected="${k === current}" class="${k === current ? "active" : ""}" data-cd-tab="${k}">${t(`camp.tabs.${k}`)}${count[k] ? `<span class="cd-tab-count">${count[k]}</span>` : ""}</button>`).join("")}
+    </div>`;
+}
+
+// The card also lists the ideas kept for this campaign (campaign.ideas —
+// what "Simpan" in that chat writes, see js/consultant-panel.js
+// saveIdeaScoped), so the loop closes on this page: brainstorm → save →
+// see it here next to the milestones.
+function brainstormCardHTML(campaign, state) {
+  const ideas = campaign.ideas || [];
+  const trackCls = ideaTrackClass(campaign);
+  return `
+    <div class="section-title" style="margin-top:28px;"><h2>${t("camp.guided.bsTitle")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.guided.bsSub")}</span></div>
+    <div class="card glass-card cd-next cd-brainstorm-card" id="cd-brainstorm-card">
+      <h3 class="cd-next-title">${t("camp.bsCard.title")}</h3>
+      <p class="cd-next-why">${t("camp.bsCard.body")}</p>
+      <div class="cd-next-actions">
+        <button type="button" class="btn btn-primary glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 14 })}${t("camp.bsCard.btn")}${icon("arrowRight", { size: 14 })}</button>
+      </div>
+      <div class="cd-bs-ideas">
+        <div class="cd-bs-ideas-head">${icon("bookmark", { size: 13 })}<b>${t("camp.bsCard.ideasTitle")}</b><span class="text-faint">${ideas.length ? t("camp.ideas.summary", { count: ideas.length }) : ""}</span></div>
+        <div class="cd-idea-bubbles" id="cd-idea-kept">
+          ${ideas.length ? ideas.map((idea) => ideaBubbleHTML(idea, state, trackCls)).join("") : `<p class="text-faint cd-idea-empty">${t("camp.bsCard.ideasEmpty")}</p>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+// Pemula's "what is this page for" strip, right under the title: two
+// things and only two — follow the milestones, brainstorm ideas — so the
+// page's purpose is never a guess.
+function guidedIntroHTML() {
+  return `
+    <div class="cd-guided-intro">
+      <div class="cd-guided-intro-item">
+        <span class="cd-guided-intro-n">1</span>
+        <div><b>${t("camp.guided.intro1Title")}</b><p>${t("camp.guided.intro1Body")}</p></div>
+      </div>
+      <div class="cd-guided-intro-item">
+        <span class="cd-guided-intro-n">2</span>
+        <div><b>${t("camp.guided.intro2Title")}</b><p>${t("camp.guided.intro2Body")}</p></div>
+      </div>
+    </div>`;
+}
+
 function activitiesHTML(acts, brandId, guided) {
   const { linked, counts } = acts;
   const recent = [...linked].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 5);
@@ -1126,11 +1283,6 @@ function activitiesHTML(acts, brandId, guided) {
       ${guided ? "" : `<div class="cd-pipeline">
         ${PIPELINE.map((p) => `<button type="button" class="cd-pipe ${counts[p.key] ? "" : "is-zero"}" data-cd-pipeline="${p.key}"><b>${counts[p.key]}</b>${p.label}</button>`).join("")}
       </div>`}
-      <div class="cd-activity-actions">
-        <button type="button" class="btn btn-secondary btn-sm glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 13 })}${t("camp.detail.brainstorm")}</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="cd-content-plan" title="${esc(t("camp.cplan.btnTitle"))}">${icon("calendar", { size: 13 })}${t("camp.cplan.btn")}</button>
-        <button type="button" class="btn btn-primary btn-sm" id="cd-new-content">${icon("plus", { size: 13 })}${t("camp.detail.newContent")}</button>
-      </div>
       ${
         recent.length
           ? `<div class="cd-activity-list">${recent
