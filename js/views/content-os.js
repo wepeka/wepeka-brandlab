@@ -14,11 +14,12 @@ import { runSpotlightTour } from "../tour.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 
-// Umbrella for the content side: Creator Studio, the calendar, the content
-// database and Copy Studio ("Tulisan Cepat": copy you need right now, not
-// scheduled content) live here as sub-tabs — the same four, in the same
-// order, for both modes. Each sub-view keeps its own render(root, {...})
-// signature; this only decides which one mounts from the URL's sub-route.
+// Umbrella for the content side: Creator, the calendar, the content list
+// ("Daftar Konten"), Tulisan Cepat (copy you need right now, not scheduled
+// content) and Seri live here as five sub-tabs — the same five, in the
+// same order, for both modes. Each sub-view keeps its own render(root,
+// {...}) signature; this only decides which one mounts from the URL's
+// sub-route.
 const SUB_TABS = [
   { key: "creator", labelKey: "contentOs.tab.creator", path: (id) => `#/brand/${id}/content/creator` },
   { key: "calendar", labelKey: "contentOs.tab.calendar", path: (id) => `#/brand/${id}/content/calendar` },
@@ -28,10 +29,14 @@ const SUB_TABS = [
 ];
 
 // The Konten tab bar. (The chat, which used to sit here as "Brainstorm",
-// has its own page now: js/views/chat.js.)
+// has its own page now: js/views/chat.js.) Wrapped in .cos-tabs-wrap so a
+// right-edge fade (css/styles.css) can hint there's more to scroll to on
+// narrow phones, where all five sub-tabs don't fit in one screen width.
 export function contentTabsHTML(brandId, activeSub) {
-  return `<div class="tabs cos-tabs" style="margin:-4px 0 20px;">
-      ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
+  return `<div class="cos-tabs-wrap" style="margin:-4px 0 20px;">
+      <div class="tabs cos-tabs">
+        ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
+      </div>
     </div>`;
 }
 
@@ -62,7 +67,7 @@ export function render(root, { brandId, sub, contentId }) {
   // has none, so a page never shows the same guide twice.
 
   root.innerHTML = `
-    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${t("nav.content")}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>
+    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))}${activeSub === "list" ? "" : ` · ${t("nav.content")}`}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>
     ${contentTabsHTML(brandId, activeSub)}
     ${dnaHintHTML(brandId, brand)}
     <div id="cos-mount"></div>

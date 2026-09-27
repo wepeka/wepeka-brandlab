@@ -35,6 +35,7 @@ const CORE = {
   // Topbar / nav (js/layout.js)
   "nav.home": { en: "Home", id: "Beranda" },
   "nav.builder": { en: "Brand Builder", id: "Brand Builder" },
+  "nav.main": { en: "Main menu", id: "Menu utama" },
   "nav.campaigns": { en: "Goals", id: "Tujuan" },
   "nav.sales": { en: "Sales Tracker", id: "Pelacak Penjualan" },
   "nav.allBrands": { en: "All Brands", id: "Semua Brand" },
@@ -54,10 +55,11 @@ const CORE = {
   // Home (js/views/home.js)
   "home.eyebrow": { en: "Home", id: "Beranda" },
   "home.sub.identity": { en: "First things first: build your brand identity.", id: "Satu langkah dulu: bangun identitas brand kamu." },
+  "home.streak.line": { en: "🔥 {n} weeks in a row posting!", id: "🔥 {n} minggu berturut-turut posting!" },
   "home.identity.title": { en: "Build your brand identity", id: "Bangun identitas brand" },
-  "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Finish this first and the rest opens up on its own.", id: "Brand DNA jadi dasar semua konten dan campaign. Selesaikan ini dulu, sisanya terbuka sendiri." },
+  "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Finish this first — Konten is already open, and Tujuan unlocks once it's done.", id: "Brand DNA jadi dasar semua konten dan campaign. Selesaikan ini dulu — Konten sudah terbuka dari awal, dan Tujuan kebuka begitu ini selesai." },
   "home.identity.dna": { en: "Brand DNA", id: "Brand DNA" },
-  "home.identity.book": { en: "Brand Book (colors, fonts, logo…)", id: "Brand Book (warna, font, logo…)" },
+  "home.identity.book": { en: "Brand Guidelines (colors, fonts, logo…)", id: "Panduan Brand (warna, font, logo…)" },
   "home.identity.bookBasics": { en: "Colors & fonts", id: "Warna & Font" },
   "home.identity.done": { en: "Done", id: "Selesai" },
   "home.identity.missing": { en: "Still to fill: {list}", id: "Tinggal diisi: {list}" },
@@ -190,8 +192,11 @@ const CORE = {
   // item at once: content stays, only its date is cleared, so it lands back
   // in the Content Bank instead of being deleted.
 
-  // Content OS wrapper (js/views/content-os.js)
-  "contentOs.tab.list": { en: "Content", id: "Konten" },
+  // Content wrapper (js/views/content-os.js)
+  // "Content List", not "Content" — the top-level nav tab is already
+  // "Konten"/"Content" (nav.content below); this sub-tab needs its own
+  // name so a tab isn't sitting inside a tab of the same name.
+  "contentOs.tab.list": { en: "Content List", id: "Daftar Konten" },
   "contentOs.tab.creator": { en: "Creator", id: "Creator" },
   "contentOs.tab.calendar": { en: "Calendar", id: "Kalender" },
   "contentOs.tab.copy": { en: "Quick copy", id: "Tulisan Cepat" },
@@ -234,23 +239,38 @@ const CORE = {
   "contentList.th.views": { en: "Views", id: "Views" },
   "contentList.th.engagement": { en: "Engagement", id: "Engagement" },
   "contentList.th.health": { en: "Health", id: "Kesehatan" },
-  "contentList.emptyTable": { en: "No content matches — try adjusting filters, or create your first piece.", id: "Tidak ada konten yang cocok — coba ubah filter, atau buat konten pertamamu." },
+  // ── Empty content list — two cases: nothing at all (with ready-to-click
+  // starter ideas) vs. a filter/search that just has no match (js/views/
+  // content-list.js, UI polish: empty states).
+  "contentList.emptyNone.title": { en: "No content yet", id: "Belum ada konten" },
+  "contentList.emptyNone.body": { en: "Create your first piece, or start from one of these ideas.", id: "Bikin konten pertamamu, atau mulai dari salah satu ide di bawah ini." },
+  "contentList.emptyNone.ideasLabel": { en: "Or start from one of these", id: "Atau mulai dari salah satu ide ini" },
+  "contentList.emptyNone.genericSubject": { en: "your product or service", id: "produk atau jasamu" },
+  "contentList.emptyNone.genericAudience": { en: "your customers", id: "pelanggan kamu" },
+  "contentList.emptyNone.idea1Title": { en: "Introduce {subject}", id: "Kenalan sama {subject}" },
+  "contentList.emptyNone.idea1Body": { en: "A short post introducing {subject} to someone who's never heard of it — what it is and who it's for.", id: "Postingan singkat kenalin {subject} ke orang yang belum pernah dengar — apa itu dan buat siapa." },
+  "contentList.emptyNone.idea2Title": { en: "Answer a common question", id: "Jawab pertanyaan yang sering ditanya" },
+  "contentList.emptyNone.idea2Body": { en: "Pick the question {audience} ask most about {subject} and answer it in one post.", id: "Ambil pertanyaan yang paling sering ditanyain {audience} soal {subject}, terus jawab dalam satu postingan." },
+  "contentList.emptyNone.idea3Title": { en: "Show the proof", id: "Tunjukkan buktinya" },
+  "contentList.emptyNone.idea3Body": { en: "A testimonial, before/after, or behind-the-scenes that makes {subject} easy to trust.", id: "Testimoni, before/after, atau di balik layar yang bikin {subject} gampang dipercaya." },
+  "contentList.emptyFiltered.title": { en: "No content matches", id: "Konten tidak ditemukan" },
+  "contentList.emptyFiltered.body": { en: "Try a different search, or clear the filters.", id: "Coba kata kunci lain, atau hapus filternya." },
   "contentList.importInstagram": { en: "Import from Instagram", id: "Import dari Instagram" },
   "contentList.connectInEditBrand": { en: "(connect in Edit Brand)", id: "(hubungkan di Edit Brand)" },
   "contentList.comingSoon": { en: "(coming soon)", id: "(segera hadir)" },
   "contentList.refreshAllIg": { en: "Refresh all Instagram metrics", id: "Refresh Semua Metrik Instagram" },
   "contentList.deleteAllContent": { en: "Delete all content ({count})", id: "Hapus Semua Konten ({count})" },
   "contentList.nothingToDelete": { en: "There's no content to delete.", id: "Tidak ada konten untuk dihapus." },
-  "contentList.deleteAllTitle": { en: "Delete ALL content for this brand?", id: "Hapus SEMUA konten brand ini?" },
-  "contentList.deleteAllMsg": { en: "This permanently deletes all {count} content record(s) for {brand}, including archived ones. This cannot be undone.", id: "Ini akan menghapus permanen semua {count} konten milik {brand}, termasuk yang diarsip. Ini tidak bisa dibatalkan." },
-  "contentList.deleteEverything": { en: "Delete everything", id: "Hapus Semuanya" },
-  "contentList.allContentDeleted": { en: "All content deleted", id: "Semua konten dihapus" },
+  "contentList.deleteAllTitle": { en: "Move ALL content for this brand to Trash?", id: "Pindahkan SEMUA konten brand ini ke Trash?" },
+  "contentList.deleteAllMsg": { en: "Moves all {count} content record(s) for {brand} (including archived ones) to Trash together. Restore within {days} days in Settings → Data, or they're gone for good.", id: "Memindahkan semua {count} konten milik {brand} (termasuk yang diarsip) ke Trash bersamaan. Bisa dipulihkan dalam {days} hari lewat Setelan → Data, lewat itu hilang permanen." },
+  "contentList.deleteEverything": { en: "Move to Trash", id: "Pindahkan ke Trash" },
+  "contentList.allContentDeleted": { en: "All content moved to Trash", id: "Semua konten dipindahkan ke Trash" },
   "contentList.unarchive": { en: "Unarchive", id: "Keluarkan dari arsip" },
   "contentList.archive": { en: "Archive", id: "Arsipkan" },
   "contentList.contentRestored": { en: "Content restored", id: "Konten dipulihkan" },
   "contentList.contentArchived": { en: "Content archived", id: "Konten diarsipkan" },
-  "contentList.deleteContentTitle": { en: "Delete this content?", id: "Hapus konten ini?" },
-  "contentList.contentDeleted": { en: "Content deleted", id: "Konten dihapus" },
+  "contentList.deleteContentTitle": { en: "Move this content to Trash?", id: "Pindahkan konten ini ke Trash?" },
+  "contentList.contentDeleted": { en: "Content moved to Trash", id: "Konten dipindahkan ke Trash" },
   "contentList.fillEngagement": { en: "Fill engagement", id: "Isi engagement" },
   "contentList.eq.title": { en: "Update engagement", id: "Update Engagement" },
   "contentList.eq.published": { en: "Published {date}", id: "Terbit {date}" },
@@ -287,9 +307,11 @@ const CORE = {
   "contentList.ig.noneTracked": { en: "No Instagram content is being tracked yet — use Import from Instagram first.", id: "Belum ada konten Instagram yang dilacak — pakai Import dari Instagram dulu." },
   "contentList.ig.unreachable": { en: "Couldn't reach Instagram: {msg}", id: "Nggak bisa terhubung ke Instagram: {msg}" },
 
-  // Dashboard (js/views/dashboard.js)
+  // Performance stats — key prefix kept from an earlier standalone
+  // "Dashboard" page; that page is gone, this data now lives in the
+  // Report PDF (js/views/report.js) and Home's widgets (js/widget-card.js).
   "dashboard.generateReport": { en: "Generate report", id: "Buat Laporan" },
-  // Every section is its own closable widget (js/views/dashboard.js
+  // Every section is its own closable widget (js/widget-card.js
   // widgetHeadHTML/widgetCollapsedHTML) — collapse persists per brand
   // (brand.dashboardCollapsed) so the page stays as clean as the user left it.
   "dashboard.widget.collapse": { en: "Collapse", id: "Tutup" },
@@ -353,7 +375,7 @@ const CORE = {
   "contentEditor.updated": { en: "Content updated", id: "Konten diperbarui" },
   "contentEditor.created": { en: "Content created", id: "Konten dibuat" },
 
-  // Creator Studio — guided-mode funnel picker (js/views/creator.js)
+  // Creator — guided-mode funnel picker (js/views/creator.js)
   "creator.funnel.guidedLabel": { en: "What's this content for?", id: "Tujuan konten ini apa?" },
   "funnel.short.TOFU": { en: "Get known", id: "Kenalan" },
   "funnel.short.MOFU": { en: "Build trust", id: "Yakinkan" },
@@ -389,7 +411,7 @@ const CORE = {
   "mode.guided.name": { en: "Beginner", id: "Pemula" },
   "mode.advanced.name": { en: "Pro", id: "Pro" },
   "mode.guided.desc": { en: "Step by step. Only what you need right now, plain words, guides everywhere.", id: "Langkah demi langkah. Cuma fitur yang kamu butuhin sekarang, bahasa sederhana, panduan di mana-mana." },
-  "mode.advanced.desc": { en: "Everything at once: dashboard & charts, campaigns, funnel (TOFU/MOFU/BOFU), benchmarks, sales tracker.", id: "Semua fitur sekaligus: dashboard & grafik, campaign, funnel (TOFU/MOFU/BOFU), benchmark, sales tracker." },
+  "mode.advanced.desc": { en: "Everything at once: performance charts, campaigns, funnel (TOFU/MOFU/BOFU), benchmarks, sales tracker.", id: "Semua fitur sekaligus: grafik performa, campaign, funnel (TOFU/MOFU/BOFU), benchmark, sales tracker." },
   "mode.switchTo": { en: "Switch to {mode}", id: "Pindah ke mode {mode}" },
 
   // Brand form — business description (js/views/brands.js)
@@ -494,6 +516,42 @@ const CORE = {
   "guidelines.tone.saveNext": { en: "Save & continue", id: "Simpan & lanjut" },
   "guidelines.tone.saved": { en: "Tone of Voice saved", id: "Tone of Voice disimpan" },
   "guidelines.tone.add": { en: "Add", id: "Tambah" },
+
+  // ---- Trash / soft delete (js/store.js listTrash etc.) — brand, campaign,
+  // content and series "Delete" confirms across js/views/brands.js,
+  // js/views/settings.js, js/views/campaigns.js, js/views/campaign-detail.js,
+  // js/views/content-list.js, js/views/series.js. Shared title/confirm
+  // label, one message per entity kind so it can say what specifically
+  // moves with it. ----
+  "trash.unknownBrand": { en: "(brand no longer here)", id: "(brand sudah tidak ada)" },
+  "delete.toTrash.title": { en: "Move to Trash?", id: "Pindahkan ke Trash?" },
+  "delete.toTrash.confirm": { en: "Move to Trash", id: "Pindahkan ke Trash" },
+  "delete.toTrash.suffix": { en: "Restorable from Settings → Data for {days} days, then it's gone for good.", id: "Bisa dipulihkan lewat Setelan → Data selama {days} hari, lewat itu hilang permanen." },
+  "delete.toTrash.brandMessage": { en: "The brand and everything inside it ({count} piece(s) of content, its campaigns and series) move to Trash together. Restore within {days} days in Settings → Data, or it's gone for good.", id: "Brand ini beserta semua isinya ({count} konten, campaign dan series-nya) pindah ke Trash bersamaan. Bisa dipulihkan dalam {days} hari lewat Setelan → Data, lewat itu hilang permanen." },
+  "delete.toTrash.brandDone": { en: "Brand moved to Trash.", id: "Brand dipindahkan ke Trash." },
+  "delete.toTrash.campaignMessage": { en: "The campaign moves to Trash; its content stays linked and comes back with it if restored. Restore within {days} days in Settings → Data, or it's gone for good.", id: "Campaign ini pindah ke Trash; kontennya tetap tertaut dan ikut kembali kalau dipulihkan. Bisa dipulihkan dalam {days} hari lewat Setelan → Data, lewat itu hilang permanen." },
+  "delete.toTrash.campaignDone": { en: "Campaign moved to Trash.", id: "Campaign dipindahkan ke Trash." },
+  "delete.toTrash.contentMessage": { en: "Moves to Trash. Restore within {days} days in Settings → Data, or it's gone for good.", id: "Pindah ke Trash. Bisa dipulihkan dalam {days} hari lewat Setelan → Data, lewat itu hilang permanen." },
+  "delete.toTrash.contentDone": { en: "Moved to Trash.", id: "Dipindahkan ke Trash." },
+  "delete.toTrash.contentAllTitle": { en: "Move all content to Trash?", id: "Pindahkan semua konten ke Trash?" },
+  "delete.toTrash.contentAllMessage": { en: "All {count} piece(s) of content in this brand move to Trash together. Restore within {days} days in Settings → Data, or they're gone for good.", id: "Semua {count} konten di brand ini pindah ke Trash bersamaan. Bisa dipulihkan dalam {days} hari lewat Setelan → Data, lewat itu hilang permanen." },
+  "delete.toTrash.contentAllDone": { en: "All content moved to Trash.", id: "Semua konten dipindahkan ke Trash." },
+  "delete.toTrash.seriesMessage": { en: "Moves to Trash; linked content keeps its script/history either way. Restore within {days} days in Settings → Data, or it's gone for good.", id: "Pindah ke Trash; konten yang tertaut tetap simpan script/riwayatnya apa pun pilihannya. Bisa dipulihkan dalam {days} hari lewat Setelan → Data, lewat itu hilang permanen." },
+  "delete.toTrash.seriesDone": { en: "Series moved to Trash.", id: "Series dipindahkan ke Trash." },
+  "set.trash.title": { en: "Trash", id: "Sampah" },
+  "set.trash.sub": { en: "Deleted brands, campaigns, content and series wait here for {days} days before they're gone for good.", id: "Brand, campaign, konten dan series yang dihapus menunggu di sini {days} hari sebelum hilang permanen." },
+  "set.trash.empty": { en: "Trash is empty.", id: "Sampah kosong." },
+  "set.trash.kind.brand": { en: "Brand", id: "Brand" },
+  "set.trash.kind.campaign": { en: "Campaign", id: "Campaign" },
+  "set.trash.kind.content": { en: "Content", id: "Konten" },
+  "set.trash.kind.series": { en: "Series", id: "Series" },
+  "set.trash.daysLeft": { en: "{n} day(s) left", id: "sisa {n} hari" },
+  "set.trash.restore": { en: "Restore", id: "Pulihkan" },
+  "set.trash.restored": { en: "Restored.", id: "Berhasil dipulihkan." },
+  "set.trash.purgeAria": { en: "Delete \"{name}\" permanently", id: "Hapus permanen \"{name}\"" },
+  "set.trash.purgeTitle": { en: "Delete permanently?", id: "Hapus permanen?" },
+  "set.trash.purgeMsg": { en: "This can't be undone — it won't be in Trash anymore.", id: "Ini nggak bisa dibatalkan — nggak akan ada lagi di Trash." },
+  "set.trash.purged": { en: "Deleted permanently.", id: "Terhapus permanen." },
 
 };
 

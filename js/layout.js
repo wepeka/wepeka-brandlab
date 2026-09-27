@@ -5,16 +5,47 @@ import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor
 import { getTheme, toggleTheme } from "./theme.js";
 import { getMode, toggleMode } from "./mode.js";
 import { t } from "./i18n.js";
-import { mountConsultantPanel, unmountConsultantPanel, openConsultantPanel } from "./consultant-panel.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
 import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod } from "./ai-usage.js";
-import { getPageGuide } from "./section-guide.js";
 import { identityDone } from "./brand-progress.js";
-import { startOnboardingTour } from "./tour.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
-import { canShowVideo, openIntroVideo } from "./guide-videos.js";
+
+// consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
+// chunk in the app, and the whole reason the logged-out login/pricing
+// screen used to have to wait on it: this file is a static import of
+// main.js's own import graph, so anything imported here at the top used to
+// load before the very first paint, brand or no brand. Loaded on first use
+// instead — the moment a brand route actually mounts the floating panel, or
+// someone opens it from the ⋯ menu — and cached after that so it only ever
+// costs one fetch per session. Same story for tour.js and guide-videos.js:
+// smaller, but neither is needed until someone opens the ⋯ menu, either.
+let consultantPanelPromise = null;
+function loadConsultantPanel() {
+  if (!consultantPanelPromise) consultantPanelPromise = import("./consultant-panel.js");
+  return consultantPanelPromise;
+}
+// Keeps the mountConsultantPanel/unmountConsultantPanel/openConsultantPanel
+// call sites below unchanged — they used to be the imported bindings
+// themselves; now they're thin wrappers that load-then-call, in order (each
+// call chains off the same cached promise, so a mount immediately followed
+// by an unmount on the next route still lands in the right order once the
+// module resolves).
+function mountConsultantPanel(brandId) {
+  loadConsultantPanel().then((m) => m.mountConsultantPanel(brandId)).catch((e) => console.warn("[consultant panel] unavailable", e));
+}
+function unmountConsultantPanel() {
+  if (!consultantPanelPromise) return; // never loaded — nothing mounted, nothing to tear down
+  consultantPanelPromise.then((m) => m.unmountConsultantPanel()).catch(() => {});
+}
+function openConsultantPanel(opts) {
+  loadConsultantPanel().then((m) => m.openConsultantPanel(opts)).catch((e) => console.warn("[consultant panel] unavailable", e));
+}
+
+function startOnboardingTour() {
+  import("./tour.js").then((m) => m.startOnboardingTour()).catch((e) => console.warn("[tour] unavailable", e));
+}
 
 // Avoid re-sampling the same logo's color every navigation — it's not
 // going to change until the avatar itself does.
@@ -132,6 +163,8 @@ function wireAnnouncements() {
     const n = unreadCount();
     const badge = qs("#updates-btn .updates-badge");
     if (badge) { badge.hidden = !n; badge.textContent = n > 9 ? "9+" : n ? String(n) : ""; }
+    const dot = qs("#app-menu-btn .app-menu-badge");
+    if (dot) dot.hidden = !n;
     if (location.hash.startsWith("#/updates") || isAnnouncementAdmin()) return;
     const seen = announcementsSeenAt();
     listAnnouncements()
@@ -151,14 +184,15 @@ export function shellHTML({ brandId, active }) {
   const tabsHTML = brand
     ? TABS.map((tab) => {
         const locked = lock && tab.gated;
-        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" href="${locked ? "#" : tab.path(brand.id)}" ${locked ? `data-locked-tab title="${t("nav.locked")}"` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(locked ? "lock" : tab.icon, { size: 16 })}${t(tab.labelKey)}</a>`;
+        const label = t(tab.labelKey);
+        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(locked ? "lock" : tab.icon, { size: 16 })}${label}</a>`;
       }).join("")
     : "";
 
   const brandSwitchHTML = brand
     ? `<button class="brand-switch" id="brand-switch-btn" data-tour="brand-switch">
          ${avatarHTML(brand)}
-         <span>${brand.name}</span>
+         <span>${escapeHtml(brand.name)}</span>
          ${icon("chevronDown", { size: 14 })}
        </button>`
     : "";
@@ -171,15 +205,15 @@ export function shellHTML({ brandId, active }) {
         Brandlab
       </a>
       ${brand ? `<div class="topbar-sep"></div>${brandSwitchHTML}` : ""}
-      ${brand ? `<nav class="tabs">${tabsHTML}</nav>` : ""}
+      ${brand ? `<nav class="tabs" aria-label="${t("nav.main")}">${tabsHTML}</nav>` : ""}
       <div class="topbar-right">
         ${planBadgeHTML()}
         ${modeConfig().bell ? bellHTML() : ""}
         ${updatesBtnHTML(active)}
-        <button class="icon-btn" id="help-btn" title="${t("topbar.help")}" aria-label="${t("topbar.help")}">${icon("help", { size: 18 })}</button>
-        <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" data-tour="settings">${icon("dots", { size: 18 })}</button>
+        <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" data-tour="settings">${icon("dots", { size: 18 })}<span class="notif-badge app-menu-badge" ${unreadCount() ? "" : "hidden"}></span></button>
       </div>
     </header>
+    ${brand ? `<nav class="bottom-nav" aria-label="${t("nav.main")}">${tabsHTML}</nav>` : ""}
     ${returnChipHTML()}
     <main class="view view-enter view-${active} ${active === "content-os" ? "wide" : ""}" id="view-root"></main>
   `;
@@ -189,7 +223,7 @@ export function shellHTML({ brandId, active }) {
 // main.js renderRoute): re-point the active tab and refresh the
 // "← Kembali ke ..." chip without touching the rest of the topbar.
 export function updateShellForRoute({ active }) {
-  qsa(".topbar .tabs .tab").forEach((a) => {
+  qsa(".topbar .tabs .tab, .bottom-nav .tab").forEach((a) => {
     const tab = TABS.find((x) => x.key === a.dataset.tabKey);
     a.classList.toggle("active", !!tab?.matches.includes(active));
   });
@@ -253,10 +287,26 @@ function aiUsagePopoverHTML() {
 // The ⋯ menu: everything that used to be its own topbar button (mode,
 // theme, AI meter, settings, logout). Copy Studio lives under Konten and the
 // Sales Tracker under Tujuan — neither is listed here.
-function appMenuHTML() {
+// On phones the topbar is one row (brand switcher + ⋯), so the trial badge
+// and "Update" live at the top of this menu there (.menu-mobile-only). Help
+// that isn't about the page on screen (ask the AI, intro video, website
+// tour) is here too — the page's own help is its "Panduan" pill.
+function appMenuHTML(brandId, canShowIntroVideo) {
   const mode = getMode();
   const other = mode === "guided" ? "advanced" : "guided";
+  const account = getCachedAccount();
+  const unread = unreadCount();
+  const trialRow = account && (isTrial(account) || isReadOnly(account))
+    ? `<button type="button" class="menu-mobile-only" data-go="#/pricing">${icon("arrowUp", { size: 15 })}${isReadOnly(account) ? t(isTrial(account) ? "app.plan.trialEnded" : "app.plan.readonly") : t("app.plan.trialShort", { days: trialDaysLeft(account) })} · ${t("app.plan.upgrade")}</button>`
+    : "";
   return `
+    ${trialRow}
+    <button type="button" class="menu-mobile-only" data-go="#/updates">${icon("megaphone", { size: 15 })}${t("ann.topbar")}${unread ? `<span class="menu-count">${unread > 9 ? "9+" : unread}</span>` : ""}</button>
+    <div class="menu-divider menu-mobile-only"></div>
+    ${brandId ? `<button type="button" data-act="consultant">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
+    ${canShowIntroVideo ? `<button type="button" data-act="intro">${icon("play", { size: 15 })}${t("help.introVideo")}</button>` : ""}
+    <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
+    <div class="menu-divider"></div>
     <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
     <button type="button" data-act="theme">${icon(getTheme() === "light" ? "moon" : "sun", { size: 15 })}${t("topbar.toggleTheme")}</button>
     <button type="button" class="menu-ai-row" data-act="ai">${aiUsageRowHTML()}</button>
@@ -264,19 +314,6 @@ function appMenuHTML() {
     <button type="button" data-go="#/settings/brands">${icon("users", { size: 15 })}${t("settings.panel.brands")}</button>
     <button type="button" data-go="#/settings">${icon("gear", { size: 15 })}${t("topbar.settings")}</button>
     <button type="button" data-act="logout">${icon("logout", { size: 15 })}${t("topbar.logout")}</button>
-  `;
-}
-
-// The ? popover: the single entry point to every kind of help — this
-// page's guide (when the view registered one, see js/section-guide.js
-// setPageGuide), the AI chat, the intro video (once it is published), the
-// website tour.
-function helpMenuHTML(brandId) {
-  return `
-    ${getPageGuide() ? `<button type="button" data-act="page">${icon("target", { size: 15 })}${t("help.pageGuide")}</button>` : ""}
-    ${brandId ? `<button type="button" data-act="consultant">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
-    ${canShowVideo("kenalan") ? `<button type="button" data-act="intro">${icon("play", { size: 15 })}${t("help.introVideo")}</button>` : ""}
-    <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
   `;
 }
 
@@ -314,30 +351,18 @@ export function wireShell({ brandId }) {
   if (brandId) mountNotesFloat(brandId);
   else unmountNotesFloat();
 
-  const helpBtn = qs("#help-btn");
-  helpBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const menu = menuBelow(helpBtn, { width: 220 });
-    if (!menu) return;
-    menu.innerHTML = helpMenuHTML(brandId);
-    menu.addEventListener("click", (ev) => {
-      const target = ev.target.closest("[data-act]");
-      if (!target) return;
-      closeMenu();
-      const act = target.dataset.act;
-      if (act === "page") getPageGuide()?.();
-      else if (act === "consultant") openConsultantPanel();
-      else if (act === "intro") openIntroVideo();
-      else if (act === "tour") startOnboardingTour();
-    });
-  });
-
   const menuBtn = qs("#app-menu-btn");
-  menuBtn?.addEventListener("click", (e) => {
+  menuBtn?.addEventListener("click", async (e) => {
     e.stopPropagation();
+    // guide-videos.js is only needed to decide whether "Video pengenalan"
+    // belongs in this menu (canShowVideo) and to actually play it — loaded
+    // here, on first ⋯ click, instead of statically at boot. Cached after
+    // the first click, same as consultant-panel.js/tour.js above.
+    const { canShowVideo, openIntroVideo } = await import("./guide-videos.js");
+    if (menuBtn !== qs("#app-menu-btn")) return; // shell rebuilt while this awaited
     const menu = menuBelow(menuBtn, { className: "app-menu", width: 250 });
     if (!menu) return;
-    menu.innerHTML = appMenuHTML();
+    menu.innerHTML = appMenuHTML(brandId, canShowVideo("kenalan"));
     menu.addEventListener("click", async (ev) => {
       const go = ev.target.closest("[data-go]");
       if (go) {
@@ -350,6 +375,9 @@ export function wireShell({ brandId }) {
       const act = target.dataset.act;
       closeMenu();
       if (act === "mode") toggleMode();
+      else if (act === "consultant") openConsultantPanel();
+      else if (act === "intro") openIntroVideo();
+      else if (act === "tour") startOnboardingTour();
       else if (act === "theme") toggleTheme();
       else if (act === "ai") {
         const pop = menuBelow(menuBtn, { className: "help-popover", width: 280 });
@@ -385,7 +413,7 @@ export function wireShell({ brandId }) {
     if (!menu) return;
     const others = listBrands().filter((b) => b.id !== brandId);
     menu.innerHTML = `
-      ${others.map((b) => `<button data-go="${b.id}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${b.name}</button>`).join("")}
+      ${others.map((b) => `<button data-go="${b.id}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`).join("")}
       ${others.length ? '<div class="menu-divider"></div>' : ""}
       <button data-go="all">${icon("grid", { size: 15 })}${t("nav.allBrands")}</button>
     `;

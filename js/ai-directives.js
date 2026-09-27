@@ -18,6 +18,7 @@ export const MAX_IDEAS = 3;
 export const MAX_TASKS = 3;
 export const MAX_MOMENTS = 2;
 export const MAX_SAVES = 2;
+export const MAX_SCRIPTS = 1;
 // Numbers the consultant read off a screenshot the user sent
 // ([[metrics:views=12300;hookPct=62]]) — become a "save to a post" card.
 export const METRIC_DIRECTIVE_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained", "videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"];
@@ -33,6 +34,7 @@ export function parseDirectives(rawText) {
   const revisions = [];
   const moments = [];
   const saves = [];
+  const scripts = [];
   let handoff = null;
   let metrics = null;
   const cleanText = (rawText || "")
@@ -60,6 +62,28 @@ export function parseDirectives(rawText) {
       return "";
     })
     .replace(/\[\[revise:(?:script|caption)\]\][\s\S]*$/i, "")
+    // A finished script the owner asked for, ready to shoot:
+    // [[script:FUNNEL|Title|Format]]…[[/script]] (format optional). Becomes a
+    // "Script siap" card with "Setujui & simpan" — the chat never saves by
+    // itself. A "CAPTION:" line inside splits off the caption. Unterminated
+    // (still streaming, or cut off) is hidden rather than shown raw.
+    .replace(/\[\[script:([^\]\n]*)\]\]([\s\S]*?)\[\[\/script\]\]/gi, (_, head, body) => {
+      const [funnel = "", title = "", format = ""] = head.split("|").map((x) => x.trim());
+      const text = body.trim();
+      if (!text || scripts.length >= MAX_SCRIPTS) return "";
+      const [scriptPart, captionPart = ""] = text.split(/\n\s*\**\s*caption\s*\**\s*:\s*\**/i);
+      const f = funnel.toUpperCase();
+      scripts.push({
+        funnel: (FUNNELS || []).includes(f) ? f : "TOFU",
+        title: (title || t("chat.script.untitled")).slice(0, 140),
+        format: format.slice(0, 40),
+        script: scriptPart.trim(),
+        caption: captionPart.trim(),
+        contentId: null,
+      });
+      return "";
+    })
+    .replace(/\[\[script:[^\]\n]*\]\][\s\S]*$/i, "")
     .replace(/\[\[goto:campaign:([A-Za-z0-9_-]+)\]\]/g, (_, id) => {
       if (!nav.some((n) => n.key === `campaign:${id}`)) nav.push({ key: `campaign:${id}`, label: t("cons.nav.campaign"), path: `campaigns/${id}` });
       return "";
@@ -133,7 +157,7 @@ export function parseDirectives(rawText) {
     })
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, handoff, metrics };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, handoff, metrics };
 }
 
 // The model answers in light markdown (bold, italics, numbered/bulleted

@@ -1,15 +1,16 @@
 import {
   getSettings, addPlatform, removePlatform, addFormat, removeFormat,
-  getGlobalAiSettings, updateGlobalAiSettings, updateGlobalBrandsBg,
+  getGlobalAiSettings, updateGlobalAiSettings, deleteLegacyGlobalAiKeys, updateGlobalBrandsBg,
   listBrands, archiveBrand, deleteBrand, listContent,
   exportJSON, importJSON, resetAll, onChange,
+  listTrash, restoreTrashItem, purgeTrashItem, TRASH_DAYS,
 } from "../store.js";
 import { getMode } from "../mode.js";
 import { currentUid, isAdmin } from "../account.js";
 import { testAiConnection } from "../ai.js";
 import { BG_PRESETS, DEFAULT_GLOW, resolveBrandsBg, bgHTML, paintBrandsBg } from "../brands-bg.js";
 import { icon } from "../icons.js";
-import { avatarHTML, qs, qsa, toast, passwordFieldHTML, wirePasswordToggles, escapeHtml } from "../dom.js";
+import { avatarHTML, qs, qsa, toast, escapeHtml } from "../dom.js";
 import { confirmDialog } from "../modals.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout, authErrorMessage } from "../auth.js";
@@ -109,7 +110,7 @@ function renderListEditor(content, title, list, addFn, removeFn, placeholder) {
       <h3 style="font-size:16px;margin-bottom:14px;">${title}</h3>
       ${list.map((item) => `
         <div class="list-editor-row">
-          <span class="row-label">${item.name}</span>
+          <span class="row-label">${escapeHtml(item.name)}</span>
           <button class="icon-btn" data-remove="${item.id}" aria-label="${escapeHtml(t("set.list.removeAria", { name: item.name }))}" style="width:30px;height:30px;">${icon("trash", { size: 14 })}</button>
         </div>
       `).join("")}
@@ -136,7 +137,7 @@ function renderBrands(content, refresh) {
       ${brands.map((b) => `
         <div class="list-editor-row">
           ${avatarHTML(b, "flex:none;width:28px;height:28px;border-radius:8px;font-size:12px;margin-right:10px;")}
-          <span class="row-label">${b.name} ${b.archived ? `<span class="text-faint">${t("set.brands.archived")}</span>` : ""} <span class="text-faint">· ${t("set.brands.contentCount", { count: listContent(b.id, { includeArchived: true }).length })}</span></span>
+          <span class="row-label">${escapeHtml(b.name)} ${b.archived ? `<span class="text-faint">${t("set.brands.archived")}</span>` : ""} <span class="text-faint">· ${t("set.brands.contentCount", { count: listContent(b.id, { includeArchived: true }).length })}</span></span>
           <button class="icon-btn" data-edit-brand="${b.id}" aria-label="${escapeHtml(t("set.brands.editAria", { name: b.name }))}" style="width:30px;height:30px;">${icon("edit", { size: 14 })}</button>
           <button class="btn btn-secondary btn-sm" data-toggle-archive="${b.id}">${b.archived ? t("set.brands.unarchive") : t("brands.archive")}</button>
           <button class="icon-btn" data-delete-brand="${b.id}" aria-label="${escapeHtml(t("set.brands.deleteAria", { name: b.name }))}" style="width:30px;height:30px;">${icon("trash", { size: 14 })}</button>
@@ -160,24 +161,33 @@ function renderBrands(content, refresh) {
     refresh();
   }));
   qsa("[data-delete-brand]").forEach((btn) => btn.addEventListener("click", async () => {
-    const ok = await confirmDialog({ title: t("brands.delete.title"), message: t("set.brands.deleteMsg"), confirmLabel: t("brands.delete.confirm"), danger: true });
-    if (ok) { deleteBrand(btn.dataset.deleteBrand); toast(t("brands.delete.done")); refresh(); }
+    const b = brands.find((x) => x.id === btn.dataset.deleteBrand);
+    const count = listContent(b.id, { includeArchived: true }).length;
+    const ok = await confirmDialog({ title: t("delete.toTrash.title"), message: t("delete.toTrash.brandMessage", { count, days: TRASH_DAYS }), confirmLabel: t("delete.toTrash.confirm"), danger: true });
+    if (ok) { deleteBrand(btn.dataset.deleteBrand); toast(t("delete.toTrash.brandDone")); refresh(); }
   }));
 }
 
+// Display-only now — the actual key for whichever of these is picked lives
+// in a Vercel env var api/ai.js reads (DEEPSEEK_API_KEY / ANTHROPIC_API_KEY
+// / GEMINI_API_KEY, matched against AI_PROVIDER), never in Firestore. This
+// select just tells the client (hasAiKey/aiCanSeeImages in js/ai.js) which
+// provider is active, mainly so vision-dependent features know DeepSeek
+// can't read images.
 const AI_PROVIDERS = [
-  { key: "anthropic", label: "Anthropic (Claude)", keyField: "anthropicApiKey", placeholder: "sk-ant-...", getKeyUrl: "https://console.anthropic.com/settings/keys", getKeyLabel: "console.anthropic.com", billedBy: "Anthropic" },
-  { key: "gemini", label: "Google (Gemini)", keyField: "geminiApiKey", placeholder: "AIza...", getKeyUrl: "https://aistudio.google.com/apikey", getKeyLabel: "aistudio.google.com", billedBy: "Google" },
-  { key: "deepseek", label: "DeepSeek", keyField: "deepseekApiKey", placeholder: "sk-...", getKeyUrl: "https://platform.deepseek.com/api_keys", getKeyLabel: "platform.deepseek.com", billedBy: "DeepSeek" },
+  { key: "anthropic", label: "Anthropic (Claude)" },
+  { key: "gemini", label: "Google (Gemini)" },
+  { key: "deepseek", label: "DeepSeek" },
 ];
 
 function renderAi(content) {
   // Wepeka's shared config (settings/main) powers every AI feature for
   // every account — only the admin account sees this panel, and it edits
-  // the shared doc.
-  const ai = getGlobalAiSettings() || { provider: "anthropic", anthropicApiKey: "", geminiApiKey: "", deepseekApiKey: "" };
+  // the shared doc. No key fields anymore (see api/ai.js) — just which
+  // provider api/ai.js's AI_PROVIDER env var should match, and an on/off
+  // switch.
+  const ai = getGlobalAiSettings() || { provider: "deepseek", enabled: true };
   const provider = AI_PROVIDERS.find((p) => p.key === ai.provider) || AI_PROVIDERS[0];
-  const currentKey = ai[provider.keyField] || "";
   content.innerHTML = `
     <div class="card">
       <h3 style="font-size:16px;margin-bottom:6px;">AI Script & Hook Generator</h3>
@@ -188,34 +198,40 @@ function renderAi(content) {
           ${AI_PROVIDERS.map((p) => `<option value="${p.key}" ${p.key === provider.key ? "selected" : ""}>${p.label}</option>`).join("")}
         </select>
       </div>
-      <div class="field" style="margin-bottom:0;">
-        <label>${provider.label} API Key</label>
-        ${passwordFieldHTML("ai-key", { placeholder: provider.placeholder, value: currentKey })}
-      </div>
-      <div id="ai-status" style="margin:10px 0;font-size:12.5px;">${currentKey ? `<span class="text-faint">${t("set.ai.saved")}</span>` : ""}</div>
+      <label class="flex items-center gap-8" style="margin:14px 0;">
+        <input type="checkbox" id="ai-enabled" ${ai.enabled !== false ? "checked" : ""} />
+        <span>${t("ai.admin.enabledLabel")}</span>
+      </label>
+      <p class="text-faint" style="font-size:11.5px;margin:0 0 16px;">${t("ai.admin.keysNote")}</p>
       <button type="button" class="btn btn-secondary btn-sm" id="ai-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
-      <p class="text-faint" style="font-size:11.5px;margin:14px 0 0;">${t("set.ai.getKey", { link: `<a href="${provider.getKeyUrl}" target="_blank" rel="noopener noreferrer" class="link">${provider.getKeyLabel}</a>`, vendor: provider.billedBy })}</p>
+      <div id="ai-status" style="margin:10px 0;font-size:12.5px;"></div>
+      <div class="divider"></div>
+      <button type="button" class="btn btn-ghost btn-sm" id="ai-clear-keys">${t("ai.admin.clearOldKeys")}</button>
     </div>
   `;
-  wirePasswordToggles(content);
-  qs("#ai-provider").addEventListener("change", (e) => {
-    updateGlobalAiSettings({ provider: e.target.value });
-    renderAi(content);
-  });
+  qs("#ai-provider").addEventListener("change", (e) => updateGlobalAiSettings({ provider: e.target.value }));
+  qs("#ai-enabled").addEventListener("change", (e) => updateGlobalAiSettings({ enabled: e.target.checked }));
   qs("#ai-test").addEventListener("click", async () => {
-    const key = qs("#ai-key").value.trim();
     const statusEl = qs("#ai-status");
-    if (!key) {
-      statusEl.innerHTML = `<span style="color:var(--health-poor);">${t("set.ai.pasteFirst")}</span>`;
-      return;
-    }
     statusEl.innerHTML = `<span class="text-muted">${t("integr.testing")}</span>`;
     try {
-      await testAiConnection({ ...ai, [provider.keyField]: key });
-      updateGlobalAiSettings({ [provider.keyField]: key });
+      await testAiConnection(getGlobalAiSettings() || ai);
       statusEl.innerHTML = `<span style="color:var(--health-good);">${t("set.ai.connected")}</span>`;
     } catch (e) {
       statusEl.innerHTML = `<span style="color:var(--health-poor);">${escapeHtml(e.message)}</span>`;
+    }
+  });
+  qs("#ai-clear-keys").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: t("ai.admin.clearOldKeys"),
+      message: t("ai.admin.clearOldKeysConfirmBody"),
+    });
+    if (!ok) return;
+    try {
+      await deleteLegacyGlobalAiKeys();
+      toast(t("ai.admin.clearOldKeysDone"));
+    } catch (e) {
+      toast(e.message || t("ai.admin.clearOldKeysDone"), "error");
     }
   });
 }
@@ -293,7 +309,17 @@ function renderBrandsBg(content) {
   draw();
 }
 
+function trashRowHTML(row) {
+  const daysLeft = Math.max(0, TRASH_DAYS - Math.floor((Date.now() - row.deletedAt) / 86400000));
+  return `
+    <div class="list-editor-row">
+      <span class="row-label"><b>${escapeHtml(row.name)}</b> <span class="text-faint">· ${t(`set.trash.kind.${row.kind}`)} · ${escapeHtml(row.brandName)} · ${t("set.trash.daysLeft", { n: daysLeft })}</span></span>
+      <button class="btn btn-secondary btn-sm" data-trash-restore="${row.kind}:${row.id}">${t("set.trash.restore")}</button>
+      <button class="icon-btn" data-trash-purge="${row.kind}:${row.id}" aria-label="${escapeHtml(t("set.trash.purgeAria", { name: row.name }))}" style="width:30px;height:30px;">${icon("trash", { size: 14 })}</button>
+    </div>`;
+}
 function renderData(content) {
+  const trash = listTrash();
   content.innerHTML = `
     <div class="card" style="margin-bottom:20px;">
       <h3 style="font-size:16px;margin-bottom:6px;">${t("set.data.backup")}</h3>
@@ -304,12 +330,35 @@ function renderData(content) {
         <input type="file" id="import-file" accept="application/json" style="display:none;" />
       </div>
     </div>
+    <div class="card" style="margin-bottom:20px;">
+      <h3 style="font-size:16px;margin-bottom:6px;">${t("set.trash.title")}</h3>
+      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.trash.sub", { days: TRASH_DAYS })}</p>
+      ${trash.length ? trash.map(trashRowHTML).join("") : `<p class="text-faint" style="font-size:13px;margin:0;">${t("set.trash.empty")}</p>`}
+    </div>
     <div class="card">
       <h3 style="font-size:16px;margin-bottom:6px;color:var(--health-poor);">${t("set.data.reset")}</h3>
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.data.resetSub")}</p>
       <button class="btn btn-danger" id="reset-btn">${icon("trash", { size: 15 })}${t("set.data.resetBtn")}</button>
     </div>
   `;
+  qsa("[data-trash-restore]", content).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const [kind, id] = btn.dataset.trashRestore.split(":");
+      restoreTrashItem(kind, id);
+      toast(t("set.trash.restored"));
+      renderData(content);
+    })
+  );
+  qsa("[data-trash-purge]", content).forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const [kind, id] = btn.dataset.trashPurge.split(":");
+      const ok = await confirmDialog({ title: t("set.trash.purgeTitle"), message: t("set.trash.purgeMsg"), confirmLabel: t("common.delete"), danger: true });
+      if (!ok) return;
+      purgeTrashItem(kind, id);
+      toast(t("set.trash.purged"));
+      renderData(content);
+    })
+  );
   qs("#export-btn").addEventListener("click", () => {
     const blob = new Blob([exportJSON()], { type: "application/json" });
     const url = URL.createObjectURL(blob);

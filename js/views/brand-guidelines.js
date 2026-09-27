@@ -260,8 +260,8 @@ function paint(root, brandId, brand, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}${guideVideoButtonHTML("brand-guidelines")}</div>
-        <h1>${brand.name}</h1>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${escapeHtml(brand.name)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}${guideVideoButtonHTML("brand-guidelines")}</div>
+        <h1>${t("bg.pageTitle")}</h1>
       </div>
       ${guidelinesProgressHTML(state)}
     </div>
@@ -675,7 +675,7 @@ function wireLogoStep(root, state, refresh) {
     if (!file) return;
     const name = await promptDialog({ title: t("bg.mascot.nameTitle"), label: t("bg.mascot.nameLabel"), placeholder: t("bg.mascot.namePlaceholder"), confirmLabel: t("guidelines.next") });
     if (!name) { e.target.value = ""; return; }
-    const description = await promptDialog({ title: t("bg.mascot.descTitle", { name }), label: t("bg.mascot.descLabel"), placeholder: t("bg.mascot.descPlaceholder"), confirmLabel: t("bg.mascot.save") });
+    const description = await promptDialog({ title: t("bg.mascot.descTitle", { name: escapeHtml(name) }), label: t("bg.mascot.descLabel"), placeholder: t("bg.mascot.descPlaceholder"), confirmLabel: t("bg.mascot.save") });
     e.target.value = "";
     const dataUrl = await resizeImageFile(file, { maxDimension: 500 });
     state.answers.mascots = [...state.answers.mascots, { name, description: description || "", dataUrl }];

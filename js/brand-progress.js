@@ -70,9 +70,9 @@ export function brandBookProgress(brand = {}) {
   return { filled: parts.filter(Boolean).length, total: parts.length };
 }
 
-// The gate for everything downstream (Campaign, Konten): Brand DNA saved
-// and the visual basics set. Both halves, because "give this brand an
-// identity" is one job.
+// The gate for the Tujuan tab (Konten is open from day one, not gated by
+// this): Brand DNA saved and the visual basics set. Both halves, because
+// "give this brand an identity" is one job.
 export function identityDone(brand = {}) {
   return brandDnaDone(brand) && visualBasicsDone(brand);
 }

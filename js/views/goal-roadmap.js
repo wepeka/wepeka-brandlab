@@ -367,7 +367,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
   qsa("[data-rg-ms-remove]", root).forEach((b) => b.addEventListener("click", async () => {
     const label = b.dataset.rgMsRemove;
     if (goal.status !== "draft") {
-      const ok = await confirmDialog({ title: t("roadmap.ms.removeTitle"), message: t("roadmap.ms.removeMsg", { name: label }), confirmLabel: t("common.delete"), danger: true });
+      const ok = await confirmDialog({ title: t("roadmap.ms.removeTitle"), message: t("roadmap.ms.removeMsg", { name: esc(label) }), confirmLabel: t("common.delete"), danger: true });
       if (!ok) return;
     }
     const res = removeGoalMilestone(brandId, goalId, label);
@@ -397,7 +397,18 @@ function paintDetail(root, brandId, goalId, state, refresh) {
       else if (act === "archive") { updateGoal(brandId, goalId, { status: "archived" }); location.hash = `#/brand/${brandId}/goals`; }
       else if (act === "delete") {
         const ok = await confirmDialog({ title: t("roadmap.menu.deleteTitle"), message: t("roadmap.menu.deleteMsg"), confirmLabel: t("common.delete"), danger: true });
-        if (ok) { deleteGoal(brandId, goalId); location.hash = `#/brand/${brandId}/goals`; }
+        if (!ok) return;
+        const linkedCampaigns = listCampaigns(brandId).filter((c) => c.goalId === goalId);
+        const archiveCampaigns = linkedCampaigns.length
+          ? await confirmDialog({
+              title: t("roadmap.menu.archiveCampaignsTitle"),
+              message: t("roadmap.menu.archiveCampaignsMsg", { n: linkedCampaigns.length }),
+              confirmLabel: t("roadmap.menu.archiveCampaignsYes"),
+              cancelLabel: t("roadmap.menu.archiveCampaignsNo"),
+            })
+          : false;
+        deleteGoal(brandId, goalId, { archiveCampaigns });
+        location.hash = `#/brand/${brandId}/goals`;
       }
     });
   });

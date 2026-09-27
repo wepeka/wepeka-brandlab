@@ -100,7 +100,7 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
       </div>
       <div class="field">
         <label>${t("contentEditor.idea.label")}</label>
-        <textarea class="textarea" id="f-idea" placeholder="${t("contentEditor.idea.placeholder")}">${draft.idea || ""}</textarea>
+        <textarea class="textarea" id="f-idea" placeholder="${t("contentEditor.idea.placeholder")}">${escapeHtml(draft.idea || "")}</textarea>
       </div>
       <div class="field">
         <label>${t("contentEditor.contentFor.label")}</label>
@@ -114,13 +114,13 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
         <div class="field">
           <label>${t("contentEditor.platform.label")}</label>
           <select class="select" id="f-platform">
-            ${settings.platforms.map((p) => `<option value="${p.name}" ${draft.platform === p.name ? "selected" : ""}>${p.name}</option>`).join("")}
+            ${settings.platforms.map((p) => `<option value="${attr(p.name)}" ${draft.platform === p.name ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
           </select>
         </div>
         <div class="field">
           <label>${t("contentEditor.format.label")}</label>
           <select class="select" id="f-format">
-            ${settings.formats.map((f) => `<option value="${f.name}" ${draft.format === f.name ? "selected" : ""}>${f.name}</option>`).join("")}
+            ${settings.formats.map((f) => `<option value="${attr(f.name)}" ${draft.format === f.name ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -131,7 +131,7 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
         </div>
         <select class="select" id="f-campaign">
           <option value="">${t("contentEditor.campaign.none")}</option>
-          ${campaigns.map((c) => `<option value="${c.id}" ${draft.campaignId === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
+          ${campaigns.map((c) => `<option value="${c.id}" ${draft.campaignId === c.id ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
         </select>
         <div id="phase-select-wrap">${phaseSelectHTML(campaigns, draft)}</div>
         ${!campaigns.length ? `<div class="text-faint" style="font-size:11px;margin-top:6px;">${t("contentEditor.campaign.noneYet")}</div>` : ""}
@@ -187,7 +187,7 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
 }
 
 function attr(v) {
-  return (v || "").replace(/"/g, "&quot;");
+  return escapeHtml(v || "");
 }
 
 // Only meaningful once a campaign is chosen — that campaign's own phases,
@@ -200,7 +200,7 @@ function phaseSelectHTML(campaigns, draft) {
   return `
     <select class="select" id="f-phase" style="margin-top:8px;">
       <option value="">${t("contentEditor.phase.none")}</option>
-      ${campaign.phases.map((p) => `<option value="${p.id}" ${draft.campaignPhaseId === p.id ? "selected" : ""}>${p.name}</option>`).join("")}
+      ${campaign.phases.map((p) => `<option value="${p.id}" ${draft.campaignPhaseId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
     </select>
   `;
 }
@@ -272,7 +272,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
                ${suggestion.rationale ? `<span class="text-faint" style="font-size:11.5px;">${escapeHtml(suggestion.rationale)}</span>` : ""}
                <button type="button" class="btn btn-secondary btn-sm" id="apply-campaign-suggestion" style="margin-top:4px;">${t("contentEditor.ai.useThisCampaign")}</button>
              </div>`
-          : `<div class="ocr-status">${icon("info", { size: 14 })}<span>${suggestion.rationale || t("contentEditor.ai.noCampaignFit")}</span></div>`;
+          : `<div class="ocr-status">${icon("info", { size: 14 })}<span>${suggestion.rationale ? escapeHtml(suggestion.rationale) : t("contentEditor.ai.noCampaignFit")}</span></div>`;
         qs("#apply-campaign-suggestion", el)?.addEventListener("click", () => {
           draft.campaignId = suggestion.campaignId;
           draft.campaignPhaseId = suggestion.phaseId || "";
@@ -281,7 +281,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
           toast(t("contentEditor.ai.campaignApplied"));
         });
       } catch (e) {
-        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e.message}</span></div>`;
+        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeHtml(e.message)}</span></div>`;
       } finally {
         suggestCampaignBtn.disabled = false;
       }
@@ -316,7 +316,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
         updateStatusRow();
         statusEl.innerHTML = `<div class="ocr-status">${icon("check", { size: 14 })}<span>${t("contentEditor.ai.detected", { funnel })}</span></div>`;
       } catch (e) {
-        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e.message}</span></div>`;
+        statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeHtml(e.message)}</span></div>`;
       } finally {
         detectFunnelBtn.disabled = false;
       }

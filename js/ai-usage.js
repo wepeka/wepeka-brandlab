@@ -1,14 +1,11 @@
-// Daily AI quota, counted per account. One "use" = one model call made
-// from the browser (script, hooks, ide, saran DNA, konsultan, jadwal
-// otomatis, ...). The count lives in this account's own settings doc
-// (settings/{uid}.aiUsage = { date, count }) so it follows the person
-// across devices, and resets simply by the date changing.
-//
-// Client-side only for now — the AI key still travels to the browser (see
-// the Phase 2 note in .claude/next-session-prompt.md: a server-side proxy
-// is where this becomes enforceable). Today it is an honest meter: it
-// tells the owner how much they've used and stops the buttons at the cap.
-import { getSettings, updateSettings, localISODate } from "./store.js";
+// Daily AI quota, counted per account. One "use" = one model call made from
+// the browser (script, hooks, ide, saran DNA, konsultan, jadwal otomatis,
+// ...). The count itself is now kept and enforced server-side (api/ai.js,
+// api/_aiQuota.js) in aiUsage/{uid} — this module just displays it: the meter
+// the owner sees is the live aiUsage/{uid} snapshot (js/store.js
+// getAiUsageDoc(), wired up in initStore()), not a number the browser could
+// edit its way past.
+import { getAiUsageDoc } from "./store.js";
 import { getCachedAccount, isAdmin, isReadOnly, currentUid } from "./account.js";
 
 // Accounts from before per-plan quotas (lifetime/builder/content/monthly)
@@ -22,6 +19,8 @@ export const DEFAULT_AI_DAILY_LIMIT = 50;
 // hard on day 1 still has real room left later, and the number is big
 // enough to actually experience the product rather than feel like a demo.
 // Shown on the pricing page (js/views/pricing.js) — keep the two in sync.
+// Also mirrored server-side in api/_aiQuota.js (the copy that actually
+// enforces the cap) — keep both in sync.
 const PLAN_QUOTA = {
   trial: { period: "total", limit: 60 },
   starter: { period: "day", limit: 20 },
@@ -46,7 +45,8 @@ export function aiQuotaPeriod() {
 // read-only account (ended trial, lapsed subscription) gets none at all;
 // every other account gets its plan's quota, or accounts/{uid}.aiDailyLimit
 // if the admin dashboard set one. The account doc is not client-writable,
-// so the cap is the admin's to raise (top-up), not the user's.
+// so the cap is the admin's to raise (top-up), not the user's. Display only
+// now — api/_aiQuota.js decides the real cap server-side.
 export function aiDailyLimit() {
   if (isAdmin(currentUid())) return Infinity;
   const account = getCachedAccount();
@@ -55,13 +55,17 @@ export function aiDailyLimit() {
   return Number.isFinite(n) && n > 0 ? n : planQuota().limit;
 }
 
-const thisMonth = () => localISODate().slice(0, 7);
+// Server and client agree on day/month boundaries in UTC (api/_aiQuota.js
+// isoDate/isoMonth) — matching that here instead of localISODate() keeps
+// the meter's "today"/"this month" in sync with what actually resets it.
+const isoDateUTC = () => new Date().toISOString().slice(0, 10);
+const isoMonthUTC = () => new Date().toISOString().slice(0, 7);
 
 function usageOn(u) {
-  return u && u.date === localISODate() ? Number(u.count) || 0 : 0;
+  return u && u.date === isoDateUTC() ? Number(u.count) || 0 : 0;
 }
 function usageInMonth(u) {
-  return u && u.month === thisMonth() ? Number(u.monthCount) || 0 : 0;
+  return u && u.month === isoMonthUTC() ? Number(u.monthCount) || 0 : 0;
 }
 // No date/month check — a total pool just accumulates for as long as the
 // account stays on a "total"-period plan (currently only the trial).
@@ -70,9 +74,10 @@ function usageTotal(u) {
 }
 
 // Usage in the current window (today, this month on a monthly cap, or the
-// whole trial on a total cap).
+// whole trial on a total cap) — read straight off the live aiUsage/{uid}
+// doc api/ai.js writes after every counted call.
 export function aiUsageToday() {
-  const u = getSettings().aiUsage;
+  const u = getAiUsageDoc();
   const period = aiQuotaPeriod();
   if (period === "total") return usageTotal(u);
   return period === "month" ? usageInMonth(u) : usageOn(u);
@@ -87,17 +92,7 @@ export function aiLimitReached() {
   return aiUsageToday() >= aiDailyLimit();
 }
 
-// All three counters are kept whatever the plan, so switching between a
-// daily, monthly, or total-pool plan never starts from a wrong number.
-export function recordAiUsage(n = 1) {
-  const u = getSettings().aiUsage;
-  updateSettings({
-    aiUsage: {
-      date: localISODate(),
-      count: usageOn(u) + n,
-      month: thisMonth(),
-      monthCount: usageInMonth(u) + n,
-      totalCount: usageTotal(u) + n,
-    },
-  });
-}
+// The server (api/ai.js) is what actually counts a call now, in the same
+// transaction that confirms it succeeded — nothing left for the client to
+// record. Kept as a no-op export so nothing that still imports it breaks.
+export function recordAiUsage() {}

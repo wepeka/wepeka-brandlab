@@ -6,7 +6,7 @@
 // creator.js's seriesFieldHTML) or picked/auto-detected in Brainstorm
 // (js/consultant-panel.js) — see js/store.js's Series CRUD and js/ai.js's
 // buildSeriesContext for how the saved DNA turns into AI context.
-import { getBrand, listContent, listSeries, getSeries, createSeries, updateSeries, deleteSeries, onChange } from "../store.js";
+import { getBrand, listContent, listSeries, getSeries, createSeries, updateSeries, deleteSeries, onChange, brandToneText, TRASH_DAYS } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, qs, qsa, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
@@ -32,6 +32,7 @@ function paint(root, brandId, refresh) {
       <div>
         <div class="page-eyebrow">${t("series.list.title")}</div>
         <h1>${t("series.tab")}</h1>
+        <p class="page-head-brand">${escapeText(brand.name)}</p>
       </div>
       <button class="btn btn-primary" id="new-series">${icon("plus", { size: 16 })}${t("series.new")}</button>
     </div>
@@ -39,15 +40,17 @@ function paint(root, brandId, refresh) {
     ${
       series.length
         ? `<div class="brand-grid">${series.map((s) => seriesCardHTML(s, content)).join("")}</div>`
-        : `<div class="content-view-card glass-card" style="max-width:460px;cursor:default;">
+        : `<div class="empty-state" style="max-width:460px;margin:0 auto;">
              <div class="icon-wrap">${icon("sparkle", { size: 22 })}</div>
              <h3>${t("series.list.empty.title")}</h3>
              <p>${t("series.list.empty.body")}</p>
+             <button type="button" class="btn btn-primary" id="empty-new-series">${icon("plus", { size: 15 })}${t("series.new")}</button>
            </div>`
     }
   `;
 
   qs("#new-series")?.addEventListener("click", () => openSeriesModal({ brandId, onSaved: refresh }));
+  qs("#empty-new-series")?.addEventListener("click", () => openSeriesModal({ brandId, onSaved: refresh }));
   qsa("[data-open-series]", root).forEach((card) => {
     card.addEventListener("click", (e) => {
       if (e.target.closest("[data-delete-series]")) return;
@@ -57,7 +60,7 @@ function paint(root, brandId, refresh) {
   qsa("[data-delete-series]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      const ok = await confirmDialog({ title: t("series.deleteConfirm.title"), message: t("series.deleteConfirm.body"), danger: true });
+      const ok = await confirmDialog({ title: t("series.deleteConfirm.title"), message: `${t("series.deleteConfirm.body")} ${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`, confirmLabel: t("delete.toTrash.confirm"), danger: true });
       if (!ok) return;
       deleteSeries(btn.dataset.deleteSeries);
       toast(t("series.deleted"));
@@ -90,7 +93,11 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
     targetAudience: dna.targetAudience || "",
     platform: dna.platform || "",
     format: dna.format || "",
-    tone: dna.tone || "",
+    // A brand-new series starts from the brand's own Brand DNA tone (one
+    // less thing to redecide per series) — editing/saving it here never
+    // reads back into brandBuilder.toneOfVoice, so it's just a starting
+    // point, not a sync.
+    tone: dna.tone || (series ? "" : brandToneText(getBrand(brandId))),
     writingStyle: dna.writingStyle || "",
     typicalHook: dna.typicalHook || "",
     storytellingStyle: dna.storytellingStyle || "",

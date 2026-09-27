@@ -30,7 +30,8 @@
 //                      is just swapping that one entry's src for an
 //                      .mp4/.webm URL or a YouTube/Vimeo link.
 import { icon } from "./icons.js";
-import { escapeHtml, toast, showCalloutBubble } from "./dom.js";
+import { escapeHtml, toast, showCalloutBubble, openMenu, closeMenu } from "./dom.js";
+import { helpEntry } from "./help.js";
 import { openModal, closeOverlay } from "./modals.js";
 import { getSettings, updateSettings } from "./store.js";
 import { getCachedAccount, isReadOnly, isAdmin, currentUid } from "./account.js";
@@ -349,7 +350,7 @@ export function resetVideoSeen() {
 // "kenalan" video (js/main.js playFirstRunIntro) and available to any other
 // caller that opens a video with `hint: true`.
 function replayHint() {
-  const btn = document.querySelector("[data-guide-video-btn]");
+  const btn = document.querySelector("[data-page-help]");
   const text = t("guide.video.offer.replay");
   if (btn) showCalloutBubble(btn, text);
   else toast(text);
@@ -392,13 +393,43 @@ export function playFirstRunIntro() {
 //             has none. Shown once the page has registered its guide
 //             (js/section-guide.js keeps these in step).
 // Neither opens on its own; only a click (delegated listener below) does.
+// The page's ONE help door. It used to be three things side by side — a
+// "?" explainer, a "Panduan" tour pill and a "Video" pill — plus another "?"
+// in the topbar. Now one "Panduan" pill opens a small menu with everything
+// this page has: what the page is for, the spotlight tour, the video, and
+// "ask the AI". The eyebrow's own "?" hides itself next to it (CSS :has).
 export function guideVideoButtonHTML(guideKey) {
+  return `<button type="button" class="icon-btn help-btn section-video-btn page-help-btn" data-page-help="${escapeHtml(guideKey)}" title="${t("guide.btn")}" aria-label="${t("guide.btn")}" aria-haspopup="menu">${icon("help", { size: 14 })}<span>${t("guide.btn")}</span></button>`;
+}
+
+function pageHelpMenu(btn) {
+  const guideKey = btn.dataset.pageHelp;
+  // The explainer text: this page's own help entry, else the one the
+  // eyebrow's (now hidden) "?" button carried.
+  const helpKey = helpEntry(guideKey) ? guideKey : btn.parentElement?.querySelector("[data-help]")?.dataset.help;
+  const entry = helpKey ? helpEntry(helpKey) : null;
   const ref = videoRefForGuide(guideKey);
-  const video = ref
-    ? `<button type="button" class="icon-btn help-btn section-video-btn"${canShowVideo(ref.video) ? "" : " hidden"} data-guide-video-btn="${escapeHtml(guideKey)}" title="${t("guide.video.btnTitle")}" aria-label="${t("guide.video.btnTitle")}">${icon("play", { size: 14 })}<span>Video</span></button>`
-    : "";
-  const guide = `<button type="button" class="icon-btn help-btn section-video-btn section-guide-btn"${getPageGuide() ? "" : " hidden"} data-page-guide-btn title="${t("help.pageGuide")}" aria-label="${t("help.pageGuide")}">${icon("target", { size: 14 })}<span>${t("guide.btn")}</span></button>`;
-  return video + guide;
+  const hasVideo = !!(ref && canShowVideo(ref.video));
+  const hasTour = !!getPageGuide();
+  const inBrand = /^#\/brand\//.test(location.hash);
+  const rect = btn.getBoundingClientRect();
+  const menu = openMenu(btn, { className: "help-popover page-help-menu", top: rect.bottom + 8, left: Math.max(8, Math.min(rect.left, window.innerWidth - 308)) });
+  if (!menu) return;
+  menu.innerHTML = `
+    ${entry ? `<div class="help-popover-title">${escapeHtml(entry.title)}</div><p class="help-popover-body">${escapeHtml(entry.body)}</p>` : ""}
+    <div class="page-help-actions">
+      ${hasTour ? `<button type="button" data-ph="tour">${icon("target", { size: 15 })}${t("help.pageGuide")}</button>` : ""}
+      ${hasVideo ? `<button type="button" data-ph="video">${icon("play", { size: 15 })}${t("guide.video.btnTitle")}</button>` : ""}
+      ${inBrand ? `<button type="button" data-ph="ai">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
+    </div>`;
+  menu.addEventListener("click", (ev) => {
+    const act = ev.target.closest("[data-ph]")?.dataset.ph;
+    if (!act) return;
+    closeMenu();
+    if (act === "tour") startPageTour();
+    else if (act === "video") whenReady().then(() => openGuideVideo(ref.video, { start: ref.start }));
+    else if (act === "ai") import("./consultant-panel.js").then((m) => m.openConsultantPanel());
+  });
 }
 
 // One delegated listener for every Video button, so pages don't each need
@@ -406,6 +437,8 @@ export function guideVideoButtonHTML(guideKey) {
 if (typeof window !== "undefined" && !window.__guideVideoClickWired) {
   window.__guideVideoClickWired = true;
   document.addEventListener("click", (e) => {
+    const helpBtn = e.target instanceof Element ? e.target.closest("[data-page-help]") : null;
+    if (helpBtn) { e.preventDefault(); e.stopPropagation(); pageHelpMenu(helpBtn); return; }
     const guideBtn = e.target instanceof Element ? e.target.closest("[data-page-guide-btn]") : null;
     if (guideBtn) { startPageTour(); return; }
     const btn = e.target instanceof Element ? e.target.closest("[data-guide-video-btn]") : null;

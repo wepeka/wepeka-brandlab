@@ -1,4 +1,4 @@
-import { updateBrand, syncCadenceRoutine, ROUTINE_DAYS } from "./store.js";
+import { updateBrand, ROUTINE_DAYS } from "./store.js";
 import { openModal, closeOverlay } from "./modals.js";
 import { qs, qsa, escapeHtml as escapeText } from "./dom.js";
 import { icon } from "./icons.js";
@@ -10,14 +10,15 @@ import { t } from "./i18n.js";
 // Calendar sub-tab, so calendar.js importing back from content-os.js would
 // be a circular import.
 //
-// One setup, three consumers: the AI Auto-Schedule constraints in
-// calendar.js (which days are upload days, how many pieces a day), and the
-// Shoot/Edit/Upload rows in My Routine on the Brands page
-// (store.js's syncCadenceRoutine — see there for how those stay in sync
-// without touching anything added to My Routine by hand). Asked once per
-// brand the first time anyone opens Content OS, and re-openable any time
-// from Calendar's "Jadwal Kerja" button. Skippable on first run — a skip
-// still records contentCadence (empty) so this doesn't reprompt every visit.
+// One setup, one consumer: the AI Auto-Schedule constraints in calendar.js
+// (which days are upload days, how many pieces a day) — this used to also
+// mirror itself into the standalone My Routine editor's routineTemplate
+// collection (store.js's syncCadenceRoutine), but that editor had no
+// caller left anywhere in the app, so the mirroring write was removed;
+// brand.contentCadence (set here) is the only copy of this now. Asked once
+// per brand the first time anyone opens Content OS, and re-openable any
+// time from Calendar's "Jadwal Kerja" button. Skippable on first run — a
+// skip still records contentCadence (empty) so this doesn't reprompt every visit.
 function dayChipsHTML(id, selectedDays) {
   return `
     <div class="chip-select" id="${id}" style="flex-wrap:wrap;">
@@ -104,7 +105,6 @@ export function openContentCadenceSetup(brand) {
       configured: true,
     };
     updateBrand(brand.id, { contentCadence: cadence });
-    syncCadenceRoutine(brand.id, cadence);
     closeOverlay(overlay);
   });
 }

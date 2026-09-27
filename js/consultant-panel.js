@@ -47,7 +47,7 @@
 // belongs there (keyword rules, or the model's [[handoff:…]]).
 import { t, getLang } from "./i18n.js";
 import {
-  getBrand, getSettings, listContent, listCampaigns, listOverdueAndDueSoon, createContent, addBrandIdea, updateBrand, updateBrandIdea, removeBrandIdea, localISODate,
+  getBrand, getSettings, listContent, listCampaigns, listOverdueAndDueSoon, createContent, addBrandIdea, updateBrand, updateBrandIdea, removeBrandIdea, listBrandIdeas, localISODate,
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, deleteBrainstorm,
   getCompanionThread, ensureCompanionThread, getConsultThread, ensureConsultThread, ROLLING_THREAD_MODES, addBrandMoments, removeBrandLogEntry, MOMENT_KINDS, MOMENT_ACTIONS,
   getCampaign, updateCampaign, getContent, updateContent, getSeries, listSeries, findSeriesByNameInText, getGoal, listGoals, formatEventDate, phaseNameLabel, onChange,
@@ -73,6 +73,7 @@ import { qs, escapeHtml, formatPercent, formatDate, toast, openMenu, closeMenu, 
 import { mountAiFeedback } from "./ai-feedback.js";
 import { readFlag, writeFlag } from "./seen-flags.js";
 import { wireMic } from "./voice-input.js";
+import { funnelShort } from "./funnel-field.js";
 
 export const MODES = ["consultant", "brainstorm", "companion"];
 const VIEWS = ["auto", ...MODES];
@@ -267,30 +268,23 @@ export function scopeInfo(brandId, scope) {
 export const chatScopeInfo = (brandId) => scopeInfo(brandId, activeScope(brandId));
 
 // Saved ideas follow the scope: a campaign (or goal) conversation reads and
-// writes the campaign's list, everything else the brand's.
+// writes that campaign's slice of the one ideas inbox (brand.ideas — see
+// listBrandIdeas), everything else the brand-level slice.
 function savedIdeasFor(brandId) {
   const camp = chatScopeInfo(brandId).campaign;
-  return { camp, items: camp ? getCampaign(camp.id)?.ideas || [] : getBrand(brandId)?.ideas || [] };
+  return { camp, items: listBrandIdeas(brandId, { campaignId: camp?.id || null }) };
 }
-const newIdeaId = () => `idea-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 function saveIdeaScoped(brandId, { title, why = "", notes = "", hooks = null }) {
   const th = currentThread(brandId);
   const { camp } = savedIdeasFor(brandId);
-  // The thread keeps its own list too, so the AI never offers it again.
-  if (th) updateBrainstorm(th.id, { ideas: [...(getBrainstorm(th.id)?.ideas || []), { id: newIdeaId(), text: title, why, at: Date.now(), savedTo: camp ? "campaign" : "brand" }] });
   const extra = { ...(notes ? { notes } : {}), ...(hooks ? { hooks } : {}) };
-  if (camp) updateCampaign(camp.id, { ideas: [...(getCampaign(camp.id)?.ideas || []), { id: newIdeaId(), text: title, description: why, ...extra, source: "brainstorm", status: "concept", threadId: th?.id || null, createdAt: Date.now() }] });
-  else addBrandIdea(brandId, { text: title, description: why, ...extra, threadId: th?.id || null });
+  addBrandIdea(brandId, { text: title, description: why, source: "chat", campaignId: camp?.id || null, ...extra, threadId: th?.id || null });
 }
 function patchSavedScoped(brandId, id, patch) {
-  const { camp } = savedIdeasFor(brandId);
-  if (camp) updateCampaign(camp.id, { ideas: (getCampaign(camp.id)?.ideas || []).map((i) => (i.id === id ? { ...i, ...patch, updatedAt: Date.now() } : i)) });
-  else updateBrandIdea(brandId, id, patch);
+  updateBrandIdea(brandId, id, patch);
 }
 function removeSavedScoped(brandId, id) {
-  const { camp } = savedIdeasFor(brandId);
-  if (camp) updateCampaign(camp.id, { ideas: (getCampaign(camp.id)?.ideas || []).filter((i) => i.id !== id) });
-  else removeBrandIdea(brandId, id);
+  removeBrandIdea(brandId, id);
 }
 // A draft made from this conversation lands where the conversation is:
 // the campaign (and its current phase), the series.
@@ -340,7 +334,7 @@ function threadEntries(th, engine) {
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null, sessionId: m.sessionId || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
     });
   });
@@ -434,7 +428,7 @@ const hasMessages = (brandId, mode = modeOf(brandId)) => historyFor(brandId, mod
 // Konsultan only decide when exactly one of them matches.
 const RULES = {
   companion: /\b(capek|cape|lelah|males|malas|bosan|bosen|stres|stress|pusing|semangat|takut|khawatir|nyerah|menyerah|sedih|senang|seneng|curhat|kesel|kesal|overwhelmed|tired|burnout|exhausted|frustrated|nggak tahu mulai|gak tau mulai|bingung mulai|cerita|tadi ada|barusan|hari ini ada)\b/i,
-  brainstorm: /\b(ide|idea|ideas|brainstorm|inspirasi|konten apa|bikin apa|posting apa|post apa|topik|angle|hook|mentok|buntu|stuck|kasih ide)\b/i,
+  brainstorm: /\b(ide|idea|ideas|brainstorm|inspirasi|konten apa|bikin apa|posting apa|post apa|topik|angle|hook|mentok|buntu|stuck|kasih ide|script|scriptnya|skrip|naskah|narasi|voice ?over)\b/i,
   consultant: /\b(performa|performance|engagement|data|angka|statistik|follower|followers|reach|views|campaign|jadwal|schedule|kalender|calendar|overdue|level|milestone|strategi|strategy|analisa|analisis|berapa|how many|kenapa konten|why is|di mana|dimana|gimana caranya|cara|benchmark|target)\b/i,
 };
 const HINT_MIN_LENGTH = 25; // a short follow-up ("iya", "yang kedua") is never a hint
@@ -688,6 +682,36 @@ function attachStripHTML(brandId) {
   return `<div class="cp-attach">${list.map((a, i) => `<div class="cp-attach-item"><img src="${esc(a.thumb)}" alt="" /><button type="button" data-attach-remove="${i}" aria-label="${t("chat.image.remove")}" title="${t("chat.image.remove")}">${icon("x", { size: 10 })}</button></div>`).join("")}</div>`;
 }
 
+// "Script siap syuting": a script the AI wrote ([[script:…]], see
+// js/ai-directives.js), shown whole and readable, with one button that
+// approves it into a real draft in Creator — script and caption filled in.
+function scriptCardHTML(sc, ref) {
+  const meta = [sc.format, funnelShort(sc.funnel)].filter(Boolean).join(" · ");
+  return `
+    <div class="cp-script">
+      <div class="cp-script-head">${icon("teleprompter", { size: 14 })}<span>${t("chat.script.label")}</span>${meta ? `<small>${esc(meta)}</small>` : ""}</div>
+      <div class="cp-script-title">${esc(sc.title)}</div>
+      <div class="cp-script-body">${renderLightMarkdown(sc.script)}</div>
+      ${sc.caption ? `<div class="cp-script-caption"><b>${t("chat.script.caption")}</b><p>${esc(sc.caption)}</p></div>` : ""}
+      <div class="cp-script-actions">
+        ${sc.contentId
+          ? `<button type="button" class="btn btn-secondary btn-sm" data-script-open="${esc(sc.contentId)}">${icon("check", { size: 13 })}${t("chat.script.saved")}${icon("arrowRight", { size: 12 })}</button>`
+          : `<button type="button" class="btn btn-primary btn-sm" data-script-approve="${ref}">${icon("check", { size: 13 })}${t("chat.script.approve")}</button>`}
+        <button type="button" class="btn btn-ghost btn-sm" data-script-copy="${ref}">${icon("copy", { size: 13 })}${t("chat.script.copy")}</button>
+      </div>
+    </div>`;
+}
+
+// The AI's format name ("Reels", "short video", "Reels/TikTok") → one of this
+// account's own formats; the platform follows when the name says it.
+function matchFormat(name) {
+  const formats = getSettings().formats || [];
+  const n = String(name || "").toLowerCase();
+  const hit = formats.find((f) => n && n.includes(f.name.toLowerCase())) || formats.find((f) => /reel/i.test(f.name)) || formats[0];
+  const platform = /tiktok/.test(n) ? "TikTok" : /youtube|shorts/.test(n) ? "YouTube" : /facebook/.test(n) ? "Facebook" : "Instagram";
+  return { format: hit?.name || "", platform };
+}
+
 function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
   if (h.role === "day") return `<div class="companion-day">${esc(h.label)}</div>`;
   if (h.role === "user") {
@@ -726,6 +750,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
         )
         .join("")}</div>`
     : "";
+  const scriptsHTML = (h.scripts || []).map((sc, j) => scriptCardHTML(sc, `${index}:${j}`)).join("");
   // A rewrite proposed in Creator's script discussion — shown for reference;
   // applying it happens in Creator.
   const revisionsHTML = (h.revisions || []).map((r) => `<div class="cp-idea"><div class="cp-idea-title">${esc(r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript"))}</div><div class="cp-idea-why" style="white-space:pre-wrap;">${esc(r.text)}</div></div>`).join("");
@@ -751,7 +776,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
     ? `<div class="consultant-followups cp-asks"><div class="consultant-starters">${h.asks.slice(0, 2).map((q) => starterChip(q, h.engine)).join("")}</div></div>`
     : "";
   // A Brainstorm question with nothing to pick yet: skip to ideas, or answer.
-  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length
+  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length
     ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-chat-go-ideas>${icon("sparkle", { size: 13 })}${t("bs.go.ideas")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-answer>${icon("chat", { size: 13 })}${t("bs.go.answer")}</button></div>`
     : "";
   // The recap offer (Teman, un-recapped chat from before today).
@@ -777,7 +802,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
     ? `<div class="cp-msg-tools"><button type="button" class="cp-copy" data-chat-copy="${index}" title="${t("chat.copy")}">${icon("copy", { size: 12 })}<span>${t("chat.copy")}</span></button>${retryToggle}</div>`
     : "";
   const retryHTML = h.retry ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-retry="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
-  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
+  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
 }
 
 // Brainstorm openers read from what is happening in the brand right now.
@@ -914,7 +939,7 @@ function chatCoreHTML(brandId, full) {
   const quotaOut = aiLimitReached();
   const info = chatScopeInfo(brandId);
   const last = history[history.length - 1];
-  const forkShown = last?.role === "assistant" && last.engine === "brainstorm" && last.question && !(last.ideas || []).length && !(last.tasks || []).length && !last.drafts?.length;
+  const forkShown = last?.role === "assistant" && last.engine === "brainstorm" && last.question && !(last.ideas || []).length && !(last.tasks || []).length && !last.drafts?.length && !last.scripts?.length;
   const placeholder = answerHint ? t("bs.answer.ph") : t(`chat.placeholder.${mode}`);
   // Only the Wepeka admin can fix the shared AI key (Settings → AI is an
   // admin-only panel) — anyone else would land on a page without it.
@@ -1073,13 +1098,27 @@ function memoryPanelHTML(brandId) {
     </aside>`;
 }
 
+// Phones: the chat page is one column, and the side cards used to pile up
+// under the chat (a long scroll to reach Ide Konten / Memori Brand). There
+// they become tabs above the chat instead — .cp-mtabs, hidden on wider
+// screens where the three columns sit side by side as before.
+let mobileTab = "chat";
+
 function pageHTML(brandId) {
   const mode = modeOf(brandId);
   const left = mode === "auto" ? sessionsRailHTML(brandId) : mode === "brainstorm" ? railHTML(brandId) : "";
+  const ideas = mode === "auto" || mode === "brainstorm" ? ideasPanelHTML(brandId).replace('<aside class="card glass-card bs-ideas ', '<aside data-pane="ideas" class="card glass-card bs-ideas ') : "";
+  const memory = mode === "auto" || mode === "companion" ? memoryPanelHTML(brandId).replace('<aside class="card glass-card bs-ideas cp-memory', '<aside data-pane="memory" class="card glass-card bs-ideas cp-memory') : "";
   // Otomatis shows both things the chat saves into, stacked.
-  const right = mode === "auto" ? `<div class="cp-side">${memoryDiffHTML()}${ideasPanelHTML(brandId)}${memoryPanelHTML(brandId)}</div>` : mode === "brainstorm" ? ideasPanelHTML(brandId) : mode === "companion" ? memoryPanelHTML(brandId) : "";
+  const right = mode === "auto" ? `<div class="cp-side">${memoryDiffHTML()}${ideas}${memory}</div>` : ideas || memory;
+  const tabs = [["chat", t("chat.mtab.chat")], ...(ideas ? [["ideas", t("bs.ideas.title")]] : []), ...(memory ? [["memory", t("chat.memory.title")]] : [])];
+  if (!tabs.some(([k]) => k === mobileTab)) mobileTab = "chat";
+  const tabsHTML = tabs.length > 1
+    ? `<div class="cp-mtabs segmented" role="tablist">${tabs.map(([k, label]) => `<button type="button" role="tab" data-cp-mtab="${k}" class="${k === mobileTab ? "active" : ""}" aria-selected="${k === mobileTab}">${esc(label)}</button>`).join("")}</div>`
+    : "";
   return `
-    <div class="bs-layout cp-page" data-mode="${mode}">
+    ${tabsHTML}
+    <div class="bs-layout cp-page" data-mode="${mode}" data-mtab="${mobileTab}">
       ${left}
       <section class="card glass-card cp-page-chat" data-mode="${mode}">${chatCoreHTML(brandId, true)}</section>
       ${right}
@@ -1320,6 +1359,32 @@ function wire(host, brandId, input, history) {
     toast(t("cons.draftSaved", { title: d.title }));
     rerender();
   });
+  // Scripts ([[script:…]]): "Setujui" makes the draft — script, caption,
+  // format and funnel filled in, placed in the conversation's scope — and
+  // the card turns into a link to it.
+  on("[data-script-approve]", (btn) => {
+    const { h, j } = refAt(btn.dataset.scriptApprove);
+    const sc = h?.scripts?.[j];
+    if (!sc || sc.contentId) return;
+    const item = draftFromScope(brandId, { title: sc.title, funnel: sc.funnel, idea: h.question ? t("cons.draftIdea", { question: h.question }) : "" });
+    updateContent(item.id, { ...matchFormat(sc.format), script: sc.script, caption: sc.caption || "", status: "draft" });
+    sc.contentId = item.id;
+    syncThreadBlocks(h);
+    toast(t("chat.script.savedToast", { title: sc.title }));
+    rerender();
+  });
+  on("[data-script-open]", (btn) => { leaveTo(brandId, `#/brand/${brandId}/content/creator/${btn.dataset.scriptOpen}`); });
+  on("[data-script-copy]", async (btn) => {
+    const { h, j } = refAt(btn.dataset.scriptCopy);
+    const sc = h?.scripts?.[j];
+    if (!sc) return;
+    try {
+      await navigator.clipboard.writeText([sc.title, "", sc.script, sc.caption ? `\nCaption:\n${sc.caption}` : ""].join("\n").trim());
+      toast(t("chat.script.copied"));
+    } catch {
+      toast(t("chat.copyFailed"), "error");
+    }
+  });
   on("[data-consultant-open-draft]", (btn) => { leaveTo(brandId, `#/brand/${brandId}/content/creator/${btn.dataset.consultantOpenDraft}`); });
 
   // Idea cards.
@@ -1466,6 +1531,12 @@ function wire(host, brandId, input, history) {
     rerender({ seed: t("companion.moment.seed", { title: m.title, detail: m.detail || "" }).replace(/ — $/, ""), focus: true });
   });
   on("[data-chat-recap]", () => runRecap(brandId));
+  on("[data-cp-mtab]", (btn) => {
+    mobileTab = btn.dataset.cpMtab;
+    const pageEl = host.querySelector(".cp-page");
+    if (pageEl) pageEl.dataset.mtab = mobileTab;
+    host.querySelectorAll("[data-cp-mtab]").forEach((b) => { b.classList.toggle("active", b === btn); b.setAttribute("aria-selected", String(b === btn)); });
+  });
   on("[data-chat-retry]", (btn) => {
     const h = history[Number(btn.dataset.chatRetry)];
     if (!h?.retry || pending) return;
@@ -1651,7 +1722,7 @@ function wireSavedIdeas(root, brandId, { rerender, close = () => {} }) {
   on("[data-chat-saved-delete]", async (btn) => {
     const i = ideaById(btn.dataset.chatSavedDelete);
     if (!i) return;
-    const ok = await confirmDialog({ title: t("bs.ideas.deleteIdeaConfirm.title"), message: t("bs.ideas.deleteIdeaConfirm.body", { title: i.text }), confirmLabel: t("common.delete"), danger: true });
+    const ok = await confirmDialog({ title: t("bs.ideas.deleteIdeaConfirm.title"), message: t("bs.ideas.deleteIdeaConfirm.body", { title: esc(i.text) }), confirmLabel: t("common.delete"), danger: true });
     if (!ok) return;
     removeSavedScoped(brandId, i.id);
     rerender();
@@ -1812,7 +1883,7 @@ function syncThreadBlocks(h) {
   if (!msg) return;
   const copy = (list) => (list || []).map((x) => ({ ...x }));
   updateBrainstormMessage(h.threadId, h.msgId, {
-    blocks: { ...(msg.blocks || {}), ideas: copy(h.ideas), drafts: copy(h.drafts), ...(h.tasks ? { tasks: copy(h.tasks) } : {}), ...(h.moments ? { moments: copy(h.moments) } : {}), ...(h.saves ? { saves: copy(h.saves) } : {}) },
+    blocks: { ...(msg.blocks || {}), ideas: copy(h.ideas), drafts: copy(h.drafts), ...(h.tasks ? { tasks: copy(h.tasks) } : {}), ...(h.moments ? { moments: copy(h.moments) } : {}), ...(h.saves ? { saves: copy(h.saves) } : {}), ...(h.scripts?.length ? { scripts: copy(h.scripts) } : {}) },
   });
 }
 
@@ -1959,6 +2030,8 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       const open = shown.lastIndexOf("[[");
       if (open !== -1 && !shown.slice(open).includes("]]")) shown = shown.slice(0, open);
       shown = shown.replace(/\[$/, "").trim();
+      // A script block is still being written: say so instead of a stall.
+      if (/\[\[script:/i.test(streamRaw) && !/\[\[\/script\]\]/i.test(streamRaw)) shown = `${shown}\n\n*${t("chat.script.writing")}*`.trim();
       if (!shown || !pending) return;
       streamShown = shown;
       const bubble = qs("#consultant-pending");
@@ -2004,8 +2077,11 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       const all = getBrainstorm(th.id)?.messages || [];
       const threadHistory = historyForModel(brandId, cur, all, asked?.id);
       // Everything already put in front of the owner counts as "don't repeat".
+      // (Used to also spread in this thread's own `ideas[]` — a save-time
+      // copy of the exact same text savedIdeasFor already returns from the
+      // one ideas inbox now, so that second copy is redundant.)
       const shown = all.flatMap((m) => (m.blocks?.ideas || []).map((i) => i.title));
-      const savedIdeas = [...new Set([...shown, ...(getBrainstorm(th.id)?.ideas || []).map((i) => i.text), ...savedIdeasFor(brandId).items.map((i) => i.text)])];
+      const savedIdeas = [...new Set([...shown, ...savedIdeasFor(brandId).items.map((i) => i.text)])];
       const campaigns = listCampaigns(brandId);
       const raw = await chatBrainstorm(ai, {
         brand, campaigns, pulseText, savedIdeas,
@@ -2014,11 +2090,11 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         turns: all.filter((m) => m.role === "user").length,
         onText: streamInto,
       });
-      const { cleanText, ideas, drafts, asks, tasks, handoff, saves } = parseDirectives(raw.trim());
+      const { cleanText, ideas, drafts, asks, tasks, handoff, saves, scripts } = parseDirectives(raw.trim());
       // A step is filed under the event; without one it is kept as an idea.
       const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
       const allIdeas = [...ideas, ...(eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why })))];
-      appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves }, sessionId });
+      appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}) }, sessionId });
     } else if (picked === "companion") {
       const thread = ensureCompanionThread(brandId);
       const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId });
@@ -2069,8 +2145,13 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
     // The question stays on screen if it never reached a log.
     const kept = (tails.get(tk) || []).filter((x) => x.role === "user");
     tails.set(tk, [...kept, entry]);
+  } finally {
+    // A finally, not a call after the try/catch: if anything above the
+    // catch block itself ever threw synchronously before reaching it,
+    // `pending` used to stay stuck true and the composer stayed disabled
+    // for the rest of the session.
+    finishReply(brandId, { streamed });
   }
-  finishReply(brandId, { streamed });
 }
 
 // "Rangkum" (Teman): the chat since the last recap → a card of moments the
@@ -2105,8 +2186,9 @@ async function runRecap(brandId) {
     updateBrand(brandId, { companion: { ...(getBrand(brandId)?.companion || {}), lastRecapAt: now } });
   } catch (err) {
     tails.set(tailKey(brandId, "companion"), [{ role: "assistant", text: err instanceof AiApiError ? err.message : t("companion.recap.failed") }]);
+  } finally {
+    finishReply(brandId, { streamed: false });
   }
-  finishReply(brandId, { streamed: false });
 }
 
 function decideRecap(brandId, msgId, save, host) {

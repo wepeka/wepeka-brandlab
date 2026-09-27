@@ -11,9 +11,10 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
-import { brandDnaCompleteness, missingDnaFields } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, missingDnaFields } from "../brand-progress.js";
 import { markDnaJustCompleted } from "./brand-builder.js";
 import { t } from "../i18n.js";
+import { dnaExamples, businessKind } from "../dna-examples.js";
 
 const TOUR_STEPS = [
   { selector: ".dna-progress-label", title: t("dna.tour.title"), body: t("dna.tour.body") },
@@ -255,6 +256,21 @@ export function render(root, { brandId, step }) {
     parts: { ...(dna.parts || {}), plan: { ...decomposeFunnel3Plan(dna.mission), ...((dna.parts || {}).plan || {}) } },
   };
   const refresh = () => paint(root, brandId, brand, state, refresh);
+  state.doneAtOpen = brandDnaDone(brand);
+  exampleKind = businessKind(brand);
+  // Delegated once on the page root (paint() replaces its contents on every
+  // step): example chips fill their box, and any typing refreshes the card.
+  root.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-example-for]");
+    if (!chip) return;
+    const input = qs(`#${chip.dataset.exampleFor}`, root);
+    if (!input) return;
+    input.value = chip.dataset.example;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+  });
+  root.addEventListener("input", () => updateLiveCard(root, state, getBrand(brandId) || brand));
+  root.addEventListener("change", () => updateLiveCard(root, state, getBrand(brandId) || brand));
 
   // Pemula answers this themselves — full stop. This page used to hand a
   // blank DNA straight to the AI before the owner had read a single
@@ -309,10 +325,13 @@ function paint(root, brandId, brand, state, refresh) {
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}/builder`, t("nav.builder"))} · ${t("dna.eyebrowWizard")}${helpButtonHTML("brand-dna")}${guideVideoButtonHTML("brand-dna")}</div>
-        <h1>${brand.name}</h1>
+        <h1>${t("home.identity.dna")}</h1>
+        <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
     </div>
-    <div style="max-width:640px;">
+    <div class="dna-wizard-layout">
+    <div class="dna-wizard-main" style="max-width:640px;">
+      ${liveCardHTML(state, brand)}
       <div class="flex items-center justify-between" style="margin-bottom:6px;">
         <span class="text-faint dna-progress-label" style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${isReview ? t("dna.progress.review") : t("dna.progress.step", { n: state.stepIndex + 1, total: total - 1 })}</span>
       </div>
@@ -321,6 +340,7 @@ function paint(root, brandId, brand, state, refresh) {
       </div>
       ${!isReview && state.stepIndex === 0 && getMode() === "advanced" && countAnswered(state.answers) < 8 ? proBriefHTML() : ""}
       ${isReview ? reviewHTML(state) : stepHTML(step, state, brandId)}
+    </div>
     </div>
   `;
 
@@ -479,6 +499,97 @@ function proofListHTML(list) {
   `;
 }
 
+// ---------- Tap-to-use examples + the live identity card ----------
+// Set per render from the brand's business description (js/dna-examples.js).
+let exampleKind = "general";
+
+function examplesHTML(targetId, key) {
+  const list = dnaExamples(key, exampleKind);
+  if (!list.length) return "";
+  return `<div class="dna-examples"><span>${t("dna.examples.label")}</span>${list.map((x) => `<button type="button" data-example-for="${targetId}" data-example="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join("")}</div>`;
+}
+
+// What the answers add up to, shown while they're being written: the owner
+// watches their brand take shape instead of only filling boxes. Reads the
+// saved answers, overlaid with whatever is typed on screen right now.
+const LIVE_ROWS = [
+  ["targetAudience", "dna.live.who"], ["problemSolved", "dna.live.problem"],
+  ["differentiation", "dna.live.why"], ["callToAction", "dna.live.cta"],
+];
+function liveValues(root, state, brand) {
+  const v = { ...state.answers, brandName: state.brandName || brand.name || "" };
+  if (!root) return v;
+  const step = STEPS[state.stepIndex];
+  qsa("[id^='ans-']", root).forEach((el) => { v[el.id.slice(4)] = el.value.trim(); });
+  // A "compose" step's combined answer is often still empty while its small
+  // boxes are being filled — preview what "Gabungkan" would make of them.
+  if (step?.kind === "compose" && !(v[step.field] || "").trim()) {
+    const parts = currentPartValues(root, step);
+    const composed = step.compose ? step.compose(parts).trim() : "";
+    if (composed) v[step.field] = composed;
+  }
+  return v;
+}
+
+function liveCardInnerHTML(v, state, brand) {
+  const filled = countAnswered(v);
+  const colors = brand.brandGuidelines?.colors || {};
+  const swatches = ["primary", "secondary", "accent"].map((k) => colors[k]).filter(Boolean);
+  const feeling = state.personality?.feeling;
+  const row = ([field, key]) => `<div class="dna-live-row"><span>${t(key)}</span>${(v[field] || "").trim() ? `<p>${escapeHtml(v[field])}</p>` : `<p class="is-empty">${t("dna.live.empty")}</p>`}</div>`;
+  return `
+    <div class="dna-live-top">
+      <div class="dna-live-avatar" ${swatches[0] ? `style="background:${escapeHtml(swatches[0])}"` : ""}>${escapeHtml((v.brandName || "?").trim().charAt(0).toUpperCase())}</div>
+      <div><b>${escapeHtml(v.brandName || brand.name || "")}</b>${(v.tagline || "").trim() ? `<em>“${escapeHtml(v.tagline)}”</em>` : `<em class="is-empty">${t("dna.live.noTagline")}</em>`}</div>
+    </div>
+    ${LIVE_ROWS.map(row).join("")}
+    <div class="dna-live-foot">
+      ${feeling ? `<span class="tag">${escapeHtml(feelingLabel(feeling))}</span>` : ""}
+      ${swatches.map((c) => `<i style="background:${escapeHtml(c)}"></i>`).join("")}
+      <span class="dna-live-count">${t("dna.live.count", { n: filled, total: 8 })}</span>
+    </div>`;
+}
+
+function liveCardHTML(state, brand) {
+  const v = liveValues(null, state, brand);
+  return `
+    <details class="dna-live" ${window.innerWidth > 900 ? "open" : ""}>
+      <summary>${icon("sparkle", { size: 14 })}<span>${t("dna.live.title")}</span><small class="dna-live-count-sum">${countAnswered(v)}/8</small></summary>
+      <div class="dna-live-card" id="dna-live-card">${liveCardInnerHTML(v, state, brand)}</div>
+    </details>`;
+}
+
+function updateLiveCard(root, state, brand) {
+  const card = qs("#dna-live-card", root);
+  if (!card) return;
+  const v = liveValues(root, state, brand);
+  card.innerHTML = liveCardInnerHTML(v, state, brand);
+  const sum = qs(".dna-live-count-sum", root);
+  if (sum) sum.textContent = `${countAnswered(v)}/8`;
+}
+
+// After the save that completes Brand DNA: show what it adds up to — the
+// identity card, big — before moving on, instead of only a toast.
+// "Was it unfinished when this visit began, and is it finished now?" —
+// measured from the page opening, because Next on the last step already
+// saves, so by the time Review's Save runs it is complete either way.
+function firstCompletion(brandId, state) {
+  if (state.doneAtOpen || !brandDnaDone(getBrand(brandId))) return false;
+  state.doneAtOpen = true;
+  return true;
+}
+
+function showDnaDoneModal(state, brand, next) {
+  const overlay = openModal({
+    title: t("dna.done.title"),
+    bodyHTML: `<p class="text-muted" style="margin:0 0 14px;font-size:14px;">${t("dna.done.sub")}</p><div class="dna-live-card dna-live-card-big">${liveCardInnerHTML(liveValues(null, state, brand), state, brand)}</div>`,
+    footHTML: `<button class="btn btn-secondary" data-later>${t("dna.done.later")}</button><button class="btn btn-primary" data-next>${t("dna.done.next")}${icon("arrowRight", { size: 14 })}</button>`,
+  });
+  overlay.querySelector("[data-later]").addEventListener("click", () => { closeOverlay(overlay); next(); });
+  overlay.querySelector("[data-next]").addEventListener("click", () => { closeOverlay(overlay); location.hash = `#/brand/${brand.id}/guidelines/color`; });
+  overlay.querySelector("[data-close]")?.addEventListener("click", () => next());
+}
+
 function composePartHTML(part, value) {
   const inner =
     part.type === "age" ? agePartInputHTML(part, value)
@@ -489,6 +600,7 @@ function composePartHTML(part, value) {
     <div class="field" style="margin-bottom:14px;">
       <label style="font-size:12px;">${part.label}</label>
       ${inner}
+      ${part.type ? "" : examplesHTML(`part-${part.key}`, part.key)}
       ${showAiHelp ? `
         <button type="button" class="btn btn-ghost btn-sm" data-polish-part="${part.key}" style="margin-top:4px;font-size:11.5px;">${icon("bot", { size: 12 })}${t("dna.part.aiHelp")}</button>
         <div id="polish-status-part-${part.key}" style="margin-top:4px;"></div>
@@ -542,12 +654,12 @@ function stepHTML(step, state, brandId) {
       <div class="field">
         <label>${t("dna.sb7.identity.nameLabel")}</label>
         <input class="input" id="ans-brandName" placeholder="${escapeHtml(t("dna.sb7.identity.namePh"))}" value="${escapeHtml(state.brandName)}" />
-        <a href="#/brand/${brandId}/builder/naming" id="dna-name-tool" style="display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--accent);">${t("dna.sb7.identity.nameTool")}</a>
       </div>
       <div class="field">
         <label>${t("dna.label.tagline")} <span class="text-faint" style="font-weight:600;text-transform:none;letter-spacing:0;">${t("dna.identity.taglineRequired")}</span></label>
         <input class="input" id="ans-tagline" placeholder="${escapeHtml(t("dna.identity.taglinePh"))}" value="${escapeHtml(state.answers.tagline)}" />
         <p class="text-faint" style="font-size:11.5px;margin:6px 0 0;">${t("dna.identity.taglineHint")}</p>
+        ${examplesHTML("ans-tagline", "tagline")}
       </div>
       ${personalityFieldHTML(state)}
       ${nav}
@@ -570,6 +682,7 @@ function stepHTML(step, state, brandId) {
     <h2 style="margin-bottom:6px;">${step.title}</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 10px;">${step.guide}</p>
     ${promptsHTML(step.prompts)}
+    ${step.key === "cta" ? examplesHTML("ans-callToAction", "callToAction") : ""}
     ${narrativeFieldHTML({ field: step.field, example: step.example, value: state.answers[step.field] })}
     ${nav}
   `;
@@ -1198,7 +1311,7 @@ function reviewHTML(state) {
       ${reviewSection(t("dna.label.values"), a.values, "values", { list: true, hint: t("dna.identity.valuesPh") })}
       ${reviewSection(t("dna.label.products"), a.productsServices, "productsServices", { list: true, hint: t("dna.review.productsHint") })}
     </details>
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between dna-review-nav">
       <div class="flex items-center gap-8">
         <button type="button" class="btn btn-secondary" id="wiz-back">${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
         <button type="button" class="icon-btn" id="dna-more" title="${t("common.more")}" aria-label="${t("common.more")}">${icon("dots", { size: 16 })}</button>
@@ -1233,7 +1346,9 @@ function wireReview(root, brandId, brand, state, refresh) {
     dnaSavedToast(state);
     const { filled, total } = brandDnaCompleteness(state.answers);
     if (total && filled >= total) markDnaJustCompleted(brandId);
-    location.hash = `#/brand/${brandId}`;
+    const go = () => { location.hash = `#/brand/${brandId}`; };
+    if (firstCompletion(brandId, state)) showDnaDoneModal(state, getBrand(brandId), go);
+    else go();
   });
   qs("#dna-answer-manually", root)?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -1260,7 +1375,10 @@ function wireReview(root, brandId, brand, state, refresh) {
     // same flag for its own toast. Pro: unchanged, back to the hub.
     const { filled, total } = brandDnaCompleteness(state.answers);
     if (total && filled >= total) markDnaJustCompleted(brandId);
-    location.hash = getMode() === "guided" ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`;
+    const go = () => { location.hash = getMode() === "guided" ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`; };
+    // The first time it's complete, show the finished identity card first.
+    if (firstCompletion(brandId, state)) showDnaDoneModal(state, getBrand(brandId), go);
+    else go();
   });
   // The ⋯ menu: fill the blanks with AI, download the PDF, reset — the
   // rare actions, out of the way of Back/Save.

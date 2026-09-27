@@ -1,5 +1,26 @@
 import { t, getLang } from "./i18n.js";
 
+// Small, self-contained fallback strings for the two failure paths below
+// (a route's own view module/render throwing, and anything else uncaught
+// anywhere in the app). Not part of js/i18n.js's dictionary on purpose —
+// this file only owns main.js, and these two messages are simple enough
+// not to need a shared key.
+const APP_ERROR_TEXT = {
+  id: {
+    routeTitle: "Halaman gagal dimuat",
+    routeBody: "Sambungan mungkin terputus, atau ada versi baru yang belum termuat penuh.",
+    reload: "Muat ulang",
+    genericToast: "Ada yang tidak berjalan semestinya. Coba muat ulang halaman.",
+  },
+  en: {
+    routeTitle: "This page failed to load",
+    routeBody: "Your connection may have dropped, or a new version hasn't fully loaded yet.",
+    reload: "Reload",
+    genericToast: "Something went wrong. Try reloading the page.",
+  },
+};
+const appErrorText = () => APP_ERROR_TEXT[getLang() === "en" ? "en" : "id"];
+
 // <html lang> follows the chosen language (screen readers, hyphenation, spellcheck).
 document.documentElement.lang = getLang();
 import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
@@ -374,58 +395,107 @@ async function renderRoute() {
   }
   window.scrollTo(0, 0);
 
-  const view = await (
-    {
-      home: () => import("./views/home.js"),
-      dna: () => import("./views/brand-dna.js"),
-      builder: () => import("./views/brand-builder.js"),
-      campaigns: () => import("./views/campaigns.js"),
-      guidelines: () => import("./views/brand-guidelines.js"),
-      sales: () => import("./views/sales.js"),
-      chat: () => import("./views/chat.js"),
-      announcements: () => import("./views/announcements.js"),
-      goals: () => import("./views/goal-roadmap.js"),
-      "content-os": () => import("./views/content-os.js"),
-      settings: () => import("./views/settings.js"),
-    }[route.view] || (() => import("./views/brands.js"))
-  )();
+  // A view's chunk (dynamic import) or its own render() can both fail — most
+  // often a stale service-worker/browser cache asking for a chunk from a
+  // deploy that no longer exists, or a flaky connection right after one.
+  // Either way this used to leave a blank page under an otherwise-normal
+  // shell, with nothing telling the person why. Caught here and painted as
+  // a small inline card instead, with a reload button (a fresh page load
+  // always gets the current deploy's chunk names).
+  let view;
+  try {
+    view = await (
+      {
+        home: () => import("./views/home.js"),
+        dna: () => import("./views/brand-dna.js"),
+        builder: () => import("./views/brand-builder.js"),
+        campaigns: () => import("./views/campaigns.js"),
+        guidelines: () => import("./views/brand-guidelines.js"),
+        sales: () => import("./views/sales.js"),
+        chat: () => import("./views/chat.js"),
+        announcements: () => import("./views/announcements.js"),
+        goals: () => import("./views/goal-roadmap.js"),
+        "content-os": () => import("./views/content-os.js"),
+        settings: () => import("./views/settings.js"),
+      }[route.view] || (() => import("./views/brands.js"))
+    )();
+  } catch (err) {
+    console.error("[route] failed to load", route.view, err);
+    if (token === renderToken) paintRouteError(viewRoot);
+    return;
+  }
   if (token !== renderToken) return; // navigated again while this was loading
 
-  switch (route.view) {
-    case "home":
-      cleanup = view.render(viewRoot, { brandId: route.brandId });
-      break;
-    case "dna":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, step: route.step });
-      break;
-    case "builder":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, stage: route.stage });
-      break;
-    case "campaigns":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });
-      break;
-    case "guidelines":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, section: route.section });
-      break;
-    case "sales":
-      cleanup = view.render(viewRoot, { brandId: route.brandId });
-      break;
-    case "chat":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, threadId: route.threadId || null });
-      break;
-    case "goals":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, goalId: route.goalId || null });
-      break;
-    case "content-os":
-      cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
-      break;
-    case "settings":
-      cleanup = view.render(viewRoot, { panel: route.panel });
-      break;
-    default:
-      cleanup = view.render(viewRoot);
+  try {
+    switch (route.view) {
+      case "home":
+        cleanup = view.render(viewRoot, { brandId: route.brandId });
+        break;
+      case "dna":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, step: route.step });
+        break;
+      case "builder":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, stage: route.stage });
+        break;
+      case "campaigns":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, campaignId: route.campaignId });
+        break;
+      case "guidelines":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, section: route.section });
+        break;
+      case "sales":
+        cleanup = view.render(viewRoot, { brandId: route.brandId });
+        break;
+      case "chat":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, threadId: route.threadId || null });
+        break;
+      case "goals":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, goalId: route.goalId || null });
+        break;
+      case "content-os":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
+        break;
+      case "settings":
+        cleanup = view.render(viewRoot, { panel: route.panel });
+        break;
+      default:
+        cleanup = view.render(viewRoot);
+    }
+  } catch (err) {
+    console.error("[route] failed to render", route.view, err);
+    cleanup = null;
+    if (token === renderToken) paintRouteError(viewRoot);
   }
 }
+
+function paintRouteError(root) {
+  const tx = appErrorText();
+  root.innerHTML = `
+    <div style="max-width:420px;margin:15vh auto 0;text-align:center;padding:28px 22px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-raised);">
+      <h2 style="margin:0 0 8px;font-size:16px;">${escapeHtml(tx.routeTitle)}</h2>
+      <p class="text-muted" style="margin:0 0 18px;font-size:13.5px;">${escapeHtml(tx.routeBody)}</p>
+      <button type="button" class="btn btn-primary" id="route-error-reload">${escapeHtml(tx.reload)}</button>
+    </div>
+  `;
+  root.querySelector("#route-error-reload")?.addEventListener("click", () => location.reload());
+}
+
+// Last-resort net for anything that escapes every other try/catch in the
+// app (a store write, an AI call, a chart render — anywhere) — logs it and
+// says so once, instead of failing silently or spamming a toast per error
+// (a single bug can throw many times in a row, e.g. inside a loop or a
+// repeating timer). Cools down after a while so a later, unrelated failure
+// still gets its own toast instead of being swallowed forever.
+let globalErrorToastAt = 0;
+function notifyUnexpectedError(kind, err) {
+  console.error(`[${kind}]`, err);
+  const now = Date.now();
+  if (now - globalErrorToastAt < 15000) return;
+  globalErrorToastAt = now;
+  toast(appErrorText().genericToast, "error");
+}
+window.addEventListener("error", (e) => notifyUnexpectedError("error", e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => notifyUnexpectedError("unhandledrejection", e.reason));
 
 // Firebase Auth's first onAuthChange callback needs a network round-trip
 // (checking/refreshing the persisted session) before it fires at all — on

@@ -133,9 +133,25 @@ export function saveLessons(brandId, month, lessons) {
 
 // ---------- For the AI prompt ----------
 
+// Picks up to `n` taste entries, preferring the ones rated on the SAME
+// feature (chat, creator, dna, copy, campaign…) this prompt is for — a 👍
+// on a Copy Studio caption is a much sharper signal for another caption
+// than for a Brand DNA answer. Falls back to the most recent entries
+// overall when there aren't enough (or no `feature` was given), so a
+// caller that doesn't know its own feature name keeps working exactly as
+// before.
+function preferFeature(entries, feature, n) {
+  if (!feature) return entries.slice(-n);
+  const matched = entries.filter((e) => e.feature === feature);
+  if (matched.length >= n) return matched.slice(-n);
+  const rest = entries.filter((e) => e.feature !== feature).slice(-(n - matched.length));
+  return [...rest, ...matched];
+}
+
 // One block every AI feature reads (appended to the pulse). "" when the
-// brand has nothing learned yet.
-export function learningText(brand, { content = [], settings = getSettings() } = {}) {
+// brand has nothing learned yet. `feature` (optional) narrows the 👍/👎
+// taste samples to the same feature this call is for — see preferFeature.
+export function learningText(brand, { content = [], settings = getSettings(), feature = "" } = {}) {
   if (!brand) return "";
   const parts = [];
   const best = bestPosts(content, settings);
@@ -147,8 +163,8 @@ export function learningText(brand, { content = [], settings = getSettings() } =
     });
   }
   const taste = brand.aiTaste || {};
-  const likes = (taste.likes || []).slice(-4);
-  const dislikes = (taste.dislikes || []).slice(-5);
+  const likes = preferFeature(taste.likes || [], feature, 4);
+  const dislikes = preferFeature(taste.dislikes || [], feature, 5);
   if (likes.length || dislikes.length) {
     parts.push("The owner's taste, from their 👍/👎 on earlier AI output (follow it):");
     likes.forEach((l) => parts.push(`- Liked: "${l.sample}"`));

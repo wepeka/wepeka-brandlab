@@ -12,7 +12,8 @@ export function escapeHtml(str) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // Exact figures with thousand separators — never abbreviated to K/M, so a
@@ -111,10 +112,11 @@ export function thumbnailFromDataUrl(dataUrl, { maxDimension = 120, quality = 0.
 // Renders a brand's photo if it has one, otherwise its initials — same
 // markup shape (class="avatar") so existing size/radius rules keep working.
 export function avatarHTML(brand, extraStyle = "") {
-  if (brand.avatar) {
-    return `<img class="avatar" style="${extraStyle}" src="${brand.avatar}" alt="" />`;
+  const avatar = brand.avatar;
+  if (avatar && (avatar.startsWith("data:image/") || avatar.startsWith("https://"))) {
+    return `<img class="avatar" style="${extraStyle}" src="${escapeHtml(avatar)}" alt="" />`;
   }
-  return `<div class="avatar" style="${extraStyle}">${initials(brand.name)}</div>`;
+  return `<div class="avatar" style="${extraStyle}">${escapeHtml(initials(brand.name))}</div>`;
 }
 
 // A password/token input with a show/hide toggle — same .input markup plus
@@ -142,6 +144,18 @@ export function wirePasswordToggles(root = document) {
       btn.setAttribute("aria-label", nowShowing ? t("app.hidePassword") : t("app.showPassword"));
     });
   });
+}
+
+// A soft shimmering placeholder for "this is still loading" content areas —
+// replaces a bare t("app.loading") sitting alone as page/card content with
+// something that shows the shape of what's coming. Visually decorative
+// (aria-hidden on the bars themselves); the actual "Memuat…" lives in a
+// visually-hidden span so screen readers still hear it. Callers wrap this
+// in a container with aria-busy="true" (or pass it straight in — the
+// wrapper below already sets that) so assistive tech knows to wait.
+export function skeletonHTML({ rows = 3, card = true } = {}) {
+  const bars = Array.from({ length: rows }, (_, i) => `<div class="skeleton-line" style="width:${i === rows - 1 ? "60%" : "100%"};"></div>`).join("");
+  return `<div class="skeleton${card ? " skeleton-card" : ""}" role="status" aria-busy="true"><span class="sr-only">${t("app.loading")}</span>${bars}</div>`;
 }
 
 export function toast(message, type = "success") {

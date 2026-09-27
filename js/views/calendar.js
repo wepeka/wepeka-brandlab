@@ -1,4 +1,4 @@
-import { listGoals, getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, listRoutineTemplate, ROUTINE_DAY_LABELS, ROUTINE_ACTIVITY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
+import { listGoals, getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, ROUTINE_DAY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
@@ -140,17 +140,14 @@ function itemsForBrand(brandId) {
   });
 }
 
-// Turns this brand's standing weekly routine into plain-language rules the
-// scheduler prompt can follow — "Editing every Tuesday", "Upload every day".
+// This used to also read the routineTemplate collection and merge in a
+// second, independently-worded copy of the very same rules (that collection
+// only ever mirrored brand.contentCadence, and nothing writes it anymore —
+// see js/store.js) — sending the AI both a "Custom task every day" line
+// and a "Only schedule on these days" line for the same setup. Reading
+// contentCadence directly (below) is the one source of truth now.
 function routineNotesForBrand(brandId) {
-  const routineNotes = listRoutineTemplate()
-    .filter((item) => item.brandId === brandId)
-    .map((item) => {
-      const activity = item.activity === "custom" ? item.customLabel || "Custom task" : ROUTINE_ACTIVITY_LABELS[item.activity];
-      const time = item.time ? ` at ${item.time}` : "";
-      return `${activity} every ${ROUTINE_DAY_LABELS[item.day]}${time}`;
-    });
-  return [...routineNotes, ...cadenceNotesForBrand(brandId)];
+  return cadenceNotesForBrand(brandId);
 }
 
 // The one-time Content OS setup question (js/views/content-os.js) becomes
@@ -298,7 +295,8 @@ function paint(root, brandId, state, refresh) {
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}${guideVideoButtonHTML("calendar")}</div>
-        <h1>${brand.name}</h1>
+        <h1>${t("contentOs.tab.calendar")}</h1>
+        <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
       <div class="flex gap-8">
         <button class="icon-btn" id="cal-more" aria-label="${t("common.more")}" title="${t("common.more")}">${icon("dots", { size: 16 })}</button>
@@ -516,10 +514,17 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
     }));
   body.innerHTML = filtered.length || dlRows.length
     ? `<div class="agenda-list">${dlRows.join("")}${filtered.map((c) => agendaRow(c, campaignById)).join("")}</div>`
-    : `<div class="card glass-card"><div class="table-empty">${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</div></div>`;
+    : `<div class="empty-state card" style="margin:0;">
+         <div class="icon-wrap">${icon("calendar", { size: 20 })}</div>
+         <h3>${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</h3>
+         <button type="button" class="btn btn-primary btn-sm" id="agenda-empty-new">${icon("plus", { size: 14 })}${t("calendar.createNewContent")}</button>
+       </div>`;
 
   qsa("[data-id]", body).forEach((el) => {
     el.addEventListener("click", () => openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh }));
+  });
+  qs("#agenda-empty-new", body)?.addEventListener("click", () => {
+    openContentEditor({ brandId, defaults: { scheduleDate: iso(rangeStart), status: "scheduled" }, onSaved: refresh });
   });
 }
 

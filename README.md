@@ -2,19 +2,21 @@
 
 A content planner and performance tracker for managing content across multiple brands — plan, publish, upload insight screenshots, and see automatically what's healthy vs. underperforming.
 
-Plain HTML/CSS/JS. No build step, no framework, no backend. All data lives in the browser's `localStorage`.
+Plain HTML/CSS/JS, no framework. Firebase/Firestore is the real backend now (see "Login" below) — the `localStorage` note above is historical.
 
-## Run it
+## Run it (dev)
 
-Any static file server works. From this folder:
+Dev always runs straight from source, unbundled — no build step in the loop:
 
 ```bash
-python3 -m http.server 8743
+python3 serve.py
 ```
 
 Then open `http://localhost:8743`.
 
-(Node wasn't available on this machine when this was built, so it's zero-dependency by design — `npx serve` works equally well if you have Node later.)
+## Production build
+
+Vercel builds the app for every deploy (`vercel.json`'s `buildCommand`, `node scripts/build.mjs` / `npm run build`): esbuild bundles `js/main.js` into a minified, code-split ESM build (hashed filenames, one chunk per route/dynamic import), the three CSS files get hashed filenames too, and `fonts/`, `assets/`, `robots.txt` are copied alongside a rewritten `index.html` — all into `dist/`, which is git-ignored and only ever exists as a build artifact. `api/` (the Vercel serverless functions) and `vercel.json`'s cron stay exactly where they are; Vercel picks them up regardless of `outputDirectory`. Run it locally with `npm run build`, then serve `dist/` with any static server to check the production build before a deploy.
 
 ## How it's organized
 

@@ -86,7 +86,7 @@ export function personalityProfile(feeling) {
 }
 
 // Which broad character cluster each feeling belongs to — lets the
-// Consistency Engine (js/consistency-engine.js) classify any pair of
+// consistency check below classify any pair of
 // feelings (e.g. a Personality choice vs. a later Color/Typography choice)
 // without hand-authoring a full 9x9 pairwise table. Same axis the e-book
 // itself uses to talk about brand character (calm vs. energetic, refined

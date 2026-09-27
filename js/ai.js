@@ -1,135 +1,124 @@
-// AI text generation — called directly from the browser, no backend
-// involved. Three providers, picked in Settings → AI:
-//  - Anthropic (Claude): supports direct browser access via the
-//    anthropic-dangerous-direct-browser-access header.
-//  - Google (Gemini): its Generative Language API also allows direct
-//    browser calls.
-//  - DeepSeek: OpenAI-compatible chat completions API, also CORS-open for
-//    direct browser calls.
-// All three confirmed against the real APIs — a bad key gets a proper error
-// response back, not a CORS failure — so any of them is safe to use with no
-// server in between. The user's own key for whichever provider they pick is
-// stored locally, same as every other integration in this app.
+// AI text generation — calls the server-side proxy at /api/ai (see that
+// file) instead of a provider directly. The proxy holds the real API key
+// (a Vercel env var, never Firestore, never the browser) and enforces the
+// account's quota server-side; this file just builds prompts and reads
+// results, the same job it always did.
 import { TONE_AXES, toneAxisLabel, toneExampleMessage, VISUAL_DIRECTIONS } from "./brandbook-data.js";
 import { COPY_LENGTHS, COPY_REWRITES, copyFormatRules, formatByKey, goalByKey } from "./knowledge/copy-formats.js";
-import { aiLimitReached, recordAiUsage, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
+import { aiLimitReached, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
+import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { isAdmin, currentUid } from "./account.js";
-
-const ANTHROPIC_API_BASE = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-sonnet-5";
-const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_MODEL = "gemini-3.6-flash";
-const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
-const DEEPSEEK_API_BASE = "https://api.deepseek.com/chat/completions";
-const DEEPSEEK_MODEL = "deepseek-chat";
+import { brandVoiceText, listBrandIdeas } from "./store.js";
 
 class AiApiError extends Error {}
 
 // Provider/setup failures. The Wepeka admin sees the real detail (which
-// provider, the key, the status code) to fix it; everyone else gets the
-// same problem in plain words — a customer can't add an API key (the AI
-// panel in Settings is admin-only) and "Error dari Claude" means nothing
-// to someone who only knows this app as Brandlab.
+// provider, the status code, the provider's own message) to fix it;
+// everyone else gets the same problem in plain words — a customer can't see
+// the AI proxy's config (that lives in Vercel env vars) and "Error dari
+// DeepSeek" means nothing to someone who only knows this app as Brandlab.
 function aiSetupError(key, vars = {}) {
   return new AiApiError(isAdmin(currentUid()) ? t(key, vars) : t(`${key}.user`, vars));
 }
 
-// Shared by every provider call: a network failure, a non-JSON body, or an
-// API error becomes an AiApiError whose message is already in the UI
-// language (the provider's own error text, when it sends one, is kept as-is
-// inside that message).
-async function fetchJson(url, options, provider) {
+// Server error code (api/ai.js's { error, message } body, or an SSE
+// `{"error":...}` event) -> a UI-language AiApiError. Reuses the existing
+// provider/network/badResponse/noVision keys (aiSetupError already branches
+// admin vs. plain-language) — "session"/"deactivated" are the two genuinely
+// new cases a client-side key setup could never hit before.
+function proxyError(code, extra = {}) {
+  switch (code) {
+    case "quota": {
+      const { limit, period } = extra;
+      const key = limit === 0 ? "ai.error.readonly" : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
+      return new AiApiError(t(key, { limit }));
+    }
+    case "auth":
+    case "account":
+      return new AiApiError(t("ai.error.session"));
+    case "deactivated":
+      return new AiApiError(t("ai.error.deactivated"));
+    case "noVision":
+      return aiSetupError("ai.error.noVision", { provider: "AI" });
+    case "badResponse":
+      return aiSetupError("ai.error.badResponse", { provider: "AI" });
+    case "network":
+      return aiSetupError("ai.error.network", { provider: "AI" });
+    case "provider":
+    default:
+      return aiSetupError("ai.error.provider", { provider: "AI", message: extra.message || "" });
+  }
+}
+
+// The one HTTP call every AI feature in this file ends up making: POSTs to
+// /api/ai with a fresh Firebase ID token, and either returns the finished
+// text (non-stream) or feeds `onText(fullTextSoFar)` as SSE chunks arrive
+// (stream) — same onText(text, {whole}) contract callModel always offered
+// its callers, so nothing downstream of callModel had to change.
+async function callProxy(system, userPrompt, maxTokens, { temperature, json = false, images = [], stream = false, countUsage = true, feature = "" } = {}, onText = null) {
+  let token;
+  try {
+    token = await auth.currentUser?.getIdToken();
+  } catch {
+    token = null;
+  }
+  if (!token) throw proxyError("auth");
+
+  const ctrl = new AbortController();
+  const timeoutMs = stream ? 130000 : 65000;
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let res;
   try {
-    res = await fetch(url, options);
-  } catch {
-    throw aiSetupError("ai.error.network", { provider });
-  }
-  let json;
-  try {
-    json = await res.json();
-  } catch {
-    throw res.ok ? aiSetupError("ai.error.badResponse", { provider }) : aiSetupError("ai.error.requestFailed", { provider, status: res.status });
-  }
-  if (!res.ok || json?.error) {
-    const message = json?.error?.message;
-    throw message ? aiSetupError("ai.error.provider", { provider, message }) : aiSetupError("ai.error.requestFailed", { provider, status: res.status });
-  }
-  return json;
-}
-
-// The system prompts stay English instructions to the model; this one line
-// tells it which language the text the owner actually reads must come back
-// in — the app's UI language (js/i18n.js). `keepSourceLanguage` names the
-// user's own text for functions that polish/rewrite it: that text's language
-// wins only when it clearly differs from the UI language.
-export function outputLanguageRule({ keepSourceLanguage = "" } = {}) {
-  const lang = getLang() === "en" ? "natural, friendly US English" : "Indonesian (Bahasa Indonesia), casual-friendly and natural";
-  const base = `OUTPUT LANGUAGE: write every piece of text meant for the user in ${lang}. JSON keys, fixed section labels, and codes specified elsewhere in these instructions stay exactly as given.`;
-  return keepSourceLanguage ? `${base} Exception: if ${keepSourceLanguage} is clearly written in a different language, keep that language instead.` : base;
-}
-
-// One user turn for the Messages API: the screenshots first (so the model
-// reads them before the question), then the text.
-function claudeUserContent(userPrompt, images = []) {
-  if (!images.length) return userPrompt;
-  return [
-    ...images.map((d) => { const m = d.match(/^data:([^;]+);base64,(.+)$/); return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : null; }).filter(Boolean),
-    { type: "text", text: userPrompt },
-  ];
-}
-
-async function callClaude(apiKey, system, userPrompt, maxTokens, { temperature, images = [] } = {}) {
-  const json = await fetchJson(ANTHROPIC_API_BASE, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_MODEL,
-      max_tokens: maxTokens,
-      ...(temperature !== undefined ? { temperature } : {}),
-      system,
-      messages: [{ role: "user", content: claudeUserContent(userPrompt, images) }],
-    }),
-  }, "Claude");
-  return json.content?.[0]?.text || "";
-}
-
-// Same request as callClaude, but streamed: onText(fullTextSoFar) fires as
-// tokens arrive so a chat reply shows up word by word instead of after the
-// whole answer is done. Errors are shaped exactly like fetchJson's.
-async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText, { temperature, images = [] } = {}) {
-  let res;
-  try {
-    res = await fetch(ANTHROPIC_API_BASE, {
+    res = await fetch("/api/ai", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: maxTokens, stream: true, ...(temperature !== undefined ? { temperature } : {}), system, messages: [{ role: "user", content: claudeUserContent(userPrompt, images) }] }),
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature }),
+      signal: ctrl.signal,
     });
   } catch {
-    throw aiSetupError("ai.error.network", { provider: "Claude" });
+    throw proxyError("network");
+  } finally {
+    clearTimeout(timer);
   }
+
+  if (!stream) {
+    let body;
+    try {
+      body = await res.json();
+    } catch {
+      throw proxyError("badResponse");
+    }
+    if (!res.ok || body?.error) throw proxyError(body?.error || "network", body || {});
+    if (onText && body.text) onText(body.text, { whole: true });
+    return body.text || "";
+  }
+
   if (!res.ok || !res.body) {
-    let message = "";
-    try { message = (await res.json())?.error?.message || ""; } catch { /* not JSON */ }
-    throw message ? aiSetupError("ai.error.provider", { provider: "Claude", message }) : aiSetupError("ai.error.requestFailed", { provider: "Claude", status: res.status });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      // The stream already started (headers sent) — no JSON body to read.
+    }
+    throw proxyError(body?.error || "network", body || {});
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let full = "";
+  let streamErr = null;
+  // The fetch timeout above only covers the headers; a stream that goes
+  // silent mid-answer would otherwise hang the caller forever.
+  const STREAM_IDLE_MS = 45000;
+  const readWithIdleTimeout = () => new Promise((resolve, reject) => {
+    const idle = setTimeout(() => { reader.cancel().catch(() => {}); reject(proxyError("network")); }, STREAM_IDLE_MS);
+    reader.read().then((r) => { clearTimeout(idle); resolve(r); }, (e) => { clearTimeout(idle); reject(e); });
+  });
   for (;;) {
-    const { done, value } = await reader.read();
+    let chunk;
+    try { chunk = await readWithIdleTimeout(); } catch (e) { if (full) break; throw e instanceof AiApiError ? e : proxyError("network"); }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let cut;
@@ -138,122 +127,52 @@ async function callClaudeStream(apiKey, system, userPrompt, maxTokens, onText, {
       buffer = buffer.slice(cut + 2);
       const line = block.split("\n").find((l) => l.startsWith("data:"));
       if (!line) continue;
-      let ev;
-      try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
-      if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
-        full += ev.delta.text;
-        onText(full);
-      } else if (ev.type === "error") {
-        throw aiSetupError("ai.error.provider", { provider: "Claude", message: ev.error?.message || "" });
-      }
-    }
-  }
-  return full;
-}
-
-async function callGemini(apiKey, system, userPrompt, { temperature, images = [] } = {}) {
-  const json = await fetchJson(`${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ parts: [...images.map(dataUrlToInlinePart).filter(Boolean), { text: userPrompt }] }],
-      ...(temperature !== undefined ? { generationConfig: { temperature } } : {}),
-    }),
-  }, "Gemini");
-  return json.candidates?.[0]?.content?.parts?.[0]?.text || "";
-}
-
-// `json` asks DeepSeek for its JSON output mode (the prompt must already say
-// "JSON" somewhere, which every structured prompt in this file does) — the
-// reply is then guaranteed to parse instead of occasionally arriving wrapped
-// in prose or fences. `temperature` is the OpenAI-style knob (DeepSeek's
-// default is 1.0, which is too loose for form-filling suggestions).
-function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false } = {}) {
-  return {
-    model: DEEPSEEK_MODEL,
-    max_tokens: maxTokens,
-    ...(temperature !== undefined ? { temperature } : {}),
-    ...(json ? { response_format: { type: "json_object" } } : {}),
-    ...(stream ? { stream: true } : {}),
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: userPrompt },
-    ],
-  };
-}
-
-async function callDeepSeek(apiKey, system, userPrompt, maxTokens, opts = {}) {
-  const json = await fetchJson(DEEPSEEK_API_BASE, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(deepSeekBody(system, userPrompt, maxTokens, opts)),
-  }, "DeepSeek");
-  return json.choices?.[0]?.message?.content || "";
-}
-
-// DeepSeek streamed (OpenAI-style SSE: `data: {...}` lines, `data: [DONE]`
-// at the end) — same contract as callClaudeStream: onText(fullTextSoFar)
-// fires as tokens arrive, so a chat reply shows up word by word.
-async function callDeepSeekStream(apiKey, system, userPrompt, maxTokens, onText, opts = {}) {
-  let res;
-  try {
-    res = await fetch(DEEPSEEK_API_BASE, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(deepSeekBody(system, userPrompt, maxTokens, { ...opts, stream: true })),
-    });
-  } catch {
-    throw aiSetupError("ai.error.network", { provider: "DeepSeek" });
-  }
-  if (!res.ok || !res.body) {
-    let message = "";
-    try { message = (await res.json())?.error?.message || ""; } catch { /* not JSON */ }
-    throw message ? aiSetupError("ai.error.provider", { provider: "DeepSeek", message }) : aiSetupError("ai.error.requestFailed", { provider: "DeepSeek", status: res.status });
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let full = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let cut;
-    while ((cut = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, cut).trim();
-      buffer = buffer.slice(cut + 1);
-      if (!line.startsWith("data:")) continue;
       const payload = line.slice(5).trim();
       if (payload === "[DONE]") continue;
       let ev;
-      try { ev = JSON.parse(payload); } catch { continue; }
-      const delta = ev.choices?.[0]?.delta?.content;
-      if (delta) {
-        full += delta;
-        onText(full);
+      try {
+        ev = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      if (ev.error) { streamErr = ev; continue; }
+      if (typeof ev.delta === "string" && ev.delta) {
+        full += ev.delta;
+        onText?.(full);
       }
     }
   }
+  if (!full && streamErr) throw proxyError(streamErr.error, streamErr);
   return full;
 }
 
-// Which settings field holds the active key, per provider — the one place
-// that maps provider -> field name so Settings and every "is AI usable
-// right now" check elsewhere in the app stay in sync automatically.
-const AI_KEY_FIELD = { anthropic: "anthropicApiKey", gemini: "geminiApiKey", deepseek: "deepseekApiKey" };
+// The system prompts stay English instructions to the model; this one line
+// tells it which language the text the owner actually reads must come back
+// in — the app's UI language (js/i18n.js). `keepSourceLanguage` names the
+// user's own text for functions that polish/rewrite it: that text's language
+// wins only when it clearly differs from the UI language.
+// `brand`/`audienceLanguage` (optional): when the brand this content is FOR
+// has an audience language set (js/views/brands.js — "" = follow the app's
+// own UI language), audience-facing generated content follows THAT instead
+// — a shop run in Indonesian can still write English captions for an
+// English-speaking audience. Conversational features (the consultant,
+// brainstorm, companion chats) talk to the OWNER, not the audience, so they
+// never pass a brand here and always stay in the UI language.
+export function outputLanguageRule({ keepSourceLanguage = "", brand = null, audienceLanguage = "" } = {}) {
+  const forced = audienceLanguage || brand?.audienceLanguage || "";
+  const lang = forced
+    ? (forced === "en" ? "natural, friendly US English" : "Indonesian (Bahasa Indonesia), casual-friendly and natural")
+    : getLang() === "en" ? "natural, friendly US English" : "Indonesian (Bahasa Indonesia), casual-friendly and natural";
+  const base = `OUTPUT LANGUAGE: write every piece of text meant for the user in ${lang}. JSON keys, fixed section labels, and codes specified elsewhere in these instructions stay exactly as given.`;
+  return keepSourceLanguage ? `${base} Exception: if ${keepSourceLanguage} is clearly written in a different language, keep that language instead.` : base;
+}
 
-// Every view that shows/hides its AI buttons based on whether a key is
-// configured for the currently-picked provider calls this instead of
-// re-deriving the same provider -> key-field mapping inline.
+// Every view that shows/hides its AI buttons reads this instead of poking
+// at settings.ai fields directly. No key fields exist client-side anymore
+// (see api/ai.js) — "configured" just means the shared config picked a
+// provider and didn't explicitly switch it off.
 export function hasAiKey(ai) {
-  return !!ai[AI_KEY_FIELD[ai.provider] || "anthropicApiKey"];
+  return !!ai?.provider && ai.enabled !== false;
 }
 
 // Claude and Gemini read screenshots; DeepSeek's chat model is text-only,
@@ -263,16 +182,16 @@ export function aiCanSeeImages(ai) {
 }
 
 // Every text call funnels through here, so this is where the daily quota
-// (js/ai-usage.js) is checked and counted: refused before the request when
-// the cap is reached, counted once after a successful response. A failed
-// request never counts.
-// `temperature` / `json` are optional per-call hints (see deepSeekBody);
-// `onText(soFar, { whole })` streams the answer where the provider can, and
-// hands over the finished text in one piece (whole: true) where it can't —
-// the caller decides whether to animate a reply that arrived all at once.
-// `images`: data: URLs sent along with the prompt (Claude / Gemini only —
-// DeepSeek refuses them with a clear error so the caller can OCR instead).
-async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [] } = {}) {
+// pre-check (js/ai-usage.js) happens before even bothering the network —
+// api/ai.js is the one that actually enforces it (and counts a successful
+// call), this is just a snappier "no" than waiting for a round trip.
+// `temperature` / `json` are optional per-call hints (see api/ai.js's
+// deepSeekBody); `onText(soFar, { whole })` streams the answer where the
+// provider can, and hands over the finished text in one piece (whole: true)
+// where it can't — the caller decides whether to animate a reply that
+// arrived all at once. `images`: data: URLs sent along with the prompt
+// (Claude / Gemini only — DeepSeek refuses them, see aiCanSeeImages).
+async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [], feature = "" } = {}) {
   if (countUsage && aiLimitReached()) {
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
@@ -281,34 +200,11 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
       : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
     throw new AiApiError(t(key, { limit }));
   }
-  let out;
-  let streamed = false;
-  if (ai.provider === "gemini") {
-    if (!ai.geminiApiKey) throw aiSetupError("ai.error.noKey", { provider: "Gemini" });
-    out = await callGemini(ai.geminiApiKey, system, userPrompt, { temperature, images });
-  } else if (ai.provider === "deepseek") {
-    if (!ai.deepseekApiKey) throw aiSetupError("ai.error.noKey", { provider: "DeepSeek" });
-    if (images.length) throw aiSetupError("ai.error.noVision", { provider: "DeepSeek" });
-    streamed = !!onText;
-    out = onText
-      ? await callDeepSeekStream(ai.deepseekApiKey, system, userPrompt, maxTokens, onText, { temperature, json })
-      : await callDeepSeek(ai.deepseekApiKey, system, userPrompt, maxTokens, { temperature, json });
-  } else {
-    if (!ai.anthropicApiKey) throw aiSetupError("ai.error.noKey", { provider: "Anthropic" });
-    streamed = !!onText;
-    out = onText
-      ? await callClaudeStream(ai.anthropicApiKey, system, userPrompt, maxTokens, onText, { temperature, images })
-      : await callClaude(ai.anthropicApiKey, system, userPrompt, maxTokens, { temperature, images });
-  }
-  // Providers without streaming hand over the finished text in one piece.
-  if (onText && !streamed && out) onText(out, { whole: true });
-  if (countUsage) recordAiUsage();
-  return out;
+  return callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature }, onText);
 }
 
-// ai: { provider: "anthropic" | "gemini" | "deepseek", anthropicApiKey, geminiApiKey, deepseekApiKey }
 export async function testAiConnection(ai) {
-  await callModel(ai, "Reply with exactly: OK", "ping", 5, { countUsage: false });
+  await callModel(ai, "Reply with exactly: OK", "ping", 5, { countUsage: false, feature: "test" });
   return true;
 }
 
@@ -416,24 +312,19 @@ export async function generateScript(
     .filter(Boolean)
     .join("\n");
 
-  const raw = await callModel(ai, system, user, 1600);
-  try {
-    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-    const parsed = JSON.parse(cleaned);
-    const slides = isCarousel && Array.isArray(parsed.slides)
-      ? parsed.slides.map((s, i) => ({ slideNumber: Number(s?.slideNumber) || i + 1, text: String(s?.text || "").trim() })).filter((s) => s.text)
-      : [];
-    // `script` still carries a flat string too — everywhere else in the app
-    // (content.script field, teleprompter, PDF export) reads one script
-    // string, so a carousel's slides are joined into the same shape while
-    // `slides` (used by the Creator Studio result view) keeps them separate.
-    const script = slides.length ? slides.map((s) => `Slide ${s.slideNumber}\n${s.text}`).join("\n\n") : parsed.script || "";
-    return { hooks: parsed.hooks || [], script, caption: parsed.caption || "", slides };
-  } catch {
-    // Model didn't return clean JSON — show the raw text as the script
-    // rather than losing the generation entirely.
-    return { hooks: [], script: raw, caption: "", slides: [] };
-  }
+  const raw = await callModel(ai, system, user, 1600, { json: true, feature: "script" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.unreadable"));
+  const slides = isCarousel && Array.isArray(parsed.slides)
+    ? parsed.slides.map((s, i) => ({ slideNumber: Number(s?.slideNumber) || i + 1, text: String(s?.text || "").trim() })).filter((s) => s.text)
+    : [];
+  // `script` still carries a flat string too — everywhere else in the app
+  // (content.script field, teleprompter, PDF export) reads one script
+  // string, so a carousel's slides are joined into the same shape while
+  // `slides` (used by the Creator Studio result view) keeps them separate.
+  const script = slides.length ? slides.map((s) => `Slide ${s.slideNumber}\n${s.text}`).join("\n\n") : parsed.script || "";
+  if (wantsScript && !script) throw new AiApiError(t("ai.error.unreadable"));
+  return { hooks: parsed.hooks || [], script, caption: parsed.caption || "", slides };
 }
 
 // Shared by Copy Studio's generate and rewrite — the one rule that matters
@@ -455,6 +346,16 @@ function parseJsonObject(raw) {
       return null;
     }
   }
+}
+
+// Every chat-shaped feature below (consultant, brainstorm, companion,
+// discuss-a-script) folds its thread's history into one plain-text
+// transcript in the user turn. Capping it here means the cap holds no
+// matter how much history a caller happens to hand in — fewer tokens spent
+// re-reading old turns, which matters a lot on a chat that fires on every
+// message.
+function recentHistory(history = [], n = 8) {
+  return history.length > n ? history.slice(-n) : history;
 }
 
 function normalizeCopyVariant(v) {
@@ -509,12 +410,10 @@ export async function generateCopy(
     .filter(Boolean)
     .join("\n");
 
-  const raw = await callModel(ai, system, user, format === "threads" && threadMode === "chain" ? 3500 : 1800);
+  const raw = await callModel(ai, system, user, format === "threads" && threadMode === "chain" ? 3500 : 1800, { json: true, feature: "copy" });
   const variants = (parseJsonObject(raw)?.variants || []).map(normalizeCopyVariant).filter(Boolean);
-  if (variants.length) return { variants };
-  if (!raw.trim()) throw new AiApiError(t("ai.error.emptyResponse"));
-  // Model didn't return clean JSON — keep the text rather than losing it.
-  return { variants: [{ parts: [raw.trim()], note: "" }] };
+  if (!variants.length) throw new AiApiError(t("ai.error.emptyResponse"));
+  return { variants };
 }
 
 // Copy Studio's "Pendekin / Lebih santai / Lebih jualan" on one variant.
@@ -536,7 +435,7 @@ export async function rewriteCopy(ai, { brandContext = "", format, customFormat 
     .filter(Boolean)
     .join("\n");
   const user = [...parts.map((p, i) => `--- part ${i + 1} ---\n${p}`), note ? `--- note ---\n${note}` : ""].filter(Boolean).join("\n");
-  const variant = normalizeCopyVariant(parseJsonObject(await callModel(ai, system, user, 2500)));
+  const variant = normalizeCopyVariant(parseJsonObject(await callModel(ai, system, user, 2500, { json: true, feature: "copy" })));
   if (!variant) throw new AiApiError(t("ai.error.readEdit"));
   return variant;
 }
@@ -627,18 +526,14 @@ export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, ro
     .map((it) => `id=${it.id} | funnel=${it.funnel || "TOFU"} | stage=${it.status} (readiness ${readiness[it.status] ?? 5}, lower=more ready)${it.campaignPhase ? ` | campaign phase=${it.campaignPhase}` : ""} | title=${it.title || "Untitled"}`)
     .join("\n");
 
-  const raw = await callModel(ai, system, user, 2000);
-  try {
-    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-    const parsed = JSON.parse(cleaned);
-    const map = new Map();
-    (parsed.schedule || []).forEach((row) => {
-      if (row?.id && row?.date) map.set(row.id, row.date);
-    });
-    return rebalanceWeeklyFunnelMix(map, items, startDate);
-  } catch {
-    throw new AiApiError(t("ai.error.readSchedule"));
-  }
+  const raw = await callModel(ai, system, user, 2000, { json: true, feature: "schedule" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.readSchedule"));
+  const map = new Map();
+  (parsed.schedule || []).forEach((row) => {
+    if (row?.id && row?.date) map.set(row.id, row.date);
+  });
+  return rebalanceWeeklyFunnelMix(map, items, startDate);
 }
 
 // Reads whatever caption/idea/title exists and picks the single closest
@@ -652,19 +547,10 @@ export async function classifyFunnel(ai, { caption, idea, title }) {
     "BOFU (direct sales/conversion push with a clear offer or CTA to buy/sign up). " +
     "Respond with ONLY one word: TOFU, MOFU, or BOFU.";
   const user = [caption ? `Caption: ${caption}` : "", idea ? `Idea: ${idea}` : "", title ? `Title: ${title}` : ""].filter(Boolean).join("\n") || "No content given — respond TOFU.";
-  const raw = await callModel(ai, system, user, 10);
+  const raw = await callModel(ai, system, user, 10, { feature: "funnel" });
   const match = raw.toUpperCase().match(/TOFU|MOFU|BOFU/);
   if (!match) throw new AiApiError(t("ai.error.funnel"));
   return match[0];
-}
-
-// Turns a data: URL (e.g. a brand's logo, already stored that way from the
-// avatar/logo upload flow) into the inline-image part shape Gemini expects.
-function dataUrlToInlinePart(dataUrl) {
-  if (!dataUrl) return null;
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) return null;
-  return { inlineData: { mimeType: match[1], data: match[2] } };
 }
 
 
@@ -694,7 +580,7 @@ export function buildBrandContext(brand) {
     dna.personality?.length ? `Brand personality: ${dna.personality.join(", ")}` : "",
     dna.values?.length ? `Brand values: ${dna.values.join(", ")}` : "",
     dna.productsServices?.length ? `Products/services: ${dna.productsServices.join(", ")}` : "",
-    brand.aiVoiceGuide ? `Voice & tone guide: ${brand.aiVoiceGuide}` : "",
+    brandVoiceText(brand) ? `Voice & tone guide: ${brandVoiceText(brand)}` : "",
     // Aturan tulisan (js/writing-rules.js): how customers are addressed, and
     // the fixed hashtags — set by the owner, never guessed.
     brand.writingRules?.customerCall ? `Address the customer as "${brand.writingRules.customerCall}" (e.g. "${brand.writingRules.customerCall}, …") whenever the text speaks to them directly — never switch to another form of address.` : "",
@@ -790,8 +676,9 @@ export function campaignSummaryLine(c, brand) {
   // Ideas kept on the campaign's own "Ide Campaign" widget (js/views/campaign-detail.js
   // ideasWidgetHTML) flow into every AI call that already includes this line — content
   // generation, brainstorming, the Rencana playbook — so execution stays aligned with
-  // what the user already decided, without each caller having to know about `campaign.ideas`.
-  const ideas = c.ideas?.length ? ` | captured ideas: ${c.ideas.slice(0, 10).map((i) => i.text).join("; ")}` : "";
+  // what the user already decided, without each caller having to know about the ideas inbox.
+  const campaignIdeas = brand?.id ? listBrandIdeas(brand.id, { campaignId: c.id }) : [];
+  const ideas = campaignIdeas.length ? ` | captured ideas: ${campaignIdeas.slice(0, 10).map((i) => i.text).join("; ")}` : "";
   // Events (js/store.js buildEventPhases) aren't a growth ladder — they're
   // a single date the whole campaign counts down to, and the brand's role
   // that day (running it vs. renting a booth vs. speaking) changes what
@@ -913,7 +800,7 @@ export async function suggestCampaignFit(ai, { brand, campaigns, idea, title }) 
     buildBrandContext(brand),
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     "Given the idea below and this brand's active campaigns (each listing its phases and how many content items are already linked to each), pick the single best-fit campaign and phase (or campaignId null if truly nothing fits), and suggest a short content angle — a specific way to shoot/frame this idea so it clearly serves that phase's goal.",
     "When more than one phase could reasonably fit, prefer the one with FEWER linked items (or marked EMPTY) over one that already has plenty — the goal is helping the campaign's journey fill in evenly, not stacking everything onto whichever phase it superficially resembles most.",
     'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"campaignId": "the chosen campaign\'s id, or null", "phaseId": "the chosen phase\'s id within that campaign, or null", "angle": "1-2 sentences describing the content angle", "rationale": "1-2 sentences on why this campaign/phase/angle, in plain language, no jargon or book names — mention if the phase being empty was part of why"}',
@@ -929,21 +816,17 @@ export async function suggestCampaignFit(ai, { brand, campaigns, idea, title }) 
     .filter(Boolean)
     .join("\n");
 
-  const raw = await callModel(ai, system, user, 600);
-  try {
-    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-    const parsed = JSON.parse(cleaned);
-    const campaign = campaigns.find((c) => c.id === parsed.campaignId);
-    const phaseValid = campaign?.phases?.some((p) => p.id === parsed.phaseId);
-    return {
-      campaignId: campaign ? campaign.id : null,
-      phaseId: phaseValid ? parsed.phaseId : null,
-      angle: parsed.angle || "",
-      rationale: parsed.rationale || "",
-    };
-  } catch {
-    throw new AiApiError(t("ai.error.readCampaignFit"));
-  }
+  const raw = await callModel(ai, system, user, 600, { json: true, feature: "campaign" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.readCampaignFit"));
+  const campaign = campaigns.find((c) => c.id === parsed.campaignId);
+  const phaseValid = campaign?.phases?.some((p) => p.id === parsed.phaseId);
+  return {
+    campaignId: campaign ? campaign.id : null,
+    phaseId: phaseValid ? parsed.phaseId : null,
+    angle: parsed.angle || "",
+    rationale: parsed.rationale || "",
+  };
 }
 
 // Powers the "Get AI options" button on the Brand DNA wizard's question
@@ -985,7 +868,7 @@ export async function suggestBrandDnaOptions(ai, { brand, question, guide, princ
     voiceRule,
     principle ? `A StoryBrand-specific craft rule applies to THIS question — treat it as the actual bar for a good answer, not just a style note: ${principle}` : "",
     "Make the options meaningfully different from each other in angle or phrasing — not near-duplicates of the same line. None of them should read as filler or padding just to sound more 'complete.'",
-    outputLanguageRule({ keepSourceLanguage: "their draft answer" }),
+    outputLanguageRule({ keepSourceLanguage: "their draft answer", brand }),
     NATURAL_WRITING_CONTEXT,
     buildBrandContext(brand),
     `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"note": "", "options": ["option 1", "option 2", "option 3"]} — exactly ${count} items, every item a non-empty string. "note" is normally an empty string; fill it with ONE short, friendly sentence in the draft's language only when the draft was too thin or vague to sharpen well (e.g. a single word) or doesn't seem to match the brand — tell the owner what to add so the options get more precise. Never put advice in the options themselves.`,
@@ -1006,14 +889,14 @@ export async function suggestBrandDnaOptions(ai, { brand, question, guide, princ
 
   let note = "";
   const parseOptions = (raw) => {
-    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseJsonObject(raw);
+    if (!parsed) throw new Error("empty");
     if (!note && typeof parsed.note === "string") note = parsed.note.trim();
     return Array.isArray(parsed.options) ? parsed.options.filter((o) => typeof o === "string" && o.trim()).map((o) => o.trim()) : [];
   };
   // Low-ish temperature: this is form-filling, not brainstorming — the
   // options should stay on the owner's own idea instead of drifting.
-  const callOpts = { temperature: 0.6, json: true };
+  const callOpts = { temperature: 0.6, json: true, feature: "dna" };
   let options;
   try {
     options = parseOptions(await callModel(ai, system, user, 800, callOpts));
@@ -1055,7 +938,7 @@ export async function generateBrandDnaDraft(ai, { brand, answers = {} }) {
     "You draft a complete brand identity ('Brand DNA') for a small business owner, following the StoryBrand framework: the CUSTOMER is the hero (never the brand); the PROBLEM has an external side and the feeling it causes; the BRAND is the GUIDE (empathy + authority), never the hero; the guide gives a simple 3-step PLAN; calls the hero to one direct ACTION; and the story ends in SUCCESS (what the customer concretely gains, including who they become) or FAILURE (what they honestly lose by doing nothing, no fear-mongering).",
     "Write in plain, spoken language. Concrete, specific to THIS business, zero marketing buzzwords ('solusi terbaik', 'kualitas premium', 'nomor satu'). Every line must pass the grunt test: a distracted stranger gets it in 5 seconds.",
     "GROUNDING: build every field from what the owner actually wrote about the business. Never invent numbers, awards, years of experience, customer counts, prices, locations or guarantees that the description doesn't give — where the description is silent, keep that field general and short rather than making something up. The owner will correct the draft, so an honest plain line beats an impressive invented one.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     "Field rules: targetAudience = who they are + what they want (third person, 'mereka'), 1-2 sentences. problemSolved = external problem → the feeling it causes, 1-2 sentences. differentiation = why trust and pick this brand, with a concrete proof if the description gives one, 1-2 sentences. mission = the 3-step plan in EXACTLY this format: '1) <aksi> 2) <aksi> 3) <aksi>' — each an action the customer takes or experiences, chronological. callToAction = at most 8 words, starts with an action verb, like a button label. successOutcome and failureOutcome = 1 sentence each. purpose = why this brand exists beyond profit, 1 sentence. vision = concrete long-term picture, 1 sentence. tagline = at most 6 words. oneLiner = ONE sentence, at most 25 words: problem → what the brand does → result. personality = 3 short adjectives. values = 3 short words. productsServices = 1-4 short items.",
     kept.length ? `These fields were already written by the owner — copy them back EXACTLY as given, do not rewrite them: ${kept.join(", ")}.` : "",
     NATURAL_WRITING_CONTEXT,
@@ -1073,7 +956,7 @@ export async function generateBrandDnaDraft(ai, { brand, answers = {} }) {
     .filter(Boolean)
     .join("\n");
 
-  const parsed = parseJsonObject(await callModel(ai, system, user, 1600, { temperature: 0.6, json: true }));
+  const parsed = parseJsonObject(await callModel(ai, system, user, 1600, { temperature: 0.6, json: true, feature: "dna" }));
   if (!parsed) throw new AiApiError(t("ai.error.readDnaDraft"));
   const out = {};
   DNA_DRAFT_FIELDS.forEach((k) => { out[k] = typeof parsed[k] === "string" ? parsed[k].trim() : ""; });
@@ -1093,7 +976,7 @@ export async function generateOneLiner(ai, { brand, answers = {} }) {
     "You write a single \"one-liner\" for a brand: one sentence that a customer immediately understands, following the shape problem -> what this brand does -> the result the customer gets.",
     "It should read like something the business owner would actually say out loud, not a slogan or ad tagline — plain, concrete, zero jargon or buzzwords.",
     "Exactly ONE sentence of AT MOST 25 words — if it runs longer, cut details (keep one problem, one thing the brand does, one result), never add commas to squeeze more in. It must pass the grunt test: a distracted stranger gets it in 5 seconds.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     "Respond with ONLY the sentence — no preamble, no quotes, no markdown.",
     NATURAL_WRITING_CONTEXT,
     buildBrandContext(brand),
@@ -1109,7 +992,7 @@ export async function generateOneLiner(ai, { brand, answers = {} }) {
     .filter(Boolean)
     .join("\n") || "Not enough answers given yet — write a generic but plausible placeholder one-liner based on the brand info above.";
 
-  const raw = await callModel(ai, system, user, 200);
+  const raw = await callModel(ai, system, user, 200, { feature: "dna" });
   return raw.trim();
 }
 
@@ -1143,24 +1026,20 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
     existingIdeas.length ? `Ideas already captured for this campaign (don't repeat these):\n${existingIdeas.map((i) => `- ${i}`).join("\n")}` : "",
     extra ? `Extra context from the user: ${extra}` : "",
     "Suggest 4 NEW ideas — a small, genuinely doable set, not a long list nobody will get through. Each idea: text = ONE short phrase, under 10 words, ready to show as a small chip/bubble in a UI. description = the full explanation someone sees once they open that idea (not shown upfront, so it can afford real detail) — 3-5 sentences covering why it fits THIS brand specifically (reference something concrete from its Brand DNA/context, not a generic reason), the concrete steps to actually pull it off, and what a realistic outcome looks like. Written like a strategist briefing a teammate, not a tagline.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     'Respond ONLY with valid JSON, no markdown fences: {"ideas": [{"text": "...", "description": "..."}, ...]}',
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, "Suggest the ideas now.", 1400);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    return {
-      ideas: (parsed.ideas || [])
-        .map((i) => ({ text: String(i.text || "").trim(), description: String(i.description || "").trim() }))
-        .filter((i) => i.text)
-        .slice(0, 4),
-    };
-  } catch {
-    throw new AiApiError(t("ai.error.readIdeas"));
-  }
+  const raw = await callModel(ai, system, "Suggest the ideas now.", 1400, { json: true, feature: "campaign" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.readIdeas"));
+  return {
+    ideas: (parsed.ideas || [])
+      .map((i) => ({ text: String(i.text || "").trim(), description: String(i.description || "").trim() }))
+      .filter((i) => i.text)
+      .slice(0, 4),
+  };
 }
 
 // "Rencana" for a Grow Brand campaign (js/views/campaign-detail.js): thinks
@@ -1198,26 +1077,22 @@ export async function generateCampaignPlaybook(ai, { brand, campaign, track, lev
     `The campaign runs in these levels, in order (each with its own targets):\n${levels.map((l) => `Level ${l.index + 1} — ${l.name}: ${l.description || ""} Targets: ${l.targets.join("; ")}`).join("\n")}`,
     extra ? `Extra context from the user: ${extra}` : "",
     "For EVERY level give 2-3 activities that directly help reach THAT level's targets, realistic for a small team with little budget. Each: title (short, imperative), how (2-3 sentences: the concrete steps), type (one word: event, program, promo, collab, routine, offer).",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     'Respond ONLY with valid JSON, no markdown fences: {"concept": {"title": "...", "summary": "...", "howToRun": ["...", "..."]}, "levels": [{"index": 0, "activities": [{"title": "...", "how": "...", "type": "..."}]}]}',
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, "Write the plan now.", 2600, { countUsage: !free });
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    const c = parsed.concept || {};
-    return {
-      concept: { title: String(c.title || ""), summary: String(c.summary || ""), howToRun: (c.howToRun || []).map(String).slice(0, 8) },
-      levels: (parsed.levels || []).map((l) => ({
-        index: Number(l.index) || 0,
-        activities: (l.activities || []).slice(0, 4).map((a) => ({ title: String(a.title || ""), how: String(a.how || ""), type: String(a.type || "") })).filter((a) => a.title),
-      })),
-    };
-  } catch {
-    throw new AiApiError(t("ai.error.readIdeas"));
-  }
+  const raw = await callModel(ai, system, "Write the plan now.", 2600, { countUsage: !free, json: true, feature: "campaign" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.readIdeas"));
+  const c = parsed.concept || {};
+  return {
+    concept: { title: String(c.title || ""), summary: String(c.summary || ""), howToRun: (c.howToRun || []).map(String).slice(0, 8) },
+    levels: (parsed.levels || []).map((l) => ({
+      index: Number(l.index) || 0,
+      activities: (l.activities || []).slice(0, 4).map((a) => ({ title: String(a.title || ""), how: String(a.how || ""), type: String(a.type || "") })).filter((a) => a.title),
+    })),
+  };
 }
 
 // Suggests 2-3 content ideas for one specific campaign phase — given what's
@@ -1235,20 +1110,16 @@ export async function suggestPhaseContent(ai, { brand, campaign, phase, existing
     `This phase ("${phase.name}") goal: ${phase.goal || "(not set — infer something reasonable for this phase and campaign)"}.`,
     existingTitles.length ? `Content already made for this phase (don't repeat these ideas):\n${existingTitles.map((t) => `- ${t}`).join("\n")}` : "",
     "Suggest 2-3 NEW content ideas for this phase.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     'Respond ONLY with valid JSON, no markdown fences: {"ideas": [{"title": "...", "angle": "1-2 sentences", "format": "e.g. Reels, Carousel, Story"}, ...]}',
   ]
     .filter(Boolean)
     .join("\n\n");
 
-  const raw = await callModel(ai, system, "Suggest the ideas now.", 700);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    return (parsed.ideas || []).slice(0, 3).map((i) => ({ title: i.title || "", angle: i.angle || "", format: i.format || "" }));
-  } catch {
-    throw new AiApiError(t("ai.error.readIdeas"));
-  }
+  const raw = await callModel(ai, system, "Suggest the ideas now.", 700, { json: true, feature: "campaign" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.readIdeas"));
+  return (parsed.ideas || []).slice(0, 3).map((i) => ({ title: i.title || "", angle: i.angle || "", format: i.format || "" }));
 }
 
 // Once a month the app (js/main.js → js/brand-learning.js) turns last
@@ -1257,13 +1128,13 @@ export async function suggestPhaseContent(ai, { brand, campaign, phase, existing
 export async function summarizeMonthLessons(ai, { brand, month, rows }) {
   const system = [
     "You read one month of a small brand's own post numbers and write the 2-4 lessons worth remembering for next month's content.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     `Brand: ${brand?.name || ""}.`,
     "Each lesson is ONE short sentence built on a comparison the numbers actually show (a format vs the others, a funnel stage, a hook style, a topic) with the figure in it — e.g. 'Reels edukasi rata-rata 2x views dibanding foto produk (3.100 vs 1.400).' Never generic advice, never a number that isn't in the data, and skip anything the data is too thin to show.",
     'Respond ONLY with valid JSON, no markdown fences: {"lessons":["...","..."]}',
   ].join("\n\n");
   const table = rows.map((r) => `- "${r.title}" | ${r.format || "?"} | ${r.funnel || "?"} | views ${r.views ?? "?"} | ER ${r.er === null || r.er === undefined ? "?" : Number(r.er).toFixed(1) + "%"}${r.hook ? ` | hook: ${r.hook}` : ""}`).join("\n");
-  const raw = await callModel(ai, system, `Month ${month}, posts:\n${table}`, 500, { countUsage: false });
+  const raw = await callModel(ai, system, `Month ${month}, posts:\n${table}`, 500, { countUsage: false, json: true, feature: "lessons" });
   const parsed = parseJsonObject(raw);
   return (parsed?.lessons || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 4);
 }
@@ -1280,7 +1151,7 @@ export async function suggestHashtags(ai, { brand, pulseText = "", current = [] 
     "Suggest 12 hashtags: 2-3 for the brand itself (its name or tagline as one tag), 4-5 for its niche/product in the language its audience searches in, 2-3 local (city/region if the context gives one), 1-2 community/audience tags. Real, commonly used tags only; no spaces, no emojis, no generic filler like #love #instagood #fyp.",
     'Respond ONLY with valid JSON, no markdown fences: {"hashtags":["#...","#..."]}',
   ].filter(Boolean).join("\n\n");
-  const raw = await callModel(ai, system, "Suggest them now.", 300);
+  const raw = await callModel(ai, system, "Suggest them now.", 300, { json: true, feature: "hashtags" });
   const parsed = parseJsonObject(raw);
   const out = [];
   (parsed?.hashtags || []).forEach((h) => {
@@ -1301,7 +1172,7 @@ export async function generateCampaignContentPlan(ai, { brand, campaign, weeks, 
   const total = weeks * perWeek;
   const system = [
     "You plan a campaign's content calendar for a small brand: what to post, week by week, so the campaign moves forward — not a list of random ideas.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     buildBrandContext(brand),
     pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
@@ -1314,7 +1185,7 @@ export async function generateCampaignContentPlan(ai, { brand, campaign, weeks, 
     formats.length ? `Formats this brand uses (pick from these): ${formats.join(", ")}.` : "",
     `Respond ONLY with valid JSON, no markdown fences: {"items":[{"week":1,"title":"short concrete content title","angle":"one sentence: what it says and why it fits this week","format":"one of the formats","funnel":"TOFU|MOFU|BOFU","phase":"stage name or empty"}]}`,
   ].filter(Boolean).join("\n\n");
-  const raw = await callModel(ai, system, "Write the plan now.", Math.min(4000, 400 + total * 110));
+  const raw = await callModel(ai, system, "Write the plan now.", Math.min(8000, 400 + total * 110), { json: true, feature: "campaign" });
   const parsed = parseJsonObject(raw);
   const items = (parsed?.items || [])
     .map((x) => ({
@@ -1342,7 +1213,7 @@ export async function generateValueProposition(ai, { brand }) {
   const system = [
     "You write the 'Value Proposition' page of a brand guidelines document — 3 short pillars explaining concretely why a customer should pick this brand over alternatives.",
     "Each pillar: a punchy 2-4 word title (not a full sentence, not generic like 'Kualitas Terbaik') plus one supporting sentence (max 18 words) — grounded in the brand's own real context below, never a generic claim with nothing concrete behind it.",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     buildBrandContext(brand),
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
@@ -1351,16 +1222,11 @@ export async function generateValueProposition(ai, { brand }) {
     .filter(Boolean)
     .join("\n\n");
 
-  const raw = await callModel(ai, system, "Write the 3 value proposition pillars now.", 500);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    const pillars = Array.isArray(parsed.pillars) ? parsed.pillars.filter((p) => p?.title && p?.desc) : [];
-    if (!pillars.length) throw new Error("empty");
-    return pillars.slice(0, 3);
-  } catch {
-    throw new AiApiError(t("ai.error.readValueProp"));
-  }
+  const raw = await callModel(ai, system, "Write the 3 value proposition pillars now.", 500, { json: true, feature: "guidelines" });
+  const parsed = parseJsonObject(raw);
+  const pillars = Array.isArray(parsed?.pillars) ? parsed.pillars.filter((p) => p?.title && p?.desc) : [];
+  if (!pillars.length) throw new AiApiError(t("ai.error.readValueProp"));
+  return pillars.slice(0, 3);
 }
 
 // Powers the Brand Guidelines PDF's "Colour Essence" page — one short
@@ -1373,7 +1239,7 @@ export async function generateColorEssence(ai, { brand, colors, colorFeelings = 
     "You write the 'Colour Essence' page of a brand guidelines document — for each of the brand's Primary, Secondary, and Accent colors, one short sentence (max 16 words) explaining the feeling that specific color is meant to evoke for THIS brand.",
     "Ground each sentence in the brand's own context and that exact hex/character — never interchangeable color-theory trivia that would read the same for any other brand with a similar hue.",
     colorFeelings.length ? `The owner picked these color feelings when choosing this palette: ${colorFeelings.join(", ")}.` : "",
-    outputLanguageRule(),
+    outputLanguageRule({ brand }),
     NATURAL_WRITING_CONTEXT,
     buildBrandContext(brand),
     `Colors — primary: ${colors.primary}, secondary: ${colors.secondary || colors.primary}, accent: ${colors.accent || colors.primary}.`,
@@ -1382,15 +1248,10 @@ export async function generateColorEssence(ai, { brand, colors, colorFeelings = 
     .filter(Boolean)
     .join("\n\n");
 
-  const raw = await callModel(ai, system, "Write the colour essence sentences now.", 400);
-  const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/, "");
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.primary) throw new Error("empty");
-    return { primary: parsed.primary, secondary: parsed.secondary || "", accent: parsed.accent || "" };
-  } catch {
-    throw new AiApiError(t("ai.error.readColorEssence"));
-  }
+  const raw = await callModel(ai, system, "Write the colour essence sentences now.", 400, { json: true, feature: "guidelines" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed?.primary) throw new AiApiError(t("ai.error.readColorEssence"));
+  return { primary: parsed.primary, secondary: parsed.secondary || "", accent: parsed.accent || "" };
 }
 
 // Powers the "Konsultasi AI" floating chat panel (js/consultant-panel.js) —
@@ -1436,7 +1297,7 @@ export async function extractInsightsFromImage(ai, dataUrl) {
     'Retention graph: x-axis is time in the video, y-axis is the % of viewers still watching. Sample it as curve: [{"sec":0,"pct":100},...] with 6 to 12 evenly spaced points including the last one at the video\'s end. hookPct = the curve\'s value at second 3 (if the graph starts below 100 at 0s, use what it shows). completionPct = the value at the last second. videoLengthSec = where the x-axis ends. If a metric is not in the picture, leave it null, never guess.',
     "If the picture is not an insights screenshot at all, return every metric null and say why in notes.",
   ].join("\n");
-  const raw = await callModel(ai, system, "Read this screenshot.", 900, { images: [dataUrl] });
+  const raw = await callModel(ai, system, "Read this screenshot.", 900, { images: [dataUrl], json: true, feature: "insights" });
   const json = parseJsonObject(raw);
   if (!json || typeof json !== "object") throw new AiApiError(t("ai.error.badExtract"));
   const n = (v) => (v === null || v === undefined || v === "" || !isFinite(Number(v)) ? null : Number(v));
@@ -1469,15 +1330,25 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
   const routesList = CONSULTANT_ROUTES.map((r) => `${r.key} = ${r.label}`).join(", ");
   const hasPhoto = images.length > 0 || !!imageText;
   const system = [
+    // ---- STATIC: identical every turn, so DeepSeek's prefix cache can
+    // reuse it — brand/pulse/live-data/photo blocks (genuinely different
+    // turn to turn) go last instead.
     "You are a practical branding & marketing consultant embedded inside this brand's own tool.",
     outputLanguageRule(),
     "Answer the user's LATEST message and nothing else, reading it in the light of the conversation so far (a short follow-up refers to what was just discussed). The brand data below is background: use only the parts that answer this question. Do not bring up other campaigns, numbers, streaks or problems the user didn't ask about — no 'the rest can wait, but…' add-ons. Only when they ask what to do first or what's most urgent, name the top one or two things.",
     "You give specific, actionable advice grounded in THIS brand's actual context and data below — never generic marketing platitudes. When the brand's tracked data below is relevant to the question, cite the actual numbers (e.g. 'ada 3 konten overdue', 'engagement rate rata-rata 2.1%') instead of speaking abstractly.",
-    buildBrandContext(brand),
-    pulseText || "",
     MARKETING_FRAMEWORKS_CONTEXT,
     RETENTION_SPECIALIST_CONTEXT,
     NATURAL_WRITING_CONTEXT,
+    "Keep it short: lead with the answer in 2-4 sentences, or at most 3 short bullets when listing steps. No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
+    `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
+    "You advise; you do not write content. If the user asks you to come up with content ideas, topics, hooks or angles, do NOT list them — answer in one sentence that says what kind of content the data points to, then end with the line [[handoff:brainstorm]] (the app turns it into a button that asks the Brainstorm tab, which saves ideas and makes drafts). If the user is only venting or telling how they feel with no question in it, reply in one warm sentence and end with [[handoff:companion]]. Never both, and never for an actual question about the brand.",
+    `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
+    "When there is an obvious next question, end with at most 2 follow-ups, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~8 words), answerable from this brand's context and data above. The app turns each into a button. Skip them when the answer is complete on its own. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
+    // ---- DYNAMIC: brand-, pulse-, data- and photo-specific, so it never
+    // matches an earlier turn's prefix past this point anyway.
+    buildBrandContext(brand),
+    pulseText || "",
     snapshotText ? `Live tracked data for this brand right now:\n${snapshotText}` : "",
     hasPhoto
       ? [
@@ -1488,19 +1359,14 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
           "End with ONE line in the exact form [[metrics:key=value;key=value]] listing every number you read, using ONLY these keys: views, reach, likes, comments, shares, saves, profileVisits, followersGained, videoLengthSec, avgWatchTimeSec, hookPct (% still watching at second 3; if the screenshot shows skip rate, hookPct = 100 minus skip rate), completionPct (% who reached the end), skipRatePct. Plain numbers only (12300 not 12.3K, seconds not 0:07). Omit the line entirely if the picture has no such numbers.",
         ].join("\n")
       : "",
-    "Keep it short: lead with the answer in 2-4 sentences, or at most 3 short bullets when listing steps. No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
-    `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
-    "You advise; you do not write content. If the user asks you to come up with content ideas, topics, hooks or angles, do NOT list them — answer in one sentence that says what kind of content the data points to, then end with the line [[handoff:brainstorm]] (the app turns it into a button that asks the Brainstorm tab, which saves ideas and makes drafts). If the user is only venting or telling how they feel with no question in it, reply in one warm sentence and end with [[handoff:companion]]. Never both, and never for an actual question about the brand.",
-    `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
-    "When there is an obvious next question, end with at most 2 follow-ups, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~8 words), answerable from this brand's context and data above. The app turns each into a button. Skip them when the answer is complete on its own. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
   ]
     .filter(Boolean)
     .join("\n\n");
 
-  const transcript = history.map((h) => `${h.role === "user" ? "User" : "Consultant"}: ${h.text}`).join("\n\n");
+  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "User" : "Consultant"}: ${h.text}`).join("\n\n");
   const user = [transcript, `User: ${question}`].filter(Boolean).join("\n\n");
 
-  return callModel(ai, system, user, hasPhoto ? 1400 : 1000, { onText, images });
+  return callModel(ai, system, user, hasPhoto ? 1400 : 1000, { onText, images, feature: "consultant" });
 }
 
 // "Otomatis" in "Tanya Brandlab" (js/consultant-panel.js): one box in front
@@ -1509,17 +1375,32 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
 // keyword rules can't tell which one a message is for, this asks the model —
 // a one-word answer, ~5 tokens, never counted against the owner's AI
 // credits (it isn't a feature, it's the receptionist).
+// A script the owner asked for goes into one [[script:…]]…[[/script]] block
+// (js/ai-directives.js), which the chat shows as a "Script siap" card with
+// "Setujui & simpan ke Creator" — so a script written in chat lands in a
+// real draft in one tap instead of being copy-pasted out of a bubble.
+const SCRIPT_DIRECTIVE_RULE = [
+  "WRITING A SCRIPT: when the owner asks you to write a script, naskah, narasi or voice-over for a video they will shoot (or says yes to your offer to write one), write the WHOLE finished script inside ONE block in exactly this form:",
+  "[[script:FUNNEL|Short content title (max 10 words)|Format]]",
+  "…the script…",
+  "CAPTION: …a ready-to-post caption with 3-5 relevant hashtags…",
+  "[[/script]]",
+  "FUNNEL is exactly TOFU, MOFU or BOFU. Format is one of: Reels, Short Video, Carousel, Story, Long Video, Static Post.",
+  "Inside the block, write it shoot-ready: a line with the total length, then one section per beat headed with its timing and purpose (e.g. '[0-3 detik — HOOK]'), each with 'Visual:' (what to show or do) and 'Narasi:' (the exact words to say), plus 'Teks layar:' when on-screen text helps. Hook first, one clear call to action at the end, in this brand's tone of voice.",
+  "Outside the block write only ONE short sentence before it (what you made and why it fits), and after it at most 2 [[ask:…]] follow-ups such as 'Bikin lebih pendek' or 'Ganti hook-nya'. Never paste the script outside the block, never write two script blocks, and never use [[draft:…]] for the same piece.",
+].join("\n");
+
 export async function classifyChatIntent(ai, { message, lastEngine = "" }) {
   const last = { consultant: "data", brainstorm: "ideas", companion: "friend" }[lastEngine] || "";
   const system = [
     "You route ONE message from a small-business brand owner to the right assistant inside their brand tool. Reply with exactly one word and nothing else: data, ideas, or friend.",
     "data — they ask about their brand's numbers, performance, schedule, campaign progress, strategy, what to do first, how or where to do something in the app, or any question that wants a concrete, factual answer.",
-    "ideas — they want content ideas, topics, angles, hooks, inspiration, or to think through what to make or post next.",
+    "ideas — they want content ideas, topics, angles, hooks, inspiration, to think through what to make or post next, or want a script, caption or voice-over written for a piece of content.",
     "friend — they tell what happened today or in the business (a sale, a customer, an offer, a problem), vent, share how they feel, or want encouragement, without asking for anything.",
     last ? `The previous reply came from: ${last}. A short follow-up ("iya", "yang pertama", "ok lanjut", "kenapa?") usually belongs to the same assistant.` : "",
     "The message may be in Indonesian or English. If genuinely unsure, answer data.",
   ].filter(Boolean).join("\n");
-  const raw = String(await callModel(ai, system, message, 5, { countUsage: false })).trim().toLowerCase();
+  const raw = String(await callModel(ai, system, message, 5, { countUsage: false, feature: "route" })).trim().toLowerCase();
   if (raw.startsWith("idea")) return "brainstorm";
   if (raw.startsWith("friend")) return "companion";
   return "consultant";
@@ -1547,15 +1428,14 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, `Sales data:\n${snapshotText}`, 1400, { countUsage: !free });
+  const raw = await callModel(ai, system, `Sales data:\n${snapshotText}`, 1400, { countUsage: !free, json: true, feature: "sales" });
   const parsed = parseJsonObject(raw);
   const actions = (parsed?.actions || [])
     .map((a) => ({ title: String(a?.title || "").trim(), why: String(a?.why || "").trim(), how: String(a?.how || "").trim() }))
     .filter((a) => a.title)
     .slice(0, 3);
-  if (actions.length) return { summary: String(parsed.summary || "").trim(), actions };
-  if (!raw.trim()) throw new AiApiError(t("ai.error.emptyResponse"));
-  return { summary: raw.trim(), actions: [] };
+  if (!actions.length) throw new AiApiError(t("ai.error.unreadable"));
+  return { summary: String(parsed.summary || "").trim(), actions };
 }
 
 // The Teman tab of the chat (js/consultant-panel.js) — a friend's reply to
@@ -1571,22 +1451,24 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
 // AI feature, one owner-approved note at a time.
 export async function companionChat(ai, { brand, pulseText = "", history = [], message, kinds = [] }) {
   const system = [
+    // ---- STATIC first (prefix-cache friendly) — brand/pulse last.
     "You are this brand owner's thinking partner — warm and direct, like a friend who actually pays attention, never a corporate assistant and never a coach lecturing them.",
     outputLanguageRule(),
-    buildBrandContext(brand),
-    pulseText || "",
     "Reply to the owner's latest message in 2-3 short sentences, conversational, no bullet points, no headers. React to what they actually said. You may offer ONE concrete, specific suggestion if it clearly calls for one — never a generic pep talk.",
     "If they mention something personal or just vent, respond like a friend would (briefly, kindly) and don't turn it into marketing advice.",
     `If what they said is something that HAPPENED to this brand — a sale or a change in sales, an offer or proposal, a notable customer, a collab, a launch, a complaint or problem, an event, a new product or price — end with ONE line in the exact form [[moment:KIND|short title, max 80 chars, concrete, in the owner's language|the specifics they gave (numbers, names, dates), max 160 chars, or empty]] where KIND is one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"}. The app offers to save it to brand memory (what every other AI feature reads when writing scripts and planning). Only for things that actually happened to the brand — never for feelings, plans, wishes or questions, and never something already in the memory above.`,
     "If they ask you for content ideas, topics or hooks, don't make them up here: say in one sentence that the Brainstorm tab does that and end with [[handoff:brainstorm]]. If they ask about their numbers, performance, schedule, strategy or how to do something in the app, say in one sentence that the Konsultan tab answers from the data and end with [[handoff:consultant]]. At most one handoff line, and only when they actually asked for that.",
     "You may end with ONE follow-up question in the exact form [[ask:Question]], written the way this owner would ask it (short, casual). Only one, and only when a natural follow-up actually exists.",
     "Never invent numbers or events the owner didn't mention and that aren't in the context above. Never mention or explain the [[...]] lines.",
+    // ---- DYNAMIC last.
+    buildBrandContext(brand),
+    pulseText || "",
   ]
     .filter(Boolean)
     .join("\n\n");
-  const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Friend"}: ${h.text}`).join("\n\n");
+  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Friend"}: ${h.text}`).join("\n\n");
   const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, 350);
+  return callModel(ai, system, user, 350, { feature: "companion" });
 }
 
 // Turns a stretch of Teman chat into "moments" — the few brand-relevant,
@@ -1613,7 +1495,7 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
     .filter(Boolean)
     .join("\n\n");
   const transcript = messages.map((m) => `${m.role === "user" ? "Owner" : "Companion"}: ${m.text}`).join("\n\n");
-  const raw = await callModel(ai, system, `Chat to recap:\n\n${transcript}`, 700);
+  const raw = await callModel(ai, system, `Chat to recap:\n\n${transcript}`, 700, { json: true, feature: "recap" });
   const obj = parseJsonObject(raw);
   if (!obj || typeof obj !== "object") throw new AiApiError(t("ai.error.unreadable"));
   return { summary: String(obj.summary || "").trim(), moments: Array.isArray(obj.moments) ? obj.moments : [] };
@@ -1662,26 +1544,38 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         "Only write [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] lines when the owner asks for ideas, or when the conversation has clearly landed on something concrete (max 3, clearly different angles; offline steps for an event may be [[task:…]] lines instead). Otherwise write none.",
         "You may end with at most 2 [[ask:…]] lines: short tap-to-answer follow-ups (max 5 words each) written the way the owner would say them, specific to THIS brand.",
         "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",
+        SCRIPT_DIRECTIVE_RULE,
         "Never repeat an idea that was already shown or saved. Never mention or explain the [[...]] lines.",
       ];
+  // buildFullContext's "Active campaigns" list would otherwise repeat the
+  // exact campaign the `scope` block above already describes in full —
+  // drop it (and a preparing event, same deal) from that list rather than
+  // saying the same campaign twice in one prompt.
+  const campaignsForContext = campaigns.filter((c) => c.id !== campaign?.id && c.id !== eventCampaign?.id);
   const system = [
+    // ---- STATIC first (prefix-cache friendly) — brand/campaign/pulse and
+    // the scope block (goal/campaign/content/series this thread is about)
+    // are the parts that actually change turn to turn, so they go last.
     "You are the brand owner's brainstorm partner inside their own planning tool: a sharp friend who already knows the brand. Short, warm, to the point — you ask, they answer, then you propose.",
     outputLanguageRule(),
-    buildFullContext(brand, { campaigns, pulseText }),
     mode === "ideas" ? MARKETING_FRAMEWORKS_CONTEXT : "",
     NATURAL_WRITING_CONTEXT,
-    scope,
     ...rules,
     eventCampaign
       ? "NOT EVERYTHING IS CONTENT. An event is mostly real-world work: recruiting people (alumni, speakers, volunteers), booking the venue, finding sponsors or partners, inviting guests, preparing materials, rehearsing. Those are STEPS, each written as its own line in the exact form [[task:Short action without the number (max 8 words)|why or how, one sentence|target number or empty|unit like 'alumni' or empty|phase name from the list above]] — e.g. [[task:Cari alumni untuk jadi pembicara|Mereka bisa cerita pengalaman belajar langsung.|6|alumni|Foundation]]. Content pieces to publish stay [[idea:…]] lines. One suggestion may produce both: the step 'find 6 alumni' and the content idea 'a short video from each alumnus'. Prefer steps whenever the thing to do happens offline. At most 3 [[task:…]] lines per reply."
       : "There is no event in preparation right now, so do not write [[task:…]] lines; use [[idea:…]] for everything.",
-    "Ground everything in this brand's actual context and data above; when the pulse says something is in motion (a post taking off, a sales dip), use it. Never invent numbers or events.",
+    "Ground everything in this brand's actual context and data; when the pulse says something is in motion (a post taking off, a sales dip), use it. Never invent numbers or events.",
+    // ---- DYNAMIC last.
+    buildFullContext(brand, { campaigns: campaignsForContext, pulseText }),
+    scope,
   ]
     .filter(Boolean)
     .join("\n\n");
-  const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
+  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
   const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, mode === "ideas" ? 750 : mode === "plot" ? 1400 : 700, { onText });
+  // Room for a full shoot-ready script + caption (SCRIPT_DIRECTIVE_RULE);
+  // max_tokens is a ceiling, a normal short reply still stops early.
+  return callModel(ai, system, user, mode === "ideas" ? 750 : mode === "plot" ? 1400 : 1600, { onText, feature: "brainstorm" });
 }
 
 // "Diskusi dengan AI" beside a script in Creator: a free chat that can see the
@@ -1700,20 +1594,23 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
     `CURRENT CAPTION:\n${(content?.caption || "").trim() || "(empty)"}`,
   ].filter(Boolean).join("\n");
   const system = [
+    // ---- STATIC first (prefix-cache friendly) — brand/series/the-piece
+    // itself are what actually differ call to call, so they go last.
     "You are the brand owner's script partner inside their own planning tool: a sharp editor who already knows the brand. You are discussing ONE piece of content with them.",
     outputLanguageRule(),
-    buildFullContext(brand, { campaigns, pulseText }),
-    series ? `This piece belongs to the recurring series "${series.name}"; keep to its concept, tone and structure:\n${buildSeriesContext(series)}` : "",
     NATURAL_WRITING_CONTEXT,
-    `THE PIECE:\n${piece}`,
     "Answer questions, critique honestly (say WHY something is weak, referring to the actual lines), and propose other angles when asked. Be concrete about this script, not generic. Plain conversational text, short paragraphs, no headers.",
     "If the owner's direction for a change is not clear yet (which part? more casual? shorter? which angle?), ask ONE short question first instead of rewriting.",
     `When you have something concrete to change, give the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : 'Keep the script in the fixed format: "HOOK", the 1-2 sentence hook, a blank line, "ISI PEMBAHASAN", the main content.'} Put at most ONE revise block per reply, always with the full text (never a fragment), and keep the words around it to a sentence or two about what changed. Never write a revise block for a mere question or critique, and never mention or explain the [[...]] syntax.`,
-    "Never invent numbers, prices or events that are not in the context above.",
+    "Never invent numbers, prices or events that are not in the brand's context and data.",
+    // ---- DYNAMIC last.
+    buildFullContext(brand, { campaigns, pulseText }),
+    series ? `This piece belongs to the recurring series "${series.name}"; keep to its concept, tone and structure:\n${buildSeriesContext(series)}` : "",
+    `THE PIECE:\n${piece}`,
   ].filter(Boolean).join("\n\n");
-  const transcript = history.map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
+  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
   const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, 1500, { onText });
+  return callModel(ai, system, user, 1500, { onText, feature: "discuss" });
 }
 
 export { AiApiError };
@@ -1733,7 +1630,7 @@ export async function summarizeConcept(ai, { brand, messages = [], scopeText = "
     NATURAL_WRITING_CONTEXT,
   ].filter(Boolean).join("\n\n");
   const transcript = messages.filter((m) => m.text).slice(-24).map((m) => `${m.role === "user" ? "Owner" : "Partner"}: ${m.text}`).join("\n\n");
-  const raw = await callModel(ai, system, transcript, 700, { countUsage: false });
+  const raw = await callModel(ai, system, transcript, 700, { countUsage: false, json: true, feature: "concept" });
   const obj = parseJsonObject(raw);
   if (!obj || typeof obj !== "object") throw new AiApiError(t("ai.error.unreadable"));
   const clean = (v) => String(v || "").trim();
@@ -1760,7 +1657,7 @@ export async function draftBusinessDescription(ai, { name = "", notes }) {
     NATURAL_WRITING_CONTEXT,
   ].join("\n\n");
   const user = `${name ? `Brand name: ${name}\n` : ""}Owner's notes:\n${notes}`;
-  const raw = await callModel(ai, system, user, 400);
+  const raw = await callModel(ai, system, user, 400, { feature: "dna" });
   return raw.trim();
 }
 
@@ -1777,7 +1674,7 @@ export async function detectToneOfVoice(ai, { brand, text }) {
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, `Sample:\n${text}`, 200);
+  const raw = await callModel(ai, system, `Sample:\n${text}`, 200, { json: true, feature: "dna" });
   const obj = parseJsonObject(raw);
   const out = {};
   for (const key of ["formal", "language", "character", "emotion"]) {

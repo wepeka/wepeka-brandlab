@@ -706,7 +706,7 @@ export function startOnboardingTour() {
     {
       // The two pills next to the page title — how every later question
       // about a page gets answered.
-      selector: ["[data-page-guide-btn]:not([hidden])", "[data-guide-video-btn]:not([hidden])"],
+      selector: ["[data-page-help]", "[data-page-guide-btn]:not([hidden])"],
       beforeStep: goBrandHome,
       title: t("tour.onb.help.title"),
       body: t("tour.onb.help.body"),

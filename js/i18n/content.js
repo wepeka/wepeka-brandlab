@@ -15,11 +15,9 @@ export default {
   "cnt.editor.guidedCampaignLabel": { en: "Which campaign is this part of?", id: "Bagian dari campaign apa?" },
   "cnt.editor.guidedStatusLabel": { en: "How far along is it?", id: "Sampai mana prosesnya?" },
 
-  // ── Content OS hub
+  // ── Content (Konten) hub
   "cnt.os.tour.title": { en: "Content", id: "Konten" },
-  "cnt.os.tour.body": { en: "Four tabs: write content, schedule it, see all your content, and a summary of the results. All of this brand's content lives here.", id: "Empat tab: tulis konten, atur jadwalnya, lihat semua konten, dan ringkasan hasilnya. Semua konten brand ini ada di sini." },
-
-  // ── Dashboard
+  "cnt.os.tour.body": { en: "Five tabs: write content in Creator, schedule it on the Calendar, see everything in Content List, write copy you need right now in Quick Copy, and plan multi-part Series. All of this brand's content lives here.", id: "Lima tab: tulis konten di Creator, atur jadwalnya di Kalender, lihat semuanya di Daftar Konten, bikin tulisan yang perlu sekarang di Tulisan Cepat, dan rencanakan Seri multi-bagian. Semua konten brand ini ada di sini." },
 
   // ── Calendar
   "cal.eventDay": { en: "Event day", id: "Hari-H" },
@@ -144,4 +142,22 @@ export default {
 
   // ── Sales (placeholder page)
   "sales.eyebrow": { en: "Sales Tracker", id: "Sales Tracker" },
+
+  // ── Home insight actions (js/views/home.js) — Brand Pulse signals turned
+  // into one-tap buttons instead of just a read-only card.
+  "home.action.title": { en: "Ready-to-run actions", id: "Aksi siap dipakai" },
+  "home.action.summary": { en: "{n} action(s) ready", id: "{n} aksi siap dipakai" },
+  "home.action.topFormat.text": { en: "{format} content is doing {mult}× better than average right now.", id: "Konten {format} performanya {mult}× dari rata-rata brand sekarang." },
+  "home.action.topFormat.cta": { en: "Schedule 2 more", id: "Jadwalkan 2 lagi" },
+  "home.action.topFormat.newTitle": { en: "More like: {title}", id: "Lanjutan: {title}" },
+  "home.action.topFormat.done": { en: "{n} new idea(s) scheduled for next week", id: "{n} ide baru dijadwalkan minggu depan" },
+  "home.action.overdue.text": { en: "{n} piece(s) of content are overdue.", id: "{n} konten sudah lewat jadwal." },
+  "home.action.overdue.cta": { en: "Move to next week", id: "Geser ke minggu depan" },
+  "home.action.overdue.done": { en: "{n} piece(s) moved to the nearest open day", id: "{n} konten digeser ke hari kosong terdekat" },
+  "home.action.emptyWeek.text": { en: "Nothing scheduled or posted this week yet.", id: "Belum ada konten minggu ini." },
+  "home.action.emptyWeek.cta": { en: "Make 3 ideas from Brand DNA", id: "Buat 3 ide dari Brand DNA" },
+  "home.action.emptyWeek.idea.audience": { en: "Get to know: {text}", id: "Kenalan sama: {text}" },
+  "home.action.emptyWeek.idea.problem": { en: "Talk about this problem: {text}", id: "Bahas masalah ini: {text}" },
+  "home.action.emptyWeek.idea.promise": { en: "Show this result: {text}", id: "Tunjukkan hasil ini: {text}" },
+  "home.action.emptyWeek.done": { en: "{n} new idea(s) created", id: "{n} ide baru dibuat" },
 };

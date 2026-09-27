@@ -2,18 +2,79 @@
 // #app) so a background store-driven rerender never yanks them away mid-edit.
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
+import { qsa } from "./dom.js";
+
+// Accessibility plumbing shared by openModal/openDrawer: each overlay is a
+// dialog (role="dialog", aria-modal, aria-labelledby pointing at its own
+// title), gets initial focus, traps Tab/Shift+Tab inside itself, and hands
+// focus back to whatever had it before opening. Several overlays can be
+// stacked (e.g. a confirmDialog on top of a drawer) — this stack is what
+// makes Escape close only the topmost one, and what makes sure every close
+// path (✕, backdrop click, requestClose, a bare closeOverlay() call from any
+// of the ~80 call sites across the app) tears its own listener down instead
+// of leaking it (the old code only removed the Escape listener when Escape
+// itself was pressed, so a still-open earlier modal's leaked listener would
+// also fire and close it on the next Escape meant for something else).
+let overlaySeq = 0;
+const overlayStack = []; // { el, dialogEl, keyHandler, previousFocus }
+
+function focusableIn(container) {
+  return qsa(
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    container
+  ).filter((el) => el.getClientRects().length > 0);
+}
+
+function activateOverlayA11y(overlay, dialogEl) {
+  const previousFocus = document.activeElement;
+  const keyHandler = (e) => {
+    const isTop = overlayStack[overlayStack.length - 1]?.el === overlay;
+    if (e.key === "Escape") {
+      if (!isTop) return; // only the topmost overlay reacts to Escape
+      e.stopPropagation();
+      closeOverlay(overlay);
+    } else if (e.key === "Tab" && isTop) {
+      const focusable = focusableIn(dialogEl);
+      if (!focusable.length) { e.preventDefault(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  document.addEventListener("keydown", keyHandler);
+  overlayStack.push({ el: overlay, dialogEl, keyHandler, previousFocus });
+  const first = focusableIn(dialogEl)[0];
+  (first || dialogEl).focus?.();
+}
+
+function deactivateOverlayA11y(overlay) {
+  const idx = overlayStack.findIndex((o) => o.el === overlay);
+  if (idx === -1) return;
+  const { previousFocus, keyHandler } = overlayStack[idx];
+  document.removeEventListener("keydown", keyHandler);
+  overlayStack.splice(idx, 1);
+  if (previousFocus && document.body.contains(previousFocus)) previousFocus.focus?.();
+}
 
 export function closeOverlay(el) {
+  deactivateOverlayA11y(el);
   el.remove();
 }
 
 export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = false, width }) {
   const overlay = document.createElement("div");
   overlay.className = "overlay center";
+  const titleId = `modal-title-${++overlaySeq}`;
   overlay.innerHTML = `
-    <div class="modal" style="${width ? `width:${width};` : wide ? "width:min(640px,92vw)" : ""}">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="${titleId}" tabindex="-1" style="${width ? `width:${width};` : wide ? "width:min(640px,92vw)" : ""}">
       <div class="drawer-head">
-        <h2>${title}</h2>
+        <h2 id="${titleId}">${title}</h2>
         <button class="icon-btn" data-close aria-label="${t("common.close")}">${icon("x", { size: 16 })}</button>
       </div>
       <div class="modal-body">${bodyHTML}</div>
@@ -21,16 +82,12 @@ export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = fals
     </div>
   `;
   document.body.appendChild(overlay);
+  const dialogEl = overlay.querySelector(".modal");
   overlay.addEventListener("mousedown", (e) => {
     if (e.target === overlay) closeOverlay(overlay);
   });
   overlay.querySelector("[data-close]").addEventListener("click", () => closeOverlay(overlay));
-  document.addEventListener("keydown", function esc(e) {
-    if (e.key === "Escape") {
-      closeOverlay(overlay);
-      document.removeEventListener("keydown", esc);
-    }
-  });
+  activateOverlayA11y(overlay, dialogEl);
   if (onMount) onMount(overlay);
   return overlay;
 }
@@ -41,10 +98,11 @@ export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = fals
 export function openDrawer({ title, bodyHTML, footHTML = "", onMount, isDirty }) {
   const overlay = document.createElement("div");
   overlay.className = "overlay";
+  const titleId = `modal-title-${++overlaySeq}`;
   overlay.innerHTML = `
-    <div class="drawer">
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="${titleId}" tabindex="-1">
       <div class="drawer-head">
-        <h2>${title}</h2>
+        <h2 id="${titleId}">${title}</h2>
         <button class="icon-btn" data-close aria-label="${t("common.close")}">${icon("x", { size: 16 })}</button>
       </div>
       <div class="drawer-body">${bodyHTML}</div>
@@ -52,6 +110,7 @@ export function openDrawer({ title, bodyHTML, footHTML = "", onMount, isDirty })
     </div>
   `;
   document.body.appendChild(overlay);
+  const dialogEl = overlay.querySelector(".drawer");
   overlay.requestClose = async () => {
     if (isDirty?.()) {
       const ok = await confirmDialog({ title: t("app.unsaved.title"), message: t("app.unsaved.message"), confirmLabel: t("app.unsaved.discard"), cancelLabel: t("app.unsaved.keep"), danger: true });
@@ -63,6 +122,7 @@ export function openDrawer({ title, bodyHTML, footHTML = "", onMount, isDirty })
     if (e.target === overlay) overlay.requestClose();
   });
   overlay.querySelector("[data-close]").addEventListener("click", () => overlay.requestClose());
+  activateOverlayA11y(overlay, dialogEl);
   if (onMount) onMount(overlay);
   return overlay;
 }

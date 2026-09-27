@@ -1,4 +1,4 @@
-import { getBrand, listContent, getContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getBrand, listContent, getContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
 import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText } from "../dom.js";
@@ -124,7 +124,8 @@ function paint(root, brandId, state, refresh) {
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}${guideVideoButtonHTML("content-list")}</div>
-        <h1>${brand.name}</h1>
+        <h1>${t("nav.content")}</h1>
+        <p class="page-head-brand">${escapeText(brand.name)}</p>
       </div>
       <div class="flex gap-8">
         <button class="icon-btn" id="more-actions" aria-label="${t("contentList.moreActions")}" title="${t("contentList.moreActions")}">${icon("dots", { size: 16 })}${staleQueue.length ? `<span class="notif-badge">${staleQueue.length}</span>` : ""}</button>
@@ -168,7 +169,7 @@ function paint(root, brandId, state, refresh) {
           </tbody>
         </table>
       </div>
-      ${items.length ? "" : `<div class="table-empty">${t("contentList.emptyTable")}</div>`}
+      ${items.length ? "" : allContentCount ? emptyFilteredHTML() : emptyNoneHTML(brand)}
     </div>
   `;
 
@@ -204,12 +205,12 @@ function paint(root, brandId, state, refresh) {
         if (!allContentCount) { toast(t("contentList.nothingToDelete"), "error"); return; }
         const ok = await confirmDialog({
           title: t("contentList.deleteAllTitle"),
-          message: t("contentList.deleteAllMsg", { count: allContentCount, brand: brand.name }),
+          message: t("contentList.deleteAllMsg", { count: allContentCount, brand: escapeText(brand.name), days: TRASH_DAYS }),
           confirmLabel: t("contentList.deleteEverything"),
           danger: true,
         });
         if (ok) {
-          listContent(brandId, { includeArchived: true }).forEach((c) => deleteContent(c.id));
+          trashContentBatch(listContent(brandId, { includeArchived: true }).map((c) => c.id));
           toast(t("contentList.allContentDeleted"));
         }
       }
@@ -246,6 +247,25 @@ function paint(root, brandId, state, refresh) {
     state.age = "";
     state.campaignId = "";
     paint(root, brandId, state, refresh);
+  });
+
+  // Empty-state actions (only present when the table has nothing to show).
+  qs("#empty-clear-filters")?.addEventListener("click", () => {
+    state.view = "all";
+    state.search = "";
+    state.funnel = "";
+    state.format = "";
+    state.platform = "";
+    state.age = "";
+    state.campaignId = "";
+    paint(root, brandId, state, refresh);
+  });
+  qs("#empty-new-content")?.addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
+  qsa("[data-empty-idea]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idea = sampleContentIdeas(brand)[Number(btn.dataset.emptyIdea)];
+      if (idea) openContentEditor({ brandId, defaults: { title: idea.title, idea: idea.idea, funnel: idea.funnel }, onSaved: refresh });
+    });
   });
 
   qsa("[data-sort]").forEach((th) => {
@@ -308,12 +328,71 @@ function paint(root, brandId, state, refresh) {
           archiveContent(id, !wasArchived);
           toast(wasArchived ? t("contentList.contentRestored") : t("contentList.contentArchived"));
         } else if (act === "delete") {
-          const ok = await confirmDialog({ title: t("contentList.deleteContentTitle"), message: t("common.noUndo"), confirmLabel: t("common.delete"), danger: true });
+          const ok = await confirmDialog({ title: t("contentList.deleteContentTitle"), message: t("delete.toTrash.suffix", { days: TRASH_DAYS }), confirmLabel: t("delete.toTrash.confirm"), danger: true });
           if (ok) { deleteContent(id); toast(t("contentList.contentDeleted")); }
         }
       });
     });
   });
+}
+
+// Filter/search matched nothing, but the brand does have content — the fix
+// is "loosen the filter", not "write something", so a single ghost button
+// is enough (no starter ideas here, unlike the true-empty case below).
+function emptyFilteredHTML() {
+  return `
+    <div class="empty-state" style="padding:48px 20px;">
+      <div class="icon-wrap">${icon("filter", { size: 20 })}</div>
+      <h3>${t("contentList.emptyFiltered.title")}</h3>
+      <p>${t("contentList.emptyFiltered.body")}</p>
+      <button type="button" class="btn btn-secondary" id="empty-clear-filters">${icon("x", { size: 13 })}${t("contentList.clearFilters")}</button>
+    </div>`;
+}
+
+// A brand-new list (nothing at all yet, archived included). The one thing
+// that actually gets someone unstuck here isn't the empty explanation — it's
+// three ready-to-click starting points, so pick one and go straight into the
+// editor already half-written instead of facing a blank "New content" form.
+function emptyNoneHTML(brand) {
+  const ideas = sampleContentIdeas(brand);
+  return `
+    <div class="empty-state" style="padding:48px 20px 8px;">
+      <div class="icon-wrap">${icon("edit", { size: 22 })}</div>
+      <h3>${t("contentList.emptyNone.title")}</h3>
+      <p>${t("contentList.emptyNone.body")}</p>
+      <button type="button" class="btn btn-primary" id="empty-new-content">${icon("plus", { size: 15 })}${t("contentList.newContent")}</button>
+    </div>
+    <div class="empty-state-ideas">
+      <p class="page-eyebrow">${t("contentList.emptyNone.ideasLabel")}</p>
+      <div class="content-view-grid">
+        ${ideas
+          .map(
+            (idea, i) => `
+          <button type="button" class="content-view-card" data-empty-idea="${i}">
+            <div class="icon-wrap">${icon("sparkle", { size: 18 })}</div>
+            <h3>${escapeText(idea.title)}</h3>
+            <p>${escapeText(idea.idea)}</p>
+          </button>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+}
+
+// Deterministic (no AI call) — three angles that work for almost any brand,
+// filled in with whatever it already told us about itself in Brand DNA
+// (first product/service, target audience), falling back to a generic UMKM
+// phrasing when that's still blank.
+function sampleContentIdeas(brand) {
+  const dna = brand?.brandDNA || {};
+  const firstSentence = (brand?.businessDescription || "").split(/[.\n]/)[0]?.trim();
+  const subject = dna.productsServices?.[0]?.trim() || firstSentence || t("contentList.emptyNone.genericSubject");
+  const audience = dna.targetAudience?.trim() || t("contentList.emptyNone.genericAudience");
+  return [
+    { title: t("contentList.emptyNone.idea1Title", { subject }), idea: t("contentList.emptyNone.idea1Body", { subject }), funnel: "TOFU" },
+    { title: t("contentList.emptyNone.idea2Title"), idea: t("contentList.emptyNone.idea2Body", { subject, audience }), funnel: "MOFU" },
+    { title: t("contentList.emptyNone.idea3Title"), idea: t("contentList.emptyNone.idea3Body", { subject }), funnel: "BOFU" },
+  ];
 }
 
 function rowHTML({ c, perf, m }, campaignsById) {

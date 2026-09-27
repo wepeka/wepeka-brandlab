@@ -2,9 +2,12 @@
 // Threads posts and threads, Story captions, WhatsApp broadcasts, feed
 // captions, or any format the user names. Three questions (format, goal,
 // what to say) produce three variants, each previewed in the shape of the
-// real thing. Nothing is saved (user's call, 14 Sep 2026): state lives only
-// while this page is open, which is also why it never repaints on db:change.
-import { getBrand, listCampaigns, listContent, getSettings } from "../store.js";
+// real thing. A generated batch is never auto-saved to Firestore — that's
+// still the user's call, per variant, via "Simpan ke konten" (26 Sep 2026)
+// — but the last batch survives a trip away from this page via
+// sessionStorage (per brand), restored on render and cleared by "Bikin
+// baru", so this still never repaints on db:change.
+import { getBrand, listCampaigns, listContent, getSettings, createContent } from "../store.js";
 import { icon } from "../icons.js";
 import { escapeHtml, toast, qs, qsa, avatarHTML } from "../dom.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
@@ -114,6 +117,43 @@ const TOUR_STEPS = [
   },
 ];
 
+// ---------- Session persistence ----------
+// The last generated batch (and the form it came from) per brand, so
+// switching tabs and coming back — or an accidental refresh — doesn't throw
+// away copy that hasn't been saved anywhere yet. sessionStorage only: gone
+// once the tab closes, never synced, never touches Firestore.
+const sessionKey = (brandId) => `wpk-copy-draft-${brandId}`;
+const SESSION_FIELDS = ["step", "format", "customFormat", "threadMode", "goal", "details", "message", "length", "campaignId", "variants", "lastParams"];
+
+function saveSession(ctx) {
+  try {
+    if (!ctx.state.variants.length || !ctx.state.lastParams) {
+      sessionStorage.removeItem(sessionKey(ctx.brandId));
+      return;
+    }
+    const payload = {};
+    SESSION_FIELDS.forEach((k) => { payload[k] = ctx.state[k]; });
+    sessionStorage.setItem(sessionKey(ctx.brandId), JSON.stringify(payload));
+  } catch {
+    /* private window / storage blocked — draft just won't survive a nav */
+  }
+}
+
+function restoreSession(ctx) {
+  try {
+    const raw = sessionStorage.getItem(sessionKey(ctx.brandId));
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    SESSION_FIELDS.forEach((k) => { if (saved[k] !== undefined) ctx.state[k] = saved[k]; });
+  } catch {
+    /* corrupt/blocked storage — start fresh instead of crashing the page */
+  }
+}
+
+function clearSession(ctx) {
+  try { sessionStorage.removeItem(sessionKey(ctx.brandId)); } catch { /* noop */ }
+}
+
 export function render(root, { brandId }) {
   if (!getBrand(brandId)) {
     location.hash = "#/";
@@ -142,11 +182,24 @@ export function render(root, { brandId }) {
       lastParams: null,
     },
   };
+  restoreSession(ctx);
   paint(ctx);
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
   return () => {
     ctx.dead = true;
   };
+}
+
+// "Bikin baru" — the wizard resets to a blank slate and the persisted
+// sessionStorage draft is dropped; already-saved variants stay saved (that
+// write already happened in Firestore, this only clears the in-memory copy).
+function startOver(ctx) {
+  clearSession(ctx);
+  Object.assign(ctx.state, {
+    step: 1, format: "", customFormat: "", threadMode: "single", goal: "", details: {},
+    message: "", length: "medium", campaignId: "", variants: [], generating: false, error: "", lastParams: null,
+  });
+  paint(ctx);
 }
 
 // ---------- Form ----------
@@ -163,8 +216,9 @@ function paint(ctx) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${guided ? t("copy.eyebrowGuided") : t("contentOs.tab.copy")}${helpButtonHTML("copy-studio")}${guideVideoButtonHTML("copy-studio")}</div>
-        <h1>${escapeHtml(brand.name)}</h1>
+        <div class="page-eyebrow flex items-center gap-6">${t("copy.eyebrowGuided")}${helpButtonHTML("copy-studio")}${guideVideoButtonHTML("copy-studio")}</div>
+        <h1>${t("contentOs.tab.copy")}</h1>
+        <p class="page-head-brand">${escapeHtml(brand.name)}</p>
         <p class="page-sub">${t("copy.sub")}</p>
       </div>
     </div>
@@ -508,8 +562,9 @@ async function runGenerate(ctx) {
     // A feed caption ends with the brand's fixed hashtags (Aturan tulisan),
     // put on by code — never guessed.
     const fixed = params.format === "feed" ? writingRulesOf(getBrand(brandId)).hashtags : [];
-    state.variants = variants.map((v) => ({ parts: fixed.length ? v.parts.map((p) => applyFixedHashtags(p, fixed)) : v.parts, note: v.note || "", demo, rated: false, editing: false, busy: false }));
+    state.variants = variants.map((v) => ({ parts: fixed.length ? v.parts.map((p) => applyFixedHashtags(p, fixed)) : v.parts, note: v.note || "", demo, rated: false, editing: false, busy: false, savedContentId: "" }));
     state.lastParams = params;
+    if (!demo) saveSession(ctx);
   } catch (e) {
     if (ctx.dead) return;
     state.error = e instanceof AiApiError ? e.message : t("copy.err.generate");
@@ -559,6 +614,9 @@ async function runRewrite(ctx, index, rewriteKey) {
     v.note = next.note ?? v.note;
     v.demo = v.demo || demo;
     v.rated = false;
+    // The text changed — a previous "Simpan ke konten" no longer matches it.
+    v.savedContentId = "";
+    if (!demo) saveSession(ctx);
   } catch (e) {
     if (!ctx.dead) toast(e instanceof AiApiError ? e.message : t("copy.err.rewrite"), "error");
   } finally {
@@ -603,6 +661,7 @@ function resultsHTML(ctx) {
       <h2>${t("copy.results.count", { n: state.variants.length })}</h2>
       <span class="tag copy-format-tag">${escapeHtml(resultsFormat)}</span>
       ${state.variants.some((v) => v.demo) ? `<span class="tag copy-demo-tag">${t("copy.results.sample")}</span>` : ""}
+      <button type="button" class="btn btn-ghost btn-sm copy-start-over" id="copy-start-over">${icon("refresh", { size: 13 })}${t("copy.startOver")}</button>
     </div>
     <p class="copy-results-sub">${t("copy.results.sub")}</p>
     ${state.variants.some((v) => v.demo) ? "" : basisHTML(brand, { content: listContent(brandId), settings: getSettings() })}
@@ -625,6 +684,16 @@ function charMetaHTML(v, params) {
   return `<span class="${text.length > limit ? "is-over" : ""}">${t("copy.charsOf", { n: text.length, limit })}</span>`;
 }
 
+// Once saved, the button becomes a real link into Creator (not just a
+// toast) — the toast still fires on the click that saved it, but the way
+// back in stays on the page after the toast fades.
+function saveActionHTML(v, i, brand, lock) {
+  if (v.savedContentId) {
+    return `<a class="btn btn-secondary btn-sm" href="#/brand/${brand.id}/content/creator/${v.savedContentId}">${icon("arrowRight", { size: 14 })}${t("copy.openInCreator")}</a>`;
+  }
+  return `<button type="button" class="btn btn-secondary btn-sm" data-copy-save="${i}" ${lock}>${icon("bookmark", { size: 14 })}${t("copy.saveToContent")}</button>`;
+}
+
 function variantHTML(v, i, params, brand) {
   const multi = v.parts.length > 1;
   const lock = v.busy ? "disabled" : "";
@@ -640,6 +709,7 @@ function variantHTML(v, i, params, brand) {
         <button type="button" class="btn btn-primary btn-sm" data-copy-copy="${i}" ${lock}>${icon("copy", { size: 14 })}${multi ? t("copy.copyAll") : t("copy.copy")}</button>
         ${params.format === "wa" ? `<button type="button" class="btn btn-secondary btn-sm" data-copy-wa="${i}" ${lock}>${icon("send", { size: 14 })}${t("copy.openWa")}</button>` : ""}
         <button type="button" class="btn btn-ghost btn-sm" data-copy-edit="${i}" ${lock}>${icon(v.editing ? "check" : "edit", { size: 14 })}${v.editing ? t("copy.doneEditing") : t("common.edit")}</button>
+        ${v.demo ? "" : saveActionHTML(v, i, brand, lock)}
       </div>
       <div class="copy-rewrites">
         ${COPY_REWRITES.map((r) => `<button type="button" class="copy-rewrite-chip" data-copy-rewrite="${r.key}" data-variant-index="${i}" ${v.busy || v.editing ? "disabled" : ""}>${escapeHtml(rewriteLabel(r.key))}</button>`).join("")}
@@ -774,6 +844,47 @@ async function copyText(text, okMessage) {
   }
 }
 
+// Copy Studio's own "format" is the shape of the post (Threads/Story/WA/
+// feed/other), not a content.platform value — this is the best-effort
+// mapping to the content schema's freeform platform field so a saved draft
+// at least lands with a sensible one instead of blank. `format` (content's
+// own, e.g. "Reels") is left for the user to pick in Creator/Content List —
+// Copy Studio never guesses it since the vocab there is brand-editable.
+const PLATFORM_FOR_FORMAT = { feed: "Instagram", story: "Instagram", threads: "Threads", wa: "WhatsApp" };
+
+// A short, human title from the copy itself — the first non-empty line —
+// so the saved draft isn't just "Konten tanpa judul" in Content List.
+function draftTitleFor(params, text) {
+  const firstLine = text.split("\n").map((l) => l.trim()).find(Boolean) || "";
+  if (firstLine) return firstLine.replace(/^#+\s*/, "").slice(0, 80);
+  const fmt = params.format === "other" ? params.customFormat : formatName(params.format);
+  return fmt || t("copy.preview.plain");
+}
+
+// "Simpan ke konten": writes this exact variant into the brand's real
+// content pipeline as a draft — the copy goes into `caption` (Copy Studio
+// only ever produces text copy, never a HOOK/ISI video script, so `script`
+// stays untouched) so it shows up ready to schedule/publish from Content
+// List or Creator.
+function saveVariantAsContent(ctx, i) {
+  const { state, brandId } = ctx;
+  const v = state.variants[i];
+  const params = state.lastParams;
+  if (!v || !params || v.savedContentId) return;
+  const text = v.parts.join("\n\n");
+  const item = createContent(brandId, {
+    title: draftTitleFor(params, text),
+    caption: text,
+    status: "draft",
+    platform: PLATFORM_FOR_FORMAT[params.format] || "",
+    campaignId: state.campaignId || "",
+  });
+  v.savedContentId = item.id;
+  saveSession(ctx);
+  toast(t("copy.savedToContent"));
+  paintResults(ctx);
+}
+
 function wireResults(ctx, el) {
   const { state, brandId } = ctx;
   const at = (value) => state.variants[Number(value)];
@@ -804,11 +915,18 @@ function wireResults(ctx, el) {
       if (v.editing) {
         const kept = v.parts.map((p) => p.trim()).filter(Boolean);
         v.parts = kept.length ? kept : v.parts;
+        // The saved draft (if any) no longer matches the edited text.
+        v.savedContentId = "";
+        saveSession(ctx);
       }
       v.editing = !v.editing;
       paintResults(ctx);
     })
   );
+  qsa("[data-copy-save]", el).forEach((btn) =>
+    btn.addEventListener("click", () => saveVariantAsContent(ctx, Number(btn.dataset.copySave)))
+  );
+  qs("#copy-start-over", el)?.addEventListener("click", () => startOver(ctx));
   qsa("[data-copy-edit-part]", el).forEach((ta) =>
     ta.addEventListener("input", () => {
       const [vi, pi] = ta.dataset.copyEditPart.split(":").map(Number);

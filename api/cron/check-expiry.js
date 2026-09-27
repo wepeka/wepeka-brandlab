@@ -14,8 +14,11 @@
 import { adminDb } from "../_firebaseAdmin.js";
 
 export default async function handler(req, res) {
+  // An unset CRON_SECRET used to leave this endpoint open to anyone who
+  // found the URL — require the secret to actually be configured, not just
+  // matched.
   const auth = req.headers.authorization || "";
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

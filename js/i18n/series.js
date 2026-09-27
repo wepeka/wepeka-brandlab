@@ -16,12 +16,12 @@ export default {
     id: "Ubah ide konten rutin (seperti \"Bedah Brand\") jadi series — simpan konsepnya sekali, lain kali cukup sebut topiknya saja.",
   },
   "series.episodeCount": { en: "{n} episode(s) linked", id: "{n} episode terkait" },
-  "series.deleteConfirm.title": { en: "Delete this series?", id: "Hapus series ini?" },
+  "series.deleteConfirm.title": { en: "Move this series to Trash?", id: "Pindahkan series ini ke Trash?" },
   "series.deleteConfirm.body": {
-    en: "Linked content keeps its script and history — it just won't read this series' context anymore.",
-    id: "Konten yang sudah terkait tetap menyimpan naskah dan riwayatnya — hanya saja tidak akan membaca context series ini lagi.",
+    en: "Linked content stays linked and keeps its script/history either way.",
+    id: "Konten yang sudah terkait tetap terkait dan tetap menyimpan naskah/riwayatnya.",
   },
-  "series.deleted": { en: "Series deleted", id: "Series dihapus" },
+  "series.deleted": { en: "Series moved to Trash", id: "Series dipindahkan ke Trash" },
 
   "series.edit.title": { en: "Edit Content Series", id: "Edit Seri Konten" },
   "series.edit.name": { en: "Series name", id: "Nama series" },

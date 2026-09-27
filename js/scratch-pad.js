@@ -1,11 +1,12 @@
-// Coretan (Bank Konsep) — a scratch pad of raw notes, per brand
-// (brand.scratch) or per campaign (campaign.scratch), grouped in folders like
-// a phone's notes app (…scratchFolders). Deliberately inert: nothing here is
-// read by any AI call, the calendar or content — unlike brand.ideas /
-// campaign.ideas, which feed every campaign prompt. The only way out is
-// "Setor ke chat": the ticked notes go to a Brainstorm thread (scoped to the
-// same brand/campaign) where the AI maps what the owner seems to want and
-// the better flow for it.
+// Catatan (Notes) — a scratch pad of raw notes, per brand (brand.scratch) or
+// per campaign (campaign.scratch), grouped in folders like a phone's notes
+// app (…scratchFolders). Deliberately inert: nothing here is read by any AI
+// call, the calendar or content — unlike the ideas inbox (brand.ideas, see
+// store.js listBrandIdeas), which feeds every campaign prompt. Two ways out:
+// "Setor ke chat" sends the ticked notes to a Brainstorm thread (scoped to
+// the same brand/campaign) where the AI maps what the owner seems to want;
+// "Simpan sebagai ide" on a single note copies it into that same ideas
+// inbox (source:"scratch") without leaving the scratch pad.
 //
 // Shown in the floating notes panel (js/notes-float.js), which repaints on
 // every store change — so the open folder, the ticked selection, the
@@ -13,7 +14,7 @@
 //
 // Shapes: note { id, text, folderId?, createdAt, sentAt? };
 // folder { id, name, color }.
-import { getBrand, updateBrand, getCampaign, updateCampaign } from "./store.js";
+import { getBrand, updateBrand, getCampaign, updateCampaign, addBrandIdea } from "./store.js";
 import { go } from "./nav-context.js";
 import { icon } from "./icons.js";
 import { escapeHtml as esc, qs, qsa, toast, openMenu, closeMenu } from "./dom.js";
@@ -84,6 +85,7 @@ function noteHTML(n, sel, folders, showFolder) {
         ${n.sentAt ? `<span class="sn-tag">${t("scratch.sent")}</span>` : ""}
         <span style="flex:1;"></span>
         <button type="button" class="sn-act" data-sn-move="${n.id}" aria-label="${t("scratch.move")}" title="${t("scratch.move")}">${icon("folder", { size: 12 })}</button>
+        ${n.savedIdeaAt ? `<span class="sn-tag">${t("scratch.savedIdea")}</span>` : `<button type="button" class="sn-act" data-scratch-idea="${n.id}" aria-label="${t("scratch.saveIdea")}" title="${t("scratch.saveIdea")}">${icon("bookmark", { size: 12 })}</button>`}
         <button type="button" class="sn-act" data-scratch-del="${n.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
       </div>
     </div>`;
@@ -176,7 +178,7 @@ export function wireScratchPad(root, { brandId, campaignId = null, fromLabel = "
       );
       menu.querySelector('[data-a="delete"]').addEventListener("click", async () => {
         closeMenu();
-        const ok = await confirmDialog({ title: t("scratch.deleteFolderTitle", { name: f.name }), message: t("scratch.deleteFolderBody"), confirmLabel: t("scratch.deleteFolder"), danger: true });
+        const ok = await confirmDialog({ title: t("scratch.deleteFolderTitle", { name: esc(f.name) }), message: t("scratch.deleteFolderBody"), confirmLabel: t("scratch.deleteFolder"), danger: true });
         if (!ok) return;
         // The notes stay (under "Semua coretan"); only the folder goes.
         save(brandId, campaignId, {
@@ -220,9 +222,19 @@ export function wireScratchPad(root, { brandId, campaignId = null, fromLabel = "
     btn.addEventListener("click", async () => {
       const id = btn.dataset.scratchDel;
       const note = notes().find((n) => n.id === id);
-      if (note && note.text.length > 80 && !(await confirmDialog({ title: t("scratch.delTitle"), message: note.text.slice(0, 120), confirmLabel: t("common.delete"), danger: true }))) return;
+      if (note && note.text.length > 80 && !(await confirmDialog({ title: t("scratch.delTitle"), message: esc(note.text.slice(0, 120)), confirmLabel: t("common.delete"), danger: true }))) return;
       sel.delete(id);
       save(brandId, campaignId, { scratch: notes().filter((n) => n.id !== id) });
+    })
+  );
+  qsa("[data-scratch-idea]", pad).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.scratchIdea;
+      const note = notes().find((n) => n.id === id);
+      if (!note || note.savedIdeaAt) return;
+      addBrandIdea(brandId, { text: note.text, source: "scratch", campaignId });
+      save(brandId, campaignId, { scratch: notes().map((n) => (n.id === id ? { ...n, savedIdeaAt: Date.now() } : n)) });
+      toast(t("scratch.savedIdeaToast"));
     })
   );
   qsa("[data-sn-move]", pad).forEach((btn) =>

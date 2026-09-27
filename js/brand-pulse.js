@@ -133,12 +133,17 @@ function signalTopFormat(content, settings, now) {
     if (!groupEr || groupEr < brandEr * TOP_FORMAT_MULTIPLIER) continue;
     const [format, funnel] = key.split("::");
     const at = Math.max(...posts.map((c) => publishedMs(c)));
+    // The single post that best represents this winning format/funnel pair
+    // (highest organic views) — exposed so a caller (e.g. the Home "Jadwalkan
+    // 2 lagi" action) can name and link a real example instead of just the
+    // aggregate stat.
+    const bestPost = [...posts].sort((a, b) => (organicViews(b) ?? -1) - (organicViews(a) ?? -1))[0];
     out.push({
       kind: "top-format",
       severity: "good",
       title: t("pulse.topFormat.title", { format, funnel }),
       detail: t("pulse.topFormat.detail", { count: posts.length, er: groupEr.toFixed(1), brandEr: brandEr.toFixed(1) }),
-      refs: {},
+      refs: { format, funnel, contentId: bestPost?.id || "", multiplier: Number((groupEr / brandEr).toFixed(1)) },
       at,
       key: `top-format:${key}:${isoWeekKey(now.getTime())}`,
     });

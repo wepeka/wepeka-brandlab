@@ -9,7 +9,7 @@ import { renderLightMarkdown } from "../ai-directives.js";
 import { backLinkHTML } from "../back-link.js";
 import { confirmDialog } from "../modals.js";
 import { icon } from "../icons.js";
-import { qs, escapeHtml as esc, toast } from "../dom.js";
+import { qs, escapeHtml as esc, toast, skeletonHTML } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 
 const KIND_ICON = { feature: "sparkle", fix: "check", info: "bell" };
@@ -95,7 +95,7 @@ export function render(root) {
             : status !== "ready" && !items.length
               ? slow
                 ? `<div class="card ann-empty"><p>${t("ann.slow")}</p><button type="button" class="btn btn-secondary btn-sm" data-ann-retry>${icon("refresh", { size: 13 })}${t("chat.retry")}</button></div>`
-                : `<div class="card ann-empty">${t("app.loading")}</div>`
+                : `<div class="ann-loading-skel" aria-busy="true">${skeletonHTML({ rows: 3 })}${skeletonHTML({ rows: 2 })}</div>`
               : items.length
                 ? items.map((a) => itemHTML(a, { seenAt, admin })).join("")
                 : `<div class="card ann-empty">${icon("bell", { size: 18 })}<p>${t("ann.empty")}</p></div>`}
@@ -155,7 +155,7 @@ export function render(root) {
     root.querySelectorAll("[data-ann-del]").forEach((b) => b.addEventListener("click", async () => {
       const a = listAnnouncements().find((x) => x.id === b.dataset.annDel);
       if (!a) return;
-      const ok = await confirmDialog({ title: t("ann.delete.title"), message: t("ann.delete.body", { title: a.title }), confirmLabel: t("common.delete"), danger: true });
+      const ok = await confirmDialog({ title: t("ann.delete.title"), message: t("ann.delete.body", { title: esc(a.title) }), confirmLabel: t("common.delete"), danger: true });
       if (!ok) return;
       try { await removeAnnouncement(a.id); toast(t("ann.deleted")); } catch { toast(t("ann.failed"), "error"); }
     }));

@@ -75,8 +75,9 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))} · ${t("sales.eyebrow")}${helpButtonHTML("sales")}${guideVideoButtonHTML("sales")}</div>
-        <h1>${esc(brand.name)}</h1>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}${helpButtonHTML("sales")}${guideVideoButtonHTML("sales")}</div>
+        <h1>${t("nav.sales")}</h1>
+        <p class="page-head-brand">${esc(brand.name)}</p>
       </div>
       ${active.length ? `<button class="btn btn-secondary" id="st-xlsx">${icon("download", { size: 15 })}${t("sales.export.excel")}</button>` : ""}
     </div>

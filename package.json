@@ -2,8 +2,15 @@
   "name": "wepeka-brandlab",
   "private": true,
   "type": "module",
-  "description": "Static ES-module app (served by serve.py locally) plus a small set of Vercel serverless functions under /api for the parts that can't live in client JS: Midtrans payment (create-transaction, webhook) and the daily subscription-expiry check.",
+  "description": "Static ES-module app (served by serve.py locally, built by esbuild for production — see scripts/build.mjs) plus a small set of Vercel serverless functions under /api for the parts that can't live in client JS: Midtrans payment (create-transaction, webhook) and the daily subscription-expiry check.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --import ./tests/setup.mjs --test \"tests/*.test.mjs\""
+  },
   "dependencies": {
     "firebase-admin": "^12.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

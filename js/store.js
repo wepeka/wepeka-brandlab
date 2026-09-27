@@ -10,7 +10,7 @@ import { t, getLang } from "./i18n.js";
 import CAMPAIGN_DICT from "./i18n/campaigns.js";
 import { db as fdb } from "./firebase.js";
 import {
-  collection, doc, query, where, onSnapshot, setDoc, deleteDoc, writeBatch,
+  collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 export const METRIC_KEYS = [
@@ -77,17 +77,6 @@ export function instagramOnlyViews(content) {
     ? content.performanceByPlatform.instagram?.views ?? null
     : content.performance?.views ?? null;
 }
-// Display-only: organic + ad-boosted views on top. Deliberately NOT fed back
-// into content.performance or computeContentMetrics — engagement-rate math
-// must stay organic-only, since paid reach behaves completely differently
-// and would dilute the percentage meaninglessly.
-export function combinedViewsWithAds(content) {
-  const organic = organicViews(content);
-  const adsViews = content.adsPerformance?.found ? content.adsPerformance.videoViews : null;
-  if (organic === null && adsViews === null) return null;
-  return (organic ?? 0) + (adsViews ?? 0);
-}
-
 // "editing" sits between production (shooting) and scheduled — Creator has
 // a checkbox that moves a card production → editing → scheduled as footage
 // gets shot and then cut, instead of only being changeable from the Status
@@ -235,20 +224,44 @@ export function defaultPersonality() {
 export function defaultToneOfVoice() {
   return { formal: 50, language: 50, character: 50, emotion: 50, avoidWords: [], source: "" };
 }
-// hasName is null until the Naming stage's opening question ("udah punya
-// nama brand?") is answered — true skips straight to confirming the name
-// they already have, false opens the AI brainstorm tool.
-export function defaultNaming() {
-  return { hasName: null, name: "", source: "" };
+// The one place a brand's "voice" should be read from: Brand DNA's
+// personality traits + tone-of-voice sliders (brand.brandBuilder — the
+// structured source brand-guidelines.js's voiceColumn already prefers),
+// falling back to the old free-text aiVoiceGuide field for a brand that
+// only ever has that (its own editable textarea in js/views/brands.js was
+// removed — Brand DNA is the only way to set voice going forward, so old
+// brands keep reading their old value here rather than losing it outright).
+// Just the tone-of-voice slice (no personality traits) — a series' own
+// dna.tone is a single free-text field, not a full voice guide, so it
+// starts from this narrower text (see js/views/series.js openSeriesModal).
+export function brandToneText(brand) {
+  const tone = brand?.brandBuilder?.toneOfVoice;
+  if (!tone?.source) return "";
+  const lean = (key, left, right) => {
+    const v = Number(tone[key]);
+    if (!Number.isFinite(v)) return "";
+    return v <= 35 ? left : v >= 65 ? right : `between ${left} and ${right}`;
+  };
+  const bits = [lean("formal", "casual", "formal"), lean("language", "plain", "technical"), lean("character", "serious", "playful"), lean("emotion", "reserved", "expressive")].filter(Boolean);
+  if (!bits.length) return "";
+  return `Tone of voice: ${bits.join(", ")}.${tone.avoidWords?.length ? ` Avoid: ${tone.avoidWords.join(", ")}.` : ""}`;
 }
-
+export function brandVoiceText(brand) {
+  const personality = brand?.brandBuilder?.personality;
+  const parts = [];
+  const traits = [...(personality?.primary || []), ...(personality?.secondary || [])];
+  if (traits.length) parts.push(`Personality: ${traits.join(", ")}.`);
+  const toneText = brandToneText(brand);
+  if (toneText) parts.push(toneText);
+  if (parts.length) return parts.join(" ");
+  return brand?.aiVoiceGuide || "";
+}
 function defaultBrandBuilder() {
   return {
     stage: "foundation",
     completedStages: [],
     personality: defaultPersonality(),
     toneOfVoice: defaultToneOfVoice(),
-    naming: defaultNaming(),
     consistencyDismissed: [],
   };
 }
@@ -323,11 +336,12 @@ function defaultDB() {
       // Empty = every platform uses the defaults above. formulas.js
       // resolves content.platform → this map → thresholds.
       thresholdsByPlatform: {},
-      // Global, not per-brand — one shared Anthropic/Gemini/DeepSeek key
-      // drives AI Script & Hook Generation for every brand and every
-      // teammate, same as the app's other credentials (stored in Firestore,
-      // used directly from the browser).
-      ai: { provider: "anthropic", anthropicApiKey: "", geminiApiKey: "", deepseekApiKey: "" },
+      // Global, not per-brand — which AI provider api/ai.js calls for every
+      // brand and every teammate, and whether AI is switched on at all. No
+      // key fields here anymore: the actual provider key lives in a Vercel
+      // env var the server-side proxy reads (see api/ai.js) and never
+      // reaches Firestore or the browser.
+      ai: { provider: "", enabled: true },
       // "guided" is the default for every account that never picked a
       // mode: a brand owner opening Brandlab for the first time lands on the
       // simplified step-by-step Home (js/views/home.js), not the
@@ -348,14 +362,34 @@ function defaultDB() {
 
 let db = defaultDB();
 
-// Fires the `db:change` event synchronously (unchanged optimistic-UI
-// behavior — every view still sees local writes instantly), then optionally
-// runs `sync` (a Firestore write) in the background. A failed cloud sync
-// doesn't roll back the local optimistic state — it surfaces as a toast so
-// the change isn't silently lost, matching this app's existing
-// never-silently-discard-data conventions.
+// Every write function above mutates `db` in place synchronously, so a
+// caller reading getBrand()/getContent()/etc. right after calling one of
+// them (in the same tick, before any listener runs) already sees the new
+// data — dispatchDbChange below only tells OTHER already-mounted views to
+// repaint, it is not what makes a write "visible". Coalesced through
+// requestAnimationFrame so a burst of writes in one tick (installing a
+// goal, a cascading trash delete, an import) triggers one repaint per view
+// per frame instead of one per write — every current onChange() subscriber
+// (grepped across the app) is a plain "repaint when something changed"
+// listener, not a one-shot handler expecting a specific dispatch, so
+// collapsing bursts into the next frame changes nothing it depends on.
+let dbChangeScheduled = false;
+function dispatchDbChange() {
+  if (dbChangeScheduled) return;
+  dbChangeScheduled = true;
+  requestAnimationFrame(() => {
+    dbChangeScheduled = false;
+    window.dispatchEvent(new CustomEvent("db:change"));
+  });
+}
+
+// Runs `sync` (a Firestore write) in the background and schedules the
+// coalesced db:change dispatch above. A failed cloud sync doesn't roll back
+// the local optimistic state — it surfaces as a toast so the change isn't
+// silently lost, matching this app's existing never-silently-discard-data
+// conventions.
 function persist(sync) {
-  window.dispatchEvent(new CustomEvent("db:change"));
+  dispatchDbChange();
   if (!sync) return;
   Promise.resolve()
     .then(sync)
@@ -365,10 +399,13 @@ function persist(sync) {
     });
 }
 
+// Firestore's hard cap is 500 ops/batch — chunking at 400 leaves headroom
+// (the trash cascades below sit right at that margin) without needing a
+// second, riskier constant just for those.
 async function commitInChunks(ops) {
-  for (let i = 0; i < ops.length; i += 500) {
+  for (let i = 0; i < ops.length; i += 400) {
     const batch = writeBatch(fdb);
-    ops.slice(i, i + 500).forEach((op) => {
+    ops.slice(i, i + 400).forEach((op) => {
       if (op.type === "delete") batch.delete(op.ref);
       else batch.set(op.ref, op.data);
     });
@@ -397,7 +434,12 @@ export function initStore(uid) {
   return new Promise((resolve) => {
     const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, brainstorms: false, series: false, settings: false };
     const checkReady = () => {
-      if (Object.values(ready).every(Boolean)) resolve();
+      if (!Object.values(ready).every(Boolean)) return;
+      // Fire-and-forget: everything this account owns has its first
+      // snapshot in now, so Trash rows older than TRASH_DAYS are safe to
+      // sweep. Never blocks the app's first render on it.
+      try { purgeOldTrash(); } catch (e) { console.error("Trash auto-purge failed", e); }
+      resolve();
     };
     // A permission-denied (e.g. a momentarily stale auth token right after a
     // network blip) or any other listener error used to leave `ready[key]`
@@ -420,42 +462,42 @@ export function initStore(uid) {
       db.brands = snap.docs.map((d) => d.data());
       ready.brands = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     }, onErr("brands", "brands"));
 
     onSnapshot(mine("content"), (snap) => {
       db.content = snap.docs.map((d) => d.data());
       ready.content = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     }, onErr("content", "content"));
 
     onSnapshot(mine("campaigns"), (snap) => {
       db.campaigns = snap.docs.map((d) => d.data());
       ready.campaigns = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     }, onErr("campaigns", "campaigns"));
 
     onSnapshot(mine("routineTemplate"), (snap) => {
       db.routineTemplate = snap.docs.map((d) => d.data());
       ready.routineTemplate = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     }, onErr("routineTemplate", "routine"));
 
     onSnapshot(mine("brainstorms"), (snap) => {
       db.brainstorms = snap.docs.map((d) => d.data());
       ready.brainstorms = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     }, onErr("brainstorms", "brainstorms"));
 
     onSnapshot(mine("series"), (snap) => {
       db.series = snap.docs.map((d) => d.data());
       ready.series = true;
       checkReady();
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     }, onErr("series", "series"));
 
     // One settings doc per account (not shared globally) — platforms,
@@ -475,7 +517,7 @@ export function initStore(uid) {
         thresholdsByPlatform: { ...(personalData.thresholdsByPlatform || {}) },
         ai: isGlobalAiActive() ? { ...personalAi, ...globalAi } : personalAi,
       };
-      window.dispatchEvent(new CustomEvent("db:change"));
+      dispatchDbChange();
     };
     onSnapshot(doc(fdb, "settings", uid), (snap) => {
       personalData = snap.exists() ? snap.data() : {};
@@ -493,23 +535,36 @@ export function initStore(uid) {
       globalBrandsBg = snap.exists() ? (snap.data().brandsBg || null) : null;
       applySettings();
     }, (e) => console.error("Cloud sync (shared AI config) failed", e));
+
+    // The AI quota counter api/ai.js keeps for this account (see
+    // firestore.rules: the client can read its own, never write it). Not
+    // part of `ready` — js/ai-usage.js just shows 0 used until the first
+    // snapshot lands, same as it always showed 0 before any call was made.
+    onSnapshot(doc(fdb, "aiUsage", uid), (snap) => {
+      aiUsageDoc = snap.exists() ? snap.data() : null;
+      dispatchDbChange();
+    }, (e) => console.error("Cloud sync (AI usage) failed", e));
   });
 }
 
 // Shared AI config lives in settings/main (written only by the Wepeka team
 // account, see firestore.rules). `globalAi` is that doc's `ai` block or null;
 // `personalAi` is this account's own `ai` block, kept separately so
-// persistSettings() never copies the shared keys into settings/{uid}.
+// persistSettings() never copies the shared config into settings/{uid}.
 let globalAi = null;
 let personalAi = null;
 // Seasonal background of the all-brands home, also in settings/main
 // (admin-written, read by everyone) — see js/brands-bg.js.
 let globalBrandsBg = null;
-const AI_KEY_FIELD = { anthropic: "anthropicApiKey", gemini: "geminiApiKey", deepseek: "deepseekApiKey" };
-// True when settings/main holds a usable key for its own provider — then it
-// overrides whatever the account set for itself.
+// api/ai.js's own quota counter for this account (aiUsage/{uid} — see
+// js/ai-usage.js's getAiUsageDoc()). No API keys live in settings/main.ai
+// anymore (see api/ai.js) — it only ever carries { provider, enabled }.
+let aiUsageDoc = null;
+// True when the shared config actually turns AI on: a provider is picked
+// and it wasn't explicitly switched off. Whether a key exists for that
+// provider is the server's problem now (api/ai.js), not the browser's.
 export function isGlobalAiActive() {
-  return !!globalAi && !!globalAi[AI_KEY_FIELD[globalAi.provider] || "anthropicApiKey"];
+  return !!globalAi?.provider && globalAi.enabled !== false;
 }
 export function getGlobalAiSettings() {
   return globalAi ? { ...globalAi } : null;
@@ -518,6 +573,23 @@ export function updateGlobalAiSettings(patch) {
   const next = { ...(globalAi || {}), ...patch };
   persist(() => setDoc(doc(fdb, "settings", "main"), { ai: next }, { merge: true }));
 }
+// One-time cleanup for accounts still carrying the pre-server-proxy key
+// fields (anthropicApiKey/geminiApiKey/deepseekApiKey) in settings/main.ai —
+// see the "Hapus kunci lama" button in js/views/settings.js. Safe to call
+// more than once; deleting a field that's already gone is just a no-op.
+export function deleteLegacyGlobalAiKeys() {
+  return updateDoc(doc(fdb, "settings", "main"), {
+    "ai.anthropicApiKey": deleteField(),
+    "ai.geminiApiKey": deleteField(),
+    "ai.deepseekApiKey": deleteField(),
+  });
+}
+
+// The live aiUsage/{uid} doc api/ai.js writes after every counted AI call —
+// js/ai-usage.js reads this instead of the old client-side settings.aiUsage.
+export function getAiUsageDoc() {
+  return aiUsageDoc ? { ...aiUsageDoc } : null;
+}
 
 export function getGlobalBrandsBg() {
   return globalBrandsBg ? { ...globalBrandsBg } : null;
@@ -525,7 +597,7 @@ export function getGlobalBrandsBg() {
 export function updateGlobalBrandsBg(next) {
   globalBrandsBg = next;
   persist(() => setDoc(doc(fdb, "settings", "main"), { brandsBg: next }, { merge: true }));
-  window.dispatchEvent(new CustomEvent("db:change"));
+  dispatchDbChange();
 }
 
 export function onChange(fn) {
@@ -533,10 +605,25 @@ export function onChange(fn) {
   return () => window.removeEventListener("db:change", fn);
 }
 
+// ---------- Trash (soft delete) ----------
+// "Delete" on a brand/campaign/content/series no longer hard-deletes it —
+// it stamps `deletedAt` instead. The doc keeps its place in `db` (the
+// Firestore listeners that populate db.brands/content/campaigns/series stay
+// exactly as tolerant as they already were of any field, deletedAt
+// included — no listener change needed) and every list* helper below
+// hides it unless called with `{ includeDeleted: true }`. Settings → Data's
+// Trash section (js/views/settings.js) lists everything still carrying
+// deletedAt across every brand, with Restore (clears the field) or Hapus
+// permanen (a real deleteDoc via purge*By Id below). purgeOldTrash() below
+// best-effort hard-deletes anything past TRASH_DAYS, called once data is
+// loaded (see initStore).
+export const TRASH_DAYS = 30;
+const notDeleted = (x) => !x.deletedAt;
+
 // ---------- Brands ----------
-export function listBrands({ includeArchived = false } = {}) {
+export function listBrands({ includeArchived = false, includeDeleted = false } = {}) {
   return db.brands
-    .filter((b) => includeArchived || !b.archived)
+    .filter((b) => (includeArchived || !b.archived) && (includeDeleted || notDeleted(b)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 // Read-time fallback for brands created before Brand DNA existed — no
@@ -552,10 +639,9 @@ export function getBrand(id) {
   // construction instead of by every future caller remembering to guard.
   if (b && !b.instagram) b.instagram = { accessToken: "", igUserId: "", username: "", connectedAt: null };
   if (b && !b.facebook) b.facebook = { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null };
-  if (b && !b.ads) b.ads = { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null };
   return b;
 }
-export function createBrand({ name, avatar = "", color = "", driveLink = "", brandbookLink = "", logoAssets = [], instagram, facebook, ads, aiVoiceGuide = "", businessDescription = "", brandDNA, brandGuidelines, brandBuilder } = {}) {
+export function createBrand({ name, avatar = "", color = "", instagram, facebook, aiVoiceGuide = "", businessDescription = "", audienceLanguage = "", brandDNA, brandGuidelines, brandBuilder } = {}) {
   const brand = {
     id: uid(), ownerId: ownerUid, name: name.trim(), avatar,
     // Manually-picked brand essence color (hex) — takes priority over the
@@ -563,7 +649,6 @@ export function createBrand({ name, avatar = "", color = "", driveLink = "", bra
     // glow on brand cards, the tab/scrollbar/button tint inside that
     // brand's own lab). Empty until the user sets one in Edit Brand.
     color,
-    driveLink, brandbookLink, logoAssets,
     // A plain-language "what does this brand do" paragraph, captured right
     // at creation so every AI feature has at least basic business context
     // from day one — before anyone's gone through the full (optional,
@@ -572,6 +657,11 @@ export function createBrand({ name, avatar = "", color = "", driveLink = "", bra
     // Plain text, not the Drive link above — this is what actually gets fed
     // into the AI prompt, since the generator can't read a linked document.
     aiVoiceGuide,
+    // "" = every AI feature writes in the app's own UI language (default);
+    // "id"/"en" forces that language for this brand's audience-facing
+    // content regardless of which language the owner runs the app in — see
+    // outputLanguageRule() in js/ai.js.
+    audienceLanguage,
     // Structured brand identity — the foundation Campaign/Content/AI read
     // from instead of every feature re-asking the user the same questions.
     brandDNA: { ...defaultBrandDNA(), ...(brandDNA || {}) },
@@ -582,7 +672,6 @@ export function createBrand({ name, avatar = "", color = "", driveLink = "", bra
     brandBuilder: { ...defaultBrandBuilder(), ...(brandBuilder || {}) },
     instagram: instagram || { accessToken: "", igUserId: "", username: "", connectedAt: null },
     facebook: facebook || { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null },
-    ads: ads || { adAccountId: "", adsAccessToken: "", accountName: "", connectedAt: null },
     createdAt: Date.now(), archived: false,
   };
   db.brands.push(brand);
@@ -590,21 +679,6 @@ export function createBrand({ name, avatar = "", color = "", driveLink = "", bra
   return brand;
 }
 
-export function addBrandLogo(brandId, { dataUrl, name }) {
-  const b = getBrand(brandId);
-  if (!b) return null;
-  if (!b.logoAssets) b.logoAssets = [];
-  const logo = { id: uid(), name: name || "Logo", dataUrl };
-  b.logoAssets.push(logo);
-  persist(() => setDoc(doc(fdb, "brands", b.id), b));
-  return logo;
-}
-export function removeBrandLogo(brandId, logoId) {
-  const b = getBrand(brandId);
-  if (!b) return;
-  b.logoAssets = (b.logoAssets || []).filter((l) => l.id !== logoId);
-  persist(() => setDoc(doc(fdb, "brands", b.id), b));
-}
 export function updateBrand(id, patch) {
   const b = getBrand(id);
   if (!b) return null;
@@ -739,18 +813,22 @@ export function clearBrandLog(brandId) {
   updateBrand(brandId, { developmentLog: [] });
 }
 
-// ---------- Brand ideas (brand.ideas[]) ----------
-// Ideas the Brainstorm partner produced outside any campaign — same shape
-// as campaign.ideas ({ id, text, description, source, createdAt }) so the
-// two lists read the same everywhere. Capped so the brand doc stays small.
+// ---------- Ideas inbox (brand.ideas[]) ----------
+// The one place every "content idea" lands, wherever it was made: the
+// Companion/Brainstorm chat (source:"chat"), the scratch pad's "save as
+// idea" (source:"scratch"), or a campaign's own idea-bubbles widget
+// (source:"campaign", tagged with that campaign's id). `campaignId` is
+// optional/null for a brand-level idea; set it to scope an idea to one
+// campaign the way campaign.ideas[] (now retired) used to. Shape:
+// { id, text, description, source, campaignId, createdAt, status }.
 export const BRAND_IDEAS_CAP = 100;
-export function addBrandIdea(brandId, { text, description = "", source = "brainstorm", notes = "", hooks = [], threadId = null }) {
+export function addBrandIdea(brandId, { text, description = "", source = "brainstorm", campaignId = null, notes = "", hooks = [], threadId = null }) {
   const b = getBrand(brandId);
   const clean = String(text || "").trim();
   if (!b || !clean) return null;
-  // A "concept" (Bank Konsep): the plain idea plus optional notes, candidate
-  // hooks and the chat it came from. Old ideas simply lack these fields.
-  const idea = { id: uid(), text: clean.slice(0, 140), description: String(description || "").trim().slice(0, 400), source, createdAt: Date.now(), status: "concept", ...(notes ? { notes: String(notes).trim().slice(0, 1200) } : {}), ...(hooks.length ? { hooks: hooks.map((h) => String(h).trim().slice(0, 200)).filter(Boolean).slice(0, 6) } : {}), ...(threadId ? { threadId } : {}) };
+  // A "concept": the plain idea plus optional notes, candidate hooks and the
+  // chat/campaign it came from. Old ideas simply lack these fields.
+  const idea = { id: uid(), text: clean.slice(0, 140), description: String(description || "").trim().slice(0, 400), source, campaignId: campaignId || null, createdAt: Date.now(), status: "concept", ...(notes ? { notes: String(notes).trim().slice(0, 1200) } : {}), ...(hooks.length ? { hooks: hooks.map((h) => String(h).trim().slice(0, 200)).filter(Boolean).slice(0, 6) } : {}), ...(threadId ? { threadId } : {}) };
   updateBrand(brandId, { ideas: [...(b.ideas || []), idea].slice(-BRAND_IDEAS_CAP) });
   return idea;
 }
@@ -763,6 +841,40 @@ export function removeBrandIdea(brandId, id) {
   const b = getBrand(brandId);
   if (!b) return;
   updateBrand(brandId, { ideas: (b.ideas || []).filter((i) => i.id !== id) });
+}
+// One-time, idempotent fold-in of ideas that used to live somewhere else:
+// a campaign's own `ideas[]` (the old per-campaign idea-bubbles widget).
+// Guarded by `ideasMigratedAt` so it runs at most once per brand — cheap
+// enough to call from every listBrandIdeas() read. A chat thread's own
+// `ideas[]` (a save-time "don't re-suggest this" copy) is NOT migrated
+// here: every entry it ever held was written in the same action that also
+// wrote a brand/campaign idea, so its content already exists in `b.ideas`
+// (or gets folded in below via the campaign it was scoped to) — nothing
+// unique would be gained by copying it too.
+function migrateLegacyIdeasOnce(b) {
+  if (b.ideasMigratedAt) return;
+  const fromCampaigns = (db.campaigns || []).filter((c) => c.brandId === b.id && c.ideas?.length);
+  if (fromCampaigns.length) {
+    const existingIds = new Set((b.ideas || []).map((i) => i.id));
+    const migrated = fromCampaigns.flatMap((c) =>
+      (c.ideas || [])
+        .filter((i) => i?.id && !existingIds.has(i.id))
+        .map((i) => ({ ...i, campaignId: i.campaignId || c.id, source: i.source || "campaign" }))
+    );
+    if (migrated.length) b.ideas = [...(b.ideas || []), ...migrated].slice(-BRAND_IDEAS_CAP);
+  }
+  b.ideasMigratedAt = Date.now();
+  persist(() => setDoc(doc(fdb, "brands", b.id), b));
+}
+// The one read every idea-list UI (chat's saved ideas, a campaign's idea
+// widget) should call instead of touching brand.ideas or campaign.ideas
+// directly. `campaignId: null` (default) reads brand-level ideas only;
+// pass a campaign's id to read that campaign's own.
+export function listBrandIdeas(brandId, { campaignId = null } = {}) {
+  const b = getBrand(brandId);
+  if (!b) return [];
+  migrateLegacyIdeasOnce(b);
+  return (b.ideas || []).filter((i) => (campaignId ? i.campaignId === campaignId : !i.campaignId));
 }
 
 // ---------- Goals (brand.goals[]) — Roadmap ke Tujuan ----------
@@ -799,10 +911,28 @@ export function updateGoal(brandId, id, patch) {
   updateBrand(brandId, { goals: b.goals.map((g) => (g.id === id ? next : g)) });
   return next;
 }
-export function deleteGoal(brandId, id) {
+// Deleting a goal must never leave a campaign pointing at a goalId that no
+// longer exists (campaign-detail.js's "Lihat roadmap" link and the mission
+// milestone-removal path both read `getGoal(brandId, campaign.goalId)`).
+// Every campaign this goal installed gets its goalId/goalLaneId cleared
+// unconditionally; archiveCampaigns additionally archives them instead of
+// leaving them active with no goal behind them — the caller asks the user
+// which they want (see js/views/goal-roadmap.js's delete menu action).
+export function deleteGoal(brandId, id, { archiveCampaigns = false } = {}) {
   const b = getBrand(brandId);
   if (!b) return;
-  updateBrand(brandId, { goals: (b.goals || []).filter((g) => g.id !== id) });
+  const linked = (db.campaigns || []).filter((c) => c.brandId === brandId && c.goalId === id);
+  linked.forEach((c) => {
+    c.goalId = "";
+    c.goalLaneId = "";
+    if (archiveCampaigns) c.status = "archived";
+    c.updatedAt = Date.now();
+  });
+  b.goals = (b.goals || []).filter((g) => g.id !== id);
+  persist(async () => {
+    await setDoc(doc(fdb, "brands", b.id), b);
+    await Promise.all(linked.map((c) => setDoc(doc(fdb, "campaigns", c.id), c)));
+  });
 }
 
 // ---------- Brainstorm threads (brainstorms/ collection) ----------
@@ -893,20 +1023,59 @@ export function ensureConsultThread(brandId) {
 export function archiveBrand(id, archived = true) {
   return updateBrand(id, { archived });
 }
+// Soft delete: the brand and everything it owns (campaigns, content,
+// series) move to Trash together — restoreBrand brings all of it back.
+// Brainstorm threads are the one exception, hard-deleted same as before:
+// a chat thread isn't one of the trashed entities this cleanup covers, and
+// nothing shows a "restore this conversation" affordance for it.
 export function deleteBrand(id) {
-  const removedContentIds = db.content.filter((c) => c.brandId === id).map((c) => c.id);
-  const removedCampaignIds = (db.campaigns || []).filter((c) => c.brandId === id).map((c) => c.id);
-  const removedThreadIds = (db.brainstorms || []).filter((b) => b.brandId === id).map((b) => b.id);
+  const b = getBrand(id);
+  if (!b) return;
+  const now = Date.now();
+  const contentItems = db.content.filter((c) => c.brandId === id && notDeleted(c));
+  const campaignItems = (db.campaigns || []).filter((c) => c.brandId === id && notDeleted(c));
+  const seriesItems = (db.series || []).filter((s) => s.brandId === id && notDeleted(s));
+  const removedThreadIds = (db.brainstorms || []).filter((t) => t.brandId === id).map((t) => t.id);
+  b.deletedAt = now;
+  contentItems.forEach((c) => { c.deletedAt = now; });
+  campaignItems.forEach((c) => { c.deletedAt = now; });
+  seriesItems.forEach((s) => { s.deletedAt = now; });
+  db.brainstorms = (db.brainstorms || []).filter((t) => t.brandId !== id);
+  persist(async () => {
+    await commitInChunks([
+      { type: "set", ref: doc(fdb, "brands", b.id), data: b },
+      ...contentItems.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
+      ...campaignItems.map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
+      ...seriesItems.map((s) => ({ type: "set", ref: doc(fdb, "series", s.id), data: s })),
+    ]);
+    await Promise.all(removedThreadIds.map((tid) => deleteDoc(doc(fdb, "brainstorms", tid))));
+  });
+}
+export function restoreBrand(id) {
+  const b = getBrand(id);
+  if (!b || !b.deletedAt) return;
+  b.deletedAt = null;
+  persist(() => setDoc(doc(fdb, "brands", b.id), b));
+}
+// "Hapus permanen" in Trash — a real, unrecoverable delete. Cascades to
+// whatever the soft delete above already trashed alongside this brand, so
+// nothing is left orphaned in Trash with no brand to show it under.
+export function purgeBrand(id) {
+  const contentIds = db.content.filter((c) => c.brandId === id).map((c) => c.id);
+  const campaignIds = (db.campaigns || []).filter((c) => c.brandId === id).map((c) => c.id);
+  const seriesIds = (db.series || []).filter((s) => s.brandId === id).map((s) => s.id);
   db.brands = db.brands.filter((b) => b.id !== id);
   db.content = db.content.filter((c) => c.brandId !== id);
   db.campaigns = (db.campaigns || []).filter((c) => c.brandId !== id);
-  db.brainstorms = (db.brainstorms || []).filter((b) => b.brandId !== id);
-  persist(async () => {
-    await deleteDoc(doc(fdb, "brands", id));
-    await Promise.all(removedContentIds.map((cid) => deleteDoc(doc(fdb, "content", cid))));
-    await Promise.all(removedCampaignIds.map((cid) => deleteDoc(doc(fdb, "campaigns", cid))));
-    await Promise.all(removedThreadIds.map((tid) => deleteDoc(doc(fdb, "brainstorms", tid))));
-  });
+  db.series = (db.series || []).filter((s) => s.brandId !== id);
+  persist(() =>
+    commitInChunks([
+      { type: "delete", ref: doc(fdb, "brands", id) },
+      ...contentIds.map((cid) => ({ type: "delete", ref: doc(fdb, "content", cid) })),
+      ...campaignIds.map((cid) => ({ type: "delete", ref: doc(fdb, "campaigns", cid) })),
+      ...seriesIds.map((sid) => ({ type: "delete", ref: doc(fdb, "series", sid) })),
+    ])
+  );
 }
 
 // ---------- Content ----------
@@ -924,7 +1093,6 @@ function emptyContent(brandId) {
     idea: "",
     format: "",
     platform: "",
-    trialReel: false,
     // Set when this content was created via Creator's "Mirror" pick — the
     // matching id shared with its twin on the other platform, so the two
     // stay traceable as "the same idea, posted to both" without merging
@@ -949,10 +1117,6 @@ function emptyContent(brandId) {
       shares: null, saves: null, profileVisits: null, followersGained: null,
       insightScreenshot: "", confirmedAt: null,
     },
-    // Paid ad results for this post, separate from organic performance above
-    // — spend/impressions from a boost shouldn't get mixed into the
-    // engagement-rate math, which assumes organic reach.
-    adsPerformance: null,
     // Manually confirmed at the Ready to Upload stage — checking both moves
     // status to published.
     uploadedPlatforms: { tiktok: false, instagram: false },
@@ -968,9 +1132,9 @@ function emptyContent(brandId) {
 // computeContentMetrics()'s safe `content.performance || {}`, so a missing
 // object here crashed Dashboard/Reports outright. Same pattern as
 // campaign.phases above.
-export function listContent(brandId, { includeArchived = false } = {}) {
+export function listContent(brandId, { includeArchived = false, includeDeleted = false } = {}) {
   return db.content
-    .filter((c) => c.brandId === brandId && (includeArchived || !c.archived))
+    .filter((c) => c.brandId === brandId && (includeArchived || !c.archived) && (includeDeleted || notDeleted(c)))
     .map((c) => { if (!c.performance) c.performance = {}; return c; })
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -999,9 +1163,37 @@ export function updateContent(id, patch) {
 export function archiveContent(id, archived = true) {
   return updateContent(id, { archived });
 }
+// Soft delete — content moves to Trash instead of vanishing outright.
 export function deleteContent(id) {
+  const item = getContent(id);
+  if (!item) return;
+  item.deletedAt = Date.now();
+  persist(() => setDoc(doc(fdb, "content", item.id), item));
+}
+export function restoreContent(id) {
+  const item = getContent(id);
+  if (!item || !item.deletedAt) return;
+  item.deletedAt = null;
+  persist(() => setDoc(doc(fdb, "content", item.id), item));
+}
+// "Hapus permanen" — the real, unrecoverable delete Trash offers.
+export function purgeContent(id) {
   db.content = db.content.filter((c) => c.id !== id);
   persist(() => deleteDoc(doc(fdb, "content", id)));
+}
+// One batch, not N single deletes — content-list.js's "Delete all content".
+export function purgeContentBatch(ids) {
+  const set = new Set(ids);
+  db.content = db.content.filter((c) => !set.has(c.id));
+  persist(() => commitInChunks(ids.map((id) => ({ type: "delete", ref: doc(fdb, "content", id) }))));
+}
+// Soft-delete a whole batch in one call — content-list.js's "Delete all
+// content" now trashes rather than purges outright (see its confirm copy).
+export function trashContentBatch(ids) {
+  const now = Date.now();
+  const items = db.content.filter((c) => ids.includes(c.id));
+  items.forEach((c) => { c.deletedAt = now; });
+  persist(() => commitInChunks(items.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c }))));
 }
 
 // Cross-brand scan for the notification bell — the shared source of truth
@@ -1099,9 +1291,9 @@ function emptyCampaign(brandId) {
 // feature existed (or saved through a path that skipped it) — no
 // migration script, they just get the default template phases merged in
 // the moment they're read, same pattern as brand.brandDNA above.
-export function listCampaigns(brandId) {
+export function listCampaigns(brandId, { includeDeleted = false } = {}) {
   return (db.campaigns || [])
-    .filter((c) => c.brandId === brandId)
+    .filter((c) => c.brandId === brandId && (includeDeleted || notDeleted(c)))
     .map((c) => { if (!c.phases) c.phases = defaultCampaignPhases(); return c; })
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -2141,7 +2333,25 @@ export function completeCampaignStage(campaignId, index, { completedAt = Date.no
   const missions = c.missions.map((m, i) => (i === index ? { ...m, completedAt } : m));
   return updateCampaign(campaignId, { missions });
 }
+// Soft delete: the campaign moves to Trash as-is, content still linked to
+// it (campaignId untouched) so Restore below undoes this completely.
+// Unlinking content only happens on the permanent purge, matching what a
+// hard delete used to do immediately.
 export function deleteCampaign(id) {
+  const c = getCampaign(id);
+  if (!c) return;
+  c.deletedAt = Date.now();
+  persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+}
+export function restoreCampaign(id) {
+  const c = getCampaign(id);
+  if (!c || !c.deletedAt) return;
+  c.deletedAt = null;
+  persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+}
+// "Hapus permanen" — unlinks its content (same as the old hard delete did)
+// then actually removes the campaign doc.
+export function purgeCampaign(id) {
   db.campaigns = (db.campaigns || []).filter((c) => c.id !== id);
   const affectedContentIds = db.content.filter((c) => c.campaignId === id).map((c) => c.id);
   db.content.forEach((c) => { if (c.campaignId === id) { c.campaignId = ""; c.campaignPhaseId = ""; } });
@@ -2165,9 +2375,9 @@ function emptySeries(brandId) {
     updatedAt: Date.now(),
   };
 }
-export function listSeries(brandId) {
+export function listSeries(brandId, { includeDeleted = false } = {}) {
   return (db.series || [])
-    .filter((s) => s.brandId === brandId)
+    .filter((s) => s.brandId === brandId && (includeDeleted || notDeleted(s)))
     .map((s) => { if (!s.dna) s.dna = defaultSeriesDNA(); return s; })
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -2203,17 +2413,72 @@ export function updateSeries(id, patch) {
   persist(() => setDoc(doc(fdb, "series", item.id), item));
   return item;
 }
+// Soft delete: content stays linked (seriesId untouched) while the series
+// sits in Trash, so Restore below brings the whole thing back exactly as
+// it was. Unlinking only happens on the permanent purge.
 export function deleteSeries(id) {
+  const s = getSeries(id);
+  if (!s) return;
+  s.deletedAt = Date.now();
+  persist(() => setDoc(doc(fdb, "series", s.id), s));
+}
+export function restoreSeries(id) {
+  const s = getSeries(id);
+  if (!s || !s.deletedAt) return;
+  s.deletedAt = null;
+  persist(() => setDoc(doc(fdb, "series", s.id), s));
+}
+// "Hapus permanen". Content linked to it keeps its script/history, it just
+// stops reading that series' context on future regenerations — same
+// unlink-not-delete behavior purgeCampaign above uses for its content.
+export function purgeSeries(id) {
   db.series = (db.series || []).filter((s) => s.id !== id);
-  // Content linked to a deleted series keeps its script/history, it just
-  // stops reading that series' context on future regenerations — same
-  // unlink-not-delete behavior as deleteCampaign above.
   const affectedContentIds = db.content.filter((c) => c.seriesId === id).map((c) => c.id);
   db.content.forEach((c) => { if (c.seriesId === id) c.seriesId = ""; });
   persist(async () => {
     await deleteDoc(doc(fdb, "series", id));
     await Promise.all(affectedContentIds.map((cid) => setDoc(doc(fdb, "content", cid), getContent(cid))));
   });
+}
+
+// Everything currently in Trash, across every brand — Settings → Data's
+// Trash section (js/views/settings.js) reads this. `kind` tells it which
+// restore*/purge* pair to call; `brandName` is resolved once here so the
+// UI doesn't need a getBrand lookup per row (and still shows something
+// sane for a brand that is itself in Trash or already gone).
+export function listTrash() {
+  const brandName = (id) => getBrand(id)?.name || t("trash.unknownBrand");
+  const rows = [
+    ...db.brands.filter((b) => b.deletedAt).map((b) => ({ kind: "brand", id: b.id, name: b.name, brandName: b.name, deletedAt: b.deletedAt })),
+    ...db.content.filter((c) => c.deletedAt).map((c) => ({ kind: "content", id: c.id, name: c.title || t("beginner.untitled"), brandName: brandName(c.brandId), deletedAt: c.deletedAt })),
+    ...(db.campaigns || []).filter((c) => c.deletedAt).map((c) => ({ kind: "campaign", id: c.id, name: c.name || t("camp.untitled"), brandName: brandName(c.brandId), deletedAt: c.deletedAt })),
+    ...(db.series || []).filter((s) => s.deletedAt).map((s) => ({ kind: "series", id: s.id, name: s.name, brandName: brandName(s.brandId), deletedAt: s.deletedAt })),
+  ];
+  return rows.sort((a, b) => b.deletedAt - a.deletedAt);
+}
+const TRASH_RESTORE = { brand: restoreBrand, content: restoreContent, campaign: restoreCampaign, series: restoreSeries };
+const TRASH_PURGE = { brand: purgeBrand, content: purgeContent, campaign: purgeCampaign, series: purgeSeries };
+export function restoreTrashItem(kind, id) {
+  TRASH_RESTORE[kind]?.(id);
+}
+export function purgeTrashItem(kind, id) {
+  TRASH_PURGE[kind]?.(id);
+}
+// Best-effort client-side sweep of anything past TRASH_DAYS — called once
+// from initStore() after the first snapshot of everything has landed.
+// Never awaited by its caller and never throws: a purge that fails (a
+// permission blip, e.g.) just leaves those rows for the next load to try
+// again, same "never block on cleanup" spirit as everything else in this
+// file that fires a persist() and moves on.
+export function purgeOldTrash() {
+  const cutoff = Date.now() - TRASH_DAYS * 24 * 60 * 60 * 1000;
+  try {
+    listTrash()
+      .filter((row) => row.deletedAt < cutoff)
+      .forEach((row) => TRASH_PURGE[row.kind]?.(row.id));
+  } catch (e) {
+    console.error("Trash auto-purge failed", e);
+  }
 }
 
 // ---------- Settings ----------
@@ -2293,66 +2558,41 @@ export function removeFormat(id) {
 // ---------- Routine Template (standing weekly schedule, home page) ----------
 export const ROUTINE_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 export const ROUTINE_DAY_LABELS = Object.fromEntries(ROUTINE_DAYS.map((d) => [d, t(`store.day.${d}`)]));
-export const ROUTINE_ACTIVITIES = ["shooting", "editing", "upload", "custom"];
-export const ROUTINE_ACTIVITY_LABELS = Object.fromEntries(ROUTINE_ACTIVITIES.map((a) => [a, t(`store.activity.${a}`)]));
-
-export function listRoutineTemplate() {
-  return db.routineTemplate || [];
-}
-export function addRoutineItem({ brandId, day, activity, customLabel = "", time = "", source = "manual" }) {
-  const item = { id: uid(), ownerId: ownerUid, brandId, day, activity, customLabel: customLabel.trim(), time, doneDates: [], source };
-  db.routineTemplate = [...(db.routineTemplate || []), item];
-  persist(() => setDoc(doc(fdb, "routineTemplate", item.id), item));
-  return item;
-}
-export function removeRoutineItem(id) {
-  db.routineTemplate = (db.routineTemplate || []).filter((t) => t.id !== id);
-  persist(() => deleteDoc(doc(fdb, "routineTemplate", id)));
-}
-
-// Content OS's cadence setup (Shoot/Edit/Upload days) IS this brand's My
-// Routine for those three activities — saving the setup regenerates exactly
-// those entries so the two are never out of sync. Only ever touches entries
-// this same sync created before (source:"cadence"); anything someone added
-// by hand in My Routine (source:"manual", or undefined from before this
-// existed) is left alone no matter how the setup is re-saved.
-export function syncCadenceRoutine(brandId, cadence) {
-  const untouched = (db.routineTemplate || []).filter((t) => !(t.brandId === brandId && t.source === "cadence"));
-  const fresh = [];
-  const addDays = (days, activity) => {
-    (days || []).forEach((day) => fresh.push({ id: uid(), ownerId: ownerUid, brandId, day, activity, customLabel: "", time: "", doneDates: [], source: "cadence" }));
-  };
-  addDays(cadence.shootDays, "shooting");
-  addDays(cadence.editDays, "editing");
-  addDays(cadence.uploadDays, "upload");
-
-  const removedIds = (db.routineTemplate || [])
-    .filter((t) => t.brandId === brandId && t.source === "cadence")
-    .map((t) => t.id);
-  db.routineTemplate = [...untouched, ...fresh];
-  persist(() =>
-    commitInChunks([
-      ...removedIds.map((id) => ({ type: "delete", ref: doc(fdb, "routineTemplate", id) })),
-      ...fresh.map((item) => ({ type: "set", ref: doc(fdb, "routineTemplate", item.id), data: item })),
-    ])
-  );
-}
-// Only meaningful for "custom" activity items — shooting/editing/upload
-// confirm themselves from real content activity instead of being toggled.
-export function markRoutineDoneToday(id, done) {
-  const todayISO = new Date().toISOString().slice(0, 10);
-  db.routineTemplate = (db.routineTemplate || []).map((t) => {
-    if (t.id !== id) return t;
-    const doneDates = done ? [...new Set([...(t.doneDates || []), todayISO])] : (t.doneDates || []).filter((d) => d !== todayISO);
-    return { ...t, doneDates };
-  });
-  const updated = db.routineTemplate.find((t) => t.id === id);
-  if (updated) persist(() => setDoc(doc(fdb, "routineTemplate", id), updated));
-}
+// listRoutineTemplate/addRoutineItem/removeRoutineItem/markRoutineDoneToday
+// (a standalone "My Routine" editor) were removed — they had no caller left
+// anywhere in the app. syncCadenceRoutine, which used to mirror Content
+// OS's cadence setup into this collection as a mechanical copy of
+// brand.contentCadence, was removed for the same reason: nothing read
+// those mirrored docs either (js/views/calendar.js reads contentCadence
+// directly). The routineTemplate Firestore listener in initStore() is left
+// in place and stays tolerant of whatever old docs still exist, and backup/
+// restore/account-deletion still cover the collection so old data isn't
+// stranded — it just has no writer left.
 
 // ---------- Backup ----------
+// Fields a backup must never carry: the shared AI config (no secrets in it
+// anymore, but still not this account's data to export) and per-brand
+// social tokens. `settings.aiUsage` is legacy — recordAiUsage() no longer
+// writes it (see js/ai-usage.js / aiUsage/{uid}), but an old cached `db`
+// could still have one lying around.
+function stripBrandSecrets(b) {
+  const clean = { ...b };
+  if (clean.instagram) {
+    const { accessToken, ...rest } = clean.instagram;
+    clean.instagram = rest;
+  }
+  if (clean.facebook) {
+    const { pageAccessToken, ...rest } = clean.facebook;
+    clean.facebook = rest;
+  }
+  if (clean.ads) {
+    clean.ads = Object.fromEntries(Object.entries(clean.ads).filter(([k]) => !/token/i.test(k)));
+  }
+  return clean;
+}
 export function exportJSON() {
-  return JSON.stringify(db, null, 2);
+  const { ai, aiUsage, ...settingsRest } = db.settings || {};
+  return JSON.stringify({ ...db, brands: (db.brands || []).map(stripBrandSecrets), settings: settingsRest }, null, 2);
 }
 // The one-time (or occasional) bulk migration path — e.g. moving an
 // existing local backup into this shared cloud database. Unlike every
@@ -2364,12 +2604,18 @@ export async function importJSON(json) {
   // Stamp ownerId on every imported doc regardless of what the backup file
   // says — otherwise an imported doc with no/stale ownerId would be
   // invisible to this account's own filtered queries (or worse, rejected
-  // outright by firestore.rules) right after import.
-  next.brands = (next.brands || []).map((b) => ({ ...b, ownerId: ownerUid }));
+  // outright by firestore.rules) right after import. Brand social tokens
+  // and the shared AI config never belong in a backup (see exportJSON
+  // above) — strip them here too, in case an older backup still has them.
+  next.brands = (next.brands || []).map((b) => ({ ...stripBrandSecrets(b), ownerId: ownerUid }));
   next.content = (next.content || []).map((c) => ({ ...c, ownerId: ownerUid }));
   next.campaigns = (next.campaigns || []).map((c) => ({ ...c, ownerId: ownerUid }));
   next.routineTemplate = (next.routineTemplate || []).map((r) => ({ ...r, ownerId: ownerUid }));
   next.brainstorms = (next.brainstorms || []).map((b) => ({ ...b, ownerId: ownerUid }));
+  {
+    const { ai, aiUsage, ...settingsRest } = next.settings || {};
+    next.settings = settingsRest;
+  }
   await commitInChunks([
     ...next.brands.map((b) => ({ type: "set", ref: doc(fdb, "brands", b.id), data: b })),
     ...next.content.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
@@ -2379,7 +2625,7 @@ export async function importJSON(json) {
     { type: "set", ref: doc(fdb, "settings", ownerUid), data: next.settings },
   ]);
   db = next;
-  window.dispatchEvent(new CustomEvent("db:change"));
+  dispatchDbChange();
 }
 export function resetAll() {
   const brandIds = db.brands.map((b) => b.id);

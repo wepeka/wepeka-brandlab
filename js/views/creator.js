@@ -251,6 +251,117 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
   // reconstructible) brand context block.
   const feedbackPrompt = (p) => ({ ...p, brandContext: undefined, seriesContext: undefined });
 
+  // "Simpan semua sebagai draf terpisah": one hook, one separate content
+  // draft each — for when two or three of the hooks are worth trying
+  // instead of committing to just one on this piece. Shared by fresh
+  // batches and restored (persisted) ones below.
+  function saveAllAsDrafts(hooksList, scriptText, captionText) {
+    if (!hooksList?.length) return;
+    hooksList.forEach((hook) => {
+      createContent(content.brandId, {
+        title: (hook.split("\n")[0] || "").trim().slice(0, 80) || content.title || t("next.untitled"),
+        idea: content.idea || "",
+        script: applyHook(scriptText || "", hook, ""),
+        caption: captionText || "",
+        funnel: state.funnel,
+        campaignId: content.campaignId || "",
+        campaignPhaseId: content.campaignPhaseId || "",
+        seriesId: content.seriesId || "",
+        status: "draft",
+      });
+    });
+    toast(t("cr.ai.savedAllDrafts", { n: hooksList.length }));
+  }
+
+  // Persisted batches (content.aiDrafts, js/store.js updateContent — set by
+  // runGenerate below) restored into the collapsed history so closing this
+  // modal never throws a usable batch away. Every "Pakai" here works exactly
+  // like a fresh batch's; only Regenerate/rating are skipped since those
+  // need a live call tied to the params that produced the text.
+  function restoredBatchHTML(draft, label) {
+    const hooksList = draft.hooks || [];
+    const slides = draft.slides || [];
+    const isCarousel = slides.length > 0;
+    const hooksHTML = hooksList.length
+      ? `<div class="page-eyebrow" style="margin-bottom:8px;">${t("cr.ai.hookOptions")}${label}</div>
+         ${hooksList
+           .map(
+             (h, i) => `
+           <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
+             <span style="font-size:13px;">${escapeHtml(h)}</span>
+             <button type="button" class="btn btn-secondary btn-sm" data-restore-hook="${i}" style="flex:none;">${t("cr.ai.use")}</button>
+           </div>`
+           )
+           .join("")}`
+      : "";
+    const scriptBody = isCarousel
+      ? slides.map((s, i) => `
+           <div class="card card-tight" style="margin-bottom:8px;">
+             <div class="page-eyebrow" style="margin-bottom:4px;font-size:11px;">${escapeHtml(t("cr.ai.slideLabel", { n: s.slideNumber || i + 1 }))}</div>
+             <div style="white-space:pre-wrap;font-size:13px;">${escapeHtml(s.text || "")}</div>
+           </div>`).join("")
+      : draft.script ? `<div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(draft.script)}</div>` : "";
+    const scriptHTML = draft.script || isCarousel
+      ? `<div class="page-eyebrow" style="margin:14px 0 8px;">${isCarousel ? t("cr.ai.fullCarousel") : t("cr.ai.fullScript")}${label}</div>
+         ${scriptBody}
+         <button type="button" class="btn btn-primary" data-restore-script>${isCarousel ? t("cr.ai.useCarousel") : t("cr.ai.useScript")}</button>`
+      : "";
+    const captionHTML = draft.caption
+      ? `<div class="page-eyebrow" style="margin:14px 0 8px;">${t("cr.ai.caption")}${label}</div>
+         <div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(draft.caption)}</div>
+         <button type="button" class="btn btn-secondary btn-block" data-restore-caption>${t("cr.ai.useCaption")}</button>`
+      : "";
+    return `
+      <div class="ai-batch">
+        ${hooksHTML}
+        ${scriptHTML}
+        ${hooksList.length ? `<button type="button" class="btn btn-ghost btn-block save-all-drafts-btn" style="margin-top:6px;">${t("cr.ai.saveAllDrafts")}</button>` : ""}
+        ${captionHTML}
+      </div>
+    `;
+  }
+  function mountRestoredBatch(draft, label) {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = restoredBatchHTML(draft, label);
+    const el = wrap.firstElementChild;
+    if (!el) return null;
+    qsa("[data-restore-hook]", el).forEach((b) => {
+      b.addEventListener("click", () => {
+        const hook = draft.hooks[Number(b.dataset.restoreHook)];
+        if (hook === undefined) return;
+        onInsert({ hook, prevHook: pickedHook });
+        pickedHook = hook;
+        toast(t("cr.ai.hookInserted"));
+      });
+    });
+    qs("[data-restore-script]", el)?.addEventListener("click", () => {
+      onInsert({ script: draft.script, hook: pickedHook, funnel: state.funnel });
+      toast((draft.slides || []).length ? t("cr.ai.carouselInserted") : t("cr.ai.scriptInserted"));
+      used.script = true;
+      maybeAutoClose();
+    });
+    qs("[data-restore-caption]", el)?.addEventListener("click", () => {
+      onInsert({ caption: draft.caption });
+      toast(t("cr.ai.captionInserted"));
+      used.caption = true;
+      maybeAutoClose();
+    });
+    qs(".save-all-drafts-btn", el)?.addEventListener("click", () => saveAllAsDrafts(draft.hooks, draft.script, draft.caption));
+    return el;
+  }
+  const persistedDrafts = getContent(content.id)?.aiDrafts || [];
+  if (persistedDrafts.length) {
+    const historyDetails = overlay.querySelector("#ai-history");
+    const historyList = overlay.querySelector("#ai-history-list");
+    persistedDrafts.forEach((draft, idx) => {
+      const label = ` ${t("cr.ai.savedBatch", { n: persistedDrafts.length - idx })}`;
+      const el = mountRestoredBatch(draft, label);
+      if (el) historyList.appendChild(el);
+    });
+    historyDetails.hidden = false;
+    overlay.querySelector("#ai-history-count").textContent = String(historyList.children.length);
+  }
+
   let batchCount = 0;
   const runGenerate = async () => {
     const btn = overlay.querySelector("#ai-generate");
@@ -270,6 +381,15 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       loadingEl.remove();
       batchCount++;
       const suffix = batchCount > 1 ? ` ${t("cr.ai.batch", { n: batchCount })}` : "";
+      // Persisted onto the content doc (content.aiDrafts, capped at 5,
+      // newest first) — a demo/tour batch never is, same as it's never
+      // rated. This is what makes the batch survive closing the modal:
+      // reopening it restores this exact batch into the history above.
+      if (!demo) {
+        const existing = getContent(content.id)?.aiDrafts || [];
+        const nextDrafts = [{ at: Date.now(), hooks, script, caption, slides }, ...existing].slice(0, 5);
+        updateContent(content.id, { aiDrafts: nextDrafts });
+      }
       const batchEl = document.createElement("div");
       batchEl.className = "ai-batch";
       // "Dibuat berdasarkan: …" — what the AI leaned on, so the owner sees it
@@ -278,6 +398,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         ${demo || !brand ? "" : basisHTML(brand, { content: listContent(brand.id), settings: getSettings() })}
         <div id="hooks-section"></div>
         <div id="script-section"></div>
+        ${hooks.length ? `<button type="button" class="btn btn-ghost btn-block save-all-drafts-btn" style="margin:6px 0 10px;">${t("cr.ai.saveAllDrafts")}</button>` : ""}
         ${
           caption
             ? `<div class="page-eyebrow" style="margin:14px 0 8px;">${t("cr.ai.caption")}${suffix}</div>
@@ -290,8 +411,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       // Newest batch always sits expanded up top; whatever was there before
       // (still fully usable — its own Use/Regenerate buttons keep working
       // after being moved) drops into the collapsed "previous" history
-      // instead of just piling up endlessly below. Nothing here is ever
-      // persisted, so closing the modal drops every batch that wasn't used.
+      // instead of just piling up endlessly below. The batch itself is
+      // persisted (above), but this DOM move is what keeps its listeners
+      // working for the rest of this modal session.
       const currentWrap = overlay.querySelector("#ai-current-batch");
       const prevBatch = currentWrap.firstElementChild;
       if (prevBatch) {
@@ -302,6 +424,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         overlay.querySelector("#ai-history-count").textContent = String(historyList.children.length);
       }
       currentWrap.appendChild(batchEl);
+      batchEl.querySelector(".save-all-drafts-btn")?.addEventListener("click", () => saveAllAsDrafts(hooks, script, caption));
       if (caption && !demo) mountAiFeedback(batchEl.querySelector(".caption-feedback"), { brandId: brand?.id, feature: "creator-caption", prompt: feedbackPrompt(params), output: caption });
 
       // Hooks and script each get their own "Regenerate" — asking the AI to
@@ -454,7 +577,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       });
       btn.innerHTML = `${icon("bot", { size: 14 })}${t("cr.ai.generateAgain")}`;
     } catch (e) {
-      loadingEl.outerHTML = `<div class="ocr-status">${icon("info", { size: 15 })}<span>${e.message}</span></div>`;
+      loadingEl.outerHTML = `<div class="ocr-status">${icon("info", { size: 15 })}<span>${escapeHtml(e.message)}</span></div>`;
     } finally {
       btn.disabled = false;
     }
@@ -576,8 +699,9 @@ function paint(root, brandId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${getMode() === "guided" ? t("cr.eyebrowGuided") : "Creator Studio — Mission"}${helpButtonHTML("creator")}${guideVideoButtonHTML("creator")}</div>
-        <h1>${brand.name}</h1>
+        <div class="page-eyebrow flex items-center gap-6">${t("cr.eyebrowGuided")}${helpButtonHTML("creator")}${guideVideoButtonHTML("creator")}</div>
+        <h1>${t("contentOs.tab.creator")}</h1>
+        <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
       <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
     </div>
@@ -588,7 +712,7 @@ function paint(root, brandId, state, refresh) {
           ${
             items.length
               ? groupedSidebarHTML(items, state.selectedId, state.collapsedGroups)
-              : `<div class="table-empty" style="padding:32px 16px;">${t("cr.sidebarEmpty")}</div>`
+              : `<div class="table-empty" style="padding:32px 16px;">${t(all.length ? "cr.sidebarEmpty" : "cr.sidebarEmptyFirst")}</div>`
           }
         </div>
       </div>

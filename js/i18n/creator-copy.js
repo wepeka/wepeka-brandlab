@@ -1,7 +1,7 @@
-// i18n dictionary — Creator Studio, teleprompter, Copy Studio, copy formats, funnel field, tour demo data. Key prefixes: cr. tp. copy. demo. funnel.
+// i18n dictionary — Creator, teleprompter, Tulisan Cepat, copy formats, funnel field, tour demo data. Key prefixes: cr. tp. copy. demo. funnel.
 // Shape: "key": { en: "...", id: "..." }. Merged into js/i18n.js.
 export default {
-  // ---------- Creator Studio (js/views/creator.js) ----------
+  // ---------- Creator (js/views/creator.js) ----------
   "cr.pdf.title": { en: "Script PDF preview", id: "Preview PDF script" },
   "cr.pdf.print": { en: "Print", id: "Cetak" },
   "cr.pdf.download": { en: "Download PDF", id: "Unduh PDF" },
@@ -35,6 +35,9 @@ export default {
   "cr.ai.writing": { en: "Writing…", id: "Lagi nulis…" },
   "cr.ai.batch": { en: "— batch {n}", id: "— batch {n}" },
   "cr.ai.previousGenerated": { en: "Previous AI generated", id: "Hasil AI sebelumnya" },
+  "cr.ai.savedBatch": { en: "— saved batch {n}", id: "— draf tersimpan {n}" },
+  "cr.ai.saveAllDrafts": { en: "Save all as separate drafts", id: "Simpan semua sebagai draf terpisah" },
+  "cr.ai.savedAllDrafts": { en: "{n} separate drafts created — find them in Content List", id: "{n} draf terpisah dibuat — cek di Daftar Konten" },
   "cr.ai.caption": { en: "Caption", id: "Caption" },
   "cr.ai.useCaption": { en: "Use this caption", id: "Pakai caption ini" },
   "cr.ai.captionInserted": { en: "Caption added", id: "Caption dimasukkan" },
@@ -67,6 +70,12 @@ export default {
 
   "cr.eyebrowGuided": { en: "Write content", id: "Tulis konten" },
   "cr.newContent": { en: "New content", id: "Konten baru" },
+  // Two different empty sidebars: a brand new brand with zero content ever
+  // (an invitation to make the first one) vs. an active brand that's
+  // caught up — everything it has is already published, nothing left in
+  // progress. Showing the "everything's published" line to a brand-new
+  // brand used to lie about work that was never there to finish.
+  "cr.sidebarEmptyFirst": { en: "Nothing here yet — make your first piece of content.", id: "Belum ada konten sama sekali — mulai bikin yang pertama, yuk." },
   "cr.sidebarEmpty": { en: "Nothing in progress — everything's published. Start a new piece of content.", id: "Belum ada yang lagi dikerjakan — semua sudah terbit. Mulai konten baru, yuk." },
   "cr.openCalendar": { en: "Open calendar", id: "Buka Kalender" },
   "cr.saved": { en: "Saved", id: "Tersimpan" },
@@ -231,7 +240,7 @@ export default {
   "funnel.status.published": { en: "Published", id: "Terbit" },
   "funnel.status.archived": { en: "Archived", id: "Arsip" },
 
-  // ---------- Copy Studio (js/views/copy-studio.js) ----------
+  // ---------- Tulisan Cepat (js/views/copy-studio.js) ----------
   "copy.eyebrowGuided": { en: "Write copy", id: "Bikin tulisan" },
   "copy.sub": { en: "Threads, Story captions, WhatsApp broadcasts, feed captions, or any other format. Each format has its own shape and character limit. Answer 3 questions and AI writes 3 options in your brand's voice.", id: "Threads, caption Story, broadcast WhatsApp, caption feed, atau format lain. Tiap format beda bentuk dan batas karakternya. Jawab 3 pertanyaan, AI tulisin 3 pilihan pakai gaya bahasa brand kamu." },
   "copy.nudge": { en: "This brand's Brand DNA is still empty, so AI doesn't know its voice yet. You can still use it, but the results fit better once {link}.", id: "Brand DNA brand ini masih kosong, jadi AI belum kenal gaya bahasanya. Tetap bisa dipakai, tapi hasilnya lebih pas kalau {link}." },
@@ -277,7 +286,7 @@ export default {
   "copy.empty.body": { en: "3 copy options, each with a preview that looks like the real thing. Pick one, edit if needed, then copy.", id: "3 pilihan tulisan, lengkap dengan preview mirip aslinya. Tinggal pilih, edit kalau perlu, lalu salin." },
   "copy.results.count": { en: "{n} options", id: "{n} pilihan" },
   "copy.results.sample": { en: "Sample", id: "Contoh" },
-  "copy.results.sub": { en: "Not saved. Copy the one you like before leaving this page.", id: "Nggak disimpan. Salin yang kamu suka sebelum pindah halaman." },
+  "copy.results.sub": { en: "Tap \"Save to content\" on the one you like to keep it as a draft. Unsaved options stay here until you tap \"Start over\".", id: "Tekan \"Simpan ke konten\" di yang kamu suka biar jadi draf. Pilihan yang belum disimpan tetap di sini sampai kamu tekan \"Bikin baru\"." },
   "copy.chars": { en: "{n} characters", id: "{n} karakter" },
   "copy.charsOf": { en: "{n}/{limit} characters", id: "{n}/{limit} karakter" },
   "copy.longestPost": { en: "longest post {n}/{limit}", id: "post terpanjang {n}/{limit}" },
@@ -298,8 +307,12 @@ export default {
   "copy.copiedAll": { en: "All posts copied", id: "Semua post tersalin" },
   "copy.copied": { en: "Copied", id: "Tersalin" },
   "copy.copiedPost": { en: "Post {n} copied", id: "Post {n} tersalin" },
+  "copy.saveToContent": { en: "Save as content", id: "Simpan ke konten" },
+  "copy.openInCreator": { en: "Open in Creator", id: "Buka di Creator" },
+  "copy.savedToContent": { en: "Saved as a draft — open it in Creator whenever you're ready.", id: "Tersimpan sebagai draf — buka di Creator kapan pun kamu siap." },
+  "copy.startOver": { en: "Start fresh", id: "Bikin baru" },
 
-  // Copy Studio tour
+  // Tulisan Cepat tour
   "copy.tour.format.title": { en: "What are you writing?", id: "Mau bikin tulisan buat apa?" },
   "copy.tour.format.body": { en: "Pick the format: **Threads**, **Story caption**, **WhatsApp broadcast**, **Feed caption**, or **Other** if yours isn't on the list. **Click** one.", id: "Pilih formatnya: **Threads**, **Caption Story**, **Broadcast WhatsApp**, **Caption feed**, atau **Lainnya** kalau formatmu nggak ada di daftar. **Klik** salah satu." },
   "copy.tour.custom.title": { en: "Type in the format", id: "Tulis formatnya" },

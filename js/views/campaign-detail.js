@@ -9,7 +9,8 @@ import { backLinkHTML } from "../back-link.js";
 import {
   getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS, campaignContentPool,
-  CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote,
+  CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote, TRASH_DAYS,
+  listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea,
 } from "../store.js";
 import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform } from "../campaign-metrics.js";
 import { getTracker, productStats, trackerTotals, eventSalesStats, campaignSalesStats, contentSalesStats } from "../sales-tracker.js";
@@ -118,7 +119,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${helpButtonHTML("campaign-detail")}${guideVideoButtonHTML("campaign-detail")}</div>
         <h1>${esc(campaign.name || t("camp.untitled"))}</h1>
-        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}${campaign.goalId ? ` · <a class="link" href="#/brand/${brandId}/goals/${campaign.goalId}">${icon("target", { size: 12 })} ${t("roadmap.camp.link")}</a>` : ""}</p>
+        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}${campaign.goalId && getGoal(brandId, campaign.goalId) ? ` · <a class="link" href="#/brand/${brandId}/goals/${campaign.goalId}">${icon("target", { size: 12 })} ${t("roadmap.camp.link")}</a>` : ""}</p>
       </div>
       <div class="cd-head-actions" style="flex:none;">
         <button class="icon-btn" id="cd-more" aria-label="${t("camp.detail.more")}" style="width:36px;height:36px;">${icon("dots", { size: 16 })}</button>
@@ -130,8 +131,8 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     ${headline ? headlineHTML(headline, stageRead, stage) : ""}
     ${guided ? "" : pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions })}
     ${guided ? "" : proToolbarHTML()}
-    ${guided ? "" : proTabsHTML(campaign, stages, acts, tab)}
-    ${tab === "ideas" ? ideasWidgetHTML(campaign, state) : ""}
+    ${guided ? "" : proTabsHTML(campaign, stages, acts, tab, brandId)}
+    ${tab === "ideas" ? ideasWidgetHTML(campaign, state, brandId) : ""}
     ${tab === "plan" ? planRoadmapHTML(campaign, stages, ctx) : ""}
     ${tab === "activity" ? `${pendingEngagementHTML(campaignPendingEngagement(campaign, ctx))}${salesWidgetHTML(brandId, campaign, brand)}${eventSalesWidgetHTML(brandId, campaign, brand)}${sourceSalesHTML(brandId, campaign, brand)}${activitiesHTML(acts, brandId, guided)}` : ""}
     ${tab !== "target" ? "" : `
@@ -163,7 +164,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     </div>
 
     ${!guided && (campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead, ctx) : ""}
-    ${guided ? brainstormCardHTML(campaign, state) : ""}`}
+    ${guided ? brainstormCardHTML(campaign, state, brandId) : ""}`}
   `;
 
   setPageGuide(() => startCampaignDetailGuide(brandId, campaign.id));
@@ -222,7 +223,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       e.stopPropagation();
       const m = stageRead.readings[Number(btn.dataset.cdMsDel)]?.milestone;
       if (!m) return;
-      const ok = await confirmDialog({ title: t("camp.detail.deleteMilestoneTitle"), message: t("camp.detail.deleteMilestoneMsg", { name: m.label }), confirmLabel: t("common.delete"), danger: true });
+      const ok = await confirmDialog({ title: t("camp.detail.deleteMilestoneTitle"), message: t("camp.detail.deleteMilestoneMsg", { name: esc(m.label) }), confirmLabel: t("common.delete"), danger: true });
       if (!ok) return;
       patchMilestone(campaign, stage, m.id, null);
       refresh();
@@ -448,8 +449,9 @@ function sourceSalesHTML(brandId, campaign, brand) {
 const IDEA_TRACK_COPY = { social: "social", community: "community", sales: "sales" };
 const ideaTrack = (campaign) => (campaign.eventPlan ? "event" : IDEA_TRACK_COPY[campaign.goalPlan?.track] || "");
 const ideaTrackClass = (campaign) => (ideaTrack(campaign) ? `cd-idea-bubble--${ideaTrack(campaign)}` : "");
-// One kept idea (campaign.ideas[]) — shared by the Pro ideas widget and
-// the Pemula Brainstorm card. Opens like a folder on click: the
+// One kept idea (from the ideas inbox, brand.ideas[] filtered to this
+// campaign — see store.js listBrandIdeas) — shared by the Pro ideas widget
+// and the Pemula Brainstorm card. Opens like a folder on click: the
 // description (AI's "why", or a note the user adds) stays out of the way
 // until someone wants it, instead of crowding every bubble at a glance.
 function ideaBubbleHTML(idea, state, trackCls) {
@@ -457,7 +459,7 @@ function ideaBubbleHTML(idea, state, trackCls) {
   return `
     <div class="cd-idea-bubble ${trackCls} ${open ? "is-open" : ""}" data-idea-id="${idea.id}">
       <button type="button" class="cd-idea-bubble-head" data-idea-toggle="${idea.id}">
-        ${idea.source === "ai" || idea.source === "brainstorm" ? icon("sparkle", { size: 11 }) : icon("folder", { size: 11 })}
+        ${idea.source === "ai" || idea.source === "brainstorm" || idea.source === "chat" ? icon("sparkle", { size: 11 }) : icon("folder", { size: 11 })}
         <span>${esc(idea.text)}</span>
         ${icon("chevronDown", { size: 12 })}
       </button>
@@ -470,7 +472,7 @@ function ideaBubbleHTML(idea, state, trackCls) {
         </div>` : ""}
     </div>`;
 }
-function ideasWidgetHTML(campaign, state) {
+function ideasWidgetHTML(campaign, state, brandId) {
   // Events don't carry a goalPlan (js/store.js buildEventPhases is a
   // separate, date-anchored system) — treat them as their own idea track
   // so the widget's copy/AI framing talks about the event, not a generic
@@ -479,7 +481,7 @@ function ideasWidgetHTML(campaign, state) {
   // Closable, same pattern as the Rencana widget just above it — collapses
   // to a one-line bar so the page doesn't stay crowded once the ideas are
   // captured and the user's back to just executing.
-  const ideas = campaign.ideas || [];
+  const ideas = listBrandIdeas(brandId, { campaignId: campaign.id });
   if (isWidgetCollapsed(campaign, "ideas")) return widgetCollapsedHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), t("camp.ideas.summary", { count: ideas.length }));
   const suggestions = state.ideaSuggestions || [];
   const trackCls = ideaTrackClass(campaign);
@@ -532,7 +534,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
   );
   qsa("[data-idea-remove]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
-      updateCampaign(campaign.id, { ideas: (campaign.ideas || []).filter((i) => i.id !== btn.dataset.ideaRemove) });
+      removeBrandIdea(brand.id, btn.dataset.ideaRemove);
       if (state.expandedIdeaId === btn.dataset.ideaRemove) state.expandedIdeaId = null;
       refresh();
     })
@@ -541,7 +543,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
     btn.addEventListener("click", () => {
       const id = btn.dataset.ideaSaveDesc;
       const description = qs("#cd-idea-desc-input", root)?.value.trim() || "";
-      updateCampaign(campaign.id, { ideas: (campaign.ideas || []).map((i) => (i.id === id ? { ...i, description } : i)) });
+      updateBrandIdea(brand.id, id, { description });
       toast(t("camp.ideas.saveDesc"));
       refresh();
     })
@@ -551,8 +553,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
   const addIdea = (text, source, description = "") => {
     const clean = text.trim();
     if (!clean) return;
-    const ideas = [...(campaign.ideas || []), { id: `idea-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, text: clean, description, source, createdAt: Date.now() }];
-    updateCampaign(campaign.id, { ideas });
+    addBrandIdea(brand.id, { text: clean, description, source, campaignId: campaign.id });
     refresh();
   };
   const submit = () => {
@@ -592,7 +593,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
     statusEl.innerHTML = `<div class="ocr-status" style="margin:6px 0;"><div class="spinner"></div><span>${t("camp.ideas.thinking")}</span></div>`;
     try {
       const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
-      const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, existingIdeas: (campaign.ideas || []).map((i) => i.text), pulseText });
+      const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, existingIdeas: listBrandIdeas(brand.id, { campaignId: campaign.id }).map((i) => i.text), pulseText });
       // Whatever was still showing (not yet kept) drops into the collapsed
       // history instead of being silently replaced — same pattern as the
       // brainstorm modal and Creator's AI panel.
@@ -810,7 +811,7 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
     ? `<button type="button" class="btn btn-ghost" id="cp-back">${icon("refresh", { size: 13 })}${t("camp.cplan.again")}</button><button type="button" class="btn btn-primary" id="cp-add" ${picked().length ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("camp.cplan.add", { n: picked().length })}</button>`
     : `<span class="text-faint" style="font-size:11.5px;margin-right:auto;">${t("camp.cplan.credit")}</span><button type="button" class="btn btn-primary" id="cp-go" ${st.busy ? "disabled" : ""}>${icon("sparkle", { size: 14 })}${t("camp.cplan.go")}</button>`;
 
-  const overlay = openModal({ title: t("camp.cplan.title", { name: campaign.name || "" }), wide: true, bodyHTML: formHTML(), footHTML: footHTML() });
+  const overlay = openModal({ title: t("camp.cplan.title", { name: esc(campaign.name || "") }), wide: true, bodyHTML: formHTML(), footHTML: footHTML() });
   const body = overlay.querySelector(".modal-body");
   const foot = overlay.querySelector(".modal-foot");
   const paint = () => {
@@ -1178,7 +1179,7 @@ function pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions }) {
   // Content & ideas tile.
   const published = acts.counts.published || 0;
   const inProgress = acts.linked.length - published;
-  const ideas = (campaign.ideas || []).length;
+  const ideas = listBrandIdeas(ctx.brand.id, { campaignId: campaign.id }).length;
 
   const first = actions[0] || null;
   return `
@@ -1225,20 +1226,21 @@ function proTabList(campaign, stages) {
   tabs.push("activity");
   return tabs;
 }
-function proTabsHTML(campaign, stages, acts, current) {
-  const count = { ideas: (campaign.ideas || []).length, activity: acts.linked.length };
+function proTabsHTML(campaign, stages, acts, current, brandId) {
+  const count = { ideas: listBrandIdeas(brandId, { campaignId: campaign.id }).length, activity: acts.linked.length };
   return `
     <div class="segmented cd-tabs" role="tablist">
       ${proTabList(campaign, stages).map((k) => `<button type="button" role="tab" aria-selected="${k === current}" class="${k === current ? "active" : ""}" data-cd-tab="${k}">${t(`camp.tabs.${k}`)}${count[k] ? `<span class="cd-tab-count">${count[k]}</span>` : ""}</button>`).join("")}
     </div>`;
 }
 
-// The card also lists the ideas kept for this campaign (campaign.ideas —
-// what "Simpan" in that chat writes, see js/consultant-panel.js
-// saveIdeaScoped), so the loop closes on this page: brainstorm → save →
-// see it here next to the milestones.
-function brainstormCardHTML(campaign, state) {
-  const ideas = campaign.ideas || [];
+// The card also lists the ideas kept for this campaign (the ideas inbox,
+// brand.ideas[] filtered to this campaign's id — what "Simpan" in that
+// chat writes, see js/consultant-panel.js saveIdeaScoped), so the loop
+// closes on this page: brainstorm → save → see it here next to the
+// milestones.
+function brainstormCardHTML(campaign, state, brandId) {
+  const ideas = listBrandIdeas(brandId, { campaignId: campaign.id });
   const trackCls = ideaTrackClass(campaign);
   return `
     <div class="section-title" style="margin-top:28px;"><h2>${t("camp.guided.bsTitle")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.guided.bsSub")}</span></div>
@@ -1518,13 +1520,13 @@ function openMilestoneMenu(btn, reading, { campaign, stage, refresh }) {
     if (!act) return;
     closeMenu();
     if (act === "target") {
-      const raw = await promptDialog({ title: t("camp.detail.changeTarget"), label: m.label, placeholder: String(m.target ?? ""), confirmLabel: t("common.save") });
+      const raw = await promptDialog({ title: t("camp.detail.changeTarget"), label: esc(m.label), placeholder: String(m.target ?? ""), confirmLabel: t("common.save") });
       if (!raw) return;
       patchMilestone(campaign, stage, m.id, { target: Math.max(1, Math.round(Number(raw) || 0)) });
     } else if (act === "na") {
       patchMilestone(campaign, stage, m.id, { notApplicable: !m.notApplicable });
     } else if (act === "remove") {
-      const ok = await confirmDialog({ title: t("camp.detail.deleteMilestoneTitle"), message: t("camp.detail.deleteMilestoneMsg", { name: m.label }), confirmLabel: t("common.delete"), danger: true });
+      const ok = await confirmDialog({ title: t("camp.detail.deleteMilestoneTitle"), message: t("camp.detail.deleteMilestoneMsg", { name: esc(m.label) }), confirmLabel: t("common.delete"), danger: true });
       if (!ok) return;
       patchMilestone(campaign, stage, m.id, null);
     }
@@ -1654,8 +1656,8 @@ function openMoreMenu(btn, { brandId, brand, campaign, stage, stages, ctx, refre
       const linkedCount = ctx.content.filter((c) => c.campaignId === campaign.id).length;
       const ok = await confirmDialog({
         title: t("camp.list.deleteTitle"),
-        message: linkedCount ? `${t("camp.list.deleteLinked", { count: linkedCount })} ${t("common.noUndo")}` : t("common.noUndo"),
-        confirmLabel: t("common.delete"),
+        message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
+        confirmLabel: t("delete.toTrash.confirm"),
         danger: true,
       });
       if (!ok) return;

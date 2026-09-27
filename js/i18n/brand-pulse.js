@@ -51,6 +51,10 @@ export default {
   "companion.greeting.afternoon": { en: "Hey! Anything new with {brand} today?", id: "Halo! Hari ini ada kejadian apa di {brand}?" },
   "companion.greeting.evening": { en: "Evening! How did {brand} do today?", id: "Malam! Hari ini gimana kabarnya {brand}?" },
   "companion.observation.quiet": { en: "It's been quiet this week — nothing standing out yet.", id: "Minggu ini tenang — belum ada yang menonjol." },
+  // A brand-new brand with zero content and zero brand-memory entries has
+  // had no "week" yet to call quiet — that line implied there was
+  // something to compare against. This is the very first thing it sees.
+  "companion.observation.firstDay": { en: "let's get your brand's story started.", id: "yuk, mulai cerita brand kamu." },
   "companion.placeholder": { en: "Type or talk — a sale, a comment, anything…", id: "Ketik atau ngomong — ada penjualan, komen, apa aja…" },
   "companion.send": { en: "Send", id: "Kirim" },
   "companion.day.today": { en: "Today", id: "Hari ini" },

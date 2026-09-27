@@ -1,5 +1,5 @@
 import {
-  listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent,
+  listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent, TRASH_DAYS,
 } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
@@ -118,14 +118,14 @@ function paint(root, refresh) {
         } else if (act === "delete") {
           const count = listContent(id, { includeArchived: true }).length;
           const ok = await confirmDialog({
-            title: t("brands.delete.title"),
-            message: t("brands.delete.message", { count }),
-            confirmLabel: t("brands.delete.confirm"),
+            title: t("delete.toTrash.title"),
+            message: t("delete.toTrash.brandMessage", { count, days: TRASH_DAYS }),
+            confirmLabel: t("delete.toTrash.confirm"),
             danger: true,
           });
           if (ok) {
             deleteBrand(id);
-            toast(t("brands.delete.done"));
+            toast(t("delete.toTrash.brandDone"));
             refresh();
           }
         }
@@ -203,7 +203,7 @@ function brandCard(brand) {
         ${avatarHTML(brand)}
         <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${brand.id}" aria-label="${t("brands.tile.actions")}">${icon("dots", { size: 14 })}</button>
       </div>
-      <h3>${brand.name}</h3>
+      <h3>${escapeText(brand.name)}</h3>
       <div class="meta">${t("brands.tile.meta", { count: contents.length, published })}</div>
     </div>
   `;
@@ -231,6 +231,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     facebook: brand?.facebook || { pageId: "", pageAccessToken: "", pageName: "", connectedAt: null },
     aiVoiceGuide: brand?.aiVoiceGuide || "",
     businessDescription: brand?.businessDescription || "",
+    audienceLanguage: brand?.audienceLanguage || "",
   };
 
   // Pemula mode: same fields, plainer words, and the brandbook/tone field
@@ -277,14 +278,20 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         <div id="brand-desc-ai-status" class="text-faint" style="font-size:11.5px;margin-top:4px;"></div>
         <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${guided ? t("brands.form.descHintGuided") : t("brands.form.descHint")}</div>
       </div>
-      <div class="field" style="margin-bottom:0;" ${guided && !brand ? "hidden" : ""}>
-        <div class="creator-field-head">
-          <label style="margin-bottom:0;">${t("brands.form.voiceLabel")}</label>
-          <button type="button" class="btn btn-ghost btn-sm" id="upload-brandbook-text" style="flex:none;">${icon("upload", { size: 12 })}Upload .txt</button>
-          <input type="file" id="brandbook-text-file" accept=".txt,.md" style="display:none;" />
-        </div>
-        <textarea class="textarea" id="brand-ai-voice" style="min-height:80px;" placeholder="${escapeText(t("brands.form.voicePh"))}">${(draft.aiVoiceGuide || "")}</textarea>
-        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${t("brands.form.voiceHint")}</div>
+      <!-- The free-text "AI voice guide" textarea that used to live here was
+           removed: Brand DNA (personality + tone of voice) is now the one
+           canonical source of a brand's voice — see store.js brandVoiceText().
+           An old brand's aiVoiceGuide value is kept (draft.aiVoiceGuide,
+           round-tripped unchanged below) and still read as a fallback
+           wherever voice is used, it just can't be edited from here anymore. -->
+      <div class="field" ${guided && !brand ? "hidden" : ""}>
+        <label>${t("ai.audienceLang.label")}</label>
+        <select class="select" id="brand-audience-lang">
+          <option value="" ${!draft.audienceLanguage ? "selected" : ""}>${t("ai.audienceLang.auto")}</option>
+          <option value="id" ${draft.audienceLanguage === "id" ? "selected" : ""}>${t("ai.audienceLang.id")}</option>
+          <option value="en" ${draft.audienceLanguage === "en" ? "selected" : ""}>${t("ai.audienceLang.en")}</option>
+        </select>
+        <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${t("ai.audienceLang.hint")}</div>
       </div>
 
       ${
@@ -309,6 +316,14 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       <button type="button" class="btn btn-secondary btn-sm" id="ig-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>`
       }
 
+      ${
+        // The Facebook connector is a stub — js/facebook.js only ever calls
+        // testFacebookConnection, nothing reads the metrics it'd return —
+        // so it's gated behind the same admin-only check Instagram uses,
+        // to stop customers from being shown a connector that does nothing.
+        !canUseInstagramApi()
+          ? ""
+          : `
       <div class="divider"></div>
       <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.fb.title")}</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.fb.intro")}</p>
@@ -322,6 +337,8 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       </div>
       <div id="fb-status" style="margin:10px 0;font-size:12.5px;">${draft.facebook.pageName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.facebook.pageName) })}</span>` : ""}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="fb-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
+      `
+      }
 
       `
           : guided
@@ -358,14 +375,6 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       el.querySelector("#remove-avatar").addEventListener("click", () => {
         draft.avatar = "";
         syncAvatarUI();
-      });
-      el.querySelector("#upload-brandbook-text").addEventListener("click", () => el.querySelector("#brandbook-text-file").click());
-      el.querySelector("#brandbook-text-file").addEventListener("change", async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const text = await file.text();
-        el.querySelector("#brand-ai-voice").value = text;
-        toast(t("brands.form.loaded", { name: file.name }));
       });
       nameInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") overlay.querySelector("[data-save]").click();
@@ -473,14 +482,17 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     const facebook = fbPageIdEl
       ? { ...draft.facebook, pageId: fbPageIdEl.value.trim(), pageAccessToken: overlay.querySelector("#fb-token").value.trim() }
       : draft.facebook;
-    const aiVoiceGuide = overlay.querySelector("#brand-ai-voice").value;
+    // No textarea for this anymore (see the create/edit form above) — an
+    // existing brand's old value just rides along unchanged.
+    const aiVoiceGuide = draft.aiVoiceGuide;
     const businessDescription = overlay.querySelector("#brand-description").value;
+    const audienceLanguage = overlay.querySelector("#brand-audience-lang").value;
     const color = overlay.querySelector("#brand-color").value;
     if (brand) {
-      updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription });
+      updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription, audienceLanguage });
       toast(t("brands.form.updated"));
     } else {
-      const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription });
+      const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription, audienceLanguage });
       toast(t("brands.form.created", { name }));
       // Pemula: a brand you just made is obviously the one you want to
       // open — go straight in instead of showing a "pick a brand" page

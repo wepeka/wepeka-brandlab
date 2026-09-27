@@ -36,7 +36,7 @@ export default {
   "ai.route.campaigns": { en: "Goals", id: "Tujuan" },
   "ai.route.contentOs": { en: "Content", id: "Konten" },
   "ai.route.contentList": { en: "Content List", id: "Daftar Konten" },
-  "ai.route.creator": { en: "Creator Studio", id: "Creator Studio" },
+  "ai.route.creator": { en: "Creator", id: "Creator" },
   "ai.route.calendar": { en: "Calendar", id: "Kalender" },
   "ai.route.sales": { en: "Sales tracker", id: "Pelacak Penjualan" },
   "ai.route.copy": { en: "Quick copy", id: "Tulisan Cepat" },
@@ -57,4 +57,31 @@ export default {
   "ai.auto.reason": { en: "Updated on its own because: {reason}", id: "Diperbarui otomatis karena: {reason}" },
   "ai.auto.busy": { en: "Something new happened ({reason}) — updating…", id: "Ada kabar baru ({reason}) — lagi memperbarui…" },
   "ai.auto.today": { en: "updated on its own today", id: "diperbarui otomatis hari ini" },
+
+  // api/ai.js's server-side error codes, mapped in js/ai.js's proxyError()
+  "ai.error.session": { en: "Your session expired — log in again and try that once more.", id: "Sesi kamu habis — login lagi, lalu coba sekali lagi." },
+  "ai.error.deactivated": { en: "This account has been deactivated. Contact Wepeka for help.", id: "Akun ini sudah dinonaktifkan. Hubungi Wepeka untuk bantuan." },
+
+  // js/views/brands.js — the brand modal's audience-language select
+  "ai.audienceLang.label": { en: "Audience language", id: "Bahasa audiens" },
+  "ai.audienceLang.hint": {
+    en: "Which language AI-written content for this brand's audience (scripts, copy, campaign plans) uses. Leave on \"Follow app language\" unless this brand's audience reads a different one.",
+    id: "Bahasa apa yang dipakai AI untuk konten buat audiens brand ini (naskah, tulisan, rencana campaign). Biarkan di \"Ikuti bahasa aplikasi\" kalau audiens brand ini bahasanya sama.",
+  },
+  "ai.audienceLang.auto": { en: "Follow app language", id: "Ikuti bahasa aplikasi" },
+  "ai.audienceLang.id": { en: "Indonesian", id: "Bahasa Indonesia" },
+  "ai.audienceLang.en": { en: "English", id: "Bahasa Inggris" },
+
+  // js/views/settings.js — admin-only AI panel (Settings → AI)
+  "ai.admin.enabledLabel": { en: "AI enabled for everyone", id: "AI aktif untuk semua orang" },
+  "ai.admin.keysNote": {
+    en: "The actual API key lives in a Vercel environment variable now (DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY, matched against AI_PROVIDER) — never in Firestore or the browser. This just tells the app which provider is active.",
+    id: "API key-nya sekarang disimpan di environment variable Vercel (DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY, sesuai AI_PROVIDER) — bukan di Firestore atau browser lagi. Ini cuma kasih tahu aplikasi provider mana yang aktif.",
+  },
+  "ai.admin.clearOldKeys": { en: "Delete old keys from settings/main", id: "Hapus kunci lama dari settings/main" },
+  "ai.admin.clearOldKeysConfirmBody": {
+    en: "This removes any anthropicApiKey/geminiApiKey/deepseekApiKey fields still sitting in settings/main.ai from before the AI proxy — they're unused now. Safe to run even if they're already gone.",
+    id: "Ini menghapus field anthropicApiKey/geminiApiKey/deepseekApiKey yang mungkin masih ada di settings/main.ai dari sebelum ada AI proxy — sudah nggak dipakai lagi. Aman dijalankan meski sudah nggak ada.",
+  },
+  "ai.admin.clearOldKeysDone": { en: "Old keys removed (or were already gone).", id: "Kunci lama sudah dihapus (atau memang sudah nggak ada)." },
 };

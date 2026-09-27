@@ -17,47 +17,43 @@ import { getLang } from "./i18n.js";
 // sentences: what it is, then how to use it.
 const HELP_CONTENT = {
   "brand-home": {
-    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, tab Konten, Campaign, dan Sales Tracker." },
-    en: { title: "Brand Home", body: "Your starting point every time you open this brand — a quick summary of what needs doing (unfinished Brand DNA, campaigns with no content yet, gaps in your content schedule) plus shortcuts to Brand Builder, the Content tab, Campaigns, and the Sales Tracker." },
+    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, tab Konten, Tujuan, dan Sales Tracker." },
+    en: { title: "Brand Home", body: "Your starting point every time you open this brand — a quick summary of what needs doing (unfinished Brand DNA, campaigns with no content yet, gaps in your content schedule) plus shortcuts to Brand Builder, the Content tab, Goals, and the Sales Tracker." },
   },
   "brand-builder-hub": {
     id: { title: "Brand Builder", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalah, positioning, nama, tagline) dan Brand Guidelines (identitas visual — logo, warna, tipografi, tone of voice). Isi Brand DNA dulu kalau brand ini masih baru, baru lanjut ke Guidelines." },
     en: { title: "Brand Builder", body: "Two doors: Brand DNA (the foundation — customers, problem, positioning, name, tagline) and Brand Guidelines (visual identity — logo, colors, typography, tone of voice). Start with Brand DNA if the brand is new, then move on to Guidelines." },
-  },
-  "dashboard": {
-    id: { title: "Dashboard", body: "Angka performa brand ini — total konten, yang udah terbit, engagement, dan tren dari waktu ke waktu. Dipakai buat lihat konten mana yang berhasil dan mana yang nggak, bukan buat nyusun konten baru (itu di Kalender/Konten)." },
-    en: { title: "Dashboard", body: "This brand's performance numbers — total content, what's published, engagement and trends over time. Use it to see which content works and which doesn't; planning new content happens in Calendar/Content." },
   },
   "calendar": {
     id: { title: "Kalender", body: "Jadwal semua konten brand ini dalam satu tampilan bulanan. Klik tanggal buat lihat apa yang udah dijadwalin, atau tambah konten baru langsung dari sini biar nggak ada hari yang bolong. Tanggal yang sudah lewat nggak bisa dipakai buat jadwal baru." },
     en: { title: "Calendar", body: "Every piece of this brand's content in one monthly view. Click a date to see what's scheduled or add new content right there so no day is left empty. Dates that have already passed can't be used for new schedules." },
   },
   "creator": {
-    id: { title: "Creator Studio", body: "Tempat nulis satu konten sampai selesai — hook, script, caption — dibantu AI, mengikuti Brand DNA dan tone of voice brand ini biar hasilnya konsisten. Klik Konten Baru, pilih platform, lalu AI langsung bantu bikin draft-nya." },
-    en: { title: "Creator Studio", body: "Where one piece of content gets written start to finish — hook, script, caption — with AI help that follows this brand's DNA and tone of voice. Click New Content, pick a platform, and the AI helps you draft it right away." },
+    id: { title: "Creator", body: "Tempat nulis satu konten sampai selesai — hook, script, caption — dibantu AI, mengikuti Brand DNA dan tone of voice brand ini biar hasilnya konsisten. Klik Konten Baru, pilih platform, lalu AI langsung bantu bikin draft-nya." },
+    en: { title: "Creator", body: "Where one piece of content gets written start to finish — hook, script, caption — with AI help that follows this brand's DNA and tone of voice. Click New Content, pick a platform, and the AI helps you draft it right away." },
   },
   "campaigns": {
-    id: { title: "Campaign", body: "Tujuan yang lagi dikejar brand ini sekarang. Tiap milestone tahu sumber angkanya (tab Konten, Instagram Insights, performa konten, atau catatanmu) dan kasih satu tombol buat memperbaruinya." },
-    en: { title: "Campaigns", body: "The goal this brand is working toward right now. Every milestone knows where its number comes from (the Content tab, Instagram Insights, content performance, or your own notes) and gives you one button to update it." },
+    id: { title: "Tujuan", body: "Tujuan yang lagi dikejar brand ini sekarang. Tiap milestone tahu sumber angkanya (tab Konten, Instagram Insights, performa konten, atau catatanmu) dan kasih satu tombol buat memperbaruinya." },
+    en: { title: "Goals", body: "The goal this brand is working toward right now. Every milestone knows where its number comes from (the Content tab, Instagram Insights, content performance, or your own notes) and gives you one button to update it." },
   },
   "campaign-detail": {
     id: { title: "Detail Campaign", body: "Dibaca dari atas ke bawah: posisi kamu sekarang (angka utama), apa yang perlu dikerjain (Langkah berikutnya), lalu milestone dan kontennya. Angka nggak pernah diketik manual di sini — semua ada sumbernya, kecuali yang memang cuma kamu yang tahu (dicatat lewat lembar Catat angka)." },
     en: { title: "Campaign Detail", body: "Read top to bottom: where you stand now (the headline number), what to do next (Next step), then milestones and their content. Numbers are never typed here by hand — each has a source, except the ones only you know (logged through the manual-entry sheet)." },
   },
   "content-list": {
-    id: { title: "Konten", body: "Tempat cek konten yang udah ada — pilih mau lihat semua, yang udah terjadwal, atau yang udah terbit. Buat nulis konten baru dari nol, pakai Creator Studio, bukan di sini." },
-    en: { title: "Content", body: "Where you check existing content — everything, what's scheduled, or what's published. To write new content from scratch, use Creator Studio instead." },
+    id: { title: "Daftar Konten", body: "Tempat cek konten yang udah ada — pilih mau lihat semua, yang udah terjadwal, atau yang udah terbit. Buat nulis konten baru dari nol, pakai Creator, bukan di sini." },
+    en: { title: "Content List", body: "Where you check existing content — everything, what's scheduled, or what's published. To write new content from scratch, use Creator instead." },
   },
   "content-os": {
-    id: { title: "Konten", body: "Tiga tab buat satu alur: Creator (nulis konten), Kalender (jadwalkan), Konten (cek yang udah ada). Selalu urutan yang sama, di kedua mode." },
-    en: { title: "Content", body: "Three tabs for one flow: Creator (write content), Calendar (schedule it), Content (check what's there). Always the same order, in both modes." },
+    id: { title: "Konten", body: "Lima tab buat satu alur: Creator (nulis konten), Kalender (jadwalkan), Daftar Konten (cek yang udah ada), Tulisan Cepat (tulisan singkat siap pakai), dan Seri (rencanakan konten berseri). Selalu urutan yang sama, di kedua mode." },
+    en: { title: "Content", body: "Five tabs for one flow: Creator (write content), Calendar (schedule it), Content List (check what's there), Quick Copy (short ready-to-use copy), and Series (plan multi-part content). Always the same order, in both modes." },
   },
   "brand-dna": {
     id: { title: "Brand DNA", body: "Wizard satu pertanyaan per langkah biar nggak kayak ngisi form kosong. Lima langkah pertama itu inti — audiens, masalah, kenapa harus percaya, rencana, dan ajakan bertindak. Jawaban tersimpan tiap kali klik Lanjut, jadi aman ditinggal kapan aja." },
     en: { title: "Brand DNA", body: "A wizard with one question per step, so it never feels like a blank form. The first five steps are the core — audience, problem, why trust you, plan, and call to action. Answers are saved every time you click Next, so it's safe to leave anytime." },
   },
   "brand-guidelines": {
-    id: { title: "Brand Guidelines itu apa?", body: "Buku aturan tampilan brand kamu — ibarat dress code. Isinya logo dan cara pakainya, warna, font, arah visual, dan tone of voice, biar semua konten dan desain (siapa pun yang bikin) kelihatan dari brand yang sama. Bagiannya bebas urutan; hasil akhirnya bisa diunduh jadi Brand Book (PDF)." },
+    id: { title: "Panduan Brand itu apa?", body: "Buku aturan tampilan brand kamu — ibarat dress code. Isinya logo dan cara pakainya, warna, font, arah visual, dan tone of voice, biar semua konten dan desain (siapa pun yang bikin) kelihatan dari brand yang sama. Bagiannya bebas urutan; hasil akhirnya bisa diunduh jadi Brand Book (PDF)." },
     en: { title: "What are Brand Guidelines?", body: "Your brand's rulebook for how it looks and sounds — like a dress code. Logo and how to use it, colors, fonts, visual direction and tone of voice, so every piece of content and design (whoever makes it) looks like the same brand. Sections can be done in any order; the result downloads as a Brand Book (PDF)." },
   },
   "settings": {
@@ -65,12 +61,12 @@ const HELP_CONTENT = {
     en: { title: "Settings", body: "Applies to all your brands, not just one — language, account, platform/format lists, and the performance formulas/thresholds." },
   },
   "sales": {
-    id: { title: "Sales Tracker", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, campaign Sales Growth, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. BrandLab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },
-    en: { title: "Sales Tracker", body: "Where sales get logged. You only type one thing: whenever someone buys, pick the product and how many. Totals, the weekly trend, your Sales Growth campaign, AI advice and the Excel/PDF export all follow from that log. BrandLab can't read sales data automatically, so every number here comes from you." },
+    id: { title: "Sales Tracker", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, campaign Sales Growth, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. Brandlab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },
+    en: { title: "Sales Tracker", body: "Where sales get logged. You only type one thing: whenever someone buys, pick the product and how many. Totals, the weekly trend, your Sales Growth campaign, AI advice and the Excel/PDF export all follow from that log. Brandlab can't read sales data automatically, so every number here comes from you." },
   },
   "copy-studio": {
-    id: { title: "Copy Studio", body: "Tulisan pendek siap pakai: Threads, caption Story, broadcast WhatsApp, caption feed. Pilih format dan tujuan, ceritain mau nyampein apa, AI tulisin 3 pilihan pakai gaya bahasa brand ini. Hasilnya nggak disimpan, jadi salin dulu sebelum pindah halaman." },
-    en: { title: "Copy Studio", body: "Short ready-to-use copy: Threads posts, Story captions, WhatsApp broadcasts, feed captions. Pick a format and goal, say what you want to get across, and AI writes 3 options in this brand's voice. Results aren't saved, so copy them before leaving the page." },
+    id: { title: "Tulisan Cepat", body: "Tulisan pendek siap pakai: Threads, caption Story, broadcast WhatsApp, caption feed. Pilih format dan tujuan, ceritain mau nyampein apa, AI tulisin 3 pilihan pakai gaya bahasa brand ini. Hasilnya nggak disimpan, jadi salin dulu sebelum pindah halaman." },
+    en: { title: "Quick Copy", body: "Short ready-to-use copy: Threads posts, Story captions, WhatsApp broadcasts, feed captions. Pick a format and goal, say what you want to get across, and AI writes 3 options in this brand's voice. Results aren't saved, so copy them before leaving the page." },
   },
   "home": {
     id: { title: "Beranda", body: "Kartu paling atas selalu bilang satu hal yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau \"Hari ini\" begitu identitasnya rampung. Di bawahnya: Teman Brand (ceritain kejadian di brand-mu seperti chat; tekan Rangkum supaya AI mengubahnya jadi momentum yang kamu pilih untuk diingat semua fitur AI), langkah berikutnya, jadwal, dan (mode Pro) analitik." },
@@ -88,12 +84,12 @@ const HELP_CONTENT = {
     en: { title: "What is Brand DNA?", body: "Your brand's foundation in words: who the customers are, what problem you solve, why they should trust and choose you, and your tagline. Every AI feature and campaign reads from it." },
   },
   "term-brand-guidelines": {
-    id: { title: "Brand Guidelines itu apa?", body: "Aturan tampilan brand kamu — logo, warna, font, arah visual, dan tone of voice — biar semua konten kelihatan dari brand yang sama. Hasil akhirnya jadi Brand Book (PDF) yang bisa kamu kasih ke desainer atau tim." },
+    id: { title: "Panduan Brand itu apa?", body: "Aturan tampilan brand kamu — logo, warna, font, arah visual, dan tone of voice — biar semua konten kelihatan dari brand yang sama. Hasil akhirnya jadi Brand Book (PDF) yang bisa kamu kasih ke desainer atau tim." },
     en: { title: "What are Brand Guidelines?", body: "The rules for how your brand looks — logo, colors, fonts, visual direction and tone of voice — so all content looks like it comes from the same brand. The end result is a Brand Book (PDF) you can hand to a designer or your team." },
   },
   "term-logo": {
-    id: { title: "Kenapa logo wajib?", body: "Logo itu wajah brand. Brand Book pakai logo ini buat halaman aturan pemakaian (jarak aman, background, larangan). Belum punya? Generate dulu pakai ChatGPT, lalu upload di sini." },
-    en: { title: "Why is a logo required?", body: "The logo is your brand's face. The Brand Book uses it for the usage-rules pages (clear space, backgrounds, don'ts). Don't have one? Generate it with ChatGPT first, then upload it here." },
+    id: { title: "Perlu logo, nggak?", body: "Logo nggak wajib buat langkah Warna & Font — boleh dilewati dulu. Tapi Brand Book pakai logo ini buat halaman aturan pemakaian (jarak aman, background, larangan), jadi upload begitu ada. Belum punya? Generate dulu pakai ChatGPT, lalu upload di sini." },
+    en: { title: "Do I need a logo?", body: "A logo isn't required for the Colors & Fonts step — you can skip it for now. But the Brand Book uses it for the usage-rules pages (clear space, backgrounds, don'ts), so upload one once you have it. Don't have one? Generate it with ChatGPT first, then upload it here." },
   },
   "term-color": {
     id: { title: "Sistem warna itu apa?", body: "3 warna utama (Primary, Secondary, Accent) plus warna background dan teks. Dipakai konsisten di semua konten biar orang langsung ngenalin brand kamu dari warnanya." },
@@ -121,7 +117,7 @@ const HELP_CONTENT = {
   },
 };
 
-function helpEntry(key) {
+export function helpEntry(key) {
   const e = HELP_CONTENT[key];
   return e ? e[getLang()] || e.id : null;
 }

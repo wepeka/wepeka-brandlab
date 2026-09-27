@@ -75,25 +75,37 @@ service cloud.firestore {
       return request.auth != null && data.ownerId == request.auth.uid;
     }
 
+    // Every `update` below also requires ownerId to stay unchanged —
+    // without it, an owner could rewrite one of their own docs to hand it
+    // (or the write access that comes with it) to a different uid, or use
+    // it to probe/overwrite another account's doc id.
+    function keepsOwner() {
+      return request.resource.data.ownerId == resource.data.ownerId;
+    }
+
     match /brands/{id} {
       allow read: if isOwner(resource.data);
       allow create: if isOwner(request.resource.data) && accountActive();
-      allow update, delete: if isOwner(resource.data) && accountActive();
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow delete: if isOwner(resource.data) && accountActive();
     }
     match /content/{id} {
       allow read: if isOwner(resource.data);
       allow create: if isOwner(request.resource.data) && accountActive();
-      allow update, delete: if isOwner(resource.data) && accountActive();
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow delete: if isOwner(resource.data) && accountActive();
     }
     match /campaigns/{id} {
       allow read: if isOwner(resource.data);
       allow create: if isOwner(request.resource.data) && accountActive();
-      allow update, delete: if isOwner(resource.data) && accountActive();
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow delete: if isOwner(resource.data) && accountActive();
     }
     match /routineTemplate/{id} {
       allow read: if isOwner(resource.data);
       allow create: if isOwner(request.resource.data) && accountActive();
-      allow update, delete: if isOwner(resource.data) && accountActive();
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow delete: if isOwner(resource.data) && accountActive();
     }
     // Recurring Content Series ("Content Series Memory") — a reusable AI
     // context (tone, structure, hooks, CTA) saved once per series and read
@@ -101,7 +113,8 @@ service cloud.firestore {
     match /series/{id} {
       allow read: if isOwner(resource.data);
       allow create: if isOwner(request.resource.data) && accountActive();
-      allow update, delete: if isOwner(resource.data) && accountActive();
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow delete: if isOwner(resource.data) && accountActive();
     }
     // Chat threads (the Home "Teman Brand" companion thread today; the
     // Brainstorm partner's threads next) — one doc per thread so a message
@@ -109,19 +122,29 @@ service cloud.firestore {
     match /brainstorms/{id} {
       allow read: if isOwner(resource.data);
       allow create: if isOwner(request.resource.data) && accountActive();
-      allow update, delete: if isOwner(resource.data) && accountActive();
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow delete: if isOwner(resource.data) && accountActive();
     }
 
-    // Shared AI config (provider + API keys) that every account uses —
-    // Wepeka pays for AI usage, customers never bring their own key. Any
-    // signed-in account reads it (the client calls the AI provider directly,
-    // so the key has to reach the browser); only the Wepeka team account
-    // (ADMIN_UIDS in js/account.js — keep in sync) can change it. Moving
-    // AI calls behind a server-side proxy is what eventually gets the key
-    // out of the browser entirely (planned Phase 2: AI usage limits).
+    // Shared, non-secret AI config: which provider is active and whether AI
+    // is enabled at all (see api/ai.js) — the actual API keys live in
+    // Vercel env vars now, never in Firestore. Also carries `brandsBg`, the
+    // seasonal background of the all-brands home. Any signed-in account
+    // reads it; only the Wepeka team account (ADMIN_UIDS in js/account.js —
+    // keep in sync) can change it.
     match /settings/main {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == 'iSwfTtIQm6VkYoHFbI6wl7BzBF53';
+    }
+
+    // Daily/monthly/trial AI quota counter, one per account — written only
+    // by api/ai.js (Admin SDK, bypasses these rules) after a successful AI
+    // call. The owner can read their own live count (see js/ai-usage.js);
+    // nobody, including the owner, can write it directly — the whole point
+    // is that the browser can no longer raise its own cap.
+    match /aiUsage/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
     }
 
     // Pengumuman (js/announcements.js): what's new in Brandlab. Every

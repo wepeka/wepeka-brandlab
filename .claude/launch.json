@@ -4,8 +4,21 @@
     {
       "name": "brandlab",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py"],
+      "runtimeArgs": [
+        "serve.py"
+      ],
       "port": 8743
+    },
+    {
+      "name": "wpk-dp-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/wepeka/Documents/wpk-dp",
+        "run",
+        "dev"
+      ],
+      "port": 3000
     }
   ]
 }

@@ -4,14 +4,14 @@
 export default {
   // ---------- Page / list ----------
   "roadmap.title": { en: "Plan toward a date", id: "Rencana menuju tanggal" },
-  "roadmap.sub": { en: "Name a goal and its date. BrandLab reads your brand, then plots the campaigns, weekly posts and deadlines that get you there.", id: "Sebut tujuan dan tanggalnya. BrandLab membaca kondisi brand-mu, lalu memetakan campaign, konten mingguan, dan deadline menuju ke sana." },
+  "roadmap.sub": { en: "Name a goal and its date. Brandlab reads your brand, then plots the campaigns, weekly posts and deadlines that get you there.", id: "Sebut tujuan dan tanggalnya. Brandlab membaca kondisi brand-mu, lalu memetakan campaign, konten mingguan, dan deadline menuju ke sana." },
   "roadmap.new": { en: "New dated plan", id: "Rencana baru" },
   "roadmap.defaultName": { en: "My event", id: "Event-ku" },
   "roadmap.guidedOne": { en: "One goal at a time in Beginner mode. Finish or archive the current one first.", id: "Mode Pemula: satu tujuan dulu. Selesaikan atau arsipkan yang sekarang sebelum bikin baru." },
   "roadmap.empty.title": { en: "What are you working toward?", id: "Kamu lagi menuju apa?" },
   "roadmap.empty.body": { en: "An onsite event, a launch day, a big date. Give it a date and this page becomes the plan.", id: "Event onsite, hari launching, tanggal besar. Kasih tanggalnya, halaman ini jadi rencananya." },
   "roadmap.empty.step1": { en: "Say what and when", id: "Bilang apa dan kapan" },
-  "roadmap.empty.step2": { en: "BrandLab reads your followers, community, posting rhythm and sales", id: "BrandLab membaca followers, komunitas, ritme posting, dan penjualan" },
+  "roadmap.empty.step2": { en: "Brandlab reads your followers, community, posting rhythm and sales", id: "Brandlab membaca followers, komunitas, ritme posting, dan penjualan" },
   "roadmap.empty.step3": { en: "You get lanes, weekly posts and dated deadlines", id: "Kamu dapat lane, konten mingguan, dan deadline bertanggal" },
   "roadmap.empty.step4": { en: "Nothing reaches your calendar until you press install", id: "Kalender tidak berubah sampai kamu menekan pasang" },
   "roadmap.list.lanes": { en: "{n} lanes", id: "{n} lane" },
@@ -46,7 +46,7 @@ export default {
   "roadmap.wizard.ticketYes": { en: "Yes, paid", id: "Ya, berbayar" },
   "roadmap.wizard.ticketNo": { en: "Free / no tickets", id: "Gratis / tanpa tiket" },
   "roadmap.wizard.price": { en: "Ticket price", id: "Harga tiket" },
-  "roadmap.wizard.q2": { en: "What BrandLab read about your brand", id: "Yang BrandLab baca dari brand-mu" },
+  "roadmap.wizard.q2": { en: "What Brandlab read about your brand", id: "Yang Brandlab baca dari brand-mu" },
   "roadmap.wizard.q2Sub": { en: "From data already in the app. Fill in only what's missing — nothing is guessed.", id: "Dari data yang sudah ada di app. Isi hanya yang kosong — tidak ada yang ditebak." },
   "roadmap.wizard.followers": { en: "{platform} followers now", id: "Followers {platform} sekarang" },
   "roadmap.wizard.followersHint": { en: "Leave empty to use the number on record.", id: "Kosongkan untuk memakai angka yang tercatat." },
@@ -64,7 +64,7 @@ export default {
   "roadmap.err.generic": { en: "Something went wrong. Try again.", id: "Ada yang gagal. Coba lagi." },
 
   // ---------- What the system read ----------
-  "roadmap.read.title": { en: "What BrandLab read", id: "Yang dibaca BrandLab" },
+  "roadmap.read.title": { en: "What Brandlab read", id: "Yang dibaca Brandlab" },
   "roadmap.read.sub": { en: "Each line shows where the number came from and what it changed.", id: "Tiap baris menyebut asal angkanya dan apa dampaknya." },
   "roadmap.read.unknown": { en: "not known", id: "belum diketahui" },
   "roadmap.read.src.typed": { en: "you typed it", id: "kamu isi sendiri" },
@@ -236,6 +236,10 @@ export default {
   "roadmap.menu.delete": { en: "Delete goal", id: "Hapus tujuan" },
   "roadmap.menu.deleteTitle": { en: "Delete this goal?", id: "Hapus tujuan ini?" },
   "roadmap.menu.deleteMsg": { en: "Only the goal is removed. Its campaigns and calendar posts stay where they are.", id: "Hanya tujuannya yang dihapus. Campaign dan konten di kalender tetap ada." },
+  "roadmap.menu.archiveCampaignsTitle": { en: "Archive its campaigns too?", id: "Arsipkan juga campaign-nya?" },
+  "roadmap.menu.archiveCampaignsMsg": { en: "This goal installed {n} campaign(s). They'll keep their content either way — only whether they move to Archived is up to you.", id: "Tujuan ini memasang {n} campaign. Kontennya tetap ada apa pun pilihannya — cuma menentukan campaign-nya pindah ke Arsip atau tidak." },
+  "roadmap.menu.archiveCampaignsYes": { en: "Archive them", id: "Arsipkan" },
+  "roadmap.menu.archiveCampaignsNo": { en: "Leave as is", id: "Biarkan saja" },
 
   // ---------- Re-plot ----------
   "roadmap.replan.cta": { en: "Re-plot", id: "Atur ulang" },
@@ -271,7 +275,7 @@ export default {
   "roadmap.home.draft": { en: "Draft — not on your calendar yet.", id: "Draft — belum masuk kalender." },
   "roadmap.home.summary": { en: "{name} · {days} days", id: "{name} · {days} hari" },
   "roadmap.home.promo.title": { en: "Working toward a big date?", id: "Lagi menuju tanggal besar?" },
-  "roadmap.home.promo.body": { en: "Give it a date and BrandLab plots the campaigns, weekly posts and deadlines — from your own numbers.", id: "Kasih tanggalnya, BrandLab memetakan campaign, konten mingguan, dan deadline — dari angka brand-mu sendiri." },
+  "roadmap.home.promo.body": { en: "Give it a date and Brandlab plots the campaigns, weekly posts and deadlines — from your own numbers.", id: "Kasih tanggalnya, Brandlab memetakan campaign, konten mingguan, dan deadline — dari angka brand-mu sendiri." },
   "roadmap.home.promo.cta": { en: "Build a roadmap", id: "Susun roadmap" },
   "roadmap.home.promo.summary": { en: "Plan toward a date", id: "Rencana menuju satu tanggal" },
 

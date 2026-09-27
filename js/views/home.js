@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, createContent, updateContent, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -100,6 +100,220 @@ function buildSteps(brandId, brand, campaigns, content) {
   return { steps, currentIndex, doneCount: steps.filter((s) => s.done).length, identityDone };
 }
 
+// ---- Progress feel: step dots, one-time celebration, posting streak ------
+// (Tugas C — "rasa kemajuan + perayaan kecil".) All deterministic, no AI.
+
+// Small "N of 3" dots next to the journey summary — the always-visible
+// line (a <summary>, not hidden behind expanding the details), so the
+// progress reads at a glance without opening anything.
+function stepDotsHTML(doneCount, total) {
+  const dots = Array.from({ length: total }, (_, i) => `<span class="step-dot${i < doneCount ? " is-done" : ""}"></span>`).join("");
+  return `<span class="step-dots" aria-hidden="true">${dots}</span>`;
+}
+
+// Compares this paint's done step keys against the last-seen set for this
+// brand (localStorage, try/catch'd — a private window or blocked storage
+// just means no celebration, never a crash). Identity already has its own
+// celebration (celebrateBuilderCompleteIfFlagged), so it's excluded here;
+// this only catches "campaign" and "content" turning done for the first
+// time on this device.
+function stepsSeenKey(brandId) {
+  return `wpk-home-steps-seen-${brandId}`;
+}
+function detectNewlyDoneSteps(brandId, steps) {
+  const doneKeys = steps.filter((s) => s.done).map((s) => s.key);
+  let prev = null;
+  try {
+    const raw = localStorage.getItem(stepsSeenKey(brandId));
+    prev = raw ? JSON.parse(raw) : null;
+  } catch {
+    prev = null;
+  }
+  try {
+    localStorage.setItem(stepsSeenKey(brandId), JSON.stringify(doneKeys));
+  } catch {
+    /* storage unavailable — celebration just won't fire, no crash */
+  }
+  if (!prev) return []; // first time this brand is seen on this device — no fake celebration
+  return doneKeys.filter((k) => k !== "identity" && !prev.includes(k));
+}
+
+// Consecutive weeks (Mon–Sun) with at least one published content, counted
+// backward from the current week — or last week if nothing's published yet
+// this week, so a streak isn't wiped out mid-week before today's post goes
+// up. Deterministic from listContent(), no AI involved.
+function postingStreakWeeks(content, now) {
+  const weekStart = (d) => {
+    const day = (d.getDay() + 6) % 7; // 0 = Monday
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime();
+  };
+  const weeksWithPost = new Set(
+    content.filter((c) => c.status === "published" && c.publishedDate).map((c) => weekStart(new Date(c.publishedDate)))
+  );
+  if (!weeksWithPost.size) return 0;
+  const WEEK_MS = 7 * 86400000;
+  let cursor = weekStart(now);
+  if (!weeksWithPost.has(cursor)) cursor -= WEEK_MS;
+  let streak = 0;
+  while (weeksWithPost.has(cursor)) {
+    streak++;
+    cursor -= WEEK_MS;
+  }
+  return streak;
+}
+
+// ---------- Insight actions (one-tap) ----------
+// Three of Brand Pulse's read-only signals turned into buttons that do the
+// actual work in one click instead of just pointing at a screen: schedule
+// more of what's already outperforming, clear an overdue pileup onto the
+// next free days, or seed the week with ideas straight from Brand DNA when
+// there's nothing going out at all (no AI call, so it still works with AI
+// off). Every action only shows when its precondition actually holds — no
+// button is ever rendered "just in case". Copy stays plain Indonesian
+// either way: t() already runs plainWords() under Pemula.
+function isWeekend(d) {
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+// The next `count` weekdays not already carrying a scheduled piece for this
+// brand — spread out instead of stacking two items onto the same day.
+function nextFreeWeekdays(usedDates, count) {
+  const used = new Set(usedDates);
+  const dates = [];
+  const cursor = new Date();
+  cursor.setDate(cursor.getDate() + 1);
+  while (dates.length < count) {
+    if (!isWeekend(cursor)) {
+      const iso = localISODate(cursor);
+      if (!used.has(iso)) {
+        dates.push(iso);
+        used.add(iso);
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+// Monday–Sunday bounds for "this week", as ISO date strings — same
+// Monday-start convention as postingStreakWeeks() above.
+function thisWeekRange(now) {
+  const day = (now.getDay() + 6) % 7;
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return { start: localISODate(start), end: localISODate(end) };
+}
+
+function buildInsightActions({ brandId, brand, content, signals, refresh }) {
+  const actions = [];
+
+  // 1. A format/funnel combo is clearly outperforming (js/brand-pulse.js
+  // signalTopFormat) — offer to schedule two more like the best example.
+  const topFormat = signals.find((s) => s.kind === "top-format" && s.refs?.contentId);
+  const bestPost = topFormat ? content.find((c) => c.id === topFormat.refs.contentId) : null;
+  if (topFormat && bestPost) {
+    actions.push({
+      id: "top-format",
+      icon: "sparkle",
+      text: t("home.action.topFormat.text", { format: bestPost.format || topFormat.refs.format, mult: topFormat.refs.multiplier }),
+      cta: t("home.action.topFormat.cta"),
+      run: () => {
+        const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
+        const dates = nextFreeWeekdays(usedDates, 2);
+        dates.forEach((scheduleDate) => {
+          createContent(brandId, {
+            title: t("home.action.topFormat.newTitle", { title: bestPost.title || t("beginner.untitled") }),
+            status: "idea",
+            format: bestPost.format || "",
+            platform: bestPost.platform || "",
+            funnel: bestPost.funnel || "TOFU",
+            campaignId: bestPost.campaignId || "",
+            campaignPhaseId: bestPost.campaignPhaseId || "",
+            scheduleDate,
+          });
+        });
+        toast(t("home.action.topFormat.done", { n: dates.length }));
+        refresh();
+      },
+    });
+  }
+
+  // 2. Overdue content piled up (js/store.js listOverdueAndDueSoon) — bump
+  // every one of them onto the next free weekdays in one go.
+  const overdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId).map((x) => x.content);
+  if (overdue.length) {
+    actions.push({
+      id: "overdue-bulk",
+      icon: "calendar",
+      text: t("home.action.overdue.text", { n: overdue.length }),
+      cta: t("home.action.overdue.cta"),
+      run: () => {
+        const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
+        const dates = nextFreeWeekdays(usedDates, overdue.length);
+        overdue.forEach((c, i) => updateContent(c.id, { scheduleDate: dates[i] }));
+        toast(t("home.action.overdue.done", { n: overdue.length }));
+        refresh();
+      },
+    });
+  }
+
+  // 3. Nothing scheduled or published this week — seed 3 ideas straight from
+  // Brand DNA's own words (audience / problem / promise). Deterministic, no
+  // AI call, so it works even when AI is switched off.
+  const { start, end } = thisWeekRange(new Date());
+  const hasThisWeek = content.some((c) => {
+    const d = c.publishedDate || c.scheduleDate;
+    return d && d >= start && d <= end;
+  });
+  const dna = brand.brandDNA || {};
+  const dnaIdeas = [
+    dna.targetAudience ? t("home.action.emptyWeek.idea.audience", { text: dna.targetAudience }) : "",
+    dna.problemSolved ? t("home.action.emptyWeek.idea.problem", { text: dna.problemSolved }) : "",
+    dna.successOutcome ? t("home.action.emptyWeek.idea.promise", { text: dna.successOutcome }) : "",
+  ].filter(Boolean);
+  if (!hasThisWeek && dnaIdeas.length) {
+    actions.push({
+      id: "empty-week",
+      icon: "bulb",
+      text: t("home.action.emptyWeek.text"),
+      cta: t("home.action.emptyWeek.cta"),
+      run: () => {
+        dnaIdeas.forEach((title) => createContent(brandId, { title, status: "idea" }));
+        toast(t("home.action.emptyWeek.done", { n: dnaIdeas.length }));
+        refresh();
+      },
+    });
+  }
+
+  return actions;
+}
+
+function insightActionsHTML(actions) {
+  return `
+    <div class="insight-action-list">
+      ${actions
+        .map(
+          (a) => `
+        <div class="insight-action-row">
+          <span class="insight-action-icon">${icon(a.icon, { size: 16 })}</span>
+          <span class="insight-action-text">${esc(a.text)}</span>
+          <button type="button" class="btn btn-primary btn-sm" data-insight-action="${a.id}">${esc(a.cta)}</button>
+        </div>`
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function wireInsightActions(root, actions) {
+  qsa("[data-insight-action]", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const action = actions.find((a) => a.id === btn.dataset.insightAction);
+      if (action) action.run();
+    });
+  });
+}
+
 // ---------- Teman Brand (the Home card) ----------
 // The chat itself lives in the Teman tab of "Tanya Brandlab"
 // (js/consultant-panel.js) — one chat component, never a second copy here.
@@ -186,13 +400,17 @@ function momentsStripHTML(brand) {
 
 function companionCardHTML(brand, { signals, content, now }) {
   const top = topSignal(signals);
+  // A brand that's never posted and has nothing in brand memory yet hasn't
+  // had a "quiet week" — it's had no week at all. Greet it as day one
+  // instead of implying there was something (unremarkable) to report.
+  const isFirstDay = !content.length && !(brand.developmentLog || []).length;
   const unrecapped = unrecappedMessages(brand.id).filter((m) => m.role === "user").length;
   const weekAgo = now.getTime() - 7 * 86400000;
   const momentsThisWeek = savedMoments(brand).filter((e) => e.at >= weekAgo).length;
   return {
     extraHead: unrecapped ? `<button type="button" class="btn btn-secondary btn-sm" data-companion-open="recap" title="${esc(t("home.companion.unrecapped", { n: unrecapped }))}">${icon("sparkle", { size: 12 })}${t("companion.recap.button")} (${unrecapped})</button>` : "",
     bodyHTML: `
-      <p class="companion-greeting">${greetingSentence(brand, now)} <b>${esc(top ? top.title : t("companion.observation.quiet"))}</b></p>
+      <p class="companion-greeting">${greetingSentence(brand, now)} <b>${esc(top ? top.title : t(isFirstDay ? "companion.observation.firstDay" : "companion.observation.quiet"))}</b></p>
       <p class="text-muted" style="font-size:12.5px;margin:6px 0 0;">${t("home.companion.sub")}</p>
       <div class="companion-actions">
         <button type="button" class="btn btn-primary btn-sm" data-companion-open="companion">${icon("heart", { size: 13 })}${t("home.companion.tell")}</button>
@@ -246,7 +464,15 @@ function paint(root, brandId, state, refresh) {
   // Computed once per paint for the Teman card's greeting and action buttons.
   const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
   const companion = companionCardHTML(brand, { signals, content, now: new Date() });
+  const insightActions = buildInsightActions({ brandId, brand, content, signals, refresh });
   const goal = goalWidget({ brandId, brand, campaigns, content, identityDone });
+  const newlyDoneSteps = detectNewlyDoneSteps(brandId, journey.steps);
+  if (newlyDoneSteps.length) toast(t(`beginner.step.${newlyDoneSteps[0]}.celebrate`));
+  const streakWeeks = postingStreakWeeks(content, new Date());
+  // Report PDF summarizes published content — nothing to report until the
+  // brand has actually published something, so the button stays hidden
+  // until then instead of opening an empty/meaningless report.
+  const hasPublishedContent = content.some((c) => c.status === "published");
 
   root.innerHTML = `
     <div class="page-head">
@@ -254,9 +480,10 @@ function paint(root, brandId, state, refresh) {
         <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
         <h1>${esc(brand.name)}</h1>
         <p class="page-sub">${!identityDone ? t("home.sub.identity") : journey.doneCount < journey.steps.length ? t("beginner.sub.identityDone", { n: journey.steps.length - journey.doneCount }) : t("beginner.sub.allDone")}</p>
+        ${streakWeeks >= 2 ? `<p class="home-streak">${t("home.streak.line", { n: streakWeeks })}</p>` : ""}
       </div>
       <div class="home-head-side">
-        <button type="button" class="btn btn-secondary btn-sm" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}${t("rep.btn")}</button>
+        ${hasPublishedContent ? `<button type="button" class="btn btn-secondary btn-sm" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}${t("rep.btn")}</button>` : ""}
         ${avatarHTML(brand, "width:64px;height:64px;border-radius:16px;font-size:24px;flex:none;")}
       </div>
     </div>
@@ -280,6 +507,14 @@ function paint(root, brandId, state, refresh) {
     }
 
     ${
+      insightActions.length
+        ? collapsed.has("insightActions")
+          ? widgetCollapsedHTML("insightActions", "sparkle", t("home.action.title"), t("home.action.summary", { n: insightActions.length }))
+          : widgetCardHTML("insightActions", "sparkle", t("home.action.title"), insightActionsHTML(insightActions))
+        : ""
+    }
+
+    ${
       scheduleRows
         ? collapsed.has("todo")
           ? widgetCollapsedHTML("todo", "calendar", t("brandHome.upNext.title"), t("beginner.todo.summary", { count: Math.min(brandOverdue.length, 3) + upNext.length }))
@@ -289,7 +524,7 @@ function paint(root, brandId, state, refresh) {
         : ""
     }
 
-    ${stepsHTML(journey, cfg.lockNext, identityJustDone)}
+    ${stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps)}
 
     ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, "") : ""}
   `;
@@ -298,6 +533,7 @@ function paint(root, brandId, state, refresh) {
   wireGoalCard(root, { brandId });
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
   if (!collapsed.has("companion")) wireCompanionCard(root, { brandId, refresh });
+  if (insightActions.length && !collapsed.has("insightActions")) wireInsightActions(root, insightActions);
   if (cfg.analytics) wireAnalyticsSection(root, state, refresh);
   // One report, for both modes: the page-head button and the weekly nudge.
   qs("#home-report", root)?.addEventListener("click", () => openReportModal(brandId));
@@ -442,14 +678,15 @@ function ctaHref(brandId, campaign, cta) {
 
 // Folded under everything else: the one action up top is what to do now;
 // this is only the map, opened when someone wants it.
-function stepsHTML(journey, lockNext, celebrateIdentity) {
+function stepsHTML(journey, lockNext, celebrateIdentity, celebrateKeys = []) {
   const total = journey.steps.length;
-  const rows = journey.steps.map((s, i) => stepRowHTML(s, i, journey, lockNext, celebrateIdentity)).join("");
+  const rows = journey.steps.map((s, i) => stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys)).join("");
   return `
       <details class="card glass-card card-tight journey journey-collapsed" id="beginner-journey">
         <summary>
           <span class="journey-summary-check">${icon(journey.currentIndex === -1 ? "check" : "layers", { size: 14 })}</span>
           <span class="t">${t("beginner.journey.collapsed", { done: journey.doneCount, total })}</span>
+          ${stepDotsHTML(journey.doneCount, total)}
           <span class="m">${t("beginner.journey.viewEdit")}</span>
         </summary>
         <div class="journey-list">${rows}</div>
@@ -457,13 +694,13 @@ function stepsHTML(journey, lockNext, celebrateIdentity) {
   `;
 }
 
-function stepRowHTML(s, i, journey, lockNext, celebrateIdentity) {
+function stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys = []) {
   // Pemula: the Campaign step stays locked until the identity is done;
   // Konten is open from day one (try first, sharpen with Brand DNA later).
   // Pro: every step is open — "current" is just the first unfinished one.
   const locked = lockNext && s.key === "campaign" && !journey.identityDone;
   const state = s.done ? "done" : locked ? "upcoming" : i === journey.currentIndex ? "current" : "open";
-  const celebrate = celebrateIdentity && s.key === "identity" ? " journey-step-celebrate" : "";
+  const celebrate = (celebrateIdentity && s.key === "identity") || celebrateKeys.includes(s.key) ? " journey-step-celebrate" : "";
   const marker = s.done ? icon("check", { size: 13 }) : `<span>${i + 1}</span>`;
   const inner = `
     <span class="journey-marker">${marker}</span>
