@@ -272,4 +272,7 @@ export default {
   "dna.reset.message": { en: "Every answer here — customer, problem, trust, plan, call to action, outcomes, tagline and brand character — is cleared and starts empty. Brand Guidelines (logo, colors, typography, tone of voice) is not affected. This can't be undone.", id: "Semua jawaban di sini — pelanggan, masalah, kepercayaan, rencana, ajakan, hasil, tagline, dan karakter brand — dihapus dan balik kosong. Brand Guidelines (logo, warna, tipografi, tone of voice) nggak kepengaruh. Nggak bisa dibatalin." },
   "dna.reset.confirm": { en: "Yes, reset it", id: "Ya, reset" },
   "dna.reset.done": { en: "Brand DNA reset", id: "Brand DNA direset" },
+  "dna.pdf.making": { en: "Making PDF…", id: "Lagi bikin PDF…" },
+  "dna.pdf.saved": { en: "Brand DNA PDF downloaded.", id: "PDF Brand DNA sudah terunduh." },
+  "dna.pdf.failed": { en: "Couldn't make the PDF — check your connection and try again.", id: "PDF gagal dibuat — cek koneksi lalu coba lagi." },
 };

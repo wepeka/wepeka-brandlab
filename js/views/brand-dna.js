@@ -15,6 +15,7 @@ import { brandDnaCompleteness, brandDnaDone, missingDnaFields } from "../brand-p
 import { markDnaJustCompleted } from "./brand-builder.js";
 import { t } from "../i18n.js";
 import { dnaExamples, businessKind } from "../dna-examples.js";
+import { ensurePdfLibs } from "../pdf-libs.js";
 
 const TOUR_STEPS = [
   { selector: ".dna-progress-label", title: t("dna.tour.title"), body: t("dna.tour.body") },
@@ -1529,8 +1530,87 @@ function openBrandDnaPdf(brand, answers) {
     `,
   });
   qs("#dna-pdf-close", overlay).addEventListener("click", () => closeOverlay(overlay));
-  qs("#dna-pdf-download", overlay).addEventListener("click", () => {
-    toast(t("dna.pdf.printHint"));
-    setTimeout(() => window.print(), 400);
+  const dlBtn = qs("#dna-pdf-download", overlay);
+  dlBtn.addEventListener("click", async () => {
+    if (dlBtn.disabled) return;
+    const label = dlBtn.innerHTML;
+    dlBtn.disabled = true;
+    dlBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px;"></span>${t("dna.pdf.making")}`;
+    try {
+      await downloadDnaPdf(brand, qs("#dna-report-sheet", overlay));
+      toast(t("dna.pdf.saved"));
+    } catch (e) {
+      console.error("Brand DNA PDF failed", e);
+      toast(t("dna.pdf.failed"), "error");
+    } finally {
+      dlBtn.disabled = false;
+      dlBtn.innerHTML = label;
+    }
   });
+}
+
+// A real downloadable .pdf (html2canvas + jsPDF, same loader as the Brand
+// Book and the brand report) instead of the browser's print dialog — which
+// on phones and in several desktop browsers never produced a file at all.
+// The preview sheet's own blocks (cover, each section, footer) are laid onto
+// fixed A4 pages off-screen; a block never splits across two pages.
+const DNA_A4_W = 794;
+const DNA_A4_H = 1123;
+async function downloadDnaPdf(brand, sheet) {
+  await ensurePdfLibs();
+  const host = document.createElement("div");
+  host.className = "rp-pdf-host";
+  document.body.appendChild(host);
+  try {
+    const blocks = [...sheet.children].filter((el) => !el.classList.contains("report-footer") && !el.classList.contains("brandbook-wpk-mark"));
+    const mark = sheet.querySelector(".brandbook-wpk-mark");
+    const pages = [];
+    let body = null;
+    const newPage = () => {
+      const page = document.createElement("div");
+      page.className = "report-sheet dna-sheet rp-page";
+      if (mark) {
+        // Explicit box: html2canvas crops a width-only (height:auto) image
+        // on these fixed A4 pages. The logo file is 4:1.
+        const m = mark.cloneNode(true);
+        m.style.cssText = "position:absolute;top:24px;right:52px;width:72px;height:18px;opacity:.55;";
+        page.appendChild(m);
+      }
+      body = document.createElement("div");
+      page.appendChild(body);
+      host.appendChild(page);
+      pages.push(page);
+    };
+    newPage();
+    const limit = DNA_A4_H - 96 - 40; // page padding + footer line
+    blocks.forEach((src) => {
+      const block = src.cloneNode(true);
+      body.appendChild(block);
+      if (body.offsetHeight > limit && body.children.length > 1) {
+        body.removeChild(block);
+        newPage();
+        body.appendChild(block);
+      }
+    });
+    pages.forEach((pg, i) => {
+      const foot = document.createElement("div");
+      foot.className = "report-footer";
+      foot.style.cssText = "position:absolute;left:52px;right:52px;bottom:28px;";
+      foot.textContent = `Wepeka Brandlab — ${brand.name} · ${i + 1}/${pages.length}`;
+      pg.style.position = "relative";
+      pg.appendChild(foot);
+    });
+    await Promise.all([...host.querySelectorAll("img")].map((img) => (img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; }))));
+    if (document.fonts?.ready) await document.fonts.ready;
+    const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+    for (let i = 0; i < pages.length; i++) {
+      const canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: "#ffffff", width: DNA_A4_W, height: DNA_A4_H, windowWidth: DNA_A4_W, logging: false, useCORS: true });
+      if (i > 0) pdf.addPage("a4", "portrait");
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+    }
+    const slug = (brand.name || "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "brand";
+    pdf.save(`${slug}-brand-dna.pdf`);
+  } finally {
+    host.remove();
+  }
 }

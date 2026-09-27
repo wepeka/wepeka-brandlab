@@ -204,8 +204,24 @@ function thisWeekRange(now) {
   return { start: localISODate(start), end: localISODate(end) };
 }
 
+// What the last one-tap action just did, per brand — kept at module scope
+// so it survives the Home repaint that follows every write, and shown in
+// the widget (titles + a link to each item) until the owner closes it.
+// Without this the action only toasted "3 ideas created" and the owner had
+// no idea what was made or where it went.
+const actionResults = new Map(); // brandId -> { kind, items: [{ id, title, date }] }
+const clipTitle = (text, max = 72) => {
+  const s = String(text || "").trim().replace(/\s+/g, " ");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 12))}…`;
+};
+
 function buildInsightActions({ brandId, brand, content, signals, refresh }) {
   const actions = [];
+  const remember = (kind, items) => {
+    actionResults.set(brandId, { kind, items: items.map((c) => ({ id: c.id, title: c.title, date: c.scheduleDate || "" })) });
+  };
 
   // 1. A format/funnel combo is clearly outperforming (js/brand-pulse.js
   // signalTopFormat) — offer to schedule two more like the best example.
@@ -220,9 +236,10 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
       run: () => {
         const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
         const dates = nextFreeWeekdays(usedDates, 2);
-        dates.forEach((scheduleDate) => {
+        const made = dates.map((scheduleDate) =>
           createContent(brandId, {
-            title: t("home.action.topFormat.newTitle", { title: bestPost.title || t("beginner.untitled") }),
+            title: t("home.action.topFormat.newTitle", { title: clipTitle(bestPost.title || t("beginner.untitled"), 60) }),
+            idea: t("home.action.topFormat.brief", { title: bestPost.title || t("beginner.untitled"), format: bestPost.format || topFormat.refs.format || "" }),
             status: "idea",
             format: bestPost.format || "",
             platform: bestPost.platform || "",
@@ -230,9 +247,10 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
             campaignId: bestPost.campaignId || "",
             campaignPhaseId: bestPost.campaignPhaseId || "",
             scheduleDate,
-          });
-        });
-        toast(t("home.action.topFormat.done", { n: dates.length }));
+          })
+        );
+        remember("ideas", made);
+        toast(t("home.action.topFormat.done", { n: made.length }));
         refresh();
       },
     });
@@ -250,7 +268,8 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
       run: () => {
         const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
         const dates = nextFreeWeekdays(usedDates, overdue.length);
-        overdue.forEach((c, i) => updateContent(c.id, { scheduleDate: dates[i] }));
+        const moved = overdue.map((c, i) => updateContent(c.id, { scheduleDate: dates[i] }) || c);
+        remember("moved", moved);
         toast(t("home.action.overdue.done", { n: overdue.length }));
         refresh();
       },
@@ -267,19 +286,30 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
   });
   const dna = brand.brandDNA || {};
   const dnaIdeas = [
-    dna.targetAudience ? t("home.action.emptyWeek.idea.audience", { text: dna.targetAudience }) : "",
-    dna.problemSolved ? t("home.action.emptyWeek.idea.problem", { text: dna.problemSolved }) : "",
-    dna.successOutcome ? t("home.action.emptyWeek.idea.promise", { text: dna.successOutcome }) : "",
-  ].filter(Boolean);
-  if (!hasThisWeek && dnaIdeas.length) {
+    ["audience", dna.targetAudience],
+    ["problem", dna.problemSolved],
+    ["promise", dna.successOutcome],
+  ]
+    .filter(([, text]) => (text || "").trim())
+    .map(([kind, text]) => ({
+      title: t(`home.action.emptyWeek.idea.${kind}`, { text: clipTitle(text, 60) }),
+      idea: t(`home.action.emptyWeek.brief.${kind}`, { text: text.trim() }),
+    }));
+  // Already made these once (and they're still around, not in Trash)? Then
+  // don't offer to make the same three again — each click used to add three
+  // more identical drafts.
+  const existingTitles = new Set(content.map((c) => (c.title || "").trim()));
+  const alreadyMade = dnaIdeas.length && dnaIdeas.every((d) => existingTitles.has(d.title));
+  if (!hasThisWeek && dnaIdeas.length && !alreadyMade) {
     actions.push({
       id: "empty-week",
       icon: "bulb",
       text: t("home.action.emptyWeek.text"),
       cta: t("home.action.emptyWeek.cta"),
       run: () => {
-        dnaIdeas.forEach((title) => createContent(brandId, { title, status: "idea" }));
-        toast(t("home.action.emptyWeek.done", { n: dnaIdeas.length }));
+        const made = dnaIdeas.map((d) => createContent(brandId, { title: d.title, idea: d.idea, status: "idea" }));
+        remember("ideas", made);
+        toast(t("home.action.emptyWeek.done", { n: made.length }));
         refresh();
       },
     });
@@ -288,8 +318,36 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
   return actions;
 }
 
-function insightActionsHTML(actions) {
+function insightResultHTML(brandId) {
+  const r = actionResults.get(brandId);
+  if (!r || !r.items.length) return "";
+  const head = r.kind === "moved" ? t("home.action.result.moved", { n: r.items.length }) : t("home.action.result.ideas", { n: r.items.length });
+  const allHref = r.kind === "moved" ? `#/brand/${brandId}/content/calendar` : `#/brand/${brandId}/content/list`;
+  const allLabel = r.kind === "moved" ? t("home.action.result.calendar") : t("home.action.result.all");
   return `
+    <div class="insight-result" role="status">
+      <div class="insight-result-head">
+        <span class="insight-result-title">${icon("check", { size: 15 })}${esc(head)}</span>
+        <button type="button" class="btn btn-ghost btn-sm" data-insight-dismiss>${esc(t("home.action.result.close"))}</button>
+      </div>
+      <ul class="insight-result-list">
+        ${r.items
+          .map(
+            (it) => `<li><a href="#/brand/${brandId}/content/creator/${esc(it.id)}">
+              <span class="insight-result-name">${esc(it.title || t("beginner.untitled"))}</span>
+              ${it.date ? `<span class="insight-result-date">${esc(formatDate(it.date))}</span>` : ""}
+              <span class="insight-result-open">${esc(t("home.action.result.open"))} ${icon("arrowRight", { size: 13 })}</span>
+            </a></li>`
+          )
+          .join("")}
+      </ul>
+      <a class="insight-result-all" href="${allHref}">${esc(allLabel)} ${icon("arrowRight", { size: 13 })}</a>
+    </div>`;
+}
+
+function insightActionsHTML(actions, brandId) {
+  return `
+    ${insightResultHTML(brandId)}
     <div class="insight-action-list">
       ${actions
         .map(
@@ -305,7 +363,11 @@ function insightActionsHTML(actions) {
   `;
 }
 
-function wireInsightActions(root, actions) {
+function wireInsightActions(root, actions, brandId, refresh) {
+  qs("[data-insight-dismiss]", root)?.addEventListener("click", () => {
+    actionResults.delete(brandId);
+    refresh();
+  });
   qsa("[data-insight-action]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       const action = actions.find((a) => a.id === btn.dataset.insightAction);
@@ -507,10 +569,10 @@ function paint(root, brandId, state, refresh) {
     }
 
     ${
-      insightActions.length
+      insightActions.length || actionResults.has(brandId)
         ? collapsed.has("insightActions")
           ? widgetCollapsedHTML("insightActions", "sparkle", t("home.action.title"), t("home.action.summary", { n: insightActions.length }))
-          : widgetCardHTML("insightActions", "sparkle", t("home.action.title"), insightActionsHTML(insightActions))
+          : widgetCardHTML("insightActions", "sparkle", t("home.action.title"), insightActionsHTML(insightActions, brandId))
         : ""
     }
 
@@ -533,7 +595,7 @@ function paint(root, brandId, state, refresh) {
   wireGoalCard(root, { brandId });
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
   if (!collapsed.has("companion")) wireCompanionCard(root, { brandId, refresh });
-  if (insightActions.length && !collapsed.has("insightActions")) wireInsightActions(root, insightActions);
+  if ((insightActions.length || actionResults.has(brandId)) && !collapsed.has("insightActions")) wireInsightActions(root, insightActions, brandId, refresh);
   if (cfg.analytics) wireAnalyticsSection(root, state, refresh);
   // One report, for both modes: the page-head button and the weekly nudge.
   qs("#home-report", root)?.addEventListener("click", () => openReportModal(brandId));

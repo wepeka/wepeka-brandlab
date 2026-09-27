@@ -57,7 +57,15 @@ export function visualBasicsDone(brand = {}) {
   return !!(colors.primary && fonts.primary && fonts.secondary);
 }
 
-// The full Brand Book, section by section, for Pro's "x/5" progress line.
+// The full Brand Book, section by section, for Pro's "x/6" progress line.
+// Includes the book's copy pages (Value Proposition + Colour Essence) —
+// those pages render a bare "not generated" empty state when
+// g.aiCopy is missing, so a brand that skipped them was still showing
+// 100% everywhere this counts (home hero, Builder hub card,
+// isBrandBuilderComplete) even though the reader would immediately hit an
+// empty page. Fixed here, once, since every caller reads off this same
+// function — see brand-guidelines.js's own PROGRESS_STEP_KEYS bar for the
+// matching in-page counter.
 export function brandBookProgress(brand = {}) {
   const g = brand.brandGuidelines || {};
   const parts = [
@@ -66,6 +74,7 @@ export function brandBookProgress(brand = {}) {
     !!g.logo?.dataUrl,
     !!g.visualDirection?.length,
     !!brand.brandBuilder?.toneOfVoice?.source,
+    !!((g.aiCopy?.valueProposition || []).some((p) => (p?.title || "").trim() && (p?.desc || "").trim()) && (g.aiCopy?.colorEssence?.primary || "").trim()),
   ];
   return { filled: parts.filter(Boolean).length, total: parts.length };
 }

@@ -2,7 +2,7 @@ import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings } from "../store.js";
 import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickTintTextColor } from "../dom.js";
 import { icon } from "../icons.js";
-import { openModal, closeOverlay, promptDialog } from "../modals.js";
+import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
 import {
   COLOR_FEELINGS, COLOR_PALETTES, COLOR_FORMULA_INFO, generatePaletteFromBase, hexToRgb, hexToCmyk, contrastRatio,
   TYPOGRAPHY_FEELINGS, FONT_LIBRARY, PREMIUM_FONT_LINK, FONT_CATEGORIES, FONT_CATEGORY_SECTORS, FONT_CATEGORY_PAIRINGS,
@@ -144,7 +144,10 @@ function answersFromBrand(brand) {
     visualDirection: bg.visualDirection || [],
     moodboard: bg.moodboard || [],
     applications: bg.applications?.length ? bg.applications : suggestedApplications(brand),
-    aiCopy: { valueProposition: null, colorEssence: null, ...(bg.aiCopy || {}) },
+    // `edited` remembers which of these the owner typed by hand — see
+    // wireReview's AI-fill handlers — so a later "Bantu isi pakai AI" click
+    // asks before silently overwriting what someone already wrote.
+    aiCopy: { valueProposition: null, colorEssence: null, edited: { valueProposition: false, colorEssence: {} }, ...(bg.aiCopy || {}) },
     bookStyle: BOOK_STYLE_KEYS.includes(bg.bookStyle) ? bg.bookStyle : "classic",
     bookPhoto: bg.bookPhoto || "",
   };
@@ -231,7 +234,12 @@ function sectionTabsHTML(state, a) {
 // Only the sections the owner actually fills in count — Foundation is
 // copied from Brand DNA and Applications comes pre-suggested, so counting
 // them showed "2/6 selesai" before anyone had touched this page.
-const PROGRESS_STEP_KEYS = ["logo", "color", "typography", "direction", "tone"];
+// "copy" (Value Proposition + Colour Essence) is counted here too, even
+// though it isn't a tab of its own — those are book pages the reader
+// WILL see on Review/PDF, and they used to show a bare "not generated"
+// while this bar (and brandBookProgress in brand-progress.js, which the
+// Home hero / Builder hub read) both still said done. See aiCopyFilled().
+const PROGRESS_STEP_KEYS = ["logo", "color", "typography", "direction", "tone", "copy"];
 function guidelinesProgressHTML(state) {
   const keys = PROGRESS_STEP_KEYS;
   const done = keys.filter((k) => isStepFilled(k, state.answers, state)).length;
@@ -291,6 +299,15 @@ function wireTabs(root, state, refresh) {
   });
 }
 
+// Value Proposition + Colour Essence both hold real, non-empty text — the
+// same test valuePropositionBody()/colorEssenceBody() use to decide
+// whether to render the book page or its "not generated" empty state, so
+// this bar and the book always agree.
+function aiCopyFilled(a) {
+  const hasPillar = (a.aiCopy?.valueProposition || []).some((p) => (p?.title || "").trim() && (p?.desc || "").trim());
+  return hasPillar && !!(a.aiCopy?.colorEssence?.primary || "").trim();
+}
+
 function isStepFilled(stepKey, a, state) {
   switch (stepKey) {
     // "Belum punya logo" no longer counts as done — the section stays open
@@ -301,6 +318,7 @@ function isStepFilled(stepKey, a, state) {
     case "typography": return !!a.fonts.primary && !!a.fonts.secondary;
     case "direction": return a.visualDirection.length > 0;
     case "applications": return a.applications.length > 0;
+    case "copy": return aiCopyFilled(a);
     default: return true;
   }
 }
@@ -2010,7 +2028,7 @@ function taglineBody(brand, a) {
 // whatever's cached in a.aiCopy.valueProposition, never calls AI itself.
 function valuePropositionBody(a) {
   const pillars = a.aiCopy?.valueProposition;
-  if (!pillars?.length) return bookEmpty(t("bg.book.notGenerated"));
+  if (!pillars?.length) return bookEmpty(t("bg.book.vpEmpty"));
   return `
     <div class="bbk-cols">
       ${pillars
@@ -2134,7 +2152,7 @@ function colorPaletteBody(a) {
 // Proposition: this only lays out a.aiCopy.colorEssence, never calls AI.
 function colorEssenceBody(a) {
   const essence = a.aiCopy?.colorEssence;
-  if (!essence?.primary) return bookEmpty(t("bg.book.notGenerated"));
+  if (!essence?.primary) return bookEmpty(t("bg.book.ceEmpty"));
   const roles = ["primary", "secondary", "accent"].filter((k) => essence[k] && a.colors[k]);
   return `
     <div class="bbk-cols">
@@ -2535,11 +2553,85 @@ function progressivePreviewHTML(brand, a) {
 
 // ---------- Review step ----------
 // Value Proposition and Colour Essence are the only two pages in this
-// whole book without a deterministic source, so they're the only reason
-// this button exists — everything else (Color/Typography/Logo/etc.) is
-// already computed straight from brandbook-data.js, no AI or key needed.
-function needsAiCopy(a) {
-  return (!a.aiCopy?.valueProposition?.length && true) || (!a.aiCopy?.colorEssence?.primary && !!a.colors.primary);
+// whole book without a deterministic source (everything else — Color/
+// Typography/Logo/etc. — is a lookup straight from brandbook-data.js, no
+// AI or key needed), so they're the only pages that need an editor here:
+// the owner can type them by hand, ask AI to draft them, or both — AI
+// never overwrites what's already been typed without asking first (see
+// the `edited` flags in answersFromBrand and the confirm() calls below).
+const MAX_PILLARS = 4;
+const COPY_ROLES = ["primary", "secondary", "accent"];
+
+function pillarEditRowHTML(p, i) {
+  return `
+    <div class="bbk-pillar-edit" data-pillar-row="${i}">
+      <div class="bbk-pillar-edit-num">0${i + 1}</div>
+      <div class="bbk-pillar-edit-fields">
+        <input class="input" type="text" data-pillar-title="${i}" maxlength="40" placeholder="${escapeHtml(t("bg.copy.vp.titlePh"))}" value="${escapeHtml(p?.title || "")}" />
+        <textarea class="textarea" data-pillar-desc="${i}" maxlength="160" placeholder="${escapeHtml(t("bg.copy.vp.descPh"))}">${escapeHtml(p?.desc || "")}</textarea>
+      </div>
+      ${i > 0 || (p?.title || p?.desc) ? `<button type="button" class="chip-icon-btn" data-pillar-remove="${i}" aria-label="${t("common.remove")}" title="${t("common.remove")}">${icon("x", { size: 12 })}</button>` : ""}
+    </div>
+  `;
+}
+
+function valuePropEditorHTML(a) {
+  const pillars = a.aiCopy?.valueProposition?.length ? a.aiCopy.valueProposition : [];
+  return `
+    <div class="bbk-copy-editor">
+      <div class="bbk-copy-editor-head">
+        <strong>${t("bg.copy.vp.title")}</strong>
+        <button type="button" class="btn btn-secondary btn-sm" id="vp-ai-fill">${icon("bot", { size: 12 })}${t("bg.copy.aiFill")}</button>
+      </div>
+      <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t("bg.copy.vp.hint")}</p>
+      <div class="bbk-pillar-edit-list">${pillars.map(pillarEditRowHTML).join("")}</div>
+      ${pillars.length < MAX_PILLARS ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-add-pillar">${icon("plus", { size: 12 })}${t("bg.copy.vp.add")}</button>` : ""}
+      <div id="vp-ai-status"></div>
+    </div>
+  `;
+}
+
+function essenceEditRowHTML(k, a) {
+  const hex = a.colors[k];
+  return `
+    <div class="bbk-essence-edit-row" data-essence-role="${k}">
+      <span class="bbk-essence-swatch" style="background:${hex};"></span>
+      <div class="bbk-essence-edit-fields">
+        <label>${roleLabel(k)} · ${hex.toUpperCase()}</label>
+        <textarea class="textarea" data-essence-text="${k}" maxlength="160" placeholder="${escapeHtml(t("bg.copy.ce.placeholder"))}">${escapeHtml(a.aiCopy?.colorEssence?.[k] || "")}</textarea>
+      </div>
+      <button type="button" class="chip-icon-btn" data-essence-ai="${k}" aria-label="${t("bg.copy.aiFillOne")}" title="${t("bg.copy.aiFillOne")}">${icon("bot", { size: 12 })}</button>
+    </div>
+  `;
+}
+
+function colorEssenceEditorHTML(a) {
+  const roles = COPY_ROLES.filter((k) => a.colors[k]);
+  return `
+    <div class="bbk-copy-editor">
+      <div class="bbk-copy-editor-head">
+        <strong>${t("bg.copy.ce.title")}</strong>
+        ${roles.length ? `<button type="button" class="btn btn-secondary btn-sm" id="ce-ai-fill-all">${icon("bot", { size: 12 })}${t("bg.copy.aiFillAll")}</button>` : ""}
+      </div>
+      <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t("bg.copy.ce.hint")}</p>
+      ${
+        roles.length
+          ? `<div class="bbk-essence-edit-list">${roles.map((k) => essenceEditRowHTML(k, a)).join("")}</div>`
+          : `<div class="bbk-empty" style="padding:18px;">${t("bg.copy.ce.noColors")}</div>`
+      }
+      <div id="ce-ai-status"></div>
+    </div>
+  `;
+}
+
+function copyEditorHTML(a) {
+  return `
+    <div class="card dark-surface card-tight bbk-copy-editors" style="margin-bottom:16px;">
+      ${valuePropEditorHTML(a)}
+      <div class="bbk-copy-editor-sep"></div>
+      ${colorEssenceEditorHTML(a)}
+    </div>
+  `;
 }
 
 // The style picker above the Review sheet: Classic (free) + the paid art
@@ -2598,15 +2690,7 @@ function reviewHTML(brand, state) {
   return `
     <h2 style="margin-bottom:6px;">${t("bg.review.title")}</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("bg.review.sub")}</p>
-    ${
-      needsAiCopy(a)
-        ? `<div class="card dark-surface card-tight" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-             <div style="font-size:12.5px;color:var(--text-muted);max-width:480px;">${icon("bot", { size: 13 })} ${escapeHtml(t("bg.review.aiNote"))}</div>
-             <button type="button" class="btn btn-secondary btn-sm" id="generate-ai-copy">${icon("bot", { size: 13 })}${t("bg.review.generate")}</button>
-           </div>
-           <div id="ai-copy-status"></div>`
-        : `<button type="button" class="btn btn-ghost btn-sm" id="generate-ai-copy" style="margin-bottom:16px;">${icon("refresh", { size: 12 })}${t("bg.review.regenerate")}</button><div id="ai-copy-status"></div>`
-    }
+    ${copyEditorHTML(a)}
     ${bookStylePickerHTML(a)}
     <div ${bookSheetAttrs(a, "bbk-review-sheet")}>
       ${buildBrandBookPages(brand, a).join("")}
@@ -2651,31 +2735,154 @@ function wireReview(root, brandId, brand, state, refresh) {
   });
   qs("#wiz-pdf", root)?.addEventListener("click", () => openBrandBookPdf(brand, state.answers));
   wireBookStylePicker(root, brandId, state, refresh);
-  qs("#generate-ai-copy", root)?.addEventListener("click", async () => {
+  wireCopyEditor(root, brandId, brand, state, refresh);
+}
+
+// Value Proposition + Colour Essence editor — manual typing persists as-is
+// (no confirmation needed, it's the owner's own text), while either
+// "Bantu isi pakai AI" button first asks before clobbering text the owner
+// already typed by hand (tracked in a.aiCopy.edited — see
+// answersFromBrand). Manual edits and AI fills both go through the same
+// `persist()` -> updateBrand(brandGuidelines) path everything else on this
+// page already uses; there's no separate store for this.
+function wireCopyEditor(root, brandId, brand, state, refresh) {
+  const a = state.answers;
+  const persist = () => updateBrand(brandId, { brandGuidelines: { ...a } });
+
+  // ---- Value Proposition: manual editing ----
+  const pillars = () => (a.aiCopy.valueProposition ||= []);
+  qsa("[data-pillar-title]", root).forEach((el) => {
+    el.addEventListener("input", () => {
+      const i = Number(el.dataset.pillarTitle);
+      pillars()[i] = { ...(pillars()[i] || {}), title: el.value };
+    });
+    el.addEventListener("change", () => {
+      a.aiCopy.edited = { ...(a.aiCopy.edited || {}), valueProposition: true };
+      persist();
+    });
+  });
+  qsa("[data-pillar-desc]", root).forEach((el) => {
+    el.addEventListener("input", () => {
+      const i = Number(el.dataset.pillarDesc);
+      pillars()[i] = { ...(pillars()[i] || {}), desc: el.value };
+    });
+    el.addEventListener("change", () => {
+      a.aiCopy.edited = { ...(a.aiCopy.edited || {}), valueProposition: true };
+      persist();
+    });
+  });
+  qsa("[data-pillar-remove]", root).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const i = Number(btn.dataset.pillarRemove);
+      pillars().splice(i, 1);
+      a.aiCopy.edited = { ...(a.aiCopy.edited || {}), valueProposition: true };
+      persist();
+      refresh();
+    })
+  );
+  qs("#vp-add-pillar", root)?.addEventListener("click", () => {
+    if (pillars().length >= MAX_PILLARS) return;
+    pillars().push({ title: "", desc: "" });
+    refresh();
+  });
+
+  // ---- Colour Essence: manual editing ----
+  qsa("[data-essence-text]", root).forEach((el) => {
+    const k = el.dataset.essenceText;
+    el.addEventListener("input", () => {
+      a.aiCopy.colorEssence = { ...(a.aiCopy.colorEssence || {}), [k]: el.value };
+    });
+    el.addEventListener("change", () => {
+      a.aiCopy.edited = { ...(a.aiCopy.edited || {}), colorEssence: { ...(a.aiCopy.edited?.colorEssence || {}), [k]: true } };
+      persist();
+    });
+  });
+
+  // ---- AI fill: Value Proposition (all 3 pillars at once) ----
+  qs("#vp-ai-fill", root)?.addEventListener("click", async () => {
+    const btn = qs("#vp-ai-fill", root);
+    const statusEl = qs("#vp-ai-status", root);
+    if (a.aiCopy.edited?.valueProposition) {
+      const ok = await confirmDialog({ title: t("bg.copy.overwrite.title"), message: t("bg.copy.overwrite.vpBody"), confirmLabel: t("bg.copy.overwrite.yes"), cancelLabel: t("common.cancel") });
+      if (!ok) return;
+    }
     const ai = getSettings().ai || {};
-    const statusEl = qs("#ai-copy-status", root);
     if (!hasAiKey(ai)) {
-      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-bottom:12px;">${t("bg.review.noKey")}</div>`;
+      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-top:8px;">${t("bg.review.noKey")}</div>`;
       return;
     }
-    const btn = qs("#generate-ai-copy", root);
     btn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status" style="margin-bottom:12px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
+    statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
     try {
-      const [pillars, essence] = await Promise.all([
-        generateValueProposition(ai, { brand }),
-        state.answers.colors.primary
-          ? generateColorEssence(ai, { brand, colors: state.answers.colors, colorFeelings: state.answers.colorFeelings })
-          : Promise.resolve(null),
-      ]);
-      state.answers.aiCopy = { valueProposition: pillars, colorEssence: essence || state.answers.aiCopy.colorEssence };
-      updateBrand(brandId, { brandGuidelines: { ...state.answers } });
+      const generated = await generateValueProposition(ai, { brand });
+      a.aiCopy.valueProposition = generated;
+      a.aiCopy.edited = { ...(a.aiCopy.edited || {}), valueProposition: false };
+      persist();
       toast(t("bg.review.generated"));
       refresh();
     } catch (err) {
-      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-bottom:12px;">${escapeHtml(err instanceof AiApiError ? err.message : t("bg.review.generateFail"))}</div>`;
+      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-top:8px;">${escapeHtml(err instanceof AiApiError ? err.message : t("bg.review.generateFail"))}</div>`;
       btn.disabled = false;
     }
+  });
+
+  // ---- AI fill: Colour Essence, all roles at once ----
+  qs("#ce-ai-fill-all", root)?.addEventListener("click", async () => {
+    const btn = qs("#ce-ai-fill-all", root);
+    const statusEl = qs("#ce-ai-status", root);
+    const anyEdited = COPY_ROLES.some((k) => a.aiCopy.edited?.colorEssence?.[k]);
+    if (anyEdited) {
+      const ok = await confirmDialog({ title: t("bg.copy.overwrite.title"), message: t("bg.copy.overwrite.ceBody"), confirmLabel: t("bg.copy.overwrite.yes"), cancelLabel: t("common.cancel") });
+      if (!ok) return;
+    }
+    const ai = getSettings().ai || {};
+    if (!hasAiKey(ai)) {
+      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-top:8px;">${t("bg.review.noKey")}</div>`;
+      return;
+    }
+    btn.disabled = true;
+    statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
+    try {
+      const essence = await generateColorEssence(ai, { brand, colors: a.colors, colorFeelings: a.colorFeelings });
+      a.aiCopy.colorEssence = essence;
+      a.aiCopy.edited = { ...(a.aiCopy.edited || {}), colorEssence: {} };
+      persist();
+      toast(t("bg.review.generated"));
+      refresh();
+    } catch (err) {
+      statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-top:8px;">${escapeHtml(err instanceof AiApiError ? err.message : t("bg.review.generateFail"))}</div>`;
+      btn.disabled = false;
+    }
+  });
+
+  // ---- AI fill: Colour Essence, one role ----
+  qsa("[data-essence-ai]", root).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const k = btn.dataset.essenceAi;
+      const statusEl = qs("#ce-ai-status", root);
+      if (a.aiCopy.edited?.colorEssence?.[k]) {
+        const ok = await confirmDialog({ title: t("bg.copy.overwrite.title"), message: t("bg.copy.overwrite.ceBody"), confirmLabel: t("bg.copy.overwrite.yes"), cancelLabel: t("common.cancel") });
+        if (!ok) return;
+      }
+      const ai = getSettings().ai || {};
+      if (!hasAiKey(ai)) {
+        statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-top:8px;">${t("bg.review.noKey")}</div>`;
+        return;
+      }
+      btn.disabled = true;
+      statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
+      try {
+        const essence = await generateColorEssence(ai, { brand, colors: a.colors, colorFeelings: a.colorFeelings });
+        a.aiCopy.colorEssence = { ...(a.aiCopy.colorEssence || {}), [k]: essence[k] };
+        if (a.aiCopy.edited?.colorEssence) a.aiCopy.edited.colorEssence[k] = false;
+        persist();
+        toast(t("bg.review.generated"));
+        refresh();
+      } catch (err) {
+        statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;margin-top:8px;">${escapeHtml(err instanceof AiApiError ? err.message : t("bg.review.generateFail"))}</div>`;
+        btn.disabled = false;
+      }
+    });
   });
 }
 

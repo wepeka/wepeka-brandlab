@@ -594,7 +594,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
 // otherwise this list only shows what's still in progress, sorted so the
 // most time-sensitive piece is first.
 export function render(root, { brandId, initialContentId }) {
-  const state = { selectedId: initialContentId || null, collapsedGroups: new Set() };
+  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set() };
   // Konten Baru → the same content drawer every other screen uses; the
   // new piece is then selected here, opening straight on its drafting panel.
   state.startNewContent = (defaults = {}) =>
@@ -711,7 +711,7 @@ function paint(root, brandId, state, refresh) {
         <div class="creator-sidebar-list">
           ${
             items.length
-              ? groupedSidebarHTML(items, state.selectedId, state.collapsedGroups)
+              ? groupedSidebarHTML(items, state.selectedId, state.collapsedGroups, state.expandedGroups)
               : `<div class="table-empty" style="padding:32px 16px;">${t(all.length ? "cr.sidebarEmpty" : "cr.sidebarEmptyFirst")}</div>`
           }
         </div>
@@ -753,6 +753,15 @@ function paint(root, brandId, state, refresh) {
       if (state.selectedId === id) state.selectedId = null;
       toast(t("cr.delete.done"));
       refresh();
+    });
+  });
+
+  qsa("[data-expand-group]", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.expandGroup;
+      if (state.expandedGroups.has(key)) state.expandedGroups.delete(key);
+      else state.expandedGroups.add(key);
+      paint(root, brandId, state, refresh);
     });
   });
 
@@ -1095,11 +1104,28 @@ const SIDEBAR_GROUPS = [
   { key: "other", label: t("cr.group.other"), statuses: ["published", "archived"] },
 ];
 
-function groupedSidebarHTML(items, selectedId, collapsedGroups) {
+// Each group shows its first few rows; the rest sit behind "Show N more".
+// Before, one long group (26 drafts) filled the whole scroll box and pushed
+// Editing / Ready to upload / etc. out of sight — every group header now
+// stays visible without scrolling inside the list.
+const GROUP_PREVIEW = 5;
+function groupedSidebarHTML(items, selectedId, collapsedGroups, expandedGroups = new Set()) {
   return SIDEBAR_GROUPS.map((g) => ({ ...g, items: items.filter((c) => g.statuses.includes(c.status)) }))
     .filter((g) => g.items.length)
     .map((g) => {
       const collapsed = collapsedGroups.has(g.key);
+      const expanded = expandedGroups.has(g.key);
+      let shown = g.items;
+      if (!expanded && g.items.length > GROUP_PREVIEW) {
+        shown = g.items.slice(0, GROUP_PREVIEW);
+        // Never hide the row that's open on the right.
+        const sel = g.items.find((c) => c.id === selectedId);
+        if (sel && !shown.includes(sel)) shown = [...shown.slice(0, GROUP_PREVIEW - 1), sel];
+      }
+      const hidden = g.items.length - shown.length;
+      const moreBtn = g.items.length > GROUP_PREVIEW
+        ? `<button type="button" class="creator-group-more" data-expand-group="${g.key}">${expanded ? t("cr.group.showLess") : t("cr.group.showMore", { n: hidden })}</button>`
+        : "";
       return `
     <div class="creator-sidebar-group ${collapsed ? "collapsed" : ""}">
       <button type="button" class="creator-sidebar-group-head" data-toggle-group="${g.key}">
@@ -1108,7 +1134,8 @@ function groupedSidebarHTML(items, selectedId, collapsedGroups) {
       </button>
       <div class="creator-sidebar-group-body">
         <div class="creator-sidebar-group-body-inner">
-          ${g.items.map((c) => sidebarRow(c, c.id === selectedId)).join("")}
+          ${shown.map((c) => sidebarRow(c, c.id === selectedId)).join("")}
+          ${moreBtn}
         </div>
       </div>
     </div>`;

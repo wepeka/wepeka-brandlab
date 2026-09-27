@@ -106,6 +106,8 @@ export default {
   "cr.group.execution": { en: "Shooting", id: "Syuting" },
   "cr.group.editing": { en: "Editing", id: "Editing" },
   "cr.group.scheduled": { en: "Ready to upload", id: "Siap upload" },
+  "cr.group.showMore": { en: "Show {n} more", id: "Tampilkan {n} lainnya" },
+  "cr.group.showLess": { en: "Show less", id: "Tampilkan lebih sedikit" },
   "cr.group.other": { en: "Other", id: "Lainnya" },
 
   "cr.empty.title": { en: "No content yet", id: "Belum ada konten" },
