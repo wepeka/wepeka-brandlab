@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, createContent, updateContent, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -210,12 +210,6 @@ function thisWeekRange(now) {
 // Without this the action only toasted "3 ideas created" and the owner had
 // no idea what was made or where it went.
 const actionResults = new Map(); // brandId -> { kind, items: [{ id, title, date }] }
-const clipTitle = (text, max = 72) => {
-  const s = String(text || "").trim().replace(/\s+/g, " ");
-  if (s.length <= max) return s;
-  const cut = s.slice(0, max);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 12))}…`;
-};
 
 function buildInsightActions({ brandId, brand, content, signals, refresh }) {
   const actions = [];
@@ -228,31 +222,21 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
   const topFormat = signals.find((s) => s.kind === "top-format" && s.refs?.contentId);
   const bestPost = topFormat ? content.find((c) => c.id === topFormat.refs.contentId) : null;
   if (topFormat && bestPost) {
+    // Ideas come from the chat (Tanya Brandlab, Brainstorm → idea cards the
+    // owner picks and saves), never created blind straight into Konten.
     actions.push({
       id: "top-format",
       icon: "sparkle",
       text: t("home.action.topFormat.text", { format: bestPost.format || topFormat.refs.format, mult: topFormat.refs.multiplier }),
       cta: t("home.action.topFormat.cta"),
-      run: () => {
-        const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
-        const dates = nextFreeWeekdays(usedDates, 2);
-        const made = dates.map((scheduleDate) =>
-          createContent(brandId, {
-            title: t("home.action.topFormat.newTitle", { title: clipTitle(bestPost.title || t("beginner.untitled"), 60) }),
-            idea: t("home.action.topFormat.brief", { title: bestPost.title || t("beginner.untitled"), format: bestPost.format || topFormat.refs.format || "" }),
-            status: "idea",
-            format: bestPost.format || "",
-            platform: bestPost.platform || "",
-            funnel: bestPost.funnel || "TOFU",
-            campaignId: bestPost.campaignId || "",
-            campaignPhaseId: bestPost.campaignPhaseId || "",
-            scheduleDate,
-          })
-        );
-        remember("ideas", made);
-        toast(t("home.action.topFormat.done", { n: made.length }));
-        refresh();
-      },
+      run: () =>
+        openConsultantPanel({
+          engine: "brainstorm",
+          bsMode: "ideas",
+          send: true,
+          fresh: true,
+          seed: t("home.action.topFormat.seed", { format: bestPost.format || topFormat.refs.format || "", title: bestPost.title || t("beginner.untitled") }),
+        }),
     });
   }
 
@@ -285,33 +269,17 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
     return d && d >= start && d <= end;
   });
   const dna = brand.brandDNA || {};
-  const dnaIdeas = [
-    ["audience", dna.targetAudience],
-    ["problem", dna.problemSolved],
-    ["promise", dna.successOutcome],
-  ]
-    .filter(([, text]) => (text || "").trim())
-    .map(([kind, text]) => ({
-      title: t(`home.action.emptyWeek.idea.${kind}`, { text: clipTitle(text, 60) }),
-      idea: t(`home.action.emptyWeek.brief.${kind}`, { text: text.trim() }),
-    }));
-  // Already made these once (and they're still around, not in Trash)? Then
-  // don't offer to make the same three again — each click used to add three
-  // more identical drafts.
-  const existingTitles = new Set(content.map((c) => (c.title || "").trim()));
-  const alreadyMade = dnaIdeas.length && dnaIdeas.every((d) => existingTitles.has(d.title));
-  if (!hasThisWeek && dnaIdeas.length && !alreadyMade) {
+  const hasDna = [dna.targetAudience, dna.problemSolved, dna.successOutcome].some((x) => (x || "").trim());
+  if (!hasThisWeek && hasDna) {
+    // Opens the chat's Brainstorm with a ready request — the AI answers with
+    // three idea cards grounded in Brand DNA, and the owner decides which to
+    // save (Ide Konten) or turn into a draft. Nothing is created until then.
     actions.push({
       id: "empty-week",
       icon: "bulb",
       text: t("home.action.emptyWeek.text"),
       cta: t("home.action.emptyWeek.cta"),
-      run: () => {
-        const made = dnaIdeas.map((d) => createContent(brandId, { title: d.title, idea: d.idea, status: "idea" }));
-        remember("ideas", made);
-        toast(t("home.action.emptyWeek.done", { n: made.length }));
-        refresh();
-      },
+      run: () => openConsultantPanel({ engine: "brainstorm", bsMode: "ideas", send: true, fresh: true, seed: t("home.action.emptyWeek.seed") }),
     });
   }
 

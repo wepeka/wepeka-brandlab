@@ -196,13 +196,14 @@ export function render(root, { brandId, section }) {
 // gate. Keeps the URL hash in sync too, so a direct link from the hub
 // (or a page reload) lands on the exact section clicked instead of always
 // restarting at Foundation.
-// Pemula sees only the two sections the identity gate needs (Warna, Font)
-// plus Review; Pro sees the whole book. Every section stays reachable by
-// URL in both modes — this only decides which tabs are advertised and
-// where Back/Next go.
-const GUIDED_STEPS = ["color", "typography"];
+// Pemula and Pro see the same full book — every section tab, and Back/Next
+// walk through all of them. (Pemula used to get only Warna + Font + Review,
+// which hid Logo, Arah Visual, Tone of Voice, etc. from beginners entirely.)
+// The Tujuan unlock gate is unchanged: it still only needs colours + fonts
+// (identityDone in brand-progress.js), so the extra sections never block a
+// beginner — they're just visible now.
 function visibleStepIndexes() {
-  return STEPS.map((s, i) => i).filter((i) => getMode() !== "guided" || GUIDED_STEPS.includes(STEPS[i].key));
+  return STEPS.map((s, i) => i);
 }
 
 function sectionTabsHTML(state, a) {
@@ -1924,7 +1925,7 @@ function foundationBody(brand) {
             (c) => `
           <div class="bbk-card">
             <div class="bbk-label bbk-label-brand">${escapeHtml(c.label)}</div>
-            <div class="bbk-card-text" style="font-size:${fitSize(c.text, [[120, 19], [220, 16.5], [340, 14]], 12.5)}px;">${escapeHtml(c.text)}</div>
+            <div class="bbk-card-text bbk-clamp-8" style="font-size:${fitSize(c.text, [[120, 19], [220, 16], [340, 13.5]], 12)}px;">${escapeHtml(c.text)}</div>
           </div>
         `
           )
@@ -1944,16 +1945,25 @@ function personalityColumn(brand) {
   const pb = brand.brandBuilder?.personality;
   const dnaTraits = brand.brandDNA?.personality || [];
   if (pb?.primary?.length) {
+    // The page is a fixed A4 artboard, so everything here is sized by how
+    // much there is: the "core character" line shrinks as it gets longer
+    // (it's meant to be a word or two, but owners/AI sometimes write a whole
+    // sentence), and rows/chips are capped so nothing runs off the page.
     const rows = [];
     for (let i = 0; i < Math.max(pb.primary.length, pb.avoid.length); i++) {
       if (!pb.primary[i] && !pb.avoid[i]) continue;
-      rows.push(`<div class="bbk-trait-row"><span class="bbk-trait-yes">${pb.primary[i] ? escapeHtml(pb.primary[i]) : ""}</span><span class="bbk-trait-no">${pb.avoid[i] ? escapeHtml(pb.avoid[i]) : ""}</span></div>`);
+      rows.push(`<div class="bbk-trait-row"><span class="bbk-trait-yes bbk-clamp-2">${pb.primary[i] ? escapeHtml(pb.primary[i]) : ""}</span><span class="bbk-trait-no bbk-clamp-2">${pb.avoid[i] ? escapeHtml(pb.avoid[i]) : ""}</span></div>`);
     }
+    const shownRows = rows.slice(0, 5);
+    const feeling = pb.feeling ? feelingLabel(pb.feeling) : "";
+    const bigSize = fitSize(feeling, [[18, 52], [32, 40], [60, 30], [110, 22]], 17);
+    const compact = shownRows.length >= 4 || feeling.length > 32;
+    const chips = (pb.secondary || []).slice(0, 6);
     return `
-      ${pb.feeling ? `<div class="bbk-label">${stripColon(t("bg.book.coreCharacter"))}</div><div class="bbk-bigword">${escapeHtml(feelingLabel(pb.feeling))}</div>` : ""}
+      ${feeling ? `<div class="bbk-label">${stripColon(t("bg.book.coreCharacter"))}</div><div class="bbk-bigword bbk-clamp-4" style="font-size:${bigSize}px;">${escapeHtml(feeling)}</div>` : ""}
       <div class="bbk-trait-head"><span>${t("bg.book.weAre")}</span><span>${t("bg.book.weAreNot")}</span></div>
-      ${rows.join("")}
-      ${pb.secondary?.length ? `<div class="bbk-chips" style="margin-top:18px;">${pb.secondary.map((s) => `<span class="bbk-chip">${escapeHtml(s)}</span>`).join("")}</div>` : ""}
+      <div class="${compact ? "bbk-traits-compact" : ""}">${shownRows.join("")}</div>
+      ${chips.length ? `<div class="bbk-chips" style="margin-top:${compact ? 12 : 18}px;">${chips.map((s) => `<span class="bbk-chip">${escapeHtml(s)}</span>`).join("")}</div>` : ""}
     `;
   }
   if (dnaTraits.length) return `<div class="bbk-label">${stripColon(t("bg.book.coreCharacter"))}</div><div class="bbk-chips" style="margin-top:12px;">${dnaTraits.map((s) => `<span class="bbk-chip bbk-chip-lg">${escapeHtml(s)}</span>`).join("")}</div>`;
@@ -1968,8 +1978,14 @@ function personalityColumn(brand) {
 function voiceColumn(brand) {
   const tov = brand.brandBuilder?.toneOfVoice;
   const guide = brand.aiVoiceGuide;
-  const cta = brand.brandDNA?.callToAction;
+  const cta = (brand.brandDNA?.callToAction || "").trim();
   if (!tov?.source && !guide && !cta) return "";
+  // A CTA is usually a short button label ("Pesan sekarang") and reads well
+  // as a pill next to the "avoid" words. A full sentence doesn't fit a pill
+  // or this already-full panel, so personalityBody() prints it as a block at
+  // the bottom of the left column instead (see ctaBlockHTML).
+  const ctaLong = cta.length > CTA_PILL_MAX;
+  const avoid = (tov?.avoidWords || []).slice(0, 8);
   const axes = tov?.source
     ? TONE_AXES.map((axis) => {
         const v = Math.max(0, Math.min(100, Number(tov[axis.key]) || 0));
@@ -1987,16 +2003,23 @@ function voiceColumn(brand) {
       ${tov?.source ? `<div class="bbk-example"><div class="bbk-label">${t("bg.book.example")}</div><div class="bbk-example-text">${escapeHtml(toneExampleDisplay(tov.formal, tov.character))}</div></div>` : ""}
       ${!tov?.source && guide ? `<div class="bbk-card-text" style="font-size:${fitSize(guide, [[200, 15], [400, 13]], 11.5)}px;margin-top:12px;">${escapeHtml(guide)}</div>` : ""}
       <div class="bbk-voice-meta">
-        ${tov?.avoidWords?.length ? `<div><span class="bbk-label">${stripColon(t("bg.book.avoid"))}</span><div class="bbk-chips">${tov.avoidWords.map((w) => `<span class="bbk-chip bbk-chip-no">${escapeHtml(w)}</span>`).join("")}</div></div>` : ""}
-        ${cta ? `<div><span class="bbk-label">${stripColon(t("bg.book.cta"))}</span><div class="bbk-chips"><span class="bbk-chip bbk-chip-cta">${escapeHtml(cta)}</span></div></div>` : ""}
+        ${avoid.length ? `<div><span class="bbk-label">${stripColon(t("bg.book.avoid"))}</span><div class="bbk-chips">${avoid.map((w) => `<span class="bbk-chip bbk-chip-no">${escapeHtml(w)}</span>`).join("")}</div></div>` : ""}
+        ${cta && !ctaLong ? `<div><span class="bbk-label">${stripColon(t("bg.book.cta"))}</span><div class="bbk-chips"><span class="bbk-chip bbk-chip-cta">${escapeHtml(cta)}</span></div></div>` : ""}
       </div>
     </div>
   `;
 }
 
+const CTA_PILL_MAX = 40;
+function ctaBlockHTML(brand) {
+  const cta = (brand.brandDNA?.callToAction || "").trim();
+  if (cta.length <= CTA_PILL_MAX) return "";
+  return `<div class="bbk-cta-wrap"><span class="bbk-label">${stripColon(t("bg.book.cta"))}</span><div class="bbk-cta-block" style="font-size:${fitSize(cta, [[90, 14], [160, 13], [240, 12]], 11)}px;"><span class="bbk-clamp-4">${escapeHtml(cta)}</span></div></div>`;
+}
+
 function personalityBody(brand) {
   const voice = voiceColumn(brand);
-  return `<div class="bbk-cols"><div style="flex:1;min-width:0;">${personalityColumn(brand)}</div>${voice ? `<div style="flex:0 0 50%;display:flex;">${voice}</div>` : ""}</div>`;
+  return `<div class="bbk-cols"><div class="bbk-persona-col" style="flex:1;min-width:0;display:flex;flex-direction:column;">${personalityColumn(brand)}${ctaBlockHTML(brand)}</div>${voice ? `<div style="flex:0 0 50%;display:flex;">${voice}</div>` : ""}</div>`;
 }
 
 // Tagline placement rules — the e-book explicitly separates "the tagline
@@ -2161,7 +2184,7 @@ function colorEssenceBody(a) {
           (k) => `
         <div class="bbk-essence">
           <div class="bbk-essence-fill" style="background:${a.colors[k]};color:${pickTintTextColor(a.colors[k])};"><span>${roleLabel(k)}</span><span>${a.colors[k].toUpperCase()}</span></div>
-          <div class="bbk-essence-text" style="font-size:${fitSize(essence[k], [[110, 20], [200, 16.5]], 14)}px;">${escapeHtml(essence[k])}</div>
+          <div class="bbk-essence-text bbk-clamp-8 ${essence[k].length > 140 ? "is-long" : ""}" style="font-size:${fitSize(essence[k], [[110, 20], [200, 16.5], [300, 14]], 12.5)}px;">${escapeHtml(essence[k])}</div>
         </div>
       `
         )

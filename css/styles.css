@@ -2325,7 +2325,8 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .bbk-style-scrap .bbk-quote, .bbk-style-scrap .bbk-pillar, .bbk-style-scrap .bbk-direction{ box-shadow:0 3px 14px rgba(0,0,0,.16); transform:rotate(-1deg); }
 .bbk-style-scrap .bbk-essence-fill{ border:10px solid #fff; border-bottom-width:34px; box-shadow:0 3px 14px rgba(0,0,0,.18); transform:rotate(-1deg); }
 .bbk-style-scrap .bbk-essence-text, .bbk-style-scrap .bbk-note{ font-family: var(--bbk-hand); font-size:21px; line-height:1.3; color:#33302c; }
-.bbk-style-scrap .bbk-essence-text{ font-size:24px !important; }
+.bbk-style-scrap .bbk-essence-text:not(.is-long){ font-size:24px !important; }
+.bbk-style-scrap .bbk-essence-text.is-long{ font-size:17px !important; line-height:1.3; }
 .bbk-style-scrap .bbk-palette{ border:12px solid #fff; border-radius:4px; box-shadow:0 4px 16px rgba(0,0,0,.18); transform:rotate(-.5deg); }
 .bbk-style-scrap .bbk-tagline-stage{ border-left:none; background:#fff; box-shadow:0 3px 14px rgba(0,0,0,.14); transform:rotate(-.8deg); }
 .bbk-style-scrap .bbk-toc-num, .bbk-style-scrap .bbk-pillar-num, .bbk-style-scrap .bbk-bigword, .bbk-style-scrap .bbk-pillar-title, .bbk-style-scrap .bbk-direction-name, .bbk-style-scrap .bbk-imagery-name, .bbk-style-scrap .bbk-type-role{ font-style:italic; font-weight:800; letter-spacing:-.03em; }
@@ -4411,4 +4412,20 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .bbk-essence-edit-fields label{ font-size:11px; font-weight:700; color: var(--text-muted); }
 .bbk-essence-edit-fields textarea{ min-height:44px; }
 .bbk-essence-edit-row .chip-icon-btn, .bbk-pillar-edit .chip-icon-btn{ margin-top:20px; }
+
+/* ---- revisi: brand book long text ---- */
+/* Book pages are fixed A4 artboards — long answers shrink (fitSize in
+   brand-guidelines.js) and, as a last resort, clamp instead of running off
+   the page or over the footer. */
+.bbk-clamp-2, .bbk-clamp-4, .bbk-clamp-8{ display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; }
+.bbk-clamp-2{ -webkit-line-clamp:2; }
+.bbk-clamp-4{ -webkit-line-clamp:4; }
+.bbk-clamp-8{ -webkit-line-clamp:8; }
+.bbk-bigword.bbk-clamp-4{ line-height:1.12; }
+.bbk-traits-compact .bbk-trait-row{ padding:9px 0; font-size:14.5px; }
+.bbk-cta-wrap{ margin-top:auto; padding-top:16px; }
+.bbk-cta-block{
+  margin-top:8px; padding:10px 14px; border-radius:12px; line-height:1.45; font-weight:600;
+  background: var(--bb-accent); color: var(--bb-on-accent);
+}
 

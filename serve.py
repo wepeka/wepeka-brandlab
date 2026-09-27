@@ -23,6 +23,14 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
 
 Handler = functools.partial(NoCacheHandler, directory=".")
 
-with http.server.ThreadingHTTPServer(("", PORT), Handler) as httpd:
+class Server(http.server.ThreadingHTTPServer):
+    # The app loads ~100 ES modules at once; the stdlib default listen
+    # backlog of 5 made the kernel reset some of those connections, which
+    # showed up as random "Failed to fetch dynamically imported module".
+    request_queue_size = 256
+    daemon_threads = True
+
+
+with Server(("", PORT), Handler) as httpd:
     print(f"Serving Wepeka Brandlab at http://localhost:{PORT} (caching disabled)")
     httpd.serve_forever()

@@ -190,6 +190,7 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
     clearInteractive();
     overlay.remove();
     document.body.classList.remove("tour-active");
+    document.body.classList.remove("tour-show-chat");
     window.removeEventListener("resize", reposition);
     window.removeEventListener("scroll", reposition, true);
     window.removeEventListener("db:change", reposition);
@@ -482,11 +483,21 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
         }
       }
       if (!alive) return;
+      // The round chat button is hidden while any tour runs (it would sit on
+      // top of tooltips) — un-hide it only for a step that points AT it.
+      // Every tour gets this now, not just onboarding: the Home guide's
+      // "Tanya AI" step used to spotlight a display:none button, so the
+      // tooltip fell back to the top-left corner.
+      document.body.classList.toggle("tour-show-chat", selectorList(step.selector).some((s) => s.includes("consultant-fab")));
       let target = resolveTarget(step.selector);
+      // A target that exists but has no box (display:none, collapsed) can't
+      // be spotlit — treat it like a missing one and wait for it to appear.
+      if (target && !target.getClientRects().length) target = null;
       if (!target) {
         setHint(t("tour.hint.wait"));
         target = await waitForSelector(step.selector, { timeout: step.waitTimeout ?? 4000, isAlive: () => alive });
         if (!alive) return;
+        if (target && !target.getClientRects().length) target = null;
       }
       if (!target && step.skipIfMissing !== false) {
         // Target never showed up (e.g. a slow route, or an optional element
