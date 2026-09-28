@@ -66,6 +66,16 @@ export function visualBasicsDone(brand = {}) {
 // empty page. Fixed here, once, since every caller reads off this same
 // function — see brand-guidelines.js's own PROGRESS_STEP_KEYS bar for the
 // matching in-page counter.
+// Value Proposition is connected to Brand DNA: until the owner writes (or
+// asks AI for) their own pillars, the book builds them straight from the
+// DNA answers below — see dnaValuePillars in js/views/brand-guidelines.js.
+// So either source counts as "filled".
+export const VALUE_PROP_DNA_FIELDS = ["differentiation", "problemSolved", "successOutcome"];
+export function hasValueProposition(brand = {}) {
+  const own = (brand.brandGuidelines?.aiCopy?.valueProposition || []).some((p) => (p?.title || "").trim() && (p?.desc || "").trim());
+  return own || VALUE_PROP_DNA_FIELDS.some((k) => String(brand.brandDNA?.[k] || "").trim());
+}
+
 export function brandBookProgress(brand = {}) {
   const g = brand.brandGuidelines || {};
   const parts = [
@@ -74,7 +84,7 @@ export function brandBookProgress(brand = {}) {
     !!g.logo?.dataUrl,
     !!g.visualDirection?.length,
     !!brand.brandBuilder?.toneOfVoice?.source,
-    !!((g.aiCopy?.valueProposition || []).some((p) => (p?.title || "").trim() && (p?.desc || "").trim()) && (g.aiCopy?.colorEssence?.primary || "").trim()),
+    !!(hasValueProposition(brand) && (g.aiCopy?.colorEssence?.primary || "").trim()),
   ];
   return { filled: parts.filter(Boolean).length, total: parts.length };
 }

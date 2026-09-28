@@ -18,6 +18,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
+import { VALUE_PROP_DNA_FIELDS } from "../brand-progress.js";
 import { getMode } from "../mode.js";
 import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
@@ -172,6 +173,7 @@ export function render(root, { brandId, section }) {
   }
 
   const state = {
+    brand,
     stepIndex: stepIndexForSection(section),
     // Guided mode opens the Typography step on the ready-made
     // recommendations; downloading fonts elsewhere is the Advanced path.
@@ -304,9 +306,34 @@ function wireTabs(root, state, refresh) {
 // same test valuePropositionBody()/colorEssenceBody() use to decide
 // whether to render the book page or its "not generated" empty state, so
 // this bar and the book always agree.
-function aiCopyFilled(a) {
-  const hasPillar = (a.aiCopy?.valueProposition || []).some((p) => (p?.title || "").trim() && (p?.desc || "").trim());
+function aiCopyFilled(a, brand) {
+  const hasPillar = valuePillars(brand, a).some((p) => (p?.title || "").trim() && (p?.desc || "").trim());
   return hasPillar && !!(a.aiCopy?.colorEssence?.primary || "").trim();
+}
+
+// Value Proposition is connected to Brand DNA: what makes the brand
+// different, the problem it solves, and the result the customer gets are
+// already answered there, so those become the 3 pillars automatically —
+// and keep following DNA edits — until the owner writes their own (by hand
+// or with AI) in the Foundation section. Long DNA answers are cut at a
+// sentence/word boundary so a pillar card never overflows its page.
+function shortenPillarText(text, max = 160) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const firstSentence = s.match(/^.{40,}?[.!?](\s|$)/)?.[0]?.trim();
+  if (firstSentence && firstSentence.length <= max) return firstSentence;
+  return `${s.slice(0, max).replace(/\s+\S*$/, "")}…`;
+}
+function dnaValuePillars(brand) {
+  const dna = brand?.brandDNA || {};
+  return VALUE_PROP_DNA_FIELDS.filter((k) => String(dna[k] || "").trim()).map((k) => ({ title: t(`bg.vp.auto.${k}`), desc: shortenPillarText(dna[k]) }));
+}
+function ownValuePillars(a) {
+  return (a.aiCopy?.valueProposition || []).filter((p) => (p?.title || "").trim() || (p?.desc || "").trim());
+}
+function valuePillars(brand, a) {
+  const own = ownValuePillars(a);
+  return own.length ? own : dnaValuePillars(brand);
 }
 
 function isStepFilled(stepKey, a, state) {
@@ -319,7 +346,7 @@ function isStepFilled(stepKey, a, state) {
     case "typography": return !!a.fonts.primary && !!a.fonts.secondary;
     case "direction": return a.visualDirection.length > 0;
     case "applications": return a.applications.length > 0;
-    case "copy": return aiCopyFilled(a);
+    case "copy": return aiCopyFilled(a, state?.brand);
     default: return true;
   }
 }
@@ -409,6 +436,7 @@ function wireStep(root, brandId, brand, state, refresh) {
     refresh();
   };
 
+  if (step.key === "foundation" || step.key === "color") wireCopyEditor(root, brandId, brand, state, refresh);
   if (step.key === "logo") wireLogoStep(root, state, commit);
   if (step.key === "color") wireColorStep(root, state, commit);
   if (step.key === "typography") wireTypographyStep(root, state, commit);
@@ -431,6 +459,7 @@ function foundationStepHTML(brand, state) {
       ${dna.personality?.length ? reviewRow(t("bg.foundation.personality"), dna.personality.join(", ")) : ""}
     </div>
     <a href="#/brand/${brand.id}/dna" style="font-size:12.5px;font-weight:700;color:var(--accent);">${t("bg.foundation.editInDna")}</a>
+    <div class="card dark-surface card-tight" style="margin-top:18px;">${valuePropEditorHTML(brand, state.answers)}</div>
     ${navHTML(state, false)}
   `;
 }
@@ -793,6 +822,7 @@ function colorStepHTML(state, brand) {
       ${["background", "text"].map((k) => colorFieldHTML(k, a.colors[k], false)).join("")}
     </div>
     <p class="text-faint" style="font-size:11px;margin:0 0 8px;">${t("bg.color.inspiration")} <a href="https://coolors.co" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;">Coolors ↗</a> · <a href="https://colorhunt.co" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;">Color Hunt ↗</a></p>
+    ${colorEssenceEditorHTML(a)}
     ${navHTML(state, !isStepFilled("color", a))}
   `;
 }
@@ -2049,8 +2079,8 @@ function taglineBody(brand, a) {
 // Typography have brandbook-data.js lookups, so it's the AI-written
 // exception (generateValueProposition in ai.js) — this only ever lays out
 // whatever's cached in a.aiCopy.valueProposition, never calls AI itself.
-function valuePropositionBody(a) {
-  const pillars = a.aiCopy?.valueProposition;
+function valuePropositionBody(brand, a) {
+  const pillars = valuePillars(brand, a).filter((p) => (p?.title || "").trim() && (p?.desc || "").trim());
   if (!pillars?.length) return bookEmpty(t("bg.book.vpEmpty"));
   return `
     <div class="bbk-cols">
@@ -2425,7 +2455,7 @@ function buildBrandBookPages(brand, a) {
       sub: t("bg.divider.personality.sub"),
       pages: (c) => [page(c, t("bg.toc.personality.label"), personalityBody(brand)), page(c, t("bg.foundation.tagline"), taglineBody(brand, a))],
     },
-    { title: t("bg.toc.valueProp.label"), sub: t("bg.divider.valueProp.sub"), pages: (c) => [page(c, t("bg.toc.valueProp.label"), valuePropositionBody(a), t("bg.toc.valueProp.desc"))] },
+    { title: t("bg.toc.valueProp.label"), sub: t("bg.divider.valueProp.sub"), pages: (c) => [page(c, t("bg.toc.valueProp.label"), valuePropositionBody(brand, a), t("bg.toc.valueProp.desc"))] },
     {
       title: t("bg.divider.identity.title"),
       sub: t("bg.divider.identity.sub"),
@@ -2598,17 +2628,22 @@ function pillarEditRowHTML(p, i) {
   `;
 }
 
-function valuePropEditorHTML(a) {
-  const pillars = a.aiCopy?.valueProposition?.length ? a.aiCopy.valueProposition : [];
+function valuePropEditorHTML(brand, a) {
+  const own = ownValuePillars(a);
+  const fromDna = !own.length;
+  const pillars = fromDna ? dnaValuePillars(brand) : own;
   return `
     <div class="bbk-copy-editor">
       <div class="bbk-copy-editor-head">
         <strong>${t("bg.copy.vp.title")}</strong>
         <button type="button" class="btn btn-secondary btn-sm" id="vp-ai-fill">${icon("bot", { size: 12 })}${t("bg.copy.aiFill")}</button>
       </div>
-      <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t("bg.copy.vp.hint")}</p>
+      <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t(fromDna && pillars.length ? "bg.copy.vp.fromDna" : fromDna ? "bg.copy.vp.noDna" : "bg.copy.vp.own")}</p>
       <div class="bbk-pillar-edit-list">${pillars.map(pillarEditRowHTML).join("")}</div>
-      ${pillars.length < MAX_PILLARS ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-add-pillar">${icon("plus", { size: 12 })}${t("bg.copy.vp.add")}</button>` : ""}
+      <div class="flex gap-8" style="flex-wrap:wrap;">
+        ${pillars.length < MAX_PILLARS ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-add-pillar">${icon("plus", { size: 12 })}${t("bg.copy.vp.add")}</button>` : ""}
+        ${!fromDna && dnaValuePillars(brand).length ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-use-dna">${icon("refresh", { size: 12 })}${t("bg.copy.vp.useDna")}</button>` : ""}
+      </div>
       <div id="vp-ai-status"></div>
     </div>
   `;
@@ -2631,7 +2666,7 @@ function essenceEditRowHTML(k, a) {
 function colorEssenceEditorHTML(a) {
   const roles = COPY_ROLES.filter((k) => a.colors[k]);
   return `
-    <div class="bbk-copy-editor">
+    <div class="card dark-surface card-tight bbk-copy-editor" style="margin-top:18px;">
       <div class="bbk-copy-editor-head">
         <strong>${t("bg.copy.ce.title")}</strong>
         ${roles.length ? `<button type="button" class="btn btn-secondary btn-sm" id="ce-ai-fill-all">${icon("bot", { size: 12 })}${t("bg.copy.aiFillAll")}</button>` : ""}
@@ -2643,16 +2678,6 @@ function colorEssenceEditorHTML(a) {
           : `<div class="bbk-empty" style="padding:18px;">${t("bg.copy.ce.noColors")}</div>`
       }
       <div id="ce-ai-status"></div>
-    </div>
-  `;
-}
-
-function copyEditorHTML(a) {
-  return `
-    <div class="card dark-surface card-tight bbk-copy-editors" style="margin-bottom:16px;">
-      ${valuePropEditorHTML(a)}
-      <div class="bbk-copy-editor-sep"></div>
-      ${colorEssenceEditorHTML(a)}
     </div>
   `;
 }
@@ -2713,7 +2738,6 @@ function reviewHTML(brand, state) {
   return `
     <h2 style="margin-bottom:6px;">${t("bg.review.title")}</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("bg.review.sub")}</p>
-    ${copyEditorHTML(a)}
     ${bookStylePickerHTML(a)}
     <div ${bookSheetAttrs(a, "bbk-review-sheet")}>
       ${buildBrandBookPages(brand, a).join("")}
@@ -2758,7 +2782,6 @@ function wireReview(root, brandId, brand, state, refresh) {
   });
   qs("#wiz-pdf", root)?.addEventListener("click", () => openBrandBookPdf(brand, state.answers));
   wireBookStylePicker(root, brandId, state, refresh);
-  wireCopyEditor(root, brandId, brand, state, refresh);
 }
 
 // Value Proposition + Colour Essence editor — manual typing persists as-is
@@ -2773,7 +2796,13 @@ function wireCopyEditor(root, brandId, brand, state, refresh) {
   const persist = () => updateBrand(brandId, { brandGuidelines: { ...a } });
 
   // ---- Value Proposition: manual editing ----
-  const pillars = () => (a.aiCopy.valueProposition ||= []);
+  // While the pillars still come from Brand DNA, the first edit copies the
+  // DNA-built ones into the owner's own list, so the row they're typing in
+  // (and the others next to it) keep their text.
+  const pillars = () => {
+    if (!ownValuePillars(a).length) a.aiCopy.valueProposition = dnaValuePillars(brand).map((p) => ({ ...p }));
+    return a.aiCopy.valueProposition;
+  };
   qsa("[data-pillar-title]", root).forEach((el) => {
     el.addEventListener("input", () => {
       const i = Number(el.dataset.pillarTitle);
@@ -2803,6 +2832,12 @@ function wireCopyEditor(root, brandId, brand, state, refresh) {
       refresh();
     })
   );
+  qs("#vp-use-dna", root)?.addEventListener("click", () => {
+    a.aiCopy.valueProposition = null;
+    a.aiCopy.edited = { ...(a.aiCopy.edited || {}), valueProposition: false };
+    persist();
+    refresh();
+  });
   qs("#vp-add-pillar", root)?.addEventListener("click", () => {
     if (pillars().length >= MAX_PILLARS) return;
     pillars().push({ title: "", desc: "" });
