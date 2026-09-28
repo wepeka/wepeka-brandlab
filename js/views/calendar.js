@@ -15,6 +15,7 @@ import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
 import { setPageGuide } from "../section-guide.js";
 import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calendar-guide.js";
 import { funnelShort } from "../funnel-field.js";
+import { openWeekPlanMenu } from "../consultant-panel.js";
 
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const dow = () => DOW_KEYS.map((k) => t(`calendar.dow.${k}`));
@@ -300,6 +301,7 @@ function paint(root, brandId, state, refresh) {
       </div>
       <div class="flex gap-8">
         <button class="icon-btn" id="cal-more" aria-label="${t("common.more")}" title="${t("common.more")}">${icon("dots", { size: 16 })}</button>
+        <button class="btn btn-secondary" id="cal-week-plan" title="${t("chat.week.credit")}">${icon("sparkle", { size: 15 })}${t("chat.week.button")}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
       </div>
     </div>
@@ -319,6 +321,7 @@ function paint(root, brandId, state, refresh) {
   `;
 
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
+  qs("#cal-week-plan").addEventListener("click", (e) => openWeekPlanMenu(e.currentTarget, brandId));
   // The ⋯ menu: the two setup-ish jobs (AI auto-schedule, the weekly work
   // rhythm) — used once in a while, not every visit.
   qs("#cal-more").addEventListener("click", (e) => {

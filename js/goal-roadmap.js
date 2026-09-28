@@ -46,7 +46,7 @@ const HISTORY_WINDOW_DAYS = 56;
 const COMMUNITY_WINDOW_BEFORE = 14; // the community hears about it this long before the public does
 const COMMUNITY_WINDOW_AFTER = 13;
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const DEFAULT_UPLOAD_ORDER = ["tue", "thu", "sat", "mon", "wed", "fri", "sun"];
+export const DEFAULT_UPLOAD_ORDER = ["tue", "thu", "sat", "mon", "wed", "fri", "sun"];
 
 // ---------- Local-calendar date maths (never toISOString: UTC shifts a day in WIB) ----------
 export function addDays(dateStr, days) {
@@ -60,7 +60,7 @@ export const weekStart = (dateStr) => {
   const d = new Date(`${dateStr}T00:00:00`);
   return addDays(dateStr, -((d.getDay() + 6) % 7)); // Monday
 };
-const weekdayOf = (dateStr) => WEEKDAYS[new Date(`${dateStr}T00:00:00`).getDay()];
+export const weekdayOf = (dateStr) => WEEKDAYS[new Date(`${dateStr}T00:00:00`).getDay()];
 function eachDay(from, to) {
   const out = [];
   for (let d = from; d && d <= to && out.length < 800; d = addDays(d, 1)) out.push(d);

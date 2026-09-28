@@ -19,7 +19,7 @@ export function renderModePicker(root) {
       <div class="mode-pick">
         <div class="mode-pick-inner">
           <div class="brand-mark" style="justify-content:center;margin-bottom:28px;">
-            <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
+            <span class="brand-logo" role="img" aria-label="Wepeka"></span>
             <span class="brand-mark-divider"></span>
             Brandlab
           </div>

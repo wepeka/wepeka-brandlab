@@ -124,7 +124,7 @@ function lockedScreenHTML(email) {
   return `
     <div class="auth-shell"><div class="auth-card" style="text-align:center;">
       <div class="brand-mark" style="justify-content:center;margin-bottom:22px;">
-        <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
+        <span class="brand-logo" role="img" aria-label="Wepeka"></span>
         <span class="brand-mark-divider"></span>
         Brandlab
       </div>

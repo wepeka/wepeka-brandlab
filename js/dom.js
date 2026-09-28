@@ -349,6 +349,23 @@ export function pickTintForeground(rgb) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// The light-mode twin of pickTintForeground: the brand color used as text/
+// a mark on a pale background (the Wepeka logo's "We"). Kept as-is unless it
+// is too pale to read on near-white (a yellow, a pastel), then darkened.
+export function pickTintForegroundLight(rgb) {
+  const parsed = parseRgb(rgb);
+  if (!parsed) return rgb;
+  let [r, g, b] = parsed;
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (luminance > 185) {
+    const keep = 0.55;
+    r = Math.round(r * keep);
+    g = Math.round(g * keep);
+    b = Math.round(b * keep);
+  }
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 // One-item-per-line textarea <-> plain string array — the encoding shared by
 // Brand DNA's personality/values/productsServices and Campaign's channels,
 // so multi-value fields don't need a dedicated add/remove list-editor UI.

@@ -60,7 +60,8 @@ import { campaignStages, activeStageIndex, readStage, campaignHeadline } from ".
 import { nextActions } from "./next-action.js";
 import { computeContentMetrics } from "./formulas.js";
 import { brandDnaCompleteness } from "./brand-progress.js";
-import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
+import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
+import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry } from "./week-plan.js";
 import { analyzeScreenshot } from "./ocr.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
@@ -334,7 +335,8 @@ function threadEntries(th, engine) {
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null, sessionId: m.sessionId || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
+      weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
     });
   });
@@ -676,6 +678,84 @@ function metricsCardHTML(mx, index) {
   return `<div class="cp-metrics"><div class="cp-metrics-title">${t("chat.metrics.title")}</div><div class="cp-metrics-list">${chips.join("")}</div><div class="cp-metrics-actions">${action}</div></div>`;
 }
 
+// "Rencanakan minggu ini": one row per date js/week-plan.js already decided
+// is free to post on. Campaign linking is automatic (the AI tags a row to
+// an active campaign when it genuinely fits) but never silent — every row
+// keeps its own campaign picker, defaulted to the AI's guess and always
+// visible/changeable before anything is saved, same as the funnel/format
+// tags next to it. Only the newest, still-open plan in the thread is
+// interactive; an older one (superseded by a revision or "Ganti semua")
+// renders as a collapsed one-line summary via weekPlanSummaryHTML instead.
+function weekPlanCardHTML(entry, index, campaigns, formats) {
+  const wp = entry.weekPlan;
+  const items = wp.items || [];
+  const saved = !!wp.savedAt;
+  const closed = !!wp.closed;
+  const campaignOptions = (selectedId) => [
+    `<option value="" ${selectedId ? "" : "selected"}>${esc(t("chat.week.noCampaign"))}</option>`,
+    ...campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === selectedId ? "selected" : ""}>${esc(c.name)}</option>`),
+  ].join("");
+  const formatOptions = (selected) => [
+    `<option value="" ${selected ? "" : "selected"}>${esc(t("chat.week.formatNone"))}</option>`,
+    ...formats.map((f) => `<option value="${esc(f.name)}" ${f.name === selected ? "selected" : ""}>${esc(f.name)}</option>`),
+  ].join("");
+  const rows = items.map((it, j) => {
+    const ref = `${index}:${j}`;
+    const locked = saved || closed;
+    const done = !!it.contentId;
+    return `
+    <div class="cp-week-row ${done ? "is-done" : ""}">
+      <input type="checkbox" data-week-pick="${ref}" ${done ? "checked disabled" : locked ? "disabled" : it.picked === false ? "" : "checked"} />
+      <input class="input cp-week-date" type="date" data-week-date="${ref}" value="${esc(it.date)}" min="${esc(localISODate())}" ${locked ? "disabled" : ""} />
+      <span class="cp-plan-body">
+        <span class="cp-week-title-row">
+          <b>${esc(it.title)}</b>
+          ${!done && !locked ? `<button type="button" class="cp-week-item-regen" data-week-regen-item="${ref}" aria-label="${esc(t("chat.week.regenItem"))}" title="${esc(t("chat.week.regenItemTitle"))}">${icon("refresh", { size: 12 })}</button>` : ""}
+        </span>
+        ${it.angle ? `<span class="text-muted">${esc(it.angle)}</span>` : ""}
+        <span class="cp-plan-tags">
+          <span class="tag tag-${it.funnel.toLowerCase()}">${esc(funnelShort(it.funnel))}</span>
+          ${done
+            ? `${it.format ? `<span class="tag">${esc(it.format)}</span>` : ""}${it.campaignName ? `<span class="tag">${esc(it.campaignName)}</span>` : ""}`
+            : `${formats.length ? `<select class="input cp-week-select" data-week-format="${ref}" aria-label="${esc(t("chat.week.formatLabel"))}">${formatOptions(it.format)}</select>` : ""}${campaigns.length ? `<select class="input cp-week-select" data-week-campaign="${ref}" aria-label="${esc(t("chat.week.campaignLabel"))}">${campaignOptions(it.campaignId)}</select>` : ""}`}
+        </span>
+      </span>
+      ${done ? `<a class="btn btn-secondary btn-sm" href="#/brand/__BRAND__/content/creator/${esc(it.contentId)}">${icon("check", { size: 12 })}${t("chat.week.open")}</a>` : ""}
+    </div>`;
+  }).join("");
+  const pickedCount = items.filter((it) => !it.contentId && it.picked !== false).length;
+  const savedCount = items.filter((it) => it.contentId).length;
+  const footer = closed
+    ? `<p class="cp-week-status">${t("chat.week.closedNote")}</p>`
+    : saved
+      ? `<p class="cp-week-status">${icon("check", { size: 12 })} ${t("chat.week.savedNote", { n: savedCount })}</p>`
+      : `
+    <div class="cp-week-foot">
+      <select class="input cp-week-count" data-week-count aria-label="${esc(t("chat.week.countLabel"))}">
+        ${[3, 5, 7, 10, 14].map((n) => `<option value="${n}" ${n === items.length ? "selected" : ""}>${t("chat.week.countN", { n })}</option>`).join("")}
+      </select>
+      ${campaigns.length ? `<select class="input cp-week-count" data-week-scope aria-label="${esc(t("chat.week.scopeLabel"))}">
+        <option value="" ${wp.campaignId ? "" : "selected"}>${esc(t("chat.week.scopeGeneral"))}</option>
+        ${campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === wp.campaignId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+      </select>` : ""}
+      <button type="button" class="btn btn-secondary btn-sm" data-week-regen="${index}" title="${esc(t("chat.week.creditNote"))}">${icon("refresh", { size: 13 })}${t("chat.week.regen")}</button>
+      <button type="button" class="btn btn-primary btn-sm" data-week-save="${index}" ${pickedCount ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("chat.week.save", { n: pickedCount })}</button>
+      <button type="button" class="btn btn-ghost btn-sm" data-week-close="${index}">${t("chat.week.close")}</button>
+    </div>`;
+  return `<div class="cp-week">${rows}${footer}</div>`;
+}
+
+// A weekPlan entry that is no longer the newest one in the thread — a
+// revision or "Ganti semua" replaced it. Kept for the record, but flat: no
+// checkboxes, no pickers, nothing to act on twice.
+function weekPlanSummaryHTML(entry) {
+  const wp = entry.weekPlan;
+  const items = wp.items || [];
+  const savedCount = items.filter((it) => it.contentId).length;
+  const label = wp.closed ? t("chat.week.summaryClosed", { n: items.length }) : savedCount ? t("chat.week.summarySaved", { n: savedCount }) : t("chat.week.summaryReplaced", { n: items.length });
+  return `<div class="cp-week-summary text-faint">${icon("calendar", { size: 12 })}${esc(label)}</div>`;
+}
+
 function attachStripHTML(brandId) {
   const list = attachments.get(brandId) || [];
   if (!list.length) return "";
@@ -712,7 +792,7 @@ function matchFormat(name) {
   return { format: hit?.name || "", platform };
 }
 
-function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
+function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatestPlan }) {
   if (h.role === "day") return `<div class="companion-day">${esc(h.label)}</div>`;
   if (h.role === "user") {
     const del = h.deletable && h.msgId ? `<button type="button" class="companion-msg-del" data-chat-msg-del="${esc(h.msgId)}" aria-label="${t("companion.msg.delete")}" title="${t("companion.msg.delete")}">${icon("trash", { size: 11 })}</button>` : "";
@@ -751,6 +831,11 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
         .join("")}</div>`
     : "";
   const scriptsHTML = (h.scripts || []).map((sc, j) => scriptCardHTML(sc, `${index}:${j}`)).join("");
+  const weekPlanHTML = h.weekPlan
+    ? isLatestPlan
+      ? weekPlanCardHTML(h, index, activeCampaignsFor(listCampaigns(brand.id)), getSettings().formats || [])
+      : weekPlanSummaryHTML(h)
+    : "";
   // A rewrite proposed in Creator's script discussion — shown for reference;
   // applying it happens in Creator.
   const revisionsHTML = (h.revisions || []).map((r) => `<div class="cp-idea"><div class="cp-idea-title">${esc(r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript"))}</div><div class="cp-idea-why" style="white-space:pre-wrap;">${esc(r.text)}</div></div>`).join("");
@@ -776,7 +861,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
     ? `<div class="consultant-followups cp-asks"><div class="consultant-starters">${h.asks.slice(0, 2).map((q) => starterChip(q, h.engine)).join("")}</div></div>`
     : "";
   // A Brainstorm question with nothing to pick yet: skip to ideas, or answer.
-  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length
+  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan
     ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-chat-go-ideas>${icon("sparkle", { size: 13 })}${t("bs.go.ideas")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-answer>${icon("chat", { size: 13 })}${t("bs.go.answer")}</button></div>`
     : "";
   // The recap offer (Teman, un-recapped chat from before today).
@@ -801,8 +886,8 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand }) {
   const toolsHTML = h.engine && !h.ephemeral
     ? `<div class="cp-msg-tools"><button type="button" class="cp-copy" data-chat-copy="${index}" title="${t("chat.copy")}">${icon("copy", { size: 12 })}<span>${t("chat.copy")}</span></button>${retryToggle}</div>`
     : "";
-  const retryHTML = h.retry ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-retry="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
-  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
+  const retryHTML = h.retry ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-resend="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
+  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
 }
 
 // Brainstorm openers read from what is happening in the brand right now.
@@ -856,18 +941,71 @@ function emptyStateHTML(brandId, info, full) {
 
 // ---- Layout -------------------------------------------------------------------
 
-// Pro: Otomatis + the three logs. Pemula: nothing — just the box; if a
-// button elsewhere opened one log (the Home card's "Cerita ke Teman
-// Brand", the Brainstorm page) a single link leads back to Otomatis.
-function tabsHTML(brandId) {
+// One compact row above the chat instead of two rows of pills:
+//   [mode ▾]  — the open view; its menu lists all four with what each is for
+//               (Pro only — Pemula never picks a mode, only gets a link back
+//               to Otomatis when a button elsewhere opened one log)
+//   [Tersimpan ▾] — Ide Konten, Memori Brand, earlier conversations (small
+//               panel only; the page shows those as its own columns)
+//   [+]       — a new conversation (Otomatis / Brainstorm; the Konsultan and
+//               Teman logs are single rolling threads, cleared from the head)
+function toolbarHTML(brandId, full) {
   const mode = modeOf(brandId);
-  if (isGuided()) {
-    return mode === "auto" ? "" : `<div class="cp-back"><button type="button" class="link" data-chat-mode="auto" ${pending ? "disabled" : ""}>${icon("chevronLeft", { size: 12 })}${t("chat.mode.back")}</button><span class="cp-back-here">${icon(MODE_ICON[mode], { size: 12 })}${t(`chat.mode.${mode}`)}</span></div>`;
-  }
-  return `
-    <div class="cp-modes" role="tablist" aria-label="${t("chat.mode.aria")}" style="--n:${VIEWS.length}">
-      ${VIEWS.map((m) => `<button type="button" role="tab" class="cp-mode ${m === mode ? "is-active" : ""}" data-chat-mode="${m}" data-engine="${m}" aria-selected="${m === mode}" aria-describedby="cp-tip-${m}" ${pending ? "disabled" : ""}>${icon(MODE_ICON[m], { size: 12 })}<span>${t(`chat.mode.${m}`)}</span><span class="cp-mode-tip" role="tooltip" id="cp-tip-${m}">${t(`chat.mode.tip.${m}`)}</span></button>`).join("")}
-    </div>`;
+  const guided = isGuided();
+  const back = guided && mode !== "auto"
+    ? `<button type="button" class="link cp-tool-back" data-chat-mode="auto" ${pending ? "disabled" : ""}>${icon("chevronLeft", { size: 12 })}${t("chat.mode.back")}</button><span class="cp-back-here">${icon(MODE_ICON[mode], { size: 12 })}${t(`chat.mode.${mode}`)}</span>`
+    : "";
+  const modeBtn = guided
+    ? ""
+    : `<button type="button" class="cp-tool cp-tool-mode" data-chat-modes data-engine="${mode}" aria-haspopup="menu" aria-label="${esc(t("chat.mode.aria"))}" title="${esc(t(`chat.mode.tip.${mode}`))}" ${pending ? "disabled" : ""}>${icon(MODE_ICON[mode], { size: 13 })}<span>${t(`chat.mode.${mode}`)}</span>${icon("chevronDown", { size: 11 })}</button>`;
+  const savedN = savedIdeasFor(brandId).items.length + savedMoments(getBrand(brandId)).length;
+  const savedBtn = full
+    ? ""
+    : `<button type="button" class="cp-tool" data-chat-saved-menu aria-haspopup="menu">${icon("bookmark", { size: 13 })}<span>${t("chat.saved.menu")}</span>${savedN ? `<span class="cp-tool-count">${savedN}</span>` : ""}${icon("chevronDown", { size: 11 })}</button>`;
+  const newBtn = !full && (mode === "auto" || mode === "brainstorm")
+    ? `<button type="button" class="cp-tool cp-tool-icon" data-chat-new aria-label="${esc(t("chat.scope.new"))}" title="${esc(t("chat.scope.new"))}" ${!hasMessages(brandId, mode) || pending ? "disabled" : ""}>${icon("plus", { size: 15 })}</button>`
+    : "";
+  if (!back && !modeBtn && !savedBtn && !newBtn) return "";
+  return `<div class="cp-toolbar">${back}${modeBtn}${savedBtn}<span class="cp-toolbar-spacer"></span>${newBtn}</div>`;
+}
+
+// [mode ▾]: every view with the one line that says what it is for — the
+// tooltips the old pill row showed on hover, now readable on touch too.
+function openModesMenu(brandId, btn) {
+  if (pending) return;
+  const r = btn.getBoundingClientRect();
+  const menu = openMenu(btn, { className: "cp-menu", top: r.bottom + 6, left: r.left });
+  if (!menu) return;
+  const current = modeOf(brandId);
+  menu.innerHTML = VIEWS.map((m) => `
+    <button type="button" class="cp-menu-mode ${m === current ? "is-active" : ""}" data-engine="${m}" data-pick-mode="${m}">
+      ${icon(MODE_ICON[m], { size: 15 })}
+      <span class="cp-menu-mode-text"><b>${t(`chat.mode.${m}`)}</b><small>${t(`chat.mode.tip.${m}`)}</small></span>
+      ${m === current ? icon("check", { size: 13 }) : ""}
+    </button>`).join("");
+  menu.querySelectorAll("[data-pick-mode]").forEach((b) => b.addEventListener("click", () => {
+    closeMenu();
+    if (pending) return;
+    setMode(brandId, b.dataset.pickMode);
+    renderPanel(brandId, { focus: !isTouch() });
+  }));
+}
+
+// [Tersimpan ▾]: what the chat keeps, plus the conversations to go back to.
+function openSavedMenu(brandId, btn) {
+  const r = btn.getBoundingClientRect();
+  const menu = openMenu(btn, { className: "cp-menu", top: r.bottom + 6, left: r.left });
+  if (!menu) return;
+  const ideas = savedIdeasFor(brandId).items.length;
+  const memory = savedMoments(getBrand(brandId)).length;
+  const sessions = listSessions(brandId).length;
+  menu.innerHTML = `
+    <button type="button" data-saved-ideas>${icon("bookmark", { size: 14 })}${t("chat.saved.button", { n: ideas })}</button>
+    <button type="button" data-saved-memory>${icon("heart", { size: 14 })}${t("chat.memory.short", { n: memory })}</button>
+    <button type="button" data-saved-sessions ${sessions ? "" : "disabled"}>${icon("chat", { size: 14 })}${t("chat.saved.sessions", { n: sessions })}${icon("chevronRight", { size: 12 })}</button>`;
+  menu.querySelector("[data-saved-ideas]").addEventListener("click", () => { closeMenu(); openSavedIdeasModal(brandId); });
+  menu.querySelector("[data-saved-memory]").addEventListener("click", () => { closeMenu(); openBrandMemoryModal(brandId, { refresh: () => renderPanel(brandId) }); });
+  menu.querySelector("[data-saved-sessions]").addEventListener("click", () => { closeMenu(); openSessionsMenu(brandId, btn); });
 }
 
 // Page-only tail of the row under the tabs: the ⋯ menu (Brainstorm) and
@@ -893,20 +1031,6 @@ function scopeRowHTML(brandId, info, full) {
         <button type="button" class="btn btn-secondary btn-sm cp-saved-jump" data-chat-see-saved title="${esc(t("bs.saved.openTitle"))}">${icon("bookmark", { size: 12 })}${t("bs.saved.open", { n: savedCount })}</button>
         <button type="button" class="icon-btn" data-chat-menu aria-label="${t("common.more")}" title="${t("common.more")}">${icon("dots", { size: 14 })}</button>
         ${expandedFrom ? `<button type="button" class="icon-btn" data-chat-shrink aria-label="${t("chat.shrink")}" title="${t("chat.shrink")}">${icon("chevronDown", { size: 14 })}</button>` : ""}` : ""}
-    </div>`;
-}
-
-// Otomatis, small panel: the three things behind the chat, one tap each —
-// the conversations, the saved ideas, brand memory. (The page shows them
-// as columns instead.)
-function quickRowHTML(brandId) {
-  const saved = savedIdeasFor(brandId).items.length;
-  const memory = savedMoments(getBrand(brandId)).length;
-  return `
-    <div class="cp-quick">
-      <button type="button" class="cp-quick-btn" data-chat-sessions>${icon("chat", { size: 12 })}${t("chat.sessions.title")}${icon("chevronDown", { size: 11 })}</button>
-      <button type="button" class="cp-quick-btn" data-chat-saved-list>${icon("bookmark", { size: 12 })}${t("chat.saved.button", { n: saved })}</button>
-      <button type="button" class="cp-quick-btn" data-chat-memory>${icon("heart", { size: 12 })}${t("chat.memory.short", { n: memory })}</button>
     </div>`;
 }
 
@@ -949,13 +1073,21 @@ function chatCoreHTML(brandId, full) {
   // under the last question already offers it.
   const ideasNow = (mode === "brainstorm" || mode === "auto") && !forkShown;
   const hint = hints.get(brandId)?.mode === mode ? hints.get(brandId) : null;
-  const autoRow = (full ? "" : quickRowHTML(brandId)) + (hasScope(activeScope(brandId)) ? scopeRowHTML(brandId, info, full) : full && expandedFrom ? `<div class="cp-scope cp-info">${rowTailHTML(brandId, full)}</div>` : "");
-  const row = mode === "auto" ? autoRow : mode === "brainstorm" ? scopeRowHTML(brandId, info, full) : mode === "companion" ? companionRowHTML(brandId, full) : consultantRowHTML(brandId, full);
+  const autoRow = hasScope(activeScope(brandId)) ? scopeRowHTML(brandId, info, full) : full && expandedFrom ? `<div class="cp-scope cp-info">${rowTailHTML(brandId, full)}</div>` : "";
+  // Konsultan's one-line "what this tab is" note now lives in the mode
+  // menu; on the page the row still carries ⋯ / Kecilkan.
+  const row = mode === "auto" ? autoRow : mode === "brainstorm" ? scopeRowHTML(brandId, info, full) : mode === "companion" ? companionRowHTML(brandId, full) : full ? consultantRowHTML(brandId, full) : "";
   return `
-    ${tabsHTML(brandId)}
+    ${toolbarHTML(brandId, full)}
     ${row}
     <div class="consultant-panel-body" id="consultant-messages" aria-live="polite">
-      ${history.length ? history.map((h, i) => messageHTML(h, i, { isLast: i === history.length - 1, info, full, hint, auto: mode === "auto", brand: getBrand(brandId) })).join("") : emptyStateHTML(brandId, info, full)}
+      ${history.length ? (() => {
+        // Only the newest weekPlan card in this transcript is interactive;
+        // any earlier one (superseded by a revision or "Ganti semua")
+        // collapses to a one-line summary (weekPlanSummaryHTML).
+        const latestPlanIndex = history.reduce((acc, h, i) => (h.weekPlan ? i : acc), -1);
+        return history.map((h, i) => messageHTML(h, i, { isLast: i === history.length - 1, info, full, hint, auto: mode === "auto", brand: getBrand(brandId), isLatestPlan: i === latestPlanIndex })).join("");
+      })() : emptyStateHTML(brandId, info, full)}
       ${noticeHTML}
     </div>
     ${quotaOut ? `<p class="companion-error cp-quota">${t("bs.quotaReached")}</p>` : ""}
@@ -983,7 +1115,6 @@ function panelHTML(brandId) {
         <div><b>${t("chat.title")}</b><small>${t(`chat.mode.tip.${mode}`)}</small></div>
       </div>
       <div class="cp-head-actions">
-        ${has && (mode === "brainstorm" || mode === "auto") ? `<button type="button" class="icon-btn" data-chat-new aria-label="${t("chat.scope.new")}" title="${t("chat.scope.new")}" ${pending ? "disabled" : ""}>${icon("plus", { size: 14 })}</button>` : ""}
         ${has && mode !== "auto" ? `<button type="button" class="icon-btn" data-chat-clear aria-label="${t(`chat.clear.${mode}`)}" title="${t(`chat.clear.${mode}`)}" ${pending ? "disabled" : ""}>${icon("trash", { size: 14 })}</button>` : ""}
         <button type="button" class="icon-btn" data-chat-expand aria-label="${t("chat.expand")}" title="${t("chat.expand")}">${icon("expand", { size: 14 })}</button>
         <button type="button" class="icon-btn" data-chat-close aria-label="${t("common.close")}">${icon("x", { size: 14 })}</button>
@@ -1292,7 +1423,10 @@ function wire(host, brandId, input, history) {
   };
   on("[data-chat-clear]", clearCurrent);
 
-  // Tabs.
+  // The toolbar's two menus.
+  on("[data-chat-modes]", (btn) => openModesMenu(brandId, btn));
+  on("[data-chat-saved-menu]", (btn) => openSavedMenu(brandId, btn));
+  // Pemula's "back to Otomatis" link.
   on("[data-chat-mode]", (btn) => {
     if (pending) return;
     setMode(brandId, btn.dataset.chatMode);
@@ -1446,6 +1580,89 @@ function wire(host, brandId, input, history) {
     el.classList.remove("is-flash"); void el.offsetWidth; el.classList.add("is-flash");
   });
 
+  // "Rencanakan minggu ini" — the weekPlan card. Every row edit (tick, date,
+  // campaign) is a plain in-memory change written straight back through
+  // syncThreadBlocks, same as ticking an idea card; nothing touches
+  // js/store.js content until "Masukkan ke kalender" actually saves.
+  on("[data-week-pick]", (cb) => {
+    const { h, j } = refAt(cb.dataset.weekPick);
+    const it = h?.weekPlan?.items?.[j];
+    if (!it || it.contentId) return;
+    it.picked = cb.checked;
+    syncThreadBlocks(h);
+    rerender();
+  });
+  // Date and campaign are edited via "change", not a click — `on()` above
+  // only ever listens for clicks, so these two are wired directly.
+  $("[data-week-date]").forEach((input) => input.addEventListener("change", () => {
+    const { h, j } = refAt(input.dataset.weekDate);
+    const it = h?.weekPlan?.items?.[j];
+    if (!it || it.contentId) return;
+    const today = localISODate();
+    if (!input.value || input.value < today) { toast(t("chat.week.pastDate"), "error"); input.value = it.date; return; }
+    it.date = input.value;
+    syncThreadBlocks(h);
+  }));
+  $("[data-week-campaign]").forEach((sel) => sel.addEventListener("change", () => {
+    const { h, j } = refAt(sel.dataset.weekCampaign);
+    const it = h?.weekPlan?.items?.[j];
+    if (!it || it.contentId) return;
+    const campaign = sel.value ? getCampaign(sel.value) : null;
+    it.campaignId = campaign?.id || "";
+    it.campaignName = campaign?.name || "";
+    syncThreadBlocks(h);
+  }));
+  $("[data-week-format]").forEach((sel) => sel.addEventListener("change", () => {
+    const { h, j } = refAt(sel.dataset.weekFormat);
+    const it = h?.weekPlan?.items?.[j];
+    if (!it || it.contentId) return;
+    it.format = sel.value || "";
+    syncThreadBlocks(h);
+  }));
+  on("[data-week-regen]", (btn) => {
+    const card = btn.closest(".cp-week");
+    const count = Number(card?.querySelector("[data-week-count]")?.value) || null;
+    const scopeId = card?.querySelector("[data-week-scope]")?.value || null;
+    sendMessage(brandId, t("chat.week.regenMsg"), { engine: "brainstorm", bsMode: "week", weekCount: count, campaignId: scopeId });
+  });
+  // One row, not the whole week: a plain revision message scoped to that
+  // date — reuses the exact same "a plan is open" path as typing in chat,
+  // just phrased for the model automatically instead of asking the owner
+  // to type it (js/ai.js generateWeekPlan only touches what's asked).
+  on("[data-week-regen-item]", (btn) => {
+    const { h, j } = refAt(btn.dataset.weekRegenItem);
+    const it = h?.weekPlan?.items?.[j];
+    if (!it || it.contentId) return;
+    sendMessage(brandId, t("chat.week.regenItemMsg", { date: formatDate(it.date), title: it.title }), { engine: "brainstorm", bsMode: "chat" });
+  });
+  on("[data-week-close]", (btn) => {
+    const h = history[Number(btn.dataset.weekClose)];
+    if (!h?.weekPlan) return;
+    h.weekPlan.closed = true;
+    syncThreadBlocks(h);
+    rerender();
+  });
+  on("[data-week-save]", (btn) => {
+    const h = history[Number(btn.dataset.weekSave)];
+    const wp = h?.weekPlan;
+    if (!wp || wp.savedAt) return;
+    const todo = wp.items.filter((it) => !it.contentId && it.picked !== false);
+    if (!todo.length) return;
+    const platform = getSettings().platforms?.[0]?.name || "";
+    const weekTag = wp.items[0]?.date || localISODate();
+    todo.forEach((it) => {
+      const created = createContent(brandId, {
+        title: it.title, idea: it.angle, funnel: it.funnel, format: it.format || "", platform,
+        status: "idea", scheduleDate: it.date, campaignId: it.campaignId || "", fromWeekPlan: weekTag,
+      });
+      it.contentId = created.id;
+    });
+    wp.savedAt = Date.now();
+    syncThreadBlocks(h);
+    toast(t("chat.week.savedToast", { n: todo.length }));
+    rerender();
+  });
+
   // Event steps.
   on("[data-chat-task-add]", (btn) => {
     const { h, j } = refAt(btn.dataset.chatTaskAdd);
@@ -1494,11 +1711,10 @@ function wire(host, brandId, input, history) {
     rerender();
   });
 
-  // Obrolan (Otomatis): the small panel's list menu, the page's rail.
-  on("[data-chat-sessions]", (btn) => openSessionsMenu(brandId, btn));
+  // Obrolan (Otomatis): the page's rail. (The small panel reaches the list
+  // through Tersimpan ▾ → openSavedMenu → openSessionsMenu.)
   on("[data-chat-session]", (btn) => { openSession(brandId, btn.dataset.chatSession); rerender(); });
   on("[data-chat-session-del]", async (btn, e) => { e.preventDefault(); if (await confirmDeleteSession(brandId, btn.dataset.chatSessionDel)) rerender(); });
-  on("[data-chat-saved-list]", () => openSavedIdeasModal(brandId));
 
   // Teman: moments, recap, brand memory, per-message delete.
   on("[data-chat-moment-save]", (btn) => {
@@ -1537,8 +1753,8 @@ function wire(host, brandId, input, history) {
     if (pageEl) pageEl.dataset.mtab = mobileTab;
     host.querySelectorAll("[data-cp-mtab]").forEach((b) => { b.classList.toggle("active", b === btn); b.setAttribute("aria-selected", String(b === btn)); });
   });
-  on("[data-chat-retry]", (btn) => {
-    const h = history[Number(btn.dataset.chatRetry)];
+  on("[data-chat-resend]", (btn) => {
+    const h = history[Number(btn.dataset.chatResend)];
     if (!h?.retry || pending) return;
     tails.delete(tailKey(brandId, modeOf(brandId)));
     sendMessage(brandId, h.retry, { engine: h.retryEngine || null });
@@ -1762,7 +1978,7 @@ function openSavedIdeasModal(brandId) {
 // Small panel "Obrolan": the newest conversations and "Obrolan baru".
 function openSessionsMenu(brandId, btn) {
   const r = btn.getBoundingClientRect();
-  const menu = openMenu(btn, { top: r.bottom + 6, left: r.left });
+  const menu = openMenu(btn, { className: "cp-menu", top: r.bottom + 6, left: r.left });
   if (!menu) return;
   const current = currentSessionOf(brandId)?.id || null;
   const list = listSessions(brandId).slice(0, SESSIONS_MENU_LIMIT);
@@ -1883,7 +2099,7 @@ function syncThreadBlocks(h) {
   if (!msg) return;
   const copy = (list) => (list || []).map((x) => ({ ...x }));
   updateBrainstormMessage(h.threadId, h.msgId, {
-    blocks: { ...(msg.blocks || {}), ideas: copy(h.ideas), drafts: copy(h.drafts), ...(h.tasks ? { tasks: copy(h.tasks) } : {}), ...(h.moments ? { moments: copy(h.moments) } : {}), ...(h.saves ? { saves: copy(h.saves) } : {}), ...(h.scripts?.length ? { scripts: copy(h.scripts) } : {}) },
+    blocks: { ...(msg.blocks || {}), ideas: copy(h.ideas), drafts: copy(h.drafts), ...(h.tasks ? { tasks: copy(h.tasks) } : {}), ...(h.moments ? { moments: copy(h.moments) } : {}), ...(h.saves ? { saves: copy(h.saves) } : {}), ...(h.scripts?.length ? { scripts: copy(h.scripts) } : {}), ...(h.weekPlan ? { weekPlan: { ...h.weekPlan, items: copy(h.weekPlan.items) } } : {}) },
   });
 }
 
@@ -1987,7 +2203,7 @@ function openMetricsPicker(brandId, h) {
 // `view` opens that view first (a "Tanya di X" chip); `engine` answers with
 // that engine (a chip, "Langsung kasih ide", a retry) — in a single-engine
 // view a different engine opens its view, in Otomatis it just answers.
-async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat" } = {}) {
+async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat", weekCount = null, campaignId = null } = {}) {
   // A photo always goes to the Konsultan: it is the engine that reads
   // numbers and has the brand's tracked data to compare them with.
   const images = attachments.get(brandId) || [];
@@ -2041,6 +2257,19 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
     }, 40);
   };
 
+  // A weekPlan card still open in THIS transcript owns the next message —
+  // in Otomatis as much as in the Pro Brainstorm tab — so a typed follow-up
+  // ("yang Rabu ganti lebih jualan"), or a per-row "Ganti ide ini" (which
+  // sends its own text with engine forced to "brainstorm", same as every
+  // other button-triggered chat message), revises it instead of being
+  // routed like a normal question. Never guessed from keywords (those
+  // misroute real revisions); the model itself says whether the message
+  // was even about the plan (generateWeekPlan's `changed`). Excluded: a
+  // photo (forces "consultant") or an explicit non-brainstorm engine.
+  const planEntry = (!engine || engine === "brainstorm") && !images.length && (cur === "auto" || cur === "brainstorm")
+    ? currentPlanEntry(cur === "auto" ? autoEntries(brandId) : threadEntries(currentThread(brandId), "brainstorm"))
+    : null;
+
   let picked = cur;
   let sessionId = null;
   try {
@@ -2048,12 +2277,60 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       sessionId = ensureSession(brandId, text).id;
       const seeded = seedEngine.get(brandId) || null;
       seedEngine.delete(brandId);
-      picked = MODES.includes(engine) ? engine : seeded || (await decideEngine(ai, text, historyFor(brandId, "auto")));
+      picked = MODES.includes(engine) ? engine : planEntry || bsMode === "week" ? "brainstorm" : seeded || (await decideEngine(ai, text, historyFor(brandId, "auto")));
     }
     const brand = getBrand(brandId);
     const pulseText = pulseNow(brandId);
 
-    if (picked === "brainstorm") {
+    if (picked === "brainstorm" && (bsMode === "week" || (bsMode === "chat" && planEntry))) {
+      let th = currentThread(brandId);
+      if (!th) {
+        const scope = activeScope(brandId);
+        th = createBrainstorm(brandId, { mode: "chat", title: text.slice(0, THREAD_TITLE_MAX), campaignId: scope.goalId ? null : scope.campaignId || null, stageId: scope.stageId || null, contentId: scope.contentId || null, goalId: scope.goalId || null, seriesId: scope.seriesId || null });
+        if (sessionId) patchSession(brandId, sessionId, { threadId: th.id });
+        else brainstormThread.set(brandId, th.id);
+        pendingScope.delete(brandId);
+        syncPageUrl(brandId);
+      }
+      appendBrainstormMessage(th.id, { role: "user", text, sessionId });
+      tails.delete(tk);
+      const isRevision = bsMode === "chat" && !!planEntry;
+      const settings = getSettings();
+      const formatNames = (settings.formats || []).map((f) => f.name).filter(Boolean);
+      const contentAll = listContent(brandId);
+      const campaigns = listCampaigns(brandId);
+      const activeCampaigns = activeCampaignsFor(campaigns);
+      // A campaign scope is "sticky" for this plan: pick one explicitly
+      // (the entry menu, or the footer's scope select on "Ganti semua") and
+      // every later revision — typed in chat, or a per-row "Ganti ide ini"
+      // — keeps generating for that same campaign without having to say so
+      // again. "Ganti semua" is the only way to change or clear it.
+      const scopeCampaignId = bsMode === "week" ? campaignId : isRevision ? planEntry.weekPlan.campaignId || null : null;
+      const scopeCampaign = scopeCampaignId ? getCampaign(scopeCampaignId) : null;
+      let slots, currentItems = null;
+      if (isRevision) {
+        currentItems = planEntry.weekPlan.items;
+        slots = currentItems.map((it) => it.date);
+      } else {
+        const plan = planWeek({ todayISO: localISODate(), cadence: brand?.contentCadence, content: contentAll, count: weekCount || undefined });
+        slots = plan.slots;
+      }
+      if (!slots.length) {
+        appendBrainstormMessage(th.id, { role: "assistant", text: t("chat.week.noRoom"), blocks: {}, sessionId });
+      } else {
+        const result = await generateWeekPlan(ai, {
+          brand, campaigns: activeCampaigns, campaign: scopeCampaign, slots, formats: formatNames,
+          existingTitles: contentAll.filter((c) => !c.archived && !c.deletedAt).map((c) => c.title).filter(Boolean),
+          pulseText, current: currentItems, request: isRevision ? text : "",
+        });
+        if (!isRevision || result.changed) {
+          const normalized = normalizePlanItems(result.items, slots, { campaigns: activeCampaigns, formats: formatNames, forceCampaign: scopeCampaign });
+          appendBrainstormMessage(th.id, { role: "assistant", text: result.note || "", blocks: { weekPlan: { v: 1, campaignId: scopeCampaign?.id || "", items: normalized, savedAt: null, closed: false } }, sessionId });
+        } else {
+          appendBrainstormMessage(th.id, { role: "assistant", text: result.note || t("chat.week.talkFallback"), blocks: { planTalk: true }, sessionId });
+        }
+      }
+    } else if (picked === "brainstorm") {
       let th = currentThread(brandId);
       if (!th) {
         const scope = activeScope(brandId);
@@ -2280,15 +2557,17 @@ function togglePanel(brandId, open, { seed = "", focus = null } = {}) {
 // runs "Rangkum".
 // `send` asks `seed` right away (with `bsMode`, e.g. "ideas" for three
 // ideas at once); `fresh` starts a new Obrolan for it.
-export function openConsultantPanel({ seed = "", mode = null, engine = null, recap = false, send = false, bsMode = "chat", fresh = false } = {}) {
+export function openConsultantPanel({ seed = "", mode = null, engine = null, recap = false, send = false, bsMode = "chat", fresh = false, weekCount = null, campaignId = null } = {}) {
   const brandId = page ? page.brandId : mountedBrandId;
   if (!brandId) return;
   if (recap) setMode(brandId, "companion");
   else if (mode) setMode(brandId, mode);
-  if (fresh) startConversation(brandId, { auto: modeOf(brandId) === "auto" });
+  // A double click (or the tour retriggering the same action) must not wipe
+  // out a conversation that is already mid-reply.
+  if (fresh && !pending) startConversation(brandId, { auto: modeOf(brandId) === "auto" });
   if (send && seed) {
     togglePanel(brandId, true);
-    sendMessage(brandId, seed, { engine: MODES.includes(engine) ? engine : null, bsMode });
+    sendMessage(brandId, seed, { engine: MODES.includes(engine) ? engine : null, bsMode, weekCount, campaignId });
     return;
   }
   if (engine && MODES.includes(engine)) {
@@ -2297,6 +2576,46 @@ export function openConsultantPanel({ seed = "", mode = null, engine = null, rec
   }
   togglePanel(brandId, true, { seed, focus: !!seed || !!engine });
   if (recap) runRecap(brandId);
+}
+
+// "Rencanakan minggu ini" — every entry point (Kalender, Creator, Beranda,
+// a chat starter chip) calls this one function instead of hand-assembling
+// openConsultantPanel's options, so they can never drift into slightly
+// different behavior. Always a fresh Obrolan: reopening the button mid
+// conversation starts a clean plan rather than accidentally "revising"
+// whatever the owner was talking about a moment ago. `campaignId`: generate
+// this week's plan FOR that one campaign instead of the default "tag
+// opportunistically across whatever's active" — see openWeekPlanMenu.
+export function openWeekPlan({ campaignId = null } = {}) {
+  const campaign = campaignId ? getCampaign(campaignId) : null;
+  openConsultantPanel({
+    engine: "brainstorm", bsMode: "week", send: true, fresh: true, campaignId,
+    seed: campaign ? t("chat.week.seedCampaign", { name: campaign.name }) : t("chat.week.seed"),
+  });
+}
+
+// The button itself, wherever it appears (Calendar, Creator): with no
+// active campaign to choose between, just generate — no point showing a
+// one-item menu. With at least one, a small menu offers "Brand umum" (the
+// default, opportunistic linking) plus each active campaign by name, so
+// the owner decides the plan's whole focus before a single credit is
+// spent, not after seeing a generic result and having to redo it.
+export function openWeekPlanMenu(anchorEl, brandId) {
+  const campaigns = activeCampaignsFor(listCampaigns(brandId));
+  if (!campaigns.length) { openWeekPlan(); return; }
+  const rect = anchorEl.getBoundingClientRect();
+  const menu = openMenu(anchorEl, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 240) });
+  if (!menu) return;
+  menu.innerHTML = `
+    <button type="button" data-week-menu="">${icon("bulb", { size: 15 })}${t("chat.week.menuGeneral")}</button>
+    ${campaigns.map((c) => `<button type="button" data-week-menu="${esc(c.id)}">${icon("target", { size: 15 })}${esc(c.name)}</button>`).join("")}
+  `;
+  menu.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-week-menu]");
+    if (!btn) return;
+    closeMenu();
+    openWeekPlan({ campaignId: btn.dataset.weekMenu || null });
+  });
 }
 
 // ---- The page (js/views/chat.js) ------------------------------------------------

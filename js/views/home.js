@@ -18,7 +18,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { computeSignals, topSignal } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
-import { openConsultantPanel } from "../consultant-panel.js";
+import { openConsultantPanel, openWeekPlan } from "../consultant-panel.js";
 import { postingLine } from "../brand-learning.js";
 
 // The brand's home, one file for both modes. The page answers one question
@@ -260,9 +260,10 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
     });
   }
 
-  // 3. Nothing scheduled or published this week — seed 3 ideas straight from
-  // Brand DNA's own words (audience / problem / promise). Deterministic, no
-  // AI call, so it works even when AI is switched off.
+  // 3. Nothing scheduled or published this week — offer "Rencanakan minggu
+  // ini" (js/consultant-panel.js openWeekPlan): the chat answers with one
+  // Rencana Minggu card, dated onto real free upload days and grounded in
+  // Brand DNA, and the owner ticks which to save. Nothing is created until then.
   const { start, end } = thisWeekRange(new Date());
   const hasThisWeek = content.some((c) => {
     const d = c.publishedDate || c.scheduleDate;
@@ -271,15 +272,12 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
   const dna = brand.brandDNA || {};
   const hasDna = [dna.targetAudience, dna.problemSolved, dna.successOutcome].some((x) => (x || "").trim());
   if (!hasThisWeek && hasDna) {
-    // Opens the chat's Brainstorm with a ready request — the AI answers with
-    // three idea cards grounded in Brand DNA, and the owner decides which to
-    // save (Ide Konten) or turn into a draft. Nothing is created until then.
     actions.push({
       id: "empty-week",
       icon: "bulb",
       text: t("home.action.emptyWeek.text"),
       cta: t("home.action.emptyWeek.cta"),
-      run: () => openConsultantPanel({ engine: "brainstorm", bsMode: "ideas", send: true, fresh: true, seed: t("home.action.emptyWeek.seed") }),
+      run: () => openWeekPlan(),
     });
   }
 

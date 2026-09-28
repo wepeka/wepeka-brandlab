@@ -255,13 +255,23 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
   white-space: nowrap; flex: none;
 }
 .brand-mark .dot{ width:9px; height:9px; border-radius:50%; background: var(--accent); }
-.brand-logo{ height:22px; width:auto; display:block; }
-/* The mark's "peka." half is rendered white (for dark chrome) baked into
-   the PNG itself — on light mode's pale background that half goes
-   invisible. Inverting is a flat-CSS fix (no separate light-mode asset
-   needed): white -> near-black stays legible, and the orange half shifts
-   to a consistent inverted tone rather than vanishing. */
-:root[data-theme="light"] .brand-logo{ filter: invert(1); }
+/* The Wepeka wordmark: the PNG is used only as a MASK (its shape), and the
+   colors come from CSS — "We" (the left 40.25% of the 400px-wide image,
+   ending between the "e" at x=159 and the "p" at x=163) takes the active
+   brand's color, "peka." takes the theme's text color. The old approach
+   inverted the whole PNG in light mode, which turned the orange "We" blue.
+   Outside a brand (brand list, login) --brand-tint* fall back to --accent.
+   Dark: --brand-tint-fg (lightened only when the brand color is too dark
+   to see). Light: --brand-tint-fg-light (darkened only when too pale). */
+.brand-logo{
+  --logo-h: 22px;
+  --logo-we: var(--brand-tint-fg, var(--accent));
+  display:block; flex:none; height: var(--logo-h); width: calc(var(--logo-h) * 4);
+  background: linear-gradient(90deg, var(--logo-we) 0 40.25%, var(--text) 40.25% 100%);
+  -webkit-mask: url("../assets/wepeka-logo.png") center / 100% 100% no-repeat;
+          mask: url("../assets/wepeka-logo.png") center / 100% 100% no-repeat;
+}
+:root[data-theme="light"] .brand-logo{ --logo-we: var(--brand-tint-fg-light, var(--brand-tint, var(--accent))); }
 .brand-mark-divider{ width:1px; height:18px; background: var(--border); }
 .topbar-sep{ width:1px; align-self:stretch; margin: 14px 0; background: var(--border); }
 
@@ -871,12 +881,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .pricing-hero::before{ content:""; position:absolute; z-index:-1; inset:-40% -10% auto -30%; height:140%; background: radial-gradient(closest-side, var(--accent-soft), transparent 70%); pointer-events:none; }
 .pricing-title{ font-size:clamp(34px,5.6vw,60px); line-height:1.02; letter-spacing:-.02em; margin:0; text-wrap:balance; }
 .pricing-sub{ font-size:15px; color: var(--text-muted); line-height:1.6; margin:0; max-width:52ch; }
-.pricing-trial-note{ display:flex; align-items:flex-start; gap:7px; font-size:12.5px; color: var(--text-muted); margin:0; line-height:1.5; }
-.pricing-trial-note svg{ flex:none; margin-top:2px; color: var(--accent); }
 
-.pricing-limited{ display:inline-flex; align-items:center; gap:8px; background: var(--accent); color: var(--accent-text); border-radius: var(--radius-pill); padding:6px 14px; font-size:11.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-.pricing-limited::before{ content:""; width:7px; height:7px; border-radius:50%; background: currentColor; }
-@media (prefers-reduced-motion: no-preference){ .pricing-limited::before{ animation: pricing-blink 1.6s ease-in-out infinite; } @keyframes pricing-blink{ 50%{ opacity:.25; } } }
 /* The two Founder waves — which one is open, never how many are sold */
 .pricing-tiers{ display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%; max-width:420px; }
 .pricing-tier{ display:flex; flex-direction:column; gap:3px; padding:12px 14px; border-radius: var(--radius-md); border:1px solid var(--border); background: var(--bg); }
@@ -889,18 +894,6 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .pricing-tier.is-gone strong{ text-decoration:line-through; }
 
 /* Value stack — agency price vs. what's included vs. what you pay */
-.pricing-stack{ margin-top:80px; display:flex; flex-direction:column; align-items:center; gap:14px; }
-.pricing-stack .pricing-section-title{ font-size:clamp(28px,4.4vw,44px); margin:0 0 12px; }
-.pricing-stack-card{ width:100%; max-width:820px; background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg); overflow:hidden; }
-.pricing-stack-row, .pricing-stack-total{ display:flex; align-items:center; justify-content:space-between; gap:12px 24px; flex-wrap:wrap; padding:20px clamp(18px,3vw,28px); border-bottom:1px solid var(--border); }
-.pricing-stack-row > div, .pricing-stack-total > div{ display:flex; flex-direction:column; gap:4px; flex:1 1 300px; min-width:0; }
-.pricing-stack-row strong{ font-size:15px; }
-.pricing-stack-row span, .pricing-stack-total span{ font-size:13px; color: var(--text-muted); line-height:1.55; }
-.pricing-stack-row em{ font-style:normal; font-size:12px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--accent); background: var(--accent-soft); padding:5px 12px; border-radius: var(--radius-pill); white-space:nowrap; }
-.pricing-stack-row.is-struck em{ background:none; padding:0; font-family: var(--font-display); font-size:19px; letter-spacing:0; text-transform:none; color: var(--text); text-decoration:line-through; text-decoration-color: var(--accent); text-decoration-thickness:2px; }
-.pricing-stack-total{ border-bottom:0; background: linear-gradient(90deg, var(--accent-soft), transparent); }
-.pricing-stack-total strong{ font-size:16px; }
-.pricing-stack-total em{ font-style:normal; font-family: var(--font-display); font-size:clamp(30px,4.5vw,42px); color: var(--accent); white-space:nowrap; }
 
 /* Segmented toggles on the subscription card (1 / 3 brand, monthly / yearly) */
 .pricing-seg{ display:inline-flex; align-self:flex-start; padding:3px; gap:2px; background: var(--surface-2); border:1px solid var(--border); border-radius: var(--radius-pill); }
@@ -910,20 +903,14 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .pricing-seg-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 
 .pricing-price-row{ display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
-.pricing-was{ font-size:14px; color: var(--text-faint); text-decoration:line-through; }
 .pricing-price{ font-family: var(--font-display); font-size:30px; font-weight:900; line-height:1; }
 .pricing-per{ font-size:13px; color: var(--text-muted); }
 .pricing-price-note{ font-size:12.5px; color: var(--text-faint); margin:0; }
 .pricing-features{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
 .pricing-features li{ display:flex; align-items:flex-start; gap:9px; font-size:13px; line-height:1.45; }
 .pricing-features li svg{ flex:none; margin-top:2px; color: var(--accent); }
-.pricing-hero-features{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px 28px; margin:26px 0 0; padding:0 clamp(4px,2vw,24px); }
 .pricing-cta{ margin-top:4px; }
 .pricing-cta[disabled]{ opacity:.55; cursor:not-allowed; }
-.pricing-slots{ display:flex; flex-direction:column; gap:6px; }
-.pricing-slots-bar{ height:8px; border-radius:99px; background: var(--surface-2); overflow:hidden; }
-.pricing-slots-bar > i{ display:block; height:100%; background: var(--accent); border-radius:99px; }
-.pricing-slots-label{ display:flex; justify-content:space-between; gap:10px; font-size:12px; color: var(--text-muted); }
 
 /* Subscription vs. Founder Lifetime — the two answers, side by side */
 .pricing-section-title{ font-size:clamp(22px,3vw,30px); margin:0 0 8px; text-align:center; text-wrap:balance; }
@@ -935,13 +922,9 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .pricing-way.is-win{ padding-block:36px 26px; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-lg); background: linear-gradient(180deg, var(--accent-soft), transparent 55%), var(--surface); }
 .pricing-way.is-win .pricing-price{ color: var(--accent); font-size:clamp(34px,4vw,44px); }
 .pricing-way .pricing-price{ white-space:nowrap; }
-.pricing-way .pricing-limited{ align-self:flex-start; margin-bottom:4px; }
 .pricing-way .pricing-tiers{ max-width:none; margin-block:6px 4px; }
 .pricing-way .pricing-features{ margin:6px 0 10px; }
-.pricing-way-name{ margin:0 0 4px; font-family: var(--font-body); font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color: var(--text-muted); }
 .pricing-way-credits{ margin:4px 0 8px; padding-top:12px; border-top:1px solid var(--border); font-size:13px; color: var(--text-muted); }
-.pricing-ribbon{ position:absolute; top:-12px; left:22px; background: var(--brand-tint); color: var(--brand-tint-text); font-size:11px; font-weight:800; letter-spacing:.04em; padding:5px 14px; border-radius: var(--radius-pill); white-space:nowrap; }
-.pricing-renew-note.pricing-renew-note--plain{ border:0; padding:16px 0 0; text-align:center; max-width:60ch; margin:0 auto; }
 
 .pricing-other{ max-width:760px; margin:26px auto 0; border:1px solid var(--border); border-radius: var(--radius-md); }
 .pricing-other summary{ cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 18px; font-size:13px; font-weight:700; color: var(--text-muted); }
@@ -999,6 +982,86 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
   .pricing-way, .pricing-addon{ transition:none; transform:none !important; }
   .pricing-way::after, .pricing-addon::after{ display:none; }
 }
+
+/* ---- Pricing, wepeka.com/brandlab look (2026-09-28) ----
+   Same art direction as the Brandlab landing on wepeka.com (wpk-dp
+   app/(store)/brandlab + components/landing/brandlab/offer.tsx): a purple-
+   blue mesh behind everything, rounded-3xl cards, a pink Founder card with a
+   soft fuchsia glow and a glowing pill. Pink/violet are Brandlab-the-product
+   colors on purpose, not the brand being worked on, so they are fixed hex
+   here rather than --accent / --brand-tint. */
+.pricing-page{
+  --pl-pink:#ec4899; --pl-pink-strong:#db2777; --pl-pink-text:#f472b6;
+  --pl-save-bg: rgba(16,185,129,.16); --pl-save-text:#6ee7b7;
+  --pl-shadow-card: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
+  --pl-shadow-pop: 0 16px 50px -12px rgba(0,0,0,.7);
+  min-height:100vh;
+  background:
+    radial-gradient(760px 440px at 12% 8%, rgba(129,140,248,.20), transparent 60%),
+    radial-gradient(720px 520px at 88% 18%, rgba(124,58,237,.22), transparent 60%),
+    linear-gradient(160deg, #14121f, #0c0b0a);
+}
+:root[data-theme="light"] .pricing-page{
+  --pl-pink-text:#db2777; --pl-save-text:#047857;
+  --pl-shadow-card: 0 1px 2px rgba(23,20,15,.05), 0 8px 24px -12px rgba(23,20,15,.14);
+  --pl-shadow-pop: 0 12px 40px -12px rgba(23,20,15,.32);
+  background:
+    radial-gradient(760px 440px at 12% 8%, rgba(196,181,253,.55), transparent 60%),
+    radial-gradient(720px 520px at 88% 18%, rgba(129,140,248,.42), transparent 62%),
+    linear-gradient(160deg, #f5f3ff, #ffffff);
+}
+.pricing-page .pricing-hero{ background:none; border:0; border-radius:0; overflow:visible; padding:0; margin-top:34px; gap:14px; }
+.pricing-page .pricing-hero::before{ display:none; }
+.pricing-page .pricing-title{ font-size:clamp(30px,5vw,52px); font-weight:900; line-height:1.05; letter-spacing:.01em; }
+.pricing-page .pricing-sub{ font-size:clamp(14px,1.6vw,17px); }
+
+.pricing-pill{ display:inline-flex; align-items:center; gap:6px; width:fit-content; padding:5px 12px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.pricing-pill svg{ width:12px; height:12px; flex:none; }
+.pricing-pill--eyebrow{ padding:6px 16px; background: var(--surface); border:1px solid var(--border); color: var(--pl-pink); letter-spacing:.15em; box-shadow: var(--pl-shadow-card); }
+.pricing-pill--pink{ background: var(--pl-pink); color:#fff; padding:6px 14px; }
+@media (prefers-reduced-motion: no-preference){
+  .pricing-pill--pink{ animation: pl-badge-glow 2.2s ease-in-out infinite; }
+  @keyframes pl-badge-glow{ 0%,100%{ box-shadow:0 0 6px rgba(236,72,153,.4); transform:scale(1); } 50%{ box-shadow:0 0 18px rgba(236,72,153,.85); transform:scale(1.03); } }
+}
+
+.pricing-page .pricing-ways-section{ margin-top:30px; }
+.pricing-page .pricing-ways{ grid-template-columns: 1.3fr 1fr; gap:20px; max-width:980px; align-items:stretch; }
+@media (max-width:760px){ .pricing-page .pricing-ways{ grid-template-columns:1fr; max-width:480px; } }
+.pricing-page .pricing-way{ gap:10px; padding:28px 26px 24px; border-radius:24px; border:1px solid var(--border); background: var(--surface); box-shadow: var(--pl-shadow-card); }
+.pricing-way-top{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; position:relative; }
+.pricing-way-title{ position:relative; margin:6px 0 0; font-family: var(--font-display); font-size:clamp(22px,2.4vw,28px); font-weight:900; line-height:1.1; }
+.pricing-page .pricing-way .pricing-price{ font-size:34px; }
+
+.pricing-page .pricing-way.is-win{ overflow:hidden; padding:30px 28px 26px; border:2px solid var(--pl-pink); background: var(--surface); box-shadow: var(--pl-shadow-pop); }
+.pricing-way-glow{ position:absolute; top:-64px; right:-64px; width:192px; height:192px; border-radius:50%; background: linear-gradient(135deg, rgba(217,70,239,.25), rgba(236,72,153,.25)); filter: blur(40px); pointer-events:none; }
+.pricing-page .pricing-way.is-win > *:not(.pricing-way-glow){ position:relative; }
+.pricing-anchor{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0 -2px; font-size:14px; color: var(--text-muted); }
+.pricing-anchor s{ text-decoration-color: var(--pl-pink); text-decoration-thickness:2px; }
+.pricing-save{ padding:3px 10px; border-radius:999px; background: var(--pl-save-bg); color: var(--pl-save-text); font-size:12px; font-weight:800; }
+.pricing-page .pricing-way.is-win .pricing-price{ color: var(--pl-pink-text); font-size:clamp(40px,5vw,54px); }
+.pricing-page .pricing-way.is-win .pricing-tier.is-open{ border-color: var(--pl-pink); box-shadow:0 0 0 1px var(--pl-pink); background: rgba(236,72,153,.10); }
+.pricing-page .pricing-way.is-win .pricing-tier.is-open strong, .pricing-page .pricing-way.is-win .pricing-tier.is-open .pricing-tier-state{ color: var(--pl-pink-text); }
+.pricing-page .pricing-way.is-win .pricing-features li svg{ color: var(--pl-pink); }
+.pricing-features--2col{ display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+@media (max-width:560px){ .pricing-features--2col{ grid-template-columns:1fr; } }
+.pricing-cta--pink{ background: var(--pl-pink); border-color: var(--pl-pink); color:#fff; font-weight:800; padding-block:13px; box-shadow: 0 10px 26px -10px rgba(236,72,153,.75); }
+.pricing-cta--pink:hover{ background: var(--pl-pink-strong); border-color: var(--pl-pink-strong); color:#fff; }
+.pricing-page .pricing-way.is-win::after{ background-image: linear-gradient(115deg, transparent 40%, rgba(236,72,153,.22) 50%, transparent 60%); }
+@media (hover:hover){
+  .pricing-page .pricing-way:hover{ border-color: var(--border); box-shadow: var(--pl-shadow-pop); }
+  .pricing-page .pricing-way.is-win:hover{ border-color: var(--pl-pink); box-shadow: 0 30px 70px -24px rgba(236,72,153,.55); }
+}
+.pricing-trust{ display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px 6px; margin:18px auto 0; max-width:720px; text-align:center; font-size:12.5px; color: var(--text-muted); }
+.pricing-trust > svg{ flex:none; color:#10b981; }
+.pricing-trust--trial{ margin-top:4px; }
+/* Both buttons on one line at the bottom, whichever card is taller. */
+.pricing-page .pricing-way > .pricing-cta{ margin-top:auto; }
+.pricing-page .pricing-way-credits{ margin-bottom:16px; }
+.pricing-page .pricing-other, .pricing-page .pricing-faq-item{ border-radius:20px; background: var(--surface); box-shadow: var(--pl-shadow-card); }
+.pricing-page .pricing-faq-item summary svg{ color: var(--pl-pink); }
+.pricing-page .pricing-faq{ margin-top:56px; }
+.pricing-page .pricing-account-bar{ border-radius:999px; background: var(--surface); box-shadow: var(--pl-shadow-card); }
+.pricing-page .pricing-locked-banner{ border-radius:24px; border:1px solid var(--border); border-top:3px solid var(--pl-pink); background: var(--surface); box-shadow: var(--pl-shadow-card); }
 
 /* Topbar plan badge (js/layout.js planBadgeHTML) → pricing */
 .plan-badge{ display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 6px 0 11px; border-radius: var(--radius-pill); border:1px solid var(--border); background: var(--surface); color: var(--text-muted); font-size:12px; font-weight:700; text-decoration:none; white-space:nowrap; flex:none; transition:border-color .15s; }
@@ -3463,26 +3526,6 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cp-head-icon{ flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--cp-accent) 18%, transparent); color: var(--cp-accent); }
 /* the composer follows the chat's own accent */
 .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
-/* the three tabs: Konsultan / Brainstorm / Teman */
-.cp-modes{ flex:none; display:grid; grid-template-columns: repeat(var(--n, 4), 1fr); gap:4px; padding:8px 12px 0; }
-/* Pemula: no mode row — only "← Tanya apa saja" when a button elsewhere opened one log */
-.cp-back{ flex:none; display:flex; align-items:center; gap:10px; padding:8px 14px 0; font-size:12px; }
-.cp-back .link{ display:inline-flex; align-items:center; gap:3px; border:0; background:none; padding:0; font:inherit; font-size:12px; font-weight:700; color: var(--cp-accent); cursor:pointer; }
-.cp-back-here{ display:inline-flex; align-items:center; gap:4px; margin-left:auto; font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color: var(--text-faint); }
-.cp-mode:disabled{ cursor:default; opacity:.7; }
-.cp-mode{ display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:6px 4px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family:inherit; font-size:11.5px; font-weight:700; cursor:pointer; --t: var(--accent); transition: background .15s, color .15s, border-color .15s; }
-.cp-mode[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-mode[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-mode[data-engine="companion"]{ --t: var(--chat-companion); }
-.cp-mode{ position:relative; }
-/* hover / focus tooltip: what this tab does, one line */
-.cp-mode-tip{ position:absolute; top:calc(100% + 6px); left:50%; transform: translateX(-50%) translateY(-2px); z-index:5; width:max-content; max-width:220px; padding:7px 10px; border-radius:10px; background: var(--bg-raised); color: var(--text); border:1px solid color-mix(in srgb, var(--t) 45%, var(--border)); box-shadow: var(--shadow-lg); font-size:11.5px; font-weight:500; line-height:1.4; text-align:left; white-space:normal; opacity:0; pointer-events:none; transition: opacity .15s, transform .15s; }
-.cp-mode:first-child .cp-mode-tip{ left:0; transform: translateY(-2px); } .cp-mode:last-child .cp-mode-tip{ left:auto; right:0; transform: translateY(-2px); }
-.cp-mode:hover .cp-mode-tip, .cp-mode:focus-visible .cp-mode-tip{ opacity:1; transform: translateX(-50%) translateY(0); }
-.cp-mode:first-child:hover .cp-mode-tip, .cp-mode:first-child:focus-visible .cp-mode-tip, .cp-mode:last-child:hover .cp-mode-tip, .cp-mode:last-child:focus-visible .cp-mode-tip{ transform: translateY(0); }
-.cp-modes{ overflow:visible; }
-.cp-mode svg{ width:12px; height:12px; flex:none; }
-.cp-mode:hover{ color: var(--text); border-color: var(--t); }
-.cp-mode.is-active{ background: color-mix(in srgb, var(--t) 16%, transparent); border-color: var(--t); color: var(--t); }
-.cp-mode:focus-visible{ outline:2px solid var(--t); outline-offset:1px; }
 /* one reply, one engine label */
 .cp-engine{ display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color: var(--cp-accent); margin-bottom:4px; }
 .cp-engine svg{ width:11px; height:11px; }
@@ -3493,7 +3536,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cp-switch{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-muted); }
 .cp-switch .consultant-starter{ display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:11.5px; }
 .cp-switch .consultant-starter svg{ width:11px; height:11px; }
-.consultant-msg.is-typing .cp-switch, .consultant-msg.is-typing .cp-idea{ display:none; }
+.consultant-msg.is-typing .cp-switch, .consultant-msg.is-typing .cp-idea, .consultant-msg.is-typing .cp-week{ display:none; }
 /* idea cards (Brainstorm) and moment cards (Teman) */
 .cp-idea{ margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); white-space:normal; }
 .cp-idea-title{ font-weight:800; font-size:13px; line-height:1.35; }
@@ -3638,7 +3681,6 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 .bs-thread-del:hover{ color: var(--health-poor); background: var(--surface-2); }
 @media (pointer: coarse){ .bs-thread-del{ opacity:1; } }
 .consultant-panel-input textarea{ overflow-y:hidden; }
-.cp-modes{ scroll-padding-right:10px; }
 .consultant-panel-input .cp-mic{ width:32px; height:32px; margin-bottom:2px; color: var(--text-muted); }
 .consultant-panel-input .cp-mic:hover{ background: var(--surface-2); color: var(--text); }
 .consultant-panel-input .cp-mic:disabled{ opacity:.4; cursor:default; }
@@ -3649,10 +3691,6 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 .cp-copy svg{ width:12px; height:12px; }
 .consultant-msg.is-typing .cp-msg-tools{ display:none; }
 @media (max-width: 640px){
-  .cp-modes{ display:flex; overflow-x:auto; gap:6px; padding:8px 10px 2px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
-  .cp-modes::-webkit-scrollbar{ display:none; }
-  .cp-mode{ flex:none; padding:6px 11px; }
-  .cp-mode-tip{ display:none; }
   .cp-msg-tools .cp-copy{ padding:4px 8px; }
 }
 
@@ -3673,7 +3711,6 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cp-memory .bs-card-actions{ margin-top:12px; }
 .cp-page-chat .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
 .cp-page-chat .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
-.cp-page-chat .cp-modes{ padding:14px 18px 0; }
 .cp-page-chat .cp-scope{ padding:10px 18px 10px; border-bottom:1px solid var(--border); }
 .cp-page-chat .consultant-panel-body{ padding:16px 18px; }
 .cp-page-chat .consultant-panel-input{ padding:12px 18px; }
@@ -3688,7 +3725,6 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .consultant-msg-assistant{ white-space:normal; }
 @media (max-width:760px){
   .cp-page-chat{ height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:460px; }
-  .cp-page-chat .cp-modes{ padding:10px 10px 2px; }
   .cp-page-chat .cp-scope, .cp-page-chat .consultant-panel-body, .cp-page-chat .consultant-panel-input{ padding-left:12px; padding-right:12px; }
   .cp-page-chat .cp-foot{ padding:0 12px 10px; }
   .cp-page-chat .consultant-msg{ max-width:94%; }
@@ -3734,11 +3770,36 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 /* Tanya Brandlab — Otomatis: the small panel's quick row (Obrolan /
    Tersimpan / Memori), the page's right column (saved ideas + brand memory
    stacked), the AI's "keep this idea?" card and its guide line. */
-.cp-quick{ flex:none; display:flex; gap:6px; padding:8px 12px 0; overflow-x:auto; scrollbar-width:none; }
-.cp-quick::-webkit-scrollbar{ display:none; }
-.cp-quick-btn{ flex:none; display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font:inherit; font-size:11.5px; font-weight:700; cursor:pointer; }
-.cp-quick-btn:hover{ color: var(--text); border-color: var(--cp-accent); }
-.cp-quick-btn svg{ width:12px; height:12px; flex:none; }
+/* The one-row toolbar above the chat (js/consultant-panel.js toolbarHTML):
+   [mode ▾] [Tersimpan ▾] … [+]. Its menus open above the floating panel
+   (z-index 65), hence .cp-menu's 70. */
+.cp-toolbar{ flex:none; display:flex; align-items:center; gap:6px; padding:8px 12px 0; min-width:0; }
+.cp-toolbar-spacer{ flex:1; }
+.cp-tool{ flex:none; display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 11px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font:inherit; font-size:12px; font-weight:700; cursor:pointer; --t: var(--accent); transition: color .15s, border-color .15s, background .15s; }
+.cp-tool svg{ width:13px; height:13px; flex:none; }
+.cp-tool:hover:not(:disabled){ color: var(--text); border-color: var(--t); }
+.cp-tool:disabled{ opacity:.5; cursor:default; }
+.cp-tool:focus-visible{ outline:2px solid var(--t); outline-offset:1px; }
+.cp-tool-mode{ background: color-mix(in srgb, var(--t) 14%, transparent); border-color: var(--t); color: var(--t); }
+.cp-tool-mode:hover:not(:disabled){ color: var(--t); }
+.cp-tool[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-tool[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-tool[data-engine="companion"]{ --t: var(--chat-companion); }
+.cp-tool-count{ min-width:18px; height:18px; padding:0 5px; border-radius:999px; background: var(--surface); border:1px solid var(--border); font-size:10.5px; line-height:16px; text-align:center; color: var(--text); }
+.cp-tool-icon{ width:30px; padding:0; justify-content:center; }
+.cp-tool-icon svg{ width:15px; height:15px; }
+.cp-tool-back{ display:inline-flex; align-items:center; gap:3px; border:0; background:none; padding:0; font:inherit; font-size:12px; font-weight:700; color: var(--cp-accent); cursor:pointer; }
+.cp-page-chat .cp-toolbar{ padding:14px 18px 0; }
+@media (max-width:760px){ .cp-page-chat .cp-toolbar{ padding:10px 12px 2px; } }
+.cp-toolbar .cp-back-here{ display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; color: var(--text-muted); }
+.menu.cp-menu{ z-index:70; max-width:min(300px, calc(100vw - 24px)); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; }
+.cp-menu .cp-menu-mode{ align-items:flex-start; --t: var(--accent); }
+.cp-menu .cp-menu-mode[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-menu .cp-menu-mode[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-menu .cp-menu-mode[data-engine="companion"]{ --t: var(--chat-companion); }
+.cp-menu .cp-menu-mode > svg:first-child{ color: var(--t); margin-top:2px; }
+.cp-menu .cp-menu-mode > svg:last-child{ margin-left:auto; margin-top:3px; color: var(--t); }
+.cp-menu .cp-menu-mode.is-active{ background: color-mix(in srgb, var(--t) 12%, transparent); }
+.cp-menu-mode-text{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.cp-menu-mode-text b{ font-size:13px; }
+.cp-menu-mode-text small{ font-size:11.5px; line-height:1.4; color: var(--text-muted); white-space:normal; }
+.cp-menu button > svg:last-child:not(:first-child){ margin-left:auto; }
 .cp-page[data-mode="auto"]{ grid-template-columns: 230px minmax(0,1fr) 270px; }
 .cp-side{ position:sticky; top:84px; display:flex; flex-direction:column; gap:16px; min-width:0; }
 .cp-side .bs-ideas{ position:static; }
@@ -3788,6 +3849,33 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cp-plan-body .text-muted{ font-size:12px; }
 .cp-plan-tags{ display:flex; flex-wrap:wrap; gap:4px; }
 .cp-plan-tags .tag{ font-size:10.5px; }
+
+/* "Rencanakan minggu ini" (js/consultant-panel.js weekPlanCardHTML) — a
+   dated, checkboxed plan inside a chat bubble. Reuses .cp-plan-body/-tags
+   above for the row's text; needs its own row grid (a date input and a
+   campaign picker don't fit .cp-plan-row's column widths) and a wider
+   bubble than the usual 85%, since a date + campaign select need real room
+   even in the small floating panel (360px). */
+.consultant-msg:has(.cp-week){ max-width:100%; }
+.cp-week{ margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.cp-week .cp-plan-body{ overflow-wrap: anywhere; }
+.cp-week-row{ display:grid; grid-template-columns: auto auto minmax(0,1fr) auto; gap:10px; align-items:flex-start; padding:9px 0; border-top:1px solid var(--border-soft, var(--border)); }
+.cp-week-row:first-child{ border-top:0; }
+.cp-week-row input[type="checkbox"]{ margin-top:5px; accent-color: var(--accent); }
+.cp-week-row.is-done{ opacity:.7; }
+.cp-week-date{ width:130px; font-size:12px; padding:5px 7px; }
+.cp-week-title-row{ display:flex; align-items:baseline; gap:6px; }
+.cp-week-item-regen{ flex:none; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; padding:0; border:none; background:none; color: var(--text-faint, var(--text-muted)); cursor:pointer; border-radius: var(--radius-sm); }
+.cp-week-item-regen:hover{ color: var(--accent); background: var(--surface-hover); }
+.cp-week-select{ font-size:11px; padding:3px 7px; max-width:160px; }
+.cp-week-foot{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-soft, var(--border)); }
+.cp-week-foot .cp-week-count{ width:auto; font-size:12px; padding:5px 8px; }
+.cp-week-status{ margin:10px 0 0; font-size:12.5px; color: var(--text-muted); display:flex; align-items:center; gap:6px; }
+.cp-week-summary{ margin-top:8px; padding:8px 10px; border:1px dashed var(--border-soft, var(--border)); border-radius: var(--radius-md); font-size:12px; display:flex; align-items:center; gap:6px; }
+@media (max-width:520px){
+  .cp-week-row{ grid-template-columns: auto auto minmax(0,1fr); }
+  .cp-week-row .btn{ grid-column: 1 / -1; margin-left:26px; }
+}
 
 /* "Dibuat berdasarkan: …" under generated content (js/brand-learning.js) */
 .ai-basis{ margin:0 0 12px; padding:8px 11px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 9%, var(--surface-2)); border:1px dashed color-mix(in srgb, var(--accent) 35%, var(--border)); font-size:12px; line-height:1.5; color: var(--text-muted); }
@@ -4038,10 +4126,6 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 }
 
 /* Pricing (logged out): what Brandlab actually does, before any price. */
-.pricing-what{ list-style:none; padding:0; margin:14px auto 0; display:grid; gap:8px; max-width:520px; text-align:left; }
-.pricing-what li{ display:flex; gap:8px; align-items:flex-start; font-size:13.5px; color: var(--text); line-height:1.45; }
-.pricing-what svg{ flex:none; margin-top:2px; color: var(--accent); }
-.pricing-what-link{ display:inline-flex; align-items:center; gap:5px; margin-top:12px; font-size:13px; font-weight:700; color: var(--accent); }
 .pricing-pending-help{ border:1px solid var(--accent); background: var(--accent-soft); border-radius: var(--radius-lg); padding:16px 18px; margin: 0 auto 18px; max-width:720px; }
 .pricing-pending-help b{ display:block; font-size:14.5px; margin-bottom:4px; }
 .pricing-pending-help p{ margin:0 0 10px; font-size:13px; color: var(--text-muted); line-height:1.5; }

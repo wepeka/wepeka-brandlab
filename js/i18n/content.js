@@ -155,7 +155,7 @@ export default {
   "home.action.overdue.cta": { en: "Move to next week", id: "Geser ke minggu depan" },
   "home.action.overdue.done": { en: "{n} piece(s) moved to the nearest open day", id: "{n} konten digeser ke hari kosong terdekat" },
   "home.action.emptyWeek.text": { en: "Nothing scheduled or posted this week yet.", id: "Belum ada konten minggu ini." },
-  "home.action.emptyWeek.cta": { en: "Ask AI for 3 ideas", id: "Minta 3 ide ke AI" },
+  "home.action.emptyWeek.cta": { en: "Plan this week", id: "Rencanakan minggu ini" },
   "home.action.emptyWeek.idea.audience": { en: "Get to know: {text}", id: "Kenalan sama: {text}" },
   "home.action.emptyWeek.idea.problem": { en: "Talk about this problem: {text}", id: "Bahas masalah ini: {text}" },
   "home.action.emptyWeek.idea.promise": { en: "Show this result: {text}", id: "Tunjukkan hasil ini: {text}" },

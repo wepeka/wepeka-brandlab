@@ -45,9 +45,14 @@ function proxyError(code, extra = {}) {
       return aiSetupError("ai.error.badResponse", { provider: "AI" });
     case "network":
       return aiSetupError("ai.error.network", { provider: "AI" });
+    case "setup":
+      return aiSetupError("ai.error.setup", { key: extra.message || "API key" });
+    case "noServer":
+      return new AiApiError(t("ai.error.noServer"));
     case "provider":
     default:
-      return aiSetupError("ai.error.provider", { provider: "AI", message: extra.message || "" });
+      // No detail from the server → the plain message, never a bare "AI error:".
+      return extra.message ? aiSetupError("ai.error.provider", { provider: "AI", message: extra.message }) : new AiApiError(t("ai.error.provider.user"));
   }
 }
 
@@ -81,6 +86,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
   } finally {
     clearTimeout(timer);
   }
+  if ([404, 405, 501].includes(res.status)) throw proxyError("noServer");
 
   if (!stream) {
     let body;
@@ -1201,6 +1207,74 @@ export async function generateCampaignContentPlan(ai, { brand, campaign, weeks, 
   if (!items.length) throw new AiApiError(t("ai.error.readIdeas"));
   return items;
 }
+
+// "Rencanakan minggu ini" (js/consultant-panel.js's weekPlan chat card): a
+// whole week's content, one idea per already-decided date. Unlike the
+// campaign plan above, the CALLER picks every date (js/week-plan.js —
+// real free upload days, cadence and existing content already excluded)
+// and just asks the model to fill each one in; the model is never allowed
+// to invent a date of its own, which is what keeps "don't post twice on a
+// day the owner can't shoot" true no matter what it writes.
+// `campaign`: the owner picked one specific active campaign before
+// generating (the menu on "Rencanakan minggu ini" in Calendar/Creator, or
+// the scope picker next to "Ganti semua") — every item in the plan then
+// serves THIS campaign, instead of the default "tag opportunistically
+// across whatever's active" behavior.
+// `current`+`request`: a revision — the owner asked for a change in chat
+// (e.g. "yang Rabu ganti lebih jualan", or a per-row "Ganti ide ini") and
+// `current` is the plan on the table; the model changes only what was
+// asked and returns `changed:false` when the message wasn't actually about
+// the plan (an off-topic question), so the chat can answer in words
+// instead of replacing a fine plan.
+export async function generateWeekPlan(ai, { brand, campaigns = [], campaign = null, slots = [], formats = [], existingTitles = [], proven = [], pulseText = "", current = null, request = "" }) {
+  const active = campaign ? [] : campaigns.filter((c) => c.status === "active" || c.status === "planning");
+  const system = [
+    campaign
+      ? "You plan one week of content that all pushes a single active campaign forward — every item should serve this campaign's message and offer, not general brand awareness."
+      : "You plan one brand's content calendar for the coming days — concrete, postable ideas for specific dates, grounded in this brand's own context.",
+    outputLanguageRule({ brand }),
+    buildBrandContext(brand),
+    pulseText || "",
+    MARKETING_FRAMEWORKS_CONTEXT,
+    NATURAL_WRITING_CONTEXT,
+    campaign
+      ? `This entire week's plan is for this campaign — every item's "campaign" field must be exactly this name:\n${campaignSummaryLine(campaign, brand)}\nOffer: ${campaign.offer || "(not set)"}. CTA: ${campaign.cta || "(not set)"}.`
+      : active.length ? `Active campaigns — if a date's idea genuinely fits one of these, name it exactly in "campaign" (else leave "campaign" empty; never force a fit):\n${active.map((c) => campaignSummaryLine(c, brand)).join("\n")}` : "",
+    proven.length ? `What already worked for this brand — lean on these patterns (not copies):\n${proven.map((p) => `- ${p}`).join("\n")}` : "",
+    existingTitles.length ? `Content already planned or made for this brand (never repeat these):\n${existingTitles.slice(0, 40).map((x) => `- ${x}`).join("\n")}` : "",
+    `These exact dates are the only ones you may use, one item per date, in this order (do not add, skip, merge, or reschedule any of them):\n${slots.map((d) => `- ${d} (${dayNameEn(d)})`).join("\n")}`,
+    "Mix the funnel sensibly across the week (not every day TOFU), and vary the formats.",
+    formats.length ? `Formats this brand uses (pick from these): ${formats.join(", ")}.` : "",
+    current
+      ? [
+          `The owner already has this plan on the table:\n${current.map((it) => `- ${it.date}: "${it.title}" (${it.funnel}${it.format ? `, ${it.format}` : ""}${it.campaignName ? `, campaign: ${it.campaignName}` : ""}) — ${it.angle || ""}`).join("\n")}`,
+          `The owner just wrote: "${request}"`,
+          "If that message asks for a change to the plan (a specific day, a general direction, adding more sales focus, etc.), rewrite the FULL plan — one item per date above — changing only what was actually asked and keeping the rest as-is. Set \"changed\" to true and \"note\" to one short sentence (max 20 words) saying what changed.",
+          "If that message is NOT about changing the plan (an unrelated question, a comment, a thank-you), do not rewrite anything: return the exact same items unchanged, set \"changed\" to false, and put a short normal reply answering the owner in \"note\".",
+        ].join("\n")
+      : "",
+    `Respond ONLY with valid JSON, no markdown fences: {"changed": true, "note": "one short sentence", "items": [{"date":"YYYY-MM-DD","title":"short concrete content title","angle":"one sentence: what it says and why it fits that day","format":"one of the formats","funnel":"TOFU|MOFU|BOFU","campaign":"exact active campaign name or empty"}]}`,
+  ].filter(Boolean).join("\n\n");
+  const raw = await callModel(ai, system, current ? "Answer now." : "Write the plan now.", Math.min(8000, 400 + slots.length * 150), { json: true, feature: "weekplan" });
+  const parsed = parseJsonObject(raw);
+  const rawItems = Array.isArray(parsed?.items) ? parsed.items : [];
+  if (!parsed || !rawItems.some((x) => String(x?.title || "").trim())) throw new AiApiError(t("ai.error.readIdeas"));
+  // Trimmed to sane types/lengths only — matching each item to one of the
+  // caller's own `slots`, resolving a campaign name to an id, and dropping
+  // an unrecognized format all happen in js/week-plan.js's
+  // normalizePlanItems, which the chat card calls with this same shape.
+  const items = rawItems.map((x) => ({
+    date: String(x?.date || "").trim(),
+    title: String(x?.title || "").trim().slice(0, 140),
+    angle: String(x?.angle || "").trim().slice(0, 300),
+    format: String(x?.format || "").trim().slice(0, 40),
+    funnel: ["TOFU", "MOFU", "BOFU"].includes(String(x?.funnel || "").toUpperCase()) ? String(x.funnel).toUpperCase() : "TOFU",
+    campaign: String(x?.campaign || "").trim(),
+  }));
+  return { changed: parsed.changed !== false, note: String(parsed.note || "").trim().slice(0, 400), items };
+}
+
+const dayNameEn = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" });
 
 // Powers the Brand Guidelines PDF's "Value Proposition" page — the one
 // piece of that document's content that genuinely has no deterministic

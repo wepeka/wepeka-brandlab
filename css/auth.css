@@ -147,5 +147,5 @@
 
 /* "Continue with your Wepeka account" — the SSO door from wepeka.com */
 .auth-wepeka-btn{ gap:8px; margin-bottom:8px; }
-.auth-wepeka-btn .brand-logo{ height:15px; }
+.auth-wepeka-btn .brand-logo{ --logo-h:15px; }
 .auth-wepeka-note{ font-size:11.5px; color: var(--text-faint); text-align:center; margin:0 0 14px; line-height:1.5; }

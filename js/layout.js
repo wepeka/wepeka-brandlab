@@ -1,7 +1,7 @@
 import { icon } from "./icons.js";
 import { listBrands, getBrand, listOverdueAndDueSoon } from "./store.js";
 import { logout } from "./auth.js";
-import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
+import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, pickTintForegroundLight, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
 import { getMode, toggleMode } from "./mode.js";
 import { t } from "./i18n.js";
@@ -61,6 +61,7 @@ async function applyBrandTint(brand) {
     document.body.style.removeProperty("--brand-tint");
     document.body.style.removeProperty("--brand-tint-text");
     document.body.style.removeProperty("--brand-tint-fg");
+    document.body.style.removeProperty("--brand-tint-fg-light");
     return;
   }
   try {
@@ -68,18 +69,20 @@ async function applyBrandTint(brand) {
     let tint = tintCache.get(cacheKey);
     if (!tint) {
       const color = brand.color || (await getDominantColor(brand.avatar));
-      tint = { color, text: pickTintTextColor(color), fg: pickTintForeground(color) };
+      tint = { color, text: pickTintTextColor(color), fg: pickTintForeground(color), fgLight: pickTintForegroundLight(color) };
       tintCache.set(cacheKey, tint);
     }
     document.body.style.setProperty("--brand-tint", tint.color);
     document.body.style.setProperty("--brand-tint-text", tint.text);
     document.body.style.setProperty("--brand-tint-fg", tint.fg);
+    document.body.style.setProperty("--brand-tint-fg-light", tint.fgLight);
     document.body.classList.add("has-brand-tint");
   } catch {
     document.body.classList.remove("has-brand-tint");
     document.body.style.removeProperty("--brand-tint");
     document.body.style.removeProperty("--brand-tint-text");
     document.body.style.removeProperty("--brand-tint-fg");
+    document.body.style.removeProperty("--brand-tint-fg-light");
   }
 }
 
@@ -200,7 +203,7 @@ export function shellHTML({ brandId, active }) {
   return `
     <header class="topbar">
       <a class="brand-mark" href="#/" title="${t("nav.allBrands")}">
-        <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
+        <span class="brand-logo" role="img" aria-label="Wepeka"></span>
         <span class="brand-mark-divider"></span>
         Brandlab
       </a>

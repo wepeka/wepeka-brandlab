@@ -18,6 +18,7 @@ import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
 import { funnelFieldHTML, wireFunnelField, statusLabel } from "../funnel-field.js";
 import { setPageGuide } from "../section-guide.js";
+import { openWeekPlanMenu } from "../consultant-panel.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
 import { wireMic } from "../voice-input.js";
@@ -703,7 +704,10 @@ function paint(root, brandId, state, refresh) {
         <h1>${t("contentOs.tab.creator")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
-      <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
+      <div class="flex gap-8">
+        <button class="btn btn-secondary" id="cr-week-plan" title="${t("chat.week.credit")}">${icon("sparkle", { size: 15 })}${t("chat.week.button")}</button>
+        <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
+      </div>
     </div>
 
     <div class="creator-layout">
@@ -727,6 +731,7 @@ function paint(root, brandId, state, refresh) {
   setPageGuide(() => startCreatorGuide(brandId));
 
   qs("#new-content").addEventListener("click", () => state.startNewContent());
+  qs("#cr-week-plan").addEventListener("click", (e) => openWeekPlanMenu(e.currentTarget, brandId));
   const emptyNewBtn = qs("#new-content-empty");
   if (emptyNewBtn) emptyNewBtn.addEventListener("click", () => state.startNewContent());
 

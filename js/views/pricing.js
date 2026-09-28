@@ -141,7 +141,6 @@ const SUBSCRIPTIONS = {
   1: { key: "starter", monthly: 49000, yearly: 399000, brands: 1, credits: 20 },
   3: { key: "pro", monthly: 99000, yearly: 799000, brands: 3, credits: 60 },
 };
-const PRO = SUBSCRIPTIONS[3];
 const STUDIO = { key: "studio", monthly: 249000, yearly: 1990000, brands: 10, credits: 200 };
 
 // Two waves inside the same 50 slots (api/_plans.js FOUNDER_TIERS — keep in
@@ -154,9 +153,12 @@ const FOUNDER_SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 }
 // (api/_plans.js BOOK_STYLE_ADDONS) — the bundle line on the Founder card.
 const BOOK_STYLES_VALUE = 3 * 20000;
 
-// Rough going rate for a social media agency / freelance manager serving a
-// small business — the one anchor on the page, shown as "kisaran".
-const AGENCY_MONTHLY = [1500000, 5000000];
+// Lifetime's normal price — what Lifetime costs once the Founder waves are
+// gone (owner's decision, 2026-09-28). Shown struck through above the
+// Founder price as the page's anchor, and stated as a fact in the Founder
+// note and the "slots" FAQ, so it must stay TRUE: if the post-Founder price
+// ever changes, change it here. Keep wpk-dp src/lib/brandlab-plans.ts in step.
+const LIFETIME_NORMAL_PRICE = 3500000;
 
 // `payKey` add-ons are bought on the spot (api/_plans.js ADDONS — keep in
 // sync) by accounts on a pay-once plan; everything else is ordered via
@@ -170,7 +172,9 @@ const ADDONS = [
 ];
 const ADDON_ELIGIBLE_PLANS = ["founder", "founder-ultimate", "lifetime"];
 
-const FAQ_KEYS = ["trial", "after", "which", "circle", "ai", "cancel", "credits", "slots"];
+// Only the four questions that stand between "interested" and "paying";
+// the rest (trial details, credits, the Circle) live on wepeka.com/brandlab.
+const FAQ_KEYS = ["which", "slots", "cancel", "after"];
 
 // A payment that's taking a while gets a card that stays on screen — what's
 // happening, what to do, and a WhatsApp button — instead of one toast that
@@ -243,7 +247,8 @@ function subscriptionCardHTML(sel, uid) {
   const planKey = `${plan.key}-${sel.yearly ? "yearly" : "monthly"}`;
   return `
     <div class="pricing-way">
-      <h3 class="pricing-way-name">${t("pricing.way.subscription")}</h3>
+      <div class="pricing-way-top"><span class="pricing-pill">${t("pricing.sub.badge")}</span></div>
+      <h3 class="pricing-way-title">${t("pricing.way.subscription")}</h3>
       <div class="pricing-price-row"><span class="pricing-price">${rp(price)}</span><span class="pricing-per">${t(sel.yearly ? "pricing.perYearShort" : "pricing.perMonthShort")}</span></div>
       <p class="pricing-price-note">${sel.yearly ? t("pricing.sub.yearlySave", { amount: rp(plan.monthly * 12 - plan.yearly) }) : t(`pricing.sub.anchor.${plan.key}`)}</p>
       ${segHTML("brands", [
@@ -259,17 +264,25 @@ function subscriptionCardHTML(sel, uid) {
     </div>`;
 }
 
+// The card the page exists for: normal price struck through, the Founder
+// price the next buyer actually pays, the two waves, what's included, and
+// one pink button — mirroring wepeka.com/brandlab's Founder card.
 function founderCardHTML({ open, tier, soldOut }, uid) {
+  const cap = FOUNDER_SLOT_CAPS[FOUNDER.slotField];
+  const savePct = Math.round((1 - tier.price / LIFETIME_NORMAL_PRICE) * 100);
   return `
     <div class="pricing-way is-win">
-      <span class="pricing-ribbon">${t("pricing.bestDeal")}</span>
-      <span class="pricing-limited">${t("pricing.founder.pill", { cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField] })}</span>
-      <h3 class="pricing-way-name">${t("pricing.way.lifetime")}</h3>
+      <span class="pricing-way-glow" aria-hidden="true"></span>
+      <div class="pricing-way-top">
+        <span class="pricing-pill pricing-pill--pink">${icon("sparkle", { size: 12 })}${t("pricing.founder.pill", { cap })}</span>
+      </div>
+      <h3 class="pricing-way-title">${t("pricing.way.lifetime")}</h3>
+      <p class="pricing-anchor"><s>${t("pricing.lifetime.normal", { price: rp(LIFETIME_NORMAL_PRICE) })}</s>${soldOut ? "" : `<span class="pricing-save">${t("pricing.lifetime.save", { pct: savePct })}</span>`}</p>
       <div class="pricing-price-row"><span class="pricing-price">${rp(tier.price)}</span><span class="pricing-per">${t("pricing.payOnce")}</span></div>
-      <p class="pricing-price-note">${t("pricing.way.lifetime.note", { yearly: rp(PRO.yearly), price: rp(tier.price) })}</p>
+      <p class="pricing-price-note">${t("pricing.lifetime.normalNote", { cap, price: rp(LIFETIME_NORMAL_PRICE) })}</p>
       ${tiersHTML(open)}
-      <ul class="pricing-features">${featuresHTML(FOUNDER)}</ul>
-      ${soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary")}
+      <ul class="pricing-features pricing-features--2col">${featuresHTML(FOUNDER)}</ul>
+      ${soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary pricing-cta--pink")}
     </div>`;
 }
 
@@ -392,36 +405,6 @@ async function openLockedBrandBook(uid, btn) {
   }
 }
 
-// "Kurang apa lagi" — the Founder bundle stacked against what the same help
-// costs elsewhere (the agency line is the page's only price anchor), ending
-// on the one number they actually pay.
-function stackHTML(founderPrice) {
-  const rows = [
-    { key: "agency", value: t("pricing.stack.agency.value", { from: rp(AGENCY_MONTHLY[0]), to: rp(AGENCY_MONTHLY[1]) }), struck: true },
-    { key: "consultant", value: t("pricing.stack.included") },
-    { key: "tools", value: t("pricing.stack.included") },
-    { key: "circle", value: t("pricing.stack.included") },
-    { key: "upcoming", value: t("pricing.stack.included") },
-  ];
-  return `
-    <section class="pricing-stack">
-      <span class="pricing-limited">${t("pricing.limited")}</span>
-      <h2 class="pricing-section-title">${t("pricing.stack.title")}</h2>
-      <div class="pricing-stack-card">
-        ${rows.map((r) => `
-          <div class="pricing-stack-row ${r.struck ? "is-struck" : ""}">
-            <div><strong>${t(`pricing.stack.${r.key}.name`)}</strong><span>${t(`pricing.stack.${r.key}.desc`)}</span></div>
-            <em>${r.value}</em>
-          </div>`).join("")}
-        <div class="pricing-stack-total">
-          <div><strong>${t("pricing.stack.total")}</strong><span>${t("pricing.stack.totalDesc")}</span></div>
-          <em>${rp(founderPrice)}</em>
-        </div>
-      </div>
-      <p class="pricing-founder-note">${t("pricing.stack.fine")}</p>
-    </section>`;
-}
-
 function addonsHTML(canBuyAddons) {
   return `
     <section class="pricing-addons">
@@ -462,13 +445,19 @@ export function render(root, { user, account, backHref, locked } = {}) {
     next: FOUNDER.tiers[1].people,
     priceFirst: rp(FOUNDER.tiers[0].price),
     priceNext: rp(FOUNDER.tiers[1].price),
+    normal: rp(LIFETIME_NORMAL_PRICE),
   };
 
+  // Laid out like wepeka.com/brandlab's offer section (same purple mesh,
+  // pink Founder card, rounded cards), but trimmed to what it takes to
+  // decide: a short hero, the two cards straight away (Founder first),
+  // one trust line, then everything secondary folded away.
   root.innerHTML = `
+    <div class="pricing-page">
     <div class="pricing-shell">
       <div class="pricing-header">
         <div class="brand-mark" style="justify-content:center;">
-          <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
+          <span class="brand-logo" role="img" aria-label="Wepeka"></span>
           <span class="brand-mark-divider"></span>
           Brandlab
         </div>
@@ -479,28 +468,22 @@ export function render(root, { user, account, backHref, locked } = {}) {
       ${locked ? lockedBannerHTML(account) : ""}
 
       <section class="pricing-hero">
-        <span class="pricing-limited">${t("pricing.limited")} · ${t("pricing.founder.pill", { cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField] })}</span>
+        <span class="pricing-pill pricing-pill--eyebrow">${t("pricing.hero.eyebrow")}</span>
         <h1 class="pricing-title">${t("pricing.hero.title")}</h1>
-        <p class="pricing-sub">${t("pricing.hero.sub")}</p>
-        ${uid ? "" : `<p class="pricing-trial-note">${check()}<span>${t("pricing.trialNote", { days: TRIAL_DAYS })}</span></p>`}
-        ${uid ? "" : `
-          <ul class="pricing-what">
-            ${["dna", "plan", "ai"].map((k) => `<li>${check()}<span>${t(`pricing.what.${k}`)}</span></li>`).join("")}
-          </ul>
-          <a class="pricing-what-link" href="https://www.wepeka.com/brandlab" target="_blank" rel="noopener">${t("pricing.what.more")} ${icon("arrowRight", { size: 13 })}</a>`}
+        <p class="pricing-sub">${t("pricing.hero.subShort")}</p>
       </section>
 
       <section class="pricing-ways-section">
         <div class="pricing-ways">
-          ${subscriptionCardHTML(sel, uid)}
           ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid)}
+          ${subscriptionCardHTML(sel, uid)}
         </div>
-        <p class="pricing-renew-note pricing-renew-note--plain">${t("pricing.renewNote")}</p>
+        <p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>
+        ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
         ${agencyHTML(uid, agencySoldOut)}
       </section>
 
-      ${stackHTML(tier.price)}
-      <p class="pricing-founder-note">${t("pricing.founder.note")}</p>
+      <p class="pricing-founder-note">${t("pricing.renewNote")} ${t("pricing.founder.note")}</p>
 
       ${showAddons ? addonsHTML(canBuyAddons) : ""}
 
@@ -521,6 +504,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
           <span class="pricing-foot-sep">·</span>
           <a href="${WEPEKA_CONNECT_URL}" style="color:var(--accent);">${t("auth.wepeka.login")}</a>`}
       </p>
+    </div>
     </div>
   `;
 

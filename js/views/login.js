@@ -21,7 +21,7 @@ export function renderAuthScreen(root) {
         <div class="auth-card">
           <a class="icon-btn auth-close" href="https://wepeka.com" target="_blank" rel="noopener noreferrer" title="${t("auth.closeTitle")}" aria-label="${t("auth.closeTitle")}">${icon("x", { size: 15 })}</a>
           <div class="brand-mark" style="justify-content:center;margin-bottom:26px;">
-            <img class="brand-logo" src="assets/wepeka-logo.png" alt="Wepeka" />
+            <span class="brand-logo" role="img" aria-label="Wepeka"></span>
             <span class="brand-mark-divider"></span>
             Brandlab
           </div>

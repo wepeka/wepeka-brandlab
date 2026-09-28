@@ -308,7 +308,9 @@ export default async function handler(req, res) {
   const apiKey = KEYS[provider];
   if (!apiKey) {
     console.error(`api/ai: no API key set for provider "${provider}" (feature=${feature || "?"})`);
-    return res.status(502).json({ error: "provider" });
+    // Its own code, not "provider": nothing is wrong with the AI service —
+    // the key was never set in Vercel, and the admin needs to be told so.
+    return res.status(503).json({ error: "setup", message: isAdminUid(uid) ? `${provider.toUpperCase()}_API_KEY` : undefined });
   }
 
   if (wantStream) {
