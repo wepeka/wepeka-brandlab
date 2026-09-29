@@ -77,3 +77,12 @@ export function writeBatch() {
     },
   };
 }
+
+// js/account.js imports these (account doc reads, username claim) — never
+// called by the pure functions the tests exercise.
+export async function getDoc() {
+  return { exists: () => false, data: () => null };
+}
+export async function runTransaction(_db, fn) {
+  return fn({ get: getDoc, set() {}, update() {} });
+}

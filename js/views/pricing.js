@@ -29,7 +29,7 @@ import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
-import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS } from "../site-links.js";
+import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS } from "../site-links.js";
 import { db as fdb, auth } from "../firebase.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } from "../account.js";
@@ -90,6 +90,9 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
       location.hash = "#/login";
       return;
     }
+    // Switching plans while one still runs: say what happens to the old
+    // one (credit now, or queued until it ends) before any payment opens.
+    if (!(await confirmPlanSwitch(planKey, idToken))) return;
     const res = await fetch("/api/midtrans/create-transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
@@ -108,6 +111,33 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
   } catch (err) {
     toast(err.message || t("pricing.err.start"), "error");
   }
+}
+
+// Plans replace each other, never stack (api/_plans.js switchQuote): an
+// upgrade starts today with the unused part of the old period off the
+// price; a downgrade waits until the current period ends. Add-ons and a
+// plain renewal go straight to payment.
+const PLAN_NAME_KEYS = ["starter", "pro", "studio", "founder", "founder-ultimate"];
+const planNameOf = (key) => t(`pricing.planName.${PLAN_NAME_KEYS.find((p) => key === p || key.startsWith(`${p}-`)) || "starter"}`);
+async function confirmPlanSwitch(planKey, idToken) {
+  const account = getCachedAccount();
+  const isPlan = PLAN_NAME_KEYS.some((p) => planKey === p || (planKey.startsWith(`${p}-`) && /-(monthly|yearly)$/.test(planKey)));
+  if (!isPlan || !["starter", "pro", "studio"].includes(account?.plan) || accessState(account) !== "paid") return true;
+  const res = await fetch("/api/midtrans/create-transaction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ planKey, quoteOnly: true }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
+  const q = await res.json();
+  if (q.mode !== "now" && q.mode !== "later") return true;
+  const { confirmDialog } = await import("../modals.js");
+  const vars = { from: planNameOf(`${account.plan}-${account.billing || "monthly"}`), to: planNameOf(planKey), price: rp(q.price), credit: rp(q.credit || 0), pay: rp(q.amount), date: q.startsAt ? new Date(q.startsAt).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long", year: "numeric" }) : "" };
+  return confirmDialog({
+    title: t(q.mode === "now" ? "pricing.switch.upTitle" : "pricing.switch.downTitle", vars),
+    message: t(q.mode === "now" ? (q.credit ? "pricing.switch.upBody" : "pricing.switch.upBodyNoCredit") : "pricing.switch.downBody", vars),
+    confirmLabel: t("pricing.switch.pay", vars),
+  });
 }
 
 // After Snap reports success on the pricing page itself: wait for the
@@ -160,16 +190,23 @@ const BOOK_STYLES_VALUE = 3 * 20000;
 // ever changes, change it here. Keep wpk-dp src/lib/brandlab-plans.ts in step.
 const LIFETIME_NORMAL_PRICE = 3500000;
 
-// `payKey` add-ons are bought on the spot (api/_plans.js ADDONS — keep in
-// sync) by accounts on a pay-once plan; everything else is ordered via
-// WhatsApp and added by hand.
+// Every add-on is bought on the spot (`payKey` = api/_plans.js ADDONS, which
+// sets the real price and re-checks who may buy it) by the accounts
+// `forWho` names; anyone else sees it without a buy button.
 const ADDONS = [
-  ...AI_TOPUPS.map(({ key, price }) => ({ key, price })),
-  { key: "brand", price: 19000, perMonth: true, forWho: "subs" },
-  { key: "brandLife1", price: 99000, payKey: "addon-brand-1", forWho: "lifetime" },
-  { key: "brandLife3", price: 249000, payKey: "addon-brand-3", forWho: "lifetime", save: 48000 },
+  { key: AI_UNLIMITED.key, price: AI_UNLIMITED.price, payKey: AI_UNLIMITED.payKey, per30: true, forWho: "paid" },
+  ...AI_TOPUPS.map(({ key, price, payKey }) => ({ key, price, payKey, forWho: "paid" })),
+  ...BRAND_ADDONS.sub.map(({ key, price, payKey }) => ({ key, price, payKey, per30: true, forWho: "paid" })),
+  ...BRAND_ADDONS.lifetime.map(({ key, price, payKey, save }) => ({ key, price, payKey, save, forWho: "lifetime" })),
 ];
 const ADDON_ELIGIBLE_PLANS = ["founder", "founder-ultimate", "lifetime"];
+const SUBSCRIPTION_PLANS = ["starter", "pro", "studio"];
+function canBuyAddon(a, account) {
+  if (accessState(account) !== "paid") return false;
+  if (a.forWho === "lifetime") return ADDON_ELIGIBLE_PLANS.includes(account?.plan);
+  if (a.forWho === "subs") return SUBSCRIPTION_PLANS.includes(account?.plan);
+  return true;
+}
 
 // Only the four questions that stand between "interested" and "paying";
 // the rest (trial details, credits, the Circle) live on wepeka.com/brandlab.
@@ -404,7 +441,7 @@ async function openLockedBrandBook(uid, btn) {
   }
 }
 
-function addonsHTML(canBuyAddons) {
+function addonsHTML(account) {
   return `
     <section class="pricing-addons">
       <h2 class="pricing-section-title">${t("pricing.addons.title")}</h2>
@@ -412,13 +449,13 @@ function addonsHTML(canBuyAddons) {
       <div class="pricing-addon-grid">
         ${ADDONS.map((a) => {
           const name = t(`pricing.addons.${a.key}`);
-          const price = a.perMonth ? t("pricing.perMonth", { price: rp(a.price) }) : rp(a.price);
+          const price = a.per30 ? t("pricing.addons.per30", { price: rp(a.price) }) : rp(a.price);
           const inner = `
             <span>${name}</span><strong>${price}</strong>
-            ${a.forWho ? `<em>${t(`pricing.addons.for.${a.forWho}`)}${a.save ? ` · ${t("pricing.addons.save", { amount: rp(a.save) })}` : ""}</em>` : ""}`;
-          return a.payKey && canBuyAddons
-            ? `<button type="button" class="pricing-addon" data-pay="${a.payKey}">${inner}</button>`
-            : `<a class="pricing-addon" href="${waLink(name, price)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+            ${a.forWho ? `<em>${t(a.forWho === "paid" ? `pricing.addons.note.${a.key}` : `pricing.addons.for.${a.forWho}`)}${a.save ? ` · ${t("pricing.addons.save", { amount: rp(a.save) })}` : ""}</em>` : ""}`;
+          return canBuyAddon(a, account)
+            ? `<button type="button" class="pricing-addon" data-pay-addon="${a.payKey}">${inner}</button>`
+            : `<div class="pricing-addon is-unavailable">${inner}</div>`;
         }).join("")}
       </div>
     </section>`;
@@ -426,7 +463,6 @@ function addonsHTML(canBuyAddons) {
 
 export function render(root, { user, account, backHref, locked } = {}) {
   const uid = user?.uid || null;
-  const canBuyAddons = !!uid && ADDON_ELIGIBLE_PLANS.includes(account?.plan);
   // Add-ons are a second decision: only accounts that already pay see them.
   const showAddons = !!uid && !["trial", "expired", "none"].includes(accessState(account));
   let slots = null;
@@ -484,7 +520,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
 
       <p class="pricing-founder-note">${t("pricing.renewNote")} ${t("pricing.founder.note")}</p>
 
-      ${showAddons ? addonsHTML(canBuyAddons) : ""}
+      ${showAddons ? addonsHTML(account) : ""}
 
       <section class="pricing-faq">
         <h2 class="pricing-section-title">${t("pricing.faq.title")}</h2>
@@ -511,6 +547,10 @@ export function render(root, { user, account, backHref, locked } = {}) {
   qs("#locked-book", root)?.addEventListener("click", (e) => openLockedBrandBook(uid, e.currentTarget));
   qsa("[data-pay]", root).forEach((btn) => {
     btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid, { onSuccess: enterAppWhenPaid }));
+  });
+  // An add-on doesn't change the plan, so there's nothing to "enter" after.
+  qsa("[data-pay-addon]", root).forEach((btn) => {
+    btn.addEventListener("click", () => payPlan(btn.dataset.payAddon, uid));
   });
   qsa("[data-seg]", root).forEach((btn) => {
     btn.addEventListener("click", () => {

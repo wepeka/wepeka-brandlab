@@ -10,7 +10,7 @@
 // build client-side (deepSeekBody, claudeUserContent, the three model ids) —
 // moved server-side so a customer's browser never sees a key again.
 import { adminDb, requireAuth } from "./_firebaseAdmin.js";
-import { quotaFor, usedInPeriod, consumeQuota, isAdminUid } from "./_aiQuota.js";
+import { quotaFor, availability, consumeQuota, isAdminUid } from "./_aiQuota.js";
 
 // Vercel: stream the response body instead of buffering it whole before
 // sending — required for the SSE path below to actually arrive incrementally.
@@ -297,10 +297,13 @@ export default async function handler(req, res) {
   const quota = quotaFor(account, uid);
   let used = 0;
   if (countUsage !== false) {
+    // The plan's allowance first, then AI Harian, then top-up credits
+    // (api/_aiQuota.js availability) — only refused when all are empty.
     const usageSnap = await db.doc(`aiUsage/${uid}`).get();
-    used = usedInPeriod(usageSnap.exists ? usageSnap.data() : null, quota.period);
-    if (used >= quota.limit) {
-      return res.status(429).json({ error: "quota", limit: quota.limit, period: quota.period, usage: { used, limit: quota.limit, period: quota.period } });
+    const avail = availability(account, uid, usageSnap.exists ? usageSnap.data() : null);
+    used = avail.planUsed;
+    if (!avail.bucket) {
+      return res.status(429).json({ error: "quota", limit: quota.limit, period: quota.period, usage: { used, limit: quota.limit, period: quota.period, dailyUsed: avail.dailyUsed, dailyLimit: avail.dailyLimit, credits: avail.credits } });
     }
   }
 
@@ -324,7 +327,7 @@ export default async function handler(req, res) {
       await callStream({ provider, apiKey, system, user, maxTokens, temperature, images }, (delta) => {
         res.write(`data: ${JSON.stringify({ delta })}\n\n`);
       });
-      if (countUsage !== false) await consumeQuota(db, uid, quota.period);
+      if (countUsage !== false) await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
     } catch (err) {
       const code = err instanceof AiProxyError ? err.code : "network";
       const message = isAdminUid(uid) && err instanceof AiProxyError ? err.message : undefined;
@@ -339,7 +342,7 @@ export default async function handler(req, res) {
     const { text } = await withOneRetry(() => callNonStream({ provider, apiKey, system, user, maxTokens, temperature, json: wantJson, images }));
     let usageOut = { used, limit: quota.limit, period: quota.period };
     if (countUsage !== false) {
-      const next = await consumeQuota(db, uid, quota.period);
+      const next = await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
       usageOut = { used: next.used, limit: quota.limit, period: quota.period };
     }
     return res.status(200).json({ text, usage: usageOut });

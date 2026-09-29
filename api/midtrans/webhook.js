@@ -5,7 +5,8 @@
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder } from "../_plans.js";
+import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -37,6 +38,14 @@ export default async function handler(req, res) {
   const db = adminDb();
   const paymentRef = db.doc(`payments/${order_id}`);
   const paymentSnap = await paymentRef.get();
+  // An auto-renew charge: Midtrans made this order itself ("<name><32
+  // digits>"), so there's no pending record — midtransSubs/<name> says whose
+  // subscription it is. Same signed notification as any payment.
+  const subName = !paymentSnap.exists ? subscriptionNameFromOrder(order_id) : null;
+  if (subName) {
+    const paidNow = ["capture", "settlement"].includes(transaction_status) && fraud_status !== "deny";
+    return res.status(200).json(await applyRenewalCharge(db, { orderId: order_id, name: subName, grossAmount: Number(gross_amount), paid: paidNow }));
+  }
   if (!paymentSnap.exists) {
     // Unknown order: nothing to unlock. Answer 200 anyway — the dashboard's
     // "Test notification URL" button sends a made-up order_id and treats
@@ -97,22 +106,58 @@ export default async function handler(req, res) {
       return true;
     }
 
-    // An add-on only widens the brand limit — plan, status and expiry are
-    // none of its business.
-    if (plan.addBrands) {
-      tx.set(accountRef, { brandLimit: FieldValue.increment(plan.addBrands) }, { merge: true });
+    // AI credits: top-ups add to a pool that never expires; AI Sepuasnya
+    // runs 30 more days from whichever is later, now or its current end.
+    if (plan.aiCredits || plan.aiUnlimitedMs) {
+      if (plan.aiCredits) tx.set(accountRef, { aiCredits: FieldValue.increment(plan.aiCredits) }, { merge: true });
+      if (plan.aiUnlimitedMs) {
+        const current = Number(accountSnap.data()?.aiUnlimitedUntil) || 0;
+        tx.set(accountRef, { aiUnlimitedUntil: Math.max(current, now) + plan.aiUnlimitedMs }, { merge: true });
+      }
       tx.set(paymentRef, { status: "paid", amount: Number(gross_amount), paidAt: now }, { merge: true });
       return true;
     }
 
-    const patch = { plan: plan.plan, status: "active", paidAt: now, trialEndsAt: null };
+    // A monthly brand slot: a new 30-day slot, or (renew) 30 more days on
+    // the one ending soonest.
+    if (plan.addBrandSlotMs) {
+      const slots = nextBrandSlots(accountSnap.data()?.brandSlotsUntil, now, plan.addBrandSlotMs, { renew: !!plan.renew });
+      tx.set(accountRef, { brandSlotsUntil: slots }, { merge: true });
+      tx.set(paymentRef, { status: "paid", amount: Number(gross_amount), paidAt: now }, { merge: true });
+      return true;
+    }
+
+    // A permanent brand slot — its own counter, so a plan purchase or a
+    // renewal resetting brandLimit never takes it away.
+    if (plan.addBrands) {
+      tx.set(accountRef, { extraBrands: FieldValue.increment(plan.addBrands) }, { merge: true });
+      tx.set(paymentRef, { status: "paid", amount: Number(gross_amount), paidAt: now }, { merge: true });
+      return true;
+    }
+
+    // A downgrade bought while a bigger plan still runs: the current plan
+    // stays until its period ends, the new one is queued behind it
+    // (api/cron/check-expiry.js switches it over on the day).
+    if (pending.mode === "later" && plan.durationMs && Number(pending.startsAt) > now) {
+      tx.set(accountRef, {
+        scheduledPlan: { plan: plan.plan, billing: plan.billing, brandLimit: plan.brandLimit, startsAt: Number(pending.startsAt) },
+        subscriptionExpiresAt: Number(pending.startsAt) + plan.durationMs,
+      }, { merge: true });
+      tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, scheduled: true }, { merge: true });
+      return true;
+    }
+
+    const patch = { plan: plan.plan, status: "active", paidAt: now, trialEndsAt: null, scheduledPlan: null };
     if (plan.billing) patch.billing = plan.billing;
     if (plan.brandLimit) patch.brandLimit = plan.brandLimit;
     if (plan.durationMs) {
       // Renewing the same plan early adds to the time left instead of
       // throwing it away; switching plans starts a fresh period from today.
       const current = accountSnap.data() || {};
-      const stillRunning = current.plan === plan.plan && Number(current.subscriptionExpiresAt) > now;
+      // Same plan AND same billing only — monthly → yearly of the same plan
+      // is an upgrade whose unused days already came off the price
+      // (switchQuote), so they must not be added on top as well.
+      const stillRunning = current.plan === plan.plan && (current.billing || "monthly") === plan.billing && Number(current.subscriptionExpiresAt) > now;
       patch.subscriptionExpiresAt = (stillRunning ? current.subscriptionExpiresAt : now) + plan.durationMs;
     } else {
       patch.subscriptionExpiresAt = null;
@@ -125,5 +170,85 @@ export default async function handler(req, res) {
     return true;
   });
 
+  // Auto-renew bookkeeping happens after the unlock is committed and never
+  // fails the notification: a problem here only means no auto-renew.
+  if (firstTime) {
+    await syncAutoRenew(db, { uid, planKey, pending, orderId: order_id }).catch((err) => console.error("Midtrans webhook: auto-renew setup failed", order_id, err?.message));
+  }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
+}
+
+// After a paid order: a plan purchase stops the old plan's auto-renew (plans
+// replace each other, never stack); a purchase made with "save card" becomes
+// a Midtrans subscription charging the full price every period from when the
+// paid time runs out.
+async function syncAutoRenew(db, { uid, planKey, pending, orderId }) {
+  const accountRef = db.doc(`accounts/${uid}`);
+  const account = (await accountRef.get()).data() || {};
+  const current = account.autoRenew || {};
+  const rec = recurringFor(planKey);
+  const updates = {};
+  const stop = async (slot) => {
+    if (!current[slot]) return;
+    await disableSubscription(current[slot].subscriptionId).catch((err) => console.error("disable subscription failed", current[slot].subscriptionId, err?.message));
+    updates[`autoRenew.${slot}`] = FieldValue.delete();
+  };
+  if (PLANS[planKey]) await stop("plan");
+  if (planKey === "ai-unlimited") await stop("aiUnlimited");
+
+  if (pending.recurring && RECURRING_ON && rec) {
+    const status = await transactionStatus(orderId);
+    const token = status?.saved_token_id;
+    if (token) {
+      const startAt = rec.slot === "plan" ? Number(account.subscriptionExpiresAt)
+        : rec.slot === "aiUnlimited" ? Number(account.aiUnlimitedUntil)
+        : Math.max(...(account.brandSlotsUntil || [0]).map(Number));
+      const amount = (PLANS[planKey] || ADDONS[planKey]).amount;
+      const name = subscriptionName(uid);
+      const sub = await createSubscription({ name, amount, token, startAt, intervalMonths: rec.interval, email: account.email });
+      await db.doc(`midtransSubs/${name}`).set({ uid, planKey, amount, subscriptionId: sub.id, slot: rec.slot, createdAt: Date.now() });
+      updates[`autoRenew.${rec.slot}`] = { subscriptionId: sub.id, name, planKey, amount, card: status.masked_card || "", nextAt: startAt };
+    }
+  }
+  if (Object.keys(updates).length) await accountRef.update(updates);
+}
+
+// One auto-renew charge: add one more period to whatever it renews.
+// payments/<order_id> makes a retried notification a no-op.
+async function applyRenewalCharge(db, { orderId, name, grossAmount, paid }) {
+  if (!paid) return { ok: true, ignored: "not-paid" };
+  const subSnap = await db.doc(`midtransSubs/${name}`).get();
+  if (!subSnap.exists) {
+    console.warn("Midtrans webhook: renewal for unknown subscription", name);
+    return { ok: true, ignored: "unknown-subscription" };
+  }
+  const sub = subSnap.data();
+  if (grossAmount !== Number(sub.amount)) {
+    console.error("Midtrans webhook: renewal amount mismatch", { orderId, grossAmount, expected: sub.amount });
+    return { ok: true, ignored: "amount-mismatch" };
+  }
+  const paymentRef = db.doc(`payments/${orderId}`);
+  const accountRef = db.doc(`accounts/${sub.uid}`);
+  const now = Date.now();
+  const applied = await db.runTransaction(async (tx) => {
+    const [pay, accSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef)]);
+    if (pay.exists) return false;
+    const acc = accSnap.data() || {};
+    const plan = PLANS[sub.planKey];
+    const addon = ADDONS[sub.planKey];
+    if (plan) {
+      // Only renews the plan it was made for; a plan switch disables it,
+      // so a charge for anything else is a stray and changes nothing.
+      if (acc.plan === plan.plan && (acc.billing || "monthly") === plan.billing) {
+        tx.set(accountRef, { status: "active", subscriptionExpiresAt: Math.max(now, Number(acc.subscriptionExpiresAt) || 0) + plan.durationMs }, { merge: true });
+      }
+    } else if (addon?.aiUnlimitedMs) {
+      tx.set(accountRef, { aiUnlimitedUntil: Math.max(now, Number(acc.aiUnlimitedUntil) || 0) + addon.aiUnlimitedMs }, { merge: true });
+    } else if (addon?.addBrandSlotMs) {
+      tx.set(accountRef, { brandSlotsUntil: nextBrandSlots(acc.brandSlotsUntil, now, addon.addBrandSlotMs, { renew: true }) }, { merge: true });
+    }
+    tx.set(paymentRef, { uid: sub.uid, planKey: sub.planKey, plan: plan?.plan || sub.planKey, amount: grossAmount, status: "paid", paidAt: now, createdAt: now, recurring: true, subscriptionName: name });
+    return true;
+  });
+  return { ok: true, renewal: true, duplicate: !applied };
 }

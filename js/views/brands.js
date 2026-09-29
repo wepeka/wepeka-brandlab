@@ -7,10 +7,13 @@ import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
 import { canUseInstagramApi } from "../account.js";
 import { testFacebookConnection } from "../facebook.js";
-import { canCreateBrand, getCachedAccount } from "../account.js";
+import { canCreateBrand, brandLimitOf, lockedBrandIds } from "../account.js";
+import { slotReminderHTML } from "../brand-locked.js";
+import { buyAddon } from "../purchase.js";
+import { BRAND_ADDONS } from "../site-links.js";
+import { openBrandOffer } from "../brand-offer.js";
 import { getMode } from "../mode.js";
 import { getSettings } from "../store.js";
-import { SUPPORT_WA_NUMBER } from "../site-links.js";
 import { hasAiKey, draftBusinessDescription } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
@@ -22,7 +25,9 @@ export function render(root) {
   // Full-screen background lives on <body> (see js/brands-bg.js), so it has
   // to be torn down when this view goes away.
   const unmountBg = mountBrandsBg();
-  return unmountBg; // no store subscription needed — actions here re-render locally
+  // A bought brand slot lands on the account doc: unlock the "+" right away.
+  window.addEventListener("account:change", refresh);
+  return () => { window.removeEventListener("account:change", refresh); unmountBg(); }; // no store subscription needed — actions here re-render locally
 }
 
 function paint(root, refresh) {
@@ -48,20 +53,25 @@ function paint(root, refresh) {
     return;
   }
 
+  const locked = !canCreateBrand(brands.length);
+  const previewOnly = lockedBrandIds(brands);
+  const lockTitle = locked ? t("brands.offer.lockedTitle", { limit: brandLimitOf() }) : t("brands.add");
   root.innerHTML = `
     <div class="hero-strip">
       <div class="kicker">Wepeka Brandlab</div>
       <h1>${guided ? t("brands.hero.titleGuided") : t("brands.hero.titlePro")}</h1>
       <p class="page-sub">${guided ? t("brands.hero.subGuided") : t("brands.hero.subPro")}</p>
     </div>
+    ${slotReminderHTML()}
     <div class="brand-row-head">
-      <button class="brand-quick-add" id="add-brand-quick" aria-label="${t("brands.add")}" title="${t("brands.add")}">${icon("plus", { size: 15 })}</button>
+      <button class="brand-quick-add ${locked ? "is-locked" : ""}" id="add-brand-quick" aria-label="${escapeText(lockTitle)}" title="${escapeText(lockTitle)}">${icon(locked ? "lock" : "plus", { size: 15 })}</button>
     </div>
     <div class="brand-grid" id="brand-grid">
-      ${brands.map(brandCard).join("")}
-      <button class="brand-tile brand-tile-add" id="add-brand">
-        <div class="brand-tile-avatar brand-tile-avatar-add">${icon("plus", { size: 28 })}</div>
+      ${brands.map((b) => brandCard(b, previewOnly.has(b.id))).join("")}
+      <button class="brand-tile brand-tile-add ${locked ? "is-locked" : ""}" id="add-brand" title="${escapeText(lockTitle)}">
+        <div class="brand-tile-avatar brand-tile-avatar-add">${icon(locked ? "lock" : "plus", { size: 28 })}</div>
         <h3>${t("brands.add")}</h3>
+        ${locked ? `<div class="meta">${t("brands.offer.lockedMeta", { limit: brandLimitOf() })}</div>` : ""}
       </button>
     </div>
   `;
@@ -71,6 +81,9 @@ function paint(root, refresh) {
   qs("#add-brand").addEventListener("click", () => {
     if (dragState.wasDragged) return;
     openBrandModal({ onSaved: refresh });
+  });
+  qs("[data-slot-renew]", root)?.addEventListener("click", () => {
+    buyAddon(BRAND_ADDONS.sub[0].renewKey);
   });
   qs("#add-brand-quick")?.addEventListener("click", () => {
     openBrandModal({ onSaved: refresh });
@@ -186,7 +199,7 @@ function wireBrandGridDrag(grid) {
   return state;
 }
 
-function brandCard(brand) {
+function brandCard(brand, previewOnly = false) {
   const contents = listContent(brand.id);
   const published = contents.filter((c) => c.status === "published").length;
   // A brand's own picked color overrides --brand-tint just for this tile —
@@ -199,13 +212,14 @@ function brandCard(brand) {
     ? `--brand-tint:${brand.color};--brand-tint-text:${pickTintTextColor(brand.color)};--brand-tint-fg:${pickTintForeground(brand.color)};`
     : "";
   return `
-    <div class="brand-tile" data-id="${brand.id}" style="${tintStyle}">
+    <div class="brand-tile ${previewOnly ? "is-preview" : ""}" data-id="${brand.id}" style="${tintStyle}" ${previewOnly ? `title="${escapeText(t("brands.locked.tileTitle"))}"` : ""}>
       <div class="brand-tile-avatar">
         ${avatarHTML(brand)}
+        ${previewOnly ? `<span class="brand-tile-lock">${icon("lock", { size: 16 })}</span>` : ""}
         <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${brand.id}" aria-label="${t("brands.tile.actions")}">${icon("dots", { size: 14 })}</button>
       </div>
       <h3>${escapeText(brand.name)}</h3>
-      <div class="meta">${t("brands.tile.meta", { count: contents.length, published })}</div>
+      <div class="meta">${previewOnly ? t("brands.locked.tileMeta") : t("brands.tile.meta", { count: contents.length, published })}</div>
     </div>
   `;
 }
@@ -215,13 +229,10 @@ const AVATAR_PREVIEW_STYLE = "width:64px;height:64px;border-radius:14px;font-siz
 // Shared create/edit modal (name + photo). Exported so Settings → Brand
 // Management can reuse it too instead of duplicating the form.
 export function openBrandModal({ brand = null, onSaved } = {}) {
+  // At the plan's brand limit the "+" is locked: it opens the offer (buy a
+  // slot on the spot), and the form itself once the slot has landed.
   if (!brand && !canCreateBrand(listBrands().length)) {
-    const limit = getCachedAccount()?.brandLimit ?? 3;
-    openModal({
-      title: t("brands.limit.title"),
-      bodyHTML: `<p style="margin:0 0 4px;">${t("brands.limit.body", { limit })}</p>`,
-      footHTML: `<a class="btn btn-primary" href="https://wa.me/${SUPPORT_WA_NUMBER}" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`,
-    });
+    openBrandOffer({ onUnlocked: () => openBrandModal({ brand, onSaved }) });
     return;
   }
   const draft = {

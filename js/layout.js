@@ -4,11 +4,11 @@ import { logout } from "./auth.js";
 import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, pickTintForegroundLight, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
 import { getMode, toggleMode } from "./mode.js";
-import { t } from "./i18n.js";
+import { t, getLang } from "./i18n.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
 import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
-import { aiDailyLimit, aiUsageToday, aiQuotaPeriod } from "./ai-usage.js";
+import { aiDailyLimit, aiUsageToday, aiQuotaPeriod, aiExtras } from "./ai-usage.js";
 import { identityDone } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
 import { installTopUpNotice, canTopUp } from "./ai-topup.js";
@@ -274,6 +274,15 @@ function aiUsageRowHTML() {
   return `${icon("bot", { size: 15 })}<span>AI · ${used}/${limit}</span><span class="ai-usage-bar ${tone}"><span style="width:${pct}%"></span></span>`;
 }
 
+// AI Sepuasnya / top-up balance under the plan's meter, when there is any.
+function extrasLineHTML() {
+  const x = aiExtras();
+  const parts = [];
+  if (x.unlimited) parts.push(t("ai.offer.balanceUnlimited", { date: new Date(x.unlimitedUntil).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long" }) }));
+  if (x.credits) parts.push(t("ai.offer.balanceCredits", { n: x.credits.toLocaleString(getLang() === "en" ? "en-US" : "id-ID") }));
+  return parts.length ? `<p class="help-popover-body"><b>${parts.join(" · ")}</b></p>` : "";
+}
+
 function aiUsagePopoverHTML() {
   const used = aiUsageToday();
   const limit = aiDailyLimit();
@@ -286,6 +295,7 @@ function aiUsagePopoverHTML() {
     <div class="help-popover-title">${t(`app.aiUsage.title${m}`)}</div>
     <p class="help-popover-body">${limit === Infinity ? t("app.aiUsage.unlimited", { used }) : left ? t(`app.aiUsage.left${m}`, { used, limit, left }) : t(`app.aiUsage.out${m}`, { used, limit })}</p>
     <p class="help-popover-body">${t(`app.aiUsage.explain${m}`)}</p>
+    ${extrasLineHTML()}
     ${limit === Infinity ? "" : `<button type="button" class="btn ${left ? "btn-secondary" : "btn-primary"} btn-sm btn-block" data-ai-topup style="margin-top:10px;">${icon(canTopUp() ? "plus" : "arrowUp", { size: 13 })}${t(canTopUp() ? "ai.topup.button" : "ai.topup.upgradeButton")}</button>`}
   `;
 }

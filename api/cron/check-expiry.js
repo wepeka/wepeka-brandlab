@@ -25,6 +25,20 @@ export default async function handler(req, res) {
   const db = adminDb();
   const now = Date.now();
   const accounts = db.collection("accounts");
+  // A downgrade bought mid-period (api/midtrans/webhook.js "later") takes
+  // over on the day the bigger plan's period ends — before the lapsed-
+  // subscription check below, which it would otherwise never need.
+  const due = await accounts.where("scheduledPlan.startsAt", "<=", now).get();
+  let switched = 0;
+  if (req.query?.dryRun !== "1") {
+    for (const doc of due.docs) {
+      const next = doc.data().scheduledPlan;
+      if (!next?.plan) continue;
+      await doc.ref.update({ plan: next.plan, billing: next.billing, brandLimit: next.brandLimit, status: "active", scheduledPlan: null });
+      switched++;
+    }
+  }
+
   const [lapsedSubs, endedTrials] = await Promise.all([
     accounts.where("subscriptionExpiresAt", "<", now).get(),
     accounts.where("trialEndsAt", "<", now).get(),
@@ -45,13 +59,13 @@ export default async function handler(req, res) {
     if (acc.status === "active" && acc.plan === "trial") toFlip.set(doc.id, doc.ref);
   });
 
-  if (!toFlip.size) return res.status(200).json({ ok: true, flipped: 0 });
+  if (!toFlip.size) return res.status(200).json({ ok: true, flipped: 0, switched });
 
   // Dry run: report who would flip without writing anything, so a change to
   // this query can be checked against production data before the next
   // scheduled run actually touches it.
   if (req.query?.dryRun === "1") {
-    return res.status(200).json({ ok: true, dryRun: true, wouldFlip: [...toFlip.keys()] });
+    return res.status(200).json({ ok: true, dryRun: true, wouldFlip: [...toFlip.keys()], wouldSwitch: due.docs.map((d) => d.id) });
   }
 
   // Firestore batches cap at 500 writes.
@@ -62,5 +76,5 @@ export default async function handler(req, res) {
     await batch.commit();
   }
 
-  return res.status(200).json({ ok: true, flipped: refs.length });
+  return res.status(200).json({ ok: true, flipped: refs.length, switched });
 }

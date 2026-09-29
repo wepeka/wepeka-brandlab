@@ -18,11 +18,26 @@ export const WEPEKA_IG_HANDLE = "wepeka";
 // wpk-dp src/lib/support.ts).
 export const SUPPORT_WA_NUMBER = "6285196627609";
 
-// AI credit top-ups. Ordered over WhatsApp and added to the account by the
-// Wepeka team (accounts/{uid}.aiDailyLimit, see api/_aiQuota.js). Shown on
-// the pricing page's add-ons and in the "AI credit habis" dialog
-// (js/ai-topup.js) — one list so the two never quote different prices.
+// AI credit top-ups, paid on the spot through Midtrans (`payKey` =
+// api/_plans.js AI_ADDONS, which sets the real price — keep in sync). Top-up
+// credits never expire. Shown on the pricing page's add-ons and in the
+// "AI credit habis" offer (js/ai-topup.js) — one list so the two never quote
+// different prices.
 export const AI_TOPUPS = [
-  { key: "credits300", credits: 300, price: 20000 },
-  { key: "credits1000", credits: 1000, price: 79000 },
+  { key: "credits300", credits: 300, price: 15000, payKey: "ai-300" },
+  { key: "credits500", credits: 500, price: 23000, payKey: "ai-500" },
+  { key: "credits1000", credits: 1000, price: 39000, payKey: "ai-1000", best: true },
 ];
+// AI Sepuasnya: no credit limit for 30 days, on any paid plan
+// (api/_aiQuota.js extrasFor).
+export const AI_UNLIMITED = { key: "aiUnlimited", days: 30, price: 50000, payKey: "ai-unlimited" };
+// Extra brand slots (api/_plans.js ADDONS): any paid account can rent one
+// for 30 days (renewKey extends the one ending soonest); only pay-once
+// plans can buy them for good — subscribers move to Lifetime first.
+export const BRAND_ADDONS = {
+  sub: [{ key: "brandSub", n: 1, price: 29000, payKey: "addon-brand-sub", renewKey: "addon-brand-sub-renew", days: 30 }],
+  lifetime: [
+    { key: "brandLife1", n: 1, price: 99000, payKey: "addon-brand-1" },
+    { key: "brandLife3", n: 3, price: 249000, payKey: "addon-brand-3", save: 48000 },
+  ],
+};

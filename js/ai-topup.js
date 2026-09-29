@@ -1,8 +1,10 @@
 // "AI credit habis" — the one place that tells someone their AI credits ran
-// out and how to get more. Paid accounts get the top-up packages (ordered
-// over WhatsApp, added by the Wepeka team); a trial or a read-only account
-// gets the plans instead, since top-ups are only sold on top of a plan
-// (same rule as the pricing page's add-ons).
+// out and how to get more. Paid accounts get the offer card: AI Sepuasnya
+// (no credit limit for 30 days) and one-off top-ups that never expire,
+// both paid on the spot through Midtrans (js/purchase.js). A trial or a
+// read-only account gets the plans instead, since extras are only sold on
+// top of a plan (same rule as the pricing page's add-ons, and enforced in
+// api/midtrans/create-transaction.js).
 //
 // It opens by itself once per quota window (today / this month / the
 // trial), the moment an AI call hits the wall (js/ai.js dispatches
@@ -14,11 +16,13 @@ import { icon } from "./icons.js";
 import { openModal, closeOverlay } from "./modals.js";
 import { escapeHtml, closeMenu } from "./dom.js";
 import { onChange } from "./store.js";
-import { aiLimitReached, aiDailyLimit, aiQuotaPeriod, aiQuotaWindow } from "./ai-usage.js";
+import { aiLimitReached, aiDailyLimit, aiQuotaPeriod, aiQuotaWindow, aiExtras, aiPlanUsedUp } from "./ai-usage.js";
 import { getCachedAccount, accessState, isReadOnly } from "./account.js";
-import { SUPPORT_WA_NUMBER, AI_TOPUPS } from "./site-links.js";
+import { AI_TOPUPS, AI_UNLIMITED } from "./site-links.js";
+import { rp, buyAddon, offerOptionHTML } from "./purchase.js";
 
-const rp = (n) => `Rp ${Number(n).toLocaleString(getLang() === "en" ? "en-US" : "id-ID")}`;
+const num = (n) => Number(n).toLocaleString(getLang() === "en" ? "en-US" : "id-ID");
+const dateLabel = (ts) => new Date(ts).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long" });
 
 // Top-ups are sold to accounts that already pay; everyone else upgrades.
 export function canTopUp(account = getCachedAccount()) {
@@ -31,12 +35,43 @@ function bodyKey(readOnly, period) {
   return period === "month" ? "ai.topup.bodyMonth" : "ai.topup.bodyDay";
 }
 
-function packageHTML(p) {
-  const name = t("ai.topup.credits", { n: p.credits.toLocaleString(getLang() === "en" ? "en-US" : "id-ID") });
-  const text = encodeURIComponent(t("ai.topup.waMessage", { name, price: rp(p.price) }));
-  return `<a class="pricing-addon ai-topup-pack" href="https://wa.me/${SUPPORT_WA_NUMBER}?text=${text}" target="_blank" rel="noopener noreferrer">
-      <span>${escapeHtml(name)}</span><strong>${rp(p.price)}</strong><em>${icon("chat", { size: 12 })}${t("ai.topup.viaWa")}</em>
-    </a>`;
+// What's left on top of the plan, one line — so a buyer sees the credits land.
+function balanceHTML(x) {
+  const parts = [];
+  if (x.unlimited) parts.push(t("ai.offer.balanceUnlimited", { date: dateLabel(x.unlimitedUntil) }));
+  if (x.credits) parts.push(t("ai.offer.balanceCredits", { n: num(x.credits) }));
+  return parts.length ? `<p class="offer-balance">${icon("bot", { size: 13 })}${parts.join(" · ")}</p>` : "";
+}
+
+export function offerHTML() {
+  const x = aiExtras();
+  const daily = offerOptionHTML({
+    payKey: AI_UNLIMITED.payKey,
+    title: t("ai.offer.unlimitedTitle"),
+    sub: x.unlimited ? t("ai.offer.unlimitedExtend", { date: dateLabel(x.unlimitedUntil) }) : t("ai.offer.unlimitedSub", { days: AI_UNLIMITED.days }),
+    price: rp(AI_UNLIMITED.price),
+    per: t("ai.offer.perDays", { days: AI_UNLIMITED.days }),
+    badge: t("ai.offer.unlimitedBadge"),
+    featured: true,
+  });
+  const packs = AI_TOPUPS.map((p) => offerOptionHTML({
+    payKey: p.payKey,
+    title: t("ai.topup.credits", { n: num(p.credits) }),
+    sub: t("ai.offer.perCredit", { price: rp(Math.round(p.price / p.credits)) }),
+    price: rp(p.price),
+    badge: p.best ? t("ai.offer.best") : "",
+  })).join("");
+  return `
+    ${balanceHTML(x)}
+    <div class="offer-group">
+      ${daily}
+      <p class="offer-note">${icon("check", { size: 12 })}${t("ai.offer.unlimitedNote")}</p>
+    </div>
+    <div class="offer-divider"><span>${t("ai.offer.or")}</span></div>
+    <div class="offer-group">
+      ${packs}
+      <p class="offer-note">${icon("check", { size: 12 })}${t("ai.offer.topupNote")}</p>
+    </div>`;
 }
 
 export function openTopUpDialog() {
@@ -49,17 +84,16 @@ export function openTopUpDialog() {
   const topUp = canTopUp(account);
   const body = out
     ? t(bodyKey(readOnly, period), { limit })
-    : t(topUp ? "ai.topup.bodyAnytime" : "ai.topup.bodyTrialAnytime");
+    : aiPlanUsedUp() && topUp
+      ? t("ai.offer.bodyOnExtras")
+      : t(topUp ? "ai.topup.bodyAnytime" : "ai.topup.bodyTrialAnytime");
   const overlay = openModal({
     title: out ? t("ai.topup.title") : t("ai.topup.titleMore"),
-    width: "min(460px,92vw)",
+    width: "min(480px,94vw)",
     bodyHTML: `
       <div class="ai-topup-modal">
-        <p class="text-muted" style="margin:0 0 16px;font-size:13.5px;">${body}</p>
-        ${topUp
-          ? `<div class="ai-topup-packs">${AI_TOPUPS.map(packageHTML).join("")}</div>
-             <p class="text-faint" style="margin:12px 0 0;font-size:12px;">${t("ai.topup.how")}</p>`
-          : ""}
+        <p class="text-muted" style="margin:0 0 14px;font-size:13.5px;">${body}</p>
+        ${topUp ? `<div class="offer-card" data-offer-body>${offerHTML()}</div>` : ""}
       </div>`,
     footHTML: topUp
       ? `<a class="btn btn-ghost" href="#/pricing" data-topup-plans>${t("ai.topup.seePlans")}</a><button type="button" class="btn btn-secondary" data-close-topup>${t("common.close")}</button>`
@@ -67,7 +101,16 @@ export function openTopUpDialog() {
   });
   overlay.querySelector("[data-close-topup]")?.addEventListener("click", () => closeOverlay(overlay));
   overlay.querySelector("[data-topup-plans]")?.addEventListener("click", () => closeOverlay(overlay));
-  overlay.querySelectorAll(".ai-topup-pack").forEach((a) => a.addEventListener("click", () => closeOverlay(overlay)));
+  overlay.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-offer-pay]");
+    if (!btn) return;
+    const key = btn.dataset.offerPay;
+    const before = aiExtras();
+    buyAddon(key, {
+      isDone: () => { const now = aiExtras(); return key === AI_UNLIMITED.payKey ? now.unlimitedUntil > before.unlimitedUntil : now.credits > before.credits; },
+      onDone: () => closeOverlay(overlay),
+    });
+  });
 }
 
 // Once per quota window, per browser tab session — enough to be noticed,

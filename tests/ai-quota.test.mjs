@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { quotaFor, usedInPeriod, consumeQuota, isAdminUid, ADMIN_UIDS, DEFAULT_AI_DAILY_LIMIT } from "../api/_aiQuota.js";
+import { quotaFor, usedInPeriod, consumeQuota, isAdminUid, ADMIN_UIDS, DEFAULT_AI_DAILY_LIMIT, pickBucket, extrasFor, availability } from "../api/_aiQuota.js";
 
 describe("quotaFor", () => {
   test("trial plan is a total-lifetime cap", () => {
@@ -123,5 +123,64 @@ describe("consumeQuota", () => {
     const db = makeFakeDb({ date: "2026-08-31", count: 1, month: "2026-08", monthCount: 40, totalCount: 100 });
     const { used } = await consumeQuota(db, "fake-uid", "month", new Date("2026-09-01T00:30:00Z"));
     assert.equal(used, 1);
+  });
+});
+
+describe("paid extras: AI Sepuasnya + top-up credits", () => {
+  const now = new Date("2026-09-29T05:00:00Z"); // 12:00 WIB
+  const today = "2026-09-29";
+  test("spending order: plan, then AI Sepuasnya, then top-up credits", () => {
+    assert.equal(pickBucket({ planUsed: 5, planLimit: 20, dailyUsed: 0, dailyLimit: 60, credits: 9 }), "plan");
+    assert.equal(pickBucket({ planUsed: 20, planLimit: 20, dailyUsed: 10, dailyLimit: 60, credits: 9 }), "daily");
+    assert.equal(pickBucket({ planUsed: 20, planLimit: 20, dailyUsed: 60, dailyLimit: 60, credits: 9 }), "credits");
+    assert.equal(pickBucket({ planUsed: 20, planLimit: 20, dailyUsed: 60, dailyLimit: 60, credits: 0 }), null);
+  });
+  test("AI Sepuasnya is truly no limit, but only while it runs; read-only accounts get no extras", () => {
+    const active = { plan: "starter", status: "active", aiUnlimitedUntil: now.getTime() + 1000, aiCredits: 300 };
+    assert.deepEqual(extrasFor(active, "u", now), { dailyLimit: Infinity, credits: 300 });
+    assert.equal(pickBucket({ planUsed: 20, planLimit: 20, dailyUsed: 100000, dailyLimit: Infinity, credits: 0 }), "daily");
+    assert.equal(extrasFor({ ...active, aiUnlimitedUntil: now.getTime() - 1 }, "u", now).dailyLimit, 0);
+    assert.deepEqual(extrasFor({ plan: "trial", trialEndsAt: 1, aiCredits: 50 }, "u", now), { dailyLimit: 0, credits: 0 });
+  });
+  test("a plan used up with AI Sepuasnya running is still allowed", () => {
+    const account = { plan: "starter", status: "active", aiUnlimitedUntil: now.getTime() + 1e9 };
+    const a = availability(account, "u", { date: today, count: 20, extraDate: today, extraCount: 5000 }, now);
+    assert.equal(a.bucket, "daily");
+  });
+
+  // Multi-doc fake with merge semantics (aiUsage + accounts).
+  function fakeDb(docs) {
+    const store = Object.fromEntries(Object.entries(docs).map(([k, v]) => [k, { ...v }]));
+    return {
+      doc: (path) => ({ path }),
+      async runTransaction(fn) {
+        return fn({
+          async get(ref) { const d = store[ref.path]; return { exists: !!d, data: () => d }; },
+          set(ref, data, opts) { store[ref.path] = opts?.merge ? { ...(store[ref.path] || {}), ...data } : { ...data }; },
+        });
+      },
+      store,
+    };
+  }
+  test("plan used up: AI Sepuasnya pays (credits untouched); once it ends, a top-up credit pays", async () => {
+    const db = fakeDb({
+      "aiUsage/u": { date: today, count: 20, month: "2026-09", monthCount: 20, totalCount: 99, extraDate: today, extraCount: 59 },
+      "accounts/u": { plan: "starter", status: "active", aiUnlimitedUntil: now.getTime() + 1e9, aiCredits: 2 },
+    });
+    let r = await consumeQuota(db, "u", "day", now, { limit: 20 });
+    assert.equal(r.bucket, "daily");
+    assert.equal(db.store["aiUsage/u"].extraCount, 60); // counted for the admin, never capped
+    assert.equal(db.store["aiUsage/u"].count, 20); // plan counter untouched
+    assert.equal(db.store["accounts/u"].aiCredits, 2);
+    db.store["accounts/u"].aiUnlimitedUntil = now.getTime() - 1;
+    r = await consumeQuota(db, "u", "day", now, { limit: 20 });
+    assert.equal(r.bucket, "credits");
+    assert.equal(db.store["accounts/u"].aiCredits, 1);
+  });
+  test("without a limit (old callers) every call still counts against the plan", async () => {
+    const db = fakeDb({ "aiUsage/u": { date: today, count: 3 } });
+    const r = await consumeQuota(db, "u", "day", now);
+    assert.equal(r.bucket, "plan");
+    assert.equal(db.store["aiUsage/u"].count, 4);
   });
 });

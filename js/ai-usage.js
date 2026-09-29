@@ -94,14 +94,33 @@ export function aiUsageToday() {
   return period === "month" ? usageInMonth(u) : usageOn(u);
 }
 
-export function aiUsageRemaining() {
-  const limit = aiDailyLimit();
-  return limit === Infinity ? Infinity : Math.max(0, limit - aiUsageToday());
+// Paid extras on top of the plan — mirrors api/_aiQuota.js extrasFor (the
+// server is what spends them): AI Sepuasnya (no credit limit while it runs)
+// and top-up credits that never expire, spent only after the plan's own
+// allowance and only when AI Sepuasnya isn't running.
+export function aiExtras() {
+  const account = getCachedAccount();
+  if (isAdmin(currentUid()) || isReadOnly(account)) return { unlimited: false, unlimitedUntil: 0, credits: 0 };
+  const unlimitedUntil = Number(account?.aiUnlimitedUntil) || 0;
+  return { unlimited: unlimitedUntil > Date.now(), unlimitedUntil, credits: Math.max(0, Math.floor(Number(account?.aiCredits) || 0)) };
 }
 
-export function aiLimitReached() {
-  return aiUsageToday() >= aiDailyLimit();
+// Everything still spendable right now: the plan's allowance + top-up
+// credits, or no end at all while AI Sepuasnya runs.
+export function aiUsageRemaining() {
+  const limit = aiDailyLimit();
+  if (limit === Infinity) return Infinity;
+  const x = aiExtras();
+  if (x.unlimited) return Infinity;
+  return Math.max(0, limit - aiUsageToday()) + x.credits;
 }
+
+// Only when the plan AND the extras are empty — the server refuses the
+// call at the same point (api/ai.js).
+export function aiLimitReached() {
+  return aiUsageRemaining() <= 0;
+}
+export const aiPlanUsedUp = () => aiUsageToday() >= aiDailyLimit();
 
 // The server (api/ai.js) is what actually counts a call now, in the same
 // transaction that confirms it succeeded — nothing left for the client to

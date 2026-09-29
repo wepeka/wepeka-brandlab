@@ -166,7 +166,36 @@ export function setCachedAccount(account) {
 export function getCachedAccount() {
   return cachedAccount;
 }
+// The plan's brand limit + permanent slots bought on a pay-once plan
+// (accounts/{uid}.extraBrands) + monthly slots still running
+// (accounts/{uid}.brandSlotsUntil). All written by the Midtrans webhook.
+export function brandLimitOf(account = cachedAccount, now = Date.now()) {
+  const base = account?.brandLimit ?? DEFAULT_BRAND_LIMIT;
+  const bought = Math.max(0, Number(account?.extraBrands) || 0);
+  const rented = (account?.brandSlotsUntil || []).filter((ts) => Number(ts) > now).length;
+  return base + bought + rented;
+}
+
+// Brands that are preview-only because a monthly slot lapsed: the active
+// (not archived) brands beyond the limit, newest first to go. Only ever
+// applies to an account that has rented a slot — an older account already
+// over its limit for any other reason is never suddenly locked. Archiving
+// an older brand frees its place, so the owner picks which ones stay open.
+export function lockedBrandIds(brands, account = cachedAccount, now = Date.now()) {
+  if (!(account?.brandSlotsUntil || []).length || isAdmin(account?.uid)) return new Set();
+  const limit = brandLimitOf(account, now);
+  const active = (brands || []).filter((b) => !b.archived && !b.deletedAt)
+    .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || String(a.id).localeCompare(String(b.id)));
+  return new Set(active.slice(limit).map((b) => b.id));
+}
+export const isBrandLocked = (brandId, brands, account = cachedAccount) => lockedBrandIds(brands, account).has(brandId);
+
+// The monthly slot ending soonest that is still running, for the "habis
+// dalam 3 hari" reminder; null when none runs out within `withinMs`.
+export function slotEndingSoon(account = cachedAccount, now = Date.now(), withinMs = 3 * 86400000) {
+  const running = (account?.brandSlotsUntil || []).map(Number).filter((ts) => ts > now).sort((a, b) => a - b);
+  return running.length && running[0] - now <= withinMs ? running[0] : null;
+}
 export function canCreateBrand(currentBrandCount) {
-  const limit = cachedAccount?.brandLimit ?? DEFAULT_BRAND_LIMIT;
-  return currentBrandCount < limit;
+  return currentBrandCount < brandLimitOf();
 }

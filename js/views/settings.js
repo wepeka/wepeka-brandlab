@@ -15,7 +15,7 @@ import { avatarHTML, qs, qsa, toast, escapeHtml, formatDate } from "../dom.js";
 import { confirmDialog } from "../modals.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout, authErrorMessage } from "../auth.js";
-import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS } from "../account.js";
+import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS, brandLimitOf, canCreateBrand } from "../account.js";
 import { aiDailyLimit, aiQuotaPeriod, aiUsageToday } from "../ai-usage.js";
 import { canTopUp } from "../ai-topup.js";
 import { t, getLang, setLang } from "../i18n.js";
@@ -151,7 +151,7 @@ function renderBrands(content, refresh) {
         </div>
       `).join("")}
       <div class="flex gap-8" style="margin-top:16px;">
-        <button class="btn btn-primary" id="add-brand">${icon("plus", { size: 15 })}${t("brands.add")}</button>
+        <button class="btn btn-primary" id="add-brand">${icon(canCreateBrand(listBrands().length) ? "plus" : "lock", { size: 15 })}${t("brands.add")}</button>
       </div>
     </div>
   `;
@@ -432,13 +432,47 @@ function planCardHTML(account) {
       <h3 style="font-size:16px;margin-bottom:14px;">${t("set.plan.title")}</h3>
       <div class="kv"><span class="k">${t("set.plan.name")}</span><span class="v">${escapeHtml(planName(account))}</span></div>
       <div class="kv"><span class="k">${t("set.plan.status")}</span><span class="v">${escapeHtml(planStatus(account))}</span></div>
-      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${listBrands().length} / ${account.brandLimit ?? "—"}</span></div>
+      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${listBrands().length} / ${brandLimitOf(account)}</span></div>
       <div class="kv"><span class="k">AI credit</span><span class="v">${escapeHtml(credits)}</span></div>
+      ${account.scheduledPlan?.plan ? `<div class="kv"><span class="k">${t("set.plan.next")}</span><span class="v">${escapeHtml(t("set.plan.nextValue", { name: planName({ plan: account.scheduledPlan.plan, brandLimit: account.scheduledPlan.brandLimit }), date: formatDate(localISODate(new Date(Number(account.scheduledPlan.startsAt)))) }))}</span></div>` : ""}
+      ${autoRenewHTML(account)}
       <div class="flex gap-8" style="flex-wrap:wrap;margin-top:14px;">
         <a class="btn btn-secondary btn-sm" href="#/pricing">${icon("arrowUp", { size: 13 })}${t("set.plan.see")}</a>
         ${limit === Infinity ? "" : `<button type="button" class="btn btn-ghost btn-sm" data-ai-topup>${icon("plus", { size: 13 })}${t(canTopUp(account) ? "ai.topup.button" : "ai.topup.upgradeButton")}</button>`}
       </div>
     </div>`;
+}
+
+// Payments Midtrans charges by itself (api/_plans.js recurringFor): one row
+// each, with the card and a stop button. Stopping keeps the time already paid.
+const AUTO_RENEW_NAME = (entry) => entry.planKey === "ai-unlimited" ? t("pricing.addons.aiUnlimited")
+  : entry.planKey === "addon-brand-sub" ? t("pricing.addons.brandSub")
+  : planName({ plan: entry.planKey.replace(/-(monthly|yearly)$/, "") });
+function autoRenewHTML(account) {
+  const rows = Object.entries(account.autoRenew || {});
+  if (!rows.length) return "";
+  return `
+    <div class="auto-renew">
+      <div class="auto-renew-title">${icon("refresh", { size: 13 })}${t("set.autoRenew.title")}</div>
+      ${rows.map(([slot, e]) => `
+        <div class="auto-renew-row">
+          <span><b>${escapeHtml(AUTO_RENEW_NAME(e))}</b><small>${escapeHtml(t("set.autoRenew.row", { amount: `Rp ${Number(e.amount).toLocaleString("id-ID")}`, card: e.card || "—", date: e.nextAt ? formatDate(localISODate(new Date(Number(e.nextAt)))) : "—" }))}</small></span>
+          <button type="button" class="btn btn-ghost btn-sm" data-stop-renew="${escapeHtml(slot)}">${t("set.autoRenew.stop")}</button>
+        </div>`).join("")}
+    </div>`;
+}
+async function stopAutoRenew(slot) {
+  const ok = await confirmDialog({ title: t("set.autoRenew.confirmTitle"), message: t("set.autoRenew.confirmBody"), confirmLabel: t("set.autoRenew.stop"), danger: true });
+  if (!ok) return;
+  try {
+    const { auth } = await import("../firebase.js");
+    const idToken = await auth.currentUser?.getIdToken();
+    const res = await fetch("/api/midtrans/auto-renew", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` }, body: JSON.stringify({ slot }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("set.autoRenew.fail"));
+    toast(t("set.autoRenew.stopped"));
+  } catch (err) {
+    toast(err.message || t("set.autoRenew.fail"), "error");
+  }
 }
 
 function renderAccount(content) {
@@ -486,6 +520,13 @@ function renderAccount(content) {
     }
   });
 
+  content.querySelectorAll("[data-stop-renew]").forEach((btn) => btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    // The row goes once the server has removed it from the account doc.
+    window.addEventListener("account:change", () => renderAccount(content), { once: true });
+    await stopAutoRenew(btn.dataset.stopRenew);
+    btn.disabled = false;
+  }));
   qs("#acc-reset").addEventListener("click", async () => {
     try {
       await resetPassword(email);

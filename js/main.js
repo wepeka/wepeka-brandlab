@@ -33,7 +33,7 @@ import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { toast, showWelcomeBumper } from "./dom.js";
-import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState } from "./account.js";
+import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -179,6 +179,9 @@ async function boot(user) {
 // admin deactivating the account both land here without a page refresh.
 function onAccountChange(user, account) {
   setCachedAccount(account);
+  // Views that show account-bound numbers (AI meter, brand slots) repaint
+  // on this instead of waiting for the next navigation.
+  window.dispatchEvent(new CustomEvent("account:change"));
 
   if (isDeactivated(account)) {
     teardownApp();
@@ -366,6 +369,18 @@ async function renderRoute() {
 
   if (route.brandId && !getBrand(route.brandId)) {
     location.hash = "#/";
+    return;
+  }
+  // A brand whose monthly slot lapsed is preview-only: every address inside
+  // it lands on the locked page (js/brand-locked.js) — no workspace, no
+  // chat, nothing to edit — until the slot is renewed.
+  if (route.brandId && isBrandLocked(route.brandId, listBrands())) {
+    delete app.dataset.shellKey;
+    import("./consultant-panel.js").then((m) => m.unmountConsultantPanel()).catch(() => {});
+    const { renderLockedBrand } = await import("./brand-locked.js");
+    if (token !== renderToken) return;
+    cleanup = renderLockedBrand(app, getBrand(route.brandId));
+    window.scrollTo(0, 0);
     return;
   }
   if (route.brandId) runPulseOnce(route.brandId);
