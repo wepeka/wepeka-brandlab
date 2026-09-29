@@ -194,7 +194,13 @@ export function render(root, { brandId, section }) {
     })(),
     toneSample: "",
   };
-  const refresh = () => paint(root, brandId, brand, state, refresh);
+  // Re-read the brand on every repaint: sections saved on this page (tone,
+  // logo, copy…) land in the store, and a snapshot taken at open made the
+  // Review pages / PDF and the Finish check read the old, emptier brand.
+  const refresh = () => {
+    state.brand = getBrand(brandId) || state.brand;
+    paint(root, brandId, state.brand, state, refresh);
+  };
   refresh();
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
   return () => {};
@@ -3008,7 +3014,7 @@ function wireReview(root, brandId, brand, state, refresh) {
     // user straight to Beranda from an incomplete book (previously the
     // "guided → always Beranda" rule below) made it look finished when it
     // wasn't.
-    const wholeBuilderDone = isBrandBuilderComplete(brand);
+    const wholeBuilderDone = isBrandBuilderComplete(getBrand(brandId) || brand);
     if (wholeBuilderDone) markBuilderJustCompleted(brandId);
     location.hash = wholeBuilderDone ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`;
   });
