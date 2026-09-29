@@ -1,7 +1,7 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
-import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
@@ -175,15 +175,18 @@ function isWeekend(d) {
   const day = d.getDay();
   return day === 0 || day === 6;
 }
-// The next `count` weekdays not already carrying a scheduled piece for this
-// brand — spread out instead of stacking two items onto the same day.
-function nextFreeWeekdays(usedDates, count) {
+// The next `count` upload days (Jadwal Kerja; weekdays if none are set)
+// not already carrying a scheduled piece for this brand — spread out instead
+// of stacking two items onto the same day.
+const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+function nextFreeUploadDays(usedDates, count, cadence) {
   const used = new Set(usedDates);
+  const uploadDays = cadence?.configured && cadence.uploadDays?.length ? new Set(cadence.uploadDays) : null;
   const dates = [];
   const cursor = new Date();
   cursor.setDate(cursor.getDate() + 1);
   while (dates.length < count) {
-    if (!isWeekend(cursor)) {
+    if (uploadDays ? uploadDays.has(DOW_KEYS[cursor.getDay()]) : !isWeekend(cursor)) {
       const iso = localISODate(cursor);
       if (!used.has(iso)) {
         dates.push(iso);
@@ -237,26 +240,6 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
           fresh: true,
           seed: t("home.action.topFormat.seed", { format: bestPost.format || topFormat.refs.format || "", title: bestPost.title || t("beginner.untitled") }),
         }),
-    });
-  }
-
-  // 2. Overdue content piled up (js/store.js listOverdueAndDueSoon) — bump
-  // every one of them onto the next free weekdays in one go.
-  const overdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId).map((x) => x.content);
-  if (overdue.length) {
-    actions.push({
-      id: "overdue-bulk",
-      icon: "calendar",
-      text: t("home.action.overdue.text", { n: overdue.length }),
-      cta: t("home.action.overdue.cta"),
-      run: () => {
-        const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
-        const dates = nextFreeWeekdays(usedDates, overdue.length);
-        const moved = overdue.map((c, i) => updateContent(c.id, { scheduleDate: dates[i] }) || c);
-        remember("moved", moved);
-        toast(t("home.action.overdue.done", { n: overdue.length }));
-        refresh();
-      },
     });
   }
 
@@ -482,12 +465,22 @@ function paint(root, brandId, state, refresh) {
   const content = listContent(brandId);
   const journey = buildSteps(brandId, brand, campaigns, content);
   const identityDone = journey.identityDone;
-  const brandOverdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId);
+  // Each piece shows up in ONE Home card. The hero's piece and the pieces a
+  // plan's own card (Tujuan · Minggu ini) already lists are left out of
+  // "Jadwal berikutnya" — one overdue post used to appear in up to four
+  // cards (hero, Tujuan, Aksi siap dipakai, Jadwal) at once.
+  const top = identityDone ? brandTopAction({ brand, campaigns, content, settings: getSettings() }) : null;
+  const shownElsewhere = new Set([
+    top?.action?.cta?.contentId,
+    ...listGoals(brandId).filter((g) => g.status === "active" || g.status === "partial").flatMap((g) => Object.values(g.installed?.slots || {}).map((x) => x.contentId)),
+  ].filter(Boolean));
+  const allOverdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId);
+  const brandOverdue = allOverdue.filter((x) => !shownElsewhere.has(x.content.id));
   const upNext = content
-    .filter((c) => c.status === "scheduled")
+    .filter((c) => c.status === "scheduled" && !shownElsewhere.has(c.id))
     .sort((a, b) => (a.scheduleDate || "9999").localeCompare(b.scheduleDate || "9999"))
     .slice(0, 5);
-  const scheduleRows = scheduleRowsHTML(brandOverdue, upNext);
+  const scheduleRows = scheduleRowsHTML(brandOverdue, upNext, allOverdue.length);
   const collapsed = new Set(brand.homeCollapsed || []);
   // Computed once per paint for the Teman card's greeting and action buttons.
   const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
@@ -516,7 +509,7 @@ function paint(root, brandId, state, refresh) {
       </div>
     </div>
 
-    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content) : identityHeroHTML(brandId, brand)}
+    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content, top) : identityHeroHTML(brandId, brand)}
 
     ${reportDue(brand, content) ? reportReminderHTML(brand) : ""}
 
@@ -569,6 +562,14 @@ function paint(root, brandId, state, refresh) {
   qs("[data-report-snooze]", root)?.addEventListener("click", () => { snoozeReport(brandId); toast(t("rep.remind.snoozed")); refresh(); });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
 
+  qs("[data-shift-overdue]", root)?.addEventListener("click", () => {
+    const late = allOverdue.map((x) => x.content);
+    const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
+    const dates = nextFreeUploadDays(usedDates, late.length, brand.contentCadence);
+    late.forEach((c, i) => updateContent(c.id, { scheduleDate: dates[i] }));
+    toast(t("home.action.overdue.done", { n: late.length }));
+    refresh();
+  });
   qsa("[data-open-content]", root).forEach((el) => {
     el.addEventListener("click", () => openContentEditor({ brandId, contentId: el.dataset.openContent, onSaved: refresh }));
   });
@@ -619,7 +620,9 @@ function identityHeroHTML(brandId, brand) {
   const dnaDone = brandDnaDone(brand);
   const basicsDone = visualBasicsDone(brand);
   const pro = getMode() === "advanced";
-  const book = pro ? brandBookProgress(brand) : { filled: basicsDone ? 2 : 0, total: 2 };
+  // Pemula's hero row is the gate itself — colour and fonts — counted one
+  // by one (it used to jump 0/2 → 2/2) with the same rule as everywhere else.
+  const book = pro ? brandBookProgress(brand) : { filled: ["color", "typography"].filter((k) => guidelineSectionDone(k, brand)).length, total: 2 };
   const cta = !dnaDone
     ? { label: dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart"), href: dnaHref(brandId, brand) }
     : { label: t("home.identity.ctaBook"), href: `#/brand/${brandId}/guidelines/color` };
@@ -642,8 +645,7 @@ function identityHeroHTML(brandId, brand) {
   `;
 }
 
-function todayHeroHTML(brandId, brand, campaigns, content) {
-  const top = brandTopAction({ brand, campaigns, content, settings: getSettings() });
+function todayHeroHTML(brandId, brand, campaigns, content, top) {
   let title, why, href, cta;
   if (top && top.action.cta.type !== "info") {
     const a = top.action;
@@ -749,8 +751,13 @@ function stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys =
 
 // ---- Schedule ------------------------------------------------------------------
 
-function scheduleRowsHTML(overdue, upNext) {
+// `lateTotal`: every overdue piece of this brand (including the ones shown
+// in another card) — the one "move them" button for all of them lives here.
+function scheduleRowsHTML(overdue, upNext, lateTotal = 0) {
   const rows = [];
+  if (lateTotal) {
+    rows.push(`<div class="home-late-bar"><span>${t("home.action.overdue.text", { n: lateTotal })}</span><button type="button" class="btn btn-secondary btn-sm" data-shift-overdue>${icon("calendar", { size: 13 })}${t("home.action.overdue.cta")}</button></div>`);
+  }
   overdue.slice(0, 3).forEach((x) => {
     rows.push(`
       <div class="top-content-row" data-open-content="${x.content.id}" style="cursor:pointer;">

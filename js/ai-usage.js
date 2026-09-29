@@ -55,17 +55,28 @@ export function aiDailyLimit() {
   return Number.isFinite(n) && n > 0 ? n : planQuota().limit;
 }
 
-// Server and client agree on day/month boundaries in UTC (api/_aiQuota.js
-// isoDate/isoMonth) — matching that here instead of localISODate() keeps
-// the meter's "today"/"this month" in sync with what actually resets it.
-const isoDateUTC = () => new Date().toISOString().slice(0, 10);
-const isoMonthUTC = () => new Date().toISOString().slice(0, 7);
+// Day/month windows are cut at Jakarta midnight, exactly like the server
+// (api/_aiQuota.js isoDate/isoMonth). This used to compare against the UTC
+// date, so between 00:00 and 07:00 WIB the meter read the server's "today"
+// as yesterday's and showed 0 used.
+const QUOTA_TZ = "Asia/Jakarta";
+const isoDateJkt = () => new Date().toLocaleDateString("en-CA", { timeZone: QUOTA_TZ });
+const isoMonthJkt = () => isoDateJkt().slice(0, 7);
+
+// Which window the current count belongs to — "day:2026-09-29",
+// "month:2026-09", or "total" — so "shown once per window" notices
+// (js/ai-topup.js) come back when the quota resets and not before.
+export function aiQuotaWindow() {
+  const period = aiQuotaPeriod();
+  if (period === "total") return "total";
+  return period === "month" ? `month:${isoMonthJkt()}` : `day:${isoDateJkt()}`;
+}
 
 function usageOn(u) {
-  return u && u.date === isoDateUTC() ? Number(u.count) || 0 : 0;
+  return u && u.date === isoDateJkt() ? Number(u.count) || 0 : 0;
 }
 function usageInMonth(u) {
-  return u && u.month === isoMonthUTC() ? Number(u.monthCount) || 0 : 0;
+  return u && u.month === isoMonthJkt() ? Number(u.monthCount) || 0 : 0;
 }
 // No date/month check — a total pool just accumulates for as long as the
 // account stays on a "total"-period plan (currently only the trial).

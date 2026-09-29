@@ -39,7 +39,6 @@ export default {
   "ret.qf.noRet": { en: "not found", id: "tidak ada" },
   "ret.qf.section": { en: "Retention (watch time)", id: "Retensi (watch time)" },
   "ret.qf.sectionSub": { en: "Filled from the retention graph screenshot — fix any number by hand.", id: "Terisi dari screenshot grafik retensi — angka bisa dikoreksi manual." },
-  "ret.qf.verdictTitle": { en: "Reading", id: "Bacaan" },
   "ret.qf.noVerdict": { en: "Add the video length and at least one retention number to get a reading.", id: "Isi durasi video dan minimal satu angka retensi untuk dapat bacaan." },
 
   // Home widgets (js/views/brand-home-analytics.js)
@@ -78,7 +77,6 @@ export default {
   "chat.metrics.pickEmpty": { en: "No published posts yet.", id: "Belum ada konten terbit." },
 
   // AI (js/ai.js)
-  "ai.error.noVision.user": { en: "This photo can't be read by the AI right now. Type the numbers instead, or try again later.", id: "Foto ini belum bisa dibaca AI sekarang. Ketik angkanya aja, atau coba lagi nanti." },
   "ai.error.noVision": { en: "{provider} can't read images. Switch to Claude or Gemini in Settings → AI.", id: "{provider} nggak bisa membaca gambar. Ganti ke Claude atau Gemini di Pengaturan → AI." },
   "ai.error.badExtract": { en: "The screenshot couldn't be read as insight numbers.", id: "Screenshot itu tidak terbaca sebagai angka insight." },
 };

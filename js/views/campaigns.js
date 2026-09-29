@@ -4,7 +4,7 @@ import {
   listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
   CAMPAIGN_OBJECTIVES, CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES, CAMPAIGN_STATUSES, CAMPAIGN_STATUS_LABELS, CAMPAIGN_PHASE_TEMPLATE,
   phaseNameLabel, TRASH_DAYS,
-  daysBetween, formatEventDate, localISODate,
+  daysBetween, formatEventDate, localISODate, listGoals,
 } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -83,6 +83,12 @@ function paintList(root, brandId, brand, refresh) {
   // two kinds were hard to tell apart.
   const events = campaigns.filter((c) => !growBrand.includes(c) && (c.objective === "event" || c.eventPlan));
   const rest = campaigns.filter((c) => !growBrand.includes(c) && !events.includes(c));
+  // An event plan that isn't installed yet has no campaign — it used to be
+  // findable only under the separate "Rencana menuju tanggal" list, so a
+  // Pemula account locked on "one plan at a time" couldn't see what was
+  // holding the lock. It sits with the other events now.
+  const draftPlans = listGoals(brandId).filter((g) => ["draft", "installing", "partial"].includes(g.status) && !campaigns.some((c) => c.goalId === g.id));
+  const eventCards = [...draftPlans.map((g) => draftPlanCard(brandId, g)), ...events.map((c) => campaignCard(brandId, c, content, brand))];
   const insights = growBrand.length ? crossCampaignInsights({ campaigns, content, brand, settings: getSettings() }) : [];
 
   root.innerHTML = `
@@ -94,7 +100,6 @@ function paintList(root, brandId, brand, refresh) {
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap;">
         <a class="btn btn-secondary" href="#/brand/${brandId}/sales" id="open-sales">${icon("chart", { size: 16 })}${t("camp.list.salesTracker")}</a>
-        <a class="btn btn-secondary" href="#/brand/${brandId}/goals" id="open-goals">${icon("target", { size: 16 })}${t("roadmap.camp.open")}</a>
         <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
       </div>
     </div>
@@ -104,11 +109,11 @@ function paintList(root, brandId, brand, refresh) {
         : t("camp.list.subPro")
     }</p>
     ${growBrand.length ? growBrandSectionHTML(growBrand, insights) : ""}
-    ${events.length ? campSectionHTML("event", t("camp.section.events"), t("camp.section.eventsSub"), events) : ""}
+    ${eventCards.length ? `<section class="camp-section">${sectionHeadHTML("event", t("camp.section.events"), t("camp.section.eventsSub"), eventCards.length)}<div class="brand-grid">${eventCards.join("")}</div></section>` : ""}
     ${
       rest.length
         ? campSectionHTML("other", growBrand.length || events.length ? t("camp.section.other") : "", "", rest)
-        : !campaigns.length
+        : !campaigns.length && !draftPlans.length
         ? `<div class="empty-state" style="max-width:460px;margin:0 auto;">
              <div class="icon-wrap">${icon("target", { size: 22 })}</div>
              <h3>${t("camp.list.emptyTitle")}</h3>
@@ -166,10 +171,13 @@ function paintList(root, brandId, brand, refresh) {
   qs("#empty-new-campaign")?.addEventListener("click", () => openNewCampaignFlow({ brandId, onSaved: refresh }));
   qsa("[data-open-campaign]", root).forEach((card) => {
     card.addEventListener("click", (e) => {
-      if (e.target.closest("[data-menu-toggle]") || e.target.closest(".menu")) return;
-      location.hash = `#/brand/${brandId}/campaigns/${card.dataset.openCampaign}`;
+      if (e.target.closest("[data-menu-toggle]") || e.target.closest(".menu") || e.target.closest("[data-delete-campaign]")) return;
+      // An event opens on its plan (its "Target & checklist" is the next tab
+      // there); every other campaign opens on itself.
+      location.hash = card.dataset.openGoal ? `#/brand/${brandId}/goals/${card.dataset.openGoal}` : `#/brand/${brandId}/campaigns/${card.dataset.openCampaign}`;
     });
   });
+  qsa("[data-open-plan]", root).forEach((card) => card.addEventListener("click", () => { location.hash = `#/brand/${brandId}/goals/${card.dataset.openPlan}`; }));
   qsa("[data-delete-campaign]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -247,7 +255,7 @@ function campaignCard(brandId, campaign, allContent, brand) {
   const track = campaign.goalPlan?.version === 3 ? campaign.goalPlan.track : null;
   const kind = campaignKind(campaign, track);
   return `
-    <div class="brand-card glass-card campaign-card campaign-card--kind-${kind.key} ${track ? `campaign-card--track-${track}` : ""}" data-open-campaign="${campaign.id}" style="cursor:pointer;">
+    <div class="brand-card glass-card campaign-card campaign-card--kind-${kind.key} ${track ? `campaign-card--track-${track}` : ""}" data-open-campaign="${campaign.id}" ${kind.key === "event" && campaign.goalId && listGoals(brandId, { includeArchived: true }).some((g) => g.id === campaign.goalId) ? `data-open-goal="${campaign.goalId}"` : ""} style="cursor:pointer;">
       <div class="camp-kind">
         <span class="camp-kind-icon camp-kind-icon--${kind.key}">${kind.svg}</span>
         <span class="camp-kind-label">${escapeText(kind.label)}</span>
@@ -272,6 +280,27 @@ function campaignCard(brandId, campaign, allContent, brand) {
       ${action ? `<div class="campaign-card-next">${icon("arrowRight", { size: 12 })}<span>${escapeText(action.label)}</span></div>` : ""}
     </div>
   `;
+}
+
+// An event plan that hasn't been put on the calendar yet — same card shape
+// as an event campaign, but it says plainly that nothing runs until it's
+// installed, and opens the plan where the install button is.
+function draftPlanCard(brandId, goal) {
+  const date = goal.targetDate || "";
+  const days = date ? daysBetween(localISODate(), date) : null;
+  const chip = days === null ? "" : days > 1 ? t("camp.kind.daysLeft", { n: days }) : days === 1 ? t("camp.kind.tomorrow") : days === 0 ? t("camp.kind.today") : t("camp.kind.past");
+  return `
+    <div class="brand-card glass-card campaign-card campaign-card--kind-event" data-open-plan="${goal.id}" style="cursor:pointer;">
+      <div class="camp-kind">
+        <span class="camp-kind-icon camp-kind-icon--event">${icon("calendar", { size: 22 })}</span>
+        <span class="camp-kind-label">${escapeText(date ? `${t("camp.kind.event")} · ${formatEventDate(date)}` : t("camp.kind.event"))}</span>
+        ${chip ? `<span class="camp-kind-chip ${days !== null && days >= 0 && days <= 7 ? "is-soon" : ""}">${escapeText(chip)}</span>` : ""}
+      </div>
+      <div class="flex items-center gap-8" style="margin-bottom:12px;"><span class="status-pill status-draft"><span class="status-dot"></span>${t("camp.draftPlan.pill")}</span></div>
+      <h3>${escapeText(goal.name || t("roadmap.defaultName"))}</h3>
+      <div class="meta" style="margin-bottom:10px;">${t("camp.draftPlan.meta")}</div>
+      <div class="campaign-card-next">${icon("arrowRight", { size: 12 })}<span>${t("camp.draftPlan.next")}</span></div>
+    </div>`;
 }
 
 // What a card is, at a glance: a big tinted icon + a plain label. Social
@@ -309,7 +338,7 @@ const CAMPAIGN_QUICK_TEMPLATES = [
   // same journey with a different main number, so they're one template whose
   // first question picks that number — and whose targets are computed from
   // the brand's own figures. The old fixed ladders (grow-social /
-  // grow-personal in MISSION_LADDERS) are no longer offered for new
+  // grow-personal ladders, removed from js/store.js) are no longer offered for new
   // campaigns; existing ones keep working unchanged.
   { id: "goal", label: t("camp.new.tpl.goal"), objective: "awareness", icon: "sparkle", description: t("camp.new.goalDesc"), recommended: t("camp.new.goalReco") },
   { id: "event", label: t("camp.new.tpl.event"), objective: "event", icon: "calendar", description: t("camp.new.eventDesc") },

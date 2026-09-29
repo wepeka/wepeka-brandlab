@@ -337,6 +337,8 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
 }
 .tab:hover{ color: var(--text); background: var(--surface); }
 .tab.active{ color: var(--brand-tint-text); background: var(--brand-tint); }
+.tab.is-disabled{ opacity:.45; cursor:not-allowed; }
+.tab.is-disabled:hover{ background:none; color: var(--text-muted); }
 
 /* Icon-only topbar tabs — the middle band between the bottom-nav breakpoint
    (JS_TOPBAR_ICONONLY_MIN below) and ~1240px, where the full row (logo +
@@ -1256,6 +1258,9 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .creator-item .ti{ flex:1; min-width:0; }
 .creator-item .t{ font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .creator-item .m{ font-size:11.5px; color: var(--text-faint); margin-top:2px; }
+/* The due badge sits under the title, not beside it — beside it, a long
+   "Tenggat 12 Okt 2026" squeezed the title down to two letters. */
+.creator-item-due{ margin-top:6px; line-height:1; }
 .fill-marks{ display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
 .fill-mark{ display:inline-flex; opacity:.3; }
 .fill-mark.on{ opacity:1; color: var(--brand-tint); }
@@ -1895,7 +1900,11 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .brandbook-layout{ display:grid; grid-template-columns: 420px 1fr; gap:28px; align-items:start; }
 .brandbook-right{ position:sticky; top:84px; max-height:calc(100vh - 110px); overflow-y:auto; background: var(--surface-2); border-radius: var(--radius-lg); padding:18px; }
 @media (max-width:960px){
-  .brandbook-layout{ grid-template-columns:1fr; }
+  /* minmax(0,1fr), not 1fr: a plain 1fr track grows to its widest child's
+     min-content, which pushed the whole left column ~30px past a phone
+     screen and clipped the right edge of every section. */
+  .brandbook-layout{ grid-template-columns:minmax(0,1fr); }
+  .brandbook-left{ min-width:0; }
   .brandbook-right{ position:static; max-height:none; }
 }
 
@@ -3670,6 +3679,11 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 .cp-scope .link{ border:0; background:none; padding:0; font:inherit; font-size:12px; font-weight:700; color: var(--cp-accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
 .cp-notice a{ color: var(--cp-accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
 .cp-quota{ flex:none; margin:0; padding:8px 14px 0; font-size:12px; }
+.cp-quota .cp-topup{ border:0; background:none; padding:0; font:inherit; font-weight:700; color: var(--accent); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+/* "AI credit habis" dialog (js/ai-topup.js) — the packages reuse the
+   pricing page's add-on cards. */
+.ai-topup-packs{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+.ai-topup-pack em{ display:inline-flex; align-items:center; gap:5px; }
 /* Conversation list rows (Brainstorm page): a delete button
    that shows on hover / keyboard focus, always on touch screens */
 .bs-thread-row{ position:relative; display:flex; min-width:0; }
@@ -4513,3 +4527,37 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   background: var(--bb-accent); color: var(--bb-on-accent);
 }
 
+
+/* "Rekomendasi Wepeka" (js/views/brand-guidelines.js recoCardHTML) — an
+   option next to the owner's own choices, never pre-applied. */
+.bg-reco{ display:flex; flex-direction:column; gap:10px; align-items:flex-start; padding:12px 14px; margin:0 0 16px; border:1px dashed color-mix(in srgb, var(--accent) 55%, transparent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.bg-reco.is-applied{ border-style:solid; }
+.bg-reco-head{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12.5px; color: var(--accent); }
+.bg-reco-head span{ color: var(--text-muted); }
+.bg-reco-body{ width:100%; }
+.bg-reco-applied{ display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color: var(--health-good, var(--accent)); }
+.bg-reco-tone{ display:flex; flex-wrap:wrap; gap:6px; }
+.bg-reco-tone span{ font-size:12px; padding:3px 9px; border-radius:999px; background: var(--surface-2, var(--surface)); }
+.bg-reco-missing{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; color: var(--text-faint); margin:0 0 14px; }
+.bg-reco-inline{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px; color: var(--text-muted); margin:0 0 8px; }
+.bg-reco-inline svg{ color: var(--accent); }
+.checkbox-chip.is-reco{ border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.bg-reco-badge{ margin-left:6px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; color: var(--accent); }
+/* Mockup text never spills out of its frame, whatever the tagline length. */
+.bb-mock-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; }
+.bb-mock-clamp-2{ -webkit-line-clamp:2; }
+.bb-mockup-website-body{ padding:12px 14px; }
+.bb-mockup-ad{ aspect-ratio:1.7; padding:12px 14px; }
+.bb-mockup-ad .bb-mockup-cta{ white-space:nowrap; font-size:10px; padding:6px 10px; }
+
+/* Creator: status as a picker (any direction), and the "Sudah terbit" card. */
+.cr-status-select{ display:inline-flex; align-items:center; gap:6px; }
+.cr-status-select .status-dot{ width:8px; height:8px; border-radius:50%; background: currentColor; flex:none; }
+.cr-status-select .select{ width:auto; padding:5px 28px 5px 10px; font-size:12.5px; font-weight:700; border-radius:999px; min-height:0; }
+.cr-published{ margin:0 0 18px; border:1px solid color-mix(in srgb, var(--health-good, #16a34a) 40%, transparent); }
+.cr-published-head{ display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:13px; }
+.cr-published-head svg{ color: var(--health-good, #16a34a); }
+/* Script talk opened from Creator's AI writer dialog: the chat sits above it. */
+.consultant-panel.is-above-modal{ z-index:80; }
+/* Beranda · Jadwal berikutnya: the one place late pieces are listed and moved. */
+.home-late-bar{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 12px; margin-bottom:6px; border-radius: var(--radius-md); background: var(--health-poor-soft); color: var(--health-poor); font-size:13px; font-weight:600; }

@@ -56,72 +56,27 @@ export function buildCampaignListSteps({ brandId }) {
       body: t("guide.camp.template.body"),
       interactive: { type: "clickAny" },
     },
-    // 3 — Syarat & Ketentuan (Grow Personal Branding and Event have one;
-    // Grow Social Media goes straight to step 6). The tour only asks them to
-    // actually read it; ticking "setuju" and pressing Lanjut is left to the
-    // user, never prompted (user's call, 14 Sep 2026).
+    // 3a — Grow Brand: tick the tracks, answer a few numbers, launch.
+    // (The old templates' terms sheet, level calibration and name prompt
+    // are gone; so are the steps that pointed at them.)
     {
-      selector: "#terms-scroll",
-      showIf: has("#terms-scroll"),
-      title: t("guide.camp.terms.title"),
-      body: t("guide.camp.terms.body"),
-      nextLabel: t("guide.camp.terms.next"),
-      placement: "top",
-    },
-    // …then the tour gets out of the way (no tooltip over the text) and
-    // quietly resumes once the terms modal is gone, however it closed.
-    {
-      selector: "#terms-scroll",
-      showIf: has("#terms-scroll"),
-      title: t("guide.camp.reading.title"),
-      body: "",
-      interactive: { type: "until", predicate: () => !qs("#terms-scroll") },
-      quiet: true,
-    },
-    // 6 — either button ends at the name prompt ("Sudah" goes through a
-    // mission picker + Lanjut first), so wait for that prompt instead
-    {
-      selector: "#calib-fresh",
-      showIf: has("#calib-fresh"),
-      title: t("guide.camp.calib.title"),
-      body: t("guide.camp.calib.body"),
-      interactive: { type: "until", predicate: has("#prompt-input") },
-      hint: t("guide.camp.calib.hint"),
-    },
-    // Cabang Event: peran → form setup → dibuat
-    {
-      selector: "[data-role]",
-      showIf: has("[data-role]"),
-      title: t("guide.camp.role.title"),
-      body: t("guide.camp.role.body"),
-      interactive: { type: "clickAny" },
-    },
-    {
-      selector: ".ev-wizard",
-      showIf: has(".ev-wizard"),
+      selector: ".goal-wizard",
+      showIf: has(".goal-wizard"),
       beforeStep: goToDetail,
       title: t("guide.camp.wizard.title"),
       body: t("guide.camp.wizard.body"),
-      interactive: { type: "until", predicate: () => !has(".ev-wizard")() },
+      interactive: { type: "until", predicate: () => !has(".goal-wizard")() },
       hint: t("guide.camp.wizard.hint"),
       write: true,
     },
-    // 7
+    // 3b — Event: name, date and size, then a draft plan to install.
     {
-      selector: "#prompt-input",
-      showIf: has("#prompt-input"),
-      title: t("guide.camp.name.title"),
-      body: t("guide.camp.name.body"),
-      interactive: { type: "input", minLength: 3 },
-    },
-    // 8
-    {
-      selector: ".overlay.center [data-confirm]",
-      showIf: has("#prompt-input"),
-      beforeStep: goToDetail,
-      title: t("guide.camp.create.title"),
-      body: t("guide.camp.create.body"),
-      interactive: { type: "click" },
+      selector: ".rg-wizard",
+      showIf: has(".rg-wizard"),
+      title: t("guide.camp.eventWizard.title"),
+      body: t("guide.camp.eventWizard.body"),
+      interactive: { type: "until", predicate: () => !has(".rg-wizard")() },
+      hint: t("guide.camp.eventWizard.hint"),
       write: true,
     },
   ]);
@@ -187,7 +142,7 @@ function buildDetailSteps(campaign) {
     },
     ...brainstormSteps(),
     {
-      selector: "#edit-campaign",
+      selector: "#cd-more",
       title: t("guide.camp.edit.title"),
       body: t("guide.camp.edit.body"),
     },

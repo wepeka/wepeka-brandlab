@@ -17,6 +17,7 @@ import {
   milestoneLabel, milestoneDescription, unitLabel, phaseNameLabel, missionText, eventPhaseDateLabel,
 } from "./store.js";
 import { computeContentMetrics } from "./formulas.js";
+import { campaignSalesStats } from "./sales-tracker.js";
 import { t } from "./i18n.js";
 
 const DAY = 86400000;
@@ -122,6 +123,31 @@ function profileReading(ctx, field) {
   };
 }
 
+// Sales Growth numbers the Sales Tracker keeps up to date on every logged
+// sale (js/sales-tracker.js syncSalesCampaign). They read as automatic, so
+// they never sit on the "Catat angka" sheet — a number typed there used to
+// be silently overwritten by the next sale — and their button opens the
+// tracker instead.
+function isTrackerKey(campaign, key) {
+  if (campaign?.goalPlan?.track !== "sales" || !key) return false;
+  return key.startsWith("sold:") || key === "revenue" || key === "repeatBuyers" || key === "referrals";
+}
+function trackerReading(value, rec, key) {
+  const flagged = key === "repeatBuyers" || key === "referrals";
+  return {
+    current: value ?? 0,
+    logged: value !== null && value !== undefined,
+    available: true,
+    auto: true,
+    home: "sales",
+    updatedAt: rec?.updatedAt || null,
+    stale: false,
+    update: { type: "sales", label: t("camp.m.logSale") },
+    improve: { type: "sales", label: t("camp.m.logSale") },
+    note: flagged ? t(key === "repeatBuyers" ? "camp.m.note.flagRepeat" : "camp.m.note.flagReferral") : "",
+  };
+}
+
 // key → how to read it. `read(ctx, ms)` returns the reading fields that
 // differ per source; readMilestone() fills in the rest.
 export const METRIC_SOURCES = {
@@ -224,6 +250,7 @@ export const METRIC_SOURCES = {
       // stage (a goal plan's community-member count) instead of one per stage.
       const rec = ctx.campaign.manualMetrics?.[ms.valueKey || ms.id] || (ms.legacy && num(ms.legacy.value) !== null ? { value: num(ms.legacy.value), updatedAt: ms.legacy.updatedAt || null } : null);
       const value = rec ? num(rec.value) : null;
+      if (isTrackerKey(ctx.campaign, ms.valueKey)) return trackerReading(value, rec, ms.valueKey);
       return {
         current: value ?? 0,
         logged: value !== null,
@@ -246,11 +273,22 @@ export const METRIC_SOURCES = {
       return { current: done ? 1 : 0, logged: !!rec, available: true, auto: false, home: "manual", updatedAt: rec?.updatedAt || null, stale: false, update: { type: "manual", label: done ? t("camp.m.change") : t("camp.m.markDone") }, improve: null };
     },
   },
-  // Sales Tracker doesn't exist yet: these read as manual numbers with a
-  // note, so the milestone keeps working and the day the tracker lands
-  // only this entry changes.
+  // Leads aren't something the Sales Tracker records — still typed by hand.
   "sales.leads": { label: t("camp.m.src.leads"), unit: "leads", read: (ctx, ms) => ({ ...METRIC_SOURCES["manual.number"].read(ctx, ms), home: "sales", note: t("camp.m.note.salesSoon") }) },
-  "sales.revenue": { label: t("camp.m.src.revenue"), unit: "Rp", read: (ctx, ms) => ({ ...METRIC_SOURCES["manual.number"].read(ctx, ms), home: "sales", note: t("camp.m.note.salesSoon") }) },
+  // Revenue for one campaign (an event's "Capai X penjualan"): the sales
+  // logged in the Sales Tracker with this campaign as their source. A number
+  // typed here before that existed keeps showing until the first tagged sale.
+  "sales.revenue": {
+    label: t("camp.m.src.revenue"),
+    unit: "Rp",
+    read: (ctx, ms) => {
+      const manual = METRIC_SOURCES["manual.number"].read(ctx, ms);
+      const stats = ctx.brand ? campaignSalesStats(ctx.brand, ctx.campaign.id) : { count: 0, revenue: 0 };
+      if (!stats.count && manual.logged && !isTrackerKey(ctx.campaign, ms.valueKey)) return { ...manual, home: "sales", note: t("camp.m.note.salesSoon") };
+      if (isTrackerKey(ctx.campaign, ms.valueKey)) return manual;
+      return { ...trackerReading(stats.count ? stats.revenue : null, null, "revenue"), note: stats.count ? t("camp.m.note.fromSales", { n: stats.count }) : t("camp.m.note.tagSales") };
+    },
+  },
   // Sales Growth with 2+ products (js/goal-plan.js buildSalesGrowthPlan): the
   // like-for-like sum of each product's own manually logged "sold" number —
   // same counting unit for every product, so it's a real total, not a blend.
@@ -319,14 +357,14 @@ function guessMetricFromLabel(label, kind) {
 // the original object so manual values typed before this existed still
 // read back. Never mutates the input.
 export function normalizeMilestone(ms, { campaign, stage } = {}) {
-  if (ms.metric) return { ...ms, label: ms.custom ? ms.label : milestoneLabel(ms.label), description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, ms.description), unit: unitLabel(ms.unit), legacy: ms.legacy || null };
+  if (ms.metric) return { ...ms, label: ms.custom ? ms.label : milestoneLabel(ms.label, ms.target), description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, ms.description), unit: unitLabel(ms.unit), legacy: ms.legacy || null };
   // Phase checklists: { id, text, done }
   if (ms.text !== undefined && ms.kind === undefined) {
     return { id: ms.id, metric: "manual.check", label: ms.text, description: "", target: null, unit: "", highlight: false, required: true, custom: true, filter: null, legacy: ms };
   }
   const base = {
     id: ms.id,
-    label: ms.custom ? ms.label : milestoneLabel(ms.label),
+    label: ms.custom ? ms.label : milestoneLabel(ms.label, ms.kind === "check" ? null : ms.target),
     description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, ms.description),
     unit: unitLabel(ms.unit),
     target: ms.kind === "check" ? null : ms.target ?? null,

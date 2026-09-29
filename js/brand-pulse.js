@@ -413,7 +413,7 @@ export function buildPulseText(signals = [], log = [], { limit = 8 } = {}) {
       const when = daysAgoLabel(entry.at, now);
       return `[${t("pulse.log.auto")}] ${when}: ${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
     }
-    const iso = new Date(entry.at).toISOString().slice(0, 10);
+    const iso = localISODate(new Date(entry.at));
     return `[${t("pulse.log.moment")}] ${iso}: ${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
   });
   return [t("pulse.header"), ...lines, t("pulse.footer")].join("\n");

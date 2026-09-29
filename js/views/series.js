@@ -11,6 +11,7 @@ import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, qs, qsa, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
 import { t } from "../i18n.js";
+import { go } from "../nav-context.js";
 
 export function render(root, { brandId }) {
   const refresh = () => paint(root, brandId, refresh);
@@ -53,10 +54,23 @@ function paint(root, brandId, refresh) {
   qs("#empty-new-series")?.addEventListener("click", () => openSeriesModal({ brandId, onSaved: refresh }));
   qsa("[data-open-series]", root).forEach((card) => {
     card.addEventListener("click", (e) => {
-      if (e.target.closest("[data-delete-series]")) return;
+      if (e.target.closest("[data-delete-series], [data-new-episode], [data-series-episodes]")) return;
       openSeriesModal({ brandId, series: getSeries(card.dataset.openSeries), onSaved: refresh });
     });
   });
+  // A series used to end at "saved": no way to start the next episode or
+  // see the ones already made. Both are on the card now — a new episode
+  // opens Creator with the series attached (so its style memory rides
+  // along on every AI call), the count opens those episodes in Daftar Konten.
+  qsa("[data-new-episode]", root).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const s = getSeries(btn.dataset.newEpisode);
+    go(`#/brand/${brandId}/content/creator`, { fromLabel: s?.name || "", intent: "new-content", defaults: { seriesId: btn.dataset.newEpisode } });
+  }));
+  qsa("[data-series-episodes]", root).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    go(`#/brand/${brandId}/content/list`, { fromLabel: getSeries(btn.dataset.seriesEpisodes)?.name || "", seriesId: btn.dataset.seriesEpisodes });
+  }));
   qsa("[data-delete-series]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -76,7 +90,10 @@ function seriesCardHTML(s, content) {
       <button class="icon-btn card-menu" data-delete-series="${s.id}" aria-label="${t("common.delete")}" style="width:30px;height:30px;">${icon("trash", { size: 15 })}</button>
       <h3>${escapeText(s.name)}</h3>
       ${s.dna?.description ? `<div class="meta" style="margin-bottom:10px;">${escapeText(s.dna.description)}</div>` : ""}
-      ${linked ? `<div class="campaign-card-next">${icon("layers", { size: 12 })}<span>${t("series.episodeCount", { n: linked })}</span></div>` : ""}
+      <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:6px;">
+        <button type="button" class="btn btn-primary btn-sm" data-new-episode="${s.id}">${icon("plus", { size: 13 })}${t("series.newEpisode")}</button>
+        ${linked ? `<button type="button" class="btn btn-ghost btn-sm" data-series-episodes="${s.id}">${icon("layers", { size: 12 })}${t("series.episodeCount", { n: linked })}</button>` : ""}
+      </div>
     </div>
   `;
 }

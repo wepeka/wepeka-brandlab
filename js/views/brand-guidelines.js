@@ -9,6 +9,7 @@ import {
   VISUAL_DIRECTIONS, APPLICATION_TYPES, IMAGERY_STYLE_COPY,
   TONE_AXES, toneAxisDisplayLabel, toneExampleDisplay,
   feelingLabel, directionLabel, directionDescription,
+  FEELING_TYPE_VIBE, FEELING_TONE, FONT_PAIRINGS, sectorFromText,
 } from "../brandbook-data.js";
 import { isBrandBuilderComplete, markBuilderJustCompleted, markVisualBasicsJustDone } from "./brand-builder.js";
 import { generateValueProposition, generateColorEssence, detectToneOfVoice, hasAiKey, AiApiError } from "../ai.js";
@@ -18,7 +19,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
-import { VALUE_PROP_DNA_FIELDS } from "../brand-progress.js";
+import { VALUE_PROP_DNA_FIELDS, guidelineSectionDone, BOOK_PROGRESS_SECTIONS, brandBookProgress, visualBasicsDone } from "../brand-progress.js";
 import { getMode } from "../mode.js";
 import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
@@ -55,9 +56,16 @@ const TYPE_SPACING_DEFAULTS = {
   accent: { lineHeight: 1.3, letterSpacing: 0 },
 };
 
+// Every Penerapan choice (brandbook-data.js APPLICATION_TYPES) has its own
+// mockup — four of the six used to render nothing at all, on screen and in
+// the Brand Book, even though the step promises one per pick.
 const MOCKUP_RENDERERS = {
   social: socialPostMockup,
   "business-card": businessCardMockup,
+  website: websiteHeroMockup,
+  packaging: packagingMockup,
+  poster: posterMockup,
+  ad: digitalAdMockup,
 };
 
 const BOOK_W = 1123;
@@ -134,6 +142,7 @@ function answersFromBrand(brand) {
     colorFormula: bg.colorFormula || "",
     colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...(bg.colors || {}) },
     typographyFeelings: bg.typographyFeelings || [],
+    fontSector: bg.fontSector || "",
     fonts: { primary: "", secondary: "", accent: "", ...(bg.fonts || {}) },
     customFonts: { ...(bg.customFonts || {}) },
     extraFonts: bg.extraFonts || [],
@@ -241,10 +250,9 @@ function sectionTabsHTML(state, a) {
 // though it isn't a tab of its own — those are book pages the reader
 // WILL see on Review/PDF, and they used to show a bare "not generated"
 // while this bar (and brandBookProgress in brand-progress.js, which the
-// Home hero / Builder hub read) both still said done. See aiCopyFilled().
-const PROGRESS_STEP_KEYS = ["logo", "color", "typography", "direction", "tone", "copy"];
+// Home hero / Builder hub read) both still said done. See guidelineSectionDone("copy").
 function guidelinesProgressHTML(state) {
-  const keys = PROGRESS_STEP_KEYS;
+  const keys = BOOK_PROGRESS_SECTIONS;
   const done = keys.filter((k) => isStepFilled(k, state.answers, state)).length;
   const pct = Math.round((done / keys.length) * 100);
   return `
@@ -306,11 +314,6 @@ function wireTabs(root, state, refresh) {
 // same test valuePropositionBody()/colorEssenceBody() use to decide
 // whether to render the book page or its "not generated" empty state, so
 // this bar and the book always agree.
-function aiCopyFilled(a, brand) {
-  const hasPillar = valuePillars(brand, a).some((p) => (p?.title || "").trim() && (p?.desc || "").trim());
-  return hasPillar && !!(a.aiCopy?.colorEssence?.primary || "").trim();
-}
-
 // Value Proposition is connected to Brand DNA: what makes the brand
 // different, the problem it solves, and the result the customer gets are
 // already answered there, so those become the 3 pillars automatically —
@@ -336,19 +339,20 @@ function valuePillars(brand, a) {
   return own.length ? own : dnaValuePillars(brand);
 }
 
+// Same rule Beranda and the Brand hub use (guidelineSectionDone in
+// js/brand-progress.js), applied to what's on screen right now. Penerapan
+// only counts once a list was actually saved — the pre-suggested one used
+// to tick the tab on a brand nobody had touched.
 function isStepFilled(stepKey, a, state) {
-  switch (stepKey) {
-    // "Belum punya logo" no longer counts as done — the section stays open
-    // until a logo (e.g. one generated with ChatGPT) is actually uploaded.
-    case "logo": return !!a.logo.dataUrl;
-    case "tone": return !!state?.tone?.source;
-    case "color": return !!a.colors.primary && !!a.colors.secondary && !!a.colors.accent;
-    case "typography": return !!a.fonts.primary && !!a.fonts.secondary;
-    case "direction": return a.visualDirection.length > 0;
-    case "applications": return a.applications.length > 0;
-    case "copy": return aiCopyFilled(a, state?.brand);
-    default: return true;
-  }
+  const saved = state?.brand?.id ? getBrand(state.brand.id) || state.brand : state?.brand || {};
+  if (stepKey === "applications") return !!saved.brandGuidelines?.applications?.length;
+  const bb = saved.brandBuilder || {};
+  const view = {
+    ...saved,
+    brandGuidelines: { ...(saved.brandGuidelines || {}), ...a },
+    brandBuilder: state?.tone ? { ...bb, toneOfVoice: { ...(bb.toneOfVoice || {}), source: state.tone.source } } : bb,
+  };
+  return guidelineSectionDone(stepKey, view);
 }
 
 // Every section here is independently accessible (see sectionTabsHTML) —
@@ -376,9 +380,9 @@ function navHTML(state) {
   // basics done on the way out, so taking it never costs anything.
   const homeReady = isStepFilled("color", state.answers, state) && isStepFilled("typography", state.answers, state);
   return `
-    <div class="flex items-center justify-between" style="margin-top:20px;">
+    <div class="flex items-center justify-between" style="margin-top:20px;flex-wrap:wrap;gap:8px;">
       <button type="button" class="btn btn-secondary" id="wiz-back" ${state.stepIndex <= visibleStepIndexes()[0] ? "disabled" : ""}>${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
-      <div class="flex gap-8">
+      <div class="flex gap-8" style="flex-wrap:wrap;justify-content:flex-end;margin-left:auto;">
         ${homeReady ? `<button type="button" class="btn btn-secondary" id="wiz-home">${icon("check", { size: 14 })}${t("guidelines.backHome")}</button>` : ""}
         <button type="button" class="btn btn-primary" id="wiz-next">${t("guidelines.next")}${icon("chevronRight", { size: 14 })}</button>
       </div>
@@ -753,6 +757,43 @@ function wireLogoStep(root, state, refresh) {
   });
 }
 
+// ---------- "Rekomendasi Wepeka" ----------
+// Colour, type and tone are built by the owner from zero — nothing here is
+// pre-filled. Next to each there's one Wepeka recommendation, read from the
+// brand character chosen in Brand DNA's last step, applied only when the
+// owner presses its button (brandbook-data.js FEELING_* / sectorFromText).
+function brandFeeling(brand) {
+  return (getBrand(brand?.id) || brand)?.brandBuilder?.personality?.feeling || "";
+}
+function recoCardHTML({ why, bodyHTML, actionId, actionLabel, applied }) {
+  return `
+    <div class="bg-reco ${applied ? "is-applied" : ""}">
+      <div class="bg-reco-head">${icon("sparkle", { size: 13 })}<b>${t("bg.reco.title")}</b><span>${why}</span></div>
+      <div class="bg-reco-body">${bodyHTML}</div>
+      ${applied
+        ? `<span class="bg-reco-applied">${icon("check", { size: 12 })}${t("bg.reco.applied")}</span>`
+        : `<button type="button" class="btn btn-secondary btn-sm" id="${actionId}">${icon("sparkle", { size: 12 })}${actionLabel}</button>`}
+    </div>`;
+}
+function noFeelingRecoHTML(brand) {
+  return `<p class="bg-reco-missing">${icon("info", { size: 12 })}${t("bg.reco.noFeeling")} <a class="link" href="#/brand/${brand.id}/dna/identity">${t("bg.reco.noFeelingLink")}</a></p>`;
+}
+const PALETTE_ROLES = ["primary", "secondary", "accent", "background", "text"];
+
+function colorRecoHTML(state, brand) {
+  const feeling = brandFeeling(brand);
+  const pal = COLOR_PALETTES[feeling]?.[0];
+  if (!pal) return noFeelingRecoHTML(brand);
+  const c = state.answers.colors;
+  return recoCardHTML({
+    why: t("bg.reco.fromFeeling", { feeling: escapeHtml(feelingLabel(feeling)) }),
+    bodyHTML: `<div class="bb-palette-row" style="margin:0;">${PALETTE_ROLES.map((r) => `<div class="bb-swatch" style="background:${pal[r]};" title="${escapeHtml(pal[r])}"></div>`).join("")}</div>`,
+    actionId: "reco-color",
+    actionLabel: t("bg.reco.useColors"),
+    applied: PALETTE_ROLES.every((r) => (c[r] || "").toLowerCase() === pal[r].toLowerCase()),
+  });
+}
+
 function colorStepHTML(state, brand) {
   const a = state.answers;
   const formula = a.colorFormula || "";
@@ -762,6 +803,7 @@ function colorStepHTML(state, brand) {
   return `
     <h2 style="margin-bottom:6px;" class="flex items-center gap-6">${t("bg.color.title")}${helpButtonHTML("term-color")}</h2>
     <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("bg.color.sub")}</p>
+    ${colorRecoHTML(state, brand)}
 
     <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">${t("bg.color.pickFeeling")}</div>
     <div class="bb-chip-row" style="margin-bottom:10px;">${chips}</div>
@@ -887,13 +929,25 @@ function wireColorStep(root, state, refresh) {
       const set = new Set(state.answers.colorFeelings);
       if (el.checked) set.add(f); else set.delete(f);
       state.answers.colorFeelings = [...set];
+      // "Satu klik, palet jadi" — the whole five-colour palette, not just the
+      // main colour (which used to leave Sekunder/Aksen empty).
       const anchor = COLOR_PALETTES[f]?.[0];
       if (el.checked && anchor) {
-        state.answers.colors.primary = anchor.primary;
-        if (!state.answers.colorFormula) state.answers.colorFormula = anchor.formula;
+        PALETTE_ROLES.forEach((r) => { state.answers.colors[r] = anchor[r]; });
+        state.answers.colorFormula = anchor.formula;
       }
       refresh();
     });
+  });
+  qs("#reco-color", root)?.addEventListener("click", () => {
+    const feeling = brandFeeling(state.brand);
+    const pal = COLOR_PALETTES[feeling]?.[0];
+    if (!pal) return;
+    PALETTE_ROLES.forEach((r) => { state.answers.colors[r] = pal[r]; });
+    state.answers.colorFormula = pal.formula;
+    state.answers.colorFeelings = [...new Set([...state.answers.colorFeelings, feeling])];
+    toast(t("bg.reco.appliedToast"));
+    refresh();
   });
   qsa("[data-formula]", root).forEach((el) => {
     el.addEventListener("change", () => {
@@ -1137,51 +1191,85 @@ function fontRecommenderHTML(state, brand) {
   if (!state.showFontRecommender) {
     return `<button type="button" class="btn btn-secondary" id="toggle-font-recommender" style="margin-bottom:18px;">${icon("bulb", { size: 13 })}${t("bg.type.recToggle")}</button>`;
   }
-  const category = FONT_CATEGORIES.find((c) => c.key === state.fontRecommenderCategory);
+  const sector = FONT_CATEGORY_SECTORS.find((s) => s.sector === a.fontSector) || null;
+  const category = sector ? FONT_CATEGORIES.find((c) => c.key === sector.categoryKey) : null;
+  const guess = businessSector(brand);
   const chips = TYPOGRAPHY_FEELINGS.map((f) => chipHTML(f, feelingLabel(f), a.typographyFeelings.includes(f), "data-feeling")).join("");
+  // A ticked vibe now leads somewhere: its ready-made font pair (it used to
+  // be a chip that changed nothing).
+  const vibePairs = a.typographyFeelings.filter((f) => FONT_PAIRINGS[f]).map((f) => fontPairRowHTML(t("bg.type.vibePair", { vibe: feelingLabel(f) }), FONT_PAIRINGS[f], a.fonts)).join("");
   return `
     <div class="card dark-surface card-tight" style="margin-bottom:18px;">
       <div class="flex items-center justify-between" style="margin-bottom:12px;">
         <span style="font-size:12.5px;font-weight:700;">${t("bg.type.recTitle")}</span>
         <button type="button" class="btn btn-ghost btn-sm" id="toggle-font-recommender">${icon("x", { size: 11 })}${t("common.close")}</button>
       </div>
+      ${fontRecoHTML(state, brand)}
       <div style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${t("bg.type.vibes")}</div>
       <div class="bb-chip-row">${chips}</div>
+      ${vibePairs ? `<div style="margin:4px 0 12px;">${vibePairs}</div>` : ""}
       <div style="font-size:11.5px;font-weight:700;margin:6px 0 8px;">${t("bg.type.sectorQ")}</div>
+      ${guess && !sector ? `<div class="bg-reco-inline">${icon("sparkle", { size: 12 })}<span>${t("bg.reco.sector", { sector: escapeHtml(guess.sector) })}</span><button type="button" class="btn btn-ghost btn-sm" data-sector-pick="${escapeHtml(guess.sector)}">${t("bg.reco.pickSector")}</button></div>` : ""}
       <div class="bb-chip-row" style="margin-bottom:${category ? "14px" : "0"};">
-        ${FONT_CATEGORY_SECTORS.map((s) => `<label class="checkbox-chip"><input type="radio" name="font-sector" data-sector value="${escapeHtml(s.sector)}" ${state.fontRecommenderSector === s.sector ? "checked" : ""} />${escapeHtml(s.sector)}</label>`).join("")}
+        ${FONT_CATEGORY_SECTORS.map((s) => `<label class="checkbox-chip ${guess?.sector === s.sector ? "is-reco" : ""}"><input type="radio" name="font-sector" data-sector value="${escapeHtml(s.sector)}" ${a.fontSector === s.sector ? "checked" : ""} />${escapeHtml(s.sector)}${guess?.sector === s.sector ? `<span class="bg-reco-badge">${t("bg.reco.badge")}</span>` : ""}</label>`).join("")}
       </div>
-      ${category ? fontCategoryRecommendationHTML(category) : `<p class="text-faint" style="font-size:11.5px;margin:0;">${t("bg.type.sectorHint")}</p>`}
+      ${category ? fontCategoryRecommendationHTML(category, a.fonts) : `<p class="text-faint" style="font-size:11.5px;margin:0;">${t("bg.type.sectorHint")}</p>`}
     </div>
   `;
+}
+
+// What the brand does, in its own words — read for the sector suggestion.
+function businessSector(brand) {
+  const b = getBrand(brand?.id) || brand || {};
+  const dna = b.brandDNA || {};
+  return sectorFromText([b.businessDescription, dna.oneLiner, ...(dna.productsServices || []), b.name].filter(Boolean).join(" "));
+}
+
+function fontRecoHTML(state, brand) {
+  const feeling = brandFeeling(brand);
+  const vibe = FEELING_TYPE_VIBE[feeling];
+  const pair = vibe && FONT_PAIRINGS[vibe];
+  if (!pair) return noFeelingRecoHTML(brand);
+  ensureGoogleFont(pair.primary); ensureGoogleFont(pair.secondary);
+  const f = state.answers.fonts;
+  return recoCardHTML({
+    why: t("bg.reco.fromFeeling", { feeling: escapeHtml(feelingLabel(feeling)) }),
+    bodyHTML: `<div style="font-family:'${escapeHtml(pair.primary)}';font-size:17px;">${escapeHtml(pair.primary)}</div>
+      <div style="font-family:'${escapeHtml(pair.secondary)}';font-size:12.5px;color:var(--text-muted);">${escapeHtml(t("bg.reco.fontsBody", { vibe: feelingLabel(vibe), secondary: pair.secondary }))}</div>`,
+    actionId: "reco-font",
+    actionLabel: t("bg.reco.useFonts"),
+    applied: f.primary === pair.primary && f.secondary === pair.secondary,
+  });
+}
+
+function fontPairRowHTML(title, pair, fonts) {
+  ensureGoogleFont(pair.primary); ensureGoogleFont(pair.secondary);
+  const inUse = fonts?.primary === pair.primary && fonts?.secondary === pair.secondary;
+  return `
+    <div style="font-size:11.5px;font-weight:700;margin-bottom:6px;">${escapeHtml(title)}</div>
+    <div class="flex items-center justify-between" style="gap:10px;padding:10px 12px;background:var(--surface-1);border-radius:var(--radius-md);margin-bottom:8px;">
+      <div>
+        <div style="font-family:'${escapeHtml(pair.primary)}';font-size:16px;">${escapeHtml(pair.primary)}</div>
+        <div style="font-family:'${escapeHtml(pair.secondary)}';font-size:12.5px;color:var(--text-muted);margin-top:2px;">${escapeHtml(pair.secondary)} — ${t("bg.type.forBody")}</div>
+      </div>
+      ${inUse
+        ? `<span class="bg-reco-applied">${icon("check", { size: 12 })}${t("bg.reco.applied")}</span>`
+        : `<button type="button" class="btn btn-primary btn-sm" data-apply-pair data-primary="${escapeHtml(pair.primary)}" data-secondary="${escapeHtml(pair.secondary)}">${t("bg.type.usePair")}</button>`}
+    </div>`;
 }
 
 // Once a category is picked, don't stop at the type name — point to where
 // to actually pick a font of that type, and offer one ready-made
 // primary+secondary combo (real Google Fonts, live-previewed) so there's
 // something concrete to apply instead of a label to go research alone.
-function fontCategoryRecommendationHTML(category) {
+function fontCategoryRecommendationHTML(category, fonts) {
   const pairing = FONT_CATEGORY_PAIRINGS[category.key];
-  if (pairing) { ensureGoogleFont(pairing.primary); ensureGoogleFont(pairing.secondary); }
   return `
     <div class="card dark-surface card-tight" style="background:var(--surface-2);">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">${escapeHtml(t("bg.type.catFit", { label: category.label }))}</div>
       <div class="text-muted" style="font-size:12px;margin-bottom:10px;">${escapeHtml(category.desc)}</div>
       <a href="${category.googleFontsUrl}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-bottom:${pairing ? "14px" : "0"};">${icon("link", { size: 12 })}${escapeHtml(t("bg.type.catBrowse", { label: category.label }))}</a>
-      ${
-        pairing
-          ? `
-        <div style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${t("bg.type.pairTitle")}</div>
-        <div class="flex items-center justify-between" style="gap:10px;padding:10px 12px;background:var(--surface-1);border-radius:var(--radius-md);margin-bottom:8px;">
-          <div>
-            <div style="font-family:'${escapeHtml(pairing.primary)}';font-size:16px;">${escapeHtml(pairing.primary)}</div>
-            <div style="font-family:'${escapeHtml(pairing.secondary)}';font-size:12.5px;color:var(--text-muted);margin-top:2px;">${escapeHtml(pairing.secondary)} — ${t("bg.type.forBody")}</div>
-          </div>
-          <button type="button" class="btn btn-primary btn-sm" id="apply-font-pairing" data-primary="${escapeHtml(pairing.primary)}" data-secondary="${escapeHtml(pairing.secondary)}">${t("bg.type.usePair")}</button>
-        </div>
-      `
-          : ""
-      }
+      ${pairing ? fontPairRowHTML(t("bg.type.pairTitle"), pairing, fonts) : ""}
     </div>
   `;
 }
@@ -1200,17 +1288,33 @@ function wireTypographyStep(root, state, refresh) {
       refresh();
     });
   });
+  // The business sector is saved with the brand now (it used to reset every
+  // visit, so the recommendation below it had to be found again each time).
   qsa("[data-sector]", root).forEach((el) => {
     el.addEventListener("change", () => {
-      state.fontRecommenderSector = el.value;
-      state.fontRecommenderCategory = FONT_CATEGORY_SECTORS.find((s) => s.sector === el.value)?.categoryKey || "";
+      state.answers.fontSector = el.value;
       refresh();
     });
   });
-  qs("#apply-font-pairing", root)?.addEventListener("click", (e) => {
+  qsa("[data-sector-pick]", root).forEach((b) => b.addEventListener("click", () => {
+    state.answers.fontSector = b.dataset.sectorPick;
+    refresh();
+  }));
+  qsa("[data-apply-pair]", root).forEach((b) => b.addEventListener("click", (e) => {
     state.answers.fonts.primary = e.currentTarget.dataset.primary;
     state.answers.fonts.secondary = e.currentTarget.dataset.secondary;
     toast(t("bg.type.pairApplied"));
+    refresh();
+  }));
+  qs("#reco-font", root)?.addEventListener("click", () => {
+    const feeling = brandFeeling(state.brand);
+    const vibe = FEELING_TYPE_VIBE[feeling];
+    const pair = FONT_PAIRINGS[vibe];
+    if (!pair) return;
+    state.answers.fonts.primary = pair.primary;
+    state.answers.fonts.secondary = pair.secondary;
+    state.answers.typographyFeelings = [...new Set([...state.answers.typographyFeelings, vibe])];
+    toast(t("bg.reco.appliedToast"));
     refresh();
   });
   ["primary", "secondary", "accent"].forEach((role) => {
@@ -1495,6 +1599,20 @@ function toneAxisRowHTML(axis, value) {
     </div>`;
 }
 
+function toneRecoHTML(state) {
+  const feeling = brandFeeling(state.brand);
+  const rec = FEELING_TONE[feeling];
+  if (!rec) return noFeelingRecoHTML(state.brand);
+  const tv = state.tone;
+  return recoCardHTML({
+    why: t("bg.reco.fromFeeling", { feeling: escapeHtml(feelingLabel(feeling)) }),
+    bodyHTML: `<div class="bg-reco-tone">${TONE_AXES.map((axis) => `<span>${escapeHtml(toneAxisDisplayLabel(axis, rec[axis.key]))}</span>`).join("")}</div>`,
+    actionId: "reco-tone",
+    actionLabel: t("bg.reco.useTone"),
+    applied: !!tv.source && TONE_AXES.every((axis) => tv[axis.key] === rec[axis.key]),
+  });
+}
+
 function toneStepHTML(state) {
   const tv = state.tone;
   return `
@@ -1510,6 +1628,7 @@ function toneStepHTML(state) {
       <button type="button" class="btn btn-secondary btn-sm" id="tov-detect" style="margin-top:8px;">${icon("bot", { size: 13 })}${t("guidelines.tone.detectBtn")}</button>
       <div id="tov-detect-status" class="text-faint" style="font-size:11.5px;margin-top:6px;"></div>
     </details>
+    <div style="margin-top:14px;">${toneRecoHTML(state)}</div>
     <div class="card dark-surface" style="margin:14px 0;">
       ${TONE_AXES.map((axis) => toneAxisRowHTML(axis, tv[axis.key])).join("")}
     </div>
@@ -1571,6 +1690,15 @@ function wireToneStep(root, brandId, state, refresh) {
       persist();
       if (!wasDone) refresh();
     });
+  });
+
+  qs("#reco-tone", root)?.addEventListener("click", () => {
+    const rec = FEELING_TONE[brandFeeling(state.brand)];
+    if (!rec) return;
+    TONE_AXES.forEach((axis) => { state.tone[axis.key] = rec[axis.key]; });
+    persist();
+    toast(t("bg.reco.appliedToast"));
+    refresh();
   });
 
   const detectEl = qs(".tov-detect", root);
@@ -1682,8 +1810,8 @@ function socialPostMockup(answers, brand) {
       <div class="bb-mockup-label">${t("bbdata.app.social")}</div>
       <div class="bb-mockup bb-mockup-social">
         ${answers.logo.dataUrl ? `<img src="${answers.logo.dataUrl}" style="height:22px;object-fit:contain;" alt="" />` : `<div class="bb-mockup-body" style="font-weight:700;">${escapeHtml(brand.name)}</div>`}
-        <div class="bb-mockup-headline">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
-        <div class="bb-mockup-chip">${t("bg.mock.shopNow")}</div>
+        <div class="bb-mockup-headline bb-mock-clamp">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
+        <div class="bb-mockup-chip" style="align-self:flex-start;">${escapeHtml(mockCta(brand))}</div>
       </div>
     </div>
   `;
@@ -1695,7 +1823,77 @@ function businessCardMockup(answers, brand) {
       <div class="bb-mockup-label">${t("bbdata.app.business-card")}</div>
       <div class="bb-mockup bb-mockup-card" style="background:var(--bb-primary);">
         ${answers.logo.dataUrl ? `<img src="${answers.logo.dataUrl}" style="height:26px;object-fit:contain;filter:brightness(0) invert(1);" alt="" />` : `<div class="bb-mockup-headline" style="color:var(--bb-bg);">${escapeHtml(brand.name)}</div>`}
-        <div class="bb-mockup-body" style="color:var(--bb-bg);opacity:.85;">${escapeHtml(brand.brandDNA.tagline || "")}</div>
+        <div class="bb-mockup-body bb-mock-clamp bb-mock-clamp-2" style="color:var(--bb-bg);opacity:.85;">${escapeHtml(brand.brandDNA.tagline || "")}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Shared bits for the four mockups below: the logo (or the name), the
+// tagline, and a short call to action from Brand DNA.
+function mockLogo(answers, brand, { invert = false, height = 22 } = {}) {
+  return answers.logo.dataUrl
+    ? `<img src="${answers.logo.dataUrl}" style="height:${height}px;max-width:70%;object-fit:contain;${invert ? "filter:brightness(0) invert(1);" : ""}" alt="" />`
+    : `<div class="bb-mockup-body" style="font-weight:800;${invert ? "color:var(--bb-bg);" : ""}">${escapeHtml(brand.name)}</div>`;
+}
+function mockCta(brand) {
+  const cta = String(brand.brandDNA?.callToAction || "").trim();
+  return cta && cta.length <= 28 ? cta : t("bg.mock.shopNow");
+}
+
+function websiteHeroMockup(answers, brand) {
+  return `
+    <div>
+      <div class="bb-mockup-label">${t("bbdata.app.website")}</div>
+      <div class="bb-mockup bb-mockup-website">
+        <div class="bb-mockup-browser-bar"><span class="bb-mockup-browser-dot"></span><span class="bb-mockup-browser-dot"></span><span class="bb-mockup-browser-dot"></span></div>
+        <div class="bb-mockup-website-body">
+          ${mockLogo(answers, brand, { height: 18 })}
+          <div class="bb-mockup-headline bb-mock-clamp bb-mock-clamp-2" style="font-size:14px;">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
+          <span class="bb-mockup-cta">${escapeHtml(mockCta(brand))}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function packagingMockup(answers, brand) {
+  const product = (brand.brandDNA?.productsServices || []).find((p) => String(p || "").trim()) || "";
+  return `
+    <div>
+      <div class="bb-mockup-label">${t("bbdata.app.packaging")}</div>
+      <div class="bb-mockup bb-mockup-packaging">
+        ${mockLogo(answers, brand, { height: 28 })}
+        ${product ? `<div class="bb-mockup-headline bb-mock-clamp" style="font-size:15px;">${escapeHtml(product)}</div>` : ""}
+        <div class="bb-mockup-body bb-mock-clamp" style="opacity:.8;">${escapeHtml(brand.brandDNA.tagline || "")}</div>
+      </div>
+    </div>
+  `;
+}
+
+function posterMockup(answers, brand) {
+  return `
+    <div>
+      <div class="bb-mockup-label">${t("bbdata.app.poster")}</div>
+      <div class="bb-mockup bb-mockup-poster" style="background:var(--bb-primary);">
+        ${mockLogo(answers, brand, { invert: true, height: 20 })}
+        <div class="bb-mockup-headline bb-mock-clamp" style="color:var(--bb-bg);font-size:19px;">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
+        <span class="bb-mockup-chip" style="align-self:flex-start;">${escapeHtml(mockCta(brand))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function digitalAdMockup(answers, brand) {
+  return `
+    <div>
+      <div class="bb-mockup-label">${t("bbdata.app.ad")}</div>
+      <div class="bb-mockup bb-mockup-ad" style="background:var(--bb-secondary);">
+        <div style="min-width:0;display:flex;flex-direction:column;gap:6px;">
+          ${mockLogo(answers, brand, { invert: true, height: 16 })}
+          <div class="bb-mockup-headline bb-mock-clamp bb-mock-clamp-2" style="color:var(--bb-bg);font-size:13px;">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
+        </div>
+        <span class="bb-mockup-cta" style="flex:none;">${escapeHtml(mockCta(brand))}</span>
       </div>
     </div>
   `;
@@ -2732,28 +2930,57 @@ function bookStylePickerHTML(a) {
   `;
 }
 
+// Review says how far along the book really is — it used to open with
+// "Brand Book kamu sudah siap" even at 0/6, above pages still showing
+// empty states. Missing sections are listed as buttons to jump there.
+function reviewHeadHTML(state) {
+  const missing = BOOK_PROGRESS_SECTIONS.filter((k) => !isStepFilled(k, state.answers, state));
+  if (!missing.length) {
+    return `<h2 style="margin-bottom:6px;">${t("bg.review.title")}</h2>
+      <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("bg.review.sub")}</p>`;
+  }
+  const label = (k) => (k === "copy" ? t("bg.review.missing.copy") : STEPS.find((s) => s.key === k)?.title || k);
+  const target = (k) => (k === "copy" ? STEPS.findIndex((s) => s.key === "foundation") : STEPS.findIndex((s) => s.key === k));
+  return `<h2 style="margin-bottom:6px;">${t("bg.review.titlePending", { n: missing.length, total: BOOK_PROGRESS_SECTIONS.length })}</h2>
+    <p class="text-muted" style="font-size:13px;margin:0 0 8px;">${t("bg.review.subPending")}</p>
+    <div class="flex gap-8" style="flex-wrap:wrap;margin:0 0 14px;">${missing.map((k) => `<button type="button" class="btn btn-ghost btn-sm" data-bb-tab="${target(k)}">${icon("arrowRight", { size: 12 })}${escapeHtml(label(k))}</button>`).join("")}</div>`;
+}
+
+// Shown under Review once the PDF is downloaded — what to do with the book
+// now, instead of the download being the end of the road.
+function afterPdfHTML(brandId) {
+  return `
+    <div class="bg-reco is-applied" style="margin-top:16px;">
+      <div class="bg-reco-head">${icon("check", { size: 13 })}<b>${t("bg.pdf.doneTitle")}</b></div>
+      <p class="text-muted" style="font-size:12.5px;margin:0;">${t("bg.pdf.doneBody")}</p>
+      <div class="flex gap-8" style="flex-wrap:wrap;">
+        <a class="btn btn-primary btn-sm" href="#/brand/${brandId}/campaigns">${icon("target", { size: 13 })}${t("bg.pdf.nextGoal")}</a>
+        <a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/content/creator">${icon("edit", { size: 13 })}${t("bg.pdf.nextContent")}</a>
+      </div>
+    </div>`;
+}
+
 function reviewHTML(brand, state) {
   const a = state.answers;
-  const homeReady = isStepFilled("color", a, state) && isStepFilled("typography", a, state);
   return `
-    <h2 style="margin-bottom:6px;">${t("bg.review.title")}</h2>
-    <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("bg.review.sub")}</p>
+    ${reviewHeadHTML(state)}
     ${bookStylePickerHTML(a)}
     <div ${bookSheetAttrs(a, "bbk-review-sheet")}>
       ${buildBrandBookPages(brand, a).join("")}
     </div>
     <div class="flex items-center justify-between">
       <button type="button" class="btn btn-secondary" id="wiz-back">${icon("chevronLeft", { size: 14 })}${t("common.back")}</button>
-      <div class="flex gap-8">
-        ${homeReady ? `<button type="button" class="btn btn-secondary" id="wiz-home">${icon("check", { size: 14 })}${t("guidelines.backHome")}</button>` : ""}
+      <div class="flex gap-8" style="flex-wrap:wrap;justify-content:flex-end;">
         ${
           ownsBookStyle(bookStyleOf(a))
             ? `<button type="button" class="btn btn-secondary" id="wiz-pdf">${icon("download", { size: 14 })}${t("bg.review.downloadPdf")}</button>`
             : `<button type="button" class="btn btn-secondary" data-book-unlock="${bookStyleOf(a).key}">${icon("lock", { size: 14 })}${t("bg.style.unlock", { price: rpShort(bookStyleOf(a).price) })}</button>`
         }
-        <button type="button" class="btn btn-primary" id="wiz-save">${icon("check", { size: 15 })}${t("guidelines.saveBook")}</button>
+        <button type="button" class="btn btn-primary" id="wiz-save">${icon("check", { size: 15 })}${t("guidelines.finish")}</button>
       </div>
     </div>
+    ${!ownsBookStyle(bookStyleOf(a)) ? `<p class="text-faint" style="font-size:12px;margin:10px 0 0;text-align:right;">${t("bg.style.lockedHint")}</p>` : ""}
+    ${state.pdfDone ? afterPdfHTML(brand.id) : ""}
   `;
 }
 
@@ -2764,8 +2991,13 @@ function wireReview(root, brandId, brand, state, refresh) {
     state.stepIndex = STEPS.length - 1;
     refresh();
   });
+  // One way out of Review (it used to have both "Balik ke Beranda" and
+  // "Simpan Brand Book", which did nearly the same thing). Everything is
+  // already saved as it's typed; this confirms it and takes the owner to
+  // where the next step shows.
   qs("#wiz-save", root).addEventListener("click", () => {
     updateBrand(brandId, { brandGuidelines: { ...state.answers } });
+    if (visualBasicsDone(getBrand(brandId))) markVisualBasicsJustDone(brandId);
     toast(t("guidelines.bookSaved"));
     // Same "take them back to where the progress actually shows" pattern as
     // Brand DNA's own save: the hub, so anything still unfinished (sections
@@ -2780,7 +3012,25 @@ function wireReview(root, brandId, brand, state, refresh) {
     if (wholeBuilderDone) markBuilderJustCompleted(brandId);
     location.hash = wholeBuilderDone ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`;
   });
-  qs("#wiz-pdf", root)?.addEventListener("click", () => openBrandBookPdf(brand, state.answers));
+  // Straight to the file — the book is already on screen above, so the old
+  // second preview (with its own Download button) was one click too many.
+  qs("#wiz-pdf", root)?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = t("bg.pdf.preparing");
+    try {
+      await downloadBrandBookPdf(brand, state.answers, (n, total) => { btn.textContent = `${t("bg.pdf.preparing")} ${n}/${total}`; });
+      toast(t("bg.pdf.doneToast"));
+      state.pdfDone = true;
+      refresh();
+    } catch (err) {
+      console.error("PDF generation failed", err);
+      toast(t("bg.pdf.failDirect"), "error");
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  });
   wireBookStylePicker(root, brandId, state, refresh);
 }
 
@@ -3080,7 +3330,7 @@ async function downloadBrandBookPdf(brand, a, onProgress) {
       if (i > 0) pdf.addPage("a4", "landscape");
       pdf.addImage(canvas.toDataURL("image/jpeg", bookStyleOf(a).photo ? 0.86 : 0.93), "JPEG", 0, 0, 297, 210, undefined, "FAST");
     }
-    pdf.save(`${brand.name.replace(/[^a-z0-9]+/gi, "-")}-brand-guidelines.pdf`);
+    pdf.save(`${brand.name.replace(/[^a-z0-9]+/gi, "-")}-brand-book.pdf`);
   } finally {
     host.remove();
   }
@@ -3126,6 +3376,7 @@ function openBrandBookPdf(brand, a) {
       await downloadBrandBookPdf(brand, a, (n, total) => {
         btn.textContent = `${t("bg.pdf.preparing")} ${n}/${total}`;
       });
+      toast(t("bg.pdf.doneToast"));
     } catch (err) {
       console.error("PDF generation failed", err);
       toast(t("bg.pdf.fail"), "error");

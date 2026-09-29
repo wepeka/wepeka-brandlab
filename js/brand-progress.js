@@ -52,9 +52,30 @@ export function brandDnaDone(brand = {}) {
 // Pemula's Warna → Font flow asks for, and the one definition of "done" for
 // the visual half everywhere (home hero, builder hub, guidelines save).
 export function visualBasicsDone(brand = {}) {
-  const colors = brand.brandGuidelines?.colors || {};
-  const fonts = brand.brandGuidelines?.fonts || {};
-  return !!(colors.primary && fonts.primary && fonts.secondary);
+  return guidelineSectionDone("color", brand) && guidelineSectionDone("typography", brand);
+}
+
+// The ONE rule for "this Brand Guidelines section is done" — the section
+// tabs' ticks, the bar at the top of that page, Beranda and the Brand hub
+// all read it. They used to carry three rules of their own (the page wanted
+// three colours, Home only the main one; Fondasi and Penerapan were ticked
+// on a brand nobody had touched), so the same brand could read "done" in
+// one place and "2/6" in the next. A colour counts from the main colour on,
+// the same line the Tujuan gate has always used (so no one gets re-locked);
+// picking a feeling or a formula fills the rest of the palette anyway.
+export function guidelineSectionDone(key, brand = {}) {
+  const g = brand.brandGuidelines || {};
+  switch (key) {
+    case "foundation": return brandDnaDone(brand);
+    case "logo": return !!g.logo?.dataUrl;
+    case "color": return !!g.colors?.primary;
+    case "typography": return !!(g.fonts?.primary && g.fonts?.secondary);
+    case "direction": return !!g.visualDirection?.length;
+    case "tone": return !!brand.brandBuilder?.toneOfVoice?.source;
+    case "applications": return !!g.applications?.length;
+    case "copy": return hasValueProposition(brand) && !!(g.aiCopy?.colorEssence?.primary || "").trim();
+    default: return false;
+  }
 }
 
 // The full Brand Book, section by section, for Pro's "x/6" progress line.
@@ -76,17 +97,12 @@ export function hasValueProposition(brand = {}) {
   return own || VALUE_PROP_DNA_FIELDS.some((k) => String(brand.brandDNA?.[k] || "").trim());
 }
 
+// The sections the owner fills in themselves. Fondasi is copied from Brand
+// DNA and Penerapan comes pre-suggested, so neither counts toward "x/6".
+export const BOOK_PROGRESS_SECTIONS = ["logo", "color", "typography", "direction", "tone", "copy"];
 export function brandBookProgress(brand = {}) {
-  const g = brand.brandGuidelines || {};
-  const parts = [
-    !!g.colors?.primary,
-    !!(g.fonts?.primary && g.fonts?.secondary),
-    !!g.logo?.dataUrl,
-    !!g.visualDirection?.length,
-    !!brand.brandBuilder?.toneOfVoice?.source,
-    !!(hasValueProposition(brand) && (g.aiCopy?.colorEssence?.primary || "").trim()),
-  ];
-  return { filled: parts.filter(Boolean).length, total: parts.length };
+  const filled = BOOK_PROGRESS_SECTIONS.filter((k) => guidelineSectionDone(k, brand)).length;
+  return { filled, total: BOOK_PROGRESS_SECTIONS.length };
 }
 
 // The gate for the Tujuan tab (Konten is open from day one, not gated by

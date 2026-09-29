@@ -11,6 +11,8 @@ import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft } from "./account.
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod } from "./ai-usage.js";
 import { identityDone } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
+import { installTopUpNotice, canTopUp } from "./ai-topup.js";
+import { rememberLastBrand } from "./back-link.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
 // chunk in the app, and the whole reason the logged-out login/pricing
@@ -283,7 +285,8 @@ function aiUsagePopoverHTML() {
   return `
     <div class="help-popover-title">${t(`app.aiUsage.title${m}`)}</div>
     <p class="help-popover-body">${limit === Infinity ? t("app.aiUsage.unlimited", { used }) : left ? t(`app.aiUsage.left${m}`, { used, limit, left }) : t(`app.aiUsage.out${m}`, { used, limit })}</p>
-    <p class="help-popover-body">${t(`app.aiUsage.explain${m}`)}${limit === Infinity ? "" : ` ${t("app.aiUsage.more")}`}</p>
+    <p class="help-popover-body">${t(`app.aiUsage.explain${m}`)}</p>
+    ${limit === Infinity ? "" : `<button type="button" class="btn ${left ? "btn-secondary" : "btn-primary"} btn-sm btn-block" data-ai-topup style="margin-top:10px;">${icon(canTopUp() ? "plus" : "arrowUp", { size: 13 })}${t(canTopUp() ? "ai.topup.button" : "ai.topup.upgradeButton")}</button>`}
   `;
 }
 
@@ -314,7 +317,6 @@ function appMenuHTML(brandId, canShowIntroVideo) {
     <button type="button" data-act="theme">${icon(getTheme() === "light" ? "moon" : "sun", { size: 15 })}${t("topbar.toggleTheme")}</button>
     <button type="button" class="menu-ai-row" data-act="ai">${aiUsageRowHTML()}</button>
     <div class="menu-divider"></div>
-    <button type="button" data-go="#/settings/brands">${icon("users", { size: 15 })}${t("settings.panel.brands")}</button>
     <button type="button" data-go="#/settings">${icon("gear", { size: 15 })}${t("topbar.settings")}</button>
     <button type="button" data-act="logout">${icon("logout", { size: 15 })}${t("topbar.logout")}</button>
   `;
@@ -334,6 +336,8 @@ function menuBelow(btn, { className = "", width = 240 } = {}) {
 
 export function wireShell({ brandId }) {
   wireAnnouncements();
+  rememberLastBrand(brandId);
+  installTopUpNotice();
   qs("#nav-return-btn")?.addEventListener("click", () => {
     const r = returnTo();
     clearNavContext();

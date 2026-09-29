@@ -1,4 +1,4 @@
-import { getBrand, listContent, createContent, updateContent } from "../store.js";
+import { getBrand, listContent, createContent, updateContent, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, showProgressBar, escapeHtml, toast } from "../dom.js";
@@ -126,7 +126,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
         format: formatFromMedia(m),
         status: "published",
         publishedUrl: m.permalink,
-        publishedDate: new Date(m.timestamp).toISOString().slice(0, 10),
+        publishedDate: localISODate(new Date(m.timestamp)),
       };
 
       let target;

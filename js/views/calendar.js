@@ -37,7 +37,7 @@ function goalDeadlines(brandId) {
   const map = new Map();
   const today = localISODate();
   listGoals(brandId).filter((g) => g.status === "active" || g.status === "partial").forEach((g) => {
-    goalItems(g, today).filter((i) => i.kind !== "slot" && i.state !== "done" && i.date).forEach((i) => map.set(i.date, [...(map.get(i.date) || []), i]));
+    goalItems(g, today).filter((i) => i.kind !== "slot" && i.state !== "done" && i.date).forEach((i) => map.set(i.date, [...(map.get(i.date) || []), { ...i, goalId: g.id }]));
   });
   return map;
 }
@@ -320,6 +320,8 @@ function paint(root, brandId, state, refresh) {
     <div id="cal-body"></div>
   `;
 
+  // The header button has no date, so the new piece wouldn't show on the
+  // grid — it opens in Creator instead (a date cell keeps you here).
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
   qs("#cal-week-plan").addEventListener("click", (e) => openWeekPlanMenu(e.currentTarget, brandId));
   // The ⋯ menu: the two setup-ish jobs (AI auto-schedule, the weekly work
@@ -407,7 +409,7 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
           const itemTitle = campaign ? `${c.title} · ${campaign.name}` : c.title;
           const isSlot = !!c.fromGoal && c.status === "idea";
           return `
-          <div class="cal-item ${isSlot ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="true" data-id="${c.id}" title="${escapeHtml(isSlot ? `${itemTitle} — ${t("roadmap.cal.slot")}` : itemTitle)}">
+          <div class="cal-item ${isSlot ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="${c.status === "published" ? "false" : "true"}" data-id="${c.id}" title="${escapeHtml(isSlot ? `${itemTitle} — ${t("roadmap.cal.slot")}` : itemTitle)}">
             <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>
             ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaign.name)}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
             ${escapeHtml(c.title || t("common.untitled"))}
@@ -510,7 +512,7 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
     .sort((a, b) => a[0].localeCompare(b[0]))
     .flatMap(([date, list]) => list.map((d) => {
       const dt = new Date(`${date}T00:00:00`);
-      return `<a class="agenda-row" href="${d.kind === "milestone" ? `#/brand/${brandId}/campaigns/${d.campaignId}` : `#/brand/${brandId}/goals`}">
+      return `<a class="agenda-row" href="${d.kind === "milestone" ? `#/brand/${brandId}/campaigns/${d.campaignId}` : `#/brand/${brandId}/goals/${d.goalId}`}">
         <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0, 3)}</div></div>
         <div class="ti" style="flex:1;min-width:0;"><div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.label)}</div></div>
         <span class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}">${t("roadmap.cal.deadline")}</span></a>`;
@@ -527,7 +529,7 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
     el.addEventListener("click", () => openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh }));
   });
   qs("#agenda-empty-new", body)?.addEventListener("click", () => {
-    openContentEditor({ brandId, defaults: { scheduleDate: iso(rangeStart), status: "scheduled" }, onSaved: refresh });
+    openContentEditor({ brandId, stay: true, defaults: { scheduleDate: iso(rangeStart), status: "idea" }, onSaved: refresh });
   });
 }
 
@@ -607,7 +609,11 @@ function assignToDate(brandId, contentId, dateISO) {
     toast(t("calendar.pastDate"), "error");
     return;
   }
-  updateContent(contentId, { scheduleDate: dateISO, status: "scheduled" });
+  // Only the date. A date says when it goes out, not how far along it is —
+  // setting "Siap upload" here used to drop an empty idea straight into
+  // Creator's upload panel, and could turn a published post back into
+  // "ready to upload". Auto-schedule (above) already writes the date alone.
+  updateContent(contentId, { scheduleDate: dateISO });
   warnIfFunnelClash(brandId, contentId, dateISO);
   toast(t("common.scheduled"));
 }
@@ -647,7 +653,7 @@ function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
 // as the Content Bank sidebar, scoped to a single click-to-assign choice —
 // no dragging required — with "create new" as the fallback underneath.
 function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
-  const unscheduled = listContent(brandId).filter((c) => !c.scheduleDate);
+  const unscheduled = listContent(brandId).filter((c) => !c.scheduleDate && c.status !== "published");
   const rect = cell.getBoundingClientRect();
   const menu = openMenu(cell, { className: "date-bank-menu", top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 260) });
   if (!menu) return;
@@ -689,7 +695,7 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
     }
     if (e.target.closest("[data-create]")) {
       closeMenu();
-      openContentEditor({ brandId, defaults: { scheduleDate: dateISO, status: "scheduled" }, onSaved: refresh });
+      openContentEditor({ brandId, stay: true, defaults: { scheduleDate: dateISO, status: "idea" }, onSaved: refresh });
     }
   });
 }

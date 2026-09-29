@@ -29,7 +29,7 @@ import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
-import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL } from "../site-links.js";
+import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS } from "../site-links.js";
 import { db as fdb, auth } from "../firebase.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } from "../account.js";
@@ -38,7 +38,7 @@ import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } fro
 // (Rp 300.000 in ID, Rp 300,000 in EN).
 const rp = (n) => `Rp ${n.toLocaleString(getLang() === "en" ? "en-US" : "id-ID")}`;
 
-const PAYMENT_WA_NUMBER = "6285196627609"; // Wepeka support (same as wpk-dp src/lib/support.ts)
+const PAYMENT_WA_NUMBER = SUPPORT_WA_NUMBER;
 
 // Client Key dari dashboard Midtrans (Settings → Access Keys → General
 // Credentials). Client key bukan rahasia (aman di frontend) — Server Key
@@ -164,8 +164,7 @@ const LIFETIME_NORMAL_PRICE = 3500000;
 // sync) by accounts on a pay-once plan; everything else is ordered via
 // WhatsApp and added by hand.
 const ADDONS = [
-  { key: "credits300", price: 20000 },
-  { key: "credits1000", price: 79000 },
+  ...AI_TOPUPS.map(({ key, price }) => ({ key, price })),
   { key: "brand", price: 19000, perMonth: true, forWho: "subs" },
   { key: "brandLife1", price: 99000, payKey: "addon-brand-1", forWho: "lifetime" },
   { key: "brandLife3", price: 249000, payKey: "addon-brand-3", forWho: "lifetime", save: 48000 },

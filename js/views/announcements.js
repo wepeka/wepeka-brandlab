@@ -6,7 +6,8 @@ import {
   isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement,
 } from "../announcements.js";
 import { renderLightMarkdown } from "../ai-directives.js";
-import { backLinkHTML } from "../back-link.js";
+import { backToLastBrandHTML } from "../back-link.js";
+import { getBrand } from "../store.js";
 import { confirmDialog } from "../modals.js";
 import { icon } from "../icons.js";
 import { qs, escapeHtml as esc, toast, skeletonHTML } from "../dom.js";
@@ -82,7 +83,7 @@ export function render(root) {
     root.innerHTML = `
       <div class="page-head">
         <div>
-          <div class="page-eyebrow">${backLinkHTML("#/", t("nav.allBrands"))}</div>
+          <div class="page-eyebrow">${backToLastBrandHTML(getBrand)}</div>
           <h1>${t("ann.title")}</h1>
           <p class="page-sub">${t("ann.sub")}</p>
         </div>

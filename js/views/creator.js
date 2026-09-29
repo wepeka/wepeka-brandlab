@@ -1,12 +1,12 @@
-import { getBrainstorm, createBrainstorm, deleteBrainstorm, appendBrainstormMessage, updateBrainstormMessage, getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, FUNNELS, localISODate } from "../store.js";
+import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
+import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
-import { escapeHtml, formatDate, toast, avatarHTML, qs, qsa } from "../dom.js";
+import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
-import { consumeNavContext } from "../nav-context.js";
-import { openModal, openDrawer, closeOverlay, confirmDialog } from "../modals.js";
-import { parseDirectives, renderLightMarkdown } from "../ai-directives.js";
-import { generateScript, discussScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, campaignSummaryLine } from "../ai.js";
+import { consumeNavContext, go } from "../nav-context.js";
+import { openModal, closeOverlay, confirmDialog } from "../modals.js";
+import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, campaignSummaryLine } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
 import { basisHTML } from "../brand-learning.js";
@@ -18,7 +18,7 @@ import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
 import { funnelFieldHTML, wireFunnelField, statusLabel } from "../funnel-field.js";
 import { setPageGuide } from "../section-guide.js";
-import { openWeekPlanMenu } from "../consultant-panel.js";
+import { openWeekPlanMenu, openScriptChat } from "../consultant-panel.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
 import { wireMic } from "../voice-input.js";
@@ -31,6 +31,10 @@ import { wireMic } from "../voice-input.js";
 // upload checkboxes, thumbnail) stay per record.
 const MIRROR_SHARED_FIELDS = ["title", "idea", "script", "caption", "cta", "reference", "notes", "funnel", "campaignId", "campaignPhaseId", "seriesId"];
 function updateContent(id, patch) {
+  // An idea that gets a script is being written now: "Ide" → "Naskah". It
+  // used to stay "Ide" however much was written, so Beranda's work-in-progress
+  // list (which reads Naskah/Syuting/Editing) never showed it.
+  if (typeof patch.script === "string" && patch.script.trim() && !patch.status && getContent(id)?.status === "idea") patch = { ...patch, status: "draft" };
   storeUpdateContent(id, patch);
   const item = getContent(id);
   if (!item?.mirrorGroupId) return;
@@ -525,9 +529,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         // the piece, like "Use script" would.
         let draft = text;
         el.querySelector(".discuss-script-btn")?.addEventListener("click", () =>
-          openScriptDiscussion({
-            brand,
+          openScriptChat({
             contentId: content.id,
+            title: content.title || "",
             getCurrent: () => ({ ...content, script: draft }),
             onRegenerate: (kind, guidance) => {
               overlay.querySelector("#ai-prompt").value = regenPrompt(content.idea, kind, guidance);
@@ -601,9 +605,10 @@ export function render(root, { brandId, initialContentId }) {
   state.startNewContent = (defaults = {}) =>
     openContentEditor({
       brandId,
+      stay: true,
       defaults: { status: "idea", ...defaults },
-      onSaved: () => {
-        const newest = [...listContent(brandId)].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+      onSaved: (made) => {
+        const newest = made || [...listContent(brandId)].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
         if (newest) state.selectedId = newest.id;
         refresh();
       },
@@ -704,7 +709,7 @@ function paint(root, brandId, state, refresh) {
         <h1>${t("contentOs.tab.creator")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
-      <div class="flex gap-8">
+      <div class="flex gap-8" style="flex-wrap:wrap;">
         <button class="btn btn-secondary" id="cr-week-plan" title="${t("chat.week.credit")}">${icon("sparkle", { size: 15 })}${t("chat.week.button")}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
       </div>
@@ -749,14 +754,14 @@ function paint(root, brandId, state, refresh) {
       const item = getContent(id);
       const ok = await confirmDialog({
         title: t("cr.delete.title", { title: escapeHtml(item?.title || t("common.untitled")) }),
-        message: t("common.noUndo"),
-        confirmLabel: t("common.delete"),
+        message: t("delete.toTrash.contentMessage", { days: TRASH_DAYS }),
+        confirmLabel: t("delete.toTrash.confirm"),
         danger: true,
       });
       if (!ok) return;
       deleteContent(id);
       if (state.selectedId === id) state.selectedId = null;
-      toast(t("cr.delete.done"));
+      toast(t("delete.toTrash.contentDone"));
       refresh();
     });
   });
@@ -856,6 +861,32 @@ function paint(root, brandId, state, refresh) {
     });
   }
 
+  qs("#f-status", root)?.addEventListener("change", (e) => {
+    const status = e.target.value;
+    const patch = { status };
+    if (status === "published" && !selected.publishedDate) patch.publishedDate = localISODate();
+    updateContent(selected.id, patch);
+    flashSaved();
+    refresh();
+  });
+  ["platform", "format"].forEach((key) => qs(`#f-${key}`, root)?.addEventListener("change", (e) => {
+    updateContent(selected.id, { [key]: e.target.value });
+    flashSaved();
+    refresh();
+  }));
+  qs("#f-published", root)?.addEventListener("change", (e) => {
+    updateContent(selected.id, { publishedDate: e.target.value });
+    flashSaved();
+  });
+  qs("#f-url", root)?.addEventListener("blur", (e) => {
+    const v = e.target.value.trim();
+    if (v === (selected.publishedUrl || "")) return;
+    updateContent(selected.id, { publishedUrl: v });
+    flashSaved();
+  });
+  qs("#cr-fill-performance", root)?.addEventListener("click", () => {
+    go(`#/brand/${brandId}/content/list`, { fromLabel: selected.title || t("common.untitled"), contentId: selected.id, intent: "performance" });
+  });
   qs("#f-campaign", root)?.addEventListener("change", (e) => {
     updateContent(selected.id, { campaignId: e.target.value, campaignPhaseId: "" });
     flashSaved();
@@ -932,9 +963,9 @@ function paint(root, brandId, state, refresh) {
   if (discussBtn) {
     discussBtn.addEventListener("click", () => {
       const contentId = selected.id;
-      openScriptDiscussion({
-        brand,
+      openScriptChat({
         contentId,
+        title: selected.title || "",
         getCurrent: () => ({
           ...(getContent(contentId) || selected),
           title: qs("#f-title", root)?.value ?? selected.title,
@@ -1044,18 +1075,16 @@ function paint(root, brandId, state, refresh) {
   const markUploadedDone = qs("#mark-uploaded-done", root);
   if (markUploadedDone) {
     markUploadedDone.addEventListener("click", () => {
-      const uploadedPlatforms = {
-        tiktok: !!qs("#uploaded-tiktok", root)?.checked,
-        instagram: !!qs("#uploaded-instagram", root)?.checked,
-      };
-      if (!uploadedPlatforms.tiktok && !uploadedPlatforms.instagram) {
+      const uploadedPlatforms = { ...(selected.uploadedPlatforms || {}) };
+      qsa("[data-uploaded]", root).forEach((cb) => { uploadedPlatforms[cb.dataset.uploaded] = cb.checked; });
+      if (!Object.values(uploadedPlatforms).some(Boolean)) {
         toast(t("cr.pickPlatform"), "error");
         return;
       }
       updateContent(selected.id, {
         uploadedPlatforms,
         status: "published",
-        publishedDate: selected.publishedDate || new Date().toISOString().slice(0, 10),
+        publishedDate: selected.publishedDate || localISODate(),
       });
       notify(t("cr.notify.published"), t("cr.notify.publishedBody", { title: selected.title || t("common.untitled") }));
     });
@@ -1092,7 +1121,7 @@ function paint(root, brandId, state, refresh) {
 // urgent piece is easy to spot.
 function dueBadge(c) {
   if (!c.scheduleDate) return "";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localISODate();
   if (c.scheduleDate < today) return `<span class="due-badge due-overdue">${t("cr.due.overdue")}</span>`;
   if (c.scheduleDate === today) return `<span class="due-badge due-today">${t("cr.due.today")}</span>`;
   return `<span class="due-badge due-soon">${t("cr.due.on", { date: formatDate(c.scheduleDate) })}</span>`;
@@ -1148,16 +1177,6 @@ function groupedSidebarHTML(items, selectedId, collapsedGroups, expandedGroups =
     .join("");
 }
 
-// Deleting is only offered on undrafted-anywhere-else stuff (idea/draft) —
-// once a piece has moved into production/editing/scheduled/published, it
-// likely has real work (shots, edits, a real publish) riding on it, so
-// removing it stays a content-list-only action (js/views/content-list.js's
-// row menu, which also has Archive) rather than a one-click trash icon
-// right in Creator's own sidebar.
-// "Diskusi dengan AI" — a saved chat (brainstorms/ doc, mode "script", one per
-// content) beside the script. The AI can only *suggest*: a rewrite arrives as
-// a revision card, and nothing touches the script until "Apply" is pressed.
-const DISC_HISTORY = 12;
 // The prompt for a regenerate that follows a discussion: the piece's own idea
 // plus what the chat concluded, so the new script/hooks follow it.
 function regenPrompt(idea, kind, guidance) {
@@ -1168,187 +1187,6 @@ function regenPrompt(idea, kind, guidance) {
   ].filter(Boolean).join("\n\n");
 }
 
-function openScriptDiscussion({ brand, contentId, getCurrent, applyRevision, onRegenerate }) {
-  const ai = getSettings().ai || { provider: "anthropic" };
-  if (!hasAiKey(ai)) {
-    toast(t("cr.ai.needKey"), "error");
-    return;
-  }
-  const threadId = `script-${contentId}`;
-  if (!getBrainstorm(threadId)) createBrainstorm(brand.id, { id: threadId, mode: "script", contentId, title: getCurrent().title || "" });
-  // Previous text per applied revision, so "Undo" works within this session.
-  const undo = new Map();
-  let busy = false;
-  const chips = ["critique", "hook", "angle", "shorter", "brand"];
-
-  const revCards = (m) =>
-    (m.blocks?.revisions || [])
-      .map((r, i) => {
-        const key = `${m.id}:${i}`;
-        const action = r.applied
-          ? undo.has(key)
-            ? `<button type="button" class="btn btn-ghost btn-sm" data-disc-undo="${key}">${t("cr.disc.undo")}</button>`
-            : `<span class="text-faint" style="font-size:12px;">${icon("check", { size: 12 })} ${t("cr.disc.applied")}</span>`
-          : `<button type="button" class="btn btn-primary btn-sm" data-disc-apply="${key}">${r.target === "caption" ? t("cr.disc.applyCaption") : t("cr.disc.applyScript")}</button>`;
-        return `<div class="disc-rev">
-          <div class="page-eyebrow" style="margin-bottom:6px;font-size:11px;">${r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript")}</div>
-          <div class="disc-rev-text">${escapeHtml(r.text)}</div>
-          <div style="margin-top:8px;">${action}</div>
-        </div>`;
-      })
-      .join("");
-  const lastAssistantId = () => {
-    const msgs = getBrainstorm(threadId)?.messages || [];
-    const last = msgs[msgs.length - 1];
-    return last?.role === "assistant" && last.text ? last.id : null;
-  };
-  // Right under the newest reply: the way out of the chat — start a fresh
-  // script or hooks that follow what was just discussed.
-  const regenRow = () => `<div class="disc-regen">
-      <button type="button" class="btn btn-primary btn-sm" data-disc-regen="script">${icon("refresh", { size: 12 })}${t("cr.disc.regenScript")}</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-disc-regen="hook">${icon("refresh", { size: 12 })}${t("cr.disc.regenHook")}</button>
-    </div>`;
-  const msgHTML = (m) =>
-    m.role === "user"
-      ? `<div class="consultant-msg consultant-msg-user">${escapeHtml(m.text)}</div>`
-      : `<div class="consultant-msg consultant-msg-assistant" data-disc-msg="${m.id}">${m.text ? renderLightMarkdown(m.text) : ""}${revCards(m)}${m.id === lastAssistantId() ? regenRow() : ""}<div class="disc-fb" data-disc-fb="${m.id}"></div></div>`;
-
-  const overlay = openDrawer({
-    title: `${t("cr.disc.title")}<button type="button" class="icon-btn" id="disc-clear" style="margin-left:8px;" aria-label="${escapeHtml(t("cr.disc.clear"))}" title="${escapeHtml(t("cr.disc.clear"))}">${icon("trash", { size: 14 })}</button>`,
-    bodyHTML: `<div class="disc-msgs" id="disc-msgs"></div>`,
-    footHTML: `<div style="width:100%;">
-      <div class="consultant-starters disc-chips" id="disc-chips">${chips.map((k) => `<button type="button" class="consultant-starter" data-disc-chip="${k}">${t(`cr.disc.chip.${k}`)}</button>`).join("")}</div>
-      <div style="display:flex;gap:8px;align-items:flex-end;">
-        <textarea id="disc-input" rows="2" placeholder="${escapeHtml(t("cr.disc.placeholder"))}" style="flex:1;resize:none;"></textarea>
-        <button type="button" class="btn btn-primary" id="disc-send">${t("cr.disc.send")}</button>
-      </div>
-      <p class="text-faint" style="font-size:11px;margin:6px 0 0;">${t("cr.disc.cost")}</p></div>`,
-  });
-  const msgsEl = overlay.querySelector("#disc-msgs");
-  const input = overlay.querySelector("#disc-input");
-  const sendBtn = overlay.querySelector("#disc-send");
-  const scrollDown = () => (msgsEl.parentElement.scrollTop = msgsEl.parentElement.scrollHeight);
-
-  function render(pendingHTML = "") {
-    const msgs = getBrainstorm(threadId)?.messages || [];
-    // Quick chips are for getting started; once talking, the regenerate row
-    // under the newest reply is the next step, so they step aside.
-    overlay.querySelector("#disc-chips").hidden = msgs.length > 0;
-    msgsEl.innerHTML =
-      (msgs.length ? "" : `<div class="consultant-msg consultant-msg-assistant">${escapeHtml(t("cr.disc.intro"))}</div>`) +
-      msgs.map(msgHTML).join("") +
-      (pendingHTML ? `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending" id="disc-pending">${pendingHTML}</div>` : "");
-    const last = msgs[msgs.length - 1];
-    if (last?.role === "assistant" && !last.rated && last.text) {
-      const slot = msgsEl.querySelector(`[data-disc-fb="${last.id}"]`);
-      const prev = msgs[msgs.length - 2];
-      if (slot) mountAiFeedback(slot, { brandId: brand.id, feature: "creator-discuss", prompt: prev?.text || "", output: last.text, onRated: () => updateBrainstormMessage(threadId, last.id, { rated: true }) });
-    }
-    scrollDown();
-  }
-
-  async function send(raw) {
-    const text = (raw || "").trim();
-    if (!text || busy) return;
-    busy = true;
-    sendBtn.disabled = true;
-    input.value = "";
-    const history = (getBrainstorm(threadId)?.messages || []).slice(-DISC_HISTORY);
-    appendBrainstormMessage(threadId, { role: "user", text });
-    render("…");
-    try {
-      const freshBrand = getBrand(brand.id) || brand;
-      const campaigns = listCampaigns(brand.id);
-      const cur = getCurrent();
-      const reply = await discussScript(ai, {
-        brand: freshBrand,
-        campaigns,
-        pulseText: pulseTextFor(freshBrand, { content: listContent(brand.id), campaigns, settings: getSettings() }),
-        content: cur,
-        series: cur.seriesId ? getSeries(cur.seriesId) : null,
-        history,
-        message: text,
-        onText: (soFar) => {
-          const el = msgsEl.querySelector("#disc-pending");
-          if (el) el.innerHTML = renderLightMarkdown(parseDirectives(soFar).cleanText) || "…";
-          scrollDown();
-        },
-      });
-      const parsed = parseDirectives(reply);
-      appendBrainstormMessage(threadId, {
-        role: "assistant",
-        text: parsed.cleanText,
-        blocks: parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : null,
-      });
-    } catch (e) {
-      toast(e instanceof AiApiError ? e.message : t("cr.disc.fail"), "error");
-    } finally {
-      busy = false;
-      sendBtn.disabled = false;
-      render();
-    }
-  }
-
-  const setApplied = (msgId, index, applied) => {
-    const m = (getBrainstorm(threadId)?.messages || []).find((x) => x.id === msgId);
-    if (!m?.blocks?.revisions) return null;
-    const revisions = m.blocks.revisions.map((r, i) => (i === index ? { ...r, applied } : r));
-    updateBrainstormMessage(threadId, msgId, { blocks: { ...m.blocks, revisions } });
-    return m.blocks.revisions[index];
-  };
-  msgsEl.addEventListener("click", (e) => {
-    const applyBtn = e.target.closest("[data-disc-apply]");
-    const undoBtn = e.target.closest("[data-disc-undo]");
-    const regenBtn = e.target.closest("[data-disc-regen]");
-    if (regenBtn) {
-      // Guidance = the owner's last ask + the AI's newest reply, trimmed.
-      const msgs = (getBrainstorm(threadId)?.messages || []).filter((x) => x.text);
-      const guidance = msgs.slice(-2).map((x) => `${x.role === "user" ? "Owner" : "AI"}: ${x.text}`).join("\n").slice(0, 900);
-      closeOverlay(overlay);
-      onRegenerate?.(regenBtn.dataset.discRegen, guidance);
-    } else if (applyBtn) {
-      const [msgId, idx] = applyBtn.dataset.discApply.split(":");
-      const rev = setApplied(msgId, Number(idx), true);
-      if (!rev) return;
-      undo.set(applyBtn.dataset.discApply, getCurrent()[rev.target] || "");
-      applyRevision(rev.target, rev.text);
-      toast(t("cr.disc.appliedToast"));
-      render();
-    } else if (undoBtn) {
-      const key = undoBtn.dataset.discUndo;
-      const [msgId, idx] = key.split(":");
-      const rev = setApplied(msgId, Number(idx), false);
-      if (!rev) return;
-      applyRevision(rev.target, undo.get(key) ?? "");
-      undo.delete(key);
-      toast(t("cr.disc.undone"));
-      render();
-    } else {
-      const starter = e.target.closest("[data-disc-starter]");
-      if (starter) send(starter.dataset.discStarter);
-    }
-  });
-  overlay.querySelector("#disc-clear").addEventListener("click", async () => {
-    if (!(getBrainstorm(threadId)?.messages || []).length) return;
-    const ok = await confirmDialog({ title: t("cr.disc.clearTitle"), message: t("cr.disc.clearBody"), confirmLabel: t("cr.disc.clear"), danger: true });
-    if (!ok) return;
-    deleteBrainstorm(threadId);
-    createBrainstorm(brand.id, { id: threadId, mode: "script", contentId, title: getCurrent().title || "" });
-    undo.clear();
-    render();
-  });
-  overlay.querySelectorAll("[data-disc-chip]").forEach((b) => b.addEventListener("click", () => send(b.textContent)));
-  sendBtn.addEventListener("click", () => send(input.value));
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send(input.value);
-    }
-  });
-  render();
-  input.focus();
-}
-
 // Two tiny "is it filled in?" marks — Script and Caption — lit when there's
 // real text, dimmed when empty, so the sidebar shows what a piece still needs.
 function fillMarks(c) {
@@ -1357,6 +1195,12 @@ function fillMarks(c) {
   return `<span class="fill-marks">${mark("edit", !!(c.script || "").trim(), t("cr.fill.script"))}${mark("chat", !!(c.caption || "").trim(), t("cr.fill.caption"))}</span>`;
 }
 
+// Deleting is only offered on undrafted-anywhere-else stuff (idea/draft) —
+// once a piece has moved into production/editing/scheduled/published, it
+// likely has real work (shots, edits, a real publish) riding on it, so
+// removing it stays a content-list-only action (js/views/content-list.js's
+// row menu, which also has Archive) rather than a one-click trash icon
+// right in Creator's own sidebar.
 function sidebarRow(c, active) {
   const deletable = c.status === "idea" || c.status === "draft";
   return `
@@ -1365,8 +1209,8 @@ function sidebarRow(c, active) {
       <div class="ti">
         <div class="t">${escapeHtml(c.title || t("common.untitled"))}</div>
         <div class="m">${c.platform || "—"} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
+        ${c.scheduleDate ? `<div class="creator-item-due">${dueBadge(c)}</div>` : ""}
       </div>
-      ${dueBadge(c)}
       ${
         deletable
           ? `<button type="button" class="icon-btn creator-item-delete" data-delete-content="${c.id}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 13 })}</button>`
@@ -1426,9 +1270,13 @@ function mainPanel(c, campaigns, series) {
 function campaignFieldHTML(c, campaigns) {
   const campaign = campaigns.find((camp) => camp.id === c.campaignId);
   const guided = getMode() === "guided";
-  // Mission-ladder campaigns count every piece automatically — no phase to
-  // pick, so the second select is only for phase-based campaigns.
-  const showPhase = campaign && !campaign.autoLinkAllContent && campaign.phases?.length;
+  // Only old phase-based campaigns have phases to pick. Level (Grow Brand)
+  // and Event campaigns move through their stages by themselves — they
+  // still carry the generic 7-phase list from creation, which used to show
+  // up here as choices that meant nothing for them — so they get a line
+  // saying which stage they're in instead.
+  const showPhase = campaignHasOwnPhases(campaign);
+  const autoStage = campaign && !showPhase ? currentStageName(campaign) : "";
   return `
     <div class="field">
       <label>${guided ? t("cr.campaign.guidedLabel") : t("cr.campaign.label")}</label>
@@ -1442,10 +1290,16 @@ function campaignFieldHTML(c, campaigns) {
                <option value="">${guided ? t("cr.phase.guided") : t("cr.phase.none")}</option>
                ${campaign.phases.map((p) => `<option value="${p.id}" ${c.campaignPhaseId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
              </select>`
-          : ""
+          : autoStage ? `<p class="text-faint" style="font-size:12px;margin:6px 0 0;">${t("cr.phase.auto", { stage: escapeHtml(autoStage) })}</p>` : ""
       }
     </div>
   `;
+}
+
+function currentStageName(campaign) {
+  const stages = campaignStages(campaign);
+  if (!stages.length) return "";
+  return stages[activeStageIndex(campaign, stages, listContent(campaign.brandId))]?.name || "";
 }
 
 // Recurring Content Series link — optional, sits right under Campaign since
@@ -1506,13 +1360,75 @@ function funnelGoalFieldHTML(c) {
   `;
 }
 
+// Creator is the one place a piece is edited (the old side drawer now
+// only creates new pieces). So everything the drawer used to hold lives
+// here too: status (any direction — the stage buttons only ever move one
+// step), platform, format, and the date it goes out.
+function statusSelectHTML(c) {
+  const guided = getMode() === "guided";
+  return `<label class="cr-status-select" title="${escapeHtml(guided ? t("cnt.editor.guidedStatusLabel") : t("contentEditor.status.label"))}">
+      <span class="status-dot status-${c.status}"></span>
+      <select class="select" id="f-status" aria-label="${escapeHtml(t("contentEditor.status.label"))}">
+        ${STATUSES.filter((s) => s !== "archived").map((s) => `<option value="${s}" ${c.status === s ? "selected" : ""}>${escapeHtml(statusLabel(s, STATUS_LABELS))}</option>`).join("")}
+      </select>
+    </label>`;
+}
+function withCurrent(list, current) {
+  const names = list.map((x) => x.name);
+  return current && !names.includes(current) ? [current, ...names] : names;
+}
+function channelFieldsHTML(c) {
+  const settings = getSettings();
+  const opt = (v, cur) => `<option value="${escapeHtml(v)}" ${v === cur ? "selected" : ""}>${escapeHtml(v)}</option>`;
+  return `
+    <div class="row-2">
+      <div class="field">
+        <label>${t("contentEditor.platform.label")}</label>
+        <select class="select" id="f-platform">${c.platform ? "" : `<option value="">—</option>`}${withCurrent(settings.platforms || [], c.platform).map((v) => opt(v, c.platform)).join("")}</select>
+      </div>
+      <div class="field">
+        <label>${t("contentEditor.format.label")}</label>
+        <select class="select" id="f-format">${c.format ? "" : `<option value="">—</option>`}${withCurrent(settings.formats || [], c.format).map((v) => opt(v, c.format)).join("")}</select>
+      </div>
+    </div>
+    ${c.status === "published" ? "" : `<div class="field">
+      <label>${t("contentEditor.scheduleDate.label")}</label>
+      <input class="input" type="date" id="f-schedule" value="${c.scheduleDate || ""}" min="${localISODate()}" />
+    </div>`}`;
+}
+// After "Selesai": the piece is out — what's left is where it went and how
+// it did. The link and the numbers used to live only in the side drawer and
+// Daftar Konten, with nothing here pointing at them.
+function publishedCardHTML(c) {
+  const p = c.performance || {};
+  const has = ["views", "likes", "comments", "shares", "saves"].some((k) => p[k] !== null && p[k] !== undefined && p[k] !== "");
+  return `
+    <div class="card dark-surface card-tight cr-published">
+      <div class="cr-published-head">${icon("check", { size: 14 })}<b>${t("cr.pub.title")}</b>${c.publishedDate ? `<span class="text-faint">${escapeHtml(formatDate(c.publishedDate))}</span>` : ""}</div>
+      <div class="row-2">
+        <div class="field" style="margin-bottom:0;">
+          <label>${t("contentEditor.publishedDate.label")}</label>
+          <input class="input" type="date" id="f-published" value="${c.publishedDate || ""}" />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>${t("cr.pub.link")}</label>
+          <input class="input" id="f-url" placeholder="https://..." value="${escapeHtml(c.publishedUrl || "")}" />
+        </div>
+      </div>
+      <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:12px;">
+        <button type="button" class="btn ${has ? "btn-secondary" : "btn-primary"} btn-sm" id="cr-fill-performance">${icon("chart", { size: 13 })}${has ? t("cr.pub.updatePerf") : t("cr.pub.fillPerf")}</button>
+        <span class="text-faint" style="font-size:12px;">${has ? t("cr.pub.perfSummary", { views: formatNumber(p.views ?? 0), likes: formatNumber(p.likes ?? 0), comments: formatNumber(p.comments ?? 0) }) : t("cr.pub.perfHint")}</span>
+      </div>
+    </div>`;
+}
+
 function phaseHead(c) {
   const back = PREV_STATUS[c.status]
     ? `<button type="button" class="btn btn-ghost btn-sm" id="stage-back">${icon("chevronLeft", { size: 13 })}${t("common.backTo", { label: statusLabel(PREV_STATUS[c.status], STATUS_LABELS) })}</button>`
     : "";
   return `
     <div class="creator-field-head" style="margin-bottom:18px;">
-      <span class="status-pill status-${c.status}"><span class="status-dot"></span>${statusLabel(c.status, STATUS_LABELS)}</span>
+      ${statusSelectHTML(c)}
       ${back}
     </div>
   `;
@@ -1568,6 +1484,19 @@ function editingPanel(c) {
   `;
 }
 
+// Every platform the account works with (Pengaturan → Platform), plus this
+// piece's own platform if it isn't on that list (Copy Studio saves Threads /
+// WhatsApp pieces) and anything already ticked — so a YouTube or Facebook
+// post can be marked published without a false TikTok/Instagram tick.
+function uploadPlatformOptions(c) {
+  const out = new Map();
+  const add = (id, name) => { const key = String(id || "").toLowerCase().trim(); if (key && !out.has(key)) out.set(key, name || id); };
+  if (c.platform) add(c.platform, c.platform);
+  (getSettings().platforms || []).forEach((p) => add(p.id || p.name, p.name));
+  Object.keys(c.uploadedPlatforms || {}).forEach((k) => add(k, k === "tiktok" ? "TikTok" : k.charAt(0).toUpperCase() + k.slice(1)));
+  return [...out].map(([id, name]) => ({ id, name }));
+}
+
 function readyToUploadPanel(c) {
   const up = c.uploadedPlatforms || {};
   return `
@@ -1598,8 +1527,7 @@ function readyToUploadPanel(c) {
       <div class="field" style="margin-bottom:8px;">
         <label>${t("cr.uploadedWhere")}</label>
         <div class="flex gap-8" style="flex-wrap:wrap;">
-          <label class="checkbox-chip"><input type="checkbox" id="uploaded-tiktok" ${up.tiktok ? "checked" : ""} />${platformIcon("tiktok")}${t("cr.onTiktok")}</label>
-          <label class="checkbox-chip"><input type="checkbox" id="uploaded-instagram" ${up.instagram ? "checked" : ""} />${platformIcon("instagram")}${t("cr.onInstagram")}</label>
+          ${uploadPlatformOptions(c).map((p) => `<label class="checkbox-chip"><input type="checkbox" data-uploaded="${escapeHtml(p.id)}" ${up[p.id] ? "checked" : ""} />${platformIcon(p.id)}${t("cr.onPlatform", { name: escapeHtml(p.name) })}</label>`).join("")}
         </div>
       </div>
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-uploaded-done">${icon("check", { size: 20 })}${t("cr.done")}</button>
@@ -1703,10 +1631,7 @@ function slidesReadHTML(script) {
 }
 
 function draftingPanel(c, campaigns, series = []) {
-  const publishedNote =
-    c.status === "published"
-      ? `<div class="hint" style="margin:0 0 16px;">${icon("info", { size: 12 })} ${t("cr.publishedNote")}</div>`
-      : "";
+  const publishedNote = c.status === "published" ? publishedCardHTML(c) : "";
   return `
     <div class="card glass-card">
       <div class="cr-ai-row">
@@ -1716,7 +1641,7 @@ function draftingPanel(c, campaigns, series = []) {
       <p class="text-faint" style="font-size:11.5px;text-align:center;margin:6px 0 16px;">${icon("arrowUp", { size: 10 })} ${t("cr.aiAllHint")}</p>
 
       <div class="creator-field-head" style="margin-bottom:18px;">
-        <span class="status-pill status-${c.status}"><span class="status-dot"></span>${statusLabel(c.status, STATUS_LABELS)}</span>
+        ${statusSelectHTML(c)}
         <div class="flex items-center gap-8">
           <span class="save-indicator" id="save-indicator">${t("cr.saved")}</span>
           <button class="btn btn-ghost btn-sm" id="download-script-pdf">${icon("download", { size: 13 })}${t("cr.pdf.download")}</button>
@@ -1730,8 +1655,9 @@ function draftingPanel(c, campaigns, series = []) {
       </div>
       <div class="field">
         <label>${t("cr.f.idea")}</label>
-        <textarea class="textarea" id="f-idea" style="min-height:60px;" placeholder="${t("cr.f.ideaPh")}">${c.idea || ""}</textarea>
+        <textarea class="textarea" id="f-idea" style="min-height:60px;" placeholder="${t("cr.f.ideaPh")}">${escapeHtml(c.idea || "")}</textarea>
       </div>
+      ${channelFieldsHTML(c)}
       ${campaignFunnelFieldsHTML(c, campaigns, series)}
       ${isCarouselContent(c) ? slidesFieldHTML(c) : `<div class="field">
         <div class="creator-field-head">
@@ -1740,14 +1666,14 @@ function draftingPanel(c, campaigns, series = []) {
             <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
           </div>
         </div>
-        <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}">${c.script || ""}</textarea>
+        <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}">${escapeHtml(c.script || "")}</textarea>
       </div>`}
       <div class="field">
         <div class="creator-field-head">
           <label style="margin-bottom:0;">${t("cr.f.caption")}</label>
           <button type="button" class="chip-icon-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}</button>
         </div>
-        <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${c.caption || ""}</textarea>
+        <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
@@ -1761,7 +1687,7 @@ function draftingPanel(c, campaigns, series = []) {
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>${t("cr.f.notes")}</label>
-        <textarea class="textarea" id="f-notes" style="min-height:60px;">${c.notes || ""}</textarea>
+        <textarea class="textarea" id="f-notes" style="min-height:60px;">${escapeHtml(c.notes || "")}</textarea>
       </div>
       ${stageProgressHTML(c)}
     </div>

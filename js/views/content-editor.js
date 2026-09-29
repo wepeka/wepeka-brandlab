@@ -1,4 +1,4 @@
-import { getContent, createContent, updateContent, getSettings, getBrand, localISODate, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, listSeries, STATUSES, STATUS_LABELS } from "../store.js";
+import { getContent, createContent, updateContent, getSettings, getBrand, localISODate, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, listSeries, STATUSES, STATUS_LABELS, campaignHasOwnPhases } from "../store.js";
 import { icon } from "../icons.js";
 import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, escapeHtml, qs, qsa, formatNumber } from "../dom.js";
@@ -8,13 +8,19 @@ import { t } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { funnelFieldHTML, wireFunnelField, setFunnelFieldValue, statusLabel } from "../funnel-field.js";
 
-// The content drawer: what a piece IS (title, idea, platform, campaign,
-// goal) and WHEN it goes out (status, dates, link). Only the title is
-// required. Writing the piece (script, caption, thumbnail) happens in
-// Creator Studio; filling in how it performed happens in Quick Fill on the
-// content list — this drawer never touches either, so nothing is edited
-// from two places at once.
-export function openContentEditor({ brandId, contentId = null, defaults = {}, onSaved }) {
+// The "Konten baru" drawer: what a new piece IS (title, idea, platform,
+// campaign, goal) and WHEN it goes out. Only the title is required.
+// It only CREATES now. An existing piece is always edited in Creator (the
+// one editor: status, platform, format, dates, link, script, caption) — the
+// drawer used to be a second editor for the same fields, and it silently
+// stamped the first platform/format onto pieces whose own weren't in the
+// list. `stay`: keep the current screen after creating (Calendar, Creator);
+// everyone else lands in Creator on the new piece.
+export function openContentEditor({ brandId, contentId = null, defaults = {}, onSaved, stay = false }) {
+  if (contentId) {
+    location.hash = `#/brand/${brandId}/content/creator/${contentId}`;
+    return null;
+  }
   const settings = getSettings();
   const existing = contentId ? getContent(contentId) : null;
   const draft = existing
@@ -52,7 +58,7 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
         <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}${t("contentEditor.save")}</button>
       </div>
     `,
-    onMount: (el) => wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns),
+    onMount: (el) => wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns, stay),
   });
 
   const markDirty = (e) => { if (e.isTrusted) dirty = true; };
@@ -195,8 +201,9 @@ function attr(v) {
 // phase from a different campaign.
 function phaseSelectHTML(campaigns, draft) {
   const campaign = campaigns.find((c) => c.id === draft.campaignId);
-  // Mission-ladder campaigns count every piece automatically — no phase to pick.
-  if (!campaign || campaign.autoLinkAllContent || !campaign.phases?.length) return "";
+  // Level and Event campaigns move through their stages by themselves — no
+  // phase to pick (see campaignHasOwnPhases).
+  if (!campaignHasOwnPhases(campaign)) return "";
   return `
     <select class="select" id="f-phase" style="margin-top:8px;">
       <option value="">${t("contentEditor.phase.none")}</option>
@@ -209,7 +216,7 @@ function quickPickActive(draft, combo) {
   return !!combo && draft.platform === combo.platform && draft.format === combo.format;
 }
 
-function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns) {
+function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns, stay = false) {
   // tabs
   qsa(".editor-tab", el).forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -407,8 +414,12 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
       updateContent(contentId, patch);
       toast(t("contentEditor.updated"));
     } else {
-      createContent(brandId, { ...draft, ...patch });
+      const made = createContent(brandId, { ...draft, ...patch });
       toast(t("contentEditor.created"));
+      closeOverlay(el.closest(".overlay"));
+      onSaved?.(made);
+      if (!stay && made?.id) location.hash = `#/brand/${brandId}/content/creator/${made.id}`;
+      return;
     }
     closeOverlay(el.closest(".overlay"));
     onSaved?.();

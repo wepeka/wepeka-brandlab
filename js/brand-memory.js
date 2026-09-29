@@ -10,7 +10,7 @@
 // bits: the recap validator and the "Memori Brand" modal the chat, the Home
 // card and Creator all open, so there is exactly one place to see and
 // delete what AI keeps reading.
-import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS } from "./store.js";
+import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS, localISODate } from "./store.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { formatDate, escapeHtml as esc, toast, qsa } from "./dom.js";
 import { icon } from "./icons.js";
@@ -158,7 +158,7 @@ export function openBrandMemoryModal(brandId, { refresh = () => {} } = {}) {
                 <div style="min-width:0;flex:1;">
                   <span class="tag" style="margin-right:6px;">${sourceTag(e)}</span>
                   <span class="companion-moment-text" style="white-space:normal;">${esc(e.title || "")}${e.source === "moment" && e.detail ? `<span class="text-muted"> — ${esc(e.detail)}</span>` : ""}</span>
-                  <div class="text-faint" style="font-size:11px;margin-top:2px;">${esc(formatDate(new Date(e.at).toISOString().slice(0, 10)))}</div>
+                  <div class="text-faint" style="font-size:11px;margin-top:2px;">${esc(formatDate(localISODate(new Date(e.at))))}</div>
                 </div>
                 <button type="button" class="icon-btn" data-memory-delete="${e.id}" aria-label="${t("common.delete")}" style="width:28px;height:28px;flex:none;">${icon("trash", { size: 13 })}</button>
               </div>`

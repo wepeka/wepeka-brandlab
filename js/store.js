@@ -888,12 +888,37 @@ export function listBrandIdeas(brandId, { campaignId = null } = {}) {
 // completed | archived.
 export const GOALS_CAP = 20;
 export const GOAL_STATUSES = ["draft", "installing", "partial", "active", "completed", "archived"];
+
+// The last day a goal still asks anything of the owner: the end of its last
+// phase (post-event included), else the event date itself.
+export function goalEndDate(goal) {
+  const ends = (goal?.roadmap?.eventPhases || []).map((p) => p.dateTo).filter(Boolean).sort();
+  return ends[ends.length - 1] || goal?.targetDate || "";
+}
+// What a goal's status really is today. Nobody had to press "Tandai selesai"
+// for an event that is over: once its last phase has passed, a running plan
+// reads as completed, and a draft that was never installed as archived — so
+// neither keeps Pemula's one-plan-at-a-time lock shut or sits on Home. Only
+// derived, never written, so a plan whose date gets moved later comes back.
+export function effectiveGoalStatus(goal, today = localISODate()) {
+  const s = goal?.status;
+  if (!goal || s === "completed" || s === "archived") return s;
+  const end = goalEndDate(goal);
+  if (!end || end >= today) return s;
+  return s === "draft" ? "archived" : "completed";
+}
+function withEffectiveStatus(g, today) {
+  const s = effectiveGoalStatus(g, today);
+  return s === g.status ? g : { ...g, status: s, autoStatus: true };
+}
 export function listGoals(brandId, { includeArchived = false } = {}) {
   const b = getBrand(brandId);
-  return (b?.goals || []).filter((g) => includeArchived || g.status !== "archived").sort((a, b2) => (a.targetDate || "").localeCompare(b2.targetDate || ""));
+  const today = localISODate();
+  return (b?.goals || []).map((g) => withEffectiveStatus(g, today)).filter((g) => includeArchived || g.status !== "archived").sort((a, b2) => (a.targetDate || "").localeCompare(b2.targetDate || ""));
 }
 export function getGoal(brandId, id) {
-  return (getBrand(brandId)?.goals || []).find((g) => g.id === id) || null;
+  const g = (getBrand(brandId)?.goals || []).find((x) => x.id === id);
+  return g ? withEffectiveStatus(g, localISODate()) : null;
 }
 export function createGoal(brandId, data = {}) {
   const b = getBrand(brandId);
@@ -1291,6 +1316,12 @@ function emptyCampaign(brandId) {
 // feature existed (or saved through a path that skipped it) — no
 // migration script, they just get the default template phases merged in
 // the moment they're read, same pattern as brand.brandDNA above.
+// Whether a campaign's content is sorted into phases the owner picks. Only
+// the old phase-based campaigns: Grow Brand levels (missions) and Event
+// windows (eventPlan) advance on their own and ignore campaignPhaseId.
+export function campaignHasOwnPhases(campaign) {
+  return !!campaign && !campaign.autoLinkAllContent && !!campaign.phases?.length && !campaign.missions?.length && !campaign.eventPlan;
+}
 export function listCampaigns(brandId, { includeDeleted = false } = {}) {
   return (db.campaigns || [])
     .filter((c) => c.brandId === brandId && (includeDeleted || notDeleted(c)))
@@ -1341,9 +1372,8 @@ export function campaignPhaseContentCounts(campaign, content) {
 //
 // One shared description per label instead of repeating it at every level a
 // metric appears in (the same "Followers"/"Shares"/etc. milestone recurs
-// across all 5 levels of a ladder, and again across ladders) — looked up by
-// createMissionsForTemplate, shown as the tree node's hover tooltip and as
-// a caption under its row in the milestone list.
+// across all 5 levels of a ladder, and again across ladders) — shown as the
+// tree node's hover tooltip and as a caption under its row in the list.
 // Labels and descriptions live in js/i18n/campaigns.js ("store.ms.*" /
 // "store.msd.*"); the dictionary's `id` text is the canonical label the
 // templates below write into Firestore.
@@ -1354,10 +1384,6 @@ Object.keys(CAMPAIGN_DICT).forEach((k) => {
   MS_LABEL_KEYS.set(CAMPAIGN_DICT[k].id, suffix);
   if (!MS_LABEL_KEYS.has(CAMPAIGN_DICT[k].en)) MS_LABEL_KEYS.set(CAMPAIGN_DICT[k].en, suffix);
 });
-function milestoneDescriptionSource(label) {
-  const k = MS_LABEL_KEYS.get(label);
-  return (k && CAMPAIGN_DICT[`store.msd.${k}`]?.id) || "";
-}
 
 // ---------- Display-time localisation of stored template text ----------
 // Templates are copied into Firestore when a campaign is created, so stored
@@ -1365,9 +1391,19 @@ function milestoneDescriptionSource(label) {
 // Indonesian, level and phase names in English). These map that text back to
 // its i18n key when painting, so old and new campaigns both render in the
 // current language. Anything not from a template (user-typed) passes through.
-export function milestoneLabel(label) {
+// Template labels keep a literal "X" where the number goes ("Minimal X
+// konten promosi terbit") — the target itself is stored next to it. Pass the
+// target and the X becomes the number; without one (a removed-milestone chip)
+// the X is dropped so nobody reads a raw placeholder.
+export function milestoneLabel(label, target) {
   const k = MS_LABEL_KEYS.get(label);
-  return k ? t(`store.ms.${k}`) : label;
+  const text = k ? t(`store.ms.${k}`) : label;
+  if (!k || !/\bX\b/.test(text)) return text;
+  const n = Number(target);
+  if (target !== null && target !== undefined && target !== "" && Number.isFinite(n)) {
+    return text.replace(/\bX\b/g, n.toLocaleString(getLang() === "en" ? "en-US" : "id-ID"));
+  }
+  return text.replace(/\bX%?\s+/g, "").replace(/\s{2,}/g, " ").trim();
 }
 export function milestoneDescription(label, fallback = "") {
   const k = MS_LABEL_KEYS.get(label);
@@ -1432,281 +1468,6 @@ export function missionProgressionNote(campaign) {
   // literal note set at creation (js/goal-plan.js).
   if (k.startsWith("gb") && campaign.goalPlan?.version !== 3) return t("goal.rules");
   return campaign.missionProgressionNote;
-}
-
-export const MISSION_LADDERS = {
-  "grow-social": {
-    // No time limit and no explicit per-content linking — every piece of
-    // content the brand publishes counts toward this ladder automatically
-    // (see milestoneStatus's autoLinkAllContent branch). The calibration
-    // question asks directly whether this ground has already been covered
-    // — not a proxy like "how many followers do you have" (that only
-    // speaks to one of sixteen milestones) — and lets the user jump to a
-    // specific mission if so, while still steering them toward starting
-    // at Level 1 by default.
-    autoLinkAllContent: true,
-    calibration: {
-      question: t("store.ladder.growSocial.question"),
-      skipNote: t("store.ladder.skipNote"),
-    },
-    // The framework itself: numbers are cumulative (total to date, not a
-    // monthly delta) but quality/consistency must hold throughout — a viral
-    // spike or bought engagement can't be used to skip a level.
-    progressionNote: t("store.ladder.growSocial.progression"),
-    missions: () => [
-      {
-        name: "Get Discovered", description: t("store.mission.gs1.desc"), tagline: t("store.mission.gs1.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 1000, unit: "followers", highlight: true },
-          { kind: "auto", label: "Konten orisinal terbit", target: 50, unit: "konten", highlight: true },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 8, unit: "minggu" },
-          { kind: "number", label: "Shares", target: 150, unit: "share" },
-          { kind: "number", label: "Saves", target: 150, unit: "save" },
-          { kind: "number", label: "DM bermakna", target: 50, unit: "DM" },
-          { kind: "auto-er-count", label: "Video dengan engagement rate di atas 10%", target: 5, unit: "video", threshold: 10 },
-          { kind: "check", label: "Engagement rate sehat dibanding rata-rata platform", highlight: true },
-        ],
-      },
-      {
-        name: "Build Trust", description: t("store.mission.gs2.desc"), tagline: t("store.mission.gs2.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 3000, unit: "followers", highlight: true },
-          { kind: "auto", label: "Konten kumulatif", target: 100, unit: "konten", highlight: true },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 12, unit: "minggu" },
-          { kind: "number", label: "Shares", target: 500, unit: "share" },
-          { kind: "number", label: "Saves", target: 500, unit: "save" },
-          { kind: "number", label: "DM bermakna", target: 150, unit: "DM" },
-          { kind: "number", label: "Orang yang balik lagi engage (recurring engagers)", target: 100, unit: "orang" },
-          { kind: "number", label: "Post yang tampil di atas rata-rata akun", target: 10, unit: "post" },
-          { kind: "check", label: "Engagement tetap sehat sepanjang periode", highlight: true },
-        ],
-      },
-      {
-        name: "Build Community", description: t("store.mission.gs3.desc"), tagline: t("store.mission.gs3.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 10000, unit: "followers", highlight: true },
-          { kind: "auto", label: "Konten kumulatif", target: 150, unit: "konten", highlight: true },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 16, unit: "minggu" },
-          { kind: "number", label: "Shares", target: 1500, unit: "share" },
-          { kind: "number", label: "Saves", target: 1500, unit: "save" },
-          { kind: "number", label: "DM bermakna", target: 300, unit: "DM" },
-          { kind: "number", label: "Member komunitas", target: 300, unit: "member" },
-          { kind: "number", label: "Member komunitas yang aktif", target: 100, unit: "member aktif" },
-          { kind: "number", label: "UGC asli dari komunitas", target: 50, unit: "UGC", highlight: true },
-          { kind: "number", label: "Community event / activation", target: 1, unit: "event" },
-          { kind: "number", label: "Peserta event komunitas", target: 50, unit: "peserta" },
-          { kind: "number", label: "Kolaborasi bermakna", target: 5, unit: "kolaborasi" },
-        ],
-      },
-      {
-        name: "Activate Community", description: t("store.mission.gs4.desc"), tagline: t("store.mission.gs4.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 25000, unit: "followers", highlight: true },
-          { kind: "auto", label: "Konten kumulatif", target: 250, unit: "konten", highlight: true },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 20, unit: "minggu" },
-          { kind: "number", label: "Shares", target: 5000, unit: "share" },
-          { kind: "number", label: "Saves", target: 5000, unit: "save" },
-          { kind: "number", label: "DM bermakna", target: 750, unit: "DM" },
-          { kind: "number", label: "Member komunitas", target: 1000, unit: "member" },
-          { kind: "number", label: "Member komunitas yang aktif", target: 200, unit: "member aktif" },
-          { kind: "number", label: "Brand advocates", target: 20, unit: "advocate", highlight: true },
-          { kind: "number", label: "UGC asli dari komunitas", target: 150, unit: "UGC" },
-          { kind: "number", label: "Community activations", target: 3, unit: "activation" },
-          { kind: "number", label: "Total peserta kumulatif", target: 300, unit: "peserta" },
-          { kind: "number", label: "Kolaborasi strategis", target: 10, unit: "kolaborasi" },
-          { kind: "number", label: "Qualified leads", target: 50, unit: "leads", highlight: true },
-        ],
-      },
-      {
-        name: "Build Advocacy", description: t("store.mission.gs5.desc"), tagline: t("store.mission.gs5.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 50000, unit: "followers", highlight: true },
-          { kind: "auto", label: "Konten kumulatif", target: 400, unit: "konten", highlight: true },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 24, unit: "minggu" },
-          { kind: "number", label: "Shares", target: 15000, unit: "share" },
-          { kind: "number", label: "Saves", target: 15000, unit: "save" },
-          { kind: "number", label: "DM bermakna", target: 1500, unit: "DM" },
-          { kind: "number", label: "Member komunitas", target: 3000, unit: "member" },
-          { kind: "number", label: "Member komunitas yang aktif", target: 500, unit: "member aktif" },
-          { kind: "number", label: "Brand advocates", target: 100, unit: "advocate", highlight: true },
-          { kind: "number", label: "UGC asli dari komunitas", target: 300, unit: "UGC" },
-          { kind: "number", label: "Community activations", target: 10, unit: "activation" },
-          { kind: "number", label: "Total peserta kumulatif", target: 1000, unit: "peserta" },
-          { kind: "number", label: "Kolaborasi strategis", target: 20, unit: "kolaborasi" },
-          { kind: "number", label: "Qualified leads", target: 100, unit: "leads" },
-          { kind: "number", label: "Community-led activation (komunitas yang gerakin sendiri)", target: 1, unit: "activation", highlight: true },
-        ],
-      },
-    ],
-  },
-  "grow-personal": {
-    autoLinkAllContent: true,
-    // A scroll-to-read, check-to-agree gate shown once before the first
-    // mission — same idea as a real app's Terms & Conditions screen. Only
-    // rendered when a ladder declares `terms`; MISSION_LADDERS entries
-    // without it (grow-social, event) skip straight to calibration.
-    terms: {
-      intro: t("store.ladder.growPersonal.termsIntro"),
-      rules: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ title: t(`store.terms.gp.${n}.title`), body: t(`store.terms.gp.${n}.body`) })),
-    },
-    calibration: {
-      question: t("store.ladder.growPersonal.question"),
-      skipNote: t("store.ladder.skipNote"),
-    },
-    progressionNote: t("store.ladder.growPersonal.progression"),
-    missions: () => [
-      {
-        name: "Find Your Voice", description: t("store.mission.gp1.desc"), tagline: t("store.mission.gp1.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 1000, unit: "followers" },
-          { kind: "auto", label: "Konten orisinal terbit", target: 20, unit: "konten" },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 8, unit: "minggu" },
-          { kind: "number", label: "Komentar bermakna", target: 100, unit: "komentar" },
-          { kind: "number", label: "DM bermakna", target: 50, unit: "DM" },
-          { kind: "number", label: "Shares", target: 100, unit: "share" },
-          { kind: "number", label: "Saves", target: 100, unit: "save" },
-          { kind: "number", label: "Konten tembus 5K+ views", target: 5, unit: "konten" },
-          { kind: "check", label: "Niche/keahlian/positioning yang jelas" },
-          { kind: "number", label: "Orang yang balik lagi engage (recurring engagers)", target: 20, unit: "orang" },
-        ],
-      },
-      {
-        name: "Build Credibility", description: t("store.mission.gp2.desc"), tagline: t("store.mission.gp2.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 3000, unit: "followers" },
-          { kind: "auto", label: "Konten kumulatif", target: 100, unit: "konten" },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 12, unit: "minggu" },
-          { kind: "number", label: "Komentar bermakna", target: 300, unit: "komentar" },
-          { kind: "number", label: "DM bermakna", target: 150, unit: "DM" },
-          { kind: "number", label: "Shares", target: 500, unit: "share" },
-          { kind: "number", label: "Saves", target: 500, unit: "save" },
-          { kind: "number", label: "Konten performa tinggi", target: 10, unit: "konten" },
-          { kind: "number", label: "Orang yang balik lagi engage (recurring engagers)", target: 100, unit: "orang" },
-          { kind: "number", label: "Kolaborasi bermakna", target: 3, unit: "kolaborasi" },
-          { kind: "number", label: "Kemunculan eksternal (podcast/webinar/event/dll)", target: 1, unit: "kemunculan" },
-        ],
-      },
-      {
-        name: "Become an Authority", description: t("store.mission.gp3.desc"), tagline: t("store.mission.gp3.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 10000, unit: "followers" },
-          { kind: "auto", label: "Konten kumulatif", target: 200, unit: "konten" },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 16, unit: "minggu" },
-          { kind: "number", label: "Komentar bermakna", target: 750, unit: "komentar" },
-          { kind: "number", label: "DM bermakna", target: 300, unit: "DM" },
-          { kind: "number", label: "Shares", target: 1500, unit: "share" },
-          { kind: "number", label: "Saves", target: 1500, unit: "save" },
-          { kind: "number", label: "Orang yang balik lagi engage (recurring engagers)", target: 200, unit: "orang" },
-          { kind: "number", label: "Kolaborasi bermakna", target: 10, unit: "kolaborasi" },
-          { kind: "number", label: "Kemunculan eksternal (podcast/webinar/event/dll)", target: 5, unit: "kemunculan" },
-          { kind: "number", label: "Inbound opportunities/inquiries", target: 50, unit: "peluang" },
-          { kind: "number", label: "Audience-generated content/mention/diskusi", target: 50, unit: "mention" },
-        ],
-      },
-      {
-        name: "Lead the Conversation", description: t("store.mission.gp4.desc"), tagline: t("store.mission.gp4.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 25000, unit: "followers" },
-          { kind: "auto", label: "Konten kumulatif", target: 300, unit: "konten" },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 20, unit: "minggu" },
-          { kind: "number", label: "Komentar bermakna", target: 2000, unit: "komentar" },
-          { kind: "number", label: "DM bermakna", target: 750, unit: "DM" },
-          { kind: "number", label: "Shares", target: 5000, unit: "share" },
-          { kind: "number", label: "Saves", target: 5000, unit: "save" },
-          { kind: "number", label: "Orang yang balik lagi engage (recurring engagers)", target: 500, unit: "orang" },
-          { kind: "number", label: "Kolaborasi strategis", target: 20, unit: "kolaborasi" },
-          { kind: "number", label: "Kemunculan eksternal (podcast/webinar/event/dll)", target: 10, unit: "kemunculan" },
-          { kind: "number", label: "Qualified inbound opportunities", target: 100, unit: "peluang" },
-          { kind: "number", label: "Mention/UGC organik", target: 100, unit: "mention" },
-          { kind: "check", label: "Signature content series/framework/IP" },
-          { kind: "check", label: "Komunitas/event/workshop/inisiatif yang kamu pimpin" },
-        ],
-      },
-      {
-        name: "Become a Recognized Voice", description: t("store.mission.gp5.desc"), tagline: t("store.mission.gp5.tagline"),
-        milestones: [
-          { kind: "number", label: "Followers", target: 50000, unit: "followers" },
-          { kind: "auto", label: "Konten kumulatif", target: 500, unit: "konten" },
-          { kind: "auto-weeks", label: "Minggu aktif konsisten", target: 24, unit: "minggu" },
-          { kind: "number", label: "Komentar bermakna", target: 5000, unit: "komentar" },
-          { kind: "number", label: "DM bermakna", target: 1500, unit: "DM" },
-          { kind: "number", label: "Shares", target: 15000, unit: "share" },
-          { kind: "number", label: "Saves", target: 15000, unit: "save" },
-          { kind: "number", label: "Orang yang balik lagi engage (recurring engagers)", target: 1000, unit: "orang" },
-          { kind: "number", label: "Kolaborasi strategis", target: 30, unit: "kolaborasi" },
-          { kind: "number", label: "Kemunculan eksternal (podcast/webinar/event/dll)", target: 20, unit: "kemunculan" },
-          { kind: "number", label: "Qualified inbound opportunities", target: 200, unit: "peluang" },
-          { kind: "number", label: "Mention/UGC organik", target: 250, unit: "mention" },
-          { kind: "check", label: "Personal framework/IP yang dikenali" },
-          { kind: "check", label: "Komunitas atau ekosistem aktif" },
-          { kind: "check", label: "Dampak profesional yang terbukti" },
-        ],
-      },
-    ],
-  },
-  // "event" used to live here too, but its real shape (role-branching setup,
-  // date-anchored non-blocking phases, dynamic targets) doesn't fit this
-  // fixed-ladder/soft-lock contract at all — it's EVENT_PLAN_CONFIG below,
-  // a parallel system with its own campaign.eventPlan data shape instead of
-  // campaign.missions.
-};
-
-// Turns a MISSION_LADDERS entry into real, saveable mission objects with
-// generated ids — called once at campaign creation (openNewCampaignFlow),
-// never re-derived, so editing a milestone later never gets silently
-// overwritten by a ladder change. `tier` (a calibration.tiers[].id) decides
-// a starting rung via that tier's `startIndex` — missions below it are
-// marked already-complete instead of making someone re-prove ground
-// they've already covered before this campaign existed.
-// Each level's minimum active period, in weeks — the same numbers the
-// ladder's progressionNote states. Used to scale the "konten terbit"
-// targets to the cadence the brand actually committed to in "Atur Jadwal
-// Kerja" (uploads/week × minimum weeks), so a 3-posts-a-week café isn't
-// handed the same 50-piece Level 1 as a daily-posting media brand.
-export const MISSION_MIN_WEEKS = [8, 12, 16, 20, 24];
-
-export function createMissionsForTemplate(templateId, { startIndex = 0, uploadsPerWeek = null, currentFollowers = null } = {}) {
-  const ladder = MISSION_LADDERS[templateId];
-  if (!ladder) return undefined;
-  const scaledContentTarget = (ms, i) => {
-    if (ms.kind !== "auto" || !uploadsPerWeek) return ms.target ?? null;
-    return Math.max(8, Math.round(uploadsPerWeek * (MISSION_MIN_WEEKS[i] || 8)));
-  };
-  // #7: the mission the account actually starts on (startIndex) keeps its
-  // rung — Tahap 1 stays Tahap 1 — but if the brand already has more
-  // followers than that rung's flat catalog target, the target is raised to
-  // match reality instead of asking them to "reach" a number they're
-  // already past.
-  const resolvedTarget = (ms, i) => {
-    if (ms.label === "Followers" && i === startIndex && currentFollowers !== null && ms.target != null) {
-      return Math.max(ms.target, currentFollowers);
-    }
-    return scaledContentTarget(ms, i);
-  };
-  return ladder.missions().map((m, i) => ({
-    id: uid(),
-    name: m.name,
-    description: m.description,
-    tagline: m.tagline || "",
-    completedAt: i < startIndex ? Date.now() : null,
-    // Firestore's setDoc rejects `undefined` anywhere in the document, so
-    // every field is always present with a concrete value (null where a
-    // kind genuinely has none) rather than only set conditionally.
-    milestones: m.milestones.map((ms) => ({
-      id: uid(),
-      kind: ms.kind,
-      phaseId: ms.phaseId || null,
-      label: ms.label,
-      description: ms.description || milestoneDescriptionSource(ms.label),
-      unit: ms.unit || "",
-      target: resolvedTarget(ms, i),
-      threshold: ms.threshold ?? null,
-      highlight: !!ms.highlight,
-      custom: false,
-      value: null,
-      done: false,
-    })),
-  }));
 }
 
 export function consecutiveActiveWeeks(content, offsetDays = 0) {
@@ -2337,17 +2098,31 @@ export function completeCampaignStage(campaignId, index, { completedAt = Date.no
 // it (campaignId untouched) so Restore below undoes this completely.
 // Unlinking content only happens on the permanent purge, matching what a
 // hard delete used to do immediately.
+// An event's plan (brand.goals[]) and its Event campaign are one thing to
+// the owner: trashing the campaign archives the plan with it, and restoring
+// the campaign brings the plan back to where it was. Without this a Pemula
+// account stayed locked on "one plan at a time" by a plan whose campaign
+// was already gone.
+function goalOwningEventCampaign(c) {
+  if (!c?.goalId) return null;
+  const g = (getBrand(c.brandId)?.goals || []).find((x) => x.id === c.goalId);
+  return g && g.installed?.campaigns?.event?.id === c.id ? g : null;
+}
 export function deleteCampaign(id) {
   const c = getCampaign(id);
   if (!c) return;
   c.deletedAt = Date.now();
   persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+  const g = goalOwningEventCampaign(c);
+  if (g && g.status !== "archived") updateGoal(c.brandId, g.id, { status: "archived", archivedWithCampaign: c.id, statusBeforeArchive: g.status });
 }
 export function restoreCampaign(id) {
   const c = getCampaign(id);
   if (!c || !c.deletedAt) return;
   c.deletedAt = null;
   persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+  const g = goalOwningEventCampaign(c);
+  if (g && g.archivedWithCampaign === c.id) updateGoal(c.brandId, g.id, { status: g.statusBeforeArchive || "active", archivedWithCampaign: null, statusBeforeArchive: null });
 }
 // "Hapus permanen" — unlinks its content (same as the old hard delete did)
 // then actually removes the campaign doc.
@@ -2558,6 +2333,40 @@ export function removeFormat(id) {
 // ---------- Routine Template (standing weekly schedule, home page) ----------
 export const ROUTINE_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 export const ROUTINE_DAY_LABELS = Object.fromEntries(ROUTINE_DAYS.map((d) => [d, t(`store.day.${d}`)]));
+
+// ---------- Uploads per week: one number, kept in Jadwal Kerja ----------
+// brand.contentCadence (Kalender → Jadwal Kerja) is the only place the
+// owner's posting rhythm lives. The Grow Brand and Event wizards both ask
+// "how many a week can you really do?" — they read it from here and, when
+// the owner types a different number, write it back here, so the next
+// wizard, the auto-scheduler and the weekly plan all see the same rhythm.
+export function cadenceUploadsPerWeek(brand) {
+  const c = brand?.contentCadence;
+  return c?.configured && c.uploadDays?.length ? c.uploadDays.length * (Number(c.perDay) || 1) : null;
+}
+// A rhythm spread over the week (3 a week lands Mon/Wed/Fri, not Mon/Tue/Wed).
+const UPLOAD_SPREAD = {
+  1: ["wed"], 2: ["tue", "fri"], 3: ["mon", "wed", "fri"], 4: ["mon", "wed", "fri", "sun"],
+  5: ["mon", "tue", "wed", "thu", "fri"], 6: ["mon", "tue", "wed", "thu", "fri", "sat"], 7: ROUTINE_DAYS,
+};
+// Returns the new cadence when something changed, else null. Days the owner
+// already picked are kept where the new count allows it.
+export function setCadenceUploadsPerWeek(brandId, perWeek) {
+  const n = Math.min(21, Math.round(Number(perWeek)));
+  const b = getBrand(brandId);
+  if (!b || !(n > 0) || cadenceUploadsPerWeek(b) === n) return null;
+  const perDay = Math.max(1, Math.ceil(n / 7));
+  const dayCount = Math.min(7, Math.ceil(n / perDay));
+  const spread = UPLOAD_SPREAD[dayCount];
+  const had = ROUTINE_DAYS.filter((d) => (b.contentCadence?.uploadDays || []).includes(d));
+  let days = had.filter((d) => spread.includes(d));
+  had.forEach((d) => { if (days.length < dayCount && !days.includes(d)) days.push(d); });
+  [...spread, ...ROUTINE_DAYS].forEach((d) => { if (days.length < dayCount && !days.includes(d)) days.push(d); });
+  days = ROUTINE_DAYS.filter((d) => days.slice(0, dayCount).includes(d));
+  const cadence = { shootDays: b.contentCadence?.shootDays || [], editDays: b.contentCadence?.editDays || [], uploadDays: days, perDay, configured: true };
+  updateBrand(brandId, { contentCadence: cadence });
+  return cadence;
+}
 // listRoutineTemplate/addRoutineItem/removeRoutineItem/markRoutineDoneToday
 // (a standalone "My Routine" editor) were removed — they had no caller left
 // anywhere in the app. syncCadenceRoutine, which used to mirror Content

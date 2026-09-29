@@ -13,6 +13,13 @@ import { brandVoiceText, listBrandIdeas } from "./store.js";
 
 class AiApiError extends Error {}
 
+// Every "out of AI credits" refusal, whichever feature hit it, also tells
+// the shell — js/ai-topup.js answers with the top-up / upgrade notice.
+function quotaOutError(key, detail) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("ai:quota-out", { detail }));
+  return new AiApiError(t(key, { limit: detail.limit }));
+}
+
 // Provider/setup failures. The Wepeka admin sees the real detail (which
 // provider, the status code, the provider's own message) to fix it;
 // everyone else gets the same problem in plain words — a customer can't see
@@ -32,7 +39,7 @@ function proxyError(code, extra = {}) {
     case "quota": {
       const { limit, period } = extra;
       const key = limit === 0 ? "ai.error.readonly" : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
-      return new AiApiError(t(key, { limit }));
+      return quotaOutError(key, { limit, period });
     }
     case "auth":
     case "account":
@@ -204,7 +211,7 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
     const key = limit === 0
       ? "ai.error.readonly"
       : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
-    throw new AiApiError(t(key, { limit }));
+    throw quotaOutError(key, { limit, period });
   }
   return callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature }, onText);
 }

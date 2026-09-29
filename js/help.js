@@ -17,12 +17,12 @@ import { getLang } from "./i18n.js";
 // sentences: what it is, then how to use it.
 const HELP_CONTENT = {
   "brand-home": {
-    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, tab Konten, Tujuan, dan Sales Tracker." },
+    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, tab Konten, Tujuan, dan Pelacak Penjualan." },
     en: { title: "Brand Home", body: "Your starting point every time you open this brand — a quick summary of what needs doing (unfinished Brand DNA, campaigns with no content yet, gaps in your content schedule) plus shortcuts to Brand Builder, the Content tab, Goals, and the Sales Tracker." },
   },
   "brand-builder-hub": {
-    id: { title: "Brand Builder", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalah, positioning, nama, tagline) dan Brand Guidelines (identitas visual — logo, warna, tipografi, tone of voice). Isi Brand DNA dulu kalau brand ini masih baru, baru lanjut ke Guidelines." },
-    en: { title: "Brand Builder", body: "Two doors: Brand DNA (the foundation — customers, problem, positioning, name, tagline) and Brand Guidelines (visual identity — logo, colors, typography, tone of voice). Start with Brand DNA if the brand is new, then move on to Guidelines." },
+    id: { title: "Brand Builder", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalah, positioning, nama, tagline) dan Brand Book (identitas visual — logo, warna, tipografi, tone of voice). Isi Brand DNA dulu kalau brand ini masih baru, baru lanjut ke Guidelines." },
+    en: { title: "Brand Builder", body: "Two doors: Brand DNA (the foundation — customers, problem, positioning, name, tagline) and the Brand Book (visual identity — logo, colors, typography, tone of voice). Start with Brand DNA if the brand is new, then move on to Guidelines." },
   },
   "calendar": {
     id: { title: "Kalender", body: "Jadwal semua konten brand ini dalam satu tampilan bulanan. Klik tanggal buat lihat apa yang udah dijadwalin, atau tambah konten baru langsung dari sini biar nggak ada hari yang bolong. Tanggal yang sudah lewat nggak bisa dipakai buat jadwal baru." },
@@ -53,15 +53,15 @@ const HELP_CONTENT = {
     en: { title: "Brand DNA", body: "A wizard with one question per step, so it never feels like a blank form. The first five steps are the core — audience, problem, why trust you, plan, and call to action. Answers are saved every time you click Next, so it's safe to leave anytime." },
   },
   "brand-guidelines": {
-    id: { title: "Panduan Brand itu apa?", body: "Buku aturan tampilan brand kamu — ibarat dress code. Isinya logo dan cara pakainya, warna, font, arah visual, dan tone of voice, biar semua konten dan desain (siapa pun yang bikin) kelihatan dari brand yang sama. Bagiannya bebas urutan; hasil akhirnya bisa diunduh jadi Brand Book (PDF)." },
-    en: { title: "What are Brand Guidelines?", body: "Your brand's rulebook for how it looks and sounds — like a dress code. Logo and how to use it, colors, fonts, visual direction and tone of voice, so every piece of content and design (whoever makes it) looks like the same brand. Sections can be done in any order; the result downloads as a Brand Book (PDF)." },
+    id: { title: "Brand Book itu apa?", body: "Buku aturan tampilan brand kamu — ibarat dress code. Isinya logo dan cara pakainya, warna, font, arah visual, dan tone of voice, biar semua konten dan desain (siapa pun yang bikin) kelihatan dari brand yang sama. Bagiannya bebas urutan; hasil akhirnya bisa diunduh jadi Brand Book (PDF)." },
+    en: { title: "What is the Brand Book?", body: "Your brand's rulebook for how it looks and sounds — like a dress code. Logo and how to use it, colors, fonts, visual direction and tone of voice, so every piece of content and design (whoever makes it) looks like the same brand. Sections can be done in any order; the result downloads as a Brand Book (PDF)." },
   },
   "settings": {
-    id: { title: "Pengaturan", body: "Berlaku ke semua brand kamu, bukan per-brand — bahasa, akun, daftar platform/format, dan rumus/ambang batas penilaian performa." },
-    en: { title: "Settings", body: "Applies to all your brands, not just one — language, account, platform/format lists, and the performance formulas/thresholds." },
+    id: { title: "Pengaturan", body: "Berlaku ke semua brand kamu, bukan per-brand: daftar brand, bahasa, akun & paket, Sampah (yang dihapus, bisa dipulihkan 30 hari), dan di mode Pro juga daftar platform/format serta backup data." },
+    en: { title: "Settings", body: "Applies to all your brands, not just one: your brand list, language, account & plan, Trash (deleted items, restorable for 30 days), and in Pro the platform/format lists and data backup." },
   },
   "sales": {
-    id: { title: "Sales Tracker", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, campaign Sales Growth, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. Brandlab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },
+    id: { title: "Pelacak Penjualan", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, campaign Sales Growth, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. Brandlab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },
     en: { title: "Sales Tracker", body: "Where sales get logged. You only type one thing: whenever someone buys, pick the product and how many. Totals, the weekly trend, your Sales Growth campaign, AI advice and the Excel/PDF export all follow from that log. Brandlab can't read sales data automatically, so every number here comes from you." },
   },
   "copy-studio": {
@@ -84,8 +84,8 @@ const HELP_CONTENT = {
     en: { title: "What is Brand DNA?", body: "Your brand's foundation in words: who the customers are, what problem you solve, why they should trust and choose you, and your tagline. Every AI feature and campaign reads from it." },
   },
   "term-brand-guidelines": {
-    id: { title: "Panduan Brand itu apa?", body: "Aturan tampilan brand kamu — logo, warna, font, arah visual, dan tone of voice — biar semua konten kelihatan dari brand yang sama. Hasil akhirnya jadi Brand Book (PDF) yang bisa kamu kasih ke desainer atau tim." },
-    en: { title: "What are Brand Guidelines?", body: "The rules for how your brand looks — logo, colors, fonts, visual direction and tone of voice — so all content looks like it comes from the same brand. The end result is a Brand Book (PDF) you can hand to a designer or your team." },
+    id: { title: "Brand Book itu apa?", body: "Aturan tampilan brand kamu — logo, warna, font, arah visual, dan tone of voice — biar semua konten kelihatan dari brand yang sama. Bisa diunduh jadi PDF untuk dikasih ke desainer atau tim." },
+    en: { title: "What is the Brand Book?", body: "The rules for how your brand looks — logo, colors, fonts, visual direction and tone of voice — so all content looks like it comes from the same brand. Download it as a PDF to hand to a designer or your team." },
   },
   "term-logo": {
     id: { title: "Perlu logo, nggak?", body: "Logo nggak wajib buat langkah Warna & Font — boleh dilewati dulu. Tapi Brand Book pakai logo ini buat halaman aturan pemakaian (jarak aman, background, larangan), jadi upload begitu ada. Belum punya? Generate dulu pakai ChatGPT, lalu upload di sini." },

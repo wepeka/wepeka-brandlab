@@ -5,7 +5,7 @@
 // Planning is js/goal-roadmap.js, writing is js/goal-actions.js, "how is it
 // going" is js/goal-progress.js — this file only draws and wires.
 import {
-  getBrand, listGoals, getGoal, createGoal, updateGoal, deleteGoal, listContent, listCampaigns, getSettings, onChange,
+  getBrand, listGoals, getGoal, createGoal, updateGoal, deleteGoal, listContent, listCampaigns, getSettings, onChange, updateBrandInsights, setCadenceUploadsPerWeek,
   localISODate, daysBetween, formatEventDate, phaseNameLabel, eventLeanLevel, milestoneLabel, unitLabel, EVENT_ROLES, EVENT_PARTICIPATION_TYPES,
 } from "../store.js";
 import { readCondition, addDays, weekStart, isISODate, AUDIENCE_PER_SEAT } from "../goal-roadmap.js";
@@ -17,8 +17,9 @@ import { getMode } from "../mode.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { qs, qsa, escapeHtml as esc, toast, openMenu, closeMenu, formatNumber } from "../dom.js";
-import { t } from "../i18n.js";
+import { t, getLang } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
+import { eventTabsHTML } from "../event-tabs.js";
 
 const LANE_COLOR = { event: "var(--accent)", audience: "var(--track-social)", community: "var(--track-community)", rhythm: "var(--text-faint)" };
 const laneColor = (id) => LANE_COLOR[id] || "var(--text-faint)";
@@ -236,6 +237,12 @@ export function openGoalWizard({ brandId }) {
       const cond = readCondition({ brand, content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings(), today, inputs: inputs() });
       if (cond.followers === null) { st.error = t("roadmap.wizard.followersNeed"); paint(); return; }
       const name = st.name.trim() || t("roadmap.defaultName");
+      // Numbers typed here are the brand's real numbers, not this plan's
+      // private copy: followers go to Insights (what every Social Media
+      // Growth target reads), the weekly rhythm to Jadwal Kerja.
+      if (st.followers !== "") updateBrandInsights(brandId, cond.platform, { followers: toNum(st.followers), source: "wizard" });
+      const cadence = st.capacity !== "" ? setCadenceUploadsPerWeek(brandId, toNum(st.capacity)) : null;
+      if (cadence) toast(t("cadence.updatedFromWizard", { n: toNum(st.capacity) }));
       const goal = createGoal(brandId, { name, targetDate: st.date, startDate: today, status: "draft", inputs: { ...inputs(), eventName: name } });
       if (!goal) { st.error = t("roadmap.err.generic"); paint(); return; }
       const plan = planForGoal(brandId, goal);
@@ -274,7 +281,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
   const brand = getBrand(brandId);
   const goal = getGoal(brandId, goalId);
   if (!brand) { location.hash = "#/"; return; }
-  if (!goal) { location.hash = `#/brand/${brandId}/goals`; return; }
+  if (!goal) { location.hash = `#/brand/${brandId}/campaigns`; return; }
   const today = localISODate();
   const content = listContent(brandId);
   const campaigns = listCampaigns(brandId);
@@ -285,7 +292,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
     return;
   }
   if (plan.errors?.length) {
-    root.innerHTML = `<div class="page-head"><div><div class="page-eyebrow">${backLinkHTML(`#/brand/${brandId}/goals`, t("roadmap.title"))}</div><h1>${esc(goal.name)}</h1></div></div>
+    root.innerHTML = `<div class="page-head"><div><div class="page-eyebrow">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}</div><h1>${esc(goal.name)}</h1></div></div>
       <div class="card rg-empty"><p class="rg-bad">${esc(t(`roadmap.err.${plan.errors[0]}`))}</p><button class="btn btn-primary" id="rg-replan">${t("roadmap.replan.cta")}</button></div>`;
     qs("#rg-replan", root)?.addEventListener("click", () => openReplanDialog({ brandId, goal }));
     return;
@@ -301,7 +308,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${backLinkHTML(`#/brand/${brandId}/goals`, t("roadmap.title"))}</div>
+        <div class="page-eyebrow">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}</div>
         <h1>${esc(goal.name || t("roadmap.defaultName"))}</h1>
         <p class="page-sub">${esc(withYear(goal.targetDate))} · ${days > 0 ? t("roadmap.days.left", { n: days }) : days === 0 ? t("roadmap.days.today") : t("roadmap.days.passed")} ${statusPill(goal.status)} <span class="rg-pill" title="${esc(t(`roadmap.scale.${plan.scale?.level ?? 0}.sub`))}">${esc(t(`roadmap.scale.${plan.scale?.level ?? 0}`))}</span></p>
       </div>
@@ -311,6 +318,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
         <button class="icon-btn" id="rg-more" aria-label="${t("common.more")}">${icon("dots", { size: 16 })}</button>
       </div>
     </div>
+    ${eventTabsHTML(brandId, goal, "plan")}
 
     ${installable ? installBannerHTML(goal, plan) : ""}
     ${pr.needsRefresh ? `<div class="rg-callout rg-callout-info">${icon("info", { size: 14 })}<div><b>${t("roadmap.refresh.title")}</b> ${t("roadmap.refresh.body")}<div class="rg-callout-actions"><button class="btn btn-secondary btn-sm" id="rg-refresh">${t("roadmap.replan.cta")}</button></div></div></div>` : ""}
@@ -394,7 +402,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
       if (!act) return;
       closeMenu();
       if (act === "complete") { updateGoal(brandId, goalId, { status: "completed" }); toast(t("roadmap.menu.completed")); }
-      else if (act === "archive") { updateGoal(brandId, goalId, { status: "archived" }); location.hash = `#/brand/${brandId}/goals`; }
+      else if (act === "archive") { updateGoal(brandId, goalId, { status: "archived" }); location.hash = `#/brand/${brandId}/campaigns`; }
       else if (act === "delete") {
         const ok = await confirmDialog({ title: t("roadmap.menu.deleteTitle"), message: t("roadmap.menu.deleteMsg"), confirmLabel: t("common.delete"), danger: true });
         if (!ok) return;
@@ -408,7 +416,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
             })
           : false;
         deleteGoal(brandId, goalId, { archiveCampaigns });
-        location.hash = `#/brand/${brandId}/goals`;
+        location.hash = `#/brand/${brandId}/campaigns`;
       }
     });
   });
@@ -432,7 +440,7 @@ function milestonesSectionHTML(goal, plan, state) {
   const total = phases.reduce((a, p) => a + p.milestones.length, 0);
   const row = (m) => {
     const what = m.kind === "check" ? t("roadmap.ms.checklist") : `${m.target ? formatNumber(m.target) : ""} ${m.unit ? esc(unitLabel(m.unit)) : ""}`.trim();
-    return `<div class="rg-ms-row"><span class="rg-ms-label">${esc(milestoneLabel(m.label))}${m.required === false ? ` <small class="text-faint">${t("camp.optional")}</small>` : ""}${m.custom ? ` <span class="rg-pill rg-pill-acc">${t("roadmap.ms.mine")}</span>` : ""}</span>
+    return `<div class="rg-ms-row"><span class="rg-ms-label">${esc(m.custom ? m.label : milestoneLabel(m.label, m.target))}${m.required === false ? ` <small class="text-faint">${t("camp.optional")}</small>` : ""}${m.custom ? ` <span class="rg-pill rg-pill-acc">${t("roadmap.ms.mine")}</span>` : ""}</span>
       <span class="rg-ms-what">${what}</span><span class="rg-ms-due">${m.dueDate ? esc(formatEventDate(m.dueDate)) : ""}</span>
       <button type="button" class="icon-btn" data-rg-ms-remove="${esc(m.label)}" aria-label="${esc(t("roadmap.ms.remove"))}" title="${esc(t("roadmap.ms.remove"))}">${icon("trash", { size: 13 })}</button></div>`;
   };
@@ -503,7 +511,7 @@ function timelineHTML(goal, plan, pr, today) {
   for (let d = from; d <= to; d = addDays(d, 1)) if (d === from || d.endsWith("-01")) months.push(d);
   const stateById = new Map(pr.items.map((i) => [i.id, i.state]));
   const dueDots = [];
-  (plan.eventPhases || []).forEach((p) => (p.milestones || []).forEach((m) => { if (m.dueDate) dueDots.push({ laneId: "event", date: m.dueDate, label: m.label, state: stateById.get(`ms:${m.id}`) || (m.dueDate < today && !m.done ? "overdue" : m.done ? "done" : "later") }); }));
+  (plan.eventPhases || []).forEach((p) => (p.milestones || []).forEach((m) => { if (m.dueDate) dueDots.push({ laneId: "event", date: m.dueDate, label: m.custom ? m.label : milestoneLabel(m.label, m.target), state: stateById.get(`ms:${m.id}`) || (m.dueDate < today && !m.done ? "overdue" : m.done ? "done" : "later") }); }));
   (goal.tasks?.length ? goal.tasks : plan.tasks || []).forEach((tk) => dueDots.push({ laneId: tk.laneId, date: tk.dueDate, label: tk.label, state: stateById.get(`task:${tk.id}`) || "later" }));
   const todayIn = today >= from && today <= to;
 
@@ -521,7 +529,7 @@ function timelineHTML(goal, plan, pr, today) {
   };
   return `
     <div class="rg-tl-scroll"><div class="rg-tl">
-      <div class="rg-lane rg-axis"><div></div><div class="rg-track rg-months">${months.map((m) => `<span style="left:${pct(m)}%">${esc(new Date(`${m}T00:00:00`).toLocaleDateString(undefined, { month: "short" }))}</span>`).join("")}</div></div>
+      <div class="rg-lane rg-axis"><div></div><div class="rg-track rg-months">${months.map((m) => `<span style="left:${pct(m)}%">${esc(new Date(`${m}T00:00:00`).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { month: "short" }))}</span>`).join("")}</div></div>
       ${plan.lanes.map(laneRow).join("")}
       <div class="rg-overlay-lines" aria-hidden="true"><div class="rg-lane"><div></div><div class="rg-track">
         ${todayIn ? `<i class="rg-today" style="left:${pct(today)}%"><b>${t("roadmap.today")}</b></i>` : ""}

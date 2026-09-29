@@ -53,14 +53,14 @@ import {
   getCampaign, updateCampaign, getContent, updateContent, getSeries, listSeries, findSeriesByNameInText, getGoal, listGoals, formatEventDate, phaseNameLabel, onChange,
 } from "./store.js";
 import { eventCampaignFor, openEventPhases, addEventMilestone } from "./goal-actions.js";
-import { aiLimitReached } from "./ai-usage.js";
-import { isAdmin, currentUid } from "./account.js";
+import { aiLimitReached, aiQuotaPeriod } from "./ai-usage.js";
+import { isAdmin, currentUid, getCachedAccount, isReadOnly } from "./account.js";
 import { confirmDialog, openModal, closeOverlay } from "./modals.js";
 import { campaignStages, activeStageIndex, readStage, campaignHeadline } from "./campaign-metrics.js";
 import { nextActions } from "./next-action.js";
 import { computeContentMetrics } from "./formulas.js";
 import { brandDnaCompleteness } from "./brand-progress.js";
-import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
+import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, discussScript, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
 import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry } from "./week-plan.js";
 import { analyzeScreenshot } from "./ocr.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
@@ -838,7 +838,19 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     : "";
   // A rewrite proposed in Creator's script discussion — shown for reference;
   // applying it happens in Creator.
-  const revisionsHTML = (h.revisions || []).map((r) => `<div class="cp-idea"><div class="cp-idea-title">${esc(r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript"))}</div><div class="cp-idea-why" style="white-space:pre-wrap;">${esc(r.text)}</div></div>`).join("");
+  const revisionsHTML = (h.revisions || []).map((r, i) => {
+    const key = `${h.threadId}|${h.msgId}|${i}`;
+    const action = !h.threadId || !h.msgId
+      ? ""
+      : r.applied
+        ? scriptUndo.has(key)
+          ? `<button type="button" class="btn btn-ghost btn-sm" data-rev-undo="${esc(key)}">${t("cr.disc.undo")}</button>`
+          : `<span class="text-faint" style="font-size:12px;">${icon("check", { size: 12 })} ${t("cr.disc.applied")}</span>`
+        : `<button type="button" class="btn btn-primary btn-sm" data-rev-apply="${esc(key)}">${r.target === "caption" ? t("cr.disc.applyCaption") : t("cr.disc.applyScript")}</button>`;
+    return `<div class="cp-idea"><div class="cp-idea-title">${esc(r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript"))}</div><div class="cp-idea-why" style="white-space:pre-wrap;">${esc(r.text)}</div>${action ? `<div style="margin-top:8px;">${action}</div>` : ""}</div>`;
+  }).join("") + (isLast && h.threadId && scriptHosts.get(h.threadId)?.onRegenerate && getBrainstorm(h.threadId)?.mode === "script"
+    ? `<div class="disc-regen"><button type="button" class="btn btn-primary btn-sm" data-script-regen="script">${icon("refresh", { size: 12 })}${t("cr.disc.regenScript")}</button><button type="button" class="btn btn-secondary btn-sm" data-script-regen="hook">${icon("refresh", { size: 12 })}${t("cr.disc.regenHook")}</button></div>`
+    : "");
   const cardsHTML =
     tasks.map((task, j) => taskCardHTML(task, `${index}:${j}`)).join("") +
     ideas.map((idea, j) => ideaCardHTML(idea, `${index}:${j}`, info, full)).join("") +
@@ -920,6 +932,10 @@ const AUTO_STARTERS = [
 function emptyStateHTML(brandId, info, full) {
   const mode = modeOf(brandId);
   const name = esc(getBrand(brandId)?.name || t("cons.thisBrand"));
+  if (currentThread(brandId)?.mode === "script") {
+    return `<div class="consultant-msg consultant-msg-assistant">${esc(t("cr.disc.intro"))}</div>
+      <div class="consultant-starters">${SCRIPT_CHIPS.map((k) => starterChip(t(`cr.disc.chip.${k}`), "brainstorm")).join("")}</div>`;
+  }
   if (mode === "auto") {
     return `<div class="consultant-msg consultant-msg-assistant">${t("chat.greeting.auto", { brand: name })}</div>
       <div class="consultant-starters">${AUTO_STARTERS.map((s) => starterChip(t(s.key), s.engine)).join("")}</div>`;
@@ -1056,6 +1072,19 @@ function companionRowHTML(brandId, full) {
     </div>`;
 }
 
+// "Come back tomorrow" is only true for a daily quota. A trial spends one
+// pool for the whole 7 days, Founder plans are capped per month, and a
+// read-only account has no AI at all — each gets its own line, and the two
+// that won't refill on their own get a way forward. The button opens the
+// same top-up / upgrade dialog as everywhere else (js/ai-topup.js).
+function quotaNoticeHTML() {
+  const readOnly = isReadOnly(getCachedAccount());
+  const period = aiQuotaPeriod();
+  const key = readOnly ? "bs.quotaReached.readonly" : period === "total" ? "bs.quotaReached.total" : period === "month" ? "bs.quotaReached.month" : "bs.quotaReached";
+  const more = readOnly || period === "total" ? t("ai.topup.seePlans") : t("ai.topup.button");
+  return `<p class="companion-error cp-quota">${t(key)} <button type="button" class="link cp-topup" data-ai-topup>${more}</button></p>`;
+}
+
 // The chat itself — identical in both sizes.
 function chatCoreHTML(brandId, full) {
   const mode = modeOf(brandId);
@@ -1090,7 +1119,7 @@ function chatCoreHTML(brandId, full) {
       })() : emptyStateHTML(brandId, info, full)}
       ${noticeHTML}
     </div>
-    ${quotaOut ? `<p class="companion-error cp-quota">${t("bs.quotaReached")}</p>` : ""}
+    ${quotaOut ? quotaNoticeHTML() : ""}
     ${attachStripHTML(brandId)}
     <div class="consultant-panel-input">
       <button type="button" class="chip-icon-btn cp-image" id="consultant-image" aria-label="${t("chat.image.attach")}" title="${t("chat.image.attach")}" ${pending || quotaOut ? "disabled" : ""}>${icon("image", { size: 15 })}</button>
@@ -1483,6 +1512,38 @@ function wire(host, brandId, input, history) {
   });
 
   // Drafts ([[draft:FUNNEL|Title]], Brainstorm): into the conversation's scope.
+  on("[data-rev-apply]", (btn) => {
+    const [threadId, msgId, i] = btn.dataset.revApply.split("|");
+    const th = getBrainstorm(threadId);
+    if (!th) return;
+    const rev = setRevisionApplied(threadId, msgId, Number(i), true);
+    if (!rev) return;
+    scriptUndo.set(btn.dataset.revApply, scriptPiece(th)[rev.target] || "");
+    putRevision(th, rev.target, rev.text);
+    toast(t("cr.disc.appliedToast"));
+    renderPanel(brandId);
+  });
+  on("[data-rev-undo]", (btn) => {
+    const key = btn.dataset.revUndo;
+    const [threadId, msgId, i] = key.split("|");
+    const th = getBrainstorm(threadId);
+    const rev = th && setRevisionApplied(threadId, msgId, Number(i), false);
+    if (!rev) return;
+    putRevision(th, rev.target, scriptUndo.get(key) ?? "");
+    scriptUndo.delete(key);
+    toast(t("cr.disc.undone"));
+    renderPanel(brandId);
+  });
+  on("[data-script-regen]", (btn) => {
+    const th = currentThread(brandId);
+    const host = th && scriptHosts.get(th.id);
+    if (!host?.onRegenerate) return;
+    // Guidance = the owner's last ask + the AI's newest reply, trimmed.
+    const msgs = (th.messages || []).filter((x) => x.text);
+    const guidance = msgs.slice(-2).map((x) => `${x.role === "user" ? "Owner" : "AI"}: ${x.text}`).join("\n").slice(0, 900);
+    togglePanel(brandId, false);
+    host.onRegenerate(btn.dataset.scriptRegen, guidance);
+  });
   on("[data-consultant-draft]", (btn) => {
     const { h, j } = refAt(btn.dataset.consultantDraft);
     const d = h?.drafts?.[j];
@@ -2203,6 +2264,102 @@ function openMetricsPicker(brandId, h) {
 // `view` opens that view first (a "Tanya di X" chip); `engine` answers with
 // that engine (a chip, "Langsung kasih ide", a retry) — in a single-engine
 // view a different engine opens its view, in Otomatis it just answers.
+// ---- Script discussion (Creator's "Diskusi") -----------------------------------
+// It used to be a second chat of its own inside Creator (own drawer, own
+// renderer, own send loop). It is this chat now, in the piece's own thread
+// (`script-<contentId>`, mode "script"): Creator registers how to read the
+// piece, put a revision into it and restart the AI writer; the chat does the
+// talking. A revision can be applied (and undone) straight from the reply —
+// with no Creator open, it goes into the saved piece directly.
+const SCRIPT_CHIPS = ["critique", "hook", "angle", "shorter", "brand"];
+const SCRIPT_HISTORY = 12;
+const scriptHosts = new Map(); // threadId -> { contentId, getCurrent, applyRevision, onRegenerate }
+const scriptUndo = new Map(); // "threadId|msgId|i" -> text before the revision went in
+// A script talk is about one piece; closing the chat hands it back to
+// whatever it showed before, so the next ordinary question doesn't land in
+// that piece's thread.
+const modeBeforeScript = new Map();
+function leaveScriptThread(brandId) {
+  if (currentThread(brandId)?.mode !== "script") return;
+  brainstormThread.delete(brandId);
+  setMode(brandId, modeBeforeScript.get(brandId) || "auto");
+  modeBeforeScript.delete(brandId);
+  qs("#consultant-panel")?.classList.remove("is-above-modal");
+}
+
+export function openScriptChat({ contentId, title = "", getCurrent = null, applyRevision = null, onRegenerate = null } = {}) {
+  const brandId = page ? page.brandId : mountedBrandId;
+  if (!brandId || !contentId) return;
+  const threadId = `script-${contentId}`;
+  if (!getBrainstorm(threadId)) createBrainstorm(brandId, { id: threadId, mode: "script", contentId, title });
+  scriptHosts.set(threadId, { contentId, getCurrent, applyRevision, onRegenerate });
+  if (currentThread(brandId)?.mode !== "script") modeBeforeScript.set(brandId, modeOf(brandId));
+  loadThread(brandId, threadId);
+  togglePanel(brandId, true, { focus: true });
+  // Opened from inside a dialog (Creator's AI writer): sit above it.
+  qs("#consultant-panel")?.classList.toggle("is-above-modal", !!document.querySelector(".overlay"));
+}
+
+function scriptPiece(th) {
+  const host = scriptHosts.get(th.id);
+  return host?.getCurrent?.() || getContent(th.contentId) || {};
+}
+
+async function sendScriptMessage(brandId, th, text, ai) {
+  if (pending) return;
+  const history = (th.messages || []).slice(-SCRIPT_HISTORY);
+  appendBrainstormMessage(th.id, { role: "user", text });
+  pending = true;
+  streamShown = "";
+  renderPanel(brandId, { keep: false });
+  pendingBubble();
+  let streamed = false;
+  try {
+    const brand = getBrand(brandId);
+    const piece = scriptPiece(th);
+    const reply = await discussScript(ai, {
+      brand,
+      campaigns: listCampaigns(brandId),
+      pulseText: pulseNow(brandId),
+      content: piece,
+      series: piece.seriesId ? getSeries(piece.seriesId) : null,
+      history,
+      message: text,
+      onText: (soFar) => {
+        const shown = parseDirectives(soFar).cleanText;
+        const bubble = qs("#consultant-pending");
+        if (!shown || !bubble) return;
+        streamed = true;
+        bubble.innerHTML = `<div class="consultant-md">${renderLightMarkdown(shown)}</div>`;
+        scrollToBottom();
+      },
+    });
+    const parsed = parseDirectives(reply);
+    appendBrainstormMessage(th.id, {
+      role: "assistant",
+      text: parsed.cleanText,
+      blocks: parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : null,
+    });
+  } catch (err) {
+    toast(err instanceof AiApiError ? err.message : t("cr.disc.fail"), "error");
+  } finally {
+    finishReply(brandId, { streamed });
+  }
+}
+
+function setRevisionApplied(threadId, msgId, index, applied) {
+  const m = (getBrainstorm(threadId)?.messages || []).find((x) => x.id === msgId);
+  if (!m?.blocks?.revisions?.[index]) return null;
+  const revisions = m.blocks.revisions.map((r, i) => (i === index ? { ...r, applied } : r));
+  updateBrainstormMessage(threadId, msgId, { blocks: { ...m.blocks, revisions } });
+  return revisions[index];
+}
+function putRevision(th, target, text) {
+  const host = scriptHosts.get(th.id);
+  if (host?.applyRevision) host.applyRevision(target, text);
+  else if (th.contentId) updateContent(th.contentId, { [target]: text });
+}
+
 async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat", weekCount = null, campaignId = null } = {}) {
   // A photo always goes to the Konsultan: it is the engine that reads
   // numbers and has the brand's tracked data to compare them with.
@@ -2214,6 +2371,8 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   const cur = modeOf(brandId);
   const ai = aiReady(brandId);
   if (!ai) return;
+  const scriptTh = currentThread(brandId);
+  if (scriptTh?.mode === "script" && !images.length) return sendScriptMessage(brandId, scriptTh, text, ai);
   // Only now: with no AI key the photos stay in the composer, next to the notice.
   attachments.delete(brandId);
   answerHint = false;
@@ -2535,6 +2694,7 @@ function togglePanel(brandId, open, { seed = "", focus = null } = {}) {
     renderPanel(page.brandId, { focus: true });
     return;
   }
+  if (!open) leaveScriptThread(brandId);
   isOpen = open;
   const panel = qs("#consultant-panel");
   const fab = qs("#consultant-fab");

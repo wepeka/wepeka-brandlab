@@ -30,7 +30,8 @@ import { assessGoal, brandBaseline } from "./goal-plan.js";
 import { identityDone } from "./brand-progress.js";
 import { computeSignals } from "./brand-pulse.js";
 import { getTracker } from "./sales-tracker.js";
-import { t } from "./i18n.js";
+import { t, getLang } from "./i18n.js";
+const numLocale = () => (getLang() === "en" ? "en-US" : "id-ID");
 
 // ---------- Rules of thumb ----------
 export const AUDIENCE_PER_SEAT = 15; // followers needed per seat: ~1 in 15 of an audience shows up to a first onsite event
@@ -114,7 +115,7 @@ export function readCondition({ brand, content = [], campaigns = [], settings = 
   rows.push({
     key: "followers", status: followers === null ? "unknown" : followersStale ? "warn" : "ok",
     stale: followersStale, age: followersAge, platform,
-    value: followers === null ? t("roadmap.read.unknown") : Number(followers).toLocaleString(),
+    value: followers === null ? t("roadmap.read.unknown") : Number(followers).toLocaleString(numLocale()),
     source: followers === null ? t("roadmap.read.followers.src.none") : typed !== null ? t("roadmap.read.src.typed") : t("roadmap.read.followers.src.insights", { platform, days: followersAge ?? "?" }),
   });
 
@@ -177,7 +178,7 @@ export function readCondition({ brand, content = [], campaigns = [], settings = 
   const ticketed = inputs.ticketed === true || (inputs.ticketed !== false && !!ticket);
   rows.push({
     key: "offer", status: ticketed ? (ticketPrice ? "ok" : "warn") : "unknown",
-    value: ticketed ? (ticketPrice ? `Rp ${Number(ticketPrice).toLocaleString()}` : t("roadmap.read.offer.noPrice")) : t("roadmap.read.offer.free"),
+    value: ticketed ? (ticketPrice ? `Rp ${Number(ticketPrice).toLocaleString(numLocale())}` : t("roadmap.read.offer.noPrice")) : t("roadmap.read.offer.free"),
     source: ticket ? t("roadmap.read.offer.src.tracker") : ticketed ? t("roadmap.read.src.typed") : t("roadmap.read.offer.src.none"),
   });
 
@@ -206,14 +207,24 @@ export function readCondition({ brand, content = [], campaigns = [], settings = 
 // 2. Planning
 // ============================================================
 
-// Titles for slots. Cycled per (lane, funnel) so a phase doesn't read as one
-// sentence repeated; `{event}` is the goal's own name.
-const TITLE_VARIANTS = { "event.TOFU": 3, "event.MOFU": 3, "event.BOFU": 2, "audience.TOFU": 3, "audience.MOFU": 2, "audience.BOFU": 1, "community.MOFU": 2, "rhythm.TOFU": 1 };
-function slotTitle(laneKind, funnel, n, name) {
-  const key = `${laneKind}.${funnel}`;
-  const variants = TITLE_VARIANTS[key] || TITLE_VARIANTS[`${laneKind}.MOFU`] || 1;
-  const k = TITLE_VARIANTS[key] ? key : TITLE_VARIANTS[`${laneKind}.MOFU`] ? `${laneKind}.MOFU` : `${laneKind}.TOFU`;
-  return t(`roadmap.slot.${k}.${(n % variants) + 1}`, { event: name });
+// Titles for slots; `{event}` is the goal's own name. One counter per
+// (lane, funnel) for the WHOLE plan — it used to restart in every phase, so
+// "Umumkan {event}" opened each of them and a 2-month plan read as the same
+// five posts over and over. When every variant has been used once, the
+// next round is numbered so no two slots share a title.
+const TITLE_VARIANTS = { "event.TOFU": 6, "event.MOFU": 6, "event.BOFU": 4, "audience.TOFU": 5, "audience.MOFU": 4, "audience.BOFU": 3, "community.MOFU": 4, "rhythm.TOFU": 4 };
+function makeSlotTitler(name) {
+  const used = new Map();
+  return (laneKind, funnel) => {
+    const key = `${laneKind}.${funnel}`;
+    const k = TITLE_VARIANTS[key] ? key : TITLE_VARIANTS[`${laneKind}.MOFU`] ? `${laneKind}.MOFU` : `${laneKind}.TOFU`;
+    const variants = TITLE_VARIANTS[k] || 1;
+    const i = used.get(k) || 0;
+    used.set(k, i + 1);
+    const base = t(`roadmap.slot.${k}.${(i % variants) + 1}`, { event: name });
+    const round = Math.floor(i / variants);
+    return round ? t("roadmap.slot.again", { title: base, n: round + 1 }) : base;
+  };
 }
 
 // Which funnel stage a slot serves, from where it sits in the journey.
@@ -274,6 +285,7 @@ export function planRoadmap({ goal, brand, content = [], campaigns = [], setting
 
   const cond = readCondition({ brand, content, campaigns, settings, today, inputs });
   const name = String(inputs.eventName || goal.name || "").trim() || t("roadmap.defaultName");
+  const slotTitle = makeSlotTitler(name);
   const role = inputs.role || "organizer";
   const templates = eventPhaseTemplatesForRole(role, inputs.participationType);
   if (!templates.length) return { errors: ["noRole"], warnings, lanes: [], slots: [], tasks: [], conflicts: [] };
@@ -421,7 +433,7 @@ export function planRoadmap({ goal, brand, content = [], campaigns = [], setting
         if (dayPhase) return t("roadmap.slot.event.live", { event: name });
         if (!p.preEvent) return n === 0 ? t("roadmap.slot.event.recap", { event: name }) : t(`roadmap.slot.event.thanks.${(n % 2) + 1}`, { event: name });
         if (isConversion) return t("roadmap.slot.event.countdown", { event: name, days: daysLeft(date) });
-        return slotTitle("event", funnel, n, name);
+        return slotTitle("event", funnel);
       },
     });
     if (demand > 0 && lp.slots < demand && !(horizonEnd && p.dateFrom > horizonEnd)) conflicts.push({ laneId: "event", phaseId: p.id, phase: p.name, need: demand, fit: lp.slots });
@@ -440,14 +452,14 @@ export function planRoadmap({ goal, brand, content = [], campaigns = [], setting
   const comLane = lanes.find((l) => l.id === "community");
   if (comLane) {
     for (let ws = weekStart(comLane.startDate); ws <= comLane.endDate; ws = addDays(ws, 7)) {
-      place({ laneId: "community", phaseKey: `w${ws}`, from: ws > comLane.startDate ? ws : comLane.startDate, to: addDays(ws, 6) < comLane.endDate ? addDays(ws, 6) : comLane.endDate, count: 1, kindForTitle: "MOFU", titler: (f, n) => slotTitle("community", "MOFU", slots.filter((s) => s.laneId === "community").length + n, name) });
+      place({ laneId: "community", phaseKey: `w${ws}`, from: ws > comLane.startDate ? ws : comLane.startDate, to: addDays(ws, 6) < comLane.endDate ? addDays(ws, 6) : comLane.endDate, count: 1, kindForTitle: "MOFU", titler: (f, n) => slotTitle("community", "MOFU") });
     }
   }
   // Rhythm: one light post a week.
   const rhLane = lanes.find((l) => l.id === "rhythm");
   if (rhLane) {
     for (let ws = weekStart(rhLane.startDate); ws <= rhLane.endDate; ws = addDays(ws, 7)) {
-      place({ laneId: "rhythm", phaseKey: `w${ws}`, from: ws > rhLane.startDate ? ws : rhLane.startDate, to: addDays(ws, 6) < rhLane.endDate ? addDays(ws, 6) : rhLane.endDate, count: 1, kindForTitle: "TOFU", titler: () => slotTitle("rhythm", "TOFU", 0, name) });
+      place({ laneId: "rhythm", phaseKey: `w${ws}`, from: ws > rhLane.startDate ? ws : rhLane.startDate, to: addDays(ws, 6) < rhLane.endDate ? addDays(ws, 6) : rhLane.endDate, count: 1, kindForTitle: "TOFU", titler: () => slotTitle("rhythm", "TOFU") });
     }
   }
   // Audience: whatever capacity is left each week (the campaign's own
@@ -459,7 +471,7 @@ export function planRoadmap({ goal, brand, content = [], campaigns = [], setting
       const from = ws > audLane.startDate ? ws : audLane.startDate;
       const to = addDays(ws, 6) < audLane.endDate ? addDays(ws, 6) : audLane.endDate;
       const free = Math.max(0, Math.min(capFor(from), weekFree(from)));
-      if (free > 0) place({ laneId: "audience", phaseKey: `w${ws}`, from, to, count: free, kindForTitle: "funnelByPhase", phaseIdx: idx % 3, phaseCount: 3, titler: (funnel, n) => slotTitle("audience", funnel, idx + n, name) });
+      if (free > 0) place({ laneId: "audience", phaseKey: `w${ws}`, from, to, count: free, kindForTitle: "funnelByPhase", phaseIdx: idx % 3, phaseCount: 3, titler: (funnel) => slotTitle("audience", funnel) });
       idx += 1;
     }
     const audSlots = slots.filter((s) => s.laneId === "audience").length;

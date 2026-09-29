@@ -33,14 +33,25 @@ function newContentSteps(campaigns) {
       body: t("guide.creator.new.body"),
       interactive: { type: "click", extraSelectors: ["#new-content-empty"] },
     },
+    // "Konten baru" opens the small new-content drawer: a title, then Save —
+    // the piece opens here in Creator, where Bab 2 picks up. (The old
+    // platform picker this step pointed at no longer exists.)
     {
-      selector: "[data-platform-pick]",
-      title: t("guide.creator.platform.title"),
-      body: t("guide.creator.platform.body"),
-      interactive: { type: "clickAny" },
+      selector: ".overlay .drawer #f-title",
+      showIf: () => !!qs(".overlay .drawer #f-title"),
+      title: t("guide.cal.title.title"),
+      body: t("guide.cal.title.body"),
+      interactive: { type: "input", minLength: 3 },
     },
-    // Picking a platform creates the content and opens the AI hook/script/
-    // caption generator straight away (no edit drawer) — Bab 2 picks up there.
+    {
+      selector: ".overlay .drawer [data-save]",
+      showIf: () => !!qs(".overlay .drawer [data-save]"),
+      title: t("common.save"),
+      body: t("guide.creator.save.body"),
+      interactive: { type: "until", predicate: () => !qs(".overlay .drawer") },
+      hint: t("guide.cal.save.hint"),
+      write: true,
+    },
   ];
 }
 

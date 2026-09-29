@@ -1,4 +1,4 @@
-import { getBrand, listContent, getContent, listCampaigns, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getBrand, listContent, getContent, listCampaigns, listSeries, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
 import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText } from "../dom.js";
@@ -25,13 +25,19 @@ const VIEWS = [
   { key: "all", labelKey: "contentList.views.all", test: () => true },
   { key: "published", labelKey: "contentList.views.published", test: (s) => s === "published" },
   { key: "drafts", labelKey: "contentList.views.drafts", test: (s) => s !== "published" },
+  // Archived pieces used to vanish for good — listContent() hides them and
+  // there was no view that showed them, so "Keluarkan dari arsip" could
+  // never be reached. They live here, with the same row menu to restore.
+  { key: "archived", labelKey: "contentList.views.archived", archived: true, test: () => true },
 ];
 
 export function render(root, { brandId }) {
-  const state = { view: "all", search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", sort: "updated", dir: "desc" };
+  const state = { view: "all", search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", seriesId: "", sort: "updated", dir: "desc" };
   // Arriving from a campaign: filter to that campaign, and for "Isi
   // performa" open Quick Fill on the piece straight away.
   const navCtx = consumeNavContext();
+  // From a series card's "N episode": that series' episodes.
+  if (navCtx?.seriesId) state.seriesId = navCtx.seriesId;
   if (navCtx?.campaignId) {
     state.campaignId = navCtx.campaignId;
     state.view = navCtx.status === "published" ? "published" : navCtx.status ? "drafts" : "all";
@@ -79,9 +85,11 @@ function paint(root, brandId, state, refresh) {
     return;
   }
   const settings = getSettings();
-  let items = listContent(brandId).map((c) => ({ c, perf: c.performance, m: computeContentMetrics(c, settings) }));
-
   const activeView = VIEWS.find((v) => v.key === state.view) || VIEWS[0];
+  const isArchived = (c) => !!c.archived || c.status === "archived";
+  const pool = activeView.archived ? listContent(brandId, { includeArchived: true }).filter(isArchived) : listContent(brandId).filter((c) => !isArchived(c));
+  let items = pool.map((c) => ({ c, perf: c.performance, m: computeContentMetrics(c, settings) }));
+
   items = items.filter((x) => activeView.test(x.c.status));
 
   if (state.search.trim()) {
@@ -93,6 +101,7 @@ function paint(root, brandId, state, refresh) {
   if (state.platform) items = items.filter((x) => x.c.platform === state.platform);
   if (state.view === "published" && state.age) items = items.filter((x) => ageBucket(x.c) === state.age);
   if (state.campaignId) items = items.filter((x) => x.c.campaignId === state.campaignId);
+  if (state.seriesId) items = items.filter((x) => x.c.seriesId === state.seriesId);
 
   items.sort((a, b) => {
     let av, bv;
@@ -112,7 +121,8 @@ function paint(root, brandId, state, refresh) {
   // "Filter" badge only counts what's inside that panel (Funnel/Format/
   // Platform/Age) — Campaign has its own always-visible dropdown.
   const panelFilterCount = (state.funnel ? 1 : 0) + (state.format ? 1 : 0) + (state.platform ? 1 : 0) + (state.age ? 1 : 0);
-  const activeFilters = panelFilterCount + (state.campaignId ? 1 : 0);
+  const activeFilters = panelFilterCount + (state.campaignId ? 1 : 0) + (state.seriesId ? 1 : 0);
+  const seriesList = listSeries(brandId);
   const igAllowed = canUseInstagramApi();
   const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
   const igUnavailableNote = t("contentList.connectInEditBrand");
@@ -145,6 +155,10 @@ function paint(root, brandId, state, refresh) {
         <option value="">${t("contentList.allCampaigns")}</option>
         ${[...campaignsById.values()].map((c) => `<option value="${c.id}" ${state.campaignId === c.id ? "selected" : ""}>${escapeText(c.name || t("common.untitled"))}</option>`).join("")}
       </select>
+      ${seriesList.length ? `<select class="select" id="filter-series" style="width:auto;">
+        <option value="">${t("contentList.allSeries")}</option>
+        ${seriesList.map((s) => `<option value="${s.id}" ${state.seriesId === s.id ? "selected" : ""}>${escapeText(s.name || t("common.untitled"))}</option>`).join("")}
+      </select>` : ""}
       <button type="button" class="btn btn-secondary btn-sm" id="filter-toggle">${icon("filter", { size: 13 })}${t("contentList.filter")}${panelFilterCount ? ` <span class="notif-badge" style="position:static;margin-left:2px;">${panelFilterCount}</span>` : ""}${icon("chevronDown", { size: 12 })}</button>
       ${activeFilters ? `<button class="btn btn-ghost btn-sm" id="clear-filters">${icon("x", { size: 13 })}${t("contentList.clearFilters")}</button>` : ""}
     </div>
@@ -236,6 +250,10 @@ function paint(root, brandId, state, refresh) {
     state.campaignId = e.target.value;
     paint(root, brandId, state, refresh);
   });
+  qs("#filter-series")?.addEventListener("change", (e) => {
+    state.seriesId = e.target.value;
+    paint(root, brandId, state, refresh);
+  });
   qs("#filter-toggle")?.addEventListener("click", (e) => {
     e.stopPropagation();
     openFilterPanel(e.currentTarget, { state, isPublishedView, settings, onChange: () => paint(root, brandId, state, refresh) });
@@ -246,6 +264,7 @@ function paint(root, brandId, state, refresh) {
     state.platform = "";
     state.age = "";
     state.campaignId = "";
+    state.seriesId = "";
     paint(root, brandId, state, refresh);
   });
 
@@ -258,6 +277,7 @@ function paint(root, brandId, state, refresh) {
     state.platform = "";
     state.age = "";
     state.campaignId = "";
+    state.seriesId = "";
     paint(root, brandId, state, refresh);
   });
   qs("#empty-new-content")?.addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
@@ -314,7 +334,7 @@ function paint(root, brandId, state, refresh) {
       if (!menu) return;
       menu.innerHTML = `
         <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
-        <button data-act="archive">${icon("archive", { size: 15 })}${item.archived ? t("contentList.unarchive") : t("contentList.archive")}</button>
+        <button data-act="archive">${icon("archive", { size: 15 })}${item.archived || item.status === "archived" ? t("contentList.unarchive") : t("contentList.archive")}</button>
         <div class="menu-divider"></div>
         <button data-act="delete" class="danger">${icon("trash", { size: 15 })}${t("common.delete")}</button>
       `;
@@ -324,8 +344,11 @@ function paint(root, brandId, state, refresh) {
         closeMenu();
         if (act === "edit") openContentEditor({ brandId, contentId: id, onSaved: refresh });
         else if (act === "archive") {
-          const wasArchived = item.archived;
+          const wasArchived = item.archived || item.status === "archived";
           archiveContent(id, !wasArchived);
+          // The old drawer could also archive through the status list; a
+          // piece restored from that comes back as a draft, not "Diarsipkan".
+          if (wasArchived && item.status === "archived") updateContent(id, { status: "draft" });
           toast(wasArchived ? t("contentList.contentRestored") : t("contentList.contentArchived"));
         } else if (act === "delete") {
           const ok = await confirmDialog({ title: t("contentList.deleteContentTitle"), message: t("delete.toTrash.suffix", { days: TRASH_DAYS }), confirmLabel: t("delete.toTrash.confirm"), danger: true });

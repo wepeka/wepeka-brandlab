@@ -10,6 +10,7 @@ import { testFacebookConnection } from "../facebook.js";
 import { canCreateBrand, getCachedAccount } from "../account.js";
 import { getMode } from "../mode.js";
 import { getSettings } from "../store.js";
+import { SUPPORT_WA_NUMBER } from "../site-links.js";
 import { hasAiKey, draftBusinessDescription } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
@@ -219,7 +220,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     openModal({
       title: t("brands.limit.title"),
       bodyHTML: `<p style="margin:0 0 4px;">${t("brands.limit.body", { limit })}</p>`,
-      footHTML: `<a class="btn btn-primary" href="https://wa.me/6285196627609" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`,
+      footHTML: `<a class="btn btn-primary" href="https://wa.me/${SUPPORT_WA_NUMBER}" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`,
     });
     return;
   }

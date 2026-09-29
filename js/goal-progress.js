@@ -11,7 +11,7 @@
 //   later    not yet time
 // The Home card's readiness bar, the lane "on track" flags and the weekly
 // brief all read from these same items.
-import { getContent, getCampaign, localISODate, daysBetween } from "./store.js";
+import { getContent, getCampaign, localISODate, daysBetween, milestoneLabel } from "./store.js";
 import { addDays, weekStart, readCondition } from "./goal-roadmap.js";
 import { t } from "./i18n.js";
 
@@ -43,8 +43,11 @@ export function goalItems(goal, today = localISODate()) {
     // added from Brainstorm) are done once the logged number reaches the target.
     if (m.kind !== "check" && !(m.kind === "number" && m.custom)) return;
     const logged = Number(live.manualMetrics?.[m.id]?.value ?? m.value) || 0;
-    const done = m.kind === "check" ? !!m.done : m.target ? logged >= m.target : !!m.done;
-    items.push({ id: `ms:${m.id}`, kind: "milestone", laneId: "event", label: m.label, date: m.dueDate, state: stateOf(m.dueDate, done, today), campaignId: live.id, milestoneId: m.id, phaseId: p.id, optional: m.required === false });
+    // Ticks from the campaign page land in manualMetrics (store.js
+    // setCampaignManualMetric); m.done is only the template's starting state.
+    const ticked = live.manualMetrics?.[m.id]?.done ?? m.done;
+    const done = m.kind === "check" ? !!ticked : m.target ? logged >= m.target : !!ticked;
+    items.push({ id: `ms:${m.id}`, kind: "milestone", laneId: "event", label: m.custom ? m.label : milestoneLabel(m.label, m.target), date: m.dueDate, state: stateOf(m.dueDate, done, today), campaignId: live.id, milestoneId: m.id, phaseId: p.id, optional: m.required === false });
   }));
   // Goal-owned tasks (community lane).
   (goal.tasks || []).forEach((tk) => items.push({ id: `task:${tk.id}`, kind: "task", laneId: tk.laneId, label: tk.label, date: tk.dueDate, state: stateOf(tk.dueDate, !!tk.done, today), taskId: tk.id }));

@@ -18,7 +18,7 @@ import { getMode } from "../mode.js";
 // along a brand is. Nothing else lives here any more.
 const HUB_TOUR_STEPS = [
   { selector: ".bb-hub-door:nth-child(1)", title: "Brand DNA", body: t("builder.tour.dna.body") },
-  { selector: ".bb-hub-door:nth-child(2)", title: "Brand Guidelines", body: t("builder.tour.guidelines.body") },
+  { selector: ".bb-hub-door:nth-child(2)", title: "Brand Book", body: t("builder.tour.guidelines.body") },
 ];
 
 // Whole-Builder completeness — both doors done. Used to decide whether
@@ -155,21 +155,24 @@ function dnaDoorHTML(brand) {
   });
 }
 
-// Pemula's promise for this door is exactly Warna+Font; Pro counts the
-// whole book (logo, colour, type, direction, tone).
+// Same count as the Brand Guidelines page's own bar and Beranda
+// (brandBookProgress) in both modes — Pemula used to see "Warna & font
+// selesai" at 100% here while the page itself said 2/6. What Pemula still
+// gets is the highlight: once colour and fonts are set this door stops
+// being "next", since that's all the Tujuan tab waits for.
 function bookDoorHTML(brand) {
   const pro = getMode() === "advanced";
   const basics = visualBasicsDone(brand);
   const book = brandBookProgress(brand);
-  const pct = pro ? Math.round((book.filled / book.total) * 100) : basics ? 100 : 0;
+  const pct = Math.round((book.filled / book.total) * 100);
   return doorHTML({
     href: `#/brand/${brand.id}/guidelines/color`,
     iconName: "book",
-    label: "Brand Guidelines",
+    label: "Brand Book",
     helpKey: "term-brand-guidelines",
     desc: t("builder.group.guidelines.doorDesc"),
     pct,
-    progressLabel: pro ? t("builder.progress.stages", { done: book.filled, total: book.total }) : basics ? t("builder.progress.visualDone") : t("builder.progress.visualPending"),
+    progressLabel: t("builder.progress.stages", { done: book.filled, total: book.total }),
     primary: brandDnaDone(brand) && !(pro ? book.filled >= book.total : basics),
   });
 }

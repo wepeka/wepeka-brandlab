@@ -102,11 +102,6 @@ export default {
   "chat.ideasNow": { en: "Ideas now", id: "Langsung kasih ide" },
   "chat.ideasNow.title": { en: "Skip the questions: three concrete content ideas right away", id: "Lewati pertanyaan: langsung tiga ide konten konkret" },
   "chat.ideasNow.message": { en: "Give me content ideas now", id: "Langsung kasih ide konten dong" },
-  "chat.idea.draft": { en: "Make a draft", id: "Jadikan draft" },
-  "chat.idea.openDraft": { en: "Open draft", id: "Buka draft" },
-  "chat.idea.save": { en: "Save idea", id: "Simpan ide" },
-  "chat.idea.saved": { en: "Saved", id: "Tersimpan" },
-  "chat.idea.savedToast": { en: "Idea saved to Content ideas.", id: "Ide disimpan ke Ide Konten." },
   // The chat's own page and its conversations (Obrolan)
   "chat.page.sub": { en: "Ask about your brand, get content ideas, or tell what happened. What the chat saves lands in Content ideas (what to make) and Brand memory (what AI should know).", id: "Tanya soal brand, minta ide konten, atau cerita kejadian. Yang disimpan chat masuk ke Ide Konten (yang mau dibikin) dan Memori Brand (yang perlu AI tahu)." },
   "chat.sessions.title": { en: "Conversations", id: "Obrolan" },
@@ -173,7 +168,7 @@ export default {
   // "Rencanakan minggu ini" — the weekPlan chat card (js/consultant-panel.js,
   // js/ai.js generateWeekPlan). Entry points: Calendar, Creator, Home.
   "chat.week.button": { en: "Plan this week", id: "Rencanakan minggu ini" },
-  "chat.week.credit": { en: "Uses 1 AI credit", id: "Memakai 1 kredit AI" },
+  "chat.week.credit": { en: "Uses 1 AI credit", id: "Memakai 1 AI credit" },
   "chat.week.seed": { en: "Plan this week's content for me.", id: "Tolong rencanakan konten minggu ini." },
   "chat.week.regenMsg": { en: "Start over with a new plan for the same days.", id: "Buat ulang rencananya untuk hari-hari yang sama." },
   "chat.week.noRoom": { en: "The next couple of weeks are already fully booked on your calendar — nothing free to plan onto. Open the calendar to see what's there, or free up a day first.", id: "Dua minggu ke depan sudah penuh di kalendermu — gak ada slot kosong buat direncanakan. Buka kalender buat lihat isinya, atau kosongkan satu hari dulu." },
@@ -183,7 +178,7 @@ export default {
   "chat.week.countLabel": { en: "How many posts", id: "Jumlah konten" },
   "chat.week.countN": { en: "{n} posts", id: "{n} konten" },
   "chat.week.regen": { en: "Start over", id: "Ganti semua" },
-  "chat.week.creditNote": { en: "Starts a brand new plan — uses 1 AI credit", id: "Bikin rencana baru dari nol — pakai 1 kredit AI" },
+  "chat.week.creditNote": { en: "Starts a brand new plan — uses 1 AI credit", id: "Bikin rencana baru dari nol — pakai 1 AI credit" },
   "chat.week.save": { en: "Add to calendar ({n})", id: "Masukkan ke kalender ({n})" },
   "chat.week.close": { en: "Close this plan", id: "Tutup rencana" },
   "chat.week.open": { en: "Open", id: "Buka" },
@@ -203,6 +198,6 @@ export default {
   "chat.week.menuGeneral": { en: "Whole brand (automatic)", id: "Brand umum (otomatis)" },
   "chat.week.seedCampaign": { en: "Plan this week's content for the \"{name}\" campaign.", id: "Tolong rencanakan konten minggu ini untuk campaign \"{name}\"." },
   "chat.week.regenItem": { en: "Try a different idea for this day", id: "Coba ide lain untuk hari ini" },
-  "chat.week.regenItemTitle": { en: "Try a different idea for this day (uses 1 AI credit)", id: "Coba ide lain untuk hari ini (pakai 1 kredit AI)" },
+  "chat.week.regenItemTitle": { en: "Try a different idea for this day (uses 1 AI credit)", id: "Coba ide lain untuk hari ini (pakai 1 AI credit)" },
   "chat.week.regenItemMsg": { en: "Try a different idea for {date} (\"{title}\") only — keep every other day as-is.", id: "Coba ide lain untuk {date} (\"{title}\") saja — hari lain jangan diubah." },
 };

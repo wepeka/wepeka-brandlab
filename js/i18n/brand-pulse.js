@@ -55,30 +55,17 @@ export default {
   // had no "week" yet to call quiet — that line implied there was
   // something to compare against. This is the very first thing it sees.
   "companion.observation.firstDay": { en: "let's get your brand's story started.", id: "yuk, mulai cerita brand kamu." },
-  "companion.placeholder": { en: "Type or talk — a sale, a comment, anything…", id: "Ketik atau ngomong — ada penjualan, komen, apa aja…" },
-  "companion.send": { en: "Send", id: "Kirim" },
   "companion.day.today": { en: "Today", id: "Hari ini" },
   "companion.day.yesterday": { en: "Yesterday", id: "Kemarin" },
-  "companion.showOlder": { en: "Show earlier chat ({n})", id: "Lihat obrolan sebelumnya ({n})" },
-  "companion.hideOlder": { en: "Hide earlier chat", id: "Sembunyikan obrolan sebelumnya" },
   "companion.msg.delete": { en: "Delete this message", id: "Hapus pesan ini" },
-  "companion.typing": { en: "Thinking…", id: "Lagi mikir…" },
-  "companion.idea.create": { en: "Make it in Creator", id: "Bikin di Creator" },
-  "companion.idea.brainstorm": { en: "Brainstorm", id: "Brainstorm" },
-  "companion.idea.created": { en: "Draft \"{title}\" saved — open it in Creator.", id: "Draft \"{title}\" tersimpan — buka di Creator." },
-  "companion.idea.openDraft": { en: "Open draft", id: "Buka draft" },
-  "companion.idea.fromChat": { en: "From a chat with the Companion: {why}", id: "Dari obrolan Teman Brand: {why}" },
   "companion.action.moreLikeThis": { en: "Make more like it", id: "Bikin yang mirip" },
   "companion.seed.contentSales": { en: "\"{title}\" brought in sales — what should the next one like it be?", id: "\"{title}\" menghasilkan penjualan — konten lanjutan yang mirip bagusnya apa?" },
   "companion.action.similarContent": { en: "Make similar content", id: "Bikin konten serupa" },
   "companion.action.rideMomentum": { en: "Ride the momentum", id: "Manfaatkan momentum" },
   "companion.action.openCreator": { en: "Open Creator", id: "Buka Creator" },
-  "companion.action.openSales": { en: "Open Sales Tracker", id: "Buka Sales Tracker" },
+  "companion.action.openSales": { en: "Open Sales Tracker", id: "Buka Pelacak Penjualan" },
   "companion.seed.viral": { en: "{title} — riding the wave, let's make a follow-up", id: "{title} — lagi naik, bikin konten lanjutan yuk" },
   "companion.seed.followerJump": { en: "{platform} followers just jumped — how do we ride this momentum?", id: "Followers {platform} lagi melonjak — gimana manfaatin momentumnya?" },
-  "companion.saveFailed": { en: "Couldn't save that — try again.", id: "Gagal menyimpan — coba lagi." },
-  "companion.aiUnavailable": { en: "Got it, noted. (AI can't reply right now.)", id: "Oke, dicatat. (AI belum bisa membalas sekarang.)" },
-  "companion.quotaReached": { en: "Today's AI quota is used up — the chat continues tomorrow.", id: "Kuota AI hari ini habis — obrolan lanjut besok." },
 
   // Recap → moments
   "companion.recap.button": { en: "Recap", id: "Rangkum" },
@@ -94,7 +81,6 @@ export default {
   "companion.recap.failed": { en: "Couldn't recap that — try again.", id: "Gagal merangkum — coba lagi." },
 
   // Moments strip + brand memory
-  "companion.moments.title": { en: "Moments", id: "Momentum" },
   "companion.moments.summary": { en: "{n} moment(s) this week", id: "{n} momentum minggu ini" },
   "companion.moments.manage": { en: "Manage", id: "Kelola" },
   "companion.moment.kind.sales-spike": { en: "Sales", id: "Penjualan" },
@@ -107,7 +93,7 @@ export default {
   "companion.moment.kind.other": { en: "Note", id: "Catatan" },
   "companion.moment.action.content": { en: "Make content", id: "Bikin konten" },
   "companion.moment.action.brainstorm": { en: "Brainstorm", id: "Brainstorm" },
-  "companion.moment.action.sales": { en: "Sales Tracker", id: "Sales Tracker" },
+  "companion.moment.action.sales": { en: "Sales Tracker", id: "Pelacak Penjualan" },
   "companion.moment.seed": { en: "{title} — {detail}", id: "{title} — {detail}" },
   "companion.memory.title": { en: "Brand memory", id: "Memori Brand" },
   "companion.memory.intro": { en: "What's happening in this brand right now — every AI feature (scripts, captions, schedule, campaigns) reads this before writing. It's not a content list: content you want to make goes to Content ideas. Delete anything AI shouldn't keep reading.", id: "Kejadian terbaru brand ini — dibaca semua fitur AI (script, caption, jadwal, campaign) sebelum menulis. Ini bukan daftar konten: konten yang mau kamu bikin masuknya ke Ide Konten. Hapus yang tidak perlu dibaca AI lagi." },

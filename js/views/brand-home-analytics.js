@@ -4,7 +4,7 @@
 // different concern (derived performance analytics vs. brand-progress
 // shortcuts) and because the widget catalog + chart drawing needs room to
 // grow without bloating home.js.
-import { getSettings, updateSettings, FUNNELS } from "../store.js";
+import { getSettings, updateSettings, FUNNELS, localISODate } from "../store.js";
 import { computeContentMetrics } from "../formulas.js";
 import { formatNumber, formatPercent, qs, qsa, openMenu, escapeHtml as escapeText } from "../dom.js";
 import { icon } from "../icons.js";
@@ -64,7 +64,7 @@ function shortDate(d) {
 // week" filter on Top Performing Content — one source of truth for "what
 // counts as this week" instead of two slightly different definitions.
 function buildWeeklyBuckets(withMetricsPublished, weeks = 8) {
-  const thisWeek = weekStart(new Date().toISOString().slice(0, 10)).getTime();
+  const thisWeek = weekStart(localISODate()).getTime();
   const buckets = [];
   for (let i = weeks - 1; i >= 0; i--) {
     const start = new Date(thisWeek);

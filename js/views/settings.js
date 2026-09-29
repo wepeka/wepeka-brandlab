@@ -3,18 +3,21 @@ import {
   getGlobalAiSettings, updateGlobalAiSettings, deleteLegacyGlobalAiKeys, updateGlobalBrandsBg,
   listBrands, archiveBrand, deleteBrand, listContent,
   exportJSON, importJSON, resetAll, onChange,
-  listTrash, restoreTrashItem, purgeTrashItem, TRASH_DAYS,
+  listTrash, restoreTrashItem, purgeTrashItem, TRASH_DAYS, getBrand, localISODate,
 } from "../store.js";
 import { getMode } from "../mode.js";
+import { backToLastBrandHTML } from "../back-link.js";
 import { currentUid, isAdmin } from "../account.js";
 import { testAiConnection } from "../ai.js";
 import { BG_PRESETS, DEFAULT_GLOW, resolveBrandsBg, bgHTML, paintBrandsBg } from "../brands-bg.js";
 import { icon } from "../icons.js";
-import { avatarHTML, qs, qsa, toast, escapeHtml } from "../dom.js";
+import { avatarHTML, qs, qsa, toast, escapeHtml, formatDate } from "../dom.js";
 import { confirmDialog } from "../modals.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout, authErrorMessage } from "../auth.js";
-import { getCachedAccount, claimUsername } from "../account.js";
+import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS } from "../account.js";
+import { aiDailyLimit, aiQuotaPeriod, aiUsageToday } from "../ai-usage.js";
+import { canTopUp } from "../ai-topup.js";
 import { t, getLang, setLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 
@@ -28,6 +31,9 @@ const PANELS = [
   { key: "account", labelKey: "settings.panel.account" },
   { key: "platforms", labelKey: "settings.panel.platforms", pro: true },
   { key: "formats", labelKey: "settings.panel.formats", pro: true },
+  // Sampah is its own panel so Pemula can reach it too — every delete dialog
+  // in the app points here ("Pengaturan → Sampah").
+  { key: "trash", labelKey: "settings.panel.trash" },
   { key: "data", labelKey: "settings.panel.data", pro: true },
   { key: "ai", labelKey: "settings.panel.ai", admin: true },
   { key: "bg", labelKey: "settings.panel.bg", admin: true },
@@ -50,7 +56,7 @@ function paint(root, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${t("settings.eyebrow")}${helpButtonHTML("settings")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backToLastBrandHTML(getBrand)}${helpButtonHTML("settings")}</div>
         <h1>${t("settings.title")}</h1>
         <p class="page-sub">${t("settings.sub")}</p>
       </div>
@@ -74,6 +80,7 @@ function paint(root, state, refresh) {
   else if (state.panel === "bg") renderBrandsBg(content);
   else if (state.panel === "language") renderLanguage(content);
   else if (state.panel === "data") renderData(content);
+  else if (state.panel === "trash") renderTrash(content);
   else if (state.panel === "account") renderAccount(content);
 }
 
@@ -318,8 +325,36 @@ function trashRowHTML(row) {
       <button class="icon-btn" data-trash-purge="${row.kind}:${row.id}" aria-label="${escapeHtml(t("set.trash.purgeAria", { name: row.name }))}" style="width:30px;height:30px;">${icon("trash", { size: 14 })}</button>
     </div>`;
 }
-function renderData(content) {
+function renderTrash(content) {
   const trash = listTrash();
+  content.innerHTML = `
+    <div class="card">
+      <h3 style="font-size:16px;margin-bottom:6px;">${t("set.trash.title")}</h3>
+      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.trash.sub", { days: TRASH_DAYS })}</p>
+      ${trash.length ? trash.map(trashRowHTML).join("") : `<p class="text-faint" style="font-size:13px;margin:0;">${t("set.trash.empty")}</p>`}
+    </div>
+  `;
+  qsa("[data-trash-restore]", content).forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const [kind, id] = btn.dataset.trashRestore.split(":");
+      restoreTrashItem(kind, id);
+      toast(t("set.trash.restored"));
+      renderTrash(content);
+    })
+  );
+  qsa("[data-trash-purge]", content).forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const [kind, id] = btn.dataset.trashPurge.split(":");
+      const ok = await confirmDialog({ title: t("set.trash.purgeTitle"), message: t("set.trash.purgeMsg"), confirmLabel: t("common.delete"), danger: true });
+      if (!ok) return;
+      purgeTrashItem(kind, id);
+      toast(t("set.trash.purged"));
+      renderTrash(content);
+    })
+  );
+}
+
+function renderData(content) {
   content.innerHTML = `
     <div class="card" style="margin-bottom:20px;">
       <h3 style="font-size:16px;margin-bottom:6px;">${t("set.data.backup")}</h3>
@@ -330,35 +365,12 @@ function renderData(content) {
         <input type="file" id="import-file" accept="application/json" style="display:none;" />
       </div>
     </div>
-    <div class="card" style="margin-bottom:20px;">
-      <h3 style="font-size:16px;margin-bottom:6px;">${t("set.trash.title")}</h3>
-      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.trash.sub", { days: TRASH_DAYS })}</p>
-      ${trash.length ? trash.map(trashRowHTML).join("") : `<p class="text-faint" style="font-size:13px;margin:0;">${t("set.trash.empty")}</p>`}
-    </div>
     <div class="card">
       <h3 style="font-size:16px;margin-bottom:6px;color:var(--health-poor);">${t("set.data.reset")}</h3>
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.data.resetSub")}</p>
       <button class="btn btn-danger" id="reset-btn">${icon("trash", { size: 15 })}${t("set.data.resetBtn")}</button>
     </div>
   `;
-  qsa("[data-trash-restore]", content).forEach((btn) =>
-    btn.addEventListener("click", () => {
-      const [kind, id] = btn.dataset.trashRestore.split(":");
-      restoreTrashItem(kind, id);
-      toast(t("set.trash.restored"));
-      renderData(content);
-    })
-  );
-  qsa("[data-trash-purge]", content).forEach((btn) =>
-    btn.addEventListener("click", async () => {
-      const [kind, id] = btn.dataset.trashPurge.split(":");
-      const ok = await confirmDialog({ title: t("set.trash.purgeTitle"), message: t("set.trash.purgeMsg"), confirmLabel: t("common.delete"), danger: true });
-      if (!ok) return;
-      purgeTrashItem(kind, id);
-      toast(t("set.trash.purged"));
-      renderData(content);
-    })
-  );
   qs("#export-btn").addEventListener("click", () => {
     const blob = new Blob([exportJSON()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -389,10 +401,51 @@ function renderData(content) {
   });
 }
 
+// What the account is on — nowhere else in the app said it once the trial
+// badge was gone. Tier names (Starter/Pro/Studio) are never shown to people
+// (pricing decision 2026-09-23): a subscription reads as "Langganan · N brand".
+function planName(account) {
+  const plan = account?.plan;
+  if (plan === "trial") return t("set.plan.trial");
+  if (plan === "founder") return "Founder Lifetime";
+  if (plan === "founder-ultimate") return "Agency Lifetime";
+  if (plan === "lifetime") return "Lifetime";
+  if (["starter", "pro", "studio"].includes(plan)) return t("set.plan.subscription", { n: account.brandLimit || { starter: 1, pro: 3, studio: 10 }[plan] });
+  return plan || "—";
+}
+function planStatus(account) {
+  if (isReadOnly(account)) return t("set.plan.status.readonly");
+  if (isTrial(account)) return t("set.plan.status.trial", { n: trialDaysLeft(account) });
+  if (LIFETIME_PLANS.includes(account?.plan)) return t("set.plan.status.lifetime");
+  const until = Number(account?.subscriptionExpiresAt);
+  return until ? t("set.plan.status.until", { date: formatDate(localISODate(new Date(until))) }) : t("set.plan.status.active");
+}
+function planCardHTML(account) {
+  if (!account) return "";
+  const limit = aiDailyLimit();
+  const period = aiQuotaPeriod();
+  const credits = limit === Infinity
+    ? t("set.plan.creditsUnlimited")
+    : t(`set.plan.credits.${period === "month" ? "month" : period === "total" ? "total" : "day"}`, { used: aiUsageToday(), limit });
+  return `
+    <div class="card" style="margin-bottom:20px;">
+      <h3 style="font-size:16px;margin-bottom:14px;">${t("set.plan.title")}</h3>
+      <div class="kv"><span class="k">${t("set.plan.name")}</span><span class="v">${escapeHtml(planName(account))}</span></div>
+      <div class="kv"><span class="k">${t("set.plan.status")}</span><span class="v">${escapeHtml(planStatus(account))}</span></div>
+      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${listBrands().length} / ${account.brandLimit ?? "—"}</span></div>
+      <div class="kv"><span class="k">AI credit</span><span class="v">${escapeHtml(credits)}</span></div>
+      <div class="flex gap-8" style="flex-wrap:wrap;margin-top:14px;">
+        <a class="btn btn-secondary btn-sm" href="#/pricing">${icon("arrowUp", { size: 13 })}${t("set.plan.see")}</a>
+        ${limit === Infinity ? "" : `<button type="button" class="btn btn-ghost btn-sm" data-ai-topup>${icon("plus", { size: 13 })}${t(canTopUp(account) ? "ai.topup.button" : "ai.topup.upgradeButton")}</button>`}
+      </div>
+    </div>`;
+}
+
 function renderAccount(content) {
   const email = getUserEmail();
   const account = getCachedAccount();
   content.innerHTML = `
+    ${planCardHTML(account)}
     <div class="card" style="margin-bottom:20px;">
       <h3 style="font-size:16px;margin-bottom:14px;">${t("set.acc.loggedInAs")}</h3>
       <div class="kv"><span class="k">Email</span><span class="v">${escapeHtml(email)}</span></div>

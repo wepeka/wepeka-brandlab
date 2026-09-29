@@ -37,6 +37,8 @@ import { isTourDemo, DEMO_TOAST } from "../tour-demo.js";
 import { STATUS_LABELS_GUIDED, funnelShort } from "../funnel-field.js";
 import { t } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
+import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
+import { openContentCadenceSetup } from "../cadence-setup.js";
 
 const CAMPAIGN_STATUS_PILL_CLASS = { planning: "status-draft", active: "status-scheduled", completed: "status-published", archived: "status-archived" };
 
@@ -119,12 +121,13 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${helpButtonHTML("campaign-detail")}${guideVideoButtonHTML("campaign-detail")}</div>
         <h1>${esc(campaign.name || t("camp.untitled"))}</h1>
-        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}${campaign.goalId && getGoal(brandId, campaign.goalId) ? ` · <a class="link" href="#/brand/${brandId}/goals/${campaign.goalId}">${icon("target", { size: 12 })} ${t("roadmap.camp.link")}</a>` : ""}</p>
+        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}</p>
       </div>
       <div class="cd-head-actions" style="flex:none;">
         <button class="icon-btn" id="cd-more" aria-label="${t("camp.detail.more")}" style="width:36px;height:36px;">${icon("dots", { size: 16 })}</button>
       </div>
     </div>
+    ${eventTabsHTML(brandId, goalForCampaign(brandId, campaign), campaign.id)}
 
     ${guided ? guidedIntroHTML() : ""}
     ${state.celebrateIndex !== undefined && state.celebrateIndex !== null && stages[state.celebrateIndex]?.state === "completed" ? celebrateHTML(stages[state.celebrateIndex], stages[state.celebrateIndex + 1]) : ""}
@@ -1403,6 +1406,12 @@ function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh,
     }
     case "brainstorm":
       goBrainstorm({ brandId, campaign, stage: stages[cta.stageIndex ?? stage?.index] || stage, ctxLabel });
+      return;
+    case "sales":
+      go(`#/brand/${brandId}/sales`, { ...base, intent: "log-sale" });
+      return;
+    case "cadence":
+      openContentCadenceSetup(brand);
       return;
     default:
   }

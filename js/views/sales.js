@@ -22,6 +22,7 @@ import { staleBecause, mayAutoRefresh, refreshStamp } from "../ai-autorefresh.js
 import { buildXlsx, downloadBlob } from "../xlsx-lite.js";
 import { getCachedAccount, isLifetime } from "../account.js";
 import { backLinkHTML } from "../back-link.js";
+import { consumeNavContext } from "../nav-context.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
@@ -50,6 +51,14 @@ export function render(root, { brandId }) {
   const state = { productId: null, showAll: false, adviceBusy: false, adviceError: "", autoTried: false, dead: false };
   const refresh = () => !state.dead && paint(root, brandId, state, refresh);
   refresh();
+  // Arrived from a campaign's "Catat penjualan": the sale form opens with
+  // that campaign already picked as the source, so the sale counts there.
+  const nav = consumeNavContext();
+  if (nav?.intent === "log-sale" && nav.campaignId) {
+    const sel = qs("#st-source", root);
+    if (sel && [...sel.options].some((o) => o.value === `c:${nav.campaignId}`)) sel.value = `c:${nav.campaignId}`;
+    qs("#st-log", root)?.scrollIntoView({ block: "center" });
+  }
   autoRefreshAdvice(brandId, state, refresh);
   return () => {
     state.dead = true;

@@ -25,7 +25,7 @@
 //            isn't the only track ticked.
 //   Finally — the ticked plans previewed side by side, one disclaimer, one
 //            button that creates the campaigns together.
-import { getBrand, listContent, listCampaigns, createCampaign, getBrandInsights, milestoneLabel, unitLabel, missionText, CAMPAIGN_PHASE_TEMPLATE } from "../store.js";
+import { getBrand, listContent, listCampaigns, createCampaign, getBrandInsights, updateBrandInsights, setCadenceUploadsPerWeek, milestoneLabel, unitLabel, missionText, CAMPAIGN_PHASE_TEMPLATE } from "../store.js";
 import {
   GOAL_DURATIONS, COMMUNITY_PLATFORMS, SOCIAL_CHECKPOINTS, assessGoal, suggestCommunityTarget, brandBaseline,
   placeStartSocialLevel, placeStartCommunityLevel, buildSocialGrowthPlan, buildCommunityGrowthPlan,
@@ -556,7 +556,16 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
   function finish() {
     const created = [];
     const namesCreated = [];
+    let cadenceChanged = null;
     if (state.order.includes("social")) {
+      // The numbers typed here are the brand's own, not this campaign's
+      // private copy: followers go to Insights (what the Followers target
+      // reads — it used to open at "0, belum pernah dicatat" right after
+      // being asked), the weekly rhythm to Jadwal Kerja.
+      if (state.followers !== null && state.followers !== undefined && state.followers !== insightsFollowersFor(state.platform)) {
+        updateBrandInsights(brandId, state.platform, { followers: state.followers, source: "wizard" });
+      }
+      if (state.uploadsPerWeek) cadenceChanged = setCadenceUploadsPerWeek(brandId, state.uploadsPerWeek);
       const placement = placeStartSocialLevel({ followers: state.followers, baseline });
       const { missions, goalPlan } = buildSocialGrowthPlan({ platform: state.platform, current: { followers: state.followers || 0 }, target: state.followersTarget, months: state.months, uploadsPerWeek: state.uploadsPerWeek, startIndex: placement.index, content, contentCadence: cad });
       created.push(createCampaign(brandId, {
@@ -574,7 +583,11 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     if (state.order.includes("community")) {
       const placement = placeStartCommunityLevel({ hasExisting: state.hasExisting, members: state.members });
       const { missions, goalPlan } = buildCommunityGrowthPlan({ hasExisting: state.hasExisting, platformWhere: [...state.platformWhere], current: { members: state.hasExisting ? state.members || 0 : 0 }, target: state.membersTarget, months: state.months, startIndex: placement.index, content });
+      // Today's member count is the first reading of the "Member komunitas"
+      // target (valueKey "members"), not a number to type in again.
+      const memberSeed = state.hasExisting && Number(state.members) > 0 ? { members: { value: Number(state.members), updatedAt: Date.now() } } : null;
       created.push(createCampaign(brandId, {
+        ...(memberSeed ? { manualMetrics: memberSeed } : {}),
         name: `${t("goal.launch.communityTitle")} ${brand?.name || ""}`.trim(),
         objective: "community", status: "active",
         targetAudience: brand?.brandDNA?.targetAudience || "",
@@ -609,6 +622,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       syncSalesCampaign(brandId);
     }
     toast(created.length > 1 ? t("goal.launch.deployedToastMany", { names: namesCreated.join(", ") }) : t("goal.launch.deployedToastOne", { name: created[0].name }));
+    if (cadenceChanged) toast(t("cadence.updatedFromWizard", { n: state.uploadsPerWeek }));
     onSaved?.();
     if (created.length === 1) location.hash = `#/brand/${brandId}/campaigns/${created[0].id}`;
     else location.hash = `#/brand/${brandId}/campaigns`;

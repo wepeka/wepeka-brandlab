@@ -276,6 +276,72 @@ export const FONT_CATEGORIES = [
 }));
 export const FONT_CATEGORY_SECTORS = FONT_CATEGORIES.flatMap((c) => c.sectors.map((sector) => ({ sector, categoryKey: c.key })));
 
+// ---------- "Rekomendasi Wepeka" — suggestions, never pre-filled ----------
+// The owner builds colour, type and tone from zero; these only power a
+// "Rekomendasi Wepeka" option next to each, read from the brand character
+// picked in Brand DNA (brandBuilder.personality.feeling — the same feeling
+// vocabulary as COLOR_FEELINGS) and the business description. Nothing here
+// is applied until the owner presses the button.
+export const FEELING_TYPE_VIBE = {
+  Trustworthy: "Professional", Premium: "Elegant", Energetic: "Bold", Natural: "Friendly", Creative: "Editorial",
+  Minimal: "Minimal", Playful: "Playful", Powerful: "Bold", Elegant: "Elegant",
+};
+// Slider positions (0 = left label, 100 = right) on TONE_AXES:
+// formal Formal↔Casual · language Simple↔Complex · character Serious↔Playful · emotion Reserved↔Expressive.
+export const FEELING_TONE = {
+  Trustworthy: { formal: 40, language: 30, character: 30, emotion: 40 },
+  Premium: { formal: 25, language: 45, character: 25, emotion: 35 },
+  Energetic: { formal: 75, language: 30, character: 70, emotion: 80 },
+  Natural: { formal: 65, language: 25, character: 50, emotion: 55 },
+  Creative: { formal: 70, language: 45, character: 70, emotion: 75 },
+  Minimal: { formal: 45, language: 20, character: 35, emotion: 25 },
+  Playful: { formal: 85, language: 20, character: 85, emotion: 80 },
+  Powerful: { formal: 45, language: 40, character: 25, emotion: 70 },
+  Elegant: { formal: 25, language: 45, character: 30, emotion: 35 },
+};
+// Words that point at one of the font sectors above, checked against the
+// business description, one-liner and products (Indonesian and English).
+// First match wins, so the more specific sectors come first.
+const SECTOR_KEYWORDS = [
+  ["wedding", ["wedding", "pernikahan", "nikahan", "wedding organizer"]],
+  ["barber", ["barber", "pangkas rambut", "cukur"]],
+  ["jewelry", ["perhiasan", "jewelry", "jewellery", "cincin", "emas"]],
+  ["premiumBeauty", ["salon", "spa", "klinik kecantikan", "beauty clinic", "estetik"]],
+  ["cosmetics", ["kosmetik", "skincare", "make up", "makeup", "cosmetic"]],
+  ["streetwear", ["streetwear", "skate"]],
+  ["highFashion", ["butik", "boutique", "couture", "desainer busana"]],
+  ["casualFashion", ["fashion", "baju", "kaos", "pakaian", "apparel", "clothing", "hijab", "konveksi", "sablon"]],
+  ["kidsToys", ["mainan", "anak-anak", "bayi", "kids", "toys", "balita"]],
+  ["organicFood", ["organik", "organic", "sayur", "makanan sehat", "healthy food", "vegan"]],
+  ["cafe", ["kafe", "cafe", "kopi", "coffee", "resto", "restoran", "warung", "kuliner", "makanan", "minuman", "katering", "catering", "bakery", "kue", "roti", "dessert"]],
+  ["alcohol", ["bar ", "wine", "bir", "alkohol", "cocktail"]],
+  ["hotel", ["hotel", "resort", "villa", "penginapan", "homestay"]],
+  ["law", ["hukum", "advokat", "notaris", "lawyer", "legal", "pengacara"]],
+  ["finance", ["keuangan", "bank", "finance", "asuransi", "investasi", "akuntan", "pajak"]],
+  ["devTech", ["developer", "programmer", "coding", "software house"]],
+  ["apps", ["aplikasi", "app ", "mobile app"]],
+  ["tech", ["teknologi", "startup", "software", "saas", "digital", "it "]],
+  ["agency", ["agensi", "agency", "konsultan", "jasa kreatif"]],
+  ["graphicDesign", ["desain grafis", "graphic design", "studio desain", "ilustrasi"]],
+  ["journals", ["jurnal", "alat tulis", "stationery", "planner"]],
+  ["ecoBrands", ["ramah lingkungan", "eco", "sustainable", "daur ulang", "zero waste"]],
+  ["print", ["majalah", "koran", "penerbit", "media cetak", "percetakan"]],
+  ["eventPoster", ["event organizer", "konser", "festival", "acara"]],
+  ["luxury", ["mewah", "luxury", "eksklusif"]],
+];
+// The sector label (as listed in the Typography step) that best matches
+// what the brand does, or null when nothing in the text points anywhere.
+export function sectorFromText(text) {
+  const hay = ` ${String(text || "").toLowerCase()} `;
+  if (!hay.trim()) return null;
+  for (const [key, words] of SECTOR_KEYWORDS) {
+    if (!words.some((w) => hay.includes(w))) continue;
+    const cat = FONT_CATEGORIES.find((c) => c.sectorKeys.includes(key));
+    if (cat) return { sector: t(`bbdata.fontCat.${cat.key}.sector.${key}`), categoryKey: cat.key };
+  }
+  return null;
+}
+
 // A ready-to-use primary (heading) + secondary (body) combo for each font
 // category above — real Google Fonts family names, contrasting where the
 // e-book's own pairing rule calls for it (a decorative/characterful heading

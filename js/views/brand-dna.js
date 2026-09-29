@@ -1282,12 +1282,6 @@ function oneLinerCardHTML(state) {
 
 function reviewHTML(state) {
   const a = state.answers;
-  // Revisi: once every question is actually answered, Review offers the
-  // way out it never had — "Balik ke Beranda" saves first, so it's a
-  // finish button, not an abandon button. Only appears at 100%, so it
-  // never reads as permission to leave half-answered.
-  const { filled, total } = brandDnaCompleteness(a);
-  const homeReady = total > 0 && filled >= total;
   return `
     <h2 style="margin-bottom:6px;">${t("dna.review.title")}</h2>
     <p class="text-muted" style="font-size:13px;margin:${state.autoDrafted ? "0 0 6px" : "0 0 20px"};">${state.autoDrafted ? t("dna.review.subAuto") : t("dna.review.sub")}</p>
@@ -1319,7 +1313,6 @@ function reviewHTML(state) {
         <div id="dna-ai-fill-status"></div>
       </div>
       <div class="flex gap-8">
-        ${homeReady ? `<button type="button" class="btn btn-secondary" id="wiz-home">${icon("check", { size: 14 })}${t("guidelines.backHome")}</button>` : ""}
         <button type="button" class="btn btn-primary" id="wiz-save">${icon("check", { size: 15 })}${t("dna.review.save")}</button>
       </div>
     </div>
@@ -1338,19 +1331,6 @@ function dnaSavedToast(state) {
 }
 
 function wireReview(root, brandId, brand, state, refresh) {
-  // Saves exactly like #wiz-save does, then always lands on Beranda —
-  // where the journey card it just ticked actually lives.
-  qs("#wiz-home", root)?.addEventListener("click", () => {
-    captureReview(root, state);
-    state.answers.oneLiner = qs("#ans-oneLiner", root)?.value.trim() || state.answers.oneLiner;
-    persistDna(brandId, state);
-    dnaSavedToast(state);
-    const { filled, total } = brandDnaCompleteness(state.answers);
-    if (total && filled >= total) markDnaJustCompleted(brandId);
-    const go = () => { location.hash = `#/brand/${brandId}`; };
-    if (firstCompletion(brandId, state)) showDnaDoneModal(state, getBrand(brandId), go);
-    else go();
-  });
   qs("#dna-answer-manually", root)?.addEventListener("click", (e) => {
     e.preventDefault();
     captureReview(root, state);
@@ -1374,9 +1354,14 @@ function wireReview(root, brandId, brand, state, refresh) {
     // pushed it there, not on every save. Pemula (3.3): straight back to
     // Beranda, the map every step returns to — home.js reads the
     // same flag for its own toast. Pro: unchanged, back to the hub.
+    // One button (Review used to have "Balik ke Beranda" next to this one,
+    // doing the same save). A finished DNA always lands on Beranda, where
+    // the next step it just unlocked is waiting; an unfinished one goes
+    // back to Pro's hub so the gaps stay in view.
     const { filled, total } = brandDnaCompleteness(state.answers);
-    if (total && filled >= total) markDnaJustCompleted(brandId);
-    const go = () => { location.hash = getMode() === "guided" ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`; };
+    const complete = total && filled >= total;
+    if (complete) markDnaJustCompleted(brandId);
+    const go = () => { location.hash = complete || getMode() === "guided" ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`; };
     // The first time it's complete, show the finished identity card first.
     if (firstCompletion(brandId, state)) showDnaDoneModal(state, getBrand(brandId), go);
     else go();
