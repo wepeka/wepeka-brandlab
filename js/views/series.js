@@ -12,6 +12,8 @@ import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, qs, qsa, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
 import { t } from "../i18n.js";
 import { go } from "../nav-context.js";
+import { seriesDays } from "../week-plan.js";
+import { openContentCadenceSetup } from "../cadence-setup.js";
 
 export function render(root, { brandId }) {
   const refresh = () => paint(root, brandId, refresh);
@@ -27,6 +29,7 @@ function paint(root, brandId, refresh) {
   }
   const series = listSeries(brandId);
   const content = listContent(brandId);
+  const days = seriesDays(brand.contentCadence, series);
 
   root.innerHTML = `
     <div class="page-head">
@@ -40,7 +43,7 @@ function paint(root, brandId, refresh) {
     <p class="page-sub" style="margin-bottom:24px;">${t("series.list.sub")}</p>
     ${
       series.length
-        ? `<div class="brand-grid">${series.map((s) => seriesCardHTML(s, content)).join("")}</div>`
+        ? `<div class="brand-grid">${series.map((s) => seriesCardHTML(s, content, days)).join("")}</div>`
         : `<div class="empty-state" style="max-width:460px;margin:0 auto;">
              <div class="icon-wrap">${icon("sparkle", { size: 22 })}</div>
              <h3>${t("series.list.empty.title")}</h3>
@@ -54,7 +57,7 @@ function paint(root, brandId, refresh) {
   qs("#empty-new-series")?.addEventListener("click", () => openSeriesModal({ brandId, onSaved: refresh }));
   qsa("[data-open-series]", root).forEach((card) => {
     card.addEventListener("click", (e) => {
-      if (e.target.closest("[data-delete-series], [data-new-episode], [data-series-episodes]")) return;
+      if (e.target.closest("[data-delete-series], [data-new-episode], [data-series-episodes], [data-series-days]")) return;
       openSeriesModal({ brandId, series: getSeries(card.dataset.openSeries), onSaved: refresh });
     });
   });
@@ -66,6 +69,12 @@ function paint(root, brandId, refresh) {
     e.stopPropagation();
     const s = getSeries(btn.dataset.newEpisode);
     go(`#/brand/${brandId}/content/creator`, { fromLabel: s?.name || "", intent: "new-content", defaults: { seriesId: btn.dataset.newEpisode } });
+  }));
+  // The day a series airs lives in Jadwal Kerja (one place for the weekly
+  // rhythm); the card only shows it and opens that setup.
+  qsa("[data-series-days]", root).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openContentCadenceSetup(getBrand(brandId));
   }));
   qsa("[data-series-episodes]", root).forEach((btn) => btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -83,13 +92,15 @@ function paint(root, brandId, refresh) {
   });
 }
 
-function seriesCardHTML(s, content) {
+function seriesCardHTML(s, content, days) {
   const linked = content.filter((c) => c.seriesId === s.id).length;
+  const airs = [...days].filter(([, x]) => x.id === s.id).map(([d]) => t(`store.day.${d}`));
   return `
     <div class="brand-card glass-card campaign-card" data-open-series="${s.id}" style="cursor:pointer;">
       <button class="icon-btn card-menu" data-delete-series="${s.id}" aria-label="${t("common.delete")}" style="width:30px;height:30px;">${icon("trash", { size: 15 })}</button>
-      <h3>${escapeText(s.name)}</h3>
+      <h3 style="padding-right:34px;">${escapeText(s.name)}</h3>
       ${s.dna?.description ? `<div class="meta" style="margin-bottom:10px;">${escapeText(s.dna.description)}</div>` : ""}
+      <button type="button" class="series-airs ${airs.length ? "is-set" : ""}" data-series-days="${s.id}">${icon("calendar", { size: 12 })}${airs.length ? `${escapeText(t("series.airs", { days: airs.join(", ") }))} · <u>${t("series.airsEdit")}</u>` : t("series.airsSet")}</button>
       <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:6px;">
         <button type="button" class="btn btn-primary btn-sm" data-new-episode="${s.id}">${icon("plus", { size: 13 })}${t("series.newEpisode")}</button>
         ${linked ? `<button type="button" class="btn btn-ghost btn-sm" data-series-episodes="${s.id}">${icon("layers", { size: 12 })}${t("series.episodeCount", { n: linked })}</button>` : ""}

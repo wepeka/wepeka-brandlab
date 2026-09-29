@@ -1,4 +1,4 @@
-import { listGoals, getBrand, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, ROUTINE_DAY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
+import { listGoals, getBrand, listSeries, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, ROUTINE_DAY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
@@ -15,7 +15,25 @@ import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
 import { setPageGuide } from "../section-guide.js";
 import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calendar-guide.js";
 import { funnelShort } from "../funnel-field.js";
-import { openWeekPlanMenu } from "../consultant-panel.js";
+import { openWeekPlanMenu, openSeriesEpisodeChat } from "../consultant-panel.js";
+import { seriesDays, missingEpisodes } from "../week-plan.js";
+
+// Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
+// episode, date -> series. Only the rest of the visible range from today.
+function missingEpisodeMap(brandId, start, end) {
+  const days = seriesDays(getBrand(brandId)?.contentCadence, listSeries(brandId));
+  const list = missingEpisodes(days, listContent(brandId), { start, end, todayISO: localISODate() });
+  return new Map(list.map((m) => [m.date, m.series]));
+}
+// `short`: a month cell only has room for the series name; the tooltip says the rest.
+const seriesGhostHTML = (date, series, { short = false } = {}) =>
+  `<button type="button" class="cal-series-ghost" data-series-ghost="${escapeHtml(series.id)}" data-date="${date}" title="${escapeHtml(`${t("series.missingEpisode", { name: series.name })}. ${t("series.missingEpisodeTitle")}`)}">${icon("sparkle", { size: 10 })}<span>${escapeHtml(short ? series.name : t("series.missingEpisode", { name: series.name }))}</span></button>`;
+function wireSeriesGhosts(body) {
+  qsa("[data-series-ghost]", body).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openSeriesEpisodeChat({ seriesId: btn.dataset.seriesGhost, date: btn.dataset.date });
+  }));
+}
 
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const dow = () => DOW_KEYS.map((k) => t(`calendar.dow.${k}`));
@@ -163,6 +181,8 @@ function cadenceNotesForBrand(brandId) {
     notes.push(`Only schedule on these days of the week: ${cadence.uploadDays.map((d) => ROUTINE_DAY_LABELS[d]).join(", ")}.`);
   }
   notes.push(`This brand can realistically post at most ${cadence.perDay} piece(s) of content per day.`);
+  const days = seriesDays(cadence, listSeries(brandId));
+  if (days.size) notes.push(`Fixed series days: ${[...days].map(([d, s]) => `${ROUTINE_DAY_LABELS[d]} = "${s.name}"`).join(", ")}. Put a piece of that series on its day when there is one; keep other pieces off those days if another day fits.`);
   notes.push("Never schedule two items of the same funnel stage (TOFU/MOFU/BOFU) on the same day, even if the daily cap allows more than one upload that day.");
   return notes;
 }
@@ -193,6 +213,7 @@ async function runAutoSchedule(brandId, refresh) {
     const brand = getBrand(brandId);
     const campaigns = listCampaigns(brandId);
     const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+    const seriesById = new Map(listSeries(brandId).map((x) => [x.id, x]));
     const schedule = demo
       ? await demoSuggestSchedule({ items: unscheduled.map((c) => ({ id: c.id, funnel: c.funnel, status: c.status })), startDate, daysAhead: 21, cadence: brand?.contentCadence })
       : await suggestSchedule(ai, {
@@ -202,6 +223,7 @@ async function runAutoSchedule(brandId, refresh) {
         return {
           id: c.id, title: c.title, funnel: c.funnel, status: c.status,
           campaignPhase: campaign ? `${campaign.name}${phase ? ` — ${phase.name}` : ""}` : "",
+          ...(c.seriesId && seriesById.get(c.seriesId) ? { series: seriesById.get(c.seriesId).name } : {}),
         };
       }),
       startDate,
@@ -385,6 +407,9 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
   const today = new Date();
   const todayISO = localISODate();
   const eventDays = eventDayMarkers(campaigns);
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridStart.getDate() + 41);
+  const ghosts = missingEpisodeMap(brandId, iso(gridStart), iso(gridEnd));
 
   let cells = "";
   for (let i = 0; i < 42; i++) {
@@ -398,6 +423,7 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
     const extra = dayItems.length - shown.length + (dayDeadlines.length - dlShown.length);
     const holiday = holidayForDate(iso(day));
     const eventNames = eventDays.get(iso(day));
+    const ghost = ghosts.get(iso(day));
 
     cells += `
       <div class="cal-cell ${outside ? "outside" : ""} ${sameDay(day, today) ? "today" : ""} ${iso(day) < todayISO ? "is-past" : ""} ${holiday ? (holiday.cuti ? "cuti" : "holiday") : ""} ${eventNames ? "event-day" : ""}" data-date="${iso(day)}" ${holiday ? `title="${escapeHtml(holiday.label)}"` : eventNames ? `title="${t("cal.eventDayTitle", { names: escapeHtml(eventNames.join(", ")) })}"` : ""}>
@@ -415,6 +441,7 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
             ${escapeHtml(c.title || t("common.untitled"))}
           </div>`;
         }).join("")}
+        ${ghost ? seriesGhostHTML(iso(day), ghost, { short: true }) : ""}
         ${extra > 0 ? `<div class="cal-more">${t("calendar.more", { count: extra })}</div>` : ""}
       </div>
     `;
@@ -429,6 +456,7 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
   `;
 
   wireDragAndOpen(body, brandId, refresh);
+  wireSeriesGhosts(body);
 }
 
 // A thin Gantt-lite strip above the month grid — one row per active
@@ -517,8 +545,17 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
         <div class="ti" style="flex:1;min-width:0;"><div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.label)}</div></div>
         <span class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}">${t("roadmap.cal.deadline")}</span></a>`;
     }));
-  body.innerHTML = filtered.length || dlRows.length
-    ? `<div class="agenda-list">${dlRows.join("")}${filtered.map((c) => agendaRow(c, campaignById)).join("")}</div>`
+  // Content and empty series days share one date order.
+  const ghostRows = [...missingEpisodeMap(brandId, iso(rangeStart), iso(rangeEnd))].map(([date, series]) => {
+    const dt = new Date(`${date}T00:00:00`);
+    return { date, html: `<div class="agenda-row agenda-ghost">
+        <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0, 3)}</div></div>
+        <div class="ti" style="flex:1;min-width:0;">${seriesGhostHTML(date, series)}</div></div>` };
+  });
+  const dayRows = [...filtered.map((c) => ({ date: c.scheduleDate || c.publishedDate, html: agendaRow(c, campaignById) })), ...ghostRows]
+    .sort((a, b) => a.date.localeCompare(b.date));
+  body.innerHTML = dayRows.length || dlRows.length
+    ? `<div class="agenda-list">${dlRows.join("")}${dayRows.map((r) => r.html).join("")}</div>`
     : `<div class="empty-state card" style="margin:0;">
          <div class="icon-wrap">${icon("calendar", { size: 20 })}</div>
          <h3>${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</h3>
@@ -528,6 +565,7 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
   qsa("[data-id]", body).forEach((el) => {
     el.addEventListener("click", () => openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh }));
   });
+  wireSeriesGhosts(body);
   qs("#agenda-empty-new", body)?.addEventListener("click", () => {
     openContentEditor({ brandId, stay: true, defaults: { scheduleDate: iso(rangeStart), status: "idea" }, onSaved: refresh });
   });

@@ -69,6 +69,43 @@ export function planSlots({ cadence, content = [], start, end, todayISO, count }
   return slots;
 }
 
+// Ritme Kerja's "Isi tiap hari" (js/cadence-setup.js): weekday → the series
+// that airs that day, e.g. { wed: "<seriesId>" }. Only upload days count and
+// only series that still exist, so removing Rabu from the upload days or
+// deleting the series quietly drops the pairing without a cleanup write.
+export function seriesDays(cadence, seriesList = []) {
+  const map = new Map();
+  if (!cadence?.configured) return map;
+  const upload = new Set(cadence.uploadDays || []);
+  const byId = new Map((seriesList || []).filter((s) => s && !s.deletedAt).map((s) => [s.id, s]));
+  for (const [day, id] of Object.entries(cadence.seriesDays || {})) {
+    if (upload.has(day) && byId.has(id)) map.set(day, byId.get(id));
+  }
+  return map;
+}
+
+export const seriesForDate = (days, iso) => (isISODate(iso) ? days.get(weekdayOf(iso)) || null : null);
+
+// Upcoming series days in [start, end] that have no episode of that series
+// yet, for the Calendar's "belum ada episode" hint. An episode counts when a
+// piece of that series sits on the date (scheduled or published).
+export function missingEpisodes(days, content = [], { start, end, todayISO }) {
+  if (!days.size || !isISODate(start) || !isISODate(end)) return [];
+  const has = new Set();
+  for (const c of content || []) {
+    if (!c || c.archived || c.deletedAt || !c.seriesId) continue;
+    if (c.scheduleDate) has.add(`${c.seriesId}|${c.scheduleDate}`);
+    if (c.publishedDate) has.add(`${c.seriesId}|${c.publishedDate}`);
+  }
+  const out = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) {
+    if (todayISO && d < todayISO) continue;
+    const s = seriesForDate(days, d);
+    if (s && !has.has(`${s.id}|${d}`)) out.push({ date: d, series: s });
+  }
+  return out;
+}
+
 // The week to plan, plus its slots. This week if it still has room for at
 // least 2 posts (or `count`, if asking for fewer) from today onward;
 // otherwise next week. If a thin cadence still can't fill `count` inside
@@ -117,7 +154,9 @@ export function planWeek({ todayISO, cadence, content = [], count } = {}) {
 // `forceCampaign`: the plan was generated FOR one specific campaign (the
 // owner picked it before generating, js/consultant-panel.js openWeekPlan) —
 // every row belongs to it regardless of what the model wrote in "campaign".
-export function normalizePlanItems(raw, slots, { campaigns = [], formats = [], forceCampaign = null } = {}) {
+// `slotSeries`: date → series for the dates that air a series (seriesDays);
+// those rows carry seriesId so saving files the piece under that series.
+export function normalizePlanItems(raw, slots, { campaigns = [], formats = [], forceCampaign = null, slotSeries = null } = {}) {
   const campaignByName = new Map((campaigns || []).map((c) => [normTitle(c.name), c]));
   const formatNames = new Set((formats || []).map((f) => normTitle(f)));
 
@@ -157,9 +196,11 @@ export function normalizePlanItems(raw, slots, { campaigns = [], formats = [], f
       const x = bySlot.get(d);
       const format = formatNames.size && !formatNames.has(normTitle(x.format)) ? "" : x.format;
       const campaign = forceCampaign || (x.campaign ? campaignByName.get(normTitle(x.campaign)) : null);
+      const series = slotSeries?.get(d) || null;
       return {
         date: d, title: x.title, angle: x.angle, format, funnel: x.funnel,
         campaignId: campaign ? campaign.id : "", campaignName: campaign ? campaign.name : "",
+        seriesId: series ? series.id : "", seriesName: series ? series.name : "",
         picked: true, contentId: "",
       };
     });

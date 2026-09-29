@@ -536,7 +536,7 @@ export async function suggestSchedule(ai, { items, startDate, daysAhead = 21, ro
     .filter(Boolean)
     .join("\n");
   const user = items
-    .map((it) => `id=${it.id} | funnel=${it.funnel || "TOFU"} | stage=${it.status} (readiness ${readiness[it.status] ?? 5}, lower=more ready)${it.campaignPhase ? ` | campaign phase=${it.campaignPhase}` : ""} | title=${it.title || "Untitled"}`)
+    .map((it) => `id=${it.id} | funnel=${it.funnel || "TOFU"} | stage=${it.status} (readiness ${readiness[it.status] ?? 5}, lower=more ready)${it.campaignPhase ? ` | campaign phase=${it.campaignPhase}` : ""}${it.series ? ` | series=${it.series}` : ""} | title=${it.title || "Untitled"}`)
     .join("\n");
 
   const raw = await callModel(ai, system, user, 2000, { json: true, feature: "schedule" });
@@ -743,11 +743,12 @@ function goalsContextBlock(brand) {
 // re-explaining the concept every time. Only called when a piece of
 // content/conversation is actually linked to a series — an empty return
 // here means "no series", not "series with nothing filled in".
-export function buildSeriesContext(series) {
+export function buildSeriesContext(series, { episodes = [] } = {}) {
   if (!series) return "";
   const dna = series.dna || {};
   const lines = [
     `Series: ${series.name}`,
+    `The series name is the title of a recurring show format, not a topic to explain: an episode is a new instalment of the show, never a lesson about what the name means.`,
     dna.description ? `Concept: ${dna.description}` : "",
     dna.mainTopic ? `Main topic: ${dna.mainTopic}` : "",
     dna.objective ? `Objective: ${dna.objective}` : "",
@@ -764,11 +765,47 @@ export function buildSeriesContext(series) {
     dna.visualStyle ? `Visual style notes: ${dna.visualStyle}` : "",
     dna.thingsToAvoid ? `Avoid in this series: ${dna.thingsToAvoid}` : "",
     dna.additionalInstructions ? `Additional instructions for this series: ${dna.additionalInstructions}` : "",
+    episodes.length ? `Episodes already made (this is the pattern to continue: same kind of subject and angle, a different subject each time; never repeat one):\n${episodes.map((x) => `- ${x}`).join("\n")}` : "",
   ].filter(Boolean);
   if (!lines.length) return "";
   return [
     `This piece is an episode of the recurring series "${series.name}" — stay consistent with the series concept and style below, but write a genuinely new episode: never reuse the same hook or CTA wording verbatim, and don't make it feel copy-pasted or templated.`,
     lines.join("\n"),
+  ].join("\n");
+}
+
+// Newest-first titles of the pieces linked to one series: the clearest
+// signal of what the series actually is ("Bedah Brand: Coca-Cola",
+// "Bedah Brand: McD" says "one famous brand per episode" far better than
+// the bare name, which a model reads literally as "how to analyse a brand").
+export function seriesEpisodeTitles(series, content = [], max = 8) {
+  if (!series) return [];
+  return content
+    .filter((c) => c.seriesId === series.id && !c.deletedAt && c.title)
+    .sort((a, b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")))
+    .slice(0, max)
+    .map((c) => c.title);
+}
+
+// Brand-wide chats (no series picked) still need to know the brand's
+// series exist: an owner typing "ide buat series bedah brand" mid
+// conversation means "the next episodes of MY show", not the literal
+// words. One line per series with its concept and latest episodes.
+// `days`: weekday → series from Ritme Kerja (js/week-plan.js seriesDays), so
+// "Rabu ini posting apa?" has an answer.
+const WEEKDAY_EN = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+export function buildSeriesOverview(seriesList = [], content = [], { days = null } = {}) {
+  const rows = seriesList.filter((s) => s?.name).map((s) => {
+    const dna = s.dna || {};
+    const concept = dna.description || dna.mainTopic || "";
+    const eps = seriesEpisodeTitles(s, content, 5);
+    const airs = days ? [...days].filter(([, x]) => x.id === s.id).map(([d]) => WEEKDAY_EN[d]).filter(Boolean) : [];
+    return `- "${s.name}"${concept ? ` — ${concept}` : ""}${airs.length ? ` | airs every ${airs.join(" and ")} (a post on that day should be an episode of it)` : ""}${eps.length ? ` | episodes so far: ${eps.map((x) => `"${x}"`).join(", ")}` : ""}`;
+  });
+  if (!rows.length) return "";
+  return [
+    "The brand runs these recurring content series. A series name is the title of a recurring show format, NOT a topic to teach. When the owner mentions one (even loosely or in lowercase), every idea for it must be a NEW EPISODE of that show that follows its concept and the pattern of its past episodes — e.g. if past episodes each take apart one well-known company, propose other well-known companies to take apart, not tips or theory about the series name.",
+    rows.join("\n"),
   ].join("\n");
 }
 
@@ -1233,7 +1270,7 @@ export async function generateCampaignContentPlan(ai, { brand, campaign, weeks, 
 // asked and returns `changed:false` when the message wasn't actually about
 // the plan (an off-topic question), so the chat can answer in words
 // instead of replacing a fine plan.
-export async function generateWeekPlan(ai, { brand, campaigns = [], campaign = null, slots = [], formats = [], existingTitles = [], proven = [], pulseText = "", current = null, request = "" }) {
+export async function generateWeekPlan(ai, { brand, campaigns = [], campaign = null, slots = [], formats = [], existingTitles = [], proven = [], pulseText = "", current = null, request = "", seriesOverview = "", seriesSlots = [] }) {
   const active = campaign ? [] : campaigns.filter((c) => c.status === "active" || c.status === "planning");
   const system = [
     campaign
@@ -1247,6 +1284,10 @@ export async function generateWeekPlan(ai, { brand, campaigns = [], campaign = n
     campaign
       ? `This entire week's plan is for this campaign — every item's "campaign" field must be exactly this name:\n${campaignSummaryLine(campaign, brand)}\nOffer: ${campaign.offer || "(not set)"}. CTA: ${campaign.cta || "(not set)"}.`
       : active.length ? `Active campaigns — if a date's idea genuinely fits one of these, name it exactly in "campaign" (else leave "campaign" empty; never force a fit):\n${active.map((c) => campaignSummaryLine(c, brand)).join("\n")}` : "",
+    seriesOverview,
+    seriesSlots.length
+      ? `Fixed series days — the item on each of these dates MUST be a NEW EPISODE of that recurring series (same concept and pattern as its past episodes, a subject it hasn't covered yet; title in the series' own naming style), never a generic post:\n${seriesSlots.map((x) => `- ${x.date}: series "${x.series.name}"\n${buildSeriesContext(x.series, { episodes: x.episodes || [] })}`).join("\n")}`
+      : "",
     proven.length ? `What already worked for this brand — lean on these patterns (not copies):\n${proven.map((p) => `- ${p}`).join("\n")}` : "",
     existingTitles.length ? `Content already planned or made for this brand (never repeat these):\n${existingTitles.slice(0, 40).map((x) => `- ${x}`).join("\n")}` : "",
     `These exact dates are the only ones you may use, one item per date, in this order (do not add, skip, merge, or reschedule any of them):\n${slots.map((d) => `- ${d} (${dayNameEn(d)})`).join("\n")}`,
@@ -1590,7 +1631,7 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
 // `onText` streams the reply as it is written. The brand, its campaigns and
 // its pulse ride along through buildFullContext, plus whatever the thread is
 // scoped to.
-export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, goalId = null, eventCampaign = null, series = null, savedIdeas = [], history = [], message, mode = "chat", turns = 1, onText = null }) {
+export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, goalId = null, eventCampaign = null, series = null, seriesEpisodes = [], seriesOverview = "", savedIdeas = [], history = [], message, mode = "chat", turns = 1, onText = null }) {
   const goal = goalId ? (brand?.goals || []).find((g) => g.id === goalId) : null;
   const scope = [
     goal ? `This conversation is about ONE goal the owner is working toward — help them think about how to get there:\n${goalLine(goal)}\nYou cannot change the roadmap yourself. When something should change (the date, the weekly posting rhythm, the expected attendance), say exactly what and why, and tell the owner to use "Re-plot" on the roadmap page. Never say the plan has been changed.` : "",
@@ -1598,8 +1639,8 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     campaign ? `This conversation is about ONE campaign of the brand:\n${campaignSummaryLine(campaign, brand)}${stageText ? `\nCurrent focus: ${stageText}` : ""}` : "",
     content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.` : "",
     series
-      ? `This conversation is about a NEW EPISODE of the owner's recurring series "${series.name}" — every idea/draft you propose must be a fresh episode of it, consistent with the series' saved concept/tone/structure below, not a generic idea:\n${buildSeriesContext(series)}`
-      : "",
+      ? `This conversation is about a NEW EPISODE of the owner's recurring series "${series.name}" — every idea/draft you propose must be a fresh episode of it, consistent with the series' saved concept/tone/structure below, not a generic idea:\n${buildSeriesContext(series, { episodes: seriesEpisodes })}`
+      : seriesOverview,
     savedIdeas.length ? `Ideas already shown or saved in this conversation (never repeat them):\n${savedIdeas.map((i) => `- ${i}`).join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
   // Talk first, ideas second. The AI asks what the owner wants (with tap-to-
@@ -1665,7 +1706,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
 // it isn't clear what to change. A concrete rewrite comes wrapped in
 // [[revise:script]]…[[/revise]] (or caption), which ai-directives.js turns
 // into an "Apply" card — the model never edits anything itself.
-export async function discussScript(ai, { brand, campaigns = [], pulseText = "", content, series = null, history = [], message, onText = null }) {
+export async function discussScript(ai, { brand, campaigns = [], pulseText = "", content, series = null, seriesEpisodes = [], history = [], message, onText = null }) {
   const isCarousel = (content?.format || "").toLowerCase().includes("carousel");
   const piece = [
     `Title: ${content?.title || "(untitled)"}`,
@@ -1686,7 +1727,7 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
     "Never invent numbers, prices or events that are not in the brand's context and data.",
     // ---- DYNAMIC last.
     buildFullContext(brand, { campaigns, pulseText }),
-    series ? `This piece belongs to the recurring series "${series.name}"; keep to its concept, tone and structure:\n${buildSeriesContext(series)}` : "",
+    series ? `This piece belongs to the recurring series "${series.name}"; keep to its concept, tone and structure:\n${buildSeriesContext(series, { episodes: seriesEpisodes })}` : "",
     `THE PIECE:\n${piece}`,
   ].filter(Boolean).join("\n\n");
   const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");

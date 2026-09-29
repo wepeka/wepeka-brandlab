@@ -6,7 +6,7 @@ import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext, go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, campaignSummaryLine } from "../ai.js";
+import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
 import { basisHTML } from "../brand-learning.js";
@@ -250,7 +250,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
   function linkedSeriesContext() {
     if (!content.seriesId) return "";
     const s = getSeries(content.seriesId);
-    return s ? buildSeriesContext(s) : "";
+    return s ? buildSeriesContext(s, { episodes: seriesEpisodeTitles(s, listContent(content.brandId)).filter((x) => x !== content.title) }) : "";
   }
   // The eval record keeps what the user asked for, not the (large,
   // reconstructible) brand context block.

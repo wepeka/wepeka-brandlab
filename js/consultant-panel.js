@@ -60,8 +60,9 @@ import { campaignStages, activeStageIndex, readStage, campaignHeadline } from ".
 import { nextActions } from "./next-action.js";
 import { computeContentMetrics } from "./formulas.js";
 import { brandDnaCompleteness } from "./brand-progress.js";
-import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, discussScript, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
-import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry } from "./week-plan.js";
+import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, discussScript, buildSeriesOverview, seriesEpisodeTitles, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
+import { addDays, weekdayOf } from "./goal-roadmap.js";
+import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry, seriesDays, seriesForDate, missingEpisodes } from "./week-plan.js";
 import { analyzeScreenshot } from "./ocr.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
@@ -178,6 +179,30 @@ let pending = false;
 let noKeyNotice = false; // "AI belum diatur" shown inside the chat
 let streamShown = ""; // the answer so far, kept across a re-render mid-answer
 let renderedCount = -1; // messages drawn last time (new one => scroll down)
+let lastHTML = ""; // chat markup drawn last time (a store sync that changes nothing skips the redraw)
+let syncTimer = null;
+
+// A store sync (any Firestore snapshot, even one about another brand)
+// used to redraw the whole chat via innerHTML. On a phone that kills the
+// scroll gesture in progress, and when the reader was near the bottom it
+// yanked them straight back down, so the chat read as "won't scroll".
+// Syncs now wait while a finger is on the transcript or it is still
+// moving, and redraw only when the markup actually changed.
+let touching = false;
+let scrollingUntil = 0;
+const inChat = (el) => !!el?.closest?.("#consultant-messages");
+document.addEventListener("touchstart", (e) => { if (inChat(e.target)) touching = true; }, { capture: true, passive: true });
+const touchOff = () => { if (touching) { touching = false; scrollingUntil = Date.now() + 700; } };
+document.addEventListener("touchend", touchOff, { capture: true, passive: true });
+document.addEventListener("touchcancel", touchOff, { capture: true, passive: true });
+document.addEventListener("scroll", (e) => { if (e.target?.id === "consultant-messages") scrollingUntil = Math.max(scrollingUntil, Date.now() + 250); }, { capture: true, passive: true });
+
+function syncRender(brandId, ok) {
+  clearTimeout(syncTimer);
+  const wait = scrollingUntil - Date.now();
+  if (touching || wait > 0) { syncTimer = setTimeout(() => syncRender(brandId, ok), Math.max(wait, 150)); return; }
+  if (ok()) renderPanel(brandId, { sync: true });
+}
 let docKeydown = null;
 
 const hostBrand = () => (page ? page.brandId : isOpen ? mountedBrandId : null);
@@ -289,9 +314,15 @@ function removeSavedScoped(brandId, id) {
 }
 // A draft made from this conversation lands where the conversation is:
 // the campaign (and its current phase), the series.
+// Opened from an empty series day in the Calendar: the first draft of that
+// series lands on that date (once — the next one is undated as usual).
+const episodeDate = new Map(); // seriesId -> ISO date
 function draftFromScope(brandId, { title, idea = "", funnel = "TOFU", notes = "" }) {
   const info = chatScopeInfo(brandId);
+  const date = info.series ? episodeDate.get(info.series.id) : "";
+  if (date) episodeDate.delete(info.series.id);
   return createContent(brandId, {
+    ...(date && date >= localISODate() ? { scheduleDate: date } : {}),
     title, funnel, idea, status: "idea", ...(notes ? { notes } : {}),
     campaignId: info.campaign?.id || "",
     campaignPhaseId: info.stage && info.stage.kind !== "level" ? info.stage.id : "",
@@ -538,7 +569,23 @@ function relevantNav(nav, text) {
   });
 }
 
-const pulseNow = (brandId) => pulseTextFor(getBrand(brandId), { content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings() });
+// Every engine reads the pulse, so the series days ride along here: the
+// weekly pairing plus which of the next 7 days still lack their episode.
+function pulseNow(brandId) {
+  const brand = getBrand(brandId);
+  const content = listContent(brandId);
+  const pulse = pulseTextFor(brand, { content, campaigns: listCampaigns(brandId), settings: getSettings() });
+  const days = seriesDays(brand?.contentCadence, listSeries(brandId));
+  if (!days.size) return pulse;
+  const today = localISODate();
+  const missing = missingEpisodes(days, content, { start: today, end: addDays(today, 6), todayISO: today });
+  const line = [
+    `Series schedule (Work Schedule): ${[...days].map(([d, s]) => `${WEEKDAY_NAME[d]} = "${s.name}"`).join(", ")}.`,
+    missing.length ? `Coming series days with no episode yet: ${missing.map((m) => `${m.date} (${WEEKDAY_NAME[weekdayOf(m.date)]}) "${m.series.name}"`).join(", ")}.` : "",
+  ].filter(Boolean).join(" ");
+  return [pulse, line].filter(Boolean).join("\n");
+}
+const WEEKDAY_NAME = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
 
 // ---- Message rendering ----------------------------------------------------
 
@@ -715,6 +762,7 @@ function weekPlanCardHTML(entry, index, campaigns, formats) {
         ${it.angle ? `<span class="text-muted">${esc(it.angle)}</span>` : ""}
         <span class="cp-plan-tags">
           <span class="tag tag-${it.funnel.toLowerCase()}">${esc(funnelShort(it.funnel))}</span>
+          ${it.seriesName ? `<span class="tag cp-week-series">${icon("sparkle", { size: 10 })}${esc(it.seriesName)}</span>` : ""}
           ${done
             ? `${it.format ? `<span class="tag">${esc(it.format)}</span>` : ""}${it.campaignName ? `<span class="tag">${esc(it.campaignName)}</span>` : ""}`
             : `${formats.length ? `<select class="input cp-week-select" data-week-format="${ref}" aria-label="${esc(t("chat.week.formatLabel"))}">${formatOptions(it.format)}</select>` : ""}${campaigns.length ? `<select class="input cp-week-select" data-week-campaign="${ref}" aria-label="${esc(t("chat.week.campaignLabel"))}">${campaignOptions(it.campaignId)}</select>` : ""}`}
@@ -1337,7 +1385,7 @@ function syncPageUrl(brandId) {
 // middle of is carried across: the text in the box (unless `keep` is off —
 // right after sending), the reading position (a new message scrolls down,
 // anything else stays put), the answer still being written, and the caret.
-function renderPanel(brandId, { seed = "", keep = true, focus = null } = {}) {
+function renderPanel(brandId, { seed = "", keep = true, focus = null, sync = false } = {}) {
   if (hostBrand() !== brandId) return;
   const host = page ? page.el : qs("#consultant-panel");
   if (!host) return;
@@ -1350,19 +1398,22 @@ function renderPanel(brandId, { seed = "", keep = true, focus = null } = {}) {
   const prevScroll = prevBody?.scrollTop || 0;
   const history = historyFor(brandId);
   const newMessage = history.length !== renderedCount;
-  renderedCount = history.length;
 
+  // The panel takes the open tab's colour (css: --cp-accent).
+  if (!page) host.dataset.mode = modeOf(brandId);
+  const html = (page ? pageHTML(brandId) : panelHTML(brandId)).replaceAll("__BRAND__", brandId);
+  if (sync && html === lastHTML && qs("#consultant-messages", host)) return;
+  lastHTML = html;
+  renderedCount = history.length;
+  host.innerHTML = html;
   if (page) {
-    host.innerHTML = pageHTML(brandId).replaceAll("__BRAND__", brandId);
     flashIdeas = false;
     syncPageUrl(brandId);
-  } else {
-    // The panel takes the open tab's colour (css: --cp-accent).
-    host.dataset.mode = modeOf(brandId);
-    host.innerHTML = panelHTML(brandId).replaceAll("__BRAND__", brandId);
   }
   if (pending) pendingBubble(streamShown);
-  if (newMessage || nearBottom || pending) scrollToBottom();
+  // A background sync keeps the reading position; only a new message (or
+  // the owner's own action while at the bottom) follows the tail down.
+  if (newMessage || pending || (nearBottom && !sync)) scrollToBottom();
   else { const body = qs("#consultant-messages", host); if (body) body.scrollTop = prevScroll; }
 
   const input = qs("#consultant-input", host);
@@ -1714,7 +1765,7 @@ function wire(host, brandId, input, history) {
     todo.forEach((it) => {
       const created = createContent(brandId, {
         title: it.title, idea: it.angle, funnel: it.funnel, format: it.format || "", platform,
-        status: "idea", scheduleDate: it.date, campaignId: it.campaignId || "", fromWeekPlan: weekTag,
+        status: "idea", scheduleDate: it.date, campaignId: it.campaignId || "", seriesId: it.seriesId || "", fromWeekPlan: weekTag,
       });
       it.contentId = created.id;
     });
@@ -2323,6 +2374,7 @@ async function sendScriptMessage(brandId, th, text, ai) {
       pulseText: pulseNow(brandId),
       content: piece,
       series: piece.seriesId ? getSeries(piece.seriesId) : null,
+      seriesEpisodes: piece.seriesId ? seriesEpisodeTitles(getSeries(piece.seriesId), listContent(brandId)).filter((x) => x !== piece.title) : [],
       history,
       message: text,
       onText: (soFar) => {
@@ -2474,6 +2526,13 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         const plan = planWeek({ todayISO: localISODate(), cadence: brand?.contentCadence, content: contentAll, count: weekCount || undefined });
         slots = plan.slots;
       }
+      // Ritme Kerja's series days ("Rabu = Bedah Brand"). A revision keeps
+      // each row's own series, even if the owner moved its date.
+      const allSeries = listSeries(brandId);
+      const days = seriesDays(brand?.contentCadence, allSeries);
+      const slotSeries = new Map();
+      if (isRevision) currentItems.forEach((it) => { const s = it.seriesId ? getSeries(it.seriesId) : null; if (s) slotSeries.set(it.date, s); });
+      else slots.forEach((d) => { const s = seriesForDate(days, d); if (s) slotSeries.set(d, s); });
       if (!slots.length) {
         appendBrainstormMessage(th.id, { role: "assistant", text: t("chat.week.noRoom"), blocks: {}, sessionId });
       } else {
@@ -2481,9 +2540,11 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           brand, campaigns: activeCampaigns, campaign: scopeCampaign, slots, formats: formatNames,
           existingTitles: contentAll.filter((c) => !c.archived && !c.deletedAt).map((c) => c.title).filter(Boolean),
           pulseText, current: currentItems, request: isRevision ? text : "",
+          seriesOverview: buildSeriesOverview(allSeries, contentAll, { days }),
+          seriesSlots: [...slotSeries].map(([date, series]) => ({ date, series, episodes: seriesEpisodeTitles(series, contentAll) })),
         });
         if (!isRevision || result.changed) {
-          const normalized = normalizePlanItems(result.items, slots, { campaigns: activeCampaigns, formats: formatNames, forceCampaign: scopeCampaign });
+          const normalized = normalizePlanItems(result.items, slots, { campaigns: activeCampaigns, formats: formatNames, forceCampaign: scopeCampaign, slotSeries });
           appendBrainstormMessage(th.id, { role: "assistant", text: result.note || "", blocks: { weekPlan: { v: 1, campaignId: scopeCampaign?.id || "", items: normalized, savedAt: null, closed: false } }, sessionId });
         } else {
           appendBrainstormMessage(th.id, { role: "assistant", text: result.note || t("chat.week.talkFallback"), blocks: { planTalk: true }, sessionId });
@@ -2504,6 +2565,11 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         else brainstormThread.set(brandId, th.id);
         pendingScope.delete(brandId);
         syncPageUrl(brandId);
+      } else if (!hasScope(threadScope(th))) {
+        // Same, later on: "sekarang ide buat Bedah Brand" three messages
+        // into a brand-wide chat turns it into that series' conversation.
+        const detected = findSeriesByNameInText(brandId, text);
+        if (detected) { th = updateBrainstorm(th.id, { seriesId: detected.id }) || getBrainstorm(th.id); toast(t("series.autoDetected", { name: detected.name })); }
       }
       const asked = appendBrainstormMessage(th.id, { role: "user", text, sessionId });
       tails.delete(tk);
@@ -2519,9 +2585,12 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       const shown = all.flatMap((m) => (m.blocks?.ideas || []).map((i) => i.title));
       const savedIdeas = [...new Set([...shown, ...savedIdeasFor(brandId).items.map((i) => i.text)])];
       const campaigns = listCampaigns(brandId);
+      const contentAll = listContent(brandId);
       const raw = await chatBrainstorm(ai, {
         brand, campaigns, pulseText, savedIdeas,
         campaign: info.campaign, stageText: info.stageText, content: info.content, series: info.series, goalId: scope.goalId || null, eventCampaign,
+        seriesEpisodes: seriesEpisodeTitles(info.series, contentAll),
+        seriesOverview: info.series ? "" : buildSeriesOverview(listSeries(brandId), contentAll, { days: seriesDays(brand?.contentCadence, listSeries(brandId)) }),
         history: threadHistory, message: text, mode: bsMode,
         turns: all.filter((m) => m.role === "user").length,
         onText: streamInto,
@@ -2681,8 +2750,7 @@ function watchStore(brandId) {
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      if (!isOpen || page || pending || mountedBrandId !== brandId) return;
-      renderPanel(brandId);
+      syncRender(brandId, () => isOpen && !page && !pending && mountedBrandId === brandId);
     });
   });
 }
@@ -2754,6 +2822,18 @@ export function openWeekPlan({ campaignId = null } = {}) {
   });
 }
 
+// Calendar's "Bedah Brand: belum ada episode" on a series day: a fresh chat
+// about that series, asking for its next episode for that date. Only ideas
+// come back — nothing is created until the owner picks one.
+export function openSeriesEpisodeChat({ seriesId, date }) {
+  const brandId = page ? page.brandId : mountedBrandId;
+  const series = getSeries(seriesId);
+  if (!brandId || !series || pending) return;
+  episodeDate.set(series.id, date);
+  applyChatContext(brandId, { seriesId: series.id }, { render: false });
+  openConsultantPanel({ engine: "brainstorm", send: true, bsMode: "ideas", seed: t("series.missingEpisodeSeed", { name: series.name, date: formatDate(date) }) });
+}
+
 // The button itself, wherever it appears (Calendar, Creator): with no
 // active campaign to choose between, just generate — no point showing a
 // one-item menu. With at least one, a small menu offers "Brand umum" (the
@@ -2818,7 +2898,7 @@ export function mountChatPage(el, { brandId, threadId = null, ctx = null }) {
       queued = false;
       if (!page || page.brandId !== brandId) return;
       if (page.wantThread && loadThread(brandId, page.wantThread)) page.wantThread = null;
-      if (!pending) renderPanel(brandId);
+      syncRender(brandId, () => page && page.brandId === brandId && !pending);
     });
   });
   return () => unmountChatPage(brandId);
@@ -2846,7 +2926,7 @@ function unmountChatPage(brandId) {
 // in the box; "Setor ke chat" notes go out at once.
 export function applyChatContext(brandId, ctx, { render = true, threadId = null } = {}) {
   if (!threadId) {
-    const scope = { campaignId: ctx.campaignId || null, stageId: ctx.stageId || null, contentId: ctx.contentId || null, goalId: ctx.goalId || null };
+    const scope = { campaignId: ctx.campaignId || null, stageId: ctx.stageId || null, contentId: ctx.contentId || null, goalId: ctx.goalId || null, seriesId: ctx.seriesId || null };
     if (isGuided() || modeOf(brandId) === "auto") {
       setMode(brandId, "auto");
       startConversation(brandId, { scope, auto: true });

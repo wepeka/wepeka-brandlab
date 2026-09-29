@@ -1480,6 +1480,12 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .cal-item .swatch{ width:6px; height:6px; border-radius:50%; flex:none; }
 .cal-item-campaign-dot{ width:6px; height:6px; border-radius:2px; background: var(--brand-tint); flex:none; }
 .cal-more{ font-size:10.5px; color: var(--text-faint); padding-left:2px; }
+/* A series day (Jadwal Kerja) with no episode yet: a dashed, clickable hint, not an item. */
+.cal-series-ghost{ display:flex; align-items:center; gap:4px; width:100%; margin-top:3px; padding:3px 6px; border:1px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: var(--radius-sm); background:transparent; color: var(--text-muted); font:inherit; font-size:10.5px; font-weight:600; text-align:left; cursor:pointer; min-width:0; }
+.cal-series-ghost span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cal-series-ghost:hover{ color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.agenda-ghost{ border-style:dashed; background:transparent; cursor:default; }
+.agenda-ghost .cal-series-ghost{ font-size:12.5px; padding:6px 10px; margin:0; width:auto; }
 
 .date-bank-menu{ min-width:240px; max-width:280px; padding:8px; }
 .date-bank-menu-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; font-weight:800; color: var(--text-faint); text-transform:uppercase; letter-spacing:.04em; padding:4px 4px 8px 8px; }
@@ -3882,6 +3888,13 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cp-week-item-regen{ flex:none; display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; padding:0; border:none; background:none; color: var(--text-faint, var(--text-muted)); cursor:pointer; border-radius: var(--radius-sm); }
 .cp-week-item-regen:hover{ color: var(--accent); background: var(--surface-hover); }
 .cp-week-select{ font-size:11px; padding:3px 7px; max-width:160px; }
+.cp-week-series{ display:inline-flex; align-items:center; gap:3px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.cad-series-rows{ display:flex; flex-direction:column; gap:6px; }
+.cad-series-row{ display:grid; grid-template-columns: 80px minmax(0,1fr); align-items:center; gap:10px; font-size:13px; font-weight:600; }
+.cad-series-row .input{ font-size:13px; padding:6px 8px; }
+.series-airs{ display:inline-flex; align-items:center; gap:5px; margin:0 0 8px; padding:0; border:0; background:none; font:inherit; font-size:12px; color: var(--text-faint); cursor:pointer; }
+.series-airs.is-set{ color: var(--accent); font-weight:600; }
+.series-airs:hover{ color: var(--accent); }
 .cp-week-foot{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-soft, var(--border)); }
 .cp-week-foot .cp-week-count{ width:auto; font-size:12px; padding:5px 8px; }
 .cp-week-status{ margin:10px 0 0; font-size:12.5px; color: var(--text-muted); display:flex; align-items:center; gap:6px; }

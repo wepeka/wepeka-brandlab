@@ -2363,7 +2363,9 @@ export function setCadenceUploadsPerWeek(brandId, perWeek) {
   had.forEach((d) => { if (days.length < dayCount && !days.includes(d)) days.push(d); });
   [...spread, ...ROUTINE_DAYS].forEach((d) => { if (days.length < dayCount && !days.includes(d)) days.push(d); });
   days = ROUTINE_DAYS.filter((d) => days.slice(0, dayCount).includes(d));
-  const cadence = { shootDays: b.contentCadence?.shootDays || [], editDays: b.contentCadence?.editDays || [], uploadDays: days, perDay, configured: true };
+  // seriesDays rides along: a day that stops being an upload day simply
+  // stops airing its series (js/week-plan.js seriesDays ignores it).
+  const cadence = { shootDays: b.contentCadence?.shootDays || [], editDays: b.contentCadence?.editDays || [], uploadDays: days, perDay, configured: true, seriesDays: b.contentCadence?.seriesDays || {} };
   updateBrand(brandId, { contentCadence: cadence });
   return cadence;
 }

@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { planSlots, planWeek, normalizePlanItems, activeCampaignsFor, currentPlanEntry, defaultWeeklyCount, normTitle } from "../js/week-plan.js";
+import { planSlots, planWeek, normalizePlanItems, activeCampaignsFor, currentPlanEntry, defaultWeeklyCount, normTitle, seriesDays, seriesForDate, missingEpisodes } from "../js/week-plan.js";
 
 describe("defaultWeeklyCount", () => {
   test("unconfigured cadence falls back to 3", () => {
@@ -239,5 +239,39 @@ describe("normTitle", () => {
   test("non-string input never throws", () => {
     assert.equal(normTitle(null), "");
     assert.equal(normTitle(undefined), "");
+  });
+});
+
+describe("series days (Jadwal Kerja: Rabu = Bedah Brand)", () => {
+  const bedah = { id: "s1", name: "Bedah Brand" };
+  const cadence = { configured: true, uploadDays: ["mon", "wed", "fri"], perDay: 1, seriesDays: { wed: "s1", thu: "s1", fri: "gone" } };
+  test("only upload days with an existing series count", () => {
+    const days = seriesDays(cadence, [bedah]);
+    assert.deepEqual([...days.keys()], ["wed"]);
+    assert.equal(days.get("wed").name, "Bedah Brand");
+  });
+  test("a deleted series or unconfigured cadence airs nothing", () => {
+    assert.equal(seriesDays(cadence, [{ ...bedah, deletedAt: 1 }]).size, 0);
+    assert.equal(seriesDays({ ...cadence, configured: false }, [bedah]).size, 0);
+    assert.equal(seriesDays(null, [bedah]).size, 0);
+  });
+  test("seriesForDate maps a date to its weekday's series", () => {
+    const days = seriesDays(cadence, [bedah]);
+    assert.equal(seriesForDate(days, "2026-09-30")?.id, "s1"); // a Wednesday
+    assert.equal(seriesForDate(days, "2026-10-01"), null); // Thursday
+    assert.equal(seriesForDate(days, "nope"), null);
+  });
+  test("missingEpisodes skips past days and days that already have an episode", () => {
+    const days = seriesDays(cadence, [bedah]);
+    const content = [{ seriesId: "s1", scheduleDate: "2026-10-07" }, { seriesId: "", scheduleDate: "2026-10-14" }];
+    const out = missingEpisodes(days, content, { start: "2026-09-28", end: "2026-10-18", todayISO: "2026-10-01" });
+    assert.deepEqual(out.map((m) => m.date), ["2026-10-14"]);
+  });
+  test("normalizePlanItems tags rows that fall on a series day", () => {
+    const slots = ["2026-09-30", "2026-10-02"];
+    const rows = normalizePlanItems([{ title: "A" }, { title: "B" }], slots, { slotSeries: new Map([["2026-09-30", bedah]]) });
+    assert.equal(rows[0].seriesId, "s1");
+    assert.equal(rows[0].seriesName, "Bedah Brand");
+    assert.equal(rows[1].seriesId, "");
   });
 });
