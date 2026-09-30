@@ -8,7 +8,7 @@
 //
 // Empty GA_ID = analytics off: every export below becomes a no-op, so dev
 // (serve.py on localhost) never pollutes production data.
-const GA_ID = "";
+const GA_ID = "G-YC3FSL9XQX";
 
 // The app is hash-routed and the Wepeka sign-in hand-off carries a Firebase
 // token in the fragment (#/sso?t=…). Page views are therefore sent by hand
