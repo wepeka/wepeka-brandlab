@@ -8,11 +8,25 @@ import { adminDb } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder } from "../_plans.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
+import { MIDTRANS_IS_PRODUCTION, isPaymentTester, isSettled } from "../_payments.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
+// Constant-time compare of two hex digests.
+function sameDigest(a, b) {
+  const x = Buffer.from(String(a), "utf8");
+  const y = Buffer.from(String(b), "utf8");
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+  // No key = no way to tell a real notification from a forged one (the hash
+  // would be computed over the literal text "undefined"). Refuse, loudly.
+  if (!MIDTRANS_SERVER_KEY) {
+    console.error("Midtrans webhook: MIDTRANS_SERVER_KEY is not set for this deployment");
+    return res.status(500).json({ error: "Server belum dikonfigurasi." });
+  }
 
   const body = req.body || {};
   const { order_id, status_code, gross_amount, signature_key, transaction_status, fraud_status } = body;
@@ -24,7 +38,7 @@ export default async function handler(req, res) {
     .createHash("sha512")
     .update(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)
     .digest("hex");
-  if (expectedSignature !== signature_key) {
+  if (!sameDigest(expectedSignature, signature_key)) {
     console.error("Midtrans webhook: invalid signature for", order_id);
     return res.status(403).json({ error: "Signature tidak valid." });
   }
@@ -44,8 +58,7 @@ export default async function handler(req, res) {
   // subscription it is. Same signed notification as any payment.
   const subName = !paymentSnap.exists ? subscriptionNameFromOrder(order_id) : null;
   if (subName) {
-    const paidNow = ["capture", "settlement"].includes(transaction_status) && fraud_status !== "deny";
-    return res.status(200).json(await applyRenewalCharge(db, { orderId: order_id, name: subName, grossAmount: Number(gross_amount), paid: paidNow }));
+    return res.status(200).json(await applyRenewalCharge(db, { orderId: order_id, name: subName, grossAmount: Number(gross_amount), paid: isSettled(transaction_status, fraud_status) }));
   }
   if (!paymentSnap.exists) {
     // Unknown order: nothing to unlock. Answer 200 anyway — the dashboard's
@@ -58,10 +71,13 @@ export default async function handler(req, res) {
   }
   const pending = paymentSnap.data();
 
-  const isPaid = ["capture", "settlement"].includes(transaction_status) && fraud_status !== "deny";
-  if (!isPaid) {
-    // pending/deny/expire/cancel — nothing to unlock, but 200 so Midtrans
-    // doesn't keep retrying a notification we've already understood.
+  if (!isSettled(transaction_status, fraud_status)) {
+    // pending/challenge/deny/expire/cancel — nothing to unlock, but 200 so
+    // Midtrans doesn't keep retrying a notification we've already understood.
+    // An order that will never be paid stops showing as "pending".
+    if (["expire", "cancel", "deny"].includes(transaction_status) && pending.status === "pending") {
+      await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
+    }
     return res.status(200).json({ ok: true, ignored: transaction_status });
   }
 
@@ -71,6 +87,17 @@ export default async function handler(req, res) {
   }
 
   const { uid, planKey } = pending;
+  // Sandbox mode: test cards settle for real, so only Wepeka's team and the
+  // Midtrans reviewer's demo accounts may unlock anything (api/_payments.js).
+  // An older order from someone else is voided instead of granted.
+  if (!MIDTRANS_IS_PRODUCTION) {
+    const buyer = (await db.doc(`accounts/${uid}`).get()).data();
+    if (!isPaymentTester(uid, buyer)) {
+      await paymentRef.set({ status: "void-sandbox", closedAt: Date.now() }, { merge: true });
+      console.warn("Midtrans webhook: sandbox payment from a non-tester voided", order_id);
+      return res.status(200).json({ ok: true, ignored: "sandbox" });
+    }
+  }
   // LEGACY_PLANS is only ever reachable here because the pending doc above
   // already proved this order_id was recorded — create-transaction.js never
   // creates one for a legacy planKey, so an order_id nobody recorded (a

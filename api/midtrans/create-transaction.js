@@ -6,15 +6,21 @@ import { adminDb, requireAuth } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, founderAmount, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, switchQuote, recurringFor } from "../_plans.js";
 import { RECURRING_ON } from "../_midtrans.js";
 import { metaContext } from "../_meta.js";
+import { MIDTRANS_IS_PRODUCTION, MIDTRANS_CLIENT_KEY, paymentsOpenFor } from "../_payments.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
-const MIDTRANS_IS_PRODUCTION = process.env.MIDTRANS_IS_PRODUCTION === "true";
 const SNAP_API_URL = MIDTRANS_IS_PRODUCTION
   ? "https://app.midtrans.com/snap/v1/transactions"
   : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  // A logged-out visitor on the pricing page only needs to know whether
+  // online payment exists at all (it decides the "pay via Midtrans" line).
+  if (req.body?.statusOnly && !req.headers.authorization) {
+    return res.status(200).json({ open: MIDTRANS_IS_PRODUCTION && !!MIDTRANS_SERVER_KEY && !!MIDTRANS_CLIENT_KEY, production: MIDTRANS_IS_PRODUCTION });
+  }
 
   let uid;
   try {
@@ -23,24 +29,46 @@ export default async function handler(req, res) {
     return res.status(err.status || 401).json({ error: "Sesi tidak valid — coba login ulang." });
   }
 
-  if (!MIDTRANS_SERVER_KEY) {
-    return res.status(500).json({ error: "MIDTRANS_SERVER_KEY belum diset di Vercel (atau deployment belum di-redeploy setelah diset)." });
-  }
-
-  // quoteOnly: just say what it would cost (the "switch plan" confirmation
-  // shows the credit / start date before Snap opens). autoRenew: false opts
-  // out of saving the card even where auto-renew is available.
-  const { planKey, quoteOnly = false, autoRenew = true } = req.body || {};
+  // statusOnly: may this account pay online right now, in which Midtrans
+  // mode, with which client key — and, given a planKey, what it's called and
+  // costs (the WhatsApp fallback message quotes it). quoteOnly: just say what
+  // it would cost (the "switch plan" confirmation shows the credit / start
+  // date before Snap opens). autoRenew: false opts out of saving the card even
+  // where auto-renew is available.
+  const { planKey, quoteOnly = false, statusOnly = false, autoRenew = true } = req.body || {};
   const plan = PLANS[planKey] || ADDONS[planKey];
-  if (!plan) {
-    return res.status(400).json({ error: "Paket tidak valid." });
-  }
 
   const accountRef = adminDb().doc(`accounts/${uid}`);
   const accountSnap = await accountRef.get();
-  if (!accountSnap.exists) return res.status(404).json({ error: "Akun tidak ditemukan — coba login ulang." });
-  const account = accountSnap.data();
+  const account = accountSnap.exists ? accountSnap.data() : null;
+  const open = !!MIDTRANS_SERVER_KEY && !!MIDTRANS_CLIENT_KEY && paymentsOpenFor(uid, account) && account?.status !== "deactivated";
+
+  if (statusOnly) {
+    const status = { open, production: MIDTRANS_IS_PRODUCTION, clientKey: MIDTRANS_CLIENT_KEY };
+    if (plan) {
+      let amount = plan.amount;
+      if (plan.slot && plan.tiered) {
+        const slotsSnap = await adminDb().doc(SLOTS_DOC).get();
+        amount = founderAmount(Number(slotsSnap.data()?.[plan.slot]) || 0);
+      }
+      Object.assign(status, { label: plan.label, amount });
+    }
+    return res.status(200).json(status);
+  }
+
+  if (!MIDTRANS_SERVER_KEY) {
+    return res.status(500).json({ error: "MIDTRANS_SERVER_KEY belum diset di Vercel (atau deployment belum di-redeploy setelah diset)." });
+  }
+  if (!plan) {
+    return res.status(400).json({ error: "Paket tidak valid." });
+  }
+  if (!account) return res.status(404).json({ error: "Akun tidak ditemukan — coba login ulang." });
   if (account.status === "deactivated") return res.status(403).json({ error: "Akun ini sedang dinonaktifkan." });
+  // Sandbox checkout stays shut for real customers (api/_payments.js) — the
+  // browser already shows the WhatsApp route; this is the enforcement.
+  if (!quoteOnly && !open) {
+    return res.status(403).json({ error: "Pembayaran online belum dibuka — pesan lewat WhatsApp dulu ya.", code: "payments-closed" });
+  }
 
   // Permanent slots are for pay-once plans only — a subscriber moves to
   // Lifetime first (owner's decision, 2026-09-29); monthly slots are for
@@ -60,10 +88,10 @@ export default async function handler(req, res) {
   }
 
   // Founder slots are a hard cap — refuse to even start a payment once the
-  // counter is full. (The webhook is what actually increments it, so two
-  // people paying in the same minute for the very last slot can both get
-  // through; that's an acceptable, honest oversell of one — never refuse
-  // someone who has already paid.)
+  // counter is full. The webhook is what actually increments it, so a
+  // checkout opened before the last slot sold can still settle — but only
+  // inside its 60-minute Snap window (below); someone who has already paid
+  // is never refused.
   let amount = plan.amount;
   if (plan.slot) {
     const slotsSnap = await adminDb().doc(SLOTS_DOC).get();
@@ -102,6 +130,10 @@ export default async function handler(req, res) {
         // Auto-renew: Snap offers to save the card; the webhook turns the
         // saved card into a Midtrans subscription (api/_plans.js recurringFor).
         ...(recurring ? { credit_card: { secure: true, save_card: true }, user_id: uid } : {}),
+        // A capped seat is priced and checked against the cap when this
+        // checkout opens; an hour-long window keeps a stale open checkout
+        // from settling long after the last seat (or the price wave) is gone.
+        ...(plan.slot ? { expiry: { unit: "minutes", duration: 60 } } : {}),
         // Carried straight through to the webhook payload — safer than
         // parsing uid/planKey back out of order_id's own text.
         custom_field1: uid,

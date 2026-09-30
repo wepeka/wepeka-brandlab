@@ -85,6 +85,8 @@ export default {
 
   // api/ai.js's server-side error codes, mapped in js/ai.js's proxyError()
   "ai.error.session": { en: "Your session expired — log in again and try that once more.", id: "Sesi kamu habis — login lagi, lalu coba sekali lagi." },
+  "ai.error.tooLarge": { en: "That's too much text to send to the AI at once — shorten it a little and try again.", id: "Teks yang dikirim ke AI terlalu panjang — persingkat sedikit, lalu coba lagi." },
+  "ai.error.tooManyImages": { en: "Too many images at once — send up to 6.", id: "Kebanyakan gambar sekaligus — kirim maksimal 6." },
   "ai.error.deactivated": { en: "This account has been deactivated. Contact Wepeka for help.", id: "Akun ini sudah dinonaktifkan. Hubungi Wepeka untuk bantuan." },
 
   // js/views/brands.js — the brand modal's audience-language select

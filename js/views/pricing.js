@@ -42,32 +42,56 @@ const rp = (n) => `Rp ${n.toLocaleString(getLang() === "en" ? "en-US" : "id-ID")
 
 const PAYMENT_WA_NUMBER = SUPPORT_WA_NUMBER;
 
-// Client Key dari dashboard Midtrans (Settings → Access Keys → General
-// Credentials). Client key bukan rahasia (aman di frontend) — Server Key
-// hanya di env var Vercel MIDTRANS_SERVER_KEY, dipakai api/midtrans/*.
-// Saat ini key SANDBOX (dashboard.sandbox.midtrans.com); ketika Midtrans
-// menyetujui akun production: ganti key ini, set MIDTRANS_IS_PRODUCTION
-// true, dan ganti MIDTRANS_SERVER_KEY + MIDTRANS_IS_PRODUCTION di Vercel.
-const MIDTRANS_CLIENT_KEY = "Mid-client-EVWF2l7q9QOMVSjO";
-const MIDTRANS_IS_PRODUCTION = false;
-const MIDTRANS_SNAP_URL = MIDTRANS_IS_PRODUCTION
-  ? "https://app.midtrans.com/snap/snap.js"
-  : "https://app.sandbox.midtrans.com/snap/snap.js";
+// Whether this account may pay online, in which Midtrans mode and with which
+// client key all come from the server (api/_payments.js, via
+// create-transaction's `statusOnly`), so going live with Midtrans is an env
+// change in Vercel, never a code change here. Until then checkout is closed
+// to customers and every buy button leads to WhatsApp instead. Anything
+// unexpected reads as closed — the WhatsApp route always works.
+async function paymentStatus(planKey) {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    const res = await fetch("/api/midtrans/create-transaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
+      body: JSON.stringify({ planKey, statusOnly: true }),
+    });
+    return res.ok ? await res.json() : { open: false };
+  } catch {
+    return { open: false };
+  }
+}
 
 let snapScriptPromise = null;
-function loadSnap() {
+function loadSnap({ production, clientKey }) {
   if (window.snap) return Promise.resolve();
   if (!snapScriptPromise) {
     snapScriptPromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.src = MIDTRANS_SNAP_URL;
-      script.setAttribute("data-client-key", MIDTRANS_CLIENT_KEY);
+      script.src = production ? "https://app.midtrans.com/snap/snap.js" : "https://app.sandbox.midtrans.com/snap/snap.js";
+      script.setAttribute("data-client-key", clientKey);
       script.onload = resolve;
       script.onerror = () => reject(new Error(t("pricing.err.loadSnap")));
       document.head.appendChild(script);
     });
   }
   return snapScriptPromise;
+}
+
+// Checkout closed: the same purchase, ordered on WhatsApp with the exact
+// item and price the server would have charged, plus the account's email so
+// the team can activate it on the right account.
+async function showPaymentsClosed(status, planKey) {
+  const { openModal } = await import("../modals.js");
+  const item = status.label ? `${status.label}${status.amount ? ` — ${rp(status.amount)}` : ""}` : planKey;
+  const message = t("pricing.closed.waMessage", { item, email: auth.currentUser?.email || "-" });
+  const wa = `https://wa.me/${PAYMENT_WA_NUMBER}?text=${encodeURIComponent(message)}`;
+  openModal({
+    title: t("pricing.closed.title"),
+    bodyHTML: `
+      <p style="margin:0 0 16px;">${t("pricing.closed.body", { item: escapeHtml(item) })}</p>
+      <a class="btn btn-primary btn-block" href="${wa}" target="_blank" rel="noopener noreferrer">${icon("chat", { size: 15 })}${t("pricing.closed.cta")}</a>`,
+  });
 }
 
 // planKey here matches accounts/{uid}.plan values on the server side (see
@@ -83,7 +107,6 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     return;
   }
   try {
-    await loadSnap();
     // The server derives uid from this token (Authorization header), never
     // from the request body — see api/midtrans/create-transaction.js.
     const idToken = await auth.currentUser?.getIdToken();
@@ -92,6 +115,12 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
       location.hash = "#/login";
       return;
     }
+    const status = await paymentStatus(planKey);
+    if (!status.open) {
+      await showPaymentsClosed(status, planKey);
+      return;
+    }
+    await loadSnap(status);
     // Switching plans while one still runs: say what happens to the old
     // one (credit now, or queued until it ends) before any payment opens.
     if (!(await confirmPlanSwitch(planKey, idToken))) return;
@@ -380,7 +409,10 @@ function accountBarHTML(user, account) {
   } else if (state === "none") {
     status += " " + t("pricing.status.none");
   } else {
-    status += " " + t("pricing.status.plan", { plan: escapeHtml(String(account.plan)) });
+    // A plan's display name, never its internal key ("founder-ultimate").
+    const plan = account?.plan;
+    const name = PLAN_NAME_KEYS.includes(plan) ? t(`pricing.planName.${plan}`) : plan === "lifetime" ? "Lifetime" : "Brandlab";
+    status += " " + t("pricing.status.plan", { plan: escapeHtml(name) });
   }
   return `<div class="pricing-account-bar">
       <span>${status}</span>
@@ -475,6 +507,9 @@ export function render(root, { user, account, backHref, locked } = {}) {
   // Add-ons are a second decision: only accounts that already pay see them.
   const showAddons = !!uid && !["trial", "expired", "none"].includes(accessState(account));
   let slots = null;
+  // null until the server answers; { open:false } swaps the "pay securely
+  // via Midtrans" line for the WhatsApp note (api/_payments.js).
+  let payState = null;
   const sel = { brands: 1, yearly: false };
 
   const paint = () => {
@@ -518,11 +553,16 @@ export function render(root, { user, account, backHref, locked } = {}) {
       </section>
 
       <section class="pricing-ways-section">
+        ${payState && !payState.open ? `
+          <div class="pricing-pending-help pricing-closed-note" role="status">
+            <b>${t("pricing.closed.title")}</b>
+            <p>${t(uid ? "pricing.closed.note" : "pricing.closed.noteGuest")}</p>
+          </div>` : ""}
         <div class="pricing-ways">
           ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid)}
           ${subscriptionCardHTML(sel, uid)}
         </div>
-        <p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>
+        ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>`}
         ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
         ${agencyHTML(uid, agencySoldOut)}
       </section>
@@ -577,6 +617,12 @@ export function render(root, { user, account, backHref, locked } = {}) {
   };
 
   paint();
+
+  paymentStatus().then((status) => {
+    if (!root.isConnected) return;
+    payState = status;
+    if (!status.open) repaintInPlace();
+  });
 
   // The live sold-count decides which Founder wave is open (and whether
   // anything is sold out) — it is never displayed. Repaint only if it

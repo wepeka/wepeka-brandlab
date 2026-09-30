@@ -64,7 +64,9 @@ async function main() {
     splitting: true,
     format: "esm",
     minify: true,
-    sourcemap: true,
+    // No public source maps: they'd publish the unminified source, comments
+    // and all (quota and billing logic included) next to the bundle.
+    sourcemap: false,
     outdir: DIST_JS,
     entryNames: "[name]-[hash]",
     chunkNames: "chunks/[name]-[hash]",

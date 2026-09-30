@@ -35,12 +35,19 @@ function planQuota(account) {
   return PLAN_QUOTA[account?.plan] || { period: "day", limit: DEFAULT_AI_DAILY_LIMIT };
 }
 
-// Mirrors js/account.js's isTrialExpired()/isReadOnly().
+// Mirrors js/account.js's isTrialExpired()/isReadOnly() — plus a lapsed
+// subscription, which the client only learns about once the daily cron has
+// flipped its status; the server shouldn't hand out AI for up to a day after
+// the paid period ended.
 function isTrialExpired(account) {
   return account?.plan === "trial" && Number(account?.trialEndsAt) <= Date.now();
 }
-function isReadOnlyAccount(account) {
-  return account?.status === "readonly" || isTrialExpired(account);
+function isSubscriptionLapsed(account) {
+  const until = Number(account?.subscriptionExpiresAt);
+  return ["starter", "pro", "studio"].includes(account?.plan) && until > 0 && until <= Date.now();
+}
+export function isReadOnlyAccount(account) {
+  return account?.status === "readonly" || isTrialExpired(account) || isSubscriptionLapsed(account);
 }
 
 // { period, limit } for this account right now — mirrors js/ai-usage.js's
@@ -116,6 +123,23 @@ export function availability(account, uid, usage, now = new Date()) {
   const dailyUsed = usedExtraToday(usage, now);
   const bucket = pickBucket({ planUsed, planLimit: quota.limit, dailyUsed, dailyLimit: extras.dailyLimit, credits: extras.credits });
   return { quota, planUsed, dailyUsed, dailyLimit: extras.dailyLimit, credits: extras.credits, bucket };
+}
+
+// Background calls the app starts on its own (api/ai.js FREE_FEATURES) are
+// free for the owner, but capped per account per day: bumps
+// aiUsage/{uid}.freeCount and says whether this one still fits under
+// `limit`. Over the cap the caller charges the call like any other.
+export async function consumeFreeCall(db, uid, now = new Date(), limit = Infinity) {
+  const ref = db.doc(`aiUsage/${uid}`);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const u = snap.exists ? snap.data() : {};
+    const today = isoDate(now);
+    const used = u.freeDate === today ? Number(u.freeCount) || 0 : 0;
+    if (used >= limit) return false;
+    tx.set(ref, { freeDate: today, freeCount: used + 1 }, { merge: true });
+    return true;
+  });
 }
 
 // Bumps aiUsage/{uid} by 1 inside a transaction (so two near-simultaneous

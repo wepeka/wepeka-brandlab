@@ -10,7 +10,20 @@
 // build client-side (deepSeekBody, claudeUserContent, the three model ids) —
 // moved server-side so a customer's browser never sees a key again.
 import { adminDb, requireAuth } from "./_firebaseAdmin.js";
-import { quotaFor, availability, consumeQuota, isAdminUid } from "./_aiQuota.js";
+import { quotaFor, availability, consumeQuota, consumeFreeCall, isAdminUid, isReadOnlyAccount } from "./_aiQuota.js";
+
+// Calls the app starts on its own — routing a chat message, the monthly
+// lessons, re-writing saved advice that went stale, the key test — don't
+// cost the owner a credit (js/ai.js countUsage:false). The server, not the
+// browser, decides which those are: only these features, each with its own
+// output cap, and at most FREE_CALLS_PER_DAY per account; anything else that
+// asks to be free is charged like a normal call.
+const FREE_FEATURES = { test: 16, route: 16, lessons: 600, concept: 800, campaign: 2600, sales: 1400 };
+const FREE_CALLS_PER_DAY = 150;
+// Far above the largest real prompt (full brand context + a month of posts),
+// far below what it takes to run up a bill with one request.
+const MAX_INPUT_CHARS = 200_000;
+const MAX_IMAGES = 6;
 
 // Vercel: stream the response body instead of buffering it whole before
 // sending — required for the SSE path below to actually arrive incrementally.
@@ -290,13 +303,30 @@ export default async function handler(req, res) {
     feature = "",
   } = req.body || {};
 
+  // An ended trial or lapsed plan has no AI (the app shows the pricing
+  // screen instead); refuse here too so the endpoint can't be used directly.
+  if (!isAdminUid(uid) && isReadOnlyAccount(account)) return res.status(403).json({ error: "readonly" });
+  if (typeof system !== "string" || typeof user !== "string" || system.length + user.length > MAX_INPUT_CHARS) {
+    return res.status(413).json({ error: "too-large" });
+  }
+  if (!Array.isArray(images) || images.length > MAX_IMAGES) return res.status(400).json({ error: "images" });
+
   // Never trust the browser's token budget blindly — clamp to what the
   // largest legitimate call (the 48-item content plan) actually needs.
-  const maxTokens = Math.min(8192, Math.max(16, Number(maxTokensRaw) || 1024));
+  let maxTokens = Math.min(8192, Math.max(16, Number(maxTokensRaw) || 1024));
+
+  // Free only when the feature is one of the app's own background calls and
+  // today's free allowance isn't used up; otherwise it's a normal call.
+  let charged = countUsage !== false;
+  if (!charged) {
+    const cap = FREE_FEATURES[feature];
+    if (cap && (await consumeFreeCall(db, uid, new Date(), FREE_CALLS_PER_DAY))) maxTokens = Math.min(maxTokens, cap);
+    else charged = true;
+  }
 
   const quota = quotaFor(account, uid);
   let used = 0;
-  if (countUsage !== false) {
+  if (charged) {
     // The plan's allowance first, then AI Harian, then top-up credits
     // (api/_aiQuota.js availability) — only refused when all are empty.
     const usageSnap = await db.doc(`aiUsage/${uid}`).get();
@@ -327,7 +357,7 @@ export default async function handler(req, res) {
       await callStream({ provider, apiKey, system, user, maxTokens, temperature, images }, (delta) => {
         res.write(`data: ${JSON.stringify({ delta })}\n\n`);
       });
-      if (countUsage !== false) await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
+      if (charged) await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
     } catch (err) {
       const code = err instanceof AiProxyError ? err.code : "network";
       const message = isAdminUid(uid) && err instanceof AiProxyError ? err.message : undefined;
@@ -341,7 +371,7 @@ export default async function handler(req, res) {
   try {
     const { text } = await withOneRetry(() => callNonStream({ provider, apiKey, system, user, maxTokens, temperature, json: wantJson, images }));
     let usageOut = { used, limit: quota.limit, period: quota.period };
-    if (countUsage !== false) {
+    if (charged) {
       const next = await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
       usageOut = { used: next.used, limit: quota.limit, period: quota.period };
     }

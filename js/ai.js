@@ -46,6 +46,12 @@ function proxyError(code, extra = {}) {
       return new AiApiError(t("ai.error.session"));
     case "deactivated":
       return new AiApiError(t("ai.error.deactivated"));
+    case "readonly":
+      return new AiApiError(t("ai.error.readonly"));
+    case "too-large":
+      return new AiApiError(t("ai.error.tooLarge"));
+    case "images":
+      return new AiApiError(t("ai.error.tooManyImages"));
     case "noVision":
       return aiSetupError("ai.error.noVision", { provider: "AI" });
     case "badResponse":
