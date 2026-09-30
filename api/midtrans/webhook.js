@@ -7,6 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder } from "../_plans.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
+import { sendMetaEvent } from "../_meta.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -174,6 +175,18 @@ export default async function handler(req, res) {
   // fails the notification: a problem here only means no auto-renew.
   if (firstTime) {
     await syncAutoRenew(db, { uid, planKey, pending, orderId: order_id }).catch((err) => console.error("Midtrans webhook: auto-renew setup failed", order_id, err?.message));
+    // Meta Purchase, once per order (retries have firstTime false). Same
+    // event id as the browser pixel in js/views/pricing.js payPlan. Awaited
+    // (Vercel may freeze the function after the response) but never throws.
+    const email = (await accountRef.get().catch(() => null))?.data()?.email;
+    await sendMetaEvent({
+      name: "Purchase",
+      eventId: order_id,
+      context: pending.meta,
+      email,
+      externalId: uid,
+      customData: { currency: "IDR", value: Number(gross_amount), content_ids: [planKey], content_name: plan.label || planKey, content_type: "product", order_id },
+    });
   }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
 }
