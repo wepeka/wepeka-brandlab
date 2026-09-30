@@ -5,6 +5,7 @@
 import { adminDb, requireAuth } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, founderAmount, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, switchQuote, recurringFor } from "../_plans.js";
 import { RECURRING_ON } from "../_midtrans.js";
+import { metaContext } from "../_meta.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 const MIDTRANS_IS_PRODUCTION = process.env.MIDTRANS_IS_PRODUCTION === "true";
@@ -121,8 +122,12 @@ export default async function handler(req, res) {
     await adminDb().doc(`payments/${orderId}`).set({
       uid, planKey, plan: plan.plan || planKey, amount, status: "pending", createdAt: Date.now(),
       mode: quote.mode, credit: quote.credit || 0, ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
+      // Buyer's browser context for the webhook's Meta Purchase event (api/_meta.js).
+      meta: metaContext(req),
     });
-    return res.status(200).json({ token: data.token });
+    // orderId/amount/label let the client report a GA4 purchase with the
+    // real paid value (js/analytics.js) — nothing secret in them.
+    return res.status(200).json({ token: data.token, orderId, amount, label: plan.label });
   } catch (err) {
     console.error("create-transaction error", err);
     return res.status(500).json({ error: "Gagal menghubungi Midtrans." });

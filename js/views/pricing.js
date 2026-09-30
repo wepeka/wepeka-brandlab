@@ -25,6 +25,8 @@
 //
 // Only sell what exists (audited against the source): no one-click IG/FB
 // import, no white-label PDF — the Brand Book PDF carries Wepeka's mark.
+import { gaEvent } from "../analytics.js";
+import { metaTrack } from "../meta-pixel.js";
 import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
@@ -99,9 +101,16 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
       body: JSON.stringify({ planKey }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
-    const { token } = await res.json();
+    const { token, orderId, amount, label } = await res.json();
+    const item = { item_id: planKey, item_name: label || planKey, price: amount, quantity: 1 };
+    gaEvent("begin_checkout", { currency: "IDR", value: amount, items: [item] });
+    const metaParams = { currency: "IDR", value: amount, content_ids: [planKey], content_name: label || planKey, content_type: "product" };
+    metaTrack("InitiateCheckout", metaParams, `ic-${orderId}`);
     window.snap.pay(token, {
       onSuccess: () => {
+        gaEvent("purchase", { transaction_id: orderId, currency: "IDR", value: amount, items: [item] });
+        // Same event id as the webhook's Conversions API Purchase (api/midtrans/webhook.js).
+        metaTrack("Purchase", metaParams, orderId);
         toast(t("pricing.pay.success"));
         onSuccess?.();
       },

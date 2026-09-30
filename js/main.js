@@ -25,6 +25,8 @@ const appErrorText = () => APP_ERROR_TEXT[getLang() === "en" ? "en" : "id"];
 document.documentElement.lang = getLang();
 import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
 import { noteNavigation } from "./nav-context.js";
+import { initAnalytics, setUser } from "./analytics.js";
+import { initMetaPixel } from "./meta-pixel.js";
 import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
@@ -582,6 +584,8 @@ async function consumeWepekaToken() {
 let lastUser = null;
 showLoading();
 consumeWepekaToken();
+initAnalytics();
+initMetaPixel();
 window.addEventListener("hashchange", () => {
   if (!lastUser) { boot(lastUser); return; } // toggle pricing <-> login while logged out
   renderRoute();
@@ -589,4 +593,4 @@ window.addEventListener("hashchange", () => {
 // Guided/Advanced toggle changes which view "home" resolves to — repaint
 // the current route immediately instead of waiting for the next navigation.
 window.addEventListener("mode:change", () => { if (storeReady) renderRoute(); });
-onAuthChange((user) => { lastUser = user; boot(user); });
+onAuthChange((user) => { lastUser = user; setUser(user?.uid); boot(user); });
