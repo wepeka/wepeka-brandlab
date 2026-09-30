@@ -3,6 +3,7 @@
 // wepeka.com (Community signup, mirrored into Firebase, or the SSO custom
 // token minted by /brandlab/connect) — this file only signs people into
 // Firebase Auth users that already exist, it never creates new ones.
+import { gaEvent } from "./analytics.js";
 import { auth } from "./firebase.js";
 import {
   onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
@@ -46,6 +47,7 @@ export function getUserEmail() {
 }
 export async function login(email, password) {
   await signInWithEmailAndPassword(auth, email, password);
+  gaEvent("login", { method: "email" });
 }
 // Signing in with a token minted by wepeka.com for the same person (see
 // js/site-links.js). Firebase verifies the signature against the Brandlab
@@ -75,6 +77,7 @@ export async function loginWithGoogle() {
     err.code = NEW_GOOGLE_ACCOUNT;
     throw err;
   }
+  gaEvent("login", { method: "google" });
 }
 export async function logout() {
   await signOut(auth);
