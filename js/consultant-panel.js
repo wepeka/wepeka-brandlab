@@ -71,7 +71,7 @@ import { parseDirectives, renderLightMarkdown } from "./ai-directives.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
 import { go } from "./nav-context.js";
 import { icon } from "./icons.js";
-import { qs, escapeHtml, formatPercent, formatDate, toast, openMenu, closeMenu, resizeImageFile, thumbnailFromDataUrl } from "./dom.js";
+import { qs, escapeHtml, formatPercent, formatDate, toast, openMenu, closeMenu, resizeImageFile, thumbnailFromDataUrl, emptyInlineHTML } from "./dom.js";
 import { mountAiFeedback } from "./ai-feedback.js";
 import { readFlag, writeFlag } from "./seen-flags.js";
 import { wireMic } from "./voice-input.js";
@@ -1139,7 +1139,8 @@ function chatCoreHTML(brandId, full) {
   const info = chatScopeInfo(brandId);
   const last = history[history.length - 1];
   const forkShown = last?.role === "assistant" && last.engine === "brainstorm" && last.question && !(last.ideas || []).length && !(last.tasks || []).length && !last.drafts?.length && !last.scripts?.length;
-  const placeholder = answerHint ? t("bs.answer.ph") : t(`chat.placeholder.${mode}`);
+  // A disabled box says why it's disabled instead of still inviting typing.
+  const placeholder = pending ? t("chat.placeholder.pending") : quotaOut ? t("chat.placeholder.quota") : answerHint ? t("bs.answer.ph") : t(`chat.placeholder.${mode}`);
   // Only the Wepeka admin can fix the shared AI key (Settings → AI is an
   // admin-only panel) — anyone else would land on a page without it.
   const setupLink = isAdmin(currentUid()) ? ` <a href="#/settings/ai">${t("chat.setupAi")} ${icon("arrowRight", { size: 11 })}</a>` : "";
@@ -1170,7 +1171,7 @@ function chatCoreHTML(brandId, full) {
     <div class="consultant-panel-input">
       <button type="button" class="chip-icon-btn cp-image" id="consultant-image" aria-label="${t("chat.image.attach")}" title="${t("chat.image.attach")}" ${pending || quotaOut ? "disabled" : ""}>${icon("image", { size: 15 })}</button>
       <input type="file" id="consultant-image-file" accept="image/*" multiple hidden />
-      <textarea id="consultant-input" placeholder="${esc(placeholder)}" rows="1" ${pending || quotaOut ? "disabled" : ""}></textarea>
+      <textarea id="consultant-input" aria-label="${esc(t("chat.input.aria"))}" placeholder="${esc(placeholder)}" rows="1" ${pending || quotaOut ? "disabled" : ""}></textarea>
       <button type="button" class="chip-icon-btn cp-mic" id="consultant-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}" ${pending || quotaOut ? "disabled" : ""}>${icon("mic", { size: 15 })}</button>
       <button type="button" class="icon-btn" id="consultant-send" aria-label="${t("cons.send")}" ${pending || quotaOut ? "disabled" : ""}>${icon("send", { size: 15 })}</button>
     </div>
@@ -2220,7 +2221,7 @@ function syncThreadBlocks(h) {
 function pendingBubble(shown = "") {
   const messagesEl = qs("#consultant-messages");
   if (!messagesEl || qs("#consultant-pending", messagesEl)) return;
-  const inner = shown ? `<div class="consultant-md">${renderLightMarkdown(shown)}</div>` : `<span class="typing-dots" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span>`;
+  const inner = shown ? `<div class="consultant-md">${renderLightMarkdown(shown)}</div>` : `<span class="typing-dots" role="status" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span>`;
   messagesEl.insertAdjacentHTML("beforeend", `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending is-new" id="consultant-pending">${inner}</div>`);
   scrollToBottom();
 }
@@ -2286,14 +2287,20 @@ function openMetricsPicker(brandId, h) {
   const all = listContent(brandId).filter((c) => c.status === "published").sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""));
   const overlay = openModal({
     title: t("chat.metrics.pickTitle"),
-    bodyHTML: `<input class="input" id="cp-pick-search" placeholder="${esc(t("chat.metrics.pickSearch"))}" /><div class="cp-pick-list" id="cp-pick-list"></div>`,
+    bodyHTML: `<input class="input" id="cp-pick-search" type="search" aria-label="${esc(t("chat.metrics.pickSearch"))}" placeholder="${esc(t("chat.metrics.pickSearch"))}" /><div class="cp-pick-list" id="cp-pick-list"></div>`,
   });
   const listEl = qs("#cp-pick-list", overlay);
   const draw = (q = "") => {
     const rows = all.filter((c) => !q || (c.title || "").toLowerCase().includes(q));
     listEl.innerHTML = rows.length
       ? rows.slice(0, 40).map((c) => `<button type="button" class="cp-pick-row" data-pick="${esc(c.id)}"><span class="t">${esc(c.title || t("common.untitled"))}</span><span class="m">${esc(c.platform || "")}${c.publishedDate ? ` · ${esc(formatDate(c.publishedDate))}` : ""}</span></button>`).join("")
-      : `<div class="text-faint" style="padding:12px 4px;font-size:13px;">${t("chat.metrics.pickEmpty")}</div>`;
+      : all.length
+      ? emptyInlineHTML(t("chat.metrics.pickNoMatch"), { compact: true })
+      : emptyInlineHTML(t("chat.metrics.pickEmpty"), { compact: true, ctaLabel: t("chat.metrics.pickOpenContent"), ctaAttrs: "data-pick-open-content" });
+    listEl.querySelector("[data-pick-open-content]")?.addEventListener("click", () => {
+      closeOverlay(overlay);
+      location.hash = `#/brand/${brandId}/content/list`;
+    });
     listEl.querySelectorAll("[data-pick]").forEach((btn) => btn.addEventListener("click", () => {
       const c = getContent(btn.dataset.pick);
       if (!c) return;

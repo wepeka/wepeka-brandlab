@@ -3,6 +3,8 @@
 export default {
   // ---- App shell (js/main.js, js/layout.js, js/dom.js, js/modals.js) ----
   "app.loading": { en: "Loading…", id: "Memuat…" },
+  // Under the boot loader's logo after ~12s (js/main.js showLoading).
+  "app.loading.slow": { en: "Still getting Brandlab ready… If it takes too long, check your connection and reload.", id: "Masih menyiapkan Brandlab… Kalau kelamaan, cek koneksi internetmu lalu muat ulang." },
   "app.done": { en: "Done", id: "Selesai" },
   // {name} arrives pre-wrapped in <b>...</b> (see showWelcomeBumper) — the
   // logo mark under this line already says "Wepeka Brandlab", so this is
@@ -101,11 +103,11 @@ export default {
   "brands.form.nameGuided": { en: "Brand / business name", id: "Nama brand / usaha" },
   "brands.form.name": { en: "Brand name", id: "Nama brand" },
   "brands.form.namePhGuided": { en: "e.g. Kopi Senja", id: "misal: Kopi Senja" },
-  "brands.form.namePh": { en: "e.g. PINTER Mandarin", id: "misal: PINTER Mandarin" },
+  "brands.form.namePh": { en: "e.g. Kopi Senja", id: "misal: Kopi Senja" },
   "brands.form.descLabelGuided": { en: "What does your business sell, and who is it for?", id: "Usahamu ini jualan apa, buat siapa?" },
   "brands.form.descLabel": { en: "What does this brand do?", id: "Brand ini bergerak di bidang apa?" },
-  "brands.form.descPhGuided": { en: "Write it in everyday words, e.g. 'A coffee shop in Kediri for students and office workers. Beans from local farmers, a cozy place to work or study.'", id: "Tulis pakai bahasa sehari-hari, misal: 'Kedai kopi di Kediri buat anak muda dan pekerja kantoran. Kopinya dari petani lokal, tempatnya nyaman buat nugas.'" },
-  "brands.form.descPh": { en: "Explain what this brand does, what it offers, and who it's for — e.g. 'We're a Mandarin language school in Kediri for kids through adults, focused on practical everyday conversation, not just grammar theory...'", id: "Jelasin brand ini bergerak di bidang apa, layanan/produknya apa, dan buat siapa — misal: 'Kami lembaga kursus bahasa Mandarin di Kediri untuk anak-anak sampai dewasa, fokus ke percakapan praktis sehari-hari, bukan cuma teori tata bahasa...'" },
+  "brands.form.descPhGuided": { en: "e.g. A coffee shop in Kediri for students and office workers. Beans from local farmers, a cozy place to work or study.", id: "misal: Kedai kopi di Kediri buat mahasiswa dan pekerja kantoran. Kopinya dari petani lokal, tempatnya nyaman buat nugas." },
+  "brands.form.descPh": { en: "e.g. A coffee shop in Kediri for students and office workers. Beans from local farmers, a cozy place to work or study.", id: "misal: Kedai kopi di Kediri buat mahasiswa dan pekerja kantoran. Kopinya dari petani lokal, tempatnya nyaman buat nugas." },
   "brands.form.descHintGuided": { en: "3–5 sentences. This is how the AI gets to know your business, so the more honest, the better.", id: "3–5 kalimat. Dari sini AI mulai kenal usahamu, jadi makin jujur makin bagus." },
   "brands.form.descHint": { en: "A few paragraphs is plenty — this becomes the base context the AI uses across the app (Brand DNA, Script Generator, Auto-Schedule, etc.), so it understands your business from the moment the brand is created.", id: "Beberapa paragraf aja — ini jadi konteks dasar yang dipakai AI di seluruh aplikasi (Brand DNA, Script Generator, Auto-Schedule, dll.) biar langsung ngerti bisnismu ini apa, dari brand pertama kali dibuat." },
   "brands.form.connectLater": { en: "Facebook connection is set up later — save this brand first, then reopen it via Edit brand.", id: "Koneksi Facebook diatur belakangan — simpan brand ini dulu, lalu buka lagi lewat Ubah brand." },
@@ -126,8 +128,8 @@ export default {
   "integr.fb.title": { en: "Facebook Page (optional)", id: "Halaman Facebook (opsional)" },
   "integr.fb.intro": { en: "Only needed if this brand's Reels get crossposted to a Facebook Page — used to import videos from that Page and to check for crossposts.", id: "Cuma perlu kalau Reels brand ini juga di-crosspost ke Halaman Facebook — dipakai buat import video dari Halaman itu dan mengecek crosspost." },
   "integr.fb.pageIdPh": { en: "e.g. 10015...", id: "misal: 10015..." },
-  "integr.ig.soon": { en: "Instagram integration is coming soon.", id: "Integrasi Instagram segera hadir." },
-  "integr.ig.importSoon": { en: "Importing from Instagram is coming soon.", id: "Import dari Instagram segera hadir." },
+  "integr.ig.soon": { en: "This feature isn't active for your account yet.", id: "Fitur ini belum aktif untuk akunmu." },
+  "integr.ig.importSoon": { en: "This feature isn't active for your account yet.", id: "Fitur ini belum aktif untuk akunmu." },
   "integr.ig.apiFailed": { en: "Instagram API request failed ({status}).", id: "Permintaan ke Instagram API gagal ({status})." },
   "integr.ig.postTitle": { en: "Instagram post — {date}", id: "Postingan Instagram — {date}" },
   "integr.ig.badUrl": { en: "That doesn't look like an Instagram post URL (expected a /p/, /reel/, or /tv/ link).", id: "Ini sepertinya bukan link postingan Instagram (harusnya link /p/, /reel/, atau /tv/)." },
@@ -147,7 +149,7 @@ export default {
   "integr.fb.countsFailed": { en: "Couldn't read like/comment/share counts: {msg}", id: "Gagal membaca jumlah like/komentar/share: {msg}" },
   "integr.ocr.loadFailed": { en: "Couldn't load the text-recognition engine. Check your connection.", id: "Gagal memuat mesin pembaca teks. Cek koneksi internet kamu." },
   "integr.import.igTitle": { en: "Import from Instagram", id: "Import dari Instagram" },
-  "integr.import.igLoading": { en: "Looking up your recent Instagram posts…", id: "Mencari postingan Instagram terbarumu…" },
+  "integr.import.igLoading": { en: "Looking up your recent Instagram posts…", id: "Lagi cari postingan Instagram terbarumu…" },
   "integr.import.selected": { en: "Import selected", id: "Import yang dipilih" },
   "integr.import.selectedCount": { en: "Import selected ({count})", id: "Import yang dipilih ({count})" },
   "integr.import.igUnreachable": { en: "Couldn't reach Instagram: {msg}", id: "Nggak bisa terhubung ke Instagram: {msg}" },
@@ -213,7 +215,8 @@ export default {
   "set.acc.loggedInAs": { en: "Logged in as", id: "Masuk sebagai" },
   "set.acc.id": { en: "Account ID", id: "ID akun" },
   "set.acc.usernameSub": { en: "Your unique handle at Wepeka — no other account can use the same name.", id: "Nama pengenal unik kamu di Wepeka — nggak ada akun lain yang bisa pakai nama yang sama." },
-  "set.acc.usernamePh": { en: "yourname", id: "namamu" },
+  "set.acc.usernameLabel": { en: "Username", id: "Username" },
+  "set.acc.usernamePh": { en: "e.g. kopisenja", id: "misal: kopisenja" },
   "set.acc.needUsername": { en: "Enter a username first.", id: "Isi username dulu." },
   "set.acc.wepekaTitle": { en: "Wepeka Account", id: "Wepeka Account" },
   "set.acc.usernameSaved": { en: "Wepeka Account @{username} saved", id: "Wepeka Account @{username} disimpan" },

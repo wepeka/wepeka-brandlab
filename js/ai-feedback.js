@@ -35,7 +35,7 @@ export function mountAiFeedback(parent, { brandId = null, feature, prompt = "", 
   el.querySelector('[data-ai-rate="up"]').addEventListener("click", () => send("up"));
   el.querySelector('[data-ai-rate="down"]').addEventListener("click", () => {
     el.innerHTML = `
-      <input class="input ai-feedback-note" maxlength="500" placeholder="${t("ai.feedback.notePlaceholder")}" />
+      <input class="input ai-feedback-note" maxlength="500" aria-label="${t("ai.feedback.notePlaceholder")}" placeholder="${t("ai.feedback.notePlaceholder")}" />
       <button type="button" class="btn btn-secondary btn-sm" data-ai-send>${t("ai.feedback.send")}</button>
     `;
     const input = el.querySelector(".ai-feedback-note");

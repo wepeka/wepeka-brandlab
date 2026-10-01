@@ -609,7 +609,7 @@ export function openReplanDialog({ brandId, goal, preset = {} }) {
       <div class="rg-replan-fields">
         <div class="field"><label for="rp-date">${t("roadmap.wizard.date")}</label><input class="input" id="rp-date" type="date" min="${addDays(today, 1)}" value="${esc(st.date)}" /></div>
         <div class="field"><label for="rp-seats">${t("roadmap.wizard.seats")}</label><input class="input" id="rp-seats" inputmode="numeric" value="${st.seats ? formatNumber(st.seats) : ""}" /></div>
-        <div class="field"><label for="rp-cap">${t("roadmap.replan.capacity")}</label><input class="input" id="rp-cap" inputmode="numeric" value="${st.capacity ? st.capacity : ""}" placeholder="${goal.roadmap?.capacity?.perWeek ?? ""}" /></div>
+        <div class="field"><label for="rp-cap">${t("roadmap.replan.capacity")}</label><input class="input" id="rp-cap" inputmode="numeric" value="${st.capacity ? st.capacity : ""}" placeholder="${goal.roadmap?.capacity?.perWeek ?? ""}" />${goal.roadmap?.capacity?.perWeek ? `<p class="ev-field-hint">${t("roadmap.replan.capacityHint", { n: goal.roadmap.capacity.perWeek })}</p>` : ""}</div>
         <div class="field"><label for="rp-push">${t("roadmap.replan.push")}</label><input class="input" id="rp-push" inputmode="numeric" value="${st.push ? st.push : ""}" placeholder="${goal.roadmap?.capacity?.suggestPush ?? ""}" /><p class="ev-field-hint">${t("roadmap.replan.pushHint")}</p></div>
       </div>
       <div id="rp-diff" class="rg-diff"></div>`,

@@ -158,6 +158,25 @@ export function skeletonHTML({ rows = 3, card = true } = {}) {
   return `<div class="skeleton${card ? " skeleton-card" : ""}" role="status" aria-busy="true"><span class="sr-only">${t("app.loading")}</span>${bars}</div>`;
 }
 
+// "Working on it" for an AI call or other wait inside a card: spinner plus
+// one line of text ("Lagi …"), announced to screen readers. Same markup the
+// app has always used inline (.ocr-status + .spinner), in one place.
+export function loadingHTML(text, { style = "" } = {}) {
+  return `<div class="ocr-status" role="status" aria-live="polite"${style ? ` style="${style}"` : ""}><div class="spinner" aria-hidden="true"></div><span>${text}</span></div>`;
+}
+
+// "Nothing here yet" inside a card or widget, one look everywhere: what's
+// empty and why (`text`, may hold markup the caller already escaped), plus
+// — when there's something to do about it — one button or link.
+export function emptyInlineHTML(text, { ctaLabel = "", ctaHref = "", ctaAttrs = "", compact = false } = {}) {
+  const cta = !ctaLabel
+    ? ""
+    : ctaHref
+    ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(ctaHref)}">${ctaLabel}${icon("arrowRight", { size: 12 })}</a>`
+    : `<button type="button" class="btn btn-secondary btn-sm" ${ctaAttrs}>${ctaLabel}</button>`;
+  return `<div class="empty-inline${compact ? " is-compact" : ""}"><p>${text}</p>${cta}</div>`;
+}
+
 export function toast(message, type = "success") {
   const root = document.getElementById("toast-root");
   const el = document.createElement("div");

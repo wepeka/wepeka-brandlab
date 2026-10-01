@@ -432,6 +432,11 @@ main.view.wide{ max-width: 1440px; }
   border-radius: var(--radius-md); padding: 11px 13px; width:100%;
 }
 .input:focus,.select:focus,.textarea:focus{ border-color: var(--accent); }
+/* Placeholder text: the browser default (Chrome #A9A9A9) is only ~2.3:1 on
+   the light theme's white inputs. --text-muted passes AA in both themes,
+   on --surface (inputs) and --surface-2 (chat composer) alike. */
+.input::placeholder,.select::placeholder,.textarea::placeholder,
+.consultant-panel-input textarea::placeholder{ color: var(--text-muted); opacity:1; }
 .password-field{ position:relative; }
 .password-field .input{ padding-right:40px; }
 .password-toggle-btn{
@@ -807,6 +812,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .search-box{ position:relative; flex:1; min-width:200px; max-width:320px; }
 .search-box svg{ position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; color: var(--text-faint); }
 .search-box input{ padding-left:36px; }
+.search-box input[type=search]{ -webkit-appearance:none; appearance:none; }
 .filter-pop{ position:relative; }
 .filter-btn{ display:flex; align-items:center; gap:7px; }
 .filter-count{ background: var(--brand-tint); color: var(--brand-tint-text); border-radius:999px; font-size:10.5px; font-weight:800; min-width:16px; height:16px; display:flex; align-items:center; justify-content:center; padding:0 4px; }
@@ -1228,6 +1234,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .logo-download:hover{ color: var(--accent); }
 .logo-add-tile{ width:52px; height:52px; border-radius:10px; border:1.5px dashed var(--border); background:transparent; color: var(--text-faint); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
 .logo-add-tile:hover{ border-color: var(--accent); color: var(--accent); }
+/* An empty upload slot that says what goes there, not just an icon. */
+.logo-add-tile.has-label{ width:auto; padding:0 16px; gap:8px; font-size:12.5px; font-weight:700; color: var(--text-muted); }
 
 .resource-chip{ display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius: var(--radius-pill); border:1px dashed var(--border); background: var(--surface); font-size:12.5px; font-weight:700; color: var(--text-muted); cursor:pointer; }
 .resource-chip.empty:hover{ border-color: var(--accent); color: var(--accent); }
@@ -1455,6 +1463,10 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .section-video-btn[hidden]{ display:none; }
 .guide-video-frame{ position:relative; width:100%; aspect-ratio:16/9; border-radius: var(--radius-md); overflow:hidden; background: var(--surface-2); border:1px solid var(--border); }
 .guide-video-frame video, .guide-video-frame iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; background:#000; }
+/* Not-yet-recorded video (admin only): dashed + a clock, so it never looks
+   like a playable video. */
+.guide-video-frame.is-placeholder{ border-style:dashed; }
+.guide-video-play.is-pending{ background: var(--surface); color: var(--text-muted); border:1.5px dashed var(--border); }
 .guide-video-frame.is-placeholder{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; padding:10px; background: radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 16%, var(--surface-2)), var(--surface-2)); }
 .guide-video-play{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--accent); color: var(--accent-text); }
 .guide-video-frame.is-compact .guide-video-play{ width:34px; height:34px; }
@@ -1646,6 +1658,48 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 @keyframes bumperOut{ from{ opacity:1; } to{ opacity:0; } }
 @media (prefers-reduced-motion: reduce){
   .brandlab-bumper, .brandlab-bumper.is-leaving{ animation:none; }
+}
+
+/* ============================================================
+   Boot loader (index.html + js/main.js showLoading) — the "Wepeka
+   loading" from wepeka.com's route curtain (wpk-dp globals.css
+   .page-curtain): brand-gradient sheet + dark sheet with the logo and a
+   sliding line. Always dark, like the bumper. Sits under toasts (100) so
+   a failed sign-in can still say so; only transform/opacity animate.
+   ============================================================ */
+.wl-loader{ position:fixed; inset:0; z-index:99; overflow:hidden; pointer-events:none; }
+.wl-loader:not(.is-revealing){ pointer-events:auto; }
+.wl-loader-sheet{ position:absolute; inset:0; will-change:transform; }
+.wl-loader-color{ background: linear-gradient(115deg, #ffa52b 0%, #ec4899 55%, #7c3aed 100%); transform: translateY(100%); visibility:hidden; }
+.wl-loader.is-covering .wl-loader-color, .wl-loader.is-revealing .wl-loader-color{ visibility:visible; }
+.wl-loader-dark{ background:#0e0c0a; display:flex; align-items:center; justify-content:center; padding:24px; }
+.wl-loader-logo{ display:flex; flex-direction:column; align-items:center; gap:1.1rem; text-align:center; animation: wl-logo-in .4s cubic-bezier(.16,1,.3,1) .12s both; }
+.wl-loader-mark{ display:flex; align-items:center; gap: clamp(10px, 1.4vw, 14px); color:#fff; font-family: var(--font-display); font-weight:900; font-size: clamp(22px, 3.4vw, 32px); line-height:1; }
+.wl-loader-mark img{ height: clamp(26px, 4vw, 38px); width:auto; display:block; }
+.wl-loader-divider{ width:2px; height: clamp(20px, 3vw, 28px); background: rgba(255,255,255,.35); }
+.wl-loader-line{ position:relative; width:7.5rem; height:2px; overflow:hidden; border-radius:999px; background: rgba(255,255,255,.12); }
+.wl-loader-line::after{ content:""; position:absolute; inset:0; width:40%; border-radius:inherit; background: linear-gradient(90deg, #ffa52b, #ec4899); animation: wl-line .9s cubic-bezier(.65,0,.35,1) infinite; }
+.wl-loader-slow{ display:none; max-width:320px; margin-top:.4rem; color: rgba(255,255,255,.72); font-size:13px; line-height:1.5; }
+.wl-loader-slow p{ margin:0 0 10px; }
+.wl-loader.is-slow .wl-loader-slow{ display:block; animation: wl-logo-in .4s ease-out both; }
+.wl-loader-reload{ font: inherit; font-weight:700; color:#fff; background: rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.22); border-radius:999px; padding:8px 18px; cursor:pointer; }
+.wl-loader-reload:hover{ background: rgba(255,255,255,.18); }
+/* Replacing a real screen (login → app): both sheets sweep up from the bottom. */
+.wl-loader.is-covering .wl-loader-color{ animation: wl-in .46s cubic-bezier(.76,0,.24,1) both; }
+.wl-loader.is-covering .wl-loader-dark{ animation: wl-in .44s cubic-bezier(.76,0,.24,1) .08s both; }
+.wl-loader.is-covering .wl-loader-logo{ animation-delay:.32s; }
+/* First real screen is in: the sheets carry on out the top, dark first. */
+.wl-loader.is-revealing .wl-loader-color{ transform:none; animation: wl-out .52s cubic-bezier(.76,0,.24,1) .09s both; }
+.wl-loader.is-revealing .wl-loader-dark{ animation: wl-out .52s cubic-bezier(.76,0,.24,1) both; }
+.wl-loader.is-revealing .wl-loader-logo{ animation: wl-logo-out .22s ease-in both; }
+@keyframes wl-in{ from{ transform: translateY(100%); } to{ transform: translateY(0); } }
+@keyframes wl-out{ from{ transform: translateY(0); } to{ transform: translateY(-100%); } }
+@keyframes wl-logo-in{ from{ opacity:0; transform: translateY(14px); } to{ opacity:1; transform:none; } }
+@keyframes wl-logo-out{ from{ opacity:1; } to{ opacity:0; transform: translateY(-10px); } }
+@keyframes wl-line{ from{ transform: translateX(-100%); } to{ transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce){
+  .wl-loader-logo, .wl-loader.is-covering .wl-loader-sheet{ animation:none; }
+  .wl-loader-line::after{ animation-duration: 2.4s; }
 }
 
 /* ============================================================
@@ -2002,7 +2056,7 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
    text always, independent of the app's own theme, same as .brandbook-sheet
    — it's meant to read as a page, not as app chrome. */
 .bb-preview-sheet{ background:#ffffff; color:#1a1816; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.35); min-height:320px; padding:28px 24px; display:flex; flex-direction:column; gap:22px; }
-.bb-preview-blank{ align-items:center; justify-content:center; text-align:center; color:#8a8580; font-size:12.5px; line-height:1.6; }
+.bb-preview-blank{ align-items:center; justify-content:center; text-align:center; color:#6b665f; font-size:12.5px; line-height:1.6; }
 .bb-preview-blank span{ max-width:220px; }
 .bb-preview-logo img{ max-width:100%; max-height:96px; object-fit:contain; }
 .bb-preview-name{ font-size:24px; font-weight:800; }
@@ -2189,7 +2243,10 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .bbk-label-brand{ color:var(--bbk-ink); }
 .bbk-label-brand::before{ content:""; display:inline-block; width:8px; height:8px; border-radius:2px; background: var(--bb-primary); margin-right:8px; }
 .bbk-note{ font-size:12.5px; line-height:1.65; color:#5a564f; margin-top:6px; }
-.bbk-empty{ flex:1; display:flex; align-items:center; justify-content:center; text-align:center; padding:40px; border:1.5px dashed #d9d3c9; border-radius:var(--bbk-r); color:var(--bbk-muted); font-size:14px; }
+.bbk-empty{ flex:1; display:flex; flex-direction:column; gap:14px; align-items:center; justify-content:center; text-align:center; padding:40px; border:1.5px dashed #d9d3c9; border-radius:var(--bbk-r); color:#6b665f; font-size:14px; }
+/* Review only — the PDF/print build drops pages with these boxes. */
+.bbk-empty-cta{ display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:999px; border:1.5px solid var(--bb-primary, #1a1816); background:transparent; color: var(--bbk-ink); font: inherit; font-size:13px; font-weight:700; text-decoration:none; cursor:pointer; }
+.bbk-empty-cta:hover{ background: var(--bb-tint, #f3efe8); }
 .bbk-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .bbk-chip{ display:inline-block; padding:6px 13px; border-radius:999px; border:1px solid #d9d3c9; font-size:12px; font-weight:600; background:#fff; }
 .bbk-chip-lg{ font-size:16px; padding:9px 18px; }
@@ -3138,6 +3195,14 @@ a.journey-step:hover .journey-edit{ text-decoration:underline; }
 .review-field:last-child{ border-bottom:none; }
 .review-field label{ display:block; font-size:12px; font-weight:800; color: var(--text-muted); margin-bottom:6px; }
 .review-textarea{ min-height:0; resize:vertical; font-size:13.5px; line-height:1.55; }
+/* Brand DNA: format rules shown as text (not hidden in a placeholder),
+   live word counters, and short answer boxes that wrap + grow. */
+.review-hint{ margin:-2px 0 6px; font-size:12px; color: var(--text-faint); line-height:1.45; }
+.dna-word-count{ margin:4px 0 0; font-size:11.5px; color: var(--text-faint); text-align:right; font-variant-numeric: tabular-nums; }
+.dna-word-count.is-over{ color: var(--health-poor); font-weight:700; }
+.textarea.dna-part-input{ min-height:0; resize:none; overflow:hidden; line-height:1.5; }
+.dna-oneliner-note{ display:flex; align-items:flex-start; gap:6px; margin:0 0 8px; font-size:12.5px; color: var(--text-muted); }
+.dna-oneliner-note svg{ flex:none; margin-top:2px; color: var(--accent); }
 @media (max-width: 720px){
   .dna-ai-fill{ flex-wrap:wrap; }
   .dna-ai-fill > .btn{ width:100%; justify-content:center; }
@@ -3261,6 +3326,12 @@ body:has(#consultant-panel:not([hidden])) .consultant-fab-hint, body.tour-active
 .warn-box svg{ flex:none; color: var(--health-poor); margin-top:2px; }
 .warn-box b{ display:block; color: var(--health-poor); margin-bottom:2px; }
 .warn-box-sub{ display:block; margin-top:4px; color: var(--text-muted); }
+/* Neutral variant — a tip, not a warning (e.g. the brand description). */
+.warn-box.info-box{ background: var(--surface-2); border-color: var(--border); }
+.warn-box.info-box svg{ color: var(--accent); }
+.warn-box.info-box b{ color: var(--text); }
+/* Brand form: empty logo slot before a name is typed (no "?"). */
+.avatar.brand-mark-empty{ background: var(--surface-2); color: var(--text-faint); border:1.5px dashed var(--border); }
 
 /* Teleprompter call-to-action (Creator) */
 .tp-cta{ display:flex; align-items:center; gap:12px; width:100%; margin:10px 0 6px; padding:11px 14px; border-radius: var(--radius-md); border:1.5px dashed color-mix(in srgb, var(--accent) 65%, var(--border)); background: var(--accent-soft); color: var(--text); font: inherit; font-size:13.5px; font-weight:800; text-align:left; cursor:pointer; transition: border-color .15s, transform .15s; }
@@ -3701,7 +3772,8 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
   .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 144px); max-height:calc(100dvh - 144px); }
 }
 .scratch-hint{ font-size:11.5px; color: var(--text-faint); margin:0 0 10px; line-height:1.45; }
-.scratch-add{ min-height:0; font-size:13px; margin-bottom:10px; }
+.scratch-add{ min-height:0; font-size:13px; margin-bottom:4px; }
+.sn-hint{ margin:0 0 10px; font-size:11px; color: var(--text-faint); }
 .scratch-foot{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--border-soft); position:sticky; bottom:-12px; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); }
 /* Sticky-note paper colours (light paper, dark ink in both themes) */
 .sn-c-yellow{ --sn-paper:#fff3a8; --sn-edge:#f0d65a; }
@@ -4382,6 +4454,12 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    here yet" screen looks like the same idea, not a one-off per page. */
 .empty-state .btn{ margin: 0 auto; }
 .empty-state-ideas{ padding: 4px 20px 36px; }
+/* Inline "nothing here yet" inside a card/widget (js/dom.js emptyInlineHTML):
+   one look everywhere, with an optional single next step. */
+.empty-inline{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:24px 16px; text-align:center; }
+.empty-inline p{ margin:0; max-width:46ch; font-size:13px; line-height:1.55; color: var(--text-muted); }
+.empty-inline.is-compact{ align-items:flex-start; padding:8px 0; text-align:left; gap:8px; }
+.empty-inline.is-compact p{ font-size:12.5px; }
 .empty-state-ideas .page-eyebrow{ text-align:center; margin-bottom:12px; }
 .ann-loading-skel{ display:flex; flex-direction:column; gap:12px; }
 

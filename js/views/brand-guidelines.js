@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings } from "../store.js";
-import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickTintTextColor } from "../dom.js";
+import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickTintTextColor, loadingHTML } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
 import {
@@ -519,8 +519,8 @@ function logoStepHTML(state, brand) {
       <div style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${t("guidelines.logo.main")}</div>
       <div class="logo-gallery" style="margin-bottom:10px;">
         ${dataUrl
-          ? `<div class="logo-thumb"><img src="${dataUrl}" alt="Logo" /><button type="button" class="logo-remove" id="logo-remove">${icon("x", { size: 10 })}</button></div>`
-          : `<button type="button" class="logo-add-tile" id="logo-add">${icon("upload", { size: 18 })}</button>`}
+          ? `<div class="logo-thumb"><img src="${dataUrl}" alt="Logo" /><button type="button" class="logo-remove" id="logo-remove" aria-label="${t("common.remove")}" title="${t("common.remove")}">${icon("x", { size: 10 })}</button></div>`
+          : `<button type="button" class="logo-add-tile has-label" id="logo-add">${icon("upload", { size: 18 })}<span>${t("guidelines.logo.uploadMain")}</span></button>`}
       </div>
       <input type="file" id="logo-file" accept="image/*" hidden />
       ${!dataUrl ? `<p class="text-faint" style="font-size:11.5px;">${t("guidelines.logo.pngHint")}</p>` : ""}
@@ -582,8 +582,8 @@ function logoVariantSlotsHTML(state) {
           <div style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${s.label} <span class="text-faint" style="font-weight:400;">${t("guidelines.moodboard.optional")}</span></div>
           <div class="logo-gallery">
             ${url
-              ? `<div class="logo-thumb"><img src="${url}" alt="${s.label}" /><button type="button" class="logo-remove" data-logo-variant-remove="${s.key}">${icon("x", { size: 10 })}</button></div>`
-              : `<button type="button" class="logo-add-tile" data-logo-variant-add="${s.key}">${icon("upload", { size: 18 })}</button>`}
+              ? `<div class="logo-thumb"><img src="${url}" alt="${s.label}" /><button type="button" class="logo-remove" data-logo-variant-remove="${s.key}" aria-label="${t("common.remove")}" title="${t("common.remove")}">${icon("x", { size: 10 })}</button></div>`
+              : `<button type="button" class="logo-add-tile" data-logo-variant-add="${s.key}" aria-label="${escapeHtml(t("guidelines.logo.uploadVariant", { name: s.label }))}" title="${escapeHtml(t("guidelines.logo.uploadVariant", { name: s.label }))}">${icon("upload", { size: 18 })}</button>`}
           </div>
           <input type="file" id="logo-variant-file-${s.key}" accept="image/*" hidden />
         </div>
@@ -862,7 +862,7 @@ function colorStepHTML(state, brand) {
 
       <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">${t("bg.color.step2")}</div>
       <div class="flex gap-8 items-center" style="flex-wrap:wrap;margin-bottom:10px;">
-        <input class="input" id="color-base-hex" placeholder="#161616" value="${escapeHtml(baseHex)}" style="width:120px;font-family:ui-monospace,monospace;" />
+        <input class="input" id="color-base-hex" aria-label="${escapeHtml(t("bg.color.step2"))}" placeholder="#161616" value="${escapeHtml(baseHex)}" style="width:120px;font-family:ui-monospace,monospace;" />
         ${window.EyeDropper ? `<button type="button" class="btn btn-secondary btn-sm" id="base-eyedrop">${icon("eye", { size: 12 })}${t("bg.color.sample")}</button>` : ""}
         <button type="button" class="btn btn-secondary btn-sm" id="btn-extract-photo">${icon("image", { size: 12 })}${t("bg.color.extract")}</button>
         <input type="file" id="photo-extract-file" accept="image/*" hidden />
@@ -1385,7 +1385,7 @@ function wireTypographyStep(root, state, refresh) {
       e.target.value = "";
       return;
     }
-    const label = await promptDialog({ title: t("bg.type.extraKindTitle"), label: t("bg.type.extraKindLabel"), placeholder: t("bg.type.extraKindDefault"), value: t("bg.type.extraKindDefault"), confirmLabel: t("guidelines.next") });
+    const label = await promptDialog({ title: t("bg.type.extraKindTitle"), label: t("bg.type.extraKindLabel"), placeholder: t("bg.type.extraKindPh"), value: t("bg.type.extraKindDefault"), confirmLabel: t("guidelines.next") });
     e.target.value = "";
     if (!label) return;
     const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || safeFontName(label) || "Custom Font";
@@ -1564,12 +1564,12 @@ function moodboardHTML(state, brand) {
             (m, i) => `
           <div class="logo-thumb">
             <img src="${m.dataUrl}" alt="Moodboard ${i + 1}" />
-            <button type="button" class="logo-remove" data-remove-moodboard="${i}">${icon("x", { size: 10 })}</button>
+            <button type="button" class="logo-remove" data-remove-moodboard="${i}" aria-label="${t("common.remove")}" title="${t("common.remove")}">${icon("x", { size: 10 })}</button>
           </div>
         `
           )
           .join("")}
-        <button type="button" class="logo-add-tile" id="add-moodboard">${icon("upload", { size: 18 })}</button>
+        <button type="button" class="logo-add-tile has-label" id="add-moodboard">${icon("upload", { size: 18 })}<span>${t("guidelines.moodboard.addPhotos")}</span></button>
       </div>
       <input type="file" id="moodboard-file" accept="image/*" multiple hidden />
     </div>
@@ -1658,7 +1658,7 @@ function toneStepHTML(state) {
       <summary>${icon("bot", { size: 14 })}${t("guidelines.tone.detectTitle")}</summary>
       <p class="text-faint" style="font-size:12px;margin:8px 0 10px;">${t("guidelines.tone.detectBody")}</p>
       <div class="flex gap-8" style="align-items:flex-start;">
-        <textarea class="textarea" id="tov-sample" style="min-height:80px;flex:1;" placeholder="${escapeHtml(t("guidelines.tone.detectPlaceholder"))}">${escapeHtml(state.toneSample)}</textarea>
+        <textarea class="textarea" id="tov-sample" aria-label="${escapeHtml(t("guidelines.tone.detectTitle"))}" style="min-height:80px;flex:1;" placeholder="${escapeHtml(t("guidelines.tone.detectPlaceholder"))}">${escapeHtml(state.toneSample)}</textarea>
         <button type="button" class="chip-icon-btn" id="tov-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
       </div>
       <button type="button" class="btn btn-secondary btn-sm" id="tov-detect" style="margin-top:8px;">${icon("bot", { size: 13 })}${t("guidelines.tone.detectBtn")}</button>
@@ -1679,7 +1679,7 @@ function toneStepHTML(state) {
           ${tv.avoidWords.map((v, i) => `<span class="dna-chip">${escapeHtml(v)}<button type="button" data-tov-avoid-remove="${i}" aria-label="${t("common.remove")}">${icon("x", { size: 10 })}</button></span>`).join("")}
         </div>
         <div class="flex gap-8" style="margin-top:6px;">
-          <input class="input" id="tov-avoid-new" placeholder="${escapeHtml(t("guidelines.tone.avoidPlaceholder"))}" style="flex:1;" />
+          <input class="input" id="tov-avoid-new" aria-label="${escapeHtml(t("guidelines.tone.avoidLabel"))}" placeholder="${escapeHtml(t("guidelines.tone.avoidPlaceholder"))}" style="flex:1;" />
           <button type="button" class="btn btn-secondary btn-sm" id="tov-avoid-add" aria-label="${t("guidelines.tone.add")}">${icon("plus", { size: 12 })}</button>
         </div>
       </div>
@@ -2010,8 +2010,18 @@ function stripColon(label) {
   return label.replace(/\s*:\s*$/, "");
 }
 
-function bookEmpty(message) {
-  return `<div class="bbk-empty">${escapeHtml(message)}</div>`;
+// A section with nothing in it yet. On screen (Review) the box says what's
+// missing and links straight to where it's filled in — a tab of this page,
+// or Brand DNA for the parts that come from there. The PDF/print build
+// leaves these pages out entirely (isEmptyBookPage keys on class="bbk-empty").
+function bookEmpty(message, { tab = "", dnaBrandId = "" } = {}) {
+  const idx = tab ? STEPS.findIndex((s) => s.key === tab) : -1;
+  const cta = idx >= 0
+    ? `<button type="button" class="bbk-empty-cta" data-bb-tab="${idx}">${escapeHtml(t("bg.book.emptyCta", { section: STEPS[idx].title }))}${icon("arrowRight", { size: 13 })}</button>`
+    : dnaBrandId
+    ? `<a class="bbk-empty-cta" href="#/brand/${escapeHtml(dnaBrandId)}/dna">${escapeHtml(t("bg.book.emptyCtaDna"))}${icon("arrowRight", { size: 13 })}</a>`
+    : "";
+  return `<div class="bbk-empty"><span>${escapeHtml(message)}</span>${cta}</div>`;
 }
 
 // The palette "spine" — the brand's own colors stacked in their usage
@@ -2178,7 +2188,7 @@ function foundationBody(brand) {
     { label: stripColon(t("bg.book.for")), text: dna.targetAudience },
     { label: stripColon(t("bg.book.whyUs")), text: dna.positioning },
   ].filter((c) => c.text);
-  if (!cards.length && !dna.tagline) return bookEmpty(t("bg.book.foundationEmpty"));
+  if (!cards.length && !dna.tagline) return bookEmpty(t("bg.book.foundationEmpty"), { dnaBrandId: brand.id });
   return `
     <div class="bbk-cols">
       ${
@@ -2238,7 +2248,7 @@ function personalityColumn(brand) {
     `;
   }
   if (dnaTraits.length) return `<div class="bbk-label">${stripColon(t("bg.book.coreCharacter"))}</div><div class="bbk-chips" style="margin-top:12px;">${dnaTraits.map((s) => `<span class="bbk-chip bbk-chip-lg">${escapeHtml(s)}</span>`).join("")}</div>`;
-  return bookEmpty(t("bg.book.personalityEmpty"));
+  return bookEmpty(t("bg.book.personalityEmpty"), { dnaBrandId: brand.id });
 }
 
 // Prefers the Tone of Voice stage's 4 sliders (structured) over the plain
@@ -2298,7 +2308,7 @@ function personalityBody(brand) {
 // both: the line set large, and the logo + tagline lockup next to the rule.
 function taglineBody(brand, a) {
   const tagline = brand.brandDNA?.tagline;
-  if (!tagline) return bookEmpty(t("bg.book.noTagline"));
+  if (!tagline) return bookEmpty(t("bg.book.noTagline"), { dnaBrandId: brand.id });
   return `
     <div class="bbk-cols">
       <div class="bbk-tagline-stage" style="flex:1;">
@@ -2322,7 +2332,7 @@ function taglineBody(brand, a) {
 // whatever's cached in a.aiCopy.valueProposition, never calls AI itself.
 function valuePropositionBody(brand, a) {
   const pillars = valuePillars(brand, a).filter((p) => (p?.title || "").trim() && (p?.desc || "").trim());
-  if (!pillars?.length) return bookEmpty(t("bg.book.vpEmpty"));
+  if (!pillars?.length) return bookEmpty(t("bg.book.vpEmpty"), { tab: "foundation" });
   return `
     <div class="bbk-cols">
       ${pillars
@@ -2350,7 +2360,7 @@ function bookHasLogo(a) {
 // Clear space/minimum size don't need a vector logo — just the raster
 // image's own rendered box, inset with a dashed guide and "x" markers.
 function logoBody(a) {
-  if (!bookHasLogo(a)) return bookEmpty(t("bg.book.noLogo"));
+  if (!bookHasLogo(a)) return bookEmpty(t("bg.book.noLogo"), { tab: "logo" });
   return `
     <div class="bbk-cols">
       <div class="bbk-stage" style="flex:1;"><img src="${a.logo.dataUrl}" style="max-width:56%;max-height:52%;" alt="Logo" /></div>
@@ -2418,7 +2428,7 @@ function mascotsBody(a) {
 // Full-height color columns, widest = most used, each carrying the three
 // codes a designer/printer actually asks for (HEX, RGB, CMYK).
 function colorPaletteBody(a) {
-  if (!a.colors.primary) return bookEmpty(t("bg.book.noColors"));
+  if (!a.colors.primary) return bookEmpty(t("bg.book.noColors"), { tab: "color" });
   const flex = { primary: 3, secondary: 2, accent: 1.5, background: 1.25, text: 1.25 };
   return `
     <div class="bbk-palette">
@@ -2446,7 +2456,7 @@ function colorPaletteBody(a) {
 // Proposition: this only lays out a.aiCopy.colorEssence, never calls AI.
 function colorEssenceBody(a) {
   const essence = a.aiCopy?.colorEssence;
-  if (!essence?.primary) return bookEmpty(t("bg.book.ceEmpty"));
+  if (!essence?.primary) return bookEmpty(t("bg.book.ceEmpty"), { tab: "color" });
   const roles = ["primary", "secondary", "accent"].filter((k) => essence[k] && a.colors[k]);
   return `
     <div class="bbk-cols">
@@ -2469,7 +2479,7 @@ function colorEssenceBody(a) {
 // check (contrastRatio() is plain hex-to-luminance math, no service).
 // 4.5:1 is the AA bar for normal text.
 function colorUsageBody(a) {
-  if (!a.colors.primary) return bookEmpty(t("bg.book.noColors"));
+  if (!a.colors.primary) return bookEmpty(t("bg.book.noColors"), { tab: "color" });
   const roles = BOOK_ROLES.filter((k) => a.colors[k]);
   const share = { primary: 62, secondary: 28, accent: 10 };
   const pairs = [];
@@ -2619,7 +2629,7 @@ function typographySpacingBody(a, brand) {
 // own radius token (VISUAL_DIRECTIONS in brandbook-data.js) — the same
 // value the Applications mockups are drawn with.
 function directionBody(a) {
-  if (!a.visualDirection.length) return bookEmpty(t("bg.book.noDirection"));
+  if (!a.visualDirection.length) return bookEmpty(t("bg.book.noDirection"), { tab: "direction" });
   return `
     <div class="bbk-cols">
       ${a.visualDirection
@@ -2645,7 +2655,7 @@ function directionBody(a) {
 // brandbook-data.js) instead of asking yet another question. The brand's
 // own moodboard uploads sit beside it as a mosaic when there are any.
 function imageryBody(a) {
-  if (!a.visualDirection.length) return bookEmpty(t("bg.book.imageryEmpty"));
+  if (!a.visualDirection.length) return bookEmpty(t("bg.book.imageryEmpty"), { tab: "direction" });
   const hasBoard = a.moodboard.length > 0;
   const styles = a.visualDirection
     .slice(0, hasBoard ? 2 : 3)
@@ -2675,7 +2685,7 @@ function generalDontsBody() {
 }
 
 function applicationsBody(a, brand) {
-  if (!a.applications.length) return bookEmpty(t("bg.book.noApps"));
+  if (!a.applications.length) return bookEmpty(t("bg.book.noApps"), { tab: "applications" });
   return `<div class="bbk-apps bb-mockup-stage ${a.applications.length <= 3 ? "bbk-apps-few" : ""}">${a.applications.slice(0, 6).map((id) => renderMockup(id, a, brand)).join("")}</div>`;
 }
 
@@ -2886,8 +2896,8 @@ function pillarEditRowHTML(p, i) {
     <div class="bbk-pillar-edit" data-pillar-row="${i}">
       <div class="bbk-pillar-edit-num">0${i + 1}</div>
       <div class="bbk-pillar-edit-fields">
-        <input class="input" type="text" data-pillar-title="${i}" maxlength="40" placeholder="${escapeHtml(t("bg.copy.vp.titlePh"))}" value="${escapeHtml(p?.title || "")}" />
-        <textarea class="textarea" data-pillar-desc="${i}" maxlength="160" placeholder="${escapeHtml(t("bg.copy.vp.descPh"))}">${escapeHtml(p?.desc || "")}</textarea>
+        <input class="input" type="text" data-pillar-title="${i}" maxlength="40" aria-label="${escapeHtml(t("bg.copy.vp.titleAria", { n: i + 1 }))}" placeholder="${escapeHtml(t("bg.copy.vp.titlePh"))}" value="${escapeHtml(p?.title || "")}" />
+        <textarea class="textarea" data-pillar-desc="${i}" maxlength="160" aria-label="${escapeHtml(t("bg.copy.vp.descAria", { n: i + 1 }))}" placeholder="${escapeHtml(t("bg.copy.vp.descPh"))}">${escapeHtml(p?.desc || "")}</textarea>
       </div>
       ${i > 0 || (p?.title || p?.desc) ? `<button type="button" class="chip-icon-btn" data-pillar-remove="${i}" aria-label="${t("common.remove")}" title="${t("common.remove")}">${icon("x", { size: 12 })}</button>` : ""}
     </div>
@@ -2905,6 +2915,7 @@ function valuePropEditorHTML(brand, a) {
         <button type="button" class="btn btn-secondary btn-sm" id="vp-ai-fill">${icon("bot", { size: 12 })}${t("bg.copy.aiFill")}</button>
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t(fromDna && pillars.length ? "bg.copy.vp.fromDna" : fromDna ? "bg.copy.vp.noDna" : "bg.copy.vp.own")}</p>
+      <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("bg.copy.vp.format")}</p>
       <div class="bbk-pillar-edit-list">${pillars.map(pillarEditRowHTML).join("")}</div>
       <div class="flex gap-8" style="flex-wrap:wrap;">
         ${pillars.length < MAX_PILLARS ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-add-pillar">${icon("plus", { size: 12 })}${t("bg.copy.vp.add")}</button>` : ""}
@@ -2921,8 +2932,8 @@ function essenceEditRowHTML(k, a) {
     <div class="bbk-essence-edit-row" data-essence-role="${k}">
       <span class="bbk-essence-swatch" style="background:${hex};"></span>
       <div class="bbk-essence-edit-fields">
-        <label>${roleLabel(k)} · ${hex.toUpperCase()}</label>
-        <textarea class="textarea" data-essence-text="${k}" maxlength="160" placeholder="${escapeHtml(t("bg.copy.ce.placeholder"))}">${escapeHtml(a.aiCopy?.colorEssence?.[k] || "")}</textarea>
+        <label for="essence-${k}">${roleLabel(k)} · ${hex.toUpperCase()}</label>
+        <textarea class="textarea" id="essence-${k}" data-essence-text="${k}" maxlength="160" placeholder="${escapeHtml(t("bg.copy.ce.placeholder"))}">${escapeHtml(a.aiCopy?.colorEssence?.[k] || "")}</textarea>
       </div>
       <button type="button" class="chip-icon-btn" data-essence-ai="${k}" aria-label="${t("bg.copy.aiFillOne")}" title="${t("bg.copy.aiFillOne")}">${icon("bot", { size: 12 })}</button>
     </div>
@@ -3202,7 +3213,7 @@ function wireCopyEditor(root, brandId, brand, state, refresh) {
       return;
     }
     btn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
+    statusEl.innerHTML = `${loadingHTML(escapeHtml(t("bg.review.writing")), { style: "margin-top:8px;" })}`;
     try {
       const generated = await generateValueProposition(ai, { brand });
       a.aiCopy.valueProposition = generated;
@@ -3231,7 +3242,7 @@ function wireCopyEditor(root, brandId, brand, state, refresh) {
       return;
     }
     btn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
+    statusEl.innerHTML = `${loadingHTML(escapeHtml(t("bg.review.writing")), { style: "margin-top:8px;" })}`;
     try {
       const essence = await generateColorEssence(ai, { brand, colors: a.colors, colorFeelings: a.colorFeelings });
       a.aiCopy.colorEssence = essence;
@@ -3260,7 +3271,7 @@ function wireCopyEditor(root, brandId, brand, state, refresh) {
         return;
       }
       btn.disabled = true;
-      statusEl.innerHTML = `<div class="ocr-status" style="margin-top:8px;"><div class="spinner"></div><span>${escapeHtml(t("bg.review.writing"))}</span></div>`;
+      statusEl.innerHTML = `${loadingHTML(escapeHtml(t("bg.review.writing")), { style: "margin-top:8px;" })}`;
       try {
         const essence = await generateColorEssence(ai, { brand, colors: a.colors, colorFeelings: a.colorFeelings });
         a.aiCopy.colorEssence = { ...(a.aiCopy.colorEssence || {}), [k]: essence[k] };

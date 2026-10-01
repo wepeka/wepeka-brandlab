@@ -105,9 +105,76 @@ let storeReady = false;
 let accountUnsub = null;
 let subscribedUid = null;
 
-function showLoading() {
-  app.innerHTML = `<div class="auth-shell"><div class="auth-card" style="text-align:center;">${t("app.loading")}</div></div>`;
+// Boot loader — the same "Wepeka loading" as wepeka.com's route curtain
+// (wpk-dp page-transition-flash.tsx): a dark sheet with the Wepeka |
+// Brandlab mark and a sliding orange→pink line, which carries on out the
+// top (brand-gradient sheet trailing) once the first real screen replaces
+// it. index.html ships the same markup inside #app, so the very first
+// paint already shows it instead of a black screen while modules load.
+const LOADER_SLOW_MS = 12_000;
+
+function loaderMarkHTML() {
+  return `<div class="wl-loader-mark"><img src="assets/wepeka-logo.png" alt="Wepeka" /><span class="wl-loader-divider"></span><span>Brandlab</span></div>`;
 }
+
+function showLoading() {
+  let loader = app.querySelector(":scope > .wl-loader");
+  if (loader) {
+    // Already up (index.html's static copy, or an earlier call this boot):
+    // keep it so the animation doesn't restart, just make sure the screen
+    // reader text is in the chosen language.
+    loader.querySelector(".sr-only").textContent = t("app.loading");
+  } else {
+    // Replacing a real screen (login → app, account switch): sweep in like
+    // wepeka.com's curtain instead of cutting.
+    const covering = app.childElementCount > 0;
+    app.innerHTML = `
+      <div class="wl-loader${covering ? " is-covering" : ""}" role="status" aria-live="polite">
+        <div class="wl-loader-sheet wl-loader-color"></div>
+        <div class="wl-loader-sheet wl-loader-dark"><div class="wl-loader-logo">${loaderMarkHTML()}<span class="wl-loader-line"></span></div></div>
+        <span class="sr-only">${t("app.loading")}</span>
+      </div>`;
+    loader = app.querySelector(":scope > .wl-loader");
+  }
+  // Firebase blocked / a dead connection used to leave "Memuat…" up
+  // forever with nothing to do — after a while, say so and offer a reload.
+  if (!loader.querySelector(".wl-loader-slow")) {
+    loader.querySelector(".wl-loader-logo").insertAdjacentHTML("beforeend", `
+      <div class="wl-loader-slow">
+        <p>${t("app.loading.slow")}</p>
+        <button type="button" class="wl-loader-reload">${appErrorText().reload}</button>
+      </div>`);
+    loader.querySelector(".wl-loader-reload").addEventListener("click", () => location.reload());
+  }
+  clearTimeout(loader._slowTimer);
+  loader._slowTimer = setTimeout(() => loader.classList.add("is-slow"), LOADER_SLOW_MS);
+}
+
+// The loader leaves the moment anything else is written into #app (every
+// screen in this file replaces app.innerHTML), so the exit lives here rather
+// than at each call site: a short-lived copy plays the curtain's "carry on
+// out the top" over the new screen, then removes itself.
+function playLoaderReveal(old) {
+  clearTimeout(old._slowTimer);
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const el = document.createElement("div");
+  el.className = "wl-loader is-revealing";
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML = `
+    <div class="wl-loader-sheet wl-loader-color"></div>
+    <div class="wl-loader-sheet wl-loader-dark"><div class="wl-loader-logo">${loaderMarkHTML()}<span class="wl-loader-line"></span></div></div>`;
+  document.body.appendChild(el);
+  // animationend can be skipped (tab in the background) — never leave a
+  // full-screen sheet over the app.
+  setTimeout(() => el.remove(), 900);
+}
+new MutationObserver((records) => {
+  for (const r of records) {
+    for (const n of r.removedNodes) {
+      if (n.nodeType === 1 && n.classList.contains("wl-loader") && !app.querySelector(":scope > .wl-loader")) playLoaderReveal(n);
+    }
+  }
+}).observe(app, { childList: true });
 
 function teardownApp() {
   storeReady = false;

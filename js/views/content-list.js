@@ -1,7 +1,7 @@
 import { getBrand, listContent, getContent, listCampaigns, listSeries, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
-import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText } from "../dom.js";
+import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText, loadingHTML } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { confirmDialog, openModal, closeOverlay } from "../modals.js";
 import { openInstagramImportPicker } from "./instagram-import.js";
@@ -149,7 +149,7 @@ function paint(root, brandId, state, refresh) {
       </div>
       <div class="search-box">
         ${icon("search", { size: 16 })}
-        <input class="input" id="search" placeholder="${t("contentList.searchPlaceholder")}" value="${state.search}" />
+        <input class="input" id="search" type="search" aria-label="${escapeText(t("contentList.searchAria"))}" placeholder="${escapeText(t("contentList.searchPlaceholder"))}" value="${escapeText(state.search)}" />
       </div>
       <select class="select" id="filter-campaign" style="width:auto;">
         <option value="">${t("contentList.allCampaigns")}</option>
@@ -627,12 +627,12 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     let retFound = false;
     let lastError = "";
     for (let i = 0; i < files.length; i++) {
-      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${files.length > 1 ? t("ret.qf.reading", { n: i + 1, total: files.length }) : t("contentList.qf.analyzing")}</span></div>`;
+      statusEl.innerHTML = `${loadingHTML(files.length > 1 ? t("ret.qf.reading", { n: i + 1, total: files.length }) : t("contentList.qf.analyzing"))}`;
       try {
         const dataUrl = await resizeImageFile(files[i], { maxDimension: 1400, format: "image/jpeg", quality: 0.88 });
         const result = useAi
           ? await extractInsightsFromImage(ai, dataUrl)
-          : await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("contentList.qf.analyzingPct", { pct })}</span></div>`; });
+          : await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = `${loadingHTML(t("contentList.qf.analyzingPct", { pct }))}`; });
         Object.entries(result.metrics || {}).forEach(([key, val]) => {
           const input = qs(`#qe-metric-${key}`, overlay);
           if (input && val !== null && val !== undefined) { input.value = val; metricsFound++; }

@@ -10,7 +10,7 @@
 import { getBrand, updateBrand, getSettings, listContent, listCampaigns } from "./store.js";
 import { openModal, closeOverlay } from "./modals.js";
 import { icon } from "./icons.js";
-import { escapeHtml as esc, qs, qsa, toast } from "./dom.js";
+import { escapeHtml as esc, qs, qsa, toast, loadingHTML } from "./dom.js";
 import { suggestHashtags, hasAiKey, AiApiError } from "./ai.js";
 import { pulseTextFor } from "./brand-pulse.js";
 import { t } from "./i18n.js";
@@ -79,7 +79,7 @@ export function openWritingRulesModal(brandId, { onSaved = () => {} } = {}) {
       : `<span class="text-faint" style="font-size:12px;">${t("wr.tags.none")}</span>`;
   const suggestHTML = () =>
     st.busy
-      ? `<div class="ocr-status" style="margin:8px 0 0;"><div class="spinner"></div><span>${t("wr.suggest.busy")}</span></div>`
+      ? `${loadingHTML(t("wr.suggest.busy"), { style: "margin:8px 0 0;" })}`
       : st.suggestions.length
       ? `<p class="text-faint" style="font-size:11.5px;margin:10px 0 6px;">${t("wr.suggest.pick")}</p><div class="wr-suggest">${st.suggestions
           .map((h) => `<button type="button" class="consultant-starter ${st.hashtags.some((x) => x.toLowerCase() === h.toLowerCase()) ? "is-added" : ""}" data-wr-add="${esc(h)}">${icon("plus", { size: 11 })}${esc(h)}</button>`)

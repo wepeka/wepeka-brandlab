@@ -152,14 +152,14 @@ export function confirmDialog({ title = t("app.confirm.title"), message = "", co
 // user text in them); `placeholder` and `value` are plain text — often the
 // owner's own data, e.g. a milestone target or a font name — and go into
 // attributes, so they are always escaped here (audit S-20).
-export function promptDialog({ title, label, placeholder = "", value = "", confirmLabel = t("common.save") }) {
+export function promptDialog({ title, label, placeholder = "", value = "", confirmLabel = t("common.save"), inputmode = "" }) {
   return new Promise((resolve) => {
     const overlay = openModal({
       title,
       bodyHTML: `
         <div class="field" style="margin-bottom:0;">
-          <label>${label}</label>
-          <input class="input" id="prompt-input" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}" />
+          <label for="prompt-input">${label}</label>
+          <input class="input" id="prompt-input" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}" ${inputmode ? `inputmode="${escapeHtml(inputmode)}"` : ""} />
         </div>
       `,
       footHTML: `

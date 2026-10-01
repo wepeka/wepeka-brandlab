@@ -98,7 +98,7 @@ export default {
   "companion.moment.seed": { en: "{title} — {detail}", id: "{title} — {detail}" },
   "companion.memory.title": { en: "Brand memory", id: "Memori Brand" },
   "companion.memory.intro": { en: "What's happening in this brand right now — every AI feature (scripts, captions, schedule, campaigns) reads this before writing. It's not a content list: content you want to make goes to Content ideas. Delete anything AI shouldn't keep reading.", id: "Kejadian terbaru brand ini — dibaca semua fitur AI (script, caption, jadwal, campaign) sebelum menulis. Ini bukan daftar konten: konten yang mau kamu bikin masuknya ke Ide Konten. Hapus yang tidak perlu dibaca AI lagi." },
-  "companion.memory.empty": { en: "Nothing in brand memory yet.", id: "Memori brand masih kosong." },
+  "companion.memory.empty": { en: "Brand Memory is empty. Tell the chat what's happening with your brand, or write it down yourself.", id: "Memori Brand masih kosong. Ceritakan kejadian brand-mu di chat, atau catat sendiri." },
   "companion.memory.clearAll": { en: "Delete all memory", id: "Hapus semua memori" },
   "companion.memory.clearConfirm.title": { en: "Delete all brand memory?", id: "Hapus semua memori brand?" },
   "companion.memory.clearConfirm.body": { en: "Every saved moment and detected signal for this brand will be gone — AI features will start again with no recent history. Your chat stays. This can't be undone.", id: "Semua momentum dan sinyal yang tersimpan untuk brand ini akan hilang — fitur AI mulai lagi tanpa riwayat terbaru. Obrolan tetap ada. Tidak bisa dibatalkan." },

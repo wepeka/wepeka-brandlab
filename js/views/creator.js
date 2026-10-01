@@ -157,7 +157,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
 
       <div class="field" style="margin-bottom:14px;">
         <div class="creator-field-head">
-          <label style="margin-bottom:0;">${lite ? t("cr.ai.promptLabelLite") : t("cr.ai.promptLabel")}</label>
+          <label for="ai-prompt" style="margin-bottom:0;">${lite ? t("cr.ai.promptLabelLite") : t("cr.ai.promptLabel")}</label>
           <button type="button" class="chip-icon-btn" id="ai-mic" aria-label="${t("cr.ai.voiceInput")}" title="${t("cr.ai.voiceTitle")}">${icon("mic", { size: 15 })}</button>
         </div>
         <textarea class="textarea" id="ai-prompt" style="min-height:70px;" placeholder="${t("cr.ai.promptPh")}">${escapeHtml(prefill)}</textarea>
@@ -172,7 +172,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         <div class="chip-select" id="ai-duration-chips">
           ${DURATION_OPTIONS.map((d) => `<button type="button" data-val="${d.val}" class="${state.duration === d.val ? "active" : ""}">${d.label}</button>`).join("")}
         </div>
-        <input class="input" id="ai-duration-custom" style="margin-top:8px;${state.duration === "Custom" ? "" : "display:none;"}" placeholder="${t("cr.ai.durationPh")}" />
+        <input class="input" id="ai-duration-custom" aria-label="${t("cr.ai.durationCustomAria")}" style="margin-top:8px;${state.duration === "Custom" ? "" : "display:none;"}" placeholder="${t("cr.ai.durationPh")}" />
       </div>`
       }
 
@@ -1310,7 +1310,7 @@ function campaignFieldHTML(c, campaigns) {
   const autoStage = campaign && !showPhase ? currentStageName(campaign) : "";
   return `
     <div class="field">
-      <label>${guided ? t("cr.campaign.guidedLabel") : t("cr.campaign.label")}</label>
+      <label for="f-campaign">${guided ? t("cr.campaign.guidedLabel") : t("cr.campaign.label")}</label>
       <select class="select" id="f-campaign">
         <option value="">${guided ? t("cr.campaign.noneGuided") : t("cr.campaign.none")}</option>
         ${campaigns.map((camp) => `<option value="${camp.id}" ${c.campaignId === camp.id ? "selected" : ""}>${escapeHtml(camp.name)}</option>`).join("")}
@@ -1342,7 +1342,7 @@ function seriesFieldHTML(c, series) {
   if (!series.length) return "";
   return `
     <div class="field">
-      <label>${t("cr.series.label")}</label>
+      <label for="f-series">${t("cr.series.label")}</label>
       <select class="select" id="f-series">
         <option value="">${t("cr.series.none")}</option>
         ${series.map((s) => `<option value="${s.id}" ${c.seriesId === s.id ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
@@ -1414,16 +1414,16 @@ function channelFieldsHTML(c) {
   return `
     <div class="row-2">
       <div class="field">
-        <label>${t("contentEditor.platform.label")}</label>
+        <label for="f-platform">${t("contentEditor.platform.label")}</label>
         <select class="select" id="f-platform">${c.platform ? "" : `<option value="">—</option>`}${withCurrent(settings.platforms || [], c.platform).map((v) => opt(v, c.platform)).join("")}</select>
       </div>
       <div class="field">
-        <label>${t("contentEditor.format.label")}</label>
+        <label for="f-format">${t("contentEditor.format.label")}</label>
         <select class="select" id="f-format">${c.format ? "" : `<option value="">—</option>`}${withCurrent(settings.formats || [], c.format).map((v) => opt(v, c.format)).join("")}</select>
       </div>
     </div>
     ${c.status === "published" ? "" : `<div class="field">
-      <label>${t("contentEditor.scheduleDate.label")}</label>
+      <label for="f-schedule">${t("contentEditor.scheduleDate.label")}</label>
       <input class="input" type="date" id="f-schedule" value="${c.scheduleDate || ""}" min="${localISODate()}" />
     </div>`}`;
 }
@@ -1438,11 +1438,11 @@ function publishedCardHTML(c) {
       <div class="cr-published-head">${icon("check", { size: 14 })}<b>${t("cr.pub.title")}</b>${c.publishedDate ? `<span class="text-faint">${escapeHtml(formatDate(c.publishedDate))}</span>` : ""}</div>
       <div class="row-2">
         <div class="field" style="margin-bottom:0;">
-          <label>${t("contentEditor.publishedDate.label")}</label>
+          <label for="f-published">${t("contentEditor.publishedDate.label")}</label>
           <input class="input" type="date" id="f-published" value="${c.publishedDate || ""}" />
         </div>
         <div class="field" style="margin-bottom:0;">
-          <label>${t("cr.pub.link")}</label>
+          <label for="f-url">${t("cr.pub.link")}</label>
           <input class="input" id="f-url" placeholder="https://..." value="${escapeHtml(c.publishedUrl || "")}" />
         </div>
       </div>
@@ -1552,7 +1552,7 @@ function readyToUploadPanel(c) {
       <div class="divider"></div>
 
       <div class="field" style="margin-bottom:8px;">
-        <label>${t("contentEditor.scheduleDate.label")}</label>
+        <label for="f-schedule">${t("contentEditor.scheduleDate.label")}</label>
         <input class="input" type="date" id="f-schedule" value="${c.scheduleDate || ""}" min="${localISODate()}" />
       </div>
       <div class="field" style="margin-bottom:8px;">
@@ -1633,7 +1633,7 @@ function slidesFieldHTML(c) {
           <button type="button" class="chip-icon-btn" data-slide-up="${i}" aria-label="${t("cr.f.slideUp")}" title="${t("cr.f.slideUp")}" ${i === 0 ? "disabled" : ""}>${icon("arrowUp", { size: 12 })}</button>
           <button type="button" class="chip-icon-btn" data-slide-delete="${i}" aria-label="${t("common.delete")}" title="${t("common.delete")}">${icon("trash", { size: 12 })}</button>
         </div>
-        <textarea class="textarea slide-text" data-slide-text="${i}" rows="2" placeholder="${escapeHtml(t("cr.f.slidePh"))}">${escapeHtml(s.text)}</textarea>
+        <textarea class="textarea slide-text" data-slide-text="${i}" rows="2" aria-label="${escapeHtml(t("cr.f.slideAria", { n: i + 1 }))}" placeholder="${escapeHtml(t("cr.f.slidePh"))}">${escapeHtml(s.text)}</textarea>
       </div>`
     )
     .join("");
@@ -1681,18 +1681,18 @@ function draftingPanel(c, campaigns, series = []) {
       ${publishedNote}
 
       <div class="field">
-        <label>${t("cr.f.title")}</label>
+        <label for="f-title">${t("cr.f.title")}</label>
         <input class="input" id="f-title" value="${escapeHtml(c.title)}" placeholder="${t("cr.f.titlePh")}" />
       </div>
       <div class="field">
-        <label>${t("cr.f.idea")}</label>
+        <label for="f-idea">${t("cr.f.idea")}</label>
         <textarea class="textarea" id="f-idea" style="min-height:60px;" placeholder="${t("cr.f.ideaPh")}">${escapeHtml(c.idea || "")}</textarea>
       </div>
       ${channelFieldsHTML(c)}
       ${campaignFunnelFieldsHTML(c, campaigns, series)}
       ${isCarouselContent(c) ? slidesFieldHTML(c) : `<div class="field">
         <div class="creator-field-head">
-          <label style="margin-bottom:0;">${t("cr.f.script")}</label>
+          <label for="f-script" style="margin-bottom:0;">${t("cr.f.script")}</label>
           <div class="flex items-center gap-6">
             <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
           </div>
@@ -1701,23 +1701,23 @@ function draftingPanel(c, campaigns, series = []) {
       </div>`}
       <div class="field">
         <div class="creator-field-head">
-          <label style="margin-bottom:0;">${t("cr.f.caption")}</label>
+          <label for="f-caption" style="margin-bottom:0;">${t("cr.f.caption")}</label>
           <button type="button" class="chip-icon-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}</button>
         </div>
         <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("cr.f.cta")}</label>
+          <label for="f-cta">${t("cr.f.cta")}</label>
           <input class="input" id="f-cta" value="${escapeHtml(c.cta)}" placeholder="${t("cr.f.ctaPh")}" />
         </div>
         <div class="field">
-          <label>${t("cr.f.reference")}</label>
+          <label for="f-reference">${t("cr.f.reference")}</label>
           <input class="input" id="f-reference" value="${escapeHtml(c.reference)}" placeholder="${t("cr.f.referencePh")}" />
         </div>
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>${t("cr.f.notes")}</label>
+        <label for="f-notes">${t("cr.f.notes")}</label>
         <textarea class="textarea" id="f-notes" style="min-height:60px;">${escapeHtml(c.notes || "")}</textarea>
       </div>
       ${stageProgressHTML(c)}

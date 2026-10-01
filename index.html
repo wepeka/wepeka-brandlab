@@ -38,7 +38,10 @@
 <script>try{if(localStorage.getItem("wepeka-theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}</script>
 </head>
 <body>
-<div id="app"></div>
+<!-- Boot loader, painted with the first frame while the JS modules and
+     Firebase load. Same markup as js/main.js showLoading(), which adopts
+     this copy instead of re-rendering it. -->
+<div id="app"><div class="wl-loader" role="status" aria-live="polite"><div class="wl-loader-sheet wl-loader-color"></div><div class="wl-loader-sheet wl-loader-dark"><div class="wl-loader-logo"><div class="wl-loader-mark"><img src="assets/wepeka-logo.png" alt="Wepeka" /><span class="wl-loader-divider"></span><span>Brandlab</span></div><span class="wl-loader-line"></span></div></div><span class="sr-only">Memuat…</span></div></div>
 <div id="toast-root" class="toast-root" aria-live="polite"></div>
 <script type="module" src="js/main.js"></script>
 </body>

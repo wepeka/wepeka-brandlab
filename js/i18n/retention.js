@@ -31,7 +31,7 @@ export default {
   // Quick Fill (js/views/content-list.js)
   "ret.qf.dropTitle": { en: "Drop insight screenshots here, or click to choose", id: "Tarik screenshot insight ke sini, atau klik untuk pilih" },
   "ret.qf.dropSub": { en: "Numbers or the retention graph — Instagram, TikTok. Several at once is fine.", id: "Angka atau grafik retensi — Instagram, TikTok. Boleh beberapa sekaligus." },
-  "ret.qf.reading": { en: "Reading screenshot {n} of {total}…", id: "Membaca screenshot {n} dari {total}…" },
+  "ret.qf.reading": { en: "Reading screenshot {n} of {total}…", id: "Lagi baca screenshot {n} dari {total}…" },
   "ret.qf.readAi": { en: "AI read it", id: "Dibaca AI" },
   "ret.qf.readOcr": { en: "Read by text scan (set up AI in Settings for the graph too)", id: "Dibaca lewat scan teks (aktifkan AI di Pengaturan supaya grafiknya ikut terbaca)" },
   "ret.qf.found": { en: "{metrics} numbers · retention {ret}", id: "{metrics} angka · retensi {ret}" },
@@ -74,7 +74,9 @@ export default {
   "chat.metrics.saved": { en: "Saved to \"{title}\"", id: "Tersimpan ke \"{title}\"" },
   "chat.metrics.pickTitle": { en: "Which post are these numbers for?", id: "Angka ini untuk konten yang mana?" },
   "chat.metrics.pickSearch": { en: "Search a published post…", id: "Cari konten terbit…" },
-  "chat.metrics.pickEmpty": { en: "No published posts yet.", id: "Belum ada konten terbit." },
+  "chat.metrics.pickEmpty": { en: "No published posts yet. Mark a post as published in Content first, then come back here.", id: "Belum ada konten berstatus Terbit. Tandai kontenmu sebagai terbit di halaman Konten dulu, lalu balik ke sini." },
+  "chat.metrics.pickNoMatch": { en: "No published post matches that.", id: "Nggak ada konten terbit yang cocok." },
+  "chat.metrics.pickOpenContent": { en: "Open Content", id: "Buka Konten" },
 
   // AI (js/ai.js)
   "ai.error.noVision": { en: "{provider} can't read images. Switch to Claude or Gemini in Settings → AI.", id: "{provider} nggak bisa membaca gambar. Ganti ke Claude atau Gemini di Pengaturan → AI." },

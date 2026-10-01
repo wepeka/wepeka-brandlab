@@ -228,6 +228,18 @@ function brandCard(brand, previewOnly = false) {
 
 const AVATAR_PREVIEW_STYLE = "width:64px;height:64px;border-radius:14px;font-size:22px;flex:none;";
 
+// Live preview of the brand mark in the create/edit form: the uploaded
+// logo, else a monogram (first letter of the name being typed) on the
+// chosen brand color; before any name is typed, an empty dashed tile —
+// not a "?" that reads like an error.
+function brandMarkPreviewHTML(name, avatar, color) {
+  if (avatar) return avatarHTML({ name, avatar }, AVATAR_PREVIEW_STYLE);
+  const letter = String(name || "").trim().charAt(0).toUpperCase();
+  if (!letter) return `<div class="avatar brand-mark-empty" style="${AVATAR_PREVIEW_STYLE}" aria-hidden="true">${icon("image", { size: 22 })}</div>`;
+  const bg = /^#[0-9a-f]{6}$/i.test(color || "") ? color : "#ffa52b";
+  return `<div class="avatar" style="${AVATAR_PREVIEW_STYLE}background:${bg};color:${pickTintTextColor(bg)};" aria-hidden="true">${escapeText(letter)}</div>`;
+}
+
 // Shared create/edit modal (name + photo). Exported so Settings → Brand
 // Management can reuse it too instead of duplicating the form.
 export function openBrandModal({ brand = null, onSaved } = {}) {
@@ -258,7 +270,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     title: brand ? t("brands.form.titleEdit") : guided ? t("brands.form.titleGuided") : t("brands.form.titleNew"),
     bodyHTML: `
       <div class="flex items-center gap-8" style="margin-bottom:22px;">
-        <div id="avatar-preview">${avatarHTML({ name: draft.name || "?", avatar: draft.avatar }, AVATAR_PREVIEW_STYLE)}</div>
+        <div id="avatar-preview">${brandMarkPreviewHTML(draft.name, draft.avatar, draft.color || "#ffa52b")}</div>
         <div class="flex" style="flex-direction:column;gap:8px;">
           <button type="button" class="btn btn-secondary btn-sm" id="upload-avatar">${icon("upload", { size: 14 })}<span id="upload-label">${draft.avatar ? t("brands.form.changePhoto") : t("brands.form.uploadPhoto")}</span></button>
           <button type="button" class="btn btn-ghost btn-sm" id="remove-avatar" style="${draft.avatar ? "" : "display:none;"}">${icon("x", { size: 13 })}${t("brands.form.removePhoto")}</button>
@@ -266,25 +278,25 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         </div>
         <div class="flex items-center gap-8" style="margin-left:auto;">
           <div style="text-align:right;">
-            <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">${t("brands.form.color")}</label>
+            <label for="brand-color" style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">${t("brands.form.color")}</label>
             <input type="color" id="brand-color" value="${/^#[0-9a-f]{6}$/i.test(draft.color || "") ? draft.color : "#ffa52b"}" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:none;padding:0;cursor:pointer;" />
           </div>
         </div>
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:-14px 0 18px;">${guided ? t("brands.form.colorHintGuided") : t("brands.form.colorHintPro")}</p>
       <div class="field">
-        <label>${guided ? t("brands.form.nameGuided") : t("brands.form.name")}</label>
+        <label for="brand-name">${guided ? t("brands.form.nameGuided") : t("brands.form.name")}</label>
         <input class="input" id="brand-name" placeholder="${guided ? t("brands.form.namePhGuided") : t("brands.form.namePh")}" value="${escapeText(draft.name || "")}" />
       </div>
       <div class="field" id="brand-desc-field">
         <div class="creator-field-head">
-          <label style="margin-bottom:0;">${guided ? t("brands.form.descLabelGuided") : t("brands.form.descLabel")}</label>
+          <label for="brand-description" style="margin-bottom:0;">${guided ? t("brands.form.descLabelGuided") : t("brands.form.descLabel")}</label>
           <div class="flex items-center gap-6">
             <button type="button" class="chip-icon-btn" id="brand-desc-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
             <button type="button" class="btn btn-secondary btn-sm" id="brand-desc-ai">${icon("bot", { size: 13 })}${t("brandForm.aiHelp")}</button>
           </div>
         </div>
-        <div class="warn-box">
+        <div class="warn-box info-box">
           ${icon("info", { size: 15 })}
           <div><b>${t("brandForm.descWarningTitle")}</b>${t("brandForm.descWarning")}<span class="warn-box-sub">${t("brandForm.descChecklist")}</span></div>
         </div>
@@ -299,7 +311,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
            round-tripped unchanged below) and still read as a fallback
            wherever voice is used, it just can't be edited from here anymore. -->
       <div class="field" ${guided && !brand ? "hidden" : ""}>
-        <label>${t("ai.audienceLang.label")}</label>
+        <label for="brand-audience-lang">${t("ai.audienceLang.label")}</label>
         <select class="select" id="brand-audience-lang">
           <option value="" ${!draft.audienceLanguage ? "selected" : ""}>${t("ai.audienceLang.auto")}</option>
           <option value="id" ${draft.audienceLanguage === "id" ? "selected" : ""}>${t("ai.audienceLang.id")}</option>
@@ -319,11 +331,11 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ig.title")}</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ig.intro")}</p>
       <div class="field">
-        <label>Instagram Business Account ID</label>
+        <label for="ig-userid">Instagram Business Account ID</label>
         <input class="input" id="ig-userid" placeholder="17841400..." value="${escapeText(draft.instagram.igUserId || "")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>Long-Lived Access Token</label>
+        <label for="ig-token">Long-Lived Access Token</label>
         ${passwordFieldHTML("ig-token", { placeholder: "IGAA...", value: draft.instagram.accessToken })}
       </div>
       <div id="ig-status" style="margin:10px 0;font-size:12.5px;">${draft.instagram.username ? `<span style="color:var(--health-good);">${t("integr.connectedAs", { name: escapeText(draft.instagram.username) })}</span>` : ""}</div>
@@ -342,11 +354,11 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.fb.title")}</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.fb.intro")}</p>
       <div class="field">
-        <label>Facebook Page ID</label>
+        <label for="fb-pageid">Facebook Page ID</label>
         <input class="input" id="fb-pageid" placeholder="${t("integr.fb.pageIdPh")}" value="${escapeText(draft.facebook.pageId || "")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
-        <label>Page Access Token</label>
+        <label for="fb-token">Page Access Token</label>
         ${passwordFieldHTML("fb-token", { placeholder: "EAA...", value: draft.facebook.pageAccessToken })}
       </div>
       <div id="fb-status" style="margin:10px 0;font-size:12.5px;">${draft.facebook.pageName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.facebook.pageName) })}</span>` : ""}</div>
@@ -373,12 +385,13 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       setTimeout(() => nameInput.focus(), 30);
 
       const syncAvatarUI = () => {
-        el.querySelector("#avatar-preview").innerHTML = avatarHTML({ name: nameInput.value || "?", avatar: draft.avatar }, AVATAR_PREVIEW_STYLE);
+        el.querySelector("#avatar-preview").innerHTML = brandMarkPreviewHTML(nameInput.value, draft.avatar, el.querySelector("#brand-color")?.value);
         el.querySelector("#upload-label").textContent = draft.avatar ? t("brands.form.changePhoto") : t("brands.form.uploadPhoto");
         el.querySelector("#remove-avatar").style.display = draft.avatar ? "" : "none";
       };
 
       nameInput.addEventListener("input", syncAvatarUI);
+      el.querySelector("#brand-color")?.addEventListener("input", syncAvatarUI);
       el.querySelector("#upload-avatar").addEventListener("click", () => el.querySelector("#avatar-file").click());
       el.querySelector("#avatar-file").addEventListener("change", async (e) => {
         const file = e.target.files[0];

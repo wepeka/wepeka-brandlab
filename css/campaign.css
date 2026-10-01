@@ -70,6 +70,7 @@
 .cd-plan-concept p{ margin:0 0 8px; font-size:13px; color: var(--text-muted); line-height:1.55; }
 .cd-plan-concept summary{ cursor:pointer; font-size:12.5px; font-weight:700; }
 .cd-plan-concept ul{ margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.6; color: var(--text); }
+.cd-plan-ai-label{ display:block; margin:0 0 6px; font-size:12.5px; font-weight:700; color: var(--text-muted); }
 .cd-plan-ai{ display:flex; gap:8px; margin-bottom:12px; }
 .cd-plan-ai .input{ flex:1; min-width:0; }
 .cd-plan-ai .btn{ flex:none; }

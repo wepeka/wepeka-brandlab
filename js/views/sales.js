@@ -27,7 +27,7 @@ import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
-import { toast, formatNumber, formatDate, qs, qsa, escapeHtml as esc, avatarHTML } from "../dom.js";
+import { toast, formatNumber, formatDate, qs, qsa, escapeHtml as esc, avatarHTML, loadingHTML } from "../dom.js";
 import { readFlag, writeFlag, clearFlag } from "../seen-flags.js";
 import { t } from "../i18n.js";
 
@@ -257,7 +257,7 @@ function adviceHTML(tracker, state, collapsed) {
   if (collapsed.has("advice")) return widgetCollapsedHTML("advice", "sparkle", t("sales.advice.title"), a ? t("sales.advice.summary", { count: (a.actions || []).length }) : t("sales.advice.summaryEmpty"));
   return widgetCardHTML("advice", "sparkle", `${t("sales.advice.title")}${lifetime ? "" : ` <span class="lifetime-tag">${icon("lock", { size: 11 })}${t("app.lifetimeOnly")}</span>`}`, `
       ${state.adviceBusy
-        ? `<div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${state.autoReason ? esc(t("ai.auto.busy", { reason: state.autoReason })) : t("sales.advice.busy")}</span></div>`
+        ? `${loadingHTML(state.autoReason ? esc(t("ai.auto.busy", { reason: state.autoReason })) : t("sales.advice.busy"), { style: "margin:0;" })}`
         : a
         ? `${a.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: a.autoReason }))}</p>` : ""}<p class="text-faint" style="font-size:11.5px;margin:0 0 6px;">${t("sales.advice.from", { date: formatDate(localISODate(new Date(a.at))) })}</p>
            ${a.summary ? `<p style="margin:0 0 12px;font-size:13.5px;">${esc(a.summary)}</p>` : ""}

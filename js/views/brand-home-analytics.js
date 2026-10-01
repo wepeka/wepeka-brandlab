@@ -6,7 +6,7 @@
 // grow without bloating home.js.
 import { getSettings, updateSettings, FUNNELS, localISODate } from "../store.js";
 import { computeContentMetrics } from "../formulas.js";
-import { formatNumber, formatPercent, qs, qsa, openMenu, escapeHtml as escapeText } from "../dom.js";
+import { formatNumber, formatPercent, qs, qsa, openMenu, escapeHtml as escapeText, emptyInlineHTML } from "../dom.js";
 import { icon } from "../icons.js";
 import { t } from "../i18n.js";
 import { brandRetentionStats, ratingLabel, retentionVerdict } from "../retention.js";
@@ -148,8 +148,13 @@ function barRow(label, value, max) {
   `;
 }
 
+// Widgets that fill from performance numbers point at where those numbers
+// are entered (the Konten list); the others just say what's missing.
+const EMPTY_TO_CONTENT = new Set(["noPublished", "trend", "breakdown", "topContent", "health", "engagementMix"]);
 function emptyHTML(key) {
-  return `<div class="table-empty" style="padding:24px;">${t(`brandHome.analytics.empty.${key}`)}</div>`;
+  const brandId = (location.hash.match(/^#\/brand\/([^/]+)/) || [])[1];
+  const toContent = brandId && EMPTY_TO_CONTENT.has(key);
+  return emptyInlineHTML(t(`brandHome.analytics.empty.${key}`), toContent ? { ctaLabel: t("brandHome.analytics.empty.cta"), ctaHref: `#/brand/${brandId}/content/list` } : {});
 }
 
 // Every widget card is draggable by its grip handle (native HTML5 DnD, wired

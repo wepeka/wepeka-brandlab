@@ -425,65 +425,65 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
     bodyHTML: `
       ${aiDraft ? `<div class="hint" style="margin:0 0 16px;">${icon("bot", { size: 12 })} ${t("camp.edit.aiHint")}</div><div id="ai-draft-feedback" style="margin:-8px 0 12px;"></div>` : ""}
       <div class="field">
-        <label>${t("camp.edit.name")}</label>
+        <label for="c-name">${t("camp.edit.name")}</label>
         <input class="input" id="c-name" placeholder="${escapeAttr(t("camp.edit.namePh"))}" value="${escapeAttr(draft.name)}" />
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("camp.custom.objective")}</label>
+          <label for="c-objective">${t("camp.custom.objective")}</label>
           <select class="select" id="c-objective">
             ${CAMPAIGN_OBJECTIVES.map((o) => `<option value="${o}" ${draft.objective === o ? "selected" : ""}>${CAMPAIGN_OBJECTIVE_LABELS[o]}</option>`).join("")}
           </select>
         </div>
         <div class="field">
-          <label>${t("camp.edit.status")}</label>
+          <label for="c-status">${t("camp.edit.status")}</label>
           <select class="select" id="c-status">
             ${CAMPAIGN_STATUSES.map((s) => `<option value="${s}" ${draft.status === s ? "selected" : ""}>${CAMPAIGN_STATUS_LABELS[s]}</option>`).join("")}
           </select>
         </div>
       </div>
       <div class="field">
-        <label>${t("camp.edit.audience")} <span class="text-faint" style="font-weight:400;">${t("camp.edit.audienceHint")}</span></label>
+        <label for="c-audience">${t("camp.edit.audience")} <span class="text-faint" style="font-weight:400;">${t("camp.edit.audienceHint")}</span></label>
         <textarea class="textarea" id="c-audience" style="min-height:60px;">${escapeText(draft.targetAudience)}</textarea>
       </div>
       <div class="field">
-        <label>${t("camp.edit.problem")}</label>
+        <label for="c-problem">${t("camp.edit.problem")}</label>
         <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.problemPh"))}">${escapeText(draft.problemOrOpportunity)}</textarea>
       </div>
       <div class="field">
-        <label>${t("camp.edit.insight")}</label>
+        <label for="c-insight">${t("camp.edit.insight")}</label>
         <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.insightPh"))}">${escapeText(draft.insight)}</textarea>
       </div>
       <div class="field">
-        <label>${t("camp.edit.bigIdea")}</label>
+        <label for="c-bigidea">${t("camp.edit.bigIdea")}</label>
         <textarea class="textarea" id="c-bigidea" style="min-height:60px;">${escapeText(draft.bigIdea)}</textarea>
       </div>
       <div class="field">
-        <label>${t("camp.edit.keyMessage")}</label>
+        <label for="c-message">${t("camp.edit.keyMessage")}</label>
         <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.keyMessagePh"))}">${escapeText(draft.keyMessage)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("camp.edit.offer")}</label>
+          <label for="c-offer">${t("camp.edit.offer")}</label>
           <input class="input" id="c-offer" value="${escapeAttr(draft.offer)}" />
         </div>
         <div class="field">
-          <label>${t("camp.edit.cta")}</label>
+          <label for="c-cta">${t("camp.edit.cta")}</label>
           <input class="input" id="c-cta" placeholder="${escapeAttr(t("camp.edit.ctaPh"))}" value="${escapeAttr(draft.cta)}" />
           <div class="hint" style="margin-top:4px;">${icon("info", { size: 12 })}<span>${t("camp.edit.ctaHint")}</span></div>
         </div>
       </div>
       <div class="field">
-        <label>${t("camp.edit.channels")}</label>
+        <label for="c-channels">${t("camp.edit.channels")}</label>
         <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="${t("camp.edit.channelsPh")}">${escapeText(listToLines(draft.channels))}</textarea>
       </div>
       <div class="row-2">
         <div class="field" style="margin-bottom:0;">
-          <label>${t("camp.edit.startDate")}</label>
+          <label for="c-start">${t("camp.edit.startDate")}</label>
           <input class="input" type="date" id="c-start" value="${escapeAttr(draft.startDate)}" />
         </div>
         <div class="field" style="margin-bottom:0;">
-          <label>${t("camp.edit.endDate")}</label>
+          <label for="c-end">${t("camp.edit.endDate")}</label>
           <input class="input" type="date" id="c-end" value="${escapeAttr(draft.endDate)}" />
         </div>
       </div>

@@ -12,7 +12,7 @@
 // delete what AI keeps reading.
 import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS, localISODate } from "./store.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
-import { formatDate, escapeHtml as esc, toast, qsa } from "./dom.js";
+import { formatDate, escapeHtml as esc, toast, qsa, emptyInlineHTML } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 
@@ -87,7 +87,7 @@ export function memoryAddFormHTML() {
   return `
     <div class="memory-add" data-memory-add>
       <p class="memory-add-title">${icon("edit", { size: 12 })}${t("chat.memory.add.title")}</p>
-      <textarea class="textarea memory-add-text" rows="2" maxlength="240" placeholder="${esc(t("chat.memory.add.ph"))}"></textarea>
+      <textarea class="textarea memory-add-text" rows="2" maxlength="240" aria-label="${esc(t("chat.memory.add.title"))}" placeholder="${esc(t("chat.memory.add.ph"))}"></textarea>
       <div class="memory-add-row">
         <label class="memory-add-kind"><span>${t("chat.memory.add.kind")}</span><select class="select">${kinds}</select></label>
         <button type="button" class="btn btn-primary btn-sm" data-memory-add-save>${icon("heart", { size: 12 })}${t("chat.memory.add.save")}</button>
@@ -164,7 +164,7 @@ export function openBrandMemoryModal(brandId, { refresh = () => {} } = {}) {
               </div>`
               )
               .join("")
-          : `<div class="table-empty" style="padding:20px;">${t("companion.memory.empty")}</div>`
+          : emptyInlineHTML(t("companion.memory.empty"))
       }
       <div class="companion-moments" style="margin-top:18px;">
         <p class="companion-moments-title">${t("companion.memory.chatSection")}</p>

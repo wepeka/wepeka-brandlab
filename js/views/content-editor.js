@@ -1,7 +1,7 @@
 import { getContent, createContent, updateContent, getSettings, getBrand, localISODate, resolveContentBuckets, listCampaigns, listContent, campaignPhaseContentCounts, listSeries, STATUSES, STATUS_LABELS, campaignHasOwnPhases } from "../store.js";
 import { icon } from "../icons.js";
 import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, escapeHtml, qs, qsa, formatNumber } from "../dom.js";
+import { toast, escapeHtml, qs, qsa, formatNumber, loadingHTML } from "../dom.js";
 import { contentSalesStats } from "../sales-tracker.js";
 import { classifyFunnel, suggestCampaignFit, hasAiKey } from "../ai.js";
 import { t } from "../i18n.js";
@@ -101,11 +101,11 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
 
     <div class="editor-pane active" data-pane="basic">
       <div class="field">
-        <label>${t("contentEditor.title.label")}</label>
+        <label for="f-title">${t("contentEditor.title.label")}</label>
         <input class="input" id="f-title" placeholder="${t("contentEditor.title.placeholder")}" value="${attr(draft.title)}" />
       </div>
       <div class="field">
-        <label>${t("contentEditor.idea.label")}</label>
+        <label for="f-idea">${t("contentEditor.idea.label")}</label>
         <textarea class="textarea" id="f-idea" placeholder="${t("contentEditor.idea.placeholder")}">${escapeHtml(draft.idea || "")}</textarea>
       </div>
       <div class="field">
@@ -118,13 +118,13 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("contentEditor.platform.label")}</label>
+          <label for="f-platform">${t("contentEditor.platform.label")}</label>
           <select class="select" id="f-platform">
             ${settings.platforms.map((p) => `<option value="${attr(p.name)}" ${draft.platform === p.name ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
           </select>
         </div>
         <div class="field">
-          <label>${t("contentEditor.format.label")}</label>
+          <label for="f-format">${t("contentEditor.format.label")}</label>
           <select class="select" id="f-format">
             ${settings.formats.map((f) => `<option value="${attr(f.name)}" ${draft.format === f.name ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
           </select>
@@ -132,7 +132,7 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
       </div>
       <div class="field">
         <div class="creator-field-head">
-          <label style="margin-bottom:0;">${getMode() === "guided" ? t("cnt.editor.guidedCampaignLabel") : t("contentEditor.campaign.label")}</label>
+          <label for="f-campaign" style="margin-bottom:0;">${getMode() === "guided" ? t("cnt.editor.guidedCampaignLabel") : t("contentEditor.campaign.label")}</label>
           <button type="button" class="chip-icon-btn" id="ai-suggest-campaign" aria-label="${t("contentEditor.campaign.aiSuggest")}" title="${campaigns.length ? t("contentEditor.campaign.aiSuggest") : t("contentEditor.campaign.aiSuggestDisabled")}" ${campaigns.length ? "" : "disabled"}>${icon("bot", { size: 14 })}</button>
         </div>
         <select class="select" id="f-campaign">
@@ -146,7 +146,7 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
       ${
         series.length
           ? `<div class="field">
-               <label>${t("contentEditor.series.label")}</label>
+               <label for="f-series">${t("contentEditor.series.label")}</label>
                <select class="select" id="f-series">
                  <option value="">${t("contentEditor.series.none")}</option>
                  ${series.map((s) => `<option value="${s.id}" ${draft.seriesId === s.id ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
@@ -165,25 +165,25 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
 
     <div class="editor-pane" data-pane="schedule">
       <div class="field">
-        <label>${getMode() === "guided" ? t("cnt.editor.guidedStatusLabel") : t("contentEditor.status.label")}</label>
+        <label for="f-status">${getMode() === "guided" ? t("cnt.editor.guidedStatusLabel") : t("contentEditor.status.label")}</label>
         <select class="select" id="f-status">
           ${STATUSES.map((s) => `<option value="${s}" ${draft.status === s ? "selected" : ""}>${statusLabel(s, STATUS_LABELS)}</option>`).join("")}
         </select>
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("contentEditor.scheduleDate.label")}</label>
+          <label for="f-schedule">${t("contentEditor.scheduleDate.label")}</label>
           <input class="input" type="date" id="f-schedule" value="${draft.scheduleDate || ""}" ${draft.status === "published" ? "" : `min="${localISODate()}"`} />
         </div>
         <div class="field">
-          <label>${t("contentEditor.publishedDate.label")}</label>
+          <label for="f-published">${t("contentEditor.publishedDate.label")}</label>
           <input class="input" type="date" id="f-published" value="${draft.publishedDate || ""}" />
         </div>
       </div>
       <details class="dna-extras" ${draft.publishedUrl ? "open" : ""}>
         <summary>${t("contentEditor.advanced")}</summary>
         <div class="field" style="margin:10px 0 0;">
-          <label>${t("contentEditor.publishedUrl.label")}</label>
+          <label for="f-url">${t("contentEditor.publishedUrl.label")}</label>
           <input class="input" id="f-url" placeholder="https://..." value="${attr(draft.publishedUrl)}" />
           <div class="hint" style="margin-top:8px;">${icon("info", { size: 12 })} ${t("contentEditor.publishedUrl.hint")}</div>
         </div>
@@ -258,7 +258,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
         return;
       }
       suggestCampaignBtn.disabled = true;
-      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("contentEditor.ai.thinking")}</span></div>`;
+      statusEl.innerHTML = `${loadingHTML(t("contentEditor.ai.thinking"))}`;
       try {
         // Phase counts are computed fresh so the AI can prefer whichever
         // phase is still empty over one that's already full.
@@ -311,7 +311,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
         return;
       }
       detectFunnelBtn.disabled = true;
-      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("contentEditor.ai.detecting")}</span></div>`;
+      statusEl.innerHTML = `${loadingHTML(t("contentEditor.ai.detecting"))}`;
       try {
         const funnel = await classifyFunnel(ai, {
           caption: draft.caption,

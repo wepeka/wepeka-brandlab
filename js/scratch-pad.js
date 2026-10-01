@@ -111,7 +111,8 @@ export function scratchPadHTML({ brandId, campaignId = null }) {
         <button type="button" class="sn-back" data-sn-back>${icon("chevronLeft", { size: 14 })}${t("scratch.folders")}</button>
         <b class="sn-bar-title">${esc(folder ? folder.name : t("scratch.allNotes"))}</b>
       </div>
-      <textarea class="textarea scratch-add" rows="2" placeholder="${esc(t("scratch.placeholder"))}">${esc(drafts.get(key) || "")}</textarea>
+      <textarea class="textarea scratch-add" rows="2" aria-label="${esc(t("scratch.addAria"))}" aria-describedby="sn-hint-${key}" placeholder="${esc(t("scratch.placeholder"))}">${esc(drafts.get(key) || "")}</textarea>
+      <p class="sn-hint" id="sn-hint-${key}">${t("scratch.enterHint")}</p>
       <div class="sn-grid">${notes.slice().reverse().map((n) => noteHTML(n, sel, folders, where === ALL)).join("") || `<p class="text-faint" style="font-size:12px;margin:6px 0;grid-column:1/-1;">${t("scratch.empty")}</p>`}</div>
       ${
         notes.length

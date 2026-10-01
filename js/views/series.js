@@ -142,37 +142,37 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
     title: series ? t("series.edit.title") : t("series.new"),
     bodyHTML: `
       <div class="field">
-        <label>${t("series.edit.name")}</label>
+        <label for="s-name">${t("series.edit.name")}</label>
         <input class="input" id="s-name" placeholder="${escapeAttr(t("series.edit.namePh"))}" value="${escapeAttr(draft.name)}" />
       </div>
 
       <div class="divider"></div>
       <div class="page-eyebrow" style="margin-bottom:12px;">${t("series.edit.section.basic")}</div>
       <div class="field">
-        <label>${t("series.edit.description")}</label>
+        <label for="s-description">${t("series.edit.description")}</label>
         <textarea class="textarea" id="s-description" style="min-height:60px;" placeholder="${escapeAttr(t("series.edit.descriptionPh"))}">${escapeText(draft.description)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("series.edit.mainTopic")}</label>
+          <label for="s-mainTopic">${t("series.edit.mainTopic")}</label>
           <input class="input" id="s-mainTopic" value="${escapeAttr(draft.mainTopic)}" />
         </div>
         <div class="field">
-          <label>${t("series.edit.objective")}</label>
+          <label for="s-objective">${t("series.edit.objective")}</label>
           <input class="input" id="s-objective" placeholder="${escapeAttr(t("series.edit.objectivePh"))}" value="${escapeAttr(draft.objective)}" />
         </div>
       </div>
       <div class="field">
-        <label>${t("series.edit.audience")}</label>
+        <label for="s-targetAudience">${t("series.edit.audience")}</label>
         <input class="input" id="s-targetAudience" value="${escapeAttr(draft.targetAudience)}" />
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("series.edit.platform")}</label>
+          <label for="s-platform">${t("series.edit.platform")}</label>
           <input class="input" id="s-platform" placeholder="${escapeAttr(t("series.edit.platformPh"))}" value="${escapeAttr(draft.platform)}" />
         </div>
         <div class="field">
-          <label>${t("series.edit.format")}</label>
+          <label for="s-format">${t("series.edit.format")}</label>
           <input class="input" id="s-format" placeholder="${escapeAttr(t("series.edit.formatPh"))}" value="${escapeAttr(draft.format)}" />
         </div>
       </div>
@@ -181,46 +181,46 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
       <div class="page-eyebrow" style="margin-bottom:12px;">${t("series.edit.section.style")}</div>
       <div class="row-2">
         <div class="field">
-          <label>${t("series.edit.tone")}</label>
+          <label for="s-tone">${t("series.edit.tone")}</label>
           <input class="input" id="s-tone" value="${escapeAttr(draft.tone)}" />
         </div>
         <div class="field">
-          <label>${t("series.edit.writingStyle")}</label>
+          <label for="s-writingStyle">${t("series.edit.writingStyle")}</label>
           <input class="input" id="s-writingStyle" value="${escapeAttr(draft.writingStyle)}" />
         </div>
       </div>
       <div class="field">
-        <label>${t("series.edit.structure")}</label>
+        <label for="s-structure">${t("series.edit.structure")}</label>
         <textarea class="textarea" id="s-structure" style="min-height:70px;" placeholder="${escapeAttr(t("series.edit.structurePh"))}">${escapeText(draft.structure)}</textarea>
       </div>
       <div class="field">
-        <label>${t("series.edit.typicalHook")}</label>
+        <label for="s-typicalHook">${t("series.edit.typicalHook")}</label>
         <textarea class="textarea" id="s-typicalHook" style="min-height:50px;">${escapeText(draft.typicalHook)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
-          <label>${t("series.edit.storytellingStyle")}</label>
+          <label for="s-storytellingStyle">${t("series.edit.storytellingStyle")}</label>
           <input class="input" id="s-storytellingStyle" value="${escapeAttr(draft.storytellingStyle)}" />
         </div>
         <div class="field">
-          <label>${t("series.edit.averageLength")}</label>
+          <label for="s-averageLength">${t("series.edit.averageLength")}</label>
           <input class="input" id="s-averageLength" value="${escapeAttr(draft.averageLength)}" />
         </div>
       </div>
       <div class="field">
-        <label>${t("series.edit.ctaStyle")}</label>
+        <label for="s-ctaStyle">${t("series.edit.ctaStyle")}</label>
         <textarea class="textarea" id="s-ctaStyle" style="min-height:50px;">${escapeText(draft.ctaStyle)}</textarea>
       </div>
       <div class="field">
-        <label>${t("series.edit.visualStyle")}</label>
+        <label for="s-visualStyle">${t("series.edit.visualStyle")}</label>
         <textarea class="textarea" id="s-visualStyle" style="min-height:50px;">${escapeText(draft.visualStyle)}</textarea>
       </div>
       <div class="field">
-        <label>${t("series.edit.avoid")}</label>
+        <label for="s-thingsToAvoid">${t("series.edit.avoid")}</label>
         <textarea class="textarea" id="s-thingsToAvoid" style="min-height:50px;">${escapeText(draft.thingsToAvoid)}</textarea>
       </div>
       <div class="field">
-        <label>${t("series.edit.additional")}</label>
+        <label for="s-additionalInstructions">${t("series.edit.additional")}</label>
         <textarea class="textarea" id="s-additionalInstructions" style="min-height:50px;">${escapeText(draft.additionalInstructions)}</textarea>
       </div>
     `,

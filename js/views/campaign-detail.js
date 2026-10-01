@@ -21,7 +21,7 @@ import { nextActions } from "../next-action.js";
 import { go } from "../nav-context.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
-import { toast, formatNumber, formatDate, qs, qsa, openMenu, closeMenu, escapeHtml as esc } from "../dom.js";
+import { toast, formatNumber, formatDate, qs, qsa, openMenu, closeMenu, escapeHtml as esc, emptyInlineHTML, loadingHTML } from "../dom.js";
 import { generateCampaignPlaybook, generateIdeaBubbles, generateCampaignContentPlan, AiApiError, hasAiKey } from "../ai.js";
 import { staleBecause, mayAutoRefresh, refreshStamp } from "../ai-autorefresh.js";
 import { postingLine, bestPostsLine } from "../brand-learning.js";
@@ -470,7 +470,7 @@ function ideaBubbleHTML(idea, state, trackCls) {
       ${open ? `
         <div class="cd-idea-desc">
           ${idea.description ? `<p>${esc(idea.description)}</p>` : `<p class="text-faint">${t("camp.ideas.noDesc")}</p>`}
-          <textarea class="textarea" id="cd-idea-desc-input" placeholder="${esc(t("camp.ideas.descPh"))}">${esc(idea.description || "")}</textarea>
+          <textarea class="textarea" id="cd-idea-desc-input" aria-label="${esc(t("camp.ideas.descAria"))}" placeholder="${esc(t("camp.ideas.descPh"))}">${esc(idea.description || "")}</textarea>
           <button type="button" class="btn btn-secondary btn-sm" data-idea-save-desc="${idea.id}">${t("camp.ideas.saveDesc")}</button>
         </div>` : ""}
     </div>`;
@@ -504,7 +504,7 @@ function ideasWidgetHTML(campaign, state, brandId) {
   const history = state.ideaSuggestionHistory || [];
   return `<div class="cd-tab-widget">` + widgetCardHTML("ideas", "bulb", t(`camp.ideas.title.${track || "default"}`), `
       <div class="cd-ideas-input">
-        <input class="input" id="cd-idea-input" maxlength="140" placeholder="${esc(t(`camp.ideas.placeholder.${track || "default"}`))}" />
+        <input class="input" id="cd-idea-input" maxlength="140" aria-label="${esc(t(`camp.ideas.title.${track || "default"}`))}" placeholder="${esc(t(`camp.ideas.placeholder.${track || "default"}`))}" />
         <button type="button" class="btn btn-primary btn-sm" id="cd-idea-add">${icon("plus", { size: 13 })}${t("camp.ideas.add")}</button>
         <button type="button" class="btn btn-secondary btn-sm" id="cd-idea-ai">${icon("sparkle", { size: 13 })}${t(`camp.ideas.aiBtn.${track || "default"}`)}</button>
         <button type="button" class="btn btn-ghost btn-sm" id="cd-idea-discuss" title="${esc(t("camp.ideas.discussTitle"))}">${icon("chat", { size: 13 })}${t("camp.ideas.discuss")}</button>
@@ -593,7 +593,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
       return;
     }
     btn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status" style="margin:6px 0;"><div class="spinner"></div><span>${t("camp.ideas.thinking")}</span></div>`;
+    statusEl.innerHTML = `${loadingHTML(t("camp.ideas.thinking"), { style: "margin:6px 0;" })}`;
     try {
       const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
       const { ideas } = await generateIdeaBubbles(ai, { brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, existingIdeas: listBrandIdeas(brand.id, { campaignId: campaign.id }).map((i) => i.text), pulseText });
@@ -659,6 +659,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
           <p>${esc(plan.concept.summary)}</p>
           ${plan.concept.howToRun?.length ? `<details open><summary>${t("camp.plan.howToRun")}</summary><ul>${plan.concept.howToRun.map((h) => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}
         </div>` : `<p class="text-muted" style="font-size:13px;margin:0 0 12px;">${t(`camp.plan.empty.${track}`)}</p>`}
+      <label for="cd-plan-context" class="cd-plan-ai-label">${t("camp.plan.contextLabel")}</label>
       <div class="cd-plan-ai">
         <input class="input" id="cd-plan-context" placeholder="${esc(t("camp.plan.contextPh"))}" />
         <button type="button" class="btn ${plan ? "btn-secondary" : "btn-primary"}" id="cd-plan-ai">${icon("sparkle", { size: 14 })}${plan ? t("camp.plan.aiAgain") : t("camp.plan.aiBtn")}</button>
@@ -680,7 +681,7 @@ function wirePlanRoadmap(root, { brand, campaign, stages, refresh }) {
       return;
     }
     btn.disabled = true;
-    statusEl.innerHTML = `<div class="ocr-status" style="margin-bottom:10px;"><div class="spinner"></div><span>${t("camp.plan.thinking")}</span></div>`;
+    statusEl.innerHTML = `${loadingHTML(t("camp.plan.thinking"), { style: "margin-bottom:10px;" })}`;
     try {
       const levels = stages.map((s) => ({ index: s.index, name: s.name, description: s.description, targets: s.milestones.filter((m) => m.required !== false && !m.notApplicable).map((m) => `${m.label}${m.target ? ` ${m.target} ${m.unit || ""}` : ""}`) }));
       const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
@@ -731,7 +732,7 @@ async function autoRefreshPlan(root, { brand, campaign, stages, state, refresh }
   const signal = staleBecause(advice, { brand, content, campaigns, settings: getSettings() });
   if (!signal) return;
   const statusEl = qs("#cd-plan-status", root);
-  if (statusEl) statusEl.innerHTML = `<div class="ocr-status" style="margin-bottom:10px;"><div class="spinner"></div><span>${esc(t("ai.auto.busy", { reason: signal.title }))}</span></div>`;
+  if (statusEl) statusEl.innerHTML = `${loadingHTML(esc(t("ai.auto.busy", { reason: signal.title })), { style: "margin-bottom:10px;" })}`;
   try {
     const levels = stages.map((s) => ({ index: s.index, name: s.name, description: s.description, targets: s.milestones.filter((m) => m.required !== false && !m.notApplicable).map((m) => `${m.label}${m.target ? ` ${m.target} ${m.unit || ""}` : ""}`) }));
     const pulseText = pulseTextFor(brand, { content, campaigns, settings: getSettings() });
@@ -788,7 +789,7 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
       <div class="chip-select" id="cp-per">${PLAN_PER_WEEK.map((n) => `<button type="button" data-val="${n}" class="${n === st.perWeek ? "active" : ""}">${t("camp.cplan.perWeekN", { n })}</button>`).join("")}</div>
     </div>
     ${st.error ? `<p class="ev-error">${esc(st.error)}</p>` : ""}
-    ${st.busy ? `<div class="ocr-status"><div class="spinner"></div><span>${t("camp.cplan.busy")}</span></div>` : ""}`;
+    ${st.busy ? `${loadingHTML(t("camp.cplan.busy"))}` : ""}`;
 
   const listHTML = () => {
     const have = existing();
@@ -915,7 +916,7 @@ function stageNavHTML(stages, index, acts, content, campaign) {
 }
 
 function milestoneListHTML(readings, stage, guided) {
-  if (!readings.length) return `<div class="table-empty" style="padding:20px;">${t(guided ? "camp.detail.noMilestonesGuided" : "camp.detail.noMilestones")}</div>`;
+  if (!readings.length) return emptyInlineHTML(t(guided ? "camp.detail.noMilestonesGuided" : "camp.detail.noMilestones"));
   const required = readings.filter((r) => r.milestone.required !== false && !r.milestone.notApplicable);
   const optional = readings.filter((r) => r.milestone.required === false && !r.milestone.notApplicable);
   const na = readings.filter((r) => r.milestone.notApplicable && !r.milestone.delegatedTo);
@@ -994,7 +995,7 @@ function openPostList(reading, { brandId, ctx, ctxLabel, campaign, stage }) {
       ${
         rows.length
           ? `<div class="cd-post-list">${rows.map((x) => `<button type="button" class="cd-post ${hit(x) ? "is-hit" : ""}" data-post="${x.c.id}">${hit(x) ? icon("check", { size: 14 }) : ""}<b>${esc(x.c.title || t("next.untitled"))}</b><span>${x.er === null ? esc(t("camp.posts.noData")) : `ER ${Math.round(x.er * 10) / 10}%`}</span></button>`).join("")}</div>`
-          : `<p class="text-faint" style="font-size:13px;">${esc(t("camp.posts.empty"))}</p>`
+          : emptyInlineHTML(esc(t("camp.posts.empty")))
       }`,
   });
   qsa("[data-post]", overlay).forEach((b) =>
@@ -1299,7 +1300,7 @@ function activitiesHTML(acts, brandId, guided) {
                 </div>`
               )
               .join("")}${linked.length > 5 ? `<a class="link" href="#/brand/${brandId}/content/list" style="font-size:12.5px;">${t("camp.detail.seeAll", { count: linked.length })}</a>` : ""}</div>`
-          : `<p class="text-faint" style="font-size:12.5px;margin:12px 0 0;">${t("camp.detail.noLinked")}</p>`
+          : emptyInlineHTML(t("camp.detail.noLinked"), { compact: true })
       }
     </div>`;
 }
@@ -1489,8 +1490,8 @@ function openCommunityIdentityModal({ campaign, milestone, refresh }) {
     title: t("camp.identity.title"),
     bodyHTML: `
       <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${esc(t("camp.identity.intro"))}</p>
-      <div class="field"><label>${t("camp.identity.nameLabel")}</label><input class="input" id="ci-name" placeholder="${esc(t("camp.identity.namePh"))}" value="${esc(existing.name || "")}" /></div>
-      <div class="field" style="margin-bottom:0;"><label>${t("camp.identity.nicknameLabel")}</label><input class="input" id="ci-nickname" placeholder="${esc(t("camp.identity.nicknamePh"))}" value="${esc(existing.memberNickname || "")}" /></div>
+      <div class="field"><label for="ci-name">${t("camp.identity.nameLabel")}</label><input class="input" id="ci-name" placeholder="${esc(t("camp.identity.namePh"))}" value="${esc(existing.name || "")}" /></div>
+      <div class="field" style="margin-bottom:0;"><label for="ci-nickname">${t("camp.identity.nicknameLabel")}</label><input class="input" id="ci-nickname" placeholder="${esc(t("camp.identity.nicknamePh"))}" value="${esc(existing.memberNickname || "")}" /></div>
     `,
     footHTML: `<button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button><button class="btn btn-primary" data-save>${t("common.save")}</button>`,
     onMount: (el) => setTimeout(() => el.querySelector("#ci-name")?.focus(), 30),
@@ -1529,7 +1530,7 @@ function openMilestoneMenu(btn, reading, { campaign, stage, refresh }) {
     if (!act) return;
     closeMenu();
     if (act === "target") {
-      const raw = await promptDialog({ title: t("camp.detail.changeTarget"), label: esc(m.label), placeholder: String(m.target ?? ""), confirmLabel: t("common.save") });
+      const raw = await promptDialog({ title: t("camp.detail.changeTarget"), label: esc(m.label), value: m.target ? String(m.target) : "", inputmode: "numeric", confirmLabel: t("common.save") });
       if (!raw) return;
       patchMilestone(campaign, stage, m.id, { target: Math.max(1, Math.round(Number(raw) || 0)) });
     } else if (act === "na") {
@@ -1588,8 +1589,8 @@ function promptAddMilestoneNumber() {
     const overlay = openModal({
       title: t("camp.detail.newNumber"),
       bodyHTML: `
-        <div class="field"><label>${t("camp.detail.msName")}</label><input class="input" id="cam-label" placeholder="${t("camp.detail.newNumberPh")}" /></div>
-        <div class="field" style="margin-bottom:0;"><label>${t("camp.detail.msTarget")}</label><input class="input" id="cam-target" type="number" min="1" inputmode="numeric" placeholder="1" /></div>
+        <div class="field"><label for="cam-label">${t("camp.detail.msName")}</label><input class="input" id="cam-label" placeholder="${t("camp.detail.newNumberPh")}" /></div>
+        <div class="field" style="margin-bottom:0;"><label for="cam-target">${t("camp.detail.msTarget")}</label><input class="input" id="cam-target" type="number" min="1" inputmode="numeric" placeholder="1" /></div>
       `,
       footHTML: `<button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button><button class="btn btn-primary" data-confirm>${t("camp.detail.add")}</button>`,
       onMount: (el) => setTimeout(() => el.querySelector("#cam-label")?.focus(), 30),

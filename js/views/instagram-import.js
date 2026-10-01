@@ -1,7 +1,7 @@
 import { getBrand, listContent, createContent, updateContent, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
-import { qs, qsa, showProgressBar, escapeHtml, toast } from "../dom.js";
+import { qs, qsa, showProgressBar, escapeHtml, toast, loadingHTML } from "../dom.js";
 import { canUseInstagramApi } from "../account.js";
 import { t } from "../i18n.js";
 import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl, formatFromMedia, titleFromMedia, thumbnailFromMedia } from "../instagram.js";
@@ -25,7 +25,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
     title: t("integr.import.igTitle"),
     wide: true,
     bodyHTML: `<div id="ig-picker-body" style="min-height:140px;">
-      <div class="ocr-status" style="margin:0;"><div class="spinner"></div><span>${t("integr.import.igLoading")}</span></div>
+      ${loadingHTML(t("integr.import.igLoading"), { style: "margin:0;" })}
     </div>`,
     footHTML: `
       <button class="btn btn-secondary" id="ig-picker-cancel">${t("common.cancel")}</button>

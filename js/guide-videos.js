@@ -182,7 +182,7 @@ export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0, aut
   if (!v.src || isPlaceholder(v.src)) {
     return `
       <div class="guide-video-frame is-placeholder${size}" role="img" aria-label="${t("guide.video.pendingAria", { title: escapeHtml(v.title) })}">
-        <div class="guide-video-play">${icon("play", { size: compact ? 16 : 22 })}</div>
+        <div class="guide-video-play is-pending" aria-hidden="true">${icon("clock", { size: compact ? 16 : 22 })}</div>
         <div class="guide-video-ph-text"><b>${t("guide.video.pending")}</b><span>${escapeHtml(v.title)} · ${escapeHtml(v.duration)}</span>${adminPreview() ? `<small>${t("guide.video.adminPending")}</small>` : ""}</div>
       </div>`;
   }
@@ -222,7 +222,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
       <div class="guide-video-choices" data-video-choices hidden>
         <p class="guide-video-choices-head">${t("guide.video.choices.head")}</p>
         <div class="guide-video-choice-row">
-          <button type="button" class="btn btn-ghost btn-sm" data-vc="replay">${icon("play", { size: 13 })}${t("guide.video.choices.replay")}</button>
+          ${real ? `<button type="button" class="btn btn-ghost btn-sm" data-vc="replay">${icon("play", { size: 13 })}${t("guide.video.choices.replay")}</button>` : ""}
           <button type="button" class="btn btn-ghost btn-sm" data-vc="tour">${icon("target", { size: 13 })}${escapeHtml(tourText)}</button>
           <button type="button" class="btn btn-primary btn-sm" data-vc="done">${t("guide.video.choices.done")}</button>
         </div>

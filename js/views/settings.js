@@ -124,7 +124,7 @@ function renderListEditor(content, title, list, addFn, removeFn, placeholder) {
         </div>
       `).join("")}
       <div class="flex gap-8" style="margin-top:16px;">
-        <input class="input" id="new-item" placeholder="${placeholder}" />
+        <input class="input" id="new-item" aria-label="${escapeHtml(title)}" placeholder="${escapeHtml(placeholder)}" />
         <button class="btn btn-primary" id="add-item" style="flex:none;">${icon("plus", { size: 15 })}${t("set.list.add")}</button>
       </div>
     </div>
@@ -504,10 +504,10 @@ function renderAccount(content) {
       <h3 style="font-size:16px;margin-bottom:6px;">${t("set.acc.wepekaTitle")}</h3>
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.acc.usernameSub")}</p>
       <div class="field" style="margin-bottom:10px;">
-        <label>Username</label>
+        <label for="acc-username">${t("set.acc.usernameLabel")}</label>
         <div class="flex items-center gap-8">
           <span class="text-faint" style="font-weight:800;">@</span>
-          <input class="input" id="acc-username" placeholder="${t("set.acc.usernamePh")}" value="${account?.username || ""}" style="flex:1;" />
+          <input class="input" id="acc-username" placeholder="${escapeHtml(t("set.acc.usernamePh"))}" value="${account?.username || ""}" style="flex:1;" />
         </div>
       </div>
       <button class="btn btn-secondary btn-sm" id="acc-username-save">${icon("check", { size: 14 })}${t("common.save")}</button>

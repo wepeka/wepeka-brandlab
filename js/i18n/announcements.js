@@ -18,7 +18,7 @@ export default {
   "ann.compose.title": { en: "Post an update to every user", id: "Kirim pengumuman ke semua user" },
   "ann.edit.title": { en: "Edit update", id: "Ubah pengumuman" },
   "ann.field.title": { en: "Title", id: "Judul" },
-  "ann.field.titlePh": { en: "e.g. Brainstorm and chat are now one", id: "mis. Brainstorm dan chat sekarang jadi satu" },
+  "ann.field.titlePh": { en: "e.g. Brainstorm and chat are now one", id: "misal: Brainstorm dan chat sekarang jadi satu" },
   "ann.field.body": { en: "Details", id: "Isi" },
   "ann.field.bodyPh": { en: "What changed, and what the user can do with it now.", id: "Apa yang berubah, dan apa yang sekarang bisa dilakukan user." },
   "ann.field.bodyHint": { en: "**bold** and lists starting with - or 1. are supported.", id: "Bisa pakai **tebal** dan daftar yang diawali - atau 1." },

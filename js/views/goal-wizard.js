@@ -134,7 +134,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         ${options.map((m) => `<button type="button" data-val="${m}" class="${!isCustom && current === m ? "active" : ""}">${t("goal.wizard.months", { n: m })}</button>`).join("")}
         <button type="button" data-val="custom" class="${isCustom ? "active" : ""}">${t("goal.wizard.monthsCustom")}</button>
       </div>
-      ${isCustom ? `<div class="field" style="margin-top:8px;"><input class="input" id="${id}-custom" inputmode="numeric" autocomplete="off" value="${current}" placeholder="${esc(t("goal.wizard.monthsCustomPh"))}" /></div>` : ""}`;
+      ${isCustom ? `<div class="field" style="margin-top:8px;"><input class="input" id="${id}-custom" inputmode="numeric" autocomplete="off" aria-label="${esc(t("goal.wizard.monthsCustomAria"))}" aria-describedby="${id}-custom-hint" value="${current}" placeholder="${esc(t("goal.wizard.monthsCustomPh"))}" /><p class="hint" id="${id}-custom-hint" style="margin:0;">${t("goal.wizard.monthsCustomHint")}</p></div>` : ""}`;
   }
 
   // ---------- Screen 0: which campaigns to deploy this run ----------

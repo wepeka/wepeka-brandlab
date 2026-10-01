@@ -48,7 +48,7 @@ export default {
   "guide.video.min": { en: "~{n} min", id: "±{n} menit" },
   "guide.video.sec": { en: "~{n} sec", id: "±{n} detik" },
   "guide.video.kenalan": { en: "Meet Brandlab", id: "Kenalan sama Brandlab" },
-  "guide.video.brandBuilder": { en: "Brand Builder: Brand DNA & Guidelines", id: "Brand Builder: Brand DNA & Guidelines" },
+  "guide.video.brandBuilder": { en: "Brand Builder: Brand DNA & Brand Book", id: "Brand Builder: Brand DNA & Brand Book" },
   "guide.video.campaign": { en: "Campaigns: a big goal, split into levels", id: "Campaign: tujuan besar, dipecah per level" },
   "guide.video.contentOs": { en: "Content: write, schedule, read results", id: "Konten: nulis, jadwalkan, baca hasil" },
   "guide.video.copy": { en: "Quick Copy: ready-to-post copy", id: "Tulisan Cepat: tulisan siap posting" },

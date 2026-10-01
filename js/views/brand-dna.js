@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality } from "../store.js";
-import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu } from "../dom.js";
+import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu, loadingHTML } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { COLOR_FEELINGS, feelingLabel, personalityProfile } from "../brandbook-data.js";
@@ -346,6 +346,7 @@ function paint(root, brandId, brand, state, refresh) {
   `;
 
   wireHelpButtons(root);
+  wireFieldExtras(root);
   if (!isReview) wireStep(root, brandId, brand, state, refresh);
   else wireReview(root, brandId, brand, state, refresh);
 }
@@ -395,7 +396,7 @@ async function runAiFill(root, brandId, brand, state, refresh, { brief = "" } = 
       cancelLabel: t("dna.aiFill.confirm.no"),
     });
     if (!ok) return;
-    statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("dna.aiFill.working")}</span></div>`;
+    statusEl.innerHTML = `${loadingHTML(t("dna.aiFill.working"))}`;
     try {
       const draft = await generateBrandDnaDraft(ai, { brand, answers: state.answers });
       Object.entries(draft).forEach(([k, v]) => {
@@ -464,19 +465,78 @@ function liveStepFilled(step, root, state) {
 // paired-field steps (stakes/foundation), and the composed result of the
 // broken-down steps below — so nothing is a second-class field with no AI
 // help.
-function narrativeFieldHTML({ field, label, guide, example, value, collapsed = false }) {
+// The example is shown once, as a permanent "Contoh:" line under the box —
+// not also as the placeholder (it used to be both, the same sentence twice).
+// A field with a word limit gets a live counter instead of a rule hidden in
+// the placeholder.
+function narrativeFieldHTML({ field, label, guide, example, value, collapsed = false, ariaLabel = "", maxWords = 0 }) {
   return `
     <div class="field" ${collapsed && !value ? 'style="display:none;" data-collapsed-field' : ""}>
-      ${label ? `<label>${label}</label>` : ""}
+      ${label ? `<label for="ans-${field}">${label}</label>` : ""}
       ${guide ? `<p class="text-muted" style="font-size:13px;margin:0 0 10px;">${guide}</p>` : ""}
       <p class="text-faint" style="font-size:11.5px;margin:0 0 8px;">${t("dna.field.writeFirst")}</p>
-      <textarea class="textarea" id="ans-${field}" data-field="${field}" style="min-height:90px;" placeholder="${escapeHtml(example)}">${escapeHtml(value)}</textarea>
+      <textarea class="textarea" id="ans-${field}" data-field="${field}" ${!label && ariaLabel ? `aria-label="${escapeHtml(ariaLabel)}"` : ""} ${maxWords ? `data-max-words="${maxWords}"` : ""} style="min-height:90px;" placeholder="${escapeHtml(t("dna.field.ownWordsPh"))}">${escapeHtml(value)}</textarea>
+      ${maxWords ? wordCountHTML(`ans-${field}`, value, maxWords) : ""}
       <button type="button" class="btn btn-secondary btn-block" data-polish="${field}" style="margin-top:8px;">${icon("bot", { size: 14 })}${t("dna.field.askAi")}</button>
       <div id="polish-status-${field}" style="margin-top:8px;"></div>
       <div id="polish-options-${field}"></div>
-      <p class="text-faint" style="font-size:11.5px;margin:8px 0 0;"><em>${t("dna.field.example", { example: escapeHtml(example) })}</em></p>
+      ${example ? `<p class="text-faint" style="font-size:11.5px;margin:8px 0 0;"><em>${t("dna.field.example", { example: escapeHtml(example) })}</em></p>` : ""}
     </div>
   `;
+}
+
+// ---------- Word counter + auto-growing boxes ----------
+const countWords = (s) => (String(s || "").trim().match(/\S+/g) || []).length;
+function wordCountHTML(id, value, max) {
+  const n = countWords(value);
+  return `<p class="dna-word-count${n > max ? " is-over" : ""}" data-count-for="${id}">${t("dna.field.wordCount", { n, max })}</p>`;
+}
+function syncWordCount(el, root) {
+  const max = Number(el.dataset.maxWords);
+  const out = root.querySelector(`[data-count-for="${el.id}"]`);
+  if (!max || !out) return;
+  const n = countWords(el.value);
+  out.textContent = t("dna.field.wordCount", { n, max });
+  out.classList.toggle("is-over", n > max);
+}
+// A short answer box that wraps instead of scrolling sideways, and grows
+// with what's typed (or picked from AI options / example chips).
+function autoGrow(el) {
+  // Not laid out yet (hidden tab / zero width): measuring now would give a
+  // giant height — leave the rows="2" default, it re-measures on focus/typing.
+  if (!el.offsetWidth) return;
+  el.style.height = "auto";
+  if (el.scrollHeight) el.style.height = `${el.scrollHeight + 2}px`;
+}
+// Direct listeners (not delegated): AI option picks dispatch a non-bubbling
+// "input" event on the box itself.
+function wireFieldExtras(root) {
+  qsa("textarea[data-autogrow]", root).forEach((el) => {
+    autoGrow(el);
+    el.addEventListener("input", () => autoGrow(el));
+    el.addEventListener("focus", () => autoGrow(el));
+    // One-line answers (they're joined into a sentence) — wrap, but no
+    // line breaks.
+    if (el.dataset.singleLine !== undefined) el.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+  });
+  qsa("textarea[data-max-words]", root).forEach((el) => el.addEventListener("input", () => syncWordCount(el, root)));
+}
+
+// The broken-down boxes' placeholder: the first example for this kind of
+// business (the chips under the box offer the rest), else the step's own.
+function partPlaceholder(part) {
+  const ex = dnaExamples(part.key, exampleKind)[0];
+  return ex ? t("dna.field.ph", { example: ex }) : part.placeholder || "";
+}
+
+// The permanent "Contoh:" line under a step's final answer, built from the
+// same kind-of-business examples as the chips so it matches this owner's
+// business instead of one fixed persona.
+function stepExample(step) {
+  const first = (key) => dnaExamples(key, exampleKind)[0] || "";
+  if (step.key === "audience" && first("who") && first("want")) return step.compose({ who: first("who"), want: first("want") });
+  if (step.key === "problem" && first("visible") && first("feel")) return step.compose({ visible: first("visible"), feel: first("feel") });
+  return step.example || "";
 }
 
 // ---------- Broken-down question boxes (compose / funnel3 steps) ----------
@@ -490,6 +550,7 @@ function agePartInputHTML(part, value) {
 
 function proofListHTML(list) {
   return `
+    <p class="text-faint" style="font-size:11.5px;margin:0 0 6px;">${t("dna.trust.proofHint")}</p>
     <div class="flex gap-8" style="margin-bottom:8px;">
       <input class="input" id="part-proof-new" placeholder="${escapeHtml(t("dna.trust.proofPh"))}" style="flex:1;" />
       <button type="button" class="btn btn-secondary" id="part-proof-add" style="flex:none;" aria-label="${t("dna.field.add")}">${icon("plus", { size: 14 })}</button>
@@ -595,11 +656,11 @@ function composePartHTML(part, value) {
   const inner =
     part.type === "age" ? agePartInputHTML(part, value)
     : part.type === "list" ? proofListHTML(Array.isArray(value) ? value : [])
-    : `<input class="input" id="part-${part.key}" data-part="${part.key}" placeholder="${escapeHtml(part.placeholder || "")}" value="${escapeHtml(value || "")}" />`;
+    : `<textarea class="textarea dna-part-input" id="part-${part.key}" data-part="${part.key}" rows="2" data-autogrow data-single-line placeholder="${escapeHtml(partPlaceholder(part))}">${escapeHtml(value || "")}</textarea>`;
   const showAiHelp = part.type !== "list";
   return `
     <div class="field" style="margin-bottom:14px;">
-      <label style="font-size:12px;">${part.label}</label>
+      <label for="${part.type === "list" ? "part-proof-new" : `part-${part.key}`}" style="font-size:12px;">${part.label}</label>
       ${inner}
       ${part.type ? "" : examplesHTML(`part-${part.key}`, part.key)}
       ${showAiHelp ? `
@@ -619,7 +680,7 @@ function composeStepHTML(step, state) {
     ${stepParts(step).map((p) => composePartHTML(p, parts[p.key])).join("")}
     <button type="button" class="btn btn-secondary btn-block" id="compose-answer" style="margin-bottom:14px;">${icon("check", { size: 14 })}${t("dna.compose.btn")}</button>
     <div id="compose-status" style="margin-bottom:10px;"></div>
-    ${narrativeFieldHTML({ field: step.field, label: t("dna.compose.label"), example: step.example, value: state.answers[step.field], collapsed: true })}
+    ${narrativeFieldHTML({ field: step.field, label: t("dna.compose.label"), example: stepExample(step), value: state.answers[step.field], collapsed: true })}
     ${navHTML(state, !isStepFilled(step, state))}
   `;
 }
@@ -653,12 +714,12 @@ function stepHTML(step, state, brandId) {
       <h2 style="margin-bottom:6px;">${step.title}</h2>
       <p class="text-muted" style="font-size:13px;margin:0 0 20px;">${step.guide}</p>
       <div class="field">
-        <label>${t("dna.sb7.identity.nameLabel")}</label>
+        <label for="ans-brandName">${t("dna.sb7.identity.nameLabel")}</label>
         <input class="input" id="ans-brandName" placeholder="${escapeHtml(t("dna.sb7.identity.namePh"))}" value="${escapeHtml(state.brandName)}" />
       </div>
       <div class="field">
-        <label>${t("dna.label.tagline")} <span class="text-faint" style="font-weight:600;text-transform:none;letter-spacing:0;">${t("dna.identity.taglineRequired")}</span></label>
-        <input class="input" id="ans-tagline" placeholder="${escapeHtml(t("dna.identity.taglinePh"))}" value="${escapeHtml(state.answers.tagline)}" />
+        <label for="ans-tagline">${t("dna.label.tagline")} <span class="text-faint" style="font-weight:600;text-transform:none;letter-spacing:0;">${t("dna.identity.taglineRequired")}</span></label>
+        <input class="input" id="ans-tagline" placeholder="${escapeHtml(dnaExamples("tagline", exampleKind)[0] ? t("dna.field.ph", { example: dnaExamples("tagline", exampleKind)[0] }) : t("dna.identity.taglinePh"))}" value="${escapeHtml(state.answers.tagline)}" />
         <p class="text-faint" style="font-size:11.5px;margin:6px 0 0;">${t("dna.identity.taglineHint")}</p>
         ${examplesHTML("ans-tagline", "tagline")}
       </div>
@@ -684,7 +745,7 @@ function stepHTML(step, state, brandId) {
     <p class="text-muted" style="font-size:13px;margin:0 0 10px;">${step.guide}</p>
     ${promptsHTML(step.prompts)}
     ${step.key === "cta" ? examplesHTML("ans-callToAction", "callToAction") : ""}
-    ${narrativeFieldHTML({ field: step.field, example: step.example, value: state.answers[step.field] })}
+    ${narrativeFieldHTML({ field: step.field, example: step.key === "cta" ? "" : stepExample(step), value: state.answers[step.field], ariaLabel: step.title, maxWords: step.maxWords || 0 })}
     ${nav}
   `;
 }
@@ -721,7 +782,7 @@ function personalityFieldHTML(state) {
 function traitListHTML(key, label, items) {
   return `
     <div class="field" style="margin-bottom:12px;">
-      <label style="font-size:11.5px;">${label}</label>
+      <label for="dna-trait-${key}-new" style="font-size:11.5px;">${label}</label>
       <div class="chip-list" id="dna-trait-${key}-list">
         ${items.map((v, i) => `<span class="dna-chip">${escapeHtml(v)}<button type="button" data-trait-remove="${key}" data-index="${i}" aria-label="${t("common.remove")}">${icon("x", { size: 10 })}</button></span>`).join("")}
       </div>
@@ -740,7 +801,7 @@ function traitListHTML(key, label, items) {
 function chipListHTML(id, label, items, placeholder) {
   return `
     <div class="field">
-      <label>${label}</label>
+      <label for="${id}-new">${label}</label>
       <div class="flex gap-8" style="margin-bottom:8px;">
         <input class="input" id="${id}-new" placeholder="${escapeHtml(placeholder || t("dna.field.chipPh"))}" style="flex:1;" />
         <button type="button" class="btn btn-secondary" data-chip-add="${id}" style="flex:none;" aria-label="${t("dna.field.add")}">${icon("plus", { size: 14 })}</button>
@@ -810,7 +871,7 @@ async function runSuggestOptions({ brand, question, guide, principle, textarea, 
   }
   const shownBefore = [...optionsEl.querySelectorAll("[data-option-text]")].map((el) => el.dataset.optionText);
   btn.disabled = true;
-  statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("dna.ai.loadingOptions")}</span></div>`;
+  statusEl.innerHTML = `${loadingHTML(t("dna.ai.loadingOptions"))}`;
   try {
     const { options, note } = await suggestBrandDnaOptions(ai, { brand, question, guide, principle, draftAnswer: draft, priorAnswers, siblingAnswers, partRule, avoid: shownBefore, count: count || 3, maxWords, voice });
     statusEl.innerHTML = note ? `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeHtml(note)}</span></div>` : "";
@@ -1243,12 +1304,19 @@ function captureStep(root, step, state) {
 // Review is where an AI draft gets corrected, so every field is a live
 // textarea (not read-only text + "click Back to the right step"). Lists
 // (personality/values/products) edit as comma-separated text.
-function reviewSection(label, value, field, { list = false, hint = "" } = {}) {
+// `hint` is shown under the label (Review is usually pre-filled by the AI
+// draft, so a rule kept in the placeholder was never seen); `example` is a
+// "misal: …" placeholder for when the box is empty; `maxWords` adds a live
+// counter.
+function reviewSection(label, value, field, { list = false, hint = "", example = "", maxWords = 0 } = {}) {
   const text = list ? (value || []).join(", ") : value || "";
+  const id = `review-${field}`;
   return `
     <div class="review-field">
-      <label>${label}</label>
-      <textarea class="textarea review-textarea" ${list ? `data-review-list="${field}"` : `data-review-field="${field}"`} rows="${text.length > 90 ? 3 : 2}" placeholder="${escapeHtml(hint || t("dna.review.empty"))}">${escapeHtml(text)}</textarea>
+      <label for="${id}">${label}</label>
+      ${hint ? `<p class="review-hint">${hint}</p>` : ""}
+      <textarea class="textarea review-textarea" id="${id}" ${list ? `data-review-list="${field}"` : `data-review-field="${field}"`} ${maxWords ? `data-max-words="${maxWords}"` : ""} rows="${text.length > 90 ? 3 : 2}" placeholder="${escapeHtml(example ? t("dna.field.ph", { example }) : t("dna.review.empty"))}">${escapeHtml(text)}</textarea>
+      ${maxWords ? wordCountHTML(id, text, maxWords) : ""}
     </div>`;
 }
 
@@ -1268,13 +1336,14 @@ function oneLinerCardHTML(state) {
   return `
     <div class="card dark-surface" style="margin-bottom:20px;border-color:var(--accent);">
       <div class="flex items-center justify-between" style="margin-bottom:4px;">
-        <h3 style="margin:0;font-size:15px;">${t("dna.oneLiner.title")}</h3>
+        <h3 id="oneliner-title" style="margin:0;font-size:15px;">${t("dna.oneLiner.title")}</h3>
         <button type="button" class="btn btn-secondary" id="gen-oneliner" ${hasEnough ? "" : "disabled"}>
           ${icon("bot", { size: 14 })}${state.answers.oneLiner ? t("dna.oneLiner.retry") : t("dna.oneLiner.generate")}
         </button>
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("dna.oneLiner.desc")}</p>
-      <textarea class="textarea" id="ans-oneLiner" style="min-height:60px;font-weight:600;" placeholder="${escapeHtml(hasEnough ? t("dna.oneLiner.phReady") : t("dna.oneLiner.phNotReady"))}">${escapeHtml(state.answers.oneLiner)}</textarea>
+      ${hasEnough ? "" : `<p class="dna-oneliner-note">${icon("info", { size: 13 })}${t("dna.oneLiner.phNotReady")}</p>`}
+      <textarea class="textarea" id="ans-oneLiner" aria-labelledby="oneliner-title" style="min-height:60px;font-weight:600;" placeholder="${escapeHtml(t("dna.oneLiner.phReady", { btn: t("dna.oneLiner.generate") }))}">${escapeHtml(state.answers.oneLiner)}</textarea>
       <div id="oneliner-status" style="margin-top:8px;"></div>
     </div>
   `;
@@ -1291,19 +1360,19 @@ function reviewHTML(state) {
       ${reviewSection(t("dna.review.customer"), a.targetAudience, "targetAudience", { hint: t("dna.review.customerHint") })}
       ${reviewSection(t("dna.review.problem"), a.problemSolved, "problemSolved", { hint: t("dna.review.problemHint") })}
       ${reviewSection(t("dna.review.trust"), a.differentiation, "differentiation", { hint: t("dna.review.trustHint") })}
-      ${reviewSection(t("dna.review.plan"), a.mission, "mission", { hint: "1) ... 2) ... 3) ..." })}
-      ${reviewSection(t("dna.review.cta"), a.callToAction, "callToAction", { hint: t("dna.review.ctaHint") })}
+      ${reviewSection(t("dna.review.plan"), a.mission, "mission", { hint: t("dna.review.planHint") })}
+      ${reviewSection(t("dna.review.cta"), a.callToAction, "callToAction", { hint: t("dna.review.ctaHint"), maxWords: 8 })}
       ${reviewSection(t("dna.review.success"), a.successOutcome, "successOutcome")}
       ${reviewSection(t("dna.review.failure"), a.failureOutcome, "failureOutcome")}
-      ${reviewSection(t("dna.label.tagline"), a.tagline, "tagline", { hint: t("dna.review.taglineHint") })}
+      ${reviewSection(t("dna.label.tagline"), a.tagline, "tagline", { hint: t("dna.review.taglineHint"), maxWords: 6 })}
     </div>
     <details class="dna-extras" style="margin-bottom:20px;">
       <summary>${t("dna.review.extras")}</summary>
       <p class="text-faint" style="font-size:11.5px;margin:6px 0 10px;">${t("dna.review.extrasHint")}</p>
       ${reviewSection(t("dna.label.purpose"), a.purpose, "purpose", { hint: t("dna.review.purposeHint") })}
       ${reviewSection(t("dna.label.vision"), a.vision, "vision", { hint: t("dna.review.visionHint") })}
-      ${reviewSection(t("dna.review.personality"), a.personality, "personality", { list: true, hint: t("dna.review.personalityHint") })}
-      ${reviewSection(t("dna.label.values"), a.values, "values", { list: true, hint: t("dna.identity.valuesPh") })}
+      ${reviewSection(t("dna.review.personality"), a.personality, "personality", { list: true, hint: t("dna.review.productsHint"), example: t("dna.review.personalityEx") })}
+      ${reviewSection(t("dna.label.values"), a.values, "values", { list: true, hint: t("dna.review.productsHint"), example: t("dna.review.valuesEx") })}
       ${reviewSection(t("dna.label.products"), a.productsServices, "productsServices", { list: true, hint: t("dna.review.productsHint") })}
     </details>
     <div class="flex items-center justify-between dna-review-nav">
@@ -1428,7 +1497,7 @@ function wireReview(root, brandId, brand, state, refresh) {
         return;
       }
       oneLinerBtn.disabled = true;
-      statusEl.innerHTML = `<div class="ocr-status"><div class="spinner"></div><span>${t("dna.oneLiner.loading")}</span></div>`;
+      statusEl.innerHTML = `${loadingHTML(t("dna.oneLiner.loading"))}`;
       try {
         const line = await generateOneLiner(ai, { brand, answers: state.answers });
         state.answers.oneLiner = line;

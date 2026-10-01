@@ -568,6 +568,7 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
     : `<div class="empty-state card" style="margin:0;">
          <div class="icon-wrap">${icon("calendar", { size: 20 })}</div>
          <h3>${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</h3>
+         <p>${t("calendar.agendaEmptyBody")}</p>
          <button type="button" class="btn btn-primary btn-sm" id="agenda-empty-new">${icon("plus", { size: 14 })}${t("calendar.createNewContent")}</button>
        </div>`;
 
