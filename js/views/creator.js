@@ -716,7 +716,7 @@ function paint(root, brandId, state, refresh) {
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap;">
-        <button class="btn btn-secondary" id="cr-week-plan" title="${t("chat.week.credit")}">${icon("sparkle", { size: 15 })}${t("chat.week.button")}</button>
+        <button class="btn btn-secondary" id="cr-week-plan">${icon("sparkle", { size: 15 })}${t("chat.week.button")}<span class="btn-cost">${t("chat.week.cost")}</span></button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
       </div>
     </div>

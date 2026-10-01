@@ -392,6 +392,8 @@ main.view.wide{ max-width: 1440px; }
 .btn-primary:hover{ filter: brightness(1.06); box-shadow: 0 0 16px color-mix(in srgb, var(--brand-tint) 55%, transparent); }
 .btn-secondary{ background: var(--surface); color: var(--text); border-color: var(--border); }
 .btn-secondary:hover{ background: var(--surface-hover); }
+/* What a button costs, on the button ("1 AI credit") — not in a tooltip. */
+.btn-cost{ font-size:11px; font-weight:700; line-height:1.4; padding:1px 7px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); white-space:nowrap; }
 .btn-ghost{ background: transparent; color: var(--text-muted); }
 .btn-ghost:hover{ color: var(--text); background: var(--surface); }
 .btn-danger{ background: var(--health-poor-soft); color: var(--health-poor); }

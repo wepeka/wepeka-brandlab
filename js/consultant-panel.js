@@ -784,7 +784,7 @@ function weekPlanCardHTML(entry, index, campaigns, formats) {
         <option value="" ${wp.campaignId ? "" : "selected"}>${esc(t("chat.week.scopeGeneral"))}</option>
         ${campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === wp.campaignId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
       </select>` : ""}
-      <button type="button" class="btn btn-secondary btn-sm" data-week-regen="${index}" title="${esc(t("chat.week.creditNote"))}">${icon("refresh", { size: 13 })}${t("chat.week.regen")}</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-week-regen="${index}" title="${esc(t("chat.week.creditNote"))}">${icon("refresh", { size: 13 })}${t("chat.week.regen")}<span class="btn-cost">${t("chat.week.cost")}</span></button>
       <button type="button" class="btn btn-primary btn-sm" data-week-save="${index}" ${pickedCount ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("chat.week.save", { n: pickedCount })}</button>
       <button type="button" class="btn btn-ghost btn-sm" data-week-close="${index}">${t("chat.week.close")}</button>
     </div>`;

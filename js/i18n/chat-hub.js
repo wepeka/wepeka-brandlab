@@ -169,6 +169,8 @@ export default {
   // js/ai.js generateWeekPlan). Entry points: Calendar, Creator, Home.
   "chat.week.button": { en: "Plan this week", id: "Rencanakan minggu ini" },
   "chat.week.credit": { en: "Uses 1 AI credit", id: "Memakai 1 AI credit" },
+  // The cost, shown on the button itself (a title tooltip never shows on touch).
+  "chat.week.cost": { en: "1 AI credit", id: "1 AI credit" },
   "chat.week.seed": { en: "Plan this week's content for me.", id: "Tolong rencanakan konten minggu ini." },
   "chat.week.regenMsg": { en: "Start over with a new plan for the same days.", id: "Buat ulang rencananya untuk hari-hari yang sama." },
   "chat.week.noRoom": { en: "The next couple of weeks are already fully booked on your calendar — nothing free to plan onto. Open the calendar to see what's there, or free up a day first.", id: "Dua minggu ke depan sudah penuh di kalendermu — gak ada slot kosong buat direncanakan. Buka kalender buat lihat isinya, atau kosongkan satu hari dulu." },
