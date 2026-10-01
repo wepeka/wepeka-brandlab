@@ -1553,6 +1553,14 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .settings-nav button.active{ background: var(--surface); color: var(--text); }
 .settings-panel{ display:none; }
 .settings-panel.active{ display:block; }
+/* One column: the panel list was still a sticky, see-through column, so the
+   panel content scrolled up underneath 5-8 buttons. It becomes a plain row
+   of chips above the panel, wrapping instead of sticking. */
+@media (max-width: 860px){
+  .settings-nav{ position:static; flex-direction:row; flex-wrap:wrap; gap:6px; }
+  .settings-nav button{ min-height:44px; padding:8px 14px; border:1px solid var(--border); border-radius:999px; background: var(--surface); }
+  .settings-nav button.active{ border-color: var(--accent); background: var(--accent-soft); }
+}
 .threshold-row{ display:grid; grid-template-columns: 90px 1fr 1fr; gap:12px; align-items:center; margin-bottom:10px; }
 .threshold-row .tl{ font-size:12.5px; font-weight:700; color: var(--text-muted); }
 .list-editor-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border-soft); }
