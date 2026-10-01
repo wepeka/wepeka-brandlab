@@ -16,6 +16,13 @@ function unscheduledOpen(brandId) {
   return listContent(brandId).filter((c) => !c.scheduleDate && c.status !== "published");
 }
 
+// Auto-Schedule and Jadwal Kerja live in the "Atur jadwal" menu.
+async function openScheduleMenu() {
+  if (qs("#edit-cadence")) return;
+  qs("#cal-schedule")?.click();
+  await tick();
+}
+
 async function ensureMonthView() {
   const monthBtn = qs('[data-view="month"]');
   if (monthBtn && !monthBtn.classList.contains("active")) {
@@ -102,12 +109,14 @@ export function buildCalendarSteps({ brandId }) {
     {
       selector: "#edit-cadence",
       showIf: () => !!getBrand(brandId)?.contentCadence?.configured,
+      beforeStep: openScheduleMenu,
       title: t("guide.cal.cadenceSet.title"),
       body: t("guide.cal.cadenceSet.body"),
     },
     {
       selector: "#edit-cadence",
       showIf: () => !getBrand(brandId)?.contentCadence?.configured,
+      beforeStep: openScheduleMenu,
       title: t("guide.cal.cadence.title"),
       body: t("guide.cal.cadence.body"),
       interactive: { type: "click" },
@@ -133,6 +142,7 @@ export function buildCalendarSteps({ brandId }) {
     {
       selector: "#ai-autoschedule",
       showIf: () => unscheduledOpen(brandId).length > 0,
+      beforeStep: openScheduleMenu,
       title: t("guide.cal.auto.title"),
       body: t("guide.cal.auto.body"),
       interactive: { type: "until", predicate: () => !!qs(".auto-schedule-list") },

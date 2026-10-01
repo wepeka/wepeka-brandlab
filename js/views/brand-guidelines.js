@@ -106,6 +106,19 @@ function ensureGoogleFont(family) {
 // TTF/OTF exports from some foundries won't, hence the friendly nudge.
 const MAX_CUSTOM_FONT_BYTES = 500 * 1024;
 
+// Font names and brand colors end up inside style="" attributes (and the
+// PDF). A font named after its file — or a value from an old import —
+// could carry quotes or "<" and break out of them, so a font name keeps
+// only letters, digits, spaces, dots, dashes and underscores, and a color
+// has to be a #hex. Applied when a name is typed and when a brand loads.
+export function safeFontName(name) {
+  return String(name || "").replace(/[^\p{L}\p{N} ._-]/gu, "").replace(/\s+/g, " ").trim();
+}
+function safeHex(c) {
+  return /^#[0-9a-f]{3,8}$/i.test(String(c || "").trim()) ? String(c).trim() : "";
+}
+const safeMap = (obj, fn) => Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => [k, fn(v)]));
+
 const loadedCustomFonts = new Set();
 function ensureCustomFont(name, dataUrl) {
   if (!name || !dataUrl || loadedCustomFonts.has(name)) return;
@@ -140,12 +153,12 @@ function answersFromBrand(brand) {
     mascots: bg.mascots || [],
     colorFeelings: bg.colorFeelings || [],
     colorFormula: bg.colorFormula || "",
-    colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...(bg.colors || {}) },
+    colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...safeMap(bg.colors, safeHex) },
     typographyFeelings: bg.typographyFeelings || [],
     fontSector: bg.fontSector || "",
-    fonts: { primary: "", secondary: "", accent: "", ...(bg.fonts || {}) },
-    customFonts: { ...(bg.customFonts || {}) },
-    extraFonts: bg.extraFonts || [],
+    fonts: { primary: "", secondary: "", accent: "", ...safeMap(bg.fonts, safeFontName) },
+    customFonts: Object.fromEntries(Object.entries(bg.customFonts || {}).map(([k, v]) => [safeFontName(k), v])),
+    extraFonts: (bg.extraFonts || []).map((f) => ({ ...f, family: safeFontName(f.family) })),
     typeSpacing: {
       primary: { ...TYPE_SPACING_DEFAULTS.primary, ...(bg.typeSpacing?.primary || {}) },
       secondary: { ...TYPE_SPACING_DEFAULTS.secondary, ...(bg.typeSpacing?.secondary || {}) },
@@ -159,7 +172,7 @@ function answersFromBrand(brand) {
     // asks before silently overwriting what someone already wrote.
     aiCopy: { valueProposition: null, colorEssence: null, edited: { valueProposition: false, colorEssence: {} }, ...(bg.aiCopy || {}) },
     bookStyle: BOOK_STYLE_KEYS.includes(bg.bookStyle) ? bg.bookStyle : "classic",
-    bookPhoto: bg.bookPhoto || "",
+    bookPhoto: /^(data:image\/|https:\/\/)/.test(bg.bookPhoto || "") ? bg.bookPhoto.replace(/['"()\\]/g, "") : "",
   };
 }
 
@@ -281,7 +294,7 @@ function paint(root, brandId, brand, state, refresh) {
   // reachable by URL only), Pemula's Beranda (the map every step returns
   // to, same as Brand DNA's own back link).
   const backHref = getMode() === "guided" ? `#/brand/${brand.id}` : `#/brand/${brand.id}/builder`;
-  const backLabel = getMode() === "guided" ? t("nav.home") : "Brand Builder";
+  const backLabel = getMode() === "guided" ? t("nav.home") : t("nav.builder");
   root.innerHTML = `
     <div class="page-head">
       <div>
@@ -295,7 +308,10 @@ function paint(root, brandId, brand, state, refresh) {
       isReview
         ? reviewHTML(brand, state)
         : `<div class="brandbook-layout">
-             <div class="brandbook-left">${stepHTML(step, state, brand)}</div>
+             <div class="brandbook-left">
+               <button type="button" class="bb-preview-jump" data-bb-preview-jump>${icon("eye", { size: 15 })}${t("bg.previewJump")}</button>
+               ${stepHTML(step, state, brand)}
+             </div>
              <div class="brandbook-right">${progressivePreviewHTML(brand, state.answers)}</div>
            </div>`
     }
@@ -313,6 +329,20 @@ function wireTabs(root, state, refresh) {
       state.stepIndex = Number(btn.dataset.bbTab);
       refresh();
     });
+  });
+  // Phones: the tabs are one sideways-scrolling row — keep the open one in
+  // sight. The preview sits under the form there, so "Lihat preview" jumps
+  // down to it (no animation for reduced motion).
+  const row = qs(".bb-tab-row", root);
+  const active = qs(".bb-tab.active", root);
+  if (row && active && row.scrollWidth > row.clientWidth) {
+    const r = row.getBoundingClientRect();
+    const a = active.getBoundingClientRect();
+    row.scrollLeft += a.left - r.left - (r.width - a.width) / 2;
+  }
+  qs("[data-bb-preview-jump]", root)?.addEventListener("click", () => {
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    qs(".brandbook-right", root)?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
   });
 }
 
@@ -1334,8 +1364,8 @@ function wireTypographyStep(root, state, refresh) {
         e.target.value = "";
         return;
       }
-      const defaultName = file.name.replace(/\.(ttf|otf|woff2?|)$/i, "").trim() || "Custom Font";
-      const name = await promptDialog({ title: t("bg.type.nameTitle"), label: t("bg.type.nameLabel"), placeholder: defaultName, value: defaultName, confirmLabel: t("bg.type.useFont") });
+      const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || "Custom Font";
+      const name = safeFontName(await promptDialog({ title: t("bg.type.nameTitle"), label: t("bg.type.nameLabel"), placeholder: escapeHtml(defaultName), value: defaultName, confirmLabel: t("bg.type.useFont") }));
       e.target.value = "";
       if (!name) return;
       const dataUrl = await fileToDataURL(file);
@@ -1358,7 +1388,7 @@ function wireTypographyStep(root, state, refresh) {
     const label = await promptDialog({ title: t("bg.type.extraKindTitle"), label: t("bg.type.extraKindLabel"), placeholder: t("bg.type.extraKindDefault"), value: t("bg.type.extraKindDefault"), confirmLabel: t("guidelines.next") });
     e.target.value = "";
     if (!label) return;
-    const defaultName = file.name.replace(/\.(ttf|otf|woff2?|)$/i, "").trim() || label;
+    const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || safeFontName(label) || "Custom Font";
     const dataUrl = await fileToDataURL(file);
     state.answers.customFonts[defaultName] = dataUrl;
     state.answers.extraFonts = [...state.answers.extraFonts, { label, family: defaultName }];
@@ -1802,7 +1832,7 @@ function wireApplicationsStep(root, state, refresh) {
 function mockupStageStyle(a) {
   const c = a.colors;
   const dir = VISUAL_DIRECTIONS[a.visualDirection[0]] || { radius: "12px" };
-  return `--bb-primary:${c.primary || "#333"};--bb-secondary:${c.secondary || "#666"};--bb-accent:${c.accent || "#999"};--bb-bg:${c.background || "#fff"};--bb-text:${c.text || "#222"};--bb-font-primary:'${a.fonts.primary || "Inter"}';--bb-font-secondary:'${a.fonts.secondary || "Inter"}';--bb-radius:${dir.radius};`;
+  return `--bb-primary:${c.primary || "#333"};--bb-secondary:${c.secondary || "#666"};--bb-accent:${c.accent || "#999"};--bb-bg:${c.background || "#fff"};--bb-text:${c.text || "#222"};--bb-font-primary:'${safeFontName(a.fonts.primary) || "Inter"}';--bb-font-secondary:'${safeFontName(a.fonts.secondary) || "Inter"}';--bb-radius:${dir.radius};`;
 }
 
 function renderMockup(id, answers, brand) {
@@ -1816,8 +1846,8 @@ function socialPostMockup(answers, brand) {
       <div class="bb-mockup-label">${t("bbdata.app.social")}</div>
       <div class="bb-mockup bb-mockup-social">
         ${answers.logo.dataUrl ? `<img src="${answers.logo.dataUrl}" style="height:22px;object-fit:contain;" alt="" />` : `<div class="bb-mockup-body" style="font-weight:700;">${escapeHtml(brand.name)}</div>`}
-        <div class="bb-mockup-headline bb-mock-clamp">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
-        <div class="bb-mockup-chip" style="align-self:flex-start;">${escapeHtml(mockCta(brand))}</div>
+        <div class="bb-mockup-headline bb-mock-clamp">${escapeHtml(mockHeadline(brand))}</div>
+        ${mockCta(brand) ? `<div class="bb-mockup-chip" style="align-self:flex-start;">${escapeHtml(mockCta(brand))}</div>` : ""}
       </div>
     </div>
   `;
@@ -1842,9 +1872,16 @@ function mockLogo(answers, brand, { invert = false, height = 22 } = {}) {
     ? `<img src="${answers.logo.dataUrl}" style="height:${height}px;max-width:70%;object-fit:contain;${invert ? "filter:brightness(0) invert(1);" : ""}" alt="" />`
     : `<div class="bb-mockup-body" style="font-weight:800;${invert ? "color:var(--bb-bg);" : ""}">${escapeHtml(brand.name)}</div>`;
 }
+// While the book is built for the PDF/print (bookForExport), nothing is
+// invented: no "Headline kamu di sini", no "Belanja sekarang". The headline
+// falls back to the brand's own name and a missing CTA is left out.
+let bookForExport = false;
 function mockCta(brand) {
   const cta = String(brand.brandDNA?.callToAction || "").trim();
-  return cta && cta.length <= 28 ? cta : t("bg.mock.shopNow");
+  return cta && cta.length <= 28 ? cta : bookForExport ? "" : t("bg.mock.shopNow");
+}
+function mockHeadline(brand) {
+  return brand.brandDNA?.tagline || (bookForExport ? brand.name : t("bg.mock.headline"));
 }
 
 function websiteHeroMockup(answers, brand) {
@@ -1855,8 +1892,8 @@ function websiteHeroMockup(answers, brand) {
         <div class="bb-mockup-browser-bar"><span class="bb-mockup-browser-dot"></span><span class="bb-mockup-browser-dot"></span><span class="bb-mockup-browser-dot"></span></div>
         <div class="bb-mockup-website-body">
           ${mockLogo(answers, brand, { height: 18 })}
-          <div class="bb-mockup-headline bb-mock-clamp bb-mock-clamp-2" style="font-size:14px;">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
-          <span class="bb-mockup-cta">${escapeHtml(mockCta(brand))}</span>
+          <div class="bb-mockup-headline bb-mock-clamp bb-mock-clamp-2" style="font-size:14px;">${escapeHtml(mockHeadline(brand))}</div>
+          ${mockCta(brand) ? `<span class="bb-mockup-cta">${escapeHtml(mockCta(brand))}</span>` : ""}
         </div>
       </div>
     </div>
@@ -1883,8 +1920,8 @@ function posterMockup(answers, brand) {
       <div class="bb-mockup-label">${t("bbdata.app.poster")}</div>
       <div class="bb-mockup bb-mockup-poster" style="background:var(--bb-primary);">
         ${mockLogo(answers, brand, { invert: true, height: 20 })}
-        <div class="bb-mockup-headline bb-mock-clamp" style="color:var(--bb-bg);font-size:19px;">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
-        <span class="bb-mockup-chip" style="align-self:flex-start;">${escapeHtml(mockCta(brand))}</span>
+        <div class="bb-mockup-headline bb-mock-clamp" style="color:var(--bb-bg);font-size:19px;">${escapeHtml(mockHeadline(brand))}</div>
+        ${mockCta(brand) ? `<span class="bb-mockup-chip" style="align-self:flex-start;">${escapeHtml(mockCta(brand))}</span>` : ""}
       </div>
     </div>
   `;
@@ -1897,9 +1934,9 @@ function digitalAdMockup(answers, brand) {
       <div class="bb-mockup bb-mockup-ad" style="background:var(--bb-secondary);">
         <div style="min-width:0;display:flex;flex-direction:column;gap:6px;">
           ${mockLogo(answers, brand, { invert: true, height: 16 })}
-          <div class="bb-mockup-headline bb-mock-clamp bb-mock-clamp-2" style="color:var(--bb-bg);font-size:13px;">${escapeHtml(brand.brandDNA.tagline || t("bg.mock.headline"))}</div>
+          <div class="bb-mockup-headline bb-mock-clamp bb-mock-clamp-2" style="color:var(--bb-bg);font-size:13px;">${escapeHtml(mockHeadline(brand))}</div>
         </div>
-        <span class="bb-mockup-cta" style="flex:none;">${escapeHtml(mockCta(brand))}</span>
+        ${mockCta(brand) ? `<span class="bb-mockup-cta" style="flex:none;">${escapeHtml(mockCta(brand))}</span>` : ""}
       </div>
     </div>
   `;
@@ -2492,7 +2529,7 @@ const SPECIMEN_ROLE_KEY = { primary: "primary", secondary: "secondary", accent: 
 function typeSpecimenSplitPageHTML(brand, a, chapter, { title, desc, family, lineHeight, letterSpacing }) {
   const phrase = brand.brandDNA?.tagline || brand.name;
   const category = fontCategoryLine(family);
-  const fam = `font-family:'${family}';`;
+  const fam = `font-family:'${safeFontName(family)}';`;
   return `
     <div class="brandbook-page brandbook-print-page bbk-page bbk-type">
       <div class="bbk-type-side">
@@ -2569,7 +2606,7 @@ function typographySpacingBody(a, brand) {
           (v) => `
         <div class="bbk-leading ${v.ok ? "bbk-leading-ok" : ""}">
           <div class="bbk-leading-head"><span class="${v.ok ? "bbk-ok" : "bbk-x"}">${v.ok ? "✓" : "✕"}</span>${escapeHtml(v.label)}</div>
-          <div class="bbk-leading-text" style="font-family:'${family}';line-height:${v.lineHeight};letter-spacing:${sp.letterSpacing}em;">${escapeHtml(sample)}</div>
+          <div class="bbk-leading-text" style="font-family:'${safeFontName(family)}';line-height:${v.lineHeight};letter-spacing:${sp.letterSpacing}em;">${escapeHtml(sample)}</div>
         </div>
       `
         )
@@ -2649,7 +2686,23 @@ function applicationsBody(a, brand) {
 // pages. Pages with nothing to show (no accent font, no mascots, no logo
 // variants…) are simply not emitted, and chapter numbers / Contents page
 // numbers / footers are all derived from what's actually left.
-function buildBrandBookPages(brand, a) {
+// `forExport` (the PDF and the print preview): pages that would only say
+// "Belum ada logo." etc. are left out, a chapter with nothing left loses
+// its divider too, and mockups use no sample text. The on-screen Review
+// keeps the empty pages — they show what's still missing.
+const isEmptyBookPage = (html) => html.includes('class="bbk-empty"');
+export function emptyBookPageCount(brand, a) {
+  return buildBrandBookPages(brand, a).filter(isEmptyBookPage).length;
+}
+function buildBrandBookPages(brand, a, { forExport = false } = {}) {
+  bookForExport = forExport;
+  try {
+    return buildBrandBookPagesInner(brand, a, forExport);
+  } finally {
+    bookForExport = false;
+  }
+}
+function buildBrandBookPagesInner(brand, a, forExport) {
   const year = new Date().getFullYear();
   const page = (chapter, title, body, lead) => brandbookPageHTML({ chapter, title, lead, body, brand, a });
   const defs = [
@@ -2707,8 +2760,17 @@ function buildBrandBookPages(brand, a) {
   const chapters = defs
     .map((d, i) => {
       const chapter = { num: String(i + 1).padStart(2, "0"), title: d.title, sub: d.sub };
-      chapter.html = [dividerPageHTML(chapter, brand, a), ...d.pages(chapter).filter(Boolean)];
+      const body = d.pages(chapter).filter(Boolean).filter((html) => !forExport || !isEmptyBookPage(html));
+      chapter.html = body.length ? [dividerPageHTML(chapter, brand, a), ...body] : [];
       return chapter;
+    })
+    .filter((c) => c.html.length)
+    // Renumber after dropping empty chapters so the book reads 01, 02, 03…
+    .map((c, i) => {
+      const num = String(i + 1).padStart(2, "0");
+      if (c.num !== num) c.html = c.html.map((html) => html.split(`<b>${c.num}</b>`).join(`<b>${num}</b>`).replace(`bbk-divider-num">${c.num}<`, `bbk-divider-num">${num}<`));
+      c.num = num;
+      return c;
     })
     .map((c) => {
       c.startPage = next;
@@ -3022,6 +3084,20 @@ function wireReview(root, brandId, brand, state, refresh) {
   // second preview (with its own Download button) was one click too many.
   qs("#wiz-pdf", root)?.addEventListener("click", async (e) => {
     const btn = e.currentTarget;
+    // Empty sections are left out of the PDF — say so first, with a way
+    // back to fill them (the missing ones are listed right on this page).
+    const empty = emptyBookPageCount(brand, state.answers);
+    if (empty) {
+      const go = await confirmDialog({ title: t("bg.pdf.emptyTitle", { n: empty }), message: t("bg.pdf.emptyBody"), confirmLabel: t("bg.pdf.emptyContinue"), cancelLabel: t("bg.pdf.emptyFill") });
+      if (!go) {
+        // Open the first missing section (Review lists them as buttons);
+        // otherwise back to the section tabs.
+        const first = qs(".btn[data-bb-tab]", root);
+        if (first) first.click();
+        else qs(".bb-tab-row", root)?.scrollIntoView({ block: "start" });
+        return;
+      }
+    }
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.textContent = t("bg.pdf.preparing");
@@ -3320,7 +3396,7 @@ async function downloadBrandBookPdf(brand, a, onProgress) {
   if (!ownsBookStyle(bookStyleOf(a))) throw new Error("locked book style");
   await ensurePdfLibs();
   const wrap = document.createElement("div");
-  wrap.innerHTML = `<div ${bookSheetAttrs(a, "bbk-export-host")}>${buildBrandBookPages(brand, a).join("")}</div>`;
+  wrap.innerHTML = `<div ${bookSheetAttrs(a, "bbk-export-host")}>${buildBrandBookPages(brand, a, { forExport: true }).join("")}</div>`;
   const host = wrap.firstElementChild;
   host.style.setProperty("--bbk-zoom", "1");
   document.body.appendChild(host);
@@ -3355,7 +3431,7 @@ export function openBrandBookReadOnly(brand) {
 
 function openBrandBookPdf(brand, a) {
   if (!ownsBookStyle(bookStyleOf(a))) return;
-  const pages = buildBrandBookPages(brand, a).join("");
+  const pages = buildBrandBookPages(brand, a, { forExport: true }).join("");
 
   const overlay = openModal({
     title: t("bg.pdf.title"),

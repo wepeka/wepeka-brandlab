@@ -392,6 +392,24 @@ main.view.wide{ max-width: 1440px; }
 .btn-primary:hover{ filter: brightness(1.06); box-shadow: 0 0 16px color-mix(in srgb, var(--brand-tint) 55%, transparent); }
 .btn-secondary{ background: var(--surface); color: var(--text); border-color: var(--border); }
 .btn-secondary:hover{ background: var(--surface-hover); }
+/* What a button costs, on the button ("1 AI credit") — not in a tooltip. */
+.btn-cost{ font-size:11px; font-weight:700; line-height:1.4; padding:1px 7px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); white-space:nowrap; }
+/* Tujuan page: Pelacak Penjualan as a labelled link under the intro. */
+.camp-sales-link{ display:flex; align-items:center; gap:12px; max-width:560px; margin:0 0 24px; padding:10px 14px; min-height:44px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--text); text-decoration:none; }
+.camp-sales-link:hover{ border-color: var(--accent); }
+.camp-sales-link-icon{ flex:none; width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background: var(--accent-soft); color: var(--accent); }
+.camp-sales-link-text{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.camp-sales-link-text b{ font-size:13.5px; }
+.camp-sales-link-text small{ font-size:12px; color: var(--text-muted); line-height:1.4; }
+.camp-sales-link > svg:last-child{ flex:none; color: var(--text-faint); }
+/* Kalender's "Atur jadwal" menu: title, one line on what it does, cost. */
+.menu.sched-menu{ width:min(320px, calc(100vw - 16px)); }
+.sched-menu button{ align-items:flex-start; padding:10px; }
+.sched-menu button > svg{ margin-top:2px; color: var(--accent); }
+.sched-menu-text{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; }
+.sched-menu-text b{ font-size:13.5px; }
+.sched-menu-text small{ font-size:12px; line-height:1.45; color: var(--text-muted); white-space:normal; }
+.sched-menu-note{ margin:4px 10px 6px; padding-top:8px; border-top:1px solid var(--border); font-size:12px; line-height:1.45; color: var(--text-muted); }
 .btn-ghost{ background: transparent; color: var(--text-muted); }
 .btn-ghost:hover{ color: var(--text); background: var(--surface); }
 .btn-danger{ background: var(--health-poor-soft); color: var(--health-poor); }
@@ -832,10 +850,23 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .brand-tile:hover h3{ color: var(--text); }
 .brand-tile .meta{ font-size:11px; color: var(--text-faint); margin-top:2px; }
 .brand-tile-menu{ position:absolute; top:4px; right:4px; width:26px; height:26px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(2px); opacity:0; transition: opacity .15s; }
-.brand-tile-avatar:hover .brand-tile-menu, .brand-tile-menu:focus-visible{ opacity:1; }
+.brand-tile-avatar:hover .brand-tile-menu, .brand-tile-menu:focus-visible, .brand-tile:focus-within .brand-tile-menu{ opacity:1; }
+/* Touch screens have no hover: the ⋯ (edit/archive/delete) is always shown. */
+@media (hover:none){ .brand-tile-menu{ opacity:1; } }
 .brand-tile-avatar-add{ background:transparent; border:1.5px dashed var(--border); color: var(--text-muted); }
 .brand-tile-add:hover .brand-tile-avatar-add{ border-color: var(--accent); color: var(--accent); background:transparent; box-shadow:none; }
 .brand-tile-add:hover h3{ color: var(--accent); }
+/* Phones: a two-column grid instead of a sideways carousel (about two of
+   five brands showed, names cut to "English House Ke…"), names wrap to two
+   lines, and the "+" tile at the end is the one add button — the 34px "+"
+   above the row goes. */
+@media (max-width: 640px){
+  .brand-row-head{ display:none; }
+  .brand-grid.brand-grid--picker{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:22px 14px; overflow:visible; padding:4px 0 16px; scroll-snap-type:none; }
+  .brand-grid--picker .brand-tile{ width:auto; min-width:0; }
+  .brand-grid--picker .brand-tile-avatar{ width:100%; max-width:150px; height:auto; aspect-ratio:1; }
+  .brand-grid--picker .brand-tile h3{ white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; line-height:1.3; }
+}
 
 .brand-card{ position:relative; border:1px solid var(--border); border-radius: var(--radius-lg); padding:22px; cursor:pointer; transition: border-color .15s, transform .1s, box-shadow .2s; }
 .brand-card:not(.glass-card){ background: var(--surface); }
@@ -1085,7 +1116,10 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    correct viewport coordinates. No scrollY/scrollX math needed anywhere,
    and it's correct whether the trigger button lives in a normal-flow
    container or inside the position:sticky topbar. */
-.menu{ position:fixed; z-index:60; min-width:170px; background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-md); padding:6px; box-shadow: var(--shadow-lg); transform-origin:top; animation: menu-pop-in .14s ease-out; }
+/* z-index 75: above the phone's bottom bar (60), the floating chat/notes
+   (65-66) and modal overlays (70), so a menu opened from any of them is
+   never drawn underneath. js/dom.js keeps it inside the viewport. */
+.menu{ position:fixed; z-index:75; min-width:170px; background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-md); padding:6px; box-shadow: var(--shadow-lg); transform-origin:top; animation: menu-pop-in .14s ease-out; }
 .menu.menu-closing{ animation: menu-pop-out .12s ease-in forwards; pointer-events:none; }
 @keyframes menu-pop-in{ from{ opacity:0; transform: scale(.97) translateY(-4px); } to{ opacity:1; transform: scale(1) translateY(0); } }
 @keyframes menu-pop-out{ to{ opacity:0; transform: scale(.97) translateY(-4px); } }
@@ -1121,16 +1155,16 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .help-popover-body{ font-size:12.5px; line-height:1.55; color: var(--text-muted); margin:0; }
 
 /* "Konsultasi AI" floating chat (js/consultant-panel.js) */
-.consultant-fab{ position:fixed; right:24px; bottom:24px; z-index:65; width:52px; height:52px; border-radius:50%; background: var(--accent); color:#fff; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transition: transform .15s ease; }
+.consultant-fab{ position:fixed; right:24px; bottom:24px; z-index:65; width:52px; height:52px; border-radius:50%; background: var(--accent); color: var(--accent-text); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transition: transform .15s ease; }
 .consultant-fab:hover{ transform: scale(1.06); }
 .consultant-fab.is-open{ background: var(--surface-2); color: var(--text); }
-.consultant-panel{ position:fixed; right:24px; bottom:88px; z-index:65; width:360px; max-width:calc(100vw - 32px); height:min(520px, calc(100vh - 120px)); background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
+.consultant-panel{ position:fixed; right:24px; bottom:88px; z-index:65; width:360px; max-width:calc(100vw - 32px); height:min(520px, calc(100vh - 120px)); height:min(520px, calc(100dvh - 120px)); background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
 .consultant-panel[hidden]{ display:none; }
 .consultant-panel-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:700; flex:none; }
 .consultant-panel-body{ flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
 .consultant-msg{ max-width:85%; padding:9px 12px; border-radius:14px; font-size:13px; line-height:1.5; white-space:pre-wrap; }
 .consultant-msg-assistant{ align-self:flex-start; background: var(--surface-2); border-bottom-left-radius:4px; }
-.consultant-msg-user{ align-self:flex-end; background: var(--accent); color:#fff; border-bottom-right-radius:4px; }
+.consultant-msg-user{ align-self:flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius:4px; }
 .consultant-msg-pending{ opacity:.55; }
 .consultant-nav-buttons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .consultant-nav-btn{ display:inline-flex; align-items:center; gap:5px; padding:6px 10px; border-radius:999px; background: var(--surface); border:1px solid var(--border); color: var(--accent); font-size:12px; font-weight:700; cursor:pointer; }
@@ -1171,7 +1205,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .drawer-head h2{ font-size:19px; }
 .drawer-body{ flex:1; overflow-y:auto; padding:24px; }
 .drawer-foot{ padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
-.modal-body{ padding:24px; max-height: calc(100vh - 160px); overflow-y: auto; }
+.modal-body{ padding:24px; max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); overflow-y: auto; }
 .modal-foot{ padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px; }
 
 .intro-pitch{ font-size:14.5px; line-height:1.65; color: var(--text); margin:0 0 14px; }
@@ -1251,6 +1285,15 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
     overscroll-behavior: contain;
   }
 }
+/* Phones: "Daftar konten" at the top of the editor jumps back up to the
+   list (js/views/creator.js revealOnPhone); both stop clear of the sticky
+   header when scrolled to. Hidden where list and editor sit side by side. */
+.creator-back-list{ display:none; }
+@media (max-width: 860px){
+  .creator-main, .creator-sidebar{ scroll-margin-top: 76px; }
+  .creator-back-list{ display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0 0 10px; padding:0 14px; border-radius:999px; border:1px solid var(--border); background: var(--surface); color: var(--text); font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; }
+  .creator-back-list svg{ color: var(--accent); }
+}
 .creator-item{ display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; border-bottom:1px solid var(--border-soft); }
 .creator-item:last-child{ border-bottom:none; }
 .creator-item:hover{ background: var(--surface-hover); }
@@ -1268,7 +1311,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    subtle by default, only steps forward on hover of the row or the button
    itself so the compact sidebar list doesn't read as button-heavy. */
 .creator-item-delete{ flex:none; width:26px; height:26px; border-radius:8px; border:none; background:transparent; color:var(--text-faint); opacity:0; transition:opacity .12s, color .12s, background .12s; }
-.creator-item:hover .creator-item-delete{ opacity:1; }
+.creator-item:hover .creator-item-delete, .creator-item:focus-within .creator-item-delete{ opacity:1; }
+@media (hover:none){ .creator-item-delete{ opacity:1; } }
 .creator-item-delete:hover{ background: var(--health-poor-soft); color: var(--health-poor); }
 .creator-item-delete svg{ width:13px; height:13px; }
 
@@ -1541,6 +1585,14 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .settings-nav button.active{ background: var(--surface); color: var(--text); }
 .settings-panel{ display:none; }
 .settings-panel.active{ display:block; }
+/* One column: the panel list was still a sticky, see-through column, so the
+   panel content scrolled up underneath 5-8 buttons. It becomes a plain row
+   of chips above the panel, wrapping instead of sticking. */
+@media (max-width: 860px){
+  .settings-nav{ position:static; flex-direction:row; flex-wrap:wrap; gap:6px; }
+  .settings-nav button{ min-height:44px; padding:8px 14px; border:1px solid var(--border); border-radius:999px; background: var(--surface); }
+  .settings-nav button.active{ border-color: var(--accent); background: var(--accent-soft); }
+}
 .threshold-row{ display:grid; grid-template-columns: 90px 1fr 1fr; gap:12px; align-items:center; margin-bottom:10px; }
 .threshold-row .tl{ font-size:12.5px; font-weight:700; color: var(--text-muted); }
 .list-editor-row{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border-soft); }
@@ -1922,6 +1974,21 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .bb-tab.done{ background: var(--health-good-soft); border-color: var(--health-good); color: var(--health-good); }
 .bb-tab.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-text,#fff); }
 .bb-tab.done.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-text,#fff); }
+/* Phones: 8 pill tabs ~30px tall wrapped onto 2-3 rows; now one row that
+   scrolls sideways (the open tab is scrolled into view), each tab 44px. */
+@media (max-width: 640px){
+  .bb-tab-row{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; margin-left:-16px; margin-right:-16px; padding:0 16px 12px; }
+  .bb-tab-row::-webkit-scrollbar{ display:none; }
+  .bb-tab{ flex:none; min-height:44px; padding:0 16px; font-size:13px; white-space:nowrap; }
+}
+/* Where the preview drops below the form, a button at the top of the form
+   jumps down to it. */
+.bb-preview-jump{ display:none; }
+@media (max-width:960px){
+  .bb-preview-jump{ display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0 0 14px; padding:0 16px; border-radius:999px; border:1px solid var(--border); background: var(--surface); color: var(--text); font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; }
+  .bb-preview-jump svg{ color: var(--accent); }
+  .brandbook-right{ scroll-margin-top: 76px; }
+}
 
 /* Overall Brand Guidelines completion — same isStepFilled() count the tab
    checkmarks use, so this bar and the tabs never disagree. */
@@ -3145,6 +3212,25 @@ main.view.view-leave{ opacity:0; transform: translateY(-6px); transition: opacit
   .consultant-fab{ right:16px; bottom:16px; }
 }
 
+/* Beranda's Analitik as a fold (js/views/brand-home-analytics.js): folded by
+   default on phones, the owner's choice remembered. */
+.bha-summary{ cursor:pointer; list-style:none; justify-content:flex-start; gap:8px; }
+.bha-summary::-webkit-details-marker{ display:none; }
+.bha-chevron{ color: var(--text-faint); transform: rotate(-90deg); transition: transform .2s; }
+.bha-section[open] .bha-chevron{ transform:none; }
+.bha-tools{ display:flex; justify-content:flex-end; gap:8px; margin:-6px 0 12px; }
+.bha-tools:empty{ display:none; }
+
+/* What changed after a Pemula/Pro switch (js/layout.js showModeSwitched). */
+.mode-switched-list{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:8px; font-size:13.5px; line-height:1.5; }
+
+/* No connection (js/layout.js wireOfflineBanner): a banner across the top;
+   the page and the sticky header move down by its height. */
+.offline-banner{ position:fixed; top:0; left:0; right:0; z-index:45; display:flex; align-items:center; justify-content:center; gap:8px; padding:7px 16px; background:#ffc94a; color:#1c1610; font-size:13px; font-weight:700; line-height:1.35; text-align:center; }
+.offline-banner svg{ flex:none; }
+body.is-offline{ padding-top: var(--offline-h, 34px); }
+body.is-offline .topbar{ top: var(--offline-h, 34px); }
+
 /* Visible back button (js/back-link.js) */
 .page-back-btn{ display:inline-flex; align-items:center; gap:6px; padding:6px 13px 6px 9px; border-radius: var(--radius-pill); border:1px solid var(--border); background: var(--surface); color: var(--text); font-size:13px; font-weight:700; letter-spacing:0; text-transform:none; text-decoration:none; line-height:1.2; transition: border-color .15s, background .15s; }
 .page-back-btn svg{ flex:none; color: var(--accent); }
@@ -3525,15 +3611,21 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
    "Tanya Brandlab" (js/consultant-panel.js): one floating chat in front of
    three engines. Each reply wears a small engine label; the label (and the
    idea cards under it) borrow that engine's accent via --cp-accent.
+   Anything FILLED with the accent (your bubbles, the send button, an idea's
+   main button) uses --cp-fill/--cp-on-fill instead: white text on the
+   bright green/blue/purple read at 2.3-4:1, so filled surfaces take a
+   darker shade of the same hue (>=5:1 with white), and the app's own amber
+   keeps its dark --accent-text. In light theme the bright hues used as TEXT
+   (labels, tabs) also step down to their darker shade.
    ============================================================ */
-.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; transition: border-color .25s; }
+.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); height:min(660px, calc(100dvh - 110px)); --cp-accent: var(--accent); --cp-fill: var(--accent); --cp-on-fill: var(--accent-text); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; --chat-consultant-fill:#15803d; --chat-brainstorm-fill:#2563eb; --chat-companion-fill:#9333ea; transition: border-color .25s; }
 /* the open tab colours the whole panel: header icon, tab, user bubbles, send button */
-.consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
-.consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
-.consultant-panel[data-mode="companion"]{ --cp-accent: var(--chat-companion); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="companion"]{ --cp-accent: var(--chat-companion); --cp-fill: var(--chat-companion-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
 .consultant-panel .consultant-panel-head{ background: color-mix(in srgb, var(--cp-accent) 10%, transparent); }
-.consultant-panel .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
-.consultant-panel .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
+.consultant-panel .consultant-msg-user{ background: var(--cp-fill); color: var(--cp-on-fill); }
+.consultant-panel .consultant-panel-input .icon-btn{ background: var(--cp-fill); color: var(--cp-on-fill); border-radius:50%; transition: background .25s; }
 .cp-head{ gap:10px; }
 .cp-head-main{ display:flex; align-items:center; gap:10px; min-width:0; }
 .cp-head-main b{ display:block; font-size:14px; line-height:1.2; }
@@ -3544,9 +3636,9 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 /* one reply, one engine label */
 .cp-engine{ display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color: var(--cp-accent); margin-bottom:4px; }
 .cp-engine svg{ width:11px; height:11px; }
-.consultant-msg[data-engine="consultant"]{ --cp-accent: var(--chat-consultant); }
-.consultant-msg[data-engine="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
-.consultant-msg[data-engine="companion"]{ --cp-accent: var(--chat-companion); }
+.consultant-msg[data-engine="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; }
+.consultant-msg[data-engine="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; }
+.consultant-msg[data-engine="companion"]{ --cp-accent: var(--chat-companion); --cp-fill: var(--chat-companion-fill); --cp-on-fill:#fff; }
 /* "Ask this in another tab" — the model's handoff or the keyword hint, one tap */
 .cp-switch{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-muted); }
 .cp-switch .consultant-starter{ display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:11.5px; }
@@ -3557,7 +3649,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cp-idea-title{ font-weight:800; font-size:13px; line-height:1.35; }
 .cp-idea-why{ font-size:12px; color: var(--text-muted); margin-top:3px; line-height:1.45; }
 .cp-idea-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.cp-idea .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
+.cp-idea .btn-primary{ background: var(--cp-fill, var(--cp-accent)); border-color: var(--cp-fill, var(--cp-accent)); color: var(--cp-on-fill, #fff); }
 /* a moment the Teman offers for brand memory */
 .cp-moment{ border-color: color-mix(in srgb, var(--chat-companion) 45%, var(--border)); }
 .cp-moment-tag{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color: var(--chat-companion); margin-bottom:4px; }
@@ -3594,7 +3686,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .notes-fab.is-open{ transform:none; background: var(--surface-2); }
 .notes-fab-count{ position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f5c542; color:#1a1a1a; font-size:10.5px; font-weight:800; line-height:18px; text-align:center; }
 .notes-fab-count:empty{ display:none; }
-.notes-float{ position:fixed; right:88px; bottom:84px; z-index:66; width:360px; max-width:calc(100vw - 24px); max-height:min(560px, calc(100vh - 120px)); display:flex; flex-direction:column; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); border:1px solid color-mix(in srgb, #f5c542 45%, var(--border)); border-top:4px solid #f5c542; border-radius:14px; box-shadow: var(--shadow-lg); overflow:hidden; }
+.notes-float{ position:fixed; right:88px; bottom:84px; z-index:66; width:360px; max-width:calc(100vw - 24px); max-height:min(560px, calc(100vh - 160px)); max-height:min(560px, calc(100dvh - 160px)); display:flex; flex-direction:column; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); border:1px solid color-mix(in srgb, #f5c542 45%, var(--border)); border-top:4px solid #f5c542; border-radius:14px; box-shadow: var(--shadow-lg); overflow:hidden; }
 .notes-float[hidden]{ display:none; }
 .notes-head{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px 6px; }
 .notes-title{ display:flex; align-items:center; gap:6px; font-weight:800; font-size:14px; }
@@ -3606,7 +3698,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 @media (max-width: 640px){
   .notes-fab{ right:68px; bottom:16px; width:40px; height:40px; }
-  .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 110px); }
+  .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 144px); max-height:calc(100dvh - 144px); }
 }
 .scratch-hint{ font-size:11.5px; color: var(--text-faint); margin:0 0 10px; line-height:1.45; }
 .scratch-add{ min-height:0; font-size:13px; margin-bottom:10px; }
@@ -3701,7 +3793,7 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 .offer-opt-main small, .offer-opt-price small{ font-size:11.5px; color: var(--text-muted); }
 .offer-opt-price{ display:flex; flex-direction:column; align-items:flex-end; flex:none; }
 .offer-opt-price strong{ font-family: var(--font-display); font-size:17px; white-space:nowrap; }
-.offer-badge{ position:absolute; top:-9px; left:12px; padding:2px 8px; border-radius:999px; background: var(--accent); color:#fff; font-size:10.5px; font-weight:700; letter-spacing:.02em; }
+.offer-badge{ position:absolute; top:-9px; left:12px; padding:2px 8px; border-radius:999px; background: var(--accent); color: var(--accent-text); font-size:10.5px; font-weight:700; letter-spacing:.02em; }
 .offer-opt:has(.offer-badge){ padding-top:18px; }
 .offer-opt:not(.is-featured) .offer-badge{ background: color-mix(in srgb, var(--accent) 22%, var(--bg-raised)); color: var(--accent); }
 .offer-note{ display:flex; align-items:flex-start; gap:6px; margin:2px 2px 0; font-size:12px; line-height:1.45; color: var(--text-muted); }
@@ -3766,18 +3858,18 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
    Same chat as the floating panel (js/consultant-panel.js), laid out in the
    Brainstorm grid: conversations | chat | saved ideas. */
 body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ display:none; }
-.cp-page-chat{ --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; display:flex; flex-direction:column; min-width:0; margin:0; padding:0; height:calc(100vh - 250px); height:calc(100dvh - 250px); min-height:520px; overflow:hidden; }
-.cp-page-chat[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); }
-.cp-page-chat[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
-.cp-page-chat[data-mode="companion"]{ --cp-accent: var(--chat-companion); }
-.cp-page-chat .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
+.cp-page-chat{ --cp-accent: var(--accent); --cp-fill: var(--accent); --cp-on-fill: var(--accent-text); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; --chat-consultant-fill:#15803d; --chat-brainstorm-fill:#2563eb; --chat-companion-fill:#9333ea; display:flex; flex-direction:column; min-width:0; margin:0; padding:0; height:calc(100vh - 250px); height:calc(100dvh - 250px); min-height:520px; overflow:hidden; }
+.cp-page-chat[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; }
+.cp-page-chat[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; }
+.cp-page-chat[data-mode="companion"]{ --cp-accent: var(--chat-companion); --cp-fill: var(--chat-companion-fill); --cp-on-fill:#fff; }
+.cp-page-chat .consultant-msg-user{ background: var(--cp-fill); color: var(--cp-on-fill); }
 /* the page grid follows the tab: Brainstorm = rail | chat | ideas, Teman = chat | memory, Konsultan = chat */
 .cp-page[data-mode="consultant"]{ grid-template-columns: minmax(0,1fr); }
 .cp-page[data-mode="companion"]{ grid-template-columns: minmax(0,1fr) 270px; }
 .cp-memory .companion-moment-row{ align-items:flex-start; }
 .cp-memory .companion-moment-row .tag{ margin-top:1px; }
 .cp-memory .bs-card-actions{ margin-top:12px; }
-.cp-page-chat .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
+.cp-page-chat .consultant-panel-input .icon-btn{ background: var(--cp-fill); color: var(--cp-on-fill); border-radius:50%; transition: background .25s; }
 .cp-page-chat .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
 .cp-page-chat .cp-scope{ padding:10px 18px 10px; border-bottom:1px solid var(--border); }
 .cp-page-chat .consultant-panel-body{ padding:16px 18px; }
@@ -3859,6 +3951,9 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 @media (max-width:760px){ .cp-page-chat .cp-toolbar{ padding:10px 12px 2px; } }
 .cp-toolbar .cp-back-here{ display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; color: var(--text-muted); }
 .menu.cp-menu{ z-index:70; max-width:min(300px, calc(100vw - 24px)); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; }
+/* Light theme: the engine hues used as text on near-white (labels, tabs,
+   menu icons) were 2.2-3.7:1 — their darker shades read at 5-7:1. */
+:root[data-theme="light"] .consultant-panel, :root[data-theme="light"] .cp-page-chat, :root[data-theme="light"] .menu.cp-menu{ --chat-consultant:#15803d; --chat-brainstorm:#1d4ed8; --chat-companion:#7e22ce; }
 .cp-menu .cp-menu-mode{ align-items:flex-start; --t: var(--accent); }
 .cp-menu .cp-menu-mode[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-menu .cp-menu-mode[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-menu .cp-menu-mode[data-engine="companion"]{ --t: var(--chat-companion); }
 .cp-menu .cp-menu-mode > svg:first-child{ color: var(--t); margin-top:2px; }
@@ -4228,6 +4323,12 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   .data-table.cl-cards td[data-label]{ grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; }
   .data-table.cl-cards td[data-label]::before{ content: attr(data-label); color: var(--text-faint); font-weight:600; font-size:11.5px; }
   .data-table.cl-cards td[data-label] .text-faint{ display:inline; margin-left:6px; }
+  /* Pelacak Penjualan's products use the same cards; multi-part values
+     (struck price + discount, sold / target + bar) stay one right-aligned block. */
+  .st-products-table td:first-child{ grid-column:1; grid-row:1; font-size:14px; min-width:0; overflow-wrap:anywhere; }
+  .st-products-table td[data-label] > div{ text-align:right; }
+  .st-products-table td[data-label] .tag-discount{ margin-left:auto; }
+  .st-products-table td[data-label] .cd-bar{ margin-left:auto; min-width:80px; }
 }
 
 /* See js/theme.js setTheme: no mixed-speed transitions during a theme switch. */
@@ -4253,7 +4354,13 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    tidak bisa dikalahkan cara lain. Tidak menyentuh angka di tile/badge/pill
    (class-nya sendiri, bukan .text-faint), jadi layout kecil itu aman. */
 @media (max-width: 640px){
-  .input, .select, .textarea{ font-size:16px; }
+  /* Every control you type into, whatever class or inline style it has: a
+     single 12-13px one (the chat box, the status pill, an inline phase
+     name, the period picker) is enough for iOS to zoom the page on focus.
+     !important because those sizes come from more specific selectors and
+     style="" attributes. */
+  .input, .select, .textarea, select, textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="hidden"]){ font-size:16px !important; }
   .page-sub{ font-size:15px; }
   .field .hint, .hint, .ev-field-hint, .text-faint{ font-size:13px !important; }
 }
@@ -4309,11 +4416,15 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   :root[data-theme="light"] .bottom-nav{ background: color-mix(in srgb, var(--brand-tint) 10%, color-mix(in srgb, var(--bg) 94%, transparent)); }
   .bottom-nav .tab{ flex-direction:column; justify-content:center; gap:3px; padding:6px 2px; min-height:52px; font-size:11.5px; min-width:0; border-radius:14px; }
   .bottom-nav .tab svg{ width:20px; height:20px; }
-  /* Room for the bar: page end, the chat button, notes and toasts sit above it. */
-  body:has(.bottom-nav) main.view{ padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  /* Room for the bar: page end, the chat button, notes and toasts sit above it.
+     The page ends 136px up so its last card clears the chat and notes
+     buttons (their tops sit ~120px up) instead of hiding under them. */
+  body:has(.bottom-nav) main.view{ padding-bottom: calc(136px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .consultant-fab{ bottom: calc(76px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .consultant-fab-hint{ bottom: calc(82px + env(safe-area-inset-bottom)); }
-  body:has(.bottom-nav) .notes-float{ bottom: calc(130px + env(safe-area-inset-bottom)); }
+  /* Its top used to land ~20px above the screen: 130px up with a height of
+     100vh - 110px. Now capped to end below the 60px header. */
+  body:has(.bottom-nav) .notes-float{ bottom: calc(130px + env(safe-area-inset-bottom)); max-height: calc(100vh - 206px - env(safe-area-inset-bottom)); max-height: calc(100dvh - 206px - env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .notes-fab{ bottom: calc(80px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .toast-root{ bottom: calc(140px + env(safe-area-inset-bottom)); }
   body.tour-active .bottom-nav{ z-index:59; }
@@ -4322,7 +4433,7 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 /* Same 1240px breakpoint as .bottom-nav above: once the topbar hides the
    plan badge and updates button, this is their only remaining home. */
 @media (max-width: 720px){ .menu-mobile-only{ display:flex !important; } .menu-divider.menu-mobile-only{ display:block !important; } }
-.menu .menu-count{ margin-left:auto; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background: var(--accent); color:#fff; font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+.menu .menu-count{ margin-left:auto; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background: var(--accent); color: var(--accent-text); font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
 #app-menu-btn{ position:relative; }
 .app-menu-badge{ display:none; }
 @media (max-width: 720px){ .app-menu-badge:not([hidden]){ display:block; position:absolute; top:4px; right:4px; width:9px; height:9px; min-width:0; padding:0; border-radius:50%; } }

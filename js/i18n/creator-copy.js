@@ -78,6 +78,8 @@ export default {
   "cr.sidebarEmptyFirst": { en: "Nothing here yet — make your first piece of content.", id: "Belum ada konten sama sekali — mulai bikin yang pertama, yuk." },
   "cr.sidebarEmpty": { en: "Nothing in progress — everything's published. Start a new piece of content.", id: "Belum ada yang lagi dikerjakan — semua sudah terbit. Mulai konten baru, yuk." },
   "cr.openCalendar": { en: "Open calendar", id: "Buka Kalender" },
+  // Phones only: the list sits above the editor, this jumps back up to it.
+  "cr.backToList": { en: "Content list ({n})", id: "Daftar konten ({n})" },
   "cr.saved": { en: "Saved", id: "Tersimpan" },
 
   "cr.notify.toShooting": { en: "On to shooting", id: "Lanjut ke syuting" },

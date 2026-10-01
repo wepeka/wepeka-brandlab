@@ -19,7 +19,7 @@ export function renderAuthScreen(root) {
     root.innerHTML = `
       <div class="auth-shell">
         <div class="auth-card">
-          <a class="icon-btn auth-close" href="https://wepeka.com" target="_blank" rel="noopener noreferrer" title="${t("auth.closeTitle")}" aria-label="${t("auth.closeTitle")}">${icon("x", { size: 15 })}</a>
+          <a class="icon-btn auth-close" href="https://wepeka.com" title="${t("auth.closeTitle")}" aria-label="${t("auth.closeTitle")}">${icon("x", { size: 15 })}</a>
           <div class="brand-mark" style="justify-content:center;margin-bottom:26px;">
             <span class="brand-logo" role="img" aria-label="Wepeka"></span>
             <span class="brand-mark-divider"></span>

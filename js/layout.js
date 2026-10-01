@@ -7,12 +7,13 @@ import { getMode, toggleMode } from "./mode.js";
 import { t, getLang } from "./i18n.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
-import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft } from "./account.js";
+import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft, TRIAL_DAYS } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod, aiExtras } from "./ai-usage.js";
 import { identityDone } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
 import { installTopUpNotice, canTopUp } from "./ai-topup.js";
 import { rememberLastBrand } from "./back-link.js";
+import { openModal, closeOverlay } from "./modals.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
 // chunk in the app, and the whole reason the logged-out login/pricing
@@ -288,13 +289,13 @@ function aiUsagePopoverHTML() {
   const limit = aiDailyLimit();
   const left = limit === Infinity ? null : Math.max(0, limit - used);
   // Founder lifetime plans are capped per month, the trial is one pool for
-  // the whole 7 days, everything else is per day.
+  // the whole trial (TRIAL_DAYS), everything else is per day.
   const period = aiQuotaPeriod();
   const m = period === "month" ? "Month" : period === "total" ? "Total" : "";
   return `
     <div class="help-popover-title">${t(`app.aiUsage.title${m}`)}</div>
-    <p class="help-popover-body">${limit === Infinity ? t("app.aiUsage.unlimited", { used }) : left ? t(`app.aiUsage.left${m}`, { used, limit, left }) : t(`app.aiUsage.out${m}`, { used, limit })}</p>
-    <p class="help-popover-body">${t(`app.aiUsage.explain${m}`)}</p>
+    <p class="help-popover-body">${limit === Infinity ? t("app.aiUsage.unlimited", { used }) : left ? t(`app.aiUsage.left${m}`, { used, limit, left, days: TRIAL_DAYS }) : t(`app.aiUsage.out${m}`, { used, limit })}</p>
+    <p class="help-popover-body">${t(`app.aiUsage.explain${m}`, { days: TRIAL_DAYS })}</p>
     ${extrasLineHTML()}
     ${limit === Infinity ? "" : `<button type="button" class="btn ${left ? "btn-secondary" : "btn-primary"} btn-sm btn-block" data-ai-topup style="margin-top:10px;">${icon(canTopUp() ? "plus" : "arrowUp", { size: 13 })}${t(canTopUp() ? "ai.topup.button" : "ai.topup.upgradeButton")}</button>`}
   `;
@@ -344,8 +345,57 @@ function menuBelow(btn, { className = "", width = 240 } = {}) {
   return openMenu(btn, { className, top: rect.bottom + 8, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)) });
 }
 
+// Pemula ⇄ Pro used to switch silently: the page just looked different.
+// Right after the switch, one small sheet says what changed and that the
+// data is the same.
+function showModeSwitched(mode) {
+  const points = [1, 2, 3].map((i) => `<li>${escapeHtml(t(`mode.switched.${mode}.${i}`, { campaign: "campaign", funnel: "TOFU/MOFU/BOFU" }))}</li>`).join("");
+  const overlay = openModal({
+    title: t(`mode.switched.title.${mode}`),
+    bodyHTML: `
+      <ul class="mode-switched-list">${points}</ul>
+      <p class="text-muted" style="margin:12px 0 0;font-size:13px;">${escapeHtml(t("mode.switched.same"))}</p>
+    `,
+    footHTML: `<button class="btn btn-primary" data-ok>${t("mode.switched.ok")}</button>`,
+  });
+  overlay.querySelector("[data-ok]").addEventListener("click", () => closeOverlay(overlay));
+}
+
+// Offline: a slim banner across the top while the connection is gone, so
+// an edit that hasn't reached the cloud yet doesn't look lost or broken —
+// Firestore keeps the writes and sends them when the connection is back.
+let offlineWired = false;
+function wireOfflineBanner() {
+  if (offlineWired) return;
+  offlineWired = true;
+  const show = () => {
+    if (document.getElementById("offline-banner")) return;
+    const el = document.createElement("div");
+    el.id = "offline-banner";
+    el.className = "offline-banner";
+    el.setAttribute("role", "status");
+    el.innerHTML = `${icon("info", { size: 15 })}<span>${escapeHtml(t("app.offline"))}</span>`;
+    document.body.appendChild(el);
+    // The page (and the sticky header) move down by the banner's height.
+    document.body.style.setProperty("--offline-h", `${el.offsetHeight}px`);
+    document.body.classList.add("is-offline");
+  };
+  const hide = () => {
+    const el = document.getElementById("offline-banner");
+    if (!el) return;
+    el.remove();
+    document.body.classList.remove("is-offline");
+    document.body.style.removeProperty("--offline-h");
+    toast(t("app.backOnline"));
+  };
+  window.addEventListener("offline", show);
+  window.addEventListener("online", hide);
+  if (navigator.onLine === false) show();
+}
+
 export function wireShell({ brandId }) {
   wireAnnouncements();
+  wireOfflineBanner();
   rememberLastBrand(brandId);
   installTopUpNotice();
   qs("#nav-return-btn")?.addEventListener("click", () => {
@@ -391,7 +441,7 @@ export function wireShell({ brandId }) {
       if (!target) return;
       const act = target.dataset.act;
       closeMenu();
-      if (act === "mode") toggleMode();
+      if (act === "mode") showModeSwitched(toggleMode());
       else if (act === "consultant") openConsultantPanel();
       else if (act === "intro") openIntroVideo();
       else if (act === "tour") startOnboardingTour();
@@ -430,7 +480,7 @@ export function wireShell({ brandId }) {
     if (!menu) return;
     const others = listBrands().filter((b) => b.id !== brandId);
     menu.innerHTML = `
-      ${others.map((b) => `<button data-go="${b.id}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`).join("")}
+      ${others.map((b) => `<button data-go="${escapeHtml(b.id)}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`).join("")}
       ${others.length ? '<div class="menu-divider"></div>' : ""}
       <button data-go="all">${icon("grid", { size: 15 })}${t("nav.allBrands")}</button>
     `;

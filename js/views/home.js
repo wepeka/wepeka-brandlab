@@ -1,6 +1,6 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
+import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
@@ -16,7 +16,7 @@ import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analyti
 import { openReportModal, reportDue, reportReminderHTML, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
-import { computeSignals, topSignal } from "../brand-pulse.js";
+import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
 import { openConsultantPanel, openWeekPlan } from "../consultant-panel.js";
 import { postingLine } from "../brand-learning.js";
@@ -339,9 +339,7 @@ const COMPANION_ACTION_KINDS = ["content-sales", "viral", "follower-jump", "sale
 const MOMENTS_SHOWN = 3;
 
 function greetingSentence(brand, now) {
-  const h = now.getHours();
-  const key = h < 11 ? "companion.greeting.morning" : h < 17 ? "companion.greeting.afternoon" : "companion.greeting.evening";
-  return t(key, { brand: esc(brand.name) });
+  return t(greetingKey(now.getHours()), { brand: esc(brand.name) });
 }
 
 // Quick actions the current signals earn (at most two), as buttons only —
@@ -545,7 +543,7 @@ function paint(root, brandId, state, refresh) {
         : ""
     }
 
-    ${stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps)}
+    ${journey.currentIndex === -1 && !identityJustDone && !newlyDoneSteps.length ? "" : stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps) /* all three done: the checklist has nothing left to say; each step lives on its own tab */}
 
     ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, "") : ""}
   `;
@@ -576,6 +574,8 @@ function paint(root, brandId, state, refresh) {
   qsa("[data-locked-step]", root).forEach((el) => {
     el.addEventListener("click", () => toast(t("home.next.lockedToast")));
   });
+  // Schedule rows and the analytics lists (top/retention posts) are divs.
+  wireClickableCards(root, "[data-open-content], [data-locked-step]");
 
   // The exact moment Campaign/Konten unlock is the one time a small callout
   // on the hero is worth it, so the change of "what to do now" isn't missed.
@@ -774,9 +774,9 @@ function scheduleRowsHTML(overdue, upNext, lateTotal = 0) {
       <div class="top-content-row" data-open-content="${c.id}" style="cursor:pointer;">
         <div class="ti">
           <div class="t">${esc(c.title || t("beginner.untitled"))}</div>
-          <div class="m">${c.platform || "—"} · ${formatDate(c.scheduleDate)}</div>
+          <div class="m">${esc(c.platform || "—")} · ${formatDate(c.scheduleDate)}</div>
         </div>
-        <span class="tag tag-${(c.funnel || "").toLowerCase()}">${funnelLabel(c.funnel)}</span>
+        <span class="tag tag-${esc((c.funnel || "").toLowerCase())}">${esc(funnelLabel(c.funnel))}</span>
       </div>
     `);
   });

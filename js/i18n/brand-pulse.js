@@ -48,7 +48,8 @@ export default {
   "home.companion.unrecapped": { en: "{n} message(s) not yet in memory — recap them", id: "{n} cerita belum masuk memori — rangkum" },
   "home.companion.summary.empty": { en: "Nothing in brand memory yet", id: "Memori Brand masih kosong" },
   "companion.greeting.morning": { en: "Morning! What happened with {brand} today?", id: "Pagi! Hari ini ada kejadian apa di {brand}?" },
-  "companion.greeting.afternoon": { en: "Hey! Anything new with {brand} today?", id: "Halo! Hari ini ada kejadian apa di {brand}?" },
+  "companion.greeting.midday": { en: "Hi! Anything new with {brand} today?", id: "Siang! Hari ini ada kejadian apa di {brand}?" },
+  "companion.greeting.afternoon": { en: "Afternoon! Anything new with {brand} today?", id: "Sore! Hari ini ada kejadian apa di {brand}?" },
   "companion.greeting.evening": { en: "Evening! How did {brand} do today?", id: "Malam! Hari ini gimana kabarnya {brand}?" },
   "companion.observation.quiet": { en: "It's been quiet this week — nothing standing out yet.", id: "Minggu ini tenang — belum ada yang menonjol." },
   // A brand-new brand with zero content and zero brand-memory entries has

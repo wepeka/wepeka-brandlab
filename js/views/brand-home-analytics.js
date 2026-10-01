@@ -306,19 +306,33 @@ function widgetHTML(key, data) {
 // column elsewhere in this app) — it lives in home.js, not in
 // Firestore settings, since "which week am I looking at" isn't a preference
 // worth persisting the way widget on/off + order are.
+// On a phone the eight charts made Beranda ~3,500px long, so the section
+// starts folded there; open or closed, the owner's own choice is kept (per
+// device, it's a viewing preference) and wins from then on.
+const OPEN_KEY = "brandlab:home-analytics-open";
+function analyticsOpen() {
+  try {
+    const saved = localStorage.getItem(OPEN_KEY);
+    if (saved !== null) return saved === "1";
+  } catch { /* storage off: fall back to the screen size */ }
+  return !window.matchMedia?.("(max-width: 640px)").matches;
+}
+function foldable(headHTML, bodyHTML) {
+  return `
+    <details class="bha-section" data-bha-section ${analyticsOpen() ? "open" : ""}>
+      <summary class="section-title bha-summary"><h2>${t("brandHome.analytics.title")}</h2>${icon("chevronDown", { size: 16, className: "bha-chevron" })}</summary>
+      <div class="bha-tools">${headHTML}</div>
+      ${bodyHTML}
+    </details>`;
+}
+
 export function analyticsSectionHTML(content, settings, state, extraHeadHTML = "") {
   const published = content.filter((c) => c.status === "published");
   const withMetrics = published.map((c) => ({ c, m: computeContentMetrics(c, settings) }));
   const keys = enabledWidgets();
 
   if (!published.length) {
-    return `
-      <div class="section-title">
-        <h2>${t("brandHome.analytics.title")}</h2>
-        <span class="flex gap-8">${extraHeadHTML}${customizeButtonHTML()}</span>
-      </div>
-      <div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noPublished")}</div>
-    `;
+    return foldable(`${extraHeadHTML}${customizeButtonHTML()}`, `<div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noPublished")}</div>`);
   }
 
   const buckets = buildWeeklyBuckets(withMetrics);
@@ -384,17 +398,12 @@ export function analyticsSectionHTML(content, settings, state, extraHeadHTML = "
 
   const data = { trend, topContent, periodOptions, selectedPeriod, platformRows, formatRows, funnelStats, healthCounts, evaluated, retention, mixRows };
 
-  return `
-    <div class="section-title">
-      <h2>${t("brandHome.analytics.title")}</h2>
-      <span class="flex gap-8">${extraHeadHTML}${customizeButtonHTML()}</span>
-    </div>
-    ${
-      keys.length
-        ? `<div class="brand-analytics-grid" style="margin-bottom:28px;">${keys.map((k) => widgetHTML(k, data)).join("")}</div>`
-        : `<div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noWidgets")}</div>`
-    }
-  `;
+  return foldable(
+    `${extraHeadHTML}${customizeButtonHTML()}`,
+    keys.length
+      ? `<div class="brand-analytics-grid" style="margin-bottom:28px;">${keys.map((k) => widgetHTML(k, data)).join("")}</div>`
+      : `<div class="card glass-card card-tight" style="margin-bottom:28px;">${emptyHTML("noWidgets")}</div>`
+  );
 }
 
 function customizeButtonHTML() {
@@ -403,6 +412,11 @@ function customizeButtonHTML() {
 
 export function wireAnalyticsSection(root, state, refresh) {
   wireCustomizeMenu(root);
+  // A click on the heading is the owner choosing — remember it.
+  const section = qs("[data-bha-section]", root);
+  section?.querySelector("summary")?.addEventListener("click", () => {
+    try { localStorage.setItem(OPEN_KEY, section.open ? "0" : "1"); } catch { /* not remembered, still toggles */ }
+  });
 
   // "Minta saran AI": the one chat, Konsultan engine, reading the same
   // retention numbers through its snapshot (js/consultant-panel.js).

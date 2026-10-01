@@ -1,7 +1,7 @@
 import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
-import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa } from "../dom.js";
+import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext, go } from "../nav-context.js";
@@ -599,7 +599,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
 // otherwise this list only shows what's still in progress, sorted so the
 // most time-sensitive piece is first.
 export function render(root, { brandId, initialContentId }) {
-  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set() };
+  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set(), revealEditor: !!initialContentId };
   // Konten Baru → the same content drawer every other screen uses; the
   // new piece is then selected here, opening straight on its drafting panel.
   state.startNewContent = (defaults = {}) =>
@@ -609,7 +609,10 @@ export function render(root, { brandId, initialContentId }) {
       defaults: { status: "idea", ...defaults },
       onSaved: (made) => {
         const newest = made || [...listContent(brandId)].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-        if (newest) state.selectedId = newest.id;
+        if (newest) {
+          state.selectedId = newest.id;
+          state.revealEditor = true;
+        }
         refresh();
       },
     });
@@ -619,7 +622,10 @@ export function render(root, { brandId, initialContentId }) {
   // attached — never an empty Creator.
   const applyNavContext = (ctx) => {
     if (!ctx) return;
-    if (ctx.contentId) state.selectedId = ctx.contentId;
+    if (ctx.contentId) {
+      state.selectedId = ctx.contentId;
+      state.revealEditor = true;
+    }
     if (ctx.intent === "new-content") setTimeout(() => state.startNewContent(ctx.defaults || {}), 0);
     // Coming from a Brainstorm idea ("Buatkan script"): open the AI writer.
     if (ctx.intent === "script" && ctx.contentId) {
@@ -710,7 +716,7 @@ function paint(root, brandId, state, refresh) {
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap;">
-        <button class="btn btn-secondary" id="cr-week-plan" title="${t("chat.week.credit")}">${icon("sparkle", { size: 15 })}${t("chat.week.button")}</button>
+        <button class="btn btn-secondary" id="cr-week-plan">${icon("sparkle", { size: 15 })}${t("chat.week.button")}<span class="btn-cost">${t("chat.week.cost")}</span></button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("cr.newContent")}</button>
       </div>
     </div>
@@ -726,6 +732,7 @@ function paint(root, brandId, state, refresh) {
         </div>
       </div>
       <div class="creator-main">
+        ${selected ? `<button type="button" class="creator-back-list" data-back-to-list>${icon("arrowUp", { size: 14 })}${t("cr.backToList", { n: items.length })}</button>` : ""}
         ${selected ? mainPanel(selected, campaigns, series) : emptyPanel()}
         <a class="link" href="#/brand/${brandId}/content/calendar" style="display:block;text-align:center;font-size:12.5px;margin-top:4px;">${icon("calendar", { size: 13 })} ${t("cr.openCalendar")}</a>
       </div>
@@ -744,8 +751,22 @@ function paint(root, brandId, state, refresh) {
     row.addEventListener("click", () => {
       state.selectedId = row.dataset.select;
       paint(root, brandId, state, refresh);
+      revealOnPhone(qs(".creator-main", root));
     });
   });
+  wireClickableCards(root, "[data-select]");
+  qs("[data-back-to-list]", root)?.addEventListener("click", () => {
+    const list = qs(".creator-sidebar-list", root);
+    const active = qs(".creator-item.active", root);
+    // The list scrolls on its own; bring the open piece into its view too.
+    if (list && active) list.scrollTop += active.getBoundingClientRect().top - list.getBoundingClientRect().top - 8;
+    revealOnPhone(qs(".creator-sidebar", root));
+    active?.focus({ preventScroll: true });
+  });
+  if (state.revealEditor && selected) {
+    state.revealEditor = false;
+    requestAnimationFrame(() => revealOnPhone(qs(".creator-main", root), { instant: true }));
+  }
 
   qsa("[data-delete-content]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
@@ -1127,6 +1148,16 @@ function dueBadge(c) {
   return `<span class="due-badge due-soon">${t("cr.due.on", { date: formatDate(c.scheduleDate) })}</span>`;
 }
 
+// Below 860px the list sits above the editor, so picking a piece used to
+// repaint something below the fold and look like nothing happened. On a
+// narrow screen this brings the editor (or, from "Daftar konten", the list)
+// to the top; no animation for people who asked for reduced motion.
+function revealOnPhone(el, { instant = false } = {}) {
+  if (!el || !window.matchMedia?.("(max-width: 860px)").matches) return;
+  const calm = instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+}
+
 // Separates "still drafting" from what's been submitted onward — each
 // phase gets its own labeled folder in the sidebar instead of one flat
 // list, so submitted content doesn't sit mixed in with raw ideas.
@@ -1208,7 +1239,7 @@ function sidebarRow(c, active) {
       <span class="status-pill status-${c.status}" style="padding:3px 8px;"><span class="status-dot"></span></span>
       <div class="ti">
         <div class="t">${escapeHtml(c.title || t("common.untitled"))}</div>
-        <div class="m">${c.platform || "—"} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
+        <div class="m">${escapeHtml(c.platform || "—")} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
         ${c.scheduleDate ? `<div class="creator-item-due">${dueBadge(c)}</div>` : ""}
       </div>
       ${

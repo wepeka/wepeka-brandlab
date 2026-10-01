@@ -600,7 +600,7 @@ export function setPlainLanguageResolver(fn) {
   plainLanguage = typeof fn === "function" ? fn : () => false;
 }
 const FUNNEL_PLAIN = { id: { TOFU: "Kenalan", MOFU: "Yakinkan", BOFU: "Jualan" }, en: { TOFU: "Get known", MOFU: "Build trust", BOFU: "Sell" } };
-const JARGON = /milestone|engagement|\bTOFU\b|\bMOFU\b|\bBOFU\b/i;
+const JARGON = /milestone|engagement|campaign|\bTOFU\b|\bMOFU\b|\bBOFU\b/i;
 export function plainWords(str, lang = getLang()) {
   if (!str || !JARGON.test(str)) return str;
   const en = lang === "en";
@@ -612,7 +612,10 @@ export function plainWords(str, lang = getLang()) {
     .replace(/(?<![{\w])(TOFU|MOFU|BOFU)(?![\w}])/g, (m) => FUNNEL_PLAIN[en ? "en" : "id"][m])
     .replace(/(?<![{\w])engagement rate(?![\w}])/gi, (m) => cap(m, en ? "interaction rate" : "tingkat interaksi"))
     .replace(/(?<![{\w])engagement(?![\w}])/gi, (m) => cap(m, en ? "interactions" : "interaksi"))
-    .replace(/(?<![{\w])milestones?(?![\w}])/gi, (m) => cap(m, en ? (/s$/i.test(m) ? "targets" : "target") : hasTarget ? "langkah" : "target"));
+    .replace(/(?<![{\w])milestones?(?![\w}])/gi, (m) => cap(m, en ? (/s$/i.test(m) ? "targets" : "target") : hasTarget ? "langkah" : "target"))
+    // "Campaign" is a Pro word (owner decision 2026-10-01): Pemula calls the
+    // same thing a Tujuan — the tab, its button and every line about it.
+    .replace(/(?<![{\w])(campaign)(s?)(?:-(nya|mu|ku))?(?![\w}])/gi, (m, word, plural, suffix) => cap(word, en ? (plural ? "goals" : "goal") : "tujuan") + (suffix && !en ? suffix : ""));
 }
 
 export function t(key, vars) {

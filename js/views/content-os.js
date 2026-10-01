@@ -1,4 +1,3 @@
-import { backLinkHTML } from "../back-link.js";
 import { getBrand } from "../store.js";
 import { brandDnaCompleteness, brandDnaDone } from "../brand-progress.js";
 import { icon } from "../icons.js";
@@ -34,9 +33,9 @@ const SUB_TABS = [
 // narrow phones, where all five sub-tabs don't fit in one screen width.
 export function contentTabsHTML(brandId, activeSub) {
   return `<div class="cos-tabs-wrap" style="margin:-4px 0 20px;">
-      <div class="tabs cos-tabs">
-        ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
-      </div>
+      <nav class="tabs cos-tabs" aria-label="${t("nav.content")}">
+        ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}" ${activeSub === tab.key ? `aria-current="page"` : ""}>${t(tab.labelKey)}</a>`).join("")}
+      </nav>
     </div>`;
 }
 
@@ -67,7 +66,7 @@ export function render(root, { brandId, sub, contentId }) {
   // has none, so a page never shows the same guide twice.
 
   root.innerHTML = `
-    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))}${activeSub === "list" ? "" : ` · ${t("nav.content")}`}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>
+    ${activeSub === "list" ? "" : `<div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${t("nav.content")}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>`}
     ${contentTabsHTML(brandId, activeSub)}
     ${dnaHintHTML(brandId, brand)}
     <div id="cos-mount"></div>

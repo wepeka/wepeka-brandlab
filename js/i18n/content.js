@@ -45,6 +45,13 @@ export default {
   "cal.cuti.ascension": { en: "Collective leave: Ascension Day", id: "Cuti Bersama Kenaikan Isa Almasih" },
   "cal.cuti.eidAdha": { en: "Collective leave: Eid al-Adha", id: "Cuti Bersama Iduladha" },
   "cal.cuti.christmas": { en: "Collective leave: Christmas", id: "Cuti Bersama Natal" },
+  // "Atur jadwal" — the one menu that gathers every way to fill the calendar.
+  "cal.schedule.btn": { en: "Schedule", id: "Atur jadwal" },
+  "cal.schedule.weekDesc": { en: "AI drafts ideas for this week's upload days — you pick which ones to keep.", id: "AI bikinin ide buat hari-hari upload minggu ini — kamu pilih mana yang disimpan." },
+  "cal.schedule.autoDesc": { en: "AI gives a date to content that has none yet (next 3 weeks) — you check it before anything moves.", id: "AI kasih tanggal ke konten yang belum dijadwalkan (3 minggu ke depan) — kamu cek dulu sebelum dipasang." },
+  "cal.schedule.cadenceDesc": { en: "Your upload days, posts per day and the day each Series airs. The two options above follow it.", id: "Hari upload, berapa konten per hari, dan hari tayang tiap Seri. Dua pilihan di atas ikut aturan ini." },
+  "cal.schedule.noAi": { en: "No AI", id: "Tanpa AI" },
+  "cal.schedule.manual": { en: "Or tap a date on the calendar to place one piece yourself.", id: "Atau ketuk tanggal di kalender buat pasang satu konten sendiri." },
 
   // ── Instagram insights modal
   "ins.title": { en: "Update Instagram insights", id: "Perbarui Insights Instagram" },

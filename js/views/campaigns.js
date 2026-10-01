@@ -1,4 +1,3 @@
-import { backLinkHTML } from "../back-link.js";
 import {
   getBrand, listContent, createContent, onChange, getSettings,
   listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
@@ -8,7 +7,7 @@ import {
 } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
+import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr, wireClickableCards } from "../dom.js";
 import { hasAiKey } from "../ai.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -94,20 +93,26 @@ function paintList(root, brandId, brand, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))}${helpButtonHTML("campaigns")}${guideVideoButtonHTML("campaigns")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${helpButtonHTML("campaigns")}${guideVideoButtonHTML("campaigns")}</div>
         <h1>${t("camp.list.eyebrow")}</h1>
         <p class="page-head-brand">${escapeText(brand.name)}</p>
       </div>
-      <div class="flex gap-8" style="flex-wrap:wrap;">
-        <a class="btn btn-secondary" href="#/brand/${brandId}/sales" id="open-sales">${icon("chart", { size: 16 })}${t("camp.list.salesTracker")}</a>
-        <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
-      </div>
+      <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
     </div>
-    <p class="page-sub" style="margin-bottom:24px;">${
+    <p class="page-sub" style="margin-bottom:14px;">${
       getMode() === "guided"
         ? t("camp.list.subGuided")
         : t("camp.list.subPro")
     }</p>
+    <!-- Pelacak Penjualan used to be a second header button next to "new",
+         which read as another kind of goal. It's a tool the goals read from
+         (Sales Growth counts what's logged there), so it sits here as a
+         labelled link that says what it is for. -->
+    <a class="camp-sales-link" href="#/brand/${brandId}/sales" id="open-sales">
+      <span class="camp-sales-link-icon">${icon("money", { size: 16 })}</span>
+      <span class="camp-sales-link-text"><b>${t("camp.list.salesTracker")}</b><small>${t("camp.list.salesTrackerSub")}</small></span>
+      ${icon("arrowRight", { size: 14 })}
+    </a>
     ${growBrand.length ? growBrandSectionHTML(growBrand, insights) : ""}
     ${eventCards.length ? `<section class="camp-section">${sectionHeadHTML("event", t("camp.section.events"), t("camp.section.eventsSub"), eventCards.length)}<div class="brand-grid">${eventCards.join("")}</div></section>` : ""}
     ${
@@ -178,6 +183,7 @@ function paintList(root, brandId, brand, refresh) {
     });
   });
   qsa("[data-open-plan]", root).forEach((card) => card.addEventListener("click", () => { location.hash = `#/brand/${brandId}/goals/${card.dataset.openPlan}`; }));
+  wireClickableCards(root, "[data-open-campaign], [data-open-plan]", { role: "link" });
   qsa("[data-delete-campaign]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -332,7 +338,7 @@ function campaignKind(campaign, track) {
 // created. AI's job starts one step later — inside a phase, helping write
 // content ideas that actually match this brand's voice — not drafting the
 // campaign's own strategy copy nobody asked for.
-const CAMPAIGN_QUICK_TEMPLATES = [
+const campaignQuickTemplates = () => [
   // Two templates only. "Grow Brand" is the Goal Plan (js/goal-plan.js):
   // growing social media, building a community and getting sales are the
   // same journey with a different main number, so they're one template whose
@@ -346,6 +352,7 @@ const CAMPAIGN_QUICK_TEMPLATES = [
 
 function openNewCampaignFlow({ brandId, onSaved }) {
   const brand = getBrand(brandId);
+  const templates = campaignQuickTemplates();
   // is shown as "Segera hadir" in every mode until it's ready — the flow
   // itself is kept, just not reachable from here.
   const overlay = openModal({
@@ -353,7 +360,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
     bodyHTML: `
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("camp.new.intro")}</p>
       <div class="content-view-grid">
-        ${CAMPAIGN_QUICK_TEMPLATES.map((tpl) => `
+        ${templates.map((tpl) => `
           <button type="button" class="content-view-card${tpl.recommended ? " is-recommended" : ""}" data-quick-template="${tpl.id}">
             ${tpl.recommended ? `<span class="campaign-reco-badge">${icon("sparkle", { size: 12 })}${tpl.recommended}</span>` : ""}
             <div class="icon-wrap">${icon(tpl.icon, { size: 20 })}</div>
@@ -368,7 +375,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
 
   qsa("[data-quick-template]", overlay).forEach((btn) => {
     btn.addEventListener("click", () => {
-      const template = CAMPAIGN_QUICK_TEMPLATES.find((t) => t.id === btn.dataset.quickTemplate);
+      const template = templates.find((t) => t.id === btn.dataset.quickTemplate);
       closeOverlay(overlay);
       if (template.id === "goal") {
         openGoalWizard({ brandId, brand, onSaved });
@@ -437,23 +444,23 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
       </div>
       <div class="field">
         <label>${t("camp.edit.audience")} <span class="text-faint" style="font-weight:400;">${t("camp.edit.audienceHint")}</span></label>
-        <textarea class="textarea" id="c-audience" style="min-height:60px;">${draft.targetAudience}</textarea>
+        <textarea class="textarea" id="c-audience" style="min-height:60px;">${escapeText(draft.targetAudience)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.problem")}</label>
-        <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.problemPh"))}">${draft.problemOrOpportunity}</textarea>
+        <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.problemPh"))}">${escapeText(draft.problemOrOpportunity)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.insight")}</label>
-        <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.insightPh"))}">${draft.insight}</textarea>
+        <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.insightPh"))}">${escapeText(draft.insight)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.bigIdea")}</label>
-        <textarea class="textarea" id="c-bigidea" style="min-height:60px;">${draft.bigIdea}</textarea>
+        <textarea class="textarea" id="c-bigidea" style="min-height:60px;">${escapeText(draft.bigIdea)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.keyMessage")}</label>
-        <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.keyMessagePh"))}">${draft.keyMessage}</textarea>
+        <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.keyMessagePh"))}">${escapeText(draft.keyMessage)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
@@ -468,16 +475,16 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
       </div>
       <div class="field">
         <label>${t("camp.edit.channels")}</label>
-        <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="${t("camp.edit.channelsPh")}">${listToLines(draft.channels)}</textarea>
+        <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="${t("camp.edit.channelsPh")}">${escapeText(listToLines(draft.channels))}</textarea>
       </div>
       <div class="row-2">
         <div class="field" style="margin-bottom:0;">
           <label>${t("camp.edit.startDate")}</label>
-          <input class="input" type="date" id="c-start" value="${draft.startDate}" />
+          <input class="input" type="date" id="c-start" value="${escapeAttr(draft.startDate)}" />
         </div>
         <div class="field" style="margin-bottom:0;">
           <label>${t("camp.edit.endDate")}</label>
-          <input class="input" type="date" id="c-end" value="${draft.endDate}" />
+          <input class="input" type="date" id="c-end" value="${escapeAttr(draft.endDate)}" />
         </div>
       </div>
 
@@ -498,7 +505,7 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
             }
           </div>
           <div class="text-faint" style="font-size:11.5px;margin-bottom:6px;">${escapeText(info.description)}</div>
-          <textarea class="textarea" id="phase-goal-${i}" style="min-height:50px;" placeholder="${escapeAttr(t("camp.edit.phaseGoalPh"))}">${p.goal}</textarea>
+          <textarea class="textarea" id="phase-goal-${i}" style="min-height:50px;" placeholder="${escapeAttr(t("camp.edit.phaseGoalPh"))}">${escapeText(p.goal)}</textarea>
         </div>`;
         })
         .join("")}

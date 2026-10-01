@@ -2,7 +2,7 @@ import {
   listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent, TRASH_DAYS,
 } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
+import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles, wireClickableCards } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
 import { canUseInstagramApi } from "../account.js";
@@ -66,7 +66,7 @@ function paint(root, refresh) {
     <div class="brand-row-head">
       <button class="brand-quick-add ${locked ? "is-locked" : ""}" id="add-brand-quick" aria-label="${escapeText(lockTitle)}" title="${escapeText(lockTitle)}">${icon(locked ? "lock" : "plus", { size: 15 })}</button>
     </div>
-    <div class="brand-grid" id="brand-grid">
+    <div class="brand-grid brand-grid--picker" id="brand-grid">
       ${brands.map((b) => brandCard(b, previewOnly.has(b.id))).join("")}
       <button class="brand-tile brand-tile-add ${locked ? "is-locked" : ""}" id="add-brand" title="${escapeText(lockTitle)}">
         <div class="brand-tile-avatar brand-tile-avatar-add">${icon(locked ? "lock" : "plus", { size: 28 })}</div>
@@ -96,6 +96,7 @@ function paint(root, refresh) {
       location.hash = `#/brand/${card.dataset.id}`;
     });
   });
+  wireClickableCards(root, ".brand-tile:not(.brand-tile-add)", { role: "link" });
 
   qsa("[data-menu-toggle]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -208,15 +209,16 @@ function brandCard(brand, previewOnly = false) {
   // which only ever reflects the *currently open* brand) is what makes
   // each tile in this all-brands list glow in its own color instead of one
   // shared color.
-  const tintStyle = brand.color
-    ? `--brand-tint:${brand.color};--brand-tint-text:${pickTintTextColor(brand.color)};--brand-tint-fg:${pickTintForeground(brand.color)};`
+  const color = /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(brand.color || "") ? brand.color : "";
+  const tintStyle = color
+    ? `--brand-tint:${color};--brand-tint-text:${pickTintTextColor(color)};--brand-tint-fg:${pickTintForeground(color)};`
     : "";
   return `
-    <div class="brand-tile ${previewOnly ? "is-preview" : ""}" data-id="${brand.id}" style="${tintStyle}" ${previewOnly ? `title="${escapeText(t("brands.locked.tileTitle"))}"` : ""}>
+    <div class="brand-tile ${previewOnly ? "is-preview" : ""}" data-id="${escapeText(brand.id)}" style="${tintStyle}" aria-label="${escapeText(brand.name)}" ${previewOnly ? `title="${escapeText(t("brands.locked.tileTitle"))}"` : ""}>
       <div class="brand-tile-avatar">
         ${avatarHTML(brand)}
         ${previewOnly ? `<span class="brand-tile-lock">${icon("lock", { size: 16 })}</span>` : ""}
-        <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${brand.id}" aria-label="${t("brands.tile.actions")}">${icon("dots", { size: 14 })}</button>
+        <button class="icon-btn brand-tile-menu" data-menu-toggle data-id="${escapeText(brand.id)}" aria-label="${t("brands.tile.actions")}">${icon("dots", { size: 14 })}</button>
       </div>
       <h3>${escapeText(brand.name)}</h3>
       <div class="meta">${previewOnly ? t("brands.locked.tileMeta") : t("brands.tile.meta", { count: contents.length, published })}</div>
@@ -265,14 +267,14 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         <div class="flex items-center gap-8" style="margin-left:auto;">
           <div style="text-align:right;">
             <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">${t("brands.form.color")}</label>
-            <input type="color" id="brand-color" value="${draft.color || "#ffa52b"}" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:none;padding:0;cursor:pointer;" />
+            <input type="color" id="brand-color" value="${/^#[0-9a-f]{6}$/i.test(draft.color || "") ? draft.color : "#ffa52b"}" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:none;padding:0;cursor:pointer;" />
           </div>
         </div>
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:-14px 0 18px;">${guided ? t("brands.form.colorHintGuided") : t("brands.form.colorHintPro")}</p>
       <div class="field">
         <label>${guided ? t("brands.form.nameGuided") : t("brands.form.name")}</label>
-        <input class="input" id="brand-name" placeholder="${guided ? t("brands.form.namePhGuided") : t("brands.form.namePh")}" value="${(draft.name || "").replace(/"/g, "&quot;")}" />
+        <input class="input" id="brand-name" placeholder="${guided ? t("brands.form.namePhGuided") : t("brands.form.namePh")}" value="${escapeText(draft.name || "")}" />
       </div>
       <div class="field" id="brand-desc-field">
         <div class="creator-field-head">
@@ -286,7 +288,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
           ${icon("info", { size: 15 })}
           <div><b>${t("brandForm.descWarningTitle")}</b>${t("brandForm.descWarning")}<span class="warn-box-sub">${t("brandForm.descChecklist")}</span></div>
         </div>
-        <textarea class="textarea" id="brand-description" style="min-height:120px;" placeholder="${escapeText(guided ? t("brands.form.descPhGuided") : t("brands.form.descPh"))}">${(draft.businessDescription || "")}</textarea>
+        <textarea class="textarea" id="brand-description" style="min-height:120px;" placeholder="${escapeText(guided ? t("brands.form.descPhGuided") : t("brands.form.descPh"))}">${escapeText((draft.businessDescription || ""))}</textarea>
         <div id="brand-desc-ai-status" class="text-faint" style="font-size:11.5px;margin-top:4px;"></div>
         <div class="text-faint" style="font-size:11.5px;margin-top:4px;">${guided ? t("brands.form.descHintGuided") : t("brands.form.descHint")}</div>
       </div>
@@ -318,7 +320,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ig.intro")}</p>
       <div class="field">
         <label>Instagram Business Account ID</label>
-        <input class="input" id="ig-userid" placeholder="17841400..." value="${(draft.instagram.igUserId || "").replace(/"/g, "&quot;")}" />
+        <input class="input" id="ig-userid" placeholder="17841400..." value="${escapeText(draft.instagram.igUserId || "")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>Long-Lived Access Token</label>
@@ -341,7 +343,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.fb.intro")}</p>
       <div class="field">
         <label>Facebook Page ID</label>
-        <input class="input" id="fb-pageid" placeholder="${t("integr.fb.pageIdPh")}" value="${(draft.facebook.pageId || "").replace(/"/g, "&quot;")}" />
+        <input class="input" id="fb-pageid" placeholder="${t("integr.fb.pageIdPh")}" value="${escapeText(draft.facebook.pageId || "")}" />
       </div>
       <div class="field" style="margin-bottom:0;">
         <label>Page Access Token</label>
