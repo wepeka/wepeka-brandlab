@@ -1,7 +1,7 @@
 import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
-import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa } from "../dom.js";
+import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext, go } from "../nav-context.js";
@@ -746,6 +746,7 @@ function paint(root, brandId, state, refresh) {
       paint(root, brandId, state, refresh);
     });
   });
+  wireClickableCards(root, "[data-select]");
 
   qsa("[data-delete-content]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {

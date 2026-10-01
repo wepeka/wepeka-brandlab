@@ -296,7 +296,7 @@ function productsHTML(stats, campaign, unit, collapsed) {
         <td>${formatNumber(s.rangeQty)}</td>
         <td>${formatNumber(s.sold)}${target ? ` <span class="text-faint">/ ${formatNumber(target)}</span><div class="cd-bar" style="margin-top:5px;max-width:120px;"><span style="width:${pct}%"></span></div>` : ""}</td>
         <td>${rp(s.loggedRevenue)}</td>
-        <td style="text-align:right;">${icon("edit", { size: 14 })}</td>
+        <td style="text-align:right;"><button type="button" class="icon-btn" aria-label="${esc(`${t("common.edit")}: ${s.product.name}`)}">${icon("edit", { size: 14 })}</button></td>
       </tr>`;
   };
   return `

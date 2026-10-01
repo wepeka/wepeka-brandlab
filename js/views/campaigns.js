@@ -8,7 +8,7 @@ import {
 } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
+import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr, wireClickableCards } from "../dom.js";
 import { hasAiKey } from "../ai.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -178,6 +178,7 @@ function paintList(root, brandId, brand, refresh) {
     });
   });
   qsa("[data-open-plan]", root).forEach((card) => card.addEventListener("click", () => { location.hash = `#/brand/${brandId}/goals/${card.dataset.openPlan}`; }));
+  wireClickableCards(root, "[data-open-campaign], [data-open-plan]", { role: "link" });
   qsa("[data-delete-campaign]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();

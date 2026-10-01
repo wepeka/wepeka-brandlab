@@ -9,7 +9,7 @@
 import { getBrand, listContent, listSeries, getSeries, createSeries, updateSeries, deleteSeries, onChange, brandToneText, TRASH_DAYS } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, qs, qsa, escapeHtml as escapeText, escapeHtml as escapeAttr } from "../dom.js";
+import { toast, qs, qsa, escapeHtml as escapeText, escapeHtml as escapeAttr, wireClickableCards } from "../dom.js";
 import { t } from "../i18n.js";
 import { go } from "../nav-context.js";
 import { seriesDays } from "../week-plan.js";
@@ -61,6 +61,7 @@ function paint(root, brandId, refresh) {
       openSeriesModal({ brandId, series: getSeries(card.dataset.openSeries), onSaved: refresh });
     });
   });
+  wireClickableCards(root, "[data-open-series]");
   // A series used to end at "saved": no way to start the next episode or
   // see the ones already made. Both are on the card now — a new episode
   // opens Creator with the series attached (so its style memory rides

@@ -2,7 +2,7 @@ import {
   listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent, TRASH_DAYS,
 } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
+import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles, wireClickableCards } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
 import { canUseInstagramApi } from "../account.js";
@@ -96,6 +96,7 @@ function paint(root, refresh) {
       location.hash = `#/brand/${card.dataset.id}`;
     });
   });
+  wireClickableCards(root, ".brand-tile:not(.brand-tile-add)", { role: "link" });
 
   qsa("[data-menu-toggle]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -212,7 +213,7 @@ function brandCard(brand, previewOnly = false) {
     ? `--brand-tint:${brand.color};--brand-tint-text:${pickTintTextColor(brand.color)};--brand-tint-fg:${pickTintForeground(brand.color)};`
     : "";
   return `
-    <div class="brand-tile ${previewOnly ? "is-preview" : ""}" data-id="${brand.id}" style="${tintStyle}" ${previewOnly ? `title="${escapeText(t("brands.locked.tileTitle"))}"` : ""}>
+    <div class="brand-tile ${previewOnly ? "is-preview" : ""}" data-id="${brand.id}" style="${tintStyle}" aria-label="${escapeText(brand.name)}" ${previewOnly ? `title="${escapeText(t("brands.locked.tileTitle"))}"` : ""}>
       <div class="brand-tile-avatar">
         ${avatarHTML(brand)}
         ${previewOnly ? `<span class="brand-tile-lock">${icon("lock", { size: 16 })}</span>` : ""}

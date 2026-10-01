@@ -366,6 +366,26 @@ export function pickTintForegroundLight(rgb) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// Clickable cards and rows that are a <div> (brand tiles, campaign/series
+// cards, Creator's list, Home's schedule rows) because they hold their own
+// buttons inside, which a real <button>/<a> can't. This makes them what
+// they look like to a keyboard or screen reader: reachable with Tab,
+// announced as a link/button, and Enter or Space does what a click does
+// (the view's existing click handler — nothing is wired twice). Keys
+// pressed on a nested control are left to that control. Call after
+// rendering; `role` is "link" for cards that open a page.
+export function wireClickableCards(root, selector, { role = "button" } = {}) {
+  qsa(selector, root).forEach((el) => {
+    if (!el.hasAttribute("tabindex")) el.tabIndex = 0;
+    if (!el.hasAttribute("role")) el.setAttribute("role", role);
+    el.addEventListener("keydown", (e) => {
+      if (e.target !== el || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      el.click();
+    });
+  });
+}
+
 // One-item-per-line textarea <-> plain string array — the encoding shared by
 // Brand DNA's personality/values/productsServices and Campaign's channels,
 // so multi-value fields don't need a dedicated add/remove list-editor UI.

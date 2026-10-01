@@ -1,6 +1,6 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa } from "../dom.js";
+import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
@@ -574,6 +574,8 @@ function paint(root, brandId, state, refresh) {
   qsa("[data-locked-step]", root).forEach((el) => {
     el.addEventListener("click", () => toast(t("home.next.lockedToast")));
   });
+  // Schedule rows and the analytics lists (top/retention posts) are divs.
+  wireClickableCards(root, "[data-open-content], [data-locked-step]");
 
   // The exact moment Campaign/Konten unlock is the one time a small callout
   // on the hero is worth it, so the change of "what to do now" isn't missed.

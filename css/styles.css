@@ -832,7 +832,9 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .brand-tile:hover h3{ color: var(--text); }
 .brand-tile .meta{ font-size:11px; color: var(--text-faint); margin-top:2px; }
 .brand-tile-menu{ position:absolute; top:4px; right:4px; width:26px; height:26px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(2px); opacity:0; transition: opacity .15s; }
-.brand-tile-avatar:hover .brand-tile-menu, .brand-tile-menu:focus-visible{ opacity:1; }
+.brand-tile-avatar:hover .brand-tile-menu, .brand-tile-menu:focus-visible, .brand-tile:focus-within .brand-tile-menu{ opacity:1; }
+/* Touch screens have no hover: the ⋯ (edit/archive/delete) is always shown. */
+@media (hover:none){ .brand-tile-menu{ opacity:1; } }
 .brand-tile-avatar-add{ background:transparent; border:1.5px dashed var(--border); color: var(--text-muted); }
 .brand-tile-add:hover .brand-tile-avatar-add{ border-color: var(--accent); color: var(--accent); background:transparent; box-shadow:none; }
 .brand-tile-add:hover h3{ color: var(--accent); }
@@ -1268,7 +1270,8 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    subtle by default, only steps forward on hover of the row or the button
    itself so the compact sidebar list doesn't read as button-heavy. */
 .creator-item-delete{ flex:none; width:26px; height:26px; border-radius:8px; border:none; background:transparent; color:var(--text-faint); opacity:0; transition:opacity .12s, color .12s, background .12s; }
-.creator-item:hover .creator-item-delete{ opacity:1; }
+.creator-item:hover .creator-item-delete, .creator-item:focus-within .creator-item-delete{ opacity:1; }
+@media (hover:none){ .creator-item-delete{ opacity:1; } }
 .creator-item-delete:hover{ background: var(--health-poor-soft); color: var(--health-poor); }
 .creator-item-delete svg{ width:13px; height:13px; }
 
