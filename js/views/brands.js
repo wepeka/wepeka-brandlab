@@ -66,7 +66,7 @@ function paint(root, refresh) {
     <div class="brand-row-head">
       <button class="brand-quick-add ${locked ? "is-locked" : ""}" id="add-brand-quick" aria-label="${escapeText(lockTitle)}" title="${escapeText(lockTitle)}">${icon(locked ? "lock" : "plus", { size: 15 })}</button>
     </div>
-    <div class="brand-grid" id="brand-grid">
+    <div class="brand-grid brand-grid--picker" id="brand-grid">
       ${brands.map((b) => brandCard(b, previewOnly.has(b.id))).join("")}
       <button class="brand-tile brand-tile-add ${locked ? "is-locked" : ""}" id="add-brand" title="${escapeText(lockTitle)}">
         <div class="brand-tile-avatar brand-tile-avatar-add">${icon(locked ? "lock" : "plus", { size: 28 })}</div>
