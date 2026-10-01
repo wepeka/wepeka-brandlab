@@ -347,6 +347,25 @@ function ctaHTML(planKey, label, uid, cls = "btn-secondary") {
     : `<a class="${classes}" data-plan="${planKey}" href="${WEPEKA_CONNECT_URL}">${label}</a>`;
 }
 const soldOutHTML = (cls = "btn-primary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`;
+const disabledCtaHTML = (label, cls = "btn-secondary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${label}</button>`;
+
+// A Lifetime account never buys another plan on top (api/_plans.js
+// switchQuote refuses it; audit S-15) — its cards say so instead of
+// offering a checkout. The one way up left is Founder → Agency Lifetime,
+// for the difference. "legacy" = the pre-subscription all-in-one Lifetime.
+const LIFETIME_PLAN_KEYS = ["founder", "founder-ultimate", "lifetime"];
+function ownedLifetime(account) {
+  const plan = account?.plan;
+  if (!LIFETIME_PLAN_KEYS.includes(plan)) return null;
+  return plan === "founder" ? "founder" : plan === "founder-ultimate" ? "agency" : "legacy";
+}
+function ownedNoteHTML(owned) {
+  return `
+    <div class="pricing-pending-help pricing-closed-note" role="status">
+      <b>${t("pricing.owned.title")}</b>
+      <p>${t(`pricing.owned.${owned}`)}</p>
+    </div>`;
+}
 
 // Index of the wave currently on sale, from the live sold-count. Unknown
 // count (still loading / read failed) shows the first wave — the amount
@@ -376,7 +395,7 @@ function segHTML(name, options) {
 
 // One card for both owner sizes: the toggles pick starter/pro and
 // monthly/yearly; the planKey follows.
-function subscriptionCardHTML(sel, uid) {
+function subscriptionCardHTML(sel, uid, owned) {
   const plan = SUBSCRIPTIONS[sel.brands];
   const price = sel.yearly ? plan.yearly : plan.monthly;
   const planKey = `${plan.key}-${sel.yearly ? "yearly" : "monthly"}`;
@@ -395,14 +414,14 @@ function subscriptionCardHTML(sel, uid) {
         { value: "yearly", label: t("pricing.period.yearly"), on: sel.yearly },
       ])}
       <p class="pricing-way-credits">${t("pricing.f.contentDay", { n: plan.credits })}</p>
-      ${ctaHTML(planKey, t("pricing.way.subscription.cta"), uid)}
+      ${owned ? disabledCtaHTML(t("pricing.owned.notNeeded")) : ctaHTML(planKey, t("pricing.way.subscription.cta"), uid)}
     </div>`;
 }
 
 // The card the page exists for: normal price struck through, the Founder
 // price the next buyer actually pays, the two waves, what's included, and
 // one pink button — mirroring wepeka.com/brandlab's Founder card.
-function founderCardHTML({ open, tier, soldOut }, uid) {
+function founderCardHTML({ open, tier, soldOut }, uid, owned) {
   const cap = FOUNDER_SLOT_CAPS[FOUNDER.slotField];
   const savePct = Math.round((1 - tier.price / LIFETIME_NORMAL_PRICE) * 100);
   return `
@@ -417,11 +436,11 @@ function founderCardHTML({ open, tier, soldOut }, uid) {
       <p class="pricing-price-note">${t("pricing.lifetime.normalNote", { cap, price: rp(LIFETIME_NORMAL_PRICE) })}</p>
       ${tiersHTML(open)}
       <ul class="pricing-features pricing-features--2col">${featuresHTML(FOUNDER)}</ul>
-      ${soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary pricing-cta--pink")}
+      ${owned ? disabledCtaHTML(t(owned === "founder" ? "pricing.owned.current" : "pricing.owned.included"), "btn-primary") : soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary pricing-cta--pink")}
     </div>`;
 }
 
-function otherPlanHTML(plan, uid) {
+function otherPlanHTML(plan, uid, owned) {
   const name = t(`pricing.${plan.key}.name`);
   return `
     <div class="pricing-other-row">
@@ -431,20 +450,33 @@ function otherPlanHTML(plan, uid) {
         <span class="pricing-other-meta">${t("pricing.f.brands", { n: plan.brands })} · ${t("pricing.f.contentDay", { n: plan.credits })}</span>
       </div>
       <div class="pricing-other-actions">
-        ${ctaHTML(`${plan.key}-monthly`, t("pricing.perMonth", { price: rp(plan.monthly) }), uid)}
-        ${ctaHTML(`${plan.key}-yearly`, t("pricing.perYear", { price: rp(plan.yearly) }), uid)}
+        ${owned
+          ? disabledCtaHTML(t("pricing.owned.notNeeded"))
+          : `${ctaHTML(`${plan.key}-monthly`, t("pricing.perMonth", { price: rp(plan.monthly) }), uid)}
+        ${ctaHTML(`${plan.key}-yearly`, t("pricing.perYear", { price: rp(plan.yearly) }), uid)}`}
       </div>
     </div>`;
 }
 
+// Agency Lifetime's button: the upgrade (pay the difference) for a Founder,
+// "your plan" for an Agency account, nothing to buy for the old Lifetime.
+function agencyCtaHTML(uid, agencySoldOut, owned) {
+  if (owned === "agency") return disabledCtaHTML(t("pricing.owned.current"));
+  if (owned === "legacy") return disabledCtaHTML(t("pricing.owned.notNeeded"));
+  if (agencySoldOut) return soldOutHTML("btn-secondary");
+  if (owned === "founder") return ctaHTML(AGENCY.key, t("pricing.owned.upgrade"), uid, "btn-primary");
+  return ctaHTML(AGENCY.key, `${rp(AGENCY.price)} · ${t("pricing.payOnce")}`, uid);
+}
+
 // Studio + Agency Lifetime, collapsed: a different buyer (people who run
-// client brands), so their prices stay out of an owner's line of sight.
-function agencyHTML(uid, agencySoldOut) {
+// client brands), so their prices stay out of an owner's line of sight —
+// open from the start for a Founder, whose one upgrade lives here.
+function agencyHTML(uid, agencySoldOut, owned) {
   const perBrand = rp(Math.round(AGENCY.price / AGENCY.brands / 1000) * 1000);
   return `
-    <details class="pricing-other" id="ultimate">
+    <details class="pricing-other" id="ultimate" ${owned === "founder" ? "open" : ""}>
       <summary>${t("pricing.agency.title")}${icon("chevronDown", { size: 16 })}</summary>
-      ${otherPlanHTML(STUDIO, uid)}
+      ${otherPlanHTML(STUDIO, uid, owned)}
       <div class="pricing-other-row">
         <div class="pricing-other-info">
           <strong>${t("pricing.founder-ultimate.name")}</strong>
@@ -452,7 +484,7 @@ function agencyHTML(uid, agencySoldOut) {
           <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentMonth", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
         </div>
         <div class="pricing-other-actions">
-          ${agencySoldOut ? soldOutHTML("btn-secondary") : ctaHTML(AGENCY.key, `${rp(AGENCY.price)} · ${t("pricing.payOnce")}`, uid)}
+          ${agencyCtaHTML(uid, agencySoldOut, owned)}
         </div>
       </div>
       <p class="pricing-renew-note">${t("pricing.agency.note")}</p>
@@ -460,7 +492,15 @@ function agencyHTML(uid, agencySoldOut) {
 }
 
 function accountBarHTML(user, account) {
-  if (!user) return "";
+  // Logged out: a visible way in, right at the top. A returning customer on
+  // a new device lands here first, and "Sudah punya akun? Masuk" used to sit
+  // only in the footer, below the FAQ (audit A-07).
+  if (!user) {
+    return `<div class="pricing-account-bar">
+      <span>${t("pricing.alreadyHave")}</span>
+      <a class="btn btn-primary btn-sm" href="#/login" id="pricing-login">${t("pricing.loginCta")}${icon("arrowRight", { size: 13 })}</a>
+    </div>`;
+  }
   let status = t("pricing.loggedInAs", { email: escapeHtml(user.email || "") });
   const state = accessState(account);
   if (state === "trial") {
@@ -565,6 +605,7 @@ function addonsHTML(account) {
 
 export function render(root, { user, account, backHref, locked } = {}) {
   const uid = user?.uid || null;
+  const owned = uid ? ownedLifetime(account) : null;
   // Add-ons are a second decision: only accounts that already pay see them.
   const showAddons = !!uid && !["trial", "expired", "none"].includes(accessState(account));
   let slots = null;
@@ -614,18 +655,19 @@ export function render(root, { user, account, backHref, locked } = {}) {
       </section>
 
       <section class="pricing-ways-section">
+        ${owned ? ownedNoteHTML(owned) : ""}
         ${payState && !payState.open ? `
           <div class="pricing-pending-help pricing-closed-note" role="status">
             <b>${t("pricing.closed.title")}</b>
             <p>${t(uid ? "pricing.closed.note" : "pricing.closed.noteGuest")}</p>
           </div>` : ""}
         <div class="pricing-ways">
-          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid)}
-          ${subscriptionCardHTML(sel, uid)}
+          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}
+          ${subscriptionCardHTML(sel, uid, owned)}
         </div>
         ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>`}
         ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
-        ${agencyHTML(uid, agencySoldOut)}
+        ${agencyHTML(uid, agencySoldOut, owned)}
       </section>
 
       <p class="pricing-founder-note">${t("pricing.renewNote")} ${t("pricing.founder.note")}</p>
