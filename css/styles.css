@@ -394,6 +394,14 @@ main.view.wide{ max-width: 1440px; }
 .btn-secondary:hover{ background: var(--surface-hover); }
 /* What a button costs, on the button ("1 AI credit") — not in a tooltip. */
 .btn-cost{ font-size:11px; font-weight:700; line-height:1.4; padding:1px 7px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); white-space:nowrap; }
+/* Kalender's "Atur jadwal" menu: title, one line on what it does, cost. */
+.menu.sched-menu{ width:min(320px, calc(100vw - 16px)); }
+.sched-menu button{ align-items:flex-start; padding:10px; }
+.sched-menu button > svg{ margin-top:2px; color: var(--accent); }
+.sched-menu-text{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; }
+.sched-menu-text b{ font-size:13.5px; }
+.sched-menu-text small{ font-size:12px; line-height:1.45; color: var(--text-muted); white-space:normal; }
+.sched-menu-note{ margin:4px 10px 6px; padding-top:8px; border-top:1px solid var(--border); font-size:12px; line-height:1.45; color: var(--text-muted); }
 .btn-ghost{ background: transparent; color: var(--text-muted); }
 .btn-ghost:hover{ color: var(--text); background: var(--surface); }
 .btn-danger{ background: var(--health-poor-soft); color: var(--health-poor); }

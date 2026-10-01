@@ -322,8 +322,7 @@ function paint(root, brandId, state, refresh) {
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
       <div class="flex gap-8">
-        <button class="icon-btn" id="cal-more" aria-label="${t("common.more")}" title="${t("common.more")}">${icon("dots", { size: 16 })}</button>
-        <button class="btn btn-secondary" id="cal-week-plan" title="${t("chat.week.credit")}">${icon("sparkle", { size: 15 })}${t("chat.week.button")}</button>
+        <button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
       </div>
     </div>
@@ -345,23 +344,33 @@ function paint(root, brandId, state, refresh) {
   // The header button has no date, so the new piece wouldn't show on the
   // grid — it opens in Creator instead (a date cell keeps you here).
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
-  qs("#cal-week-plan").addEventListener("click", (e) => openWeekPlanMenu(e.currentTarget, brandId));
-  // The ⋯ menu: the two setup-ish jobs (AI auto-schedule, the weekly work
-  // rhythm) — used once in a while, not every visit.
-  qs("#cal-more").addEventListener("click", (e) => {
+  // "Atur jadwal": every way to fill the calendar in one place, each with
+  // what it does and what it costs. "Rencanakan minggu ini" used to be its
+  // own button and the other two hid in a ⋯ menu, so it read as four
+  // unrelated features. Series days are set inside Jadwal Kerja.
+  qs("#cal-schedule").addEventListener("click", (e) => {
     e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const menu = openMenu(e.currentTarget, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 240) });
+    const btn = e.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    const menu = openMenu(btn, { className: "sched-menu", top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 328) });
     if (!menu) return;
+    const option = (act, id, ic, title, desc, cost) => `
+      <button type="button" data-act="${act}" ${id ? `id="${id}"` : ""}>
+        ${icon(ic, { size: 16 })}
+        <span class="sched-menu-text"><b>${title}</b><small>${desc}</small><span class="btn-cost">${cost}</span></span>
+      </button>`;
     menu.innerHTML = `
-      <button data-act="autoschedule" id="ai-autoschedule">${icon("bot", { size: 15 })}${t("calendar.autoscheduleBtn")}</button>
-      <button data-act="cadence" id="edit-cadence">${icon("gear", { size: 15 })}${t("calendar.editCadenceBtn")}</button>
+      ${option("week", "", "sparkle", t("chat.week.button"), t("cal.schedule.weekDesc"), t("chat.week.cost"))}
+      ${option("autoschedule", "ai-autoschedule", "bot", t("calendar.autoscheduleBtn"), t("cal.schedule.autoDesc"), t("chat.week.cost"))}
+      ${option("cadence", "edit-cadence", "gear", t("calendar.editCadenceBtn"), t("cal.schedule.cadenceDesc"), t("cal.schedule.noAi"))}
+      <p class="sched-menu-note">${t("cal.schedule.manual")}</p>
     `;
     menu.addEventListener("click", (ev) => {
       const act = ev.target.closest("[data-act]")?.dataset.act;
       if (!act) return;
       closeMenu();
-      if (act === "autoschedule") runAutoSchedule(brandId, refresh);
+      if (act === "week") openWeekPlanMenu(btn, brandId);
+      else if (act === "autoschedule") runAutoSchedule(brandId, refresh);
       else if (act === "cadence") openContentCadenceSetup(brand);
     });
   });
