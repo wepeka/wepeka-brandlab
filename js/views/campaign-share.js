@@ -21,7 +21,10 @@ function ensureJsPdf() {
   if (jsPdfLoading) return jsPdfLoading;
   jsPdfLoading = new Promise((resolve, reject) => {
     const script = document.createElement("script");
+    // Same pinned file and SRI hash as js/pdf-libs.js (audit S-25).
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    script.integrity = "sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk";
+    script.crossOrigin = "anonymous";
     script.onload = resolve;
     script.onerror = reject;
     document.head.appendChild(script);

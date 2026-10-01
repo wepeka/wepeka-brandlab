@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isPaymentTester, isSettled } from "../api/_payments.js";
+import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isPaymentTester, isSettled, notificationAction } from "../api/_payments.js";
 import { ADMIN_UIDS, isReadOnlyAccount, consumeFreeCall } from "../api/_aiQuota.js";
 
 // The test run has no MIDTRANS_IS_PRODUCTION, i.e. the sandbox situation the
@@ -103,5 +103,47 @@ describe("consumeFreeCall", () => {
     const db = makeFakeDb({ freeDate: "2026-09-30", freeCount: 150 });
     assert.equal(await consumeFreeCall(db, "u", new Date("2026-10-01T03:00:00Z"), 150), true);
     assert.equal(db.read().freeCount, 1);
+  });
+});
+
+describe("notificationAction (what a signed notification does to an order)", () => {
+  const pending = { status: "pending" };
+  const paid = { status: "paid", paidAt: 1 };
+  test("first settlement grants; a repeat is a duplicate", () => {
+    assert.equal(notificationAction(pending, "settlement"), "grant");
+    assert.equal(notificationAction(pending, "capture", "accept"), "grant");
+    assert.equal(notificationAction(paid, "settlement"), "duplicate");
+  });
+  test("a card held for review grants nothing yet", () => {
+    assert.equal(notificationAction(pending, "capture", "challenge"), "ignore");
+    assert.equal(notificationAction(pending, "pending"), "ignore");
+  });
+  test("an unpaid order that expires, is cancelled or denied is closed", () => {
+    for (const s of ["expire", "cancel", "deny", "failure"]) assert.equal(notificationAction(pending, s), "close", s);
+  });
+  test("refunds and chargebacks on a paid order are flagged (S-19)", () => {
+    for (const s of ["refund", "partial_refund", "chargeback", "partial_chargeback"]) assert.equal(notificationAction(paid, s), "flag", s);
+  });
+  test("a captured card denied or cancelled afterwards is flagged too", () => {
+    assert.equal(notificationAction(paid, "deny"), "flag");
+    assert.equal(notificationAction(paid, "cancel"), "flag");
+  });
+  test("a partial refund that becomes a full one is flagged again", () => {
+    assert.equal(notificationAction({ status: "partial_refund", paidAt: 1 }, "refund"), "flag");
+    assert.equal(notificationAction({ status: "refund", paidAt: 1 }, "settlement"), "ignore");
+  });
+  test("an out-of-order 'pending' after payment changes nothing", () => {
+    assert.equal(notificationAction(paid, "pending"), "ignore");
+  });
+  test("money landing on an order already closed unpaid is flagged", () => {
+    assert.equal(notificationAction({ status: "expire" }, "settlement"), "flag");
+    assert.equal(notificationAction({ status: "expire" }, "expire"), "ignore");
+  });
+  test("a voided sandbox order stays void", () => {
+    assert.equal(notificationAction({ status: "void-sandbox" }, "settlement"), "ignore");
+  });
+  test("sandbox: only testers' payments are granted", () => {
+    assert.equal(paymentsOpenFor("someone", { email: "owner@kopi.id" }), false);
+    assert.equal(paymentsOpenFor("r", { email: "wepeka.cobabrandlab@gmail.com" }), true);
   });
 });

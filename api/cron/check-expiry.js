@@ -12,6 +12,7 @@
 // here in code — a single-field inequality needs no composite index, and
 // the rows it re-reads (already-readonly accounts) are few and cheap.
 import { adminDb } from "../_firebaseAdmin.js";
+import { dueSchedulePatch } from "../_plans.js";
 
 export default async function handler(req, res) {
   // An unset CRON_SECRET used to leave this endpoint open to anyone who
@@ -26,15 +27,17 @@ export default async function handler(req, res) {
   const now = Date.now();
   const accounts = db.collection("accounts");
   // A downgrade bought mid-period (api/midtrans/webhook.js "later") takes
-  // over on the day the bigger plan's period ends — before the lapsed-
-  // subscription check below, which it would otherwise never need.
+  // over on the day the bigger plan's own period ends — before the lapsed-
+  // subscription check below, which it would otherwise never need. Plan
+  // fields only (api/_plans.js dueSchedulePatch): status is left as it is,
+  // so an account an admin deactivated stays deactivated (audit S-22).
   const due = await accounts.where("scheduledPlan.startsAt", "<=", now).get();
   let switched = 0;
   if (req.query?.dryRun !== "1") {
     for (const doc of due.docs) {
-      const next = doc.data().scheduledPlan;
-      if (!next?.plan) continue;
-      await doc.ref.update({ plan: next.plan, billing: next.billing, brandLimit: next.brandLimit, status: "active", scheduledPlan: null });
+      const patch = dueSchedulePatch(doc.data(), now);
+      if (!patch) continue;
+      await doc.ref.update(patch);
       switched++;
     }
   }

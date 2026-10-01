@@ -81,6 +81,15 @@ export async function loginWithGoogle() {
 }
 export async function logout() {
   await signOut(auth);
+  // This tab's scratch state — unsaved Copy Studio drafts, the last brand
+  // opened, tour hand-offs — belonged to whoever was signed in, never to
+  // the next person on this tab (audit S-25). Only this app uses this
+  // origin's sessionStorage, so all of it goes.
+  try {
+    sessionStorage.clear();
+  } catch {
+    /* storage off: nothing to clear */
+  }
 }
 export function resetPassword(email) {
   return sendPasswordResetEmail(auth, email);

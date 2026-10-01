@@ -116,6 +116,13 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
       return;
     }
     const status = await paymentStatus(planKey);
+    // A plan this account can't buy at all (anything on top of a Lifetime
+    // plan, a second queued downgrade) is said before any WhatsApp order or
+    // payment is offered.
+    if (status.refused) {
+      await showRefused(status.refused, planKey);
+      return;
+    }
     if (!status.open) {
       await showPaymentsClosed(status, planKey);
       return;
@@ -123,11 +130,12 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     await loadSnap(status);
     // Switching plans while one still runs: say what happens to the old
     // one (credit now, or queued until it ends) before any payment opens.
-    if (!(await confirmPlanSwitch(planKey, idToken))) return;
+    const confirmed = await confirmPlanSwitch(planKey, idToken);
+    if (!confirmed) return;
     const res = await fetch("/api/midtrans/create-transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ planKey }),
+      body: JSON.stringify({ planKey, ...confirmed }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
     const { token, orderId, amount, label } = await res.json();
@@ -156,26 +164,79 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
 // price; a downgrade waits until the current period ends. Add-ons and a
 // plain renewal go straight to payment.
 const PLAN_NAME_KEYS = ["starter", "pro", "studio", "founder", "founder-ultimate"];
-const planNameOf = (key) => t(`pricing.planName.${PLAN_NAME_KEYS.find((p) => key === p || key.startsWith(`${p}-`)) || "starter"}`);
+// Exact key first: "founder-ultimate" also starts with "founder-".
+const planNameOf = (key) => t(`pricing.planName.${PLAN_NAME_KEYS.find((p) => key === p) || PLAN_NAME_KEYS.find((p) => key.startsWith(`${p}-`)) || "starter"}`);
+const isPlanKey = (planKey) => PLAN_NAME_KEYS.some((p) => planKey === p || (planKey.startsWith(`${p}-`) && /-(monthly|yearly)$/.test(planKey)));
+const accountPlanKey = (plan, billing) => (["starter", "pro", "studio"].includes(plan) ? `${plan}-${billing || "monthly"}` : plan);
+const longDate = (ms) => (ms ? new Date(ms).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long", year: "numeric" }) : "");
+
+// A plan the server won't sell this account (create-transaction's `code`):
+// its own words, plus the WhatsApp route where the team sorts it out by hand.
+async function showRefused(refusal, planKey) {
+  const known = ["lifetime-owned", "lifetime-top", "lifetime-manual", "scheduled"].includes(refusal?.code);
+  const text = known ? t(`pricing.refused.${refusal.code}`, { date: longDate(refusal.startsAt) }) : escapeHtml(refusal?.error || t("pricing.err.start"));
+  const viaWa = ["lifetime-owned", "lifetime-manual"].includes(refusal?.code);
+  const wa = `https://wa.me/${PAYMENT_WA_NUMBER}?text=${encodeURIComponent(t("pricing.refused.waMessage", { item: planNameOf(planKey), email: auth.currentUser?.email || "-" }))}`;
+  const { openModal } = await import("../modals.js");
+  openModal({
+    title: t("pricing.refused.title"),
+    bodyHTML: `
+      <p style="margin:0 0 16px;">${text}</p>
+      ${viaWa ? `<a class="btn btn-primary btn-block" href="${wa}" target="_blank" rel="noopener noreferrer">${icon("chat", { size: 15 })}${t("pricing.pending.wa")}</a>` : ""}`,
+  });
+}
+
+// Says what a plan purchase does to the plan already running before Snap
+// opens. Resolves to what create-transaction needs along with the planKey
+// ({} when there's nothing to confirm), or null when the buyer backs out or
+// the server refuses. Unused value the new price can't absorb is spelled
+// out and needs its own explicit OK (`acceptForfeit`, audit S-23).
 async function confirmPlanSwitch(planKey, idToken) {
   const account = getCachedAccount();
-  const isPlan = PLAN_NAME_KEYS.some((p) => planKey === p || (planKey.startsWith(`${p}-`) && /-(monthly|yearly)$/.test(planKey)));
-  if (!isPlan || !["starter", "pro", "studio"].includes(account?.plan) || accessState(account) !== "paid") return true;
+  // Nothing running to switch from (trial, lapsed): just buy.
+  if (!isPlanKey(planKey) || accessState(account) !== "paid") return {};
   const res = await fetch("/api/midtrans/create-transaction", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
     body: JSON.stringify({ planKey, quoteOnly: true }),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
-  const q = await res.json();
-  if (q.mode !== "now" && q.mode !== "later") return true;
+  const q = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (q?.code) {
+      await showRefused(q, planKey);
+      return null;
+    }
+    throw new Error(q?.error || t("pricing.err.createTx"));
+  }
+  const next = account.scheduledPlan?.plan ? planNameOf(accountPlanKey(account.scheduledPlan.plan, account.scheduledPlan.billing)) : "";
+  const vars = {
+    from: planNameOf(accountPlanKey(account.plan, account.billing)), to: planNameOf(planKey), next,
+    price: rp(q.price), credit: rp(q.credit || 0), pay: rp(q.amount),
+    forfeit: rp(q.forfeit || 0), value: rp((q.credit || 0) + (q.forfeit || 0)),
+    date: longDate(q.startsAt || q.scheduledStartsAt),
+  };
+  let title;
+  let message;
+  if (q.mode === "now" && q.lifetimeUpgrade) {
+    title = t("pricing.switch.lifetimeTitle", vars);
+    message = t("pricing.switch.lifetimeBody", vars);
+  } else if (q.mode === "now") {
+    title = t("pricing.switch.upTitle", vars);
+    message = t(q.credit ? "pricing.switch.upBody" : "pricing.switch.upBodyNoCredit", vars);
+    if (q.replacesScheduled && next) message += ` ${t("pricing.switch.scheduledNote", vars)}`;
+  } else if (q.mode === "later") {
+    title = t("pricing.switch.downTitle", vars);
+    message = t("pricing.switch.downBody", vars);
+  } else if (q.mode === "renew" && q.scheduledStartsAt && next) {
+    title = t("pricing.switch.renewTitle", vars);
+    message = t("pricing.switch.renewBody", vars);
+  } else {
+    return {};
+  }
+  if (q.forfeit) message += `<br><br><b>${t("pricing.switch.forfeitNote", vars)}</b>`;
   const { confirmDialog } = await import("../modals.js");
-  const vars = { from: planNameOf(`${account.plan}-${account.billing || "monthly"}`), to: planNameOf(planKey), price: rp(q.price), credit: rp(q.credit || 0), pay: rp(q.amount), date: q.startsAt ? new Date(q.startsAt).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long", year: "numeric" }) : "" };
-  return confirmDialog({
-    title: t(q.mode === "now" ? "pricing.switch.upTitle" : "pricing.switch.downTitle", vars),
-    message: t(q.mode === "now" ? (q.credit ? "pricing.switch.upBody" : "pricing.switch.upBodyNoCredit") : "pricing.switch.downBody", vars),
-    confirmLabel: t("pricing.switch.pay", vars),
-  });
+  const ok = await confirmDialog({ title, message, confirmLabel: t(q.forfeit ? "pricing.switch.payForfeit" : "pricing.switch.pay", vars), danger: !!q.forfeit });
+  return ok ? { acceptForfeit: !!q.forfeit } : null;
 }
 
 // After Snap reports success on the pricing page itself: wait for the
@@ -286,10 +347,37 @@ function ctaHTML(planKey, label, uid, cls = "btn-secondary") {
     : `<a class="${classes}" data-plan="${planKey}" href="${WEPEKA_CONNECT_URL}">${label}</a>`;
 }
 const soldOutHTML = (cls = "btn-primary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`;
+const disabledCtaHTML = (label, cls = "btn-secondary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${label}</button>`;
+
+// A Lifetime account never buys another plan on top (api/_plans.js
+// switchQuote refuses it; audit S-15) — its cards say so instead of
+// offering a checkout. The one way up left is Founder → Agency Lifetime,
+// for the difference. "legacy" = the pre-subscription all-in-one Lifetime.
+const LIFETIME_PLAN_KEYS = ["founder", "founder-ultimate", "lifetime"];
+function ownedLifetime(account) {
+  const plan = account?.plan;
+  if (!LIFETIME_PLAN_KEYS.includes(plan)) return null;
+  return plan === "founder" ? "founder" : plan === "founder-ultimate" ? "agency" : "legacy";
+}
+function ownedNoteHTML(owned) {
+  return `
+    <div class="pricing-pending-help pricing-closed-note" role="status">
+      <b>${t("pricing.owned.title")}</b>
+      <p>${t(`pricing.owned.${owned}`)}</p>
+    </div>`;
+}
 
 // Index of the wave currently on sale, from the live sold-count. Unknown
 // count (still loading / read failed) shows the first wave — the amount
 // actually charged is decided server-side either way.
+// Seats gone = sold + held by a checkout still open (meta/founderSlots
+// .holds, api/_plans.js seatsTaken — keep in sync): a held seat is priced
+// and capped like a sold one until its Snap window closes (audit S-17).
+export function seatsTakenOf(slots, field, now = Date.now()) {
+  const held = Object.values(slots?.holds?.[field] || {}).filter((until) => Number(until) > now).length;
+  return (Number(slots?.[field]) || 0) + held;
+}
+
 function openTier(sold) {
   const i = FOUNDER.tiers.findIndex((tier) => (sold || 0) < tier.upTo);
   return i === -1 ? FOUNDER.tiers.length : i;
@@ -315,7 +403,7 @@ function segHTML(name, options) {
 
 // One card for both owner sizes: the toggles pick starter/pro and
 // monthly/yearly; the planKey follows.
-function subscriptionCardHTML(sel, uid) {
+function subscriptionCardHTML(sel, uid, owned) {
   const plan = SUBSCRIPTIONS[sel.brands];
   const price = sel.yearly ? plan.yearly : plan.monthly;
   const planKey = `${plan.key}-${sel.yearly ? "yearly" : "monthly"}`;
@@ -334,14 +422,14 @@ function subscriptionCardHTML(sel, uid) {
         { value: "yearly", label: t("pricing.period.yearly"), on: sel.yearly },
       ])}
       <p class="pricing-way-credits">${t("pricing.f.contentDay", { n: plan.credits })}</p>
-      ${ctaHTML(planKey, t("pricing.way.subscription.cta"), uid)}
+      ${owned ? disabledCtaHTML(t("pricing.owned.notNeeded")) : ctaHTML(planKey, t("pricing.way.subscription.cta"), uid)}
     </div>`;
 }
 
 // The card the page exists for: normal price struck through, the Founder
 // price the next buyer actually pays, the two waves, what's included, and
 // one pink button — mirroring wepeka.com/brandlab's Founder card.
-function founderCardHTML({ open, tier, soldOut }, uid) {
+function founderCardHTML({ open, tier, soldOut }, uid, owned) {
   const cap = FOUNDER_SLOT_CAPS[FOUNDER.slotField];
   const savePct = Math.round((1 - tier.price / LIFETIME_NORMAL_PRICE) * 100);
   return `
@@ -356,11 +444,11 @@ function founderCardHTML({ open, tier, soldOut }, uid) {
       <p class="pricing-price-note">${t("pricing.lifetime.normalNote", { cap, price: rp(LIFETIME_NORMAL_PRICE) })}</p>
       ${tiersHTML(open)}
       <ul class="pricing-features pricing-features--2col">${featuresHTML(FOUNDER)}</ul>
-      ${soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary pricing-cta--pink")}
+      ${owned ? disabledCtaHTML(t(owned === "founder" ? "pricing.owned.current" : "pricing.owned.included"), "btn-primary") : soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary pricing-cta--pink")}
     </div>`;
 }
 
-function otherPlanHTML(plan, uid) {
+function otherPlanHTML(plan, uid, owned) {
   const name = t(`pricing.${plan.key}.name`);
   return `
     <div class="pricing-other-row">
@@ -370,20 +458,33 @@ function otherPlanHTML(plan, uid) {
         <span class="pricing-other-meta">${t("pricing.f.brands", { n: plan.brands })} · ${t("pricing.f.contentDay", { n: plan.credits })}</span>
       </div>
       <div class="pricing-other-actions">
-        ${ctaHTML(`${plan.key}-monthly`, t("pricing.perMonth", { price: rp(plan.monthly) }), uid)}
-        ${ctaHTML(`${plan.key}-yearly`, t("pricing.perYear", { price: rp(plan.yearly) }), uid)}
+        ${owned
+          ? disabledCtaHTML(t("pricing.owned.notNeeded"))
+          : `${ctaHTML(`${plan.key}-monthly`, t("pricing.perMonth", { price: rp(plan.monthly) }), uid)}
+        ${ctaHTML(`${plan.key}-yearly`, t("pricing.perYear", { price: rp(plan.yearly) }), uid)}`}
       </div>
     </div>`;
 }
 
+// Agency Lifetime's button: the upgrade (pay the difference) for a Founder,
+// "your plan" for an Agency account, nothing to buy for the old Lifetime.
+function agencyCtaHTML(uid, agencySoldOut, owned) {
+  if (owned === "agency") return disabledCtaHTML(t("pricing.owned.current"));
+  if (owned === "legacy") return disabledCtaHTML(t("pricing.owned.notNeeded"));
+  if (agencySoldOut) return soldOutHTML("btn-secondary");
+  if (owned === "founder") return ctaHTML(AGENCY.key, t("pricing.owned.upgrade"), uid, "btn-primary");
+  return ctaHTML(AGENCY.key, `${rp(AGENCY.price)} · ${t("pricing.payOnce")}`, uid);
+}
+
 // Studio + Agency Lifetime, collapsed: a different buyer (people who run
-// client brands), so their prices stay out of an owner's line of sight.
-function agencyHTML(uid, agencySoldOut) {
+// client brands), so their prices stay out of an owner's line of sight —
+// open from the start for a Founder, whose one upgrade lives here.
+function agencyHTML(uid, agencySoldOut, owned) {
   const perBrand = rp(Math.round(AGENCY.price / AGENCY.brands / 1000) * 1000);
   return `
-    <details class="pricing-other" id="ultimate">
+    <details class="pricing-other" id="ultimate" ${owned === "founder" ? "open" : ""}>
       <summary>${t("pricing.agency.title")}${icon("chevronDown", { size: 16 })}</summary>
-      ${otherPlanHTML(STUDIO, uid)}
+      ${otherPlanHTML(STUDIO, uid, owned)}
       <div class="pricing-other-row">
         <div class="pricing-other-info">
           <strong>${t("pricing.founder-ultimate.name")}</strong>
@@ -391,7 +492,7 @@ function agencyHTML(uid, agencySoldOut) {
           <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentMonth", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
         </div>
         <div class="pricing-other-actions">
-          ${agencySoldOut ? soldOutHTML("btn-secondary") : ctaHTML(AGENCY.key, `${rp(AGENCY.price)} · ${t("pricing.payOnce")}`, uid)}
+          ${agencyCtaHTML(uid, agencySoldOut, owned)}
         </div>
       </div>
       <p class="pricing-renew-note">${t("pricing.agency.note")}</p>
@@ -399,7 +500,15 @@ function agencyHTML(uid, agencySoldOut) {
 }
 
 function accountBarHTML(user, account) {
-  if (!user) return "";
+  // Logged out: a visible way in, right at the top. A returning customer on
+  // a new device lands here first, and "Sudah punya akun? Masuk" used to sit
+  // only in the footer, below the FAQ (audit A-07).
+  if (!user) {
+    return `<div class="pricing-account-bar">
+      <span>${t("pricing.alreadyHave")}</span>
+      <a class="btn btn-primary btn-sm" href="#/login" id="pricing-login">${t("pricing.loginCta")}${icon("arrowRight", { size: 13 })}</a>
+    </div>`;
+  }
   let status = t("pricing.loggedInAs", { email: escapeHtml(user.email || "") });
   const state = accessState(account);
   if (state === "trial") {
@@ -504,6 +613,7 @@ function addonsHTML(account) {
 
 export function render(root, { user, account, backHref, locked } = {}) {
   const uid = user?.uid || null;
+  const owned = uid ? ownedLifetime(account) : null;
   // Add-ons are a second decision: only accounts that already pay see them.
   const showAddons = !!uid && !["trial", "expired", "none"].includes(accessState(account));
   let slots = null;
@@ -513,10 +623,10 @@ export function render(root, { user, account, backHref, locked } = {}) {
   const sel = { brands: 1, yearly: false };
 
   const paint = () => {
-  const open = openTier(slots?.[FOUNDER.slotField]);
+  const open = openTier(slots ? seatsTakenOf(slots, FOUNDER.slotField) : null);
   const founderSoldOut = open >= FOUNDER.tiers.length;
   const tier = FOUNDER.tiers[Math.min(open, FOUNDER.tiers.length - 1)];
-  const agencySoldOut = (Number(slots?.[AGENCY.slotField]) || 0) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+  const agencySoldOut = seatsTakenOf(slots, AGENCY.slotField) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
   const faqVars = {
     days: TRIAL_DAYS,
     cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField],
@@ -553,18 +663,19 @@ export function render(root, { user, account, backHref, locked } = {}) {
       </section>
 
       <section class="pricing-ways-section">
+        ${owned ? ownedNoteHTML(owned) : ""}
         ${payState && !payState.open ? `
           <div class="pricing-pending-help pricing-closed-note" role="status">
             <b>${t("pricing.closed.title")}</b>
             <p>${t(uid ? "pricing.closed.note" : "pricing.closed.noteGuest")}</p>
           </div>` : ""}
         <div class="pricing-ways">
-          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid)}
-          ${subscriptionCardHTML(sel, uid)}
+          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}
+          ${subscriptionCardHTML(sel, uid, owned)}
         </div>
         ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>`}
         ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
-        ${agencyHTML(uid, agencySoldOut)}
+        ${agencyHTML(uid, agencySoldOut, owned)}
       </section>
 
       <p class="pricing-founder-note">${t("pricing.renewNote")} ${t("pricing.founder.note")}</p>
@@ -632,8 +743,8 @@ export function render(root, { user, account, backHref, locked } = {}) {
       if (!root.isConnected) return;
       const before = openTier(null);
       slots = snap.exists() ? snap.data() : {};
-      const agencyGone = (Number(slots[AGENCY.slotField]) || 0) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
-      if (openTier(slots[FOUNDER.slotField]) === before && !agencyGone) return;
+      const agencyGone = seatsTakenOf(slots, AGENCY.slotField) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+      if (openTier(seatsTakenOf(slots, FOUNDER.slotField)) === before && !agencyGone) return;
       repaintInPlace();
     })
     .catch((err) => console.warn("Founder slot count unavailable", err));

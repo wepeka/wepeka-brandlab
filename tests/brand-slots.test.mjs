@@ -38,7 +38,14 @@ describe("brand limit + preview-only brands", () => {
     const account = { brandLimit: 2, brandSlotsUntil: [now + DAY] };
     assert.equal(lockedBrandIds(brands, account, now).size, 0);
   });
-  test("an account that never rented a slot is never locked, even over its limit", () => {
-    assert.equal(lockedBrandIds(brands, { brandLimit: 1 }, now).size, 0);
+  test("every account over its limit is held to it — a Studio → Starter downgrade keeps 1 brand open (S-16)", () => {
+    assert.deepEqual([...lockedBrandIds(brands, { plan: "starter", brandLimit: 1 }, now)], ["b", "c"]);
+  });
+  test("archiving an older brand frees its place", () => {
+    const withArchive = brands.map((b) => (b.id === "a" ? { ...b, archived: true } : b));
+    assert.deepEqual([...lockedBrandIds(withArchive, { brandLimit: 1 }, now)], ["c"]);
+  });
+  test("Wepeka's own team account is never locked", () => {
+    assert.equal(lockedBrandIds(brands, { uid: "iSwfTtIQm6VkYoHFbI6wl7BzBF53", brandLimit: 1 }, now).size, 0);
   });
 });

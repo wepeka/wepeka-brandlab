@@ -19,9 +19,14 @@ service cloud.firestore {
       // from the client", not a bound like the old 7-day-trial check it
       // replaces.
       allow create: if false;
+      // A username change must point at a claim this account holds
+      // (usernames/{name}, written in the same transaction by
+      // js/account.js claimUsername) — never at someone else's handle.
       allow update: if request.auth != null && request.auth.uid == uid
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName', 'username']);
+             .hasOnly(['displayName', 'username'])
+        && (!('username' in request.resource.data.diff(resource.data).affectedKeys())
+            || getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == request.auth.uid);
       allow delete: if false;
     }
 
@@ -50,11 +55,31 @@ service cloud.firestore {
     // meant to be shown/looked up), but a claim can only be created/held by
     // the uid it names, and can only ever be released (deleted) by its owner
     // — never overwritten to point at a different uid.
+    //
+    // One handle per account (audit S-25: any signed-in user could claim
+    // as many handles as they liked). A claim is only created together
+    // with accounts/{uid}.username moving to it, and only once the
+    // account's previous claim is released in the same transaction; a
+    // claim is only released once the account no longer uses it. This is
+    // exactly what claimUsername() already does, so the app needs no change.
+    function usernameAfter() {
+      return getAfter(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get('username', '');
+    }
+    function releasesOldClaim(username) {
+      let old = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get('username', '');
+      return old == '' || old == username || !existsAfter(/databases/$(database)/documents/usernames/$(old));
+    }
     match /usernames/{username} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid'])
+        && username.matches('^[a-z0-9_]{3,20}$')
+        && usernameAfter() == username
+        && releasesOldClaim(username);
       allow update: if false;
-      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid
+        && usernameAfter() != username;
     }
 
     // True only for a signed-in, PAID, non-suspended account — every write
@@ -64,12 +89,22 @@ service cloud.firestore {
     // content directly via the console even though the app itself never
     // lets them reach that code path), a lapsed monthly plan
     // (status=="readonly"), and an admin-deactivated account.
+    // Mirrored in js/account.js writableByRules() (tested there) — keep the
+    // two in sync.
     function accountActive() {
       let acc = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data;
       return request.auth != null && acc.status == 'active' && acc.plan != 'free'
         // A trial stops being writable the moment it ends, without waiting
         // for the daily cron (api/cron/check-expiry.js) to flip its status.
-        && (acc.plan != 'trial' || acc.trialEndsAt > request.time.toMillis());
+        && (acc.plan != 'trial' || acc.trialEndsAt > request.time.toMillis())
+        // Same for a paid period (audit S-22): a lapsed subscription used to
+        // keep writing until the cron's next run. No end date (Lifetime) or
+        // a non-number = no limit, exactly like the cron and accessState().
+        && paidTimeLeft(acc);
+    }
+    function paidTimeLeft(acc) {
+      let ends = acc.get('subscriptionExpiresAt', null);
+      return acc.plan == 'trial' || ends == null || !(ends is number) || ends > request.time.toMillis();
     }
     function isOwner(data) {
       return request.auth != null && data.ownerId == request.auth.uid;
@@ -167,11 +202,21 @@ service cloud.firestore {
     // 👍/👎 on AI results (js/ai-feedback.js → store.js recordAiFeedback).
     // Create-only for the signed-in author: the eval set is read later via
     // the Admin SDK, never by the client, and a rating is never edited.
+    // Bounded (audit S-25): exactly the fields recordAiFeedback() writes,
+    // at the sizes it already cuts them to — keep the two in sync — and
+    // only from an account that can use AI at all.
     match /aiFeedback/{id} {
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['id', 'uid', 'brandId', 'feature', 'prompt', 'output', 'rating', 'note', 'createdAt'])
         && request.resource.data.rating in ['up', 'down']
-        && request.resource.data.feature is string;
+        && request.resource.data.feature is string && request.resource.data.feature.size() <= 80
+        && request.resource.data.get('prompt', '') is string && request.resource.data.get('prompt', '').size() <= 8000
+        && request.resource.data.get('output', '') is string && request.resource.data.get('output', '').size() <= 12000
+        && request.resource.data.get('note', '') is string && request.resource.data.get('note', '').size() <= 1000
+        && (request.resource.data.get('brandId', null) == null
+            || (request.resource.data.brandId is string && request.resource.data.brandId.size() <= 128))
+        && accountActive();
       allow read, update, delete: if false;
     }
 

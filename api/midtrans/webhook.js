@@ -5,10 +5,11 @@
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
+import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
-import { MIDTRANS_IS_PRODUCTION, isPaymentTester, isSettled } from "../_payments.js";
+import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isSettled, notificationAction } from "../_payments.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -71,20 +72,35 @@ export default async function handler(req, res) {
   }
   const pending = paymentSnap.data();
 
-  if (!isSettled(transaction_status, fraud_status)) {
-    // pending/challenge/deny/expire/cancel — nothing to unlock, but 200 so
-    // Midtrans doesn't keep retrying a notification we've already understood.
-    // An order that will never be paid stops showing as "pending".
-    if (["expire", "cancel", "deny"].includes(transaction_status) && pending.status === "pending") {
-      await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
-    }
+  // Every answer below is 200 so Midtrans doesn't keep retrying a
+  // notification we've understood (api/_payments.js notificationAction).
+  const action = notificationAction(pending, transaction_status, fraud_status);
+  if (action === "close") {
+    // An order that will never be paid stops showing as "pending", and the
+    // Founder/Agency seat it held goes back on sale right away.
+    await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
+    await releaseHold(db, pending.hold);
     return res.status(200).json({ ok: true, ignored: transaction_status });
   }
-
-  if (pending.status !== "pending") {
-    // Already settled by an earlier notification for this same order_id.
-    return res.status(200).json({ ok: true, duplicate: true });
+  if (action === "flag") {
+    // Refund, chargeback, a captured card denied/cancelled afterwards — or
+    // money landing on an order already closed. Recorded on the payment and
+    // flagged on the account for the admin; access and seats are NOT taken
+    // back automatically (the owner hasn't set a policy for that yet).
+    const now = Date.now();
+    const batch = db.batch();
+    batch.set(paymentRef, {
+      status: transaction_status,
+      needsReview: transaction_status,
+      reversal: { status: transaction_status, previous: pending.status, at: now, ...(body.refund_amount ? { amount: Number(body.refund_amount) } : {}) },
+    }, { merge: true });
+    if (pending.uid) batch.set(db.doc(`accounts/${pending.uid}`), { paymentIssue: { orderId: order_id, status: transaction_status, planKey: pending.planKey || null, at: now } }, { merge: true });
+    await batch.commit();
+    console.warn("Midtrans webhook: payment reversed, flagged for review", order_id, transaction_status);
+    return res.status(200).json({ ok: true, flagged: transaction_status });
   }
+  if (action === "duplicate") return res.status(200).json({ ok: true, duplicate: true });
+  if (action !== "grant") return res.status(200).json({ ok: true, ignored: transaction_status });
 
   const { uid, planKey } = pending;
   // Sandbox mode: test cards settle for real, so only Wepeka's team and the
@@ -92,8 +108,9 @@ export default async function handler(req, res) {
   // An older order from someone else is voided instead of granted.
   if (!MIDTRANS_IS_PRODUCTION) {
     const buyer = (await db.doc(`accounts/${uid}`).get()).data();
-    if (!isPaymentTester(uid, buyer)) {
+    if (!paymentsOpenFor(uid, buyer)) {
       await paymentRef.set({ status: "void-sandbox", closedAt: Date.now() }, { merge: true });
+      await releaseHold(db, pending.hold);
       console.warn("Midtrans webhook: sandbox payment from a non-tester voided", order_id);
       return res.status(200).json({ ok: true, ignored: "sandbox" });
     }
@@ -123,8 +140,9 @@ export default async function handler(req, res) {
   // does retry the same notification, and a retry must not extend the
   // subscription a second time, take a second Founder slot, or double-count
   // revenue in the admin dashboard's per-account total.
+  const slotsRef = plan.slot ? db.doc(SLOTS_DOC) : null;
   const firstTime = await db.runTransaction(async (tx) => {
-    const [freshPaymentSnap, accountSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef)]);
+    const [freshPaymentSnap, accountSnap, slotsSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef), slotsRef ? tx.get(slotsRef) : null]);
     if (!freshPaymentSnap.exists || freshPaymentSnap.data().status !== "pending") return false;
 
     // A Brand Book art style only joins the account's owned list.
@@ -163,45 +181,47 @@ export default async function handler(req, res) {
       return true;
     }
 
-    // A downgrade bought while a bigger plan still runs: the current plan
-    // stays until its period ends, the new one is queued behind it
-    // (api/cron/check-expiry.js switches it over on the day).
-    if (pending.mode === "later" && plan.durationMs && Number(pending.startsAt) > now) {
-      tx.set(accountRef, {
-        scheduledPlan: { plan: plan.plan, billing: plan.billing, brandLimit: plan.brandLimit, startsAt: Number(pending.startsAt) },
-        subscriptionExpiresAt: Number(pending.startsAt) + plan.durationMs,
-      }, { merge: true });
-      tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, scheduled: true }, { merge: true });
-      return true;
+    // A plan: what it does to the account is decided against the account
+    // as it is NOW (api/_plans.js settlePlanPurchase) — a queued downgrade
+    // waits for the running plan's own period, a renewal adds to it, and an
+    // order that can no longer apply the way it was sold (a second queued
+    // downgrade, or any plan but Agency on top of a Lifetime account) is
+    // recorded as paid and flagged for the admin instead of being forced
+    // onto the account — a Lifetime plan is never downgraded from here.
+    const decision = settlePlanPurchase(accountSnap.data() || {}, planKey, pending, now);
+    if (decision.issue) {
+      tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, needsReview: decision.issue }, { merge: true });
+      tx.set(accountRef, { paymentIssue: { orderId: order_id, status: decision.issue, planKey, at: now } }, { merge: true });
+      // Nothing applied, so no seat either: the one this order held goes back.
+      if (slotsRef && pending.hold?.key && slotsSnap?.exists) {
+        tx.update(slotsRef, seatFields(plan.slot, { holds: releaseSeat(slotsSnap.data(), plan.slot, pending.hold.key, pending.hold.until, now) }).update);
+      }
+      console.warn("Midtrans webhook: paid order needs review", order_id, decision.issue);
+      return "issue";
     }
-
-    const patch = { plan: plan.plan, status: "active", paidAt: now, trialEndsAt: null, scheduledPlan: null };
-    if (plan.billing) patch.billing = plan.billing;
-    if (plan.brandLimit) patch.brandLimit = plan.brandLimit;
-    if (plan.durationMs) {
-      // Renewing the same plan early adds to the time left instead of
-      // throwing it away; switching plans starts a fresh period from today.
-      const current = accountSnap.data() || {};
-      // Same plan AND same billing only — monthly → yearly of the same plan
-      // is an upgrade whose unused days already came off the price
-      // (switchQuote), so they must not be added on top as well.
-      const stillRunning = current.plan === plan.plan && (current.billing || "monthly") === plan.billing && Number(current.subscriptionExpiresAt) > now;
-      patch.subscriptionExpiresAt = (stillRunning ? current.subscriptionExpiresAt : now) + plan.durationMs;
-    } else {
-      patch.subscriptionExpiresAt = null;
-      patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
-    }
-
+    // A capped seat: its hold becomes a sale (api/_plans.js convertSeat). One
+    // sold past the cap — its hold had lapsed and the seat went to someone
+    // else — is still granted, since it's paid, and flagged for the admin.
+    const seat = decision.takesSeat ? convertSeat(slotsSnap?.data(), plan.slot, pending.hold?.key, now) : null;
+    const review = decision.review || (seat?.overCap ? "over-cap" : undefined);
+    const patch = { ...decision.patch };
+    if (decision.grantBookStyles) patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
+    // Applied, but worth a look (a Founder who paid Agency's full price, a
+    // seat past the cap).
+    if (review) patch.paymentIssue = { orderId: order_id, status: review, planKey, at: now };
     tx.set(accountRef, patch, { merge: true });
-    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now }, { merge: true });
-    if (plan.slot) tx.set(db.doc(SLOTS_DOC), { [plan.slot]: FieldValue.increment(1) }, { merge: true });
+    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}), ...(review ? { needsReview: review } : {}) }, { merge: true });
+    if (seat) writeSeats(tx, slotsRef, slotsSnap, seatFields(plan.slot, { sold: seat.sold, holds: seat.holds }));
     return true;
   });
 
   // Auto-renew bookkeeping happens after the unlock is committed and never
-  // fails the notification: a problem here only means no auto-renew.
-  if (firstTime) {
+  // fails the notification: a problem here only means no auto-renew. A paid
+  // order flagged for review changed nothing, so it leaves auto-renew alone.
+  if (firstTime === true) {
     await syncAutoRenew(db, { uid, planKey, pending, orderId: order_id }).catch((err) => console.error("Midtrans webhook: auto-renew setup failed", order_id, err?.message));
+  }
+  if (firstTime) {
     // Meta Purchase, once per order (retries have firstTime false). Same
     // event id as the browser pixel in js/views/pricing.js payPlan. Awaited
     // (Vercel may freeze the function after the response) but never throws.
@@ -277,11 +297,11 @@ async function applyRenewalCharge(db, { orderId, name, grossAmount, paid }) {
     const plan = PLANS[sub.planKey];
     const addon = ADDONS[sub.planKey];
     if (plan) {
-      // Only renews the plan it was made for; a plan switch disables it,
-      // so a charge for anything else is a stray and changes nothing.
-      if (acc.plan === plan.plan && (acc.billing || "monthly") === plan.billing) {
-        tx.set(accountRef, { status: "active", subscriptionExpiresAt: Math.max(now, Number(acc.subscriptionExpiresAt) || 0) + plan.durationMs }, { merge: true });
-      }
+      // Only renews the plan it was made for (a plan switch disables it, so
+      // a charge for anything else is a stray and changes nothing), and
+      // never re-activates an account an admin deactivated.
+      const patch = renewalChargePatch(acc, sub.planKey, now);
+      if (patch) tx.set(accountRef, patch, { merge: true });
     } else if (addon?.aiUnlimitedMs) {
       tx.set(accountRef, { aiUnlimitedUntil: Math.max(now, Number(acc.aiUnlimitedUntil) || 0) + addon.aiUnlimitedMs }, { merge: true });
     } else if (addon?.addBrandSlotMs) {
