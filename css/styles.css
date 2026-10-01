@@ -3212,6 +3212,9 @@ main.view.view-leave{ opacity:0; transform: translateY(-6px); transition: opacit
   .consultant-fab{ right:16px; bottom:16px; }
 }
 
+/* What changed after a Pemula/Pro switch (js/layout.js showModeSwitched). */
+.mode-switched-list{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:8px; font-size:13.5px; line-height:1.5; }
+
 /* No connection (js/layout.js wireOfflineBanner): a banner across the top;
    the page and the sticky header move down by its height. */
 .offline-banner{ position:fixed; top:0; left:0; right:0; z-index:45; display:flex; align-items:center; justify-content:center; gap:8px; padding:7px 16px; background:#ffc94a; color:#1c1610; font-size:13px; font-weight:700; line-height:1.35; text-align:center; }

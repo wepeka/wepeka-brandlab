@@ -204,6 +204,12 @@ export default {
   "set.data.resetMsg": { en: "This permanently deletes all brands and content.", id: "Ini menghapus semua brand dan konten secara permanen." },
   "set.data.resetConfirm": { en: "Reset everything", id: "Reset semuanya" },
   "set.data.resetDone": { en: "All data reset", id: "Semua data sudah direset" },
+  // Reset can't be undone, so it asks for a typed word (js/typed-confirm.js).
+  "set.data.resetWord": { en: "DELETE", id: "HAPUS" },
+  "set.data.resetType": { en: "Type <b>{word}</b> to confirm. Download a backup first if you might want any of it back.", id: "Ketik <b>{word}</b> buat konfirmasi. Unduh backup dulu kalau mungkin masih butuh datanya." },
+  "set.data.importTitle": { en: "Replace data with this backup?", id: "Timpa data dengan backup ini?" },
+  "set.data.importMsg": { en: "\"{file}\" holds {brands} brand(s), {content} content item(s) and {campaigns} campaign(s). Items with the same ID are overwritten by the file's version and your settings are replaced by the file's. Things that aren't in the file stay as they are.", id: "\"{file}\" berisi {brands} brand, {content} konten, dan {campaigns} campaign. Data dengan ID yang sama ditimpa versi dari file, dan pengaturanmu diganti isi file. Yang tidak ada di file tetap seperti sekarang." },
+  "set.data.importConfirm": { en: "Replace with backup", id: "Timpa dengan backup" },
   "set.acc.loggedInAs": { en: "Logged in as", id: "Masuk sebagai" },
   "set.acc.id": { en: "Account ID", id: "ID akun" },
   "set.acc.usernameSub": { en: "Your unique handle at Wepeka — no other account can use the same name.", id: "Nama pengenal unik kamu di Wepeka — nggak ada akun lain yang bisa pakai nama yang sama." },
@@ -419,6 +425,18 @@ export default {
   "auth.wepeka.login": { en: "Continue with your Wepeka account", id: "Lanjut pakai akun Wepeka" },
   "auth.wepeka.registerCta": { en: "Register on wepeka.com", id: "Daftar di wepeka.com" },
   "auth.wepeka.note": { en: "One account for wepeka.com Community and Brandlab — no second password.", id: "Satu akun buat Community wepeka.com dan Brandlab — nggak perlu password kedua." },
+  // js/layout.js showModeSwitched: what changed right after the Pemula/Pro switch.
+  "mode.switched.title.guided": { en: "You're on Beginner now", id: "Sekarang mode Pemula" },
+  "mode.switched.title.advanced": { en: "You're on Pro now", id: "Sekarang mode Pro" },
+  "mode.switched.guided.1": { en: "Home shows the next step, without the analytics charts.", id: "Beranda fokus ke langkah berikutnya, tanpa grafik analitik." },
+  // {campaign}/{funnel} come in as vars: Pemula's plainWords() would turn the words themselves into "tujuan"/"Kenalan".
+  "mode.switched.guided.2": { en: "Plain words: Goal instead of {campaign}, Get known / Build trust / Sell instead of {funnel}.", id: "Bahasa sederhana: Tujuan (bukan {campaign}), Kenalan / Yakinkan / Jualan (bukan {funnel})." },
+  "mode.switched.guided.3": { en: "The chat is one box — the AI picks the right helper for you.", id: "Chat jadi satu kotak — AI yang milih bantuan yang pas." },
+  "mode.switched.advanced.1": { en: "Home adds the analytics charts; the reminder bell sits at the top.", id: "Beranda nambah grafik analitik; lonceng pengingat muncul di atas." },
+  "mode.switched.advanced.2": { en: "Full terms: campaign, funnel (TOFU/MOFU/BOFU), engagement, plus campaign status and menus.", id: "Istilah lengkap: campaign, funnel (TOFU/MOFU/BOFU), engagement, plus status dan menu campaign." },
+  "mode.switched.advanced.3": { en: "The chat's Consultant, Brainstorm and Companion open on their own; Settings adds your own platforms and formats.", id: "Konsultan, Brainstorm, dan Teman di chat bisa dibuka sendiri-sendiri; Pengaturan nambah daftar platform & format." },
+  "mode.switched.same": { en: "Your data stays exactly the same — only the view changes. Switch back anytime from the ⋯ menu.", id: "Datamu tetap sama persis — cuma tampilannya yang berubah. Bisa ganti lagi kapan aja dari menu ⋯." },
+  "mode.switched.ok": { en: "Got it", id: "Oke" },
   // js/layout.js: shown while the browser has no connection.
   "app.offline": { en: "You're offline — your changes are saved once you're back online.", id: "Kamu sedang offline — perubahan disimpan saat online lagi." },
   "app.backOnline": { en: "Back online — saving your changes.", id: "Online lagi — perubahan sedang disimpan." },

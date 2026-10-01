@@ -13,6 +13,7 @@ import { BG_PRESETS, DEFAULT_GLOW, resolveBrandsBg, bgHTML, paintBrandsBg } from
 import { icon } from "../icons.js";
 import { avatarHTML, qs, qsa, toast, escapeHtml, formatDate } from "../dom.js";
 import { confirmDialog } from "../modals.js";
+import { typedConfirmDialog } from "../typed-confirm.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout, authErrorMessage } from "../auth.js";
 import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS, brandLimitOf, canCreateBrand } from "../account.js";
@@ -34,7 +35,8 @@ const PANELS = [
   // Sampah is its own panel so Pemula can reach it too — every delete dialog
   // in the app points here ("Pengaturan → Sampah").
   { key: "trash", labelKey: "settings.panel.trash" },
-  { key: "data", labelKey: "settings.panel.data", pro: true },
+  // Backup (export/import) for both modes: a Pemula account's data is worth saving too.
+  { key: "data", labelKey: "settings.panel.data" },
   { key: "ai", labelKey: "settings.panel.ai", admin: true },
   { key: "bg", labelKey: "settings.panel.bg", admin: true },
 ];
@@ -383,9 +385,21 @@ function renderData(content) {
   qs("#import-btn").addEventListener("click", () => qs("#import-file").click());
   qs("#import-file").addEventListener("change", async (e) => {
     const file = e.target.files[0];
+    e.target.value = ""; // the same file can be picked again after a cancel
     if (!file) return;
     try {
-      await importJSON(await file.text());
+      const text = await file.text();
+      // Say what the file holds and what it overwrites before writing anything.
+      const parsed = JSON.parse(text);
+      const n = (k) => (Array.isArray(parsed?.[k]) ? parsed[k].length : 0);
+      const ok = await confirmDialog({
+        title: t("set.data.importTitle"),
+        message: t("set.data.importMsg", { file: escapeHtml(file.name), brands: n("brands"), content: n("content"), campaigns: n("campaigns") }),
+        confirmLabel: t("set.data.importConfirm"),
+        danger: true,
+      });
+      if (!ok) return;
+      await importJSON(text);
       toast(t("set.data.imported"));
     } catch (err) {
       const reason = err instanceof SyntaxError
@@ -396,7 +410,8 @@ function renderData(content) {
     }
   });
   qs("#reset-btn").addEventListener("click", async () => {
-    const ok = await confirmDialog({ title: t("set.data.resetTitle"), message: t("set.data.resetMsg"), confirmLabel: t("set.data.resetConfirm"), danger: true });
+    const word = t("set.data.resetWord");
+    const ok = await typedConfirmDialog({ title: t("set.data.resetTitle"), message: t("set.data.resetMsg"), word, prompt: t("set.data.resetType", { word }), confirmLabel: t("set.data.resetConfirm") });
     if (ok) { resetAll(); toast(t("set.data.resetDone")); location.hash = "#/"; }
   });
 }

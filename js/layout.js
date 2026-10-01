@@ -13,6 +13,7 @@ import { identityDone } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
 import { installTopUpNotice, canTopUp } from "./ai-topup.js";
 import { rememberLastBrand } from "./back-link.js";
+import { openModal, closeOverlay } from "./modals.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
 // chunk in the app, and the whole reason the logged-out login/pricing
@@ -344,6 +345,22 @@ function menuBelow(btn, { className = "", width = 240 } = {}) {
   return openMenu(btn, { className, top: rect.bottom + 8, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)) });
 }
 
+// Pemula ⇄ Pro used to switch silently: the page just looked different.
+// Right after the switch, one small sheet says what changed and that the
+// data is the same.
+function showModeSwitched(mode) {
+  const points = [1, 2, 3].map((i) => `<li>${escapeHtml(t(`mode.switched.${mode}.${i}`, { campaign: "campaign", funnel: "TOFU/MOFU/BOFU" }))}</li>`).join("");
+  const overlay = openModal({
+    title: t(`mode.switched.title.${mode}`),
+    bodyHTML: `
+      <ul class="mode-switched-list">${points}</ul>
+      <p class="text-muted" style="margin:12px 0 0;font-size:13px;">${escapeHtml(t("mode.switched.same"))}</p>
+    `,
+    footHTML: `<button class="btn btn-primary" data-ok>${t("mode.switched.ok")}</button>`,
+  });
+  overlay.querySelector("[data-ok]").addEventListener("click", () => closeOverlay(overlay));
+}
+
 // Offline: a slim banner across the top while the connection is gone, so
 // an edit that hasn't reached the cloud yet doesn't look lost or broken —
 // Firestore keeps the writes and sends them when the connection is back.
@@ -424,7 +441,7 @@ export function wireShell({ brandId }) {
       if (!target) return;
       const act = target.dataset.act;
       closeMenu();
-      if (act === "mode") toggleMode();
+      if (act === "mode") showModeSwitched(toggleMode());
       else if (act === "consultant") openConsultantPanel();
       else if (act === "intro") openIntroVideo();
       else if (act === "tour") startOnboardingTour();
