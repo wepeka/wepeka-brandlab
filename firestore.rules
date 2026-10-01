@@ -66,8 +66,11 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get('username', '');
     }
     function releasesOldClaim(username) {
-      let old = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get('username', '');
-      return old == '' || old == username || !existsAfter(/databases/$(database)/documents/usernames/$(old));
+      // New accounts are created with username: null (wepeka.com
+      // brandlab-db.ts), so null and a missing field both mean "no old claim".
+      let old = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get('username', null);
+      return old == null || old == '' || old == username
+        || !existsAfter(/databases/$(database)/documents/usernames/$(old));
     }
     match /usernames/{username} {
       allow read: if request.auth != null;
