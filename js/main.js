@@ -57,11 +57,22 @@ const app = document.getElementById("app");
 
 // The "Selamat datang" video (admin slot `akun-baru`): once per account,
 // after the account exists and before the Pemula/Pro picker. Silent when it
-// isn't published; never blocks the picker if anything fails.
+// isn't published; never blocks the picker if anything fails. "Tur website"
+// there can't run yet (no app on screen), so it's remembered and started
+// once the picked mode's first page has painted (tourAfterPicker).
+let welcomeTourPending = false;
 function playWelcomeVideo() {
   return import("./guide-videos.js")
-    .then((m) => m.playVideoGate("akun-baru"))
+    .then((m) => m.playVideoGate("akun-baru", { tourNow: false }))
+    .then((r) => { if (r?.tour) welcomeTourPending = true; })
     .catch((e) => console.warn("welcome video unavailable", e));
+}
+// True (once) when the welcome video asked for the tour; starts it.
+function tourAfterPicker(delay = 600) {
+  if (!welcomeTourPending) return false;
+  welcomeTourPending = false;
+  setTimeout(() => import("./guide-videos.js").then((m) => m.startTour()), delay);
+  return true;
 }
 let cleanup = null;
 
@@ -322,10 +333,10 @@ function onAccountChange(user, account) {
       }
       if (firstEverOpen) {
         // "Hi {nama}, welcome to Brandlab" first, then the kenalan video —
-        // in that order, never both at once.
+        // in that order, never both at once. Someone who already chose "Tur
+        // website" on the welcome video gets the tour there instead.
         bumper
-          .then(() => import("./guide-videos.js"))
-          .then((m) => m.playFirstRunIntro())
+          .then(() => (tourAfterPicker(0) ? null : import("./guide-videos.js").then((m) => m.playFirstRunIntro())))
           .catch((e) => console.warn("first-run video unavailable", e));
       }
       // Weekly Instagram insights refresh for published content. Loaded
@@ -434,6 +445,7 @@ async function renderRoute() {
     if (token !== renderToken) return;
     await renderModePicker(document.getElementById("mode-root"));
     if (token !== renderToken) return;
+    tourAfterPicker(1200);
   }
 
   const route = parseRoute(location.hash);

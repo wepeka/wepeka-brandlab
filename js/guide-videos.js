@@ -305,10 +305,12 @@ function partListHTML(parts, current) {
 // Panduan button, which is exactly what the closing bubble will point at.
 // `start` (seconds) opens the video at that page's chapter; the replay
 // button starts from the top, so the whole app video is one click away.
-// `continueLabel`: the video stands in front of something (the mode picker,
-// the chat) — it ends on "replay" or that one button instead of the three
-// answers, and `onContinue` runs however it closes.
-export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = null, hint = true, start = 0, part = 0, continueLabel = null, onContinue = null } = {}) {
+// The three answers — Ulangi video, Tur website (or this page's guide),
+// Sudah paham — sit under the player the whole time, not only once it ends.
+// `onClose(choice)`: the video stands in front of something (the mode
+// picker, the chat); it's told how the modal closed ("tour" or "done" — the
+// X counts as done) and takes over from there instead of the usual hint.
+export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = null, hint = true, start = 0, part = 0, onClose = null } = {}) {
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return null;
   const real = !!v.src && !isPlaceholder(v.src);
@@ -338,25 +340,19 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
       </div>
       <div data-gv-list>${partListHTML(parts, current)}</div>
       <p class="guide-video-note">${real ? t("guide.video.duration", { duration: escapeHtml(v.duration) }) : t("guide.video.pendingNote", { duration: escapeHtml(v.duration) })}</p>
-      <div class="guide-video-skip" data-video-skip hidden>
-        <button type="button" class="btn btn-ghost btn-sm" data-vc="skip">${t("guide.video.skip")}</button>
-      </div>
-      <div class="guide-video-choices" data-video-choices hidden>
-        <p class="guide-video-choices-head">${t("guide.video.choices.head")}</p>
+      <div class="guide-video-choices" data-video-choices>
+        <p class="guide-video-choices-head" data-video-choices-head hidden>${t("guide.video.choices.head")}</p>
         <div class="guide-video-choice-row">
           ${real ? `<button type="button" class="btn btn-ghost btn-sm" data-vc="replay">${icon("play", { size: 13 })}${t("guide.video.choices.replay")}</button>` : ""}
-          ${continueLabel
-            ? `<button type="button" class="btn btn-primary btn-sm" data-vc="done">${escapeHtml(continueLabel)}</button>`
-            : `<button type="button" class="btn btn-ghost btn-sm" data-vc="tour">${icon("target", { size: 13 })}${escapeHtml(tourText)}</button>
-          <button type="button" class="btn btn-primary btn-sm" data-vc="done">${t("guide.video.choices.done")}</button>`}
+          <button type="button" class="btn btn-ghost btn-sm" data-vc="tour">${icon("target", { size: 13 })}${escapeHtml(tourText)}</button>
+          <button type="button" class="btn btn-primary btn-sm" data-vc="done">${t("guide.video.choices.done")}</button>
         </div>
       </div>
     `,
   });
   overlay.setAttribute("data-guide-video-modal", videoKey);
 
-  const choices = overlay.querySelector("[data-video-choices]");
-  const skipRow = overlay.querySelector("[data-video-skip]");
+  const choicesHead = overlay.querySelector("[data-video-choices-head]");
   const stage = overlay.querySelector("[data-video-stage]");
   const frameHost = overlay.querySelector("[data-video-frame-host]");
   const listHost = overlay.querySelector("[data-gv-list]");
@@ -365,6 +361,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
   const nextBtn = overlay.querySelector('[data-vc="next"]');
   let ending = null;
   let tourTaken = false;
+  let choice = "done";
 
   const paintBar = () => {
     if (status) status.textContent = multi ? t("guide.video.partOf", { n: current + 1, total: parts.length }) : "";
@@ -372,10 +369,11 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     if (nextBtn) nextBtn.disabled = current >= parts.length - 1;
     listHost.innerHTML = partListHTML(parts, current);
   };
+  // The end of the last part: the buttons were there all along; now the
+  // question above them shows too.
   const showChoices = () => {
     if (ending) { clearTimeout(ending); ending = null; }
-    skipRow.hidden = true;
-    choices.hidden = false;
+    choicesHead.hidden = false;
   };
   // A part ending: the next one starts by itself; after the last, the
   // three answers.
@@ -388,9 +386,8 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
   // placeholder has nothing to play at all, so it asks straight away.
   const watchForEnd = () => {
     if (ending) { clearTimeout(ending); ending = null; }
-    choices.hidden = true;
+    choicesHead.hidden = true;
     if (!real) return showChoices();
-    skipRow.hidden = false;
     const el = stage.querySelector("video");
     if (el) {
       // Same guard for a file whose real length is shorter than declared.
@@ -416,7 +413,6 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     const btn = e.target instanceof Element ? e.target.closest("[data-vc]") : null;
     if (!btn) return;
     const what = btn.dataset.vc;
-    if (what === "skip") return showChoices();
     if (what === "prev") return playPart(current - 1);
     if (what === "next") return playPart(current + 1);
     if (what === "fullscreen") {
@@ -426,20 +422,21 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     }
     if (what === "replay") return playPart(0);
     tourTaken = what === "tour";
+    choice = tourTaken ? "tour" : "done";
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     closeOverlay(overlay);
-    if (tourTaken) onTour?.();
+    if (tourTaken && !onClose) onTour?.();
   });
 
   // However it closes — a choice, the X, Escape, a click outside — the same
   // sentence is what's left on screen. After the tour it waits for the tour
   // to finish, so the bubble never fights the spotlight for attention.
-  if (hint || onContinue) {
+  if (hint || onClose) {
     const obs = new MutationObserver(() => {
       if (overlay.isConnected) return;
       obs.disconnect();
       if (ending) clearTimeout(ending);
-      if (onContinue) return onContinue();
+      if (onClose) return onClose(choice);
       if (tourTaken) hintAfterTour();
       else replayHint();
     });
@@ -542,21 +539,33 @@ export function playFirstRunIntro() {
   whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: startTour, tourLabel: t("guide.video.choices.tour"), hint: true }) : startTour()));
 }
 
-// A video that stands in front of something, once per account: resolves
-// when it has been watched or skipped (closing it any way counts), or right
-// away when it isn't published / was already seen. The caller then carries
-// on with what was asked (show the mode picker, open the chat).
-export function playVideoGate(videoKey, { continueLabel = t("guide.video.continue") } = {}) {
-  if (videoSeen(videoKey)) return Promise.resolve();
+// A video that stands in front of something, once per account. Resolves
+// with { tour } once it closes — tour: true when "Tur website" was pressed —
+// or right away ({ tour: false }) when it isn't published / was already
+// seen. The caller carries on (show the mode picker, open the chat).
+// `tourNow`: start the website tour here; false when the caller has to put
+// something on screen first (the mode picker) and starts it itself.
+export function playVideoGate(videoKey, { tourNow = true } = {}) {
+  if (videoSeen(videoKey)) return Promise.resolve({ tour: false });
   return whenReady().then(
     () =>
       new Promise((resolve) => {
-        if (!canShowVideo(videoKey)) return resolve();
+        if (!canShowVideo(videoKey)) return resolve({ tour: false });
         markVideoSeen(videoKey);
-        const overlay = openGuideVideo(videoKey, { hint: false, continueLabel, onContinue: resolve });
-        if (!overlay) resolve();
+        const done = (choice) => {
+          const tour = choice === "tour";
+          if (tour && tourNow) startWebsiteTour();
+          resolve({ tour });
+        };
+        const overlay = openGuideVideo(videoKey, { hint: false, onTour: startWebsiteTour, tourLabel: t("guide.video.choices.tour"), onClose: done });
+        if (!overlay) resolve({ tour: false });
       })
   );
+}
+
+// The website tour, for a caller that held it back (playVideoGate tourNow:false).
+export function startTour() {
+  return startWebsiteTour();
 }
 
 // The two pills next to a page's "?" (js/help.js helpButtonHTML), same

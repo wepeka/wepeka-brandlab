@@ -1479,8 +1479,7 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
    or skipped (js/guide-videos.js openGuideVideo). */
 /* [hidden] is only display:none at UA weight — a class that sets display
    would silently win, so both toggled blocks say it themselves. */
-.guide-video-skip{ display:flex; justify-content:flex-end; margin-top:10px; }
-.guide-video-skip[hidden], .guide-video-choices[hidden]{ display:none; }
+.guide-video-choices[hidden]{ display:none; }
 .guide-video-choices{ margin-top:14px; padding-top:14px; border-top:1px solid var(--border); animation: reveal-up .22s ease-out both; }
 .guide-video-choices-head{ margin:0 0 10px; font-size:13px; font-weight:600; }
 .guide-video-choice-row{ display:flex; flex-wrap:wrap; gap:8px; }

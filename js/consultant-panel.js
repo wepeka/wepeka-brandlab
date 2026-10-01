@@ -2984,7 +2984,7 @@ function wireDocument() {
 function tanyaVideoFirst() {
   return import("./guide-videos.js")
     .then((m) => m.playVideoGate("tanya-brandlab"))
-    .catch(() => {});
+    .catch(() => ({ tour: false }));
 }
 
 export function mountConsultantPanel(brandId) {
@@ -3004,7 +3004,8 @@ export function mountConsultantPanel(brandId) {
   fab.addEventListener("click", async () => {
     // The first press ever: the "Tanya Brandlab" video (admin slot
     // `tanya-brandlab`) plays first, then the chat opens.
-    if (!isOpen) await tanyaVideoFirst();
+    // "Tur website" there runs the tour instead of opening the chat.
+    if (!isOpen && (await tanyaVideoFirst()).tour) return;
     // Pemula: the round button always opens the one simple box.
     if (!isOpen && isGuided()) setMode(brandId, "auto");
     togglePanel(brandId, !isOpen);
@@ -3020,7 +3021,7 @@ export function mountConsultantPanel(brandId) {
     hint.className = "consultant-fab-hint";
     hint.textContent = t("consultant.fabHint");
     hint.addEventListener("click", async () => {
-      await tanyaVideoFirst();
+      if ((await tanyaVideoFirst()).tour) return;
       togglePanel(brandId, true);
     });
     document.body.appendChild(hint);
