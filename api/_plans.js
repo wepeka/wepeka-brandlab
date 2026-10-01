@@ -173,6 +173,25 @@ function creditQuote(price, value, extra = {}) {
   return { mode: "now", amount: price - credit, credit, ...extra };
 }
 
+// A Lifetime account is never sold another plan on top — it used to read
+// as "nothing running", so a Founder clicking "Langganan" became a Starter
+// expiring in 30 days, an Agency buying Founder dropped to 3 brands, and a
+// Founder could buy Founder again (audit S-15). The one way up is Founder
+// → Agency Lifetime, for the difference between the two: Agency's price
+// minus what the Founder seat cost (accounts/{uid}.lifetimePaid, written by
+// the webhook), never below MIN_CHARGE. Without a recorded price (a seat
+// activated by hand over WhatsApp) the difference is worked out by the
+// team instead: "lifetime-manual". Owner's rule, 2026-10-01.
+export const isLifetimePlan = (plan) => LIFETIME_KEYS.includes(plan);
+function lifetimeQuote(acc, planKey, price) {
+  if (acc.plan === "founder" && planKey === "founder-ultimate") {
+    const paid = Number(acc.lifetimePaid);
+    if (!(paid > 0)) return refused("lifetime-manual");
+    return creditQuote(price, paid, { lifetimeUpgrade: true });
+  }
+  return refused(acc.plan === "founder-ultimate" ? "lifetime-top" : "lifetime-owned");
+}
+
 // What buying `planKey` costs this account right now, and when it starts.
 // mode: "new" (nothing running), "renew" (same plan; `scheduledStartsAt` =
 // where a queued downgrade moves to), "now" (upgrade, with `credit` = the
@@ -183,6 +202,9 @@ function creditQuote(price, value, extra = {}) {
 export function switchQuote(account, planKey, price, now = Date.now()) {
   const target = PLANS[planKey];
   if (!target) return null;
+  // Whatever its status: a Lifetime plan an admin paused is still not
+  // something a subscription may overwrite.
+  if (isLifetimePlan(account?.plan)) return lifetimeQuote(account, planKey, price);
   const run = runningSubscription(account, now);
   if (!run) return { mode: "new", amount: price, credit: 0 };
   if (run.key === planKey) {
@@ -214,6 +236,12 @@ export function settlePlanPurchase(account, planKey, pending = {}, now = Date.no
   if (!plan) return { issue: "unknown-plan" };
   const due = dueSchedulePatch(account, now) || {};
   const acc = withDueSchedule(account, now);
+  // Defensive twin of switchQuote's refusal: an order opened before the
+  // account went Lifetime (or one forged around the pricing page) is paid,
+  // but never downgrades a Lifetime account or takes a second seat.
+  if (isLifetimePlan(acc.plan) && !(acc.plan === "founder" && planKey === "founder-ultimate")) {
+    return { issue: "lifetime-conflict" };
+  }
   const run = runningSubscription(acc, now);
   // Paying re-opens a lapsed ("readonly") account, never one an admin
   // deactivated — that stays the admin's call (audit S-22).
@@ -257,7 +285,16 @@ export function settlePlanPurchase(account, planKey, pending = {}, now = Date.no
   }
   patch.subscriptionExpiresAt = null;
   patch.scheduledPlan = null;
-  return { patch, grantBookStyles: true, takesSeat: !!plan.slot };
+  // What this Lifetime is worth, for a later Founder → Agency upgrade: the
+  // plan's full price (cash + any credit that came off it), so an upgraded
+  // Founder ends at Agency's price in total.
+  if (PLANS[planKey]) patch.lifetimePaid = Number(pending.price) || Number(pending.amount || 0) + Number(pending.credit || 0);
+  // Agency bought at full price by an account that has meanwhile become a
+  // Founder (a checkout opened before the Founder one settled): applied —
+  // it's what they paid for — but the Founder price was paid on top, which
+  // is the admin's to refund.
+  const review = acc.plan === "founder" && !pending.lifetimeUpgrade ? "lifetime-overpaid" : undefined;
+  return { patch, grantBookStyles: true, takesSeat: !!plan.slot, ...(review ? { review } : {}) };
 }
 
 // ---- Auto-renew (Midtrans Subscription API, card only for now) ----------

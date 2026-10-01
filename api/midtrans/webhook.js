@@ -167,8 +167,9 @@ export default async function handler(req, res) {
     // as it is NOW (api/_plans.js settlePlanPurchase) — a queued downgrade
     // waits for the running plan's own period, a renewal adds to it, and an
     // order that can no longer apply the way it was sold (a second queued
-    // downgrade) is recorded as paid and flagged for the admin instead of
-    // being forced onto the account.
+    // downgrade, or any plan but Agency on top of a Lifetime account) is
+    // recorded as paid and flagged for the admin instead of being forced
+    // onto the account — a Lifetime plan is never downgraded from here.
     const decision = settlePlanPurchase(accountSnap.data() || {}, planKey, pending, now);
     if (decision.issue) {
       tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, needsReview: decision.issue }, { merge: true });
@@ -178,8 +179,10 @@ export default async function handler(req, res) {
     }
     const patch = { ...decision.patch };
     if (decision.grantBookStyles) patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
+    // Applied, but worth a look (e.g. a Founder who paid Agency's full price).
+    if (decision.review) patch.paymentIssue = { orderId: order_id, status: decision.review, planKey, at: now };
     tx.set(accountRef, patch, { merge: true });
-    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}) }, { merge: true });
+    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}), ...(decision.review ? { needsReview: decision.review } : {}) }, { merge: true });
     if (decision.takesSeat) tx.set(db.doc(SLOTS_DOC), { [plan.slot]: FieldValue.increment(1) }, { merge: true });
     return true;
   });

@@ -174,3 +174,60 @@ describe("what a paid plan writes", () => {
     assert.equal(d.takesSeat, true);
   });
 });
+
+describe("a Lifetime account is never overwritten (S-15)", () => {
+  const founder = { plan: "founder", billing: "lifetime", status: "active", brandLimit: 3, subscriptionExpiresAt: null, lifetimePaid: 499000 };
+  const agency = { plan: "founder-ultimate", billing: "lifetime", status: "active", brandLimit: 15, subscriptionExpiresAt: null, lifetimePaid: 1490000 };
+
+  test("a Founder can't buy a subscription, Studio, or Founder again", () => {
+    for (const key of ["starter-monthly", "pro-yearly", "studio-monthly", "founder"]) {
+      const q = switchQuote(founder, key, PLANS[key].amount, t0);
+      assert.equal(q.mode, "refused", key);
+      assert.equal(q.code, "lifetime-owned", key);
+    }
+  });
+  test("Agency Lifetime is the top: nothing else is sold to it", () => {
+    for (const key of ["starter-monthly", "studio-yearly", "founder", "founder-ultimate"]) {
+      assert.equal(switchQuote(agency, key, PLANS[key].amount, t0).code, "lifetime-top", key);
+    }
+  });
+  test("the old all-in-one Lifetime and a paused Founder are refused too", () => {
+    assert.equal(switchQuote({ plan: "lifetime", status: "active" }, "founder", 499000, t0).code, "lifetime-owned");
+    assert.equal(switchQuote({ ...founder, status: "readonly" }, "starter-monthly", 49000, t0).code, "lifetime-owned");
+  });
+  test("Founder → Agency pays the difference", () => {
+    assert.deepEqual(switchQuote(founder, "founder-ultimate", 1490000, t0), { mode: "now", amount: 991000, credit: 499000, lifetimeUpgrade: true });
+    assert.equal(switchQuote({ ...founder, lifetimePaid: 699000 }, "founder-ultimate", 1490000, t0).amount, 791000);
+  });
+  test("without a recorded Founder price the team works the difference out", () => {
+    const { lifetimePaid, ...handActivated } = founder;
+    assert.equal(switchQuote(handActivated, "founder-ultimate", 1490000, t0).code, "lifetime-manual");
+  });
+  test("the difference never goes below Rp 1.000", () => {
+    assert.equal(switchQuote({ ...founder, lifetimePaid: 2000000 }, "founder-ultimate", 1490000, t0).amount, 1000);
+  });
+
+  test("a plan paid for a Lifetime account changes nothing and is flagged", () => {
+    assert.deepEqual(settlePlanPurchase(founder, "starter-monthly", { mode: "new" }, t0), { issue: "lifetime-conflict" });
+    assert.deepEqual(settlePlanPurchase(founder, "founder", { mode: "new" }, t0), { issue: "lifetime-conflict" });
+    assert.deepEqual(settlePlanPurchase(agency, "founder", { mode: "new" }, t0), { issue: "lifetime-conflict" });
+  });
+  test("Founder → Agency settles to Agency, 15 brands, worth Agency's price", () => {
+    const d = settlePlanPurchase(founder, "founder-ultimate", { mode: "now", amount: 991000, credit: 499000, price: 1490000, lifetimeUpgrade: true }, t0);
+    assert.equal(d.patch.plan, "founder-ultimate");
+    assert.equal(d.patch.brandLimit, 15);
+    assert.equal(d.patch.lifetimePaid, 1490000);
+    assert.equal(d.takesSeat, true);
+    assert.equal(d.review, undefined);
+  });
+  test("Agency paid in full by an account that became Founder meanwhile: applied, flagged for a refund", () => {
+    const d = settlePlanPurchase(founder, "founder-ultimate", { mode: "new", amount: 1490000, price: 1490000 }, t0);
+    assert.equal(d.patch.plan, "founder-ultimate");
+    assert.equal(d.review, "lifetime-overpaid");
+  });
+  test("a subscriber moving to Founder records the seat's full price, credit included", () => {
+    const d = settlePlanPurchase(sub("pro", "monthly", 10), "founder", { mode: "now", amount: 466000, credit: 33000, price: 499000 }, t0);
+    assert.equal(d.patch.lifetimePaid, 499000);
+    assert.equal(d.patch.subscriptionExpiresAt, null);
+  });
+});

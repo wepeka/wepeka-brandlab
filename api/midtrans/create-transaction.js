@@ -13,6 +13,17 @@ const SNAP_API_URL = MIDTRANS_IS_PRODUCTION
   ? "https://app.midtrans.com/snap/v1/transactions"
   : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
+// Why a plan can't be bought (api/_plans.js switchQuote `code`), in the
+// words the toast shows when the browser has no text of its own for the
+// code (js/views/pricing.js maps the codes it knows to i18n first).
+const REFUSALS = {
+  "lifetime-owned": "Akun kamu sudah Lifetime — nggak perlu beli paket lagi. Mau pindah paket? Chat kami lewat WhatsApp.",
+  "lifetime-top": "Akun kamu sudah Agency Lifetime, paket tertinggi.",
+  "lifetime-manual": "Upgrade ke Agency Lifetime untuk akunmu dihitung tim Wepeka (selisih dari harga Founder yang kamu bayar) — chat kami lewat WhatsApp.",
+  scheduled: "Kamu sudah menjadwalkan pindah paket. Paket lain bisa dibeli setelah jadwal itu mulai.",
+};
+const refusalBody = (q) => ({ error: REFUSALS[q.code] || "Paket ini tidak bisa dibeli untuk akunmu.", code: q.code, ...(q.startsAt ? { startsAt: q.startsAt } : {}) });
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -52,6 +63,10 @@ export default async function handler(req, res) {
         amount = founderAmount(Number(slotsSnap.data()?.[plan.slot]) || 0);
       }
       Object.assign(status, { label: plan.label, amount });
+      // A plan this account may not buy at all (a Lifetime account, a second
+      // queued downgrade) says so here, before any WhatsApp order is offered.
+      const q = PLANS[planKey] && account ? switchQuote(account, planKey, amount) : null;
+      if (q?.mode === "refused") Object.assign(status, { refused: refusalBody(q) });
     }
     return res.status(200).json(status);
   }
@@ -87,6 +102,12 @@ export default async function handler(req, res) {
     return res.status(409).json({ error: "Gaya Brand Book ini sudah kamu miliki." });
   }
 
+  // A plan this account may not buy (api/_plans.js switchQuote: anything on
+  // top of a Lifetime plan but Founder → Agency, a second queued downgrade)
+  // is refused before a seat is even looked at.
+  const precheck = PLANS[planKey] ? switchQuote(account, planKey, plan.amount) : null;
+  if (precheck?.mode === "refused") return res.status(409).json(refusalBody(precheck));
+
   // Founder slots are a hard cap — refuse to even start a payment once the
   // counter is full. The webhook is what actually increments it, so a
   // checkout opened before the last slot sold can still settle — but only
@@ -107,6 +128,7 @@ export default async function handler(req, res) {
   // when the current period ends (api/_plans.js switchQuote).
   const price = amount;
   const quote = PLANS[planKey] ? switchQuote(account, planKey, price) : { mode: "new", amount: price, credit: 0 };
+  if (quote.mode === "refused") return res.status(409).json(refusalBody(quote));
   amount = quote.amount;
   if (quoteOnly) return res.status(200).json({ ...quote, price });
   const recurring = RECURRING_ON && autoRenew !== false && !!recurringFor(planKey);
@@ -153,7 +175,10 @@ export default async function handler(req, res) {
     // which travel unsigned and could otherwise be edited in flight.
     await adminDb().doc(`payments/${orderId}`).set({
       uid, planKey, plan: plan.plan || planKey, amount, status: "pending", createdAt: Date.now(),
-      mode: quote.mode, credit: quote.credit || 0, ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
+      // `price` = the plan's own price before any credit (a Lifetime's worth
+      // for a later Founder → Agency upgrade, api/_plans.js settlePlanPurchase).
+      mode: quote.mode, price, credit: quote.credit || 0, ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
+      ...(quote.lifetimeUpgrade ? { lifetimeUpgrade: true } : {}),
       // Buyer's browser context for the webhook's Meta Purchase event (api/_meta.js).
       meta: metaContext(req),
     });
