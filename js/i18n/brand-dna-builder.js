@@ -177,7 +177,7 @@ export default {
   "beginner.tour.ai.title": { en: "Ask AI", id: "Tanya AI" },
   "beginner.tour.ai.body": { en: "Stuck on any step? Ask here in everyday language. This AI already knows your brand.", id: "Bingung di langkah mana pun? Tanya di sini pakai bahasa sehari-hari. AI ini sudah kenal brand kamu." },
   "beginner.minutes": { en: "~{n} min", id: "±{n} menit" },
-  "beginner.step.identity.title": { en: "Build your Brand DNA & Guidelines", id: "Perkuat Brand DNA & Guidelines kamu" },
+  "beginner.step.identity.title": { en: "Build your Brand DNA & Brand Book", id: "Perkuat Brand DNA & Brand Book kamu" },
   "beginner.step.identity.desc": { en: "Who your customers are and why they'd pick you, then your colors and fonts. This is what AI reads for every piece of work after this.", id: "Siapa pelangganmu dan kenapa mereka pilih kamu, lalu warna dan fontnya. Ini yang dibaca AI di semua pekerjaanmu setelah ini." },
   "beginner.step.identity.ctaDna": { en: "Fill in Brand DNA", id: "Isi Brand DNA" },
   "beginner.step.identity.ctaGuidelines": { en: "Next: colors & fonts", id: "Lanjut ke warna & font" },

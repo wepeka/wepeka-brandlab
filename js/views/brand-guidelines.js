@@ -281,7 +281,7 @@ function paint(root, brandId, brand, state, refresh) {
   // reachable by URL only), Pemula's Beranda (the map every step returns
   // to, same as Brand DNA's own back link).
   const backHref = getMode() === "guided" ? `#/brand/${brand.id}` : `#/brand/${brand.id}/builder`;
-  const backLabel = getMode() === "guided" ? t("nav.home") : "Brand Builder";
+  const backLabel = getMode() === "guided" ? t("nav.home") : t("nav.builder");
   root.innerHTML = `
     <div class="page-head">
       <div>

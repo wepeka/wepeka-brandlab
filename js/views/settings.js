@@ -501,7 +501,7 @@ function renderAccount(content) {
       ${account?.accountNumber ? `<div class="kv"><span class="k">${t("set.acc.id")}</span><span class="v">#${account.accountNumber}</span></div>` : ""}
     </div>
     <div class="card" style="margin-bottom:20px;">
-      <h3 style="font-size:16px;margin-bottom:6px;">Wepeka Account</h3>
+      <h3 style="font-size:16px;margin-bottom:6px;">${t("set.acc.wepekaTitle")}</h3>
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("set.acc.usernameSub")}</p>
       <div class="field" style="margin-bottom:10px;">
         <label>Username</label>

@@ -3,6 +3,7 @@ import { openModal, closeOverlay } from "./modals.js";
 import { qs, qsa, escapeHtml as escapeText } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
+import { getMode } from "./mode.js";
 
 // Lives in its own module (not js/views/content-os.js, where this used to
 // be) so js/views/calendar.js can open it too without the two view files
@@ -62,7 +63,7 @@ export function openContentCadenceSetup(brand) {
         <label>${t("contentOs.cadence.perDayLabel")}</label>
         <input class="input" type="number" id="cadence-per-day" min="1" value="${existing?.perDay || 1}" style="width:120px;" />
       </div>
-      <p class="text-faint" style="font-size:11.5px;margin:6px 0 0;">${t("contentOs.cadence.note")}</p>
+      ${getMode() === "advanced" ? `<p class="text-faint" style="font-size:11.5px;margin:6px 0 0;">${t("contentOs.cadence.note")}</p>` : "" /* a funnel-stage rule; Pemula has no funnel words */}
     `,
     footHTML: `
       <button class="btn btn-secondary" id="cadence-skip">${t("contentOs.cadence.skip")}</button>
