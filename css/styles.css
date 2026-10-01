@@ -3212,6 +3212,15 @@ main.view.view-leave{ opacity:0; transform: translateY(-6px); transition: opacit
   .consultant-fab{ right:16px; bottom:16px; }
 }
 
+/* Beranda's Analitik as a fold (js/views/brand-home-analytics.js): folded by
+   default on phones, the owner's choice remembered. */
+.bha-summary{ cursor:pointer; list-style:none; justify-content:flex-start; gap:8px; }
+.bha-summary::-webkit-details-marker{ display:none; }
+.bha-chevron{ color: var(--text-faint); transform: rotate(-90deg); transition: transform .2s; }
+.bha-section[open] .bha-chevron{ transform:none; }
+.bha-tools{ display:flex; justify-content:flex-end; gap:8px; margin:-6px 0 12px; }
+.bha-tools:empty{ display:none; }
+
 /* What changed after a Pemula/Pro switch (js/layout.js showModeSwitched). */
 .mode-switched-list{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:8px; font-size:13.5px; line-height:1.5; }
 

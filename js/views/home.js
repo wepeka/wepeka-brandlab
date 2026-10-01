@@ -543,7 +543,7 @@ function paint(root, brandId, state, refresh) {
         : ""
     }
 
-    ${stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps)}
+    ${journey.currentIndex === -1 && !identityJustDone && !newlyDoneSteps.length ? "" : stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps) /* all three done: the checklist has nothing left to say; each step lives on its own tab */}
 
     ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, "") : ""}
   `;
