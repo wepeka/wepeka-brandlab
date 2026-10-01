@@ -226,10 +226,17 @@ const CORE = {
   "calendar.bank.movedBack": { en: "Back in the Content Bank — no date yet", id: "Balik ke Bank Konten — belum ada tanggal" },
   "cal.bank.showAll": { en: "Show all content", id: "Tampilkan semua konten" },
   "calendar.createNewContent": { en: "Create new content", id: "Buat konten baru" },
-  // Bulk-unschedule everything visible on the current view — same effect as
-  // "Remove from calendar" (js/views/calendar.js openCalItemMenu) on every
-  // item at once: content stays, only its date is cleared, so it lands back
-  // in the Content Bank instead of being deleted.
+  // Clear one month (js/views/calendar.js openClearMonth, in "Atur jadwal")
+  // — same effect as "Remove from calendar" (openCalItemMenu) on every
+  // ticked piece at once: content stays, only its date is cleared, so it
+  // lands back in the Content Bank instead of being deleted.
+  "calendar.clear.btn": { en: "Clear {month}", id: "Kosongkan {month}" },
+  "calendar.clear.desc": { en: "Take the upcoming pieces of this month off the calendar. They go back to the Content Bank — nothing is deleted.", id: "Lepas tanggal konten yang akan datang di bulan ini. Kontennya balik ke Bank Konten — tidak ada yang dihapus." },
+  "calendar.clear.empty": { en: "Nothing upcoming is scheduled in {month} — nothing to clear.", id: "Tidak ada konten terjadwal yang akan datang di {month} — tidak ada yang perlu dikosongkan." },
+  "calendar.clear.title": { en: "Clear {month}?", id: "Kosongkan {month}?" },
+  "calendar.clear.sub": { en: "Ticked pieces lose their date only — the content itself stays and goes back to the Content Bank. Untick anything you want to keep on the calendar. Already-published content is never touched.", id: "Konten yang dicentang cuma dilepas tanggalnya — kontennya tetap ada dan balik ke Bank Konten. Hapus centang yang mau tetap di kalender. Konten yang sudah published tidak diubah." },
+  "calendar.clear.confirm": { en: "Clear {count} piece(s)", id: "Kosongkan {count} konten" },
+  "calendar.clear.done": { en: "{count} piece(s) cleared from {month} — back in the Content Bank.", id: "{count} konten dikosongkan dari {month} — balik ke Bank Konten." },
 
   // Content wrapper (js/views/content-os.js)
   // "Content List", not "Content" — the top-level nav tab is already

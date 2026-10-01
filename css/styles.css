@@ -410,6 +410,11 @@ main.view.wide{ max-width: 1440px; }
 .sched-menu-text b{ font-size:13.5px; }
 .sched-menu-text small{ font-size:12px; line-height:1.45; color: var(--text-muted); white-space:normal; }
 .sched-menu-note{ margin:4px 10px 6px; padding-top:8px; border-top:1px solid var(--border); font-size:12px; line-height:1.45; color: var(--text-muted); }
+.sched-menu button.danger > svg{ color: inherit; }
+/* "Kosongkan {bulan}" review list (js/views/calendar.js openClearMonth). */
+.clear-month-row{ cursor:pointer; }
+.clear-month-row input{ flex:none; width:16px; height:16px; margin:0; accent-color: var(--accent); }
+.clear-month-date{ flex:none; width:92px; font-size:12px; color: var(--text-muted); }
 .btn-ghost{ background: transparent; color: var(--text-muted); }
 .btn-ghost:hover{ color: var(--text); background: var(--surface); }
 .btn-danger{ background: var(--health-poor-soft); color: var(--health-poor); }

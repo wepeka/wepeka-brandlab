@@ -439,6 +439,64 @@ function openAutoScheduleConfirm(proposed, refresh) {
   });
 }
 
+// Bulk version of "Remove from calendar" (openCalItemMenu) for one whole
+// month — only the date is cleared, so the content lands back in the
+// Content Bank instead of being deleted. Published pieces are history and
+// never listed; past unpublished ones aren't on the grid (itemsForBrand).
+// Every piece starts ticked, so keeping one is a single untick.
+function openClearMonth(brandId, monthDate, refresh) {
+  const month = iso(monthDate).slice(0, 7);
+  const label = monthLabel(monthDate);
+  const todayISO = localISODate();
+  const targets = listContent(brandId)
+    .filter((c) => c.status !== "published" && !c.publishedDate && c.scheduleDate?.slice(0, 7) === month && c.scheduleDate.slice(0, 10) >= todayISO)
+    .sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
+  if (!targets.length) {
+    toast(t("calendar.clear.empty", { month: label }));
+    return;
+  }
+  const picked = new Set(targets.map((c) => c.id));
+  const overlay = openModal({
+    title: t("calendar.clear.title", { month: label }),
+    wide: true,
+    bodyHTML: `
+      <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("calendar.clear.sub")}</p>
+      <div class="auto-schedule-list">
+        ${targets.map((c) => `
+          <label class="auto-schedule-row clear-month-row">
+            <input type="checkbox" data-clear-pick="${escapeHtml(c.id)}" checked />
+            <span class="clear-month-date">${formatCellDate(c.scheduleDate.slice(0, 10))}</span>
+            <span class="tag tag-${escapeHtml((c.funnel || "").toLowerCase())}">${escapeHtml(funnelShort(c.funnel))}</span>
+            <span class="auto-schedule-title">${escapeHtml(c.title || t("common.untitled"))}</span>
+          </label>`).join("")}
+      </div>
+    `,
+    footHTML: `
+      <button class="btn btn-secondary" id="clear-month-cancel">${t("common.cancel")}</button>
+      <button class="btn btn-danger" id="clear-month-confirm">${icon("trash", { size: 15 })}<span></span></button>
+    `,
+  });
+  const confirmBtn = overlay.querySelector("#clear-month-confirm");
+  const syncConfirm = () => {
+    confirmBtn.querySelector("span").textContent = t("calendar.clear.confirm", { count: picked.size });
+    confirmBtn.disabled = !picked.size;
+  };
+  syncConfirm();
+  qsa("[data-clear-pick]", overlay).forEach((box) => box.addEventListener("change", () => {
+    if (box.checked) picked.add(box.dataset.clearPick);
+    else picked.delete(box.dataset.clearPick);
+    syncConfirm();
+  }));
+  overlay.querySelector("#clear-month-cancel").addEventListener("click", () => closeOverlay(overlay));
+  confirmBtn.addEventListener("click", () => {
+    if (!picked.size) return;
+    picked.forEach((id) => updateContent(id, { scheduleDate: "" }));
+    toast(t("calendar.clear.done", { count: picked.size, month: label }));
+    closeOverlay(overlay);
+    refresh();
+  });
+}
+
 function visibleRangeISO(state) {
   const d = state.cursor;
   if (state.view === "month") {
@@ -520,6 +578,11 @@ function paint(root, brandId, state, refresh) {
       ${option("autoschedule", "ai-autoschedule", "bot", t("calendar.autoscheduleBtn"), t("cal.schedule.autoDesc"), t("chat.week.cost"))}
       ${option("cadence", "edit-cadence", "gear", t("calendar.editCadenceBtn"), t("cal.schedule.cadenceDesc"), t("cal.schedule.noAi"))}
       <p class="sched-menu-note">${t("cal.schedule.manual")}</p>
+      <div class="menu-divider"></div>
+      <button type="button" data-act="clear" id="clear-month" class="danger">
+        ${icon("trash", { size: 16 })}
+        <span class="sched-menu-text"><b>${t("calendar.clear.btn", { month: monthLabel(state.cursor) })}</b><small>${t("calendar.clear.desc")}</small></span>
+      </button>
     `;
     menu.addEventListener("click", (ev) => {
       const act = ev.target.closest("[data-act]")?.dataset.act;
@@ -528,6 +591,7 @@ function paint(root, brandId, state, refresh) {
       if (act === "week") openWeekPlanMenu(btn, brandId);
       else if (act === "autoschedule") runAutoSchedule(brandId, refresh);
       else if (act === "cadence") openContentCadenceSetup(brand);
+      else if (act === "clear") openClearMonth(brandId, state.cursor, refresh);
     });
   });
   wireHelpButtons(root);
@@ -551,6 +615,8 @@ function paint(root, brandId, state, refresh) {
 
 }
 
+const monthLabel = (d) => `${months()[d.getMonth()]} ${d.getFullYear()}`;
+
 function periodLabel(state) {
   const d = state.cursor;
   const dayFirst = getLang() === "id";
@@ -558,7 +624,7 @@ function periodLabel(state) {
     const m = full ? months()[x.getMonth()] : months()[x.getMonth()].slice(0, 3);
     return dayFirst ? `${x.getDate()} ${m}` : `${m} ${x.getDate()}`;
   };
-  if (state.view === "month") return `${months()[d.getMonth()]} ${d.getFullYear()}`;
+  if (state.view === "month") return monthLabel(d);
   if (state.view === "week") {
     const s = startOfWeek(d); const e = new Date(s); e.setDate(e.getDate() + 6);
     return `${md(s)} – ${md(e)}`;
