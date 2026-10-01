@@ -4296,6 +4296,12 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   .data-table.cl-cards td[data-label]{ grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; }
   .data-table.cl-cards td[data-label]::before{ content: attr(data-label); color: var(--text-faint); font-weight:600; font-size:11.5px; }
   .data-table.cl-cards td[data-label] .text-faint{ display:inline; margin-left:6px; }
+  /* Pelacak Penjualan's products use the same cards; multi-part values
+     (struck price + discount, sold / target + bar) stay one right-aligned block. */
+  .st-products-table td:first-child{ grid-column:1; grid-row:1; font-size:14px; min-width:0; overflow-wrap:anywhere; }
+  .st-products-table td[data-label] > div{ text-align:right; }
+  .st-products-table td[data-label] .tag-discount{ margin-left:auto; }
+  .st-products-table td[data-label] .cd-bar{ margin-left:auto; min-width:80px; }
 }
 
 /* See js/theme.js setTheme: no mixed-speed transitions during a theme switch. */

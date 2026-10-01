@@ -281,6 +281,7 @@ function productsHTML(stats, campaign, unit, collapsed) {
   if (!rows.length && !archived.length) return `<div class="card glass-card card-tight"><div class="table-empty" style="padding:28px;">${t("sales.products.empty")}</div></div>`;
   if (collapsed) return "";
   const targetOf = (id) => campaign?.goalPlan?.products?.find((p) => p.id === id)?.target || null;
+  const soldLabel = t("sales.col.sold", { unit });
   const row = (s) => {
     const target = targetOf(s.product.id);
     const pct = target ? Math.min(100, Math.round((s.sold / target) * 100)) : 0;
@@ -292,16 +293,16 @@ function productsHTML(stats, campaign, unit, collapsed) {
     return `
       <tr data-st-edit="${s.product.id}" class="${s.product.archived ? "is-archived" : ""}">
         <td><b>${esc(s.product.name)}</b>${s.product.archived ? ` <span class="tag" style="font-size:10.5px;">${t("sales.products.archived")}</span>` : ""}</td>
-        <td>${priceCell}</td>
-        <td>${formatNumber(s.rangeQty)}</td>
-        <td>${formatNumber(s.sold)}${target ? ` <span class="text-faint">/ ${formatNumber(target)}</span><div class="cd-bar" style="margin-top:5px;max-width:120px;"><span style="width:${pct}%"></span></div>` : ""}</td>
-        <td>${rp(s.loggedRevenue)}</td>
+        <td data-label="${esc(t("sales.col.price"))}"><div>${priceCell}</div></td>
+        <td data-label="${esc(t("sales.col.month"))}">${formatNumber(s.rangeQty)}</td>
+        <td data-label="${esc(soldLabel)}"><div>${formatNumber(s.sold)}${target ? ` <span class="text-faint">/ ${formatNumber(target)}</span><div class="cd-bar" style="margin-top:5px;max-width:120px;"><span style="width:${pct}%"></span></div>` : ""}</div></td>
+        <td data-label="${esc(t("sales.col.revenue"))}">${rp(s.loggedRevenue)}</td>
         <td style="text-align:right;"><button type="button" class="icon-btn" aria-label="${esc(`${t("common.edit")}: ${s.product.name}`)}">${icon("edit", { size: 14 })}</button></td>
       </tr>`;
   };
   return `
-    <div class="table-wrap"><div class="table-scroll"><table class="data-table">
-      <thead><tr><th>${t("sales.col.product")}</th><th>${t("sales.col.price")}</th><th>${t("sales.col.month")}</th><th>${t("sales.col.sold", { unit })}</th><th>${t("sales.col.revenue")}</th><th></th></tr></thead>
+    <div class="table-wrap"><div class="table-scroll"><table class="data-table cl-cards st-products-table">
+      <thead><tr><th>${t("sales.col.product")}</th><th>${t("sales.col.price")}</th><th>${t("sales.col.month")}</th><th>${esc(soldLabel)}</th><th>${t("sales.col.revenue")}</th><th></th></tr></thead>
       <tbody>${[...rows, ...archived].map(row).join("")}</tbody>
     </table></div></div>`;
 }
