@@ -9,7 +9,7 @@ import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrand
 import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
-import { MIDTRANS_IS_PRODUCTION, isPaymentTester, isSettled } from "../_payments.js";
+import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isSettled, notificationAction } from "../_payments.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -72,22 +72,35 @@ export default async function handler(req, res) {
   }
   const pending = paymentSnap.data();
 
-  if (!isSettled(transaction_status, fraud_status)) {
-    // pending/challenge/deny/expire/cancel — nothing to unlock, but 200 so
-    // Midtrans doesn't keep retrying a notification we've already understood.
-    // An order that will never be paid stops showing as "pending".
-    if (["expire", "cancel", "deny"].includes(transaction_status) && pending.status === "pending") {
-      await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
-      // The Founder/Agency seat it held goes back on sale right away.
-      await releaseHold(db, pending.hold);
-    }
+  // Every answer below is 200 so Midtrans doesn't keep retrying a
+  // notification we've understood (api/_payments.js notificationAction).
+  const action = notificationAction(pending, transaction_status, fraud_status);
+  if (action === "close") {
+    // An order that will never be paid stops showing as "pending", and the
+    // Founder/Agency seat it held goes back on sale right away.
+    await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
+    await releaseHold(db, pending.hold);
     return res.status(200).json({ ok: true, ignored: transaction_status });
   }
-
-  if (pending.status !== "pending") {
-    // Already settled by an earlier notification for this same order_id.
-    return res.status(200).json({ ok: true, duplicate: true });
+  if (action === "flag") {
+    // Refund, chargeback, a captured card denied/cancelled afterwards — or
+    // money landing on an order already closed. Recorded on the payment and
+    // flagged on the account for the admin; access and seats are NOT taken
+    // back automatically (the owner hasn't set a policy for that yet).
+    const now = Date.now();
+    const batch = db.batch();
+    batch.set(paymentRef, {
+      status: transaction_status,
+      needsReview: transaction_status,
+      reversal: { status: transaction_status, previous: pending.status, at: now, ...(body.refund_amount ? { amount: Number(body.refund_amount) } : {}) },
+    }, { merge: true });
+    if (pending.uid) batch.set(db.doc(`accounts/${pending.uid}`), { paymentIssue: { orderId: order_id, status: transaction_status, planKey: pending.planKey || null, at: now } }, { merge: true });
+    await batch.commit();
+    console.warn("Midtrans webhook: payment reversed, flagged for review", order_id, transaction_status);
+    return res.status(200).json({ ok: true, flagged: transaction_status });
   }
+  if (action === "duplicate") return res.status(200).json({ ok: true, duplicate: true });
+  if (action !== "grant") return res.status(200).json({ ok: true, ignored: transaction_status });
 
   const { uid, planKey } = pending;
   // Sandbox mode: test cards settle for real, so only Wepeka's team and the
@@ -95,7 +108,7 @@ export default async function handler(req, res) {
   // An older order from someone else is voided instead of granted.
   if (!MIDTRANS_IS_PRODUCTION) {
     const buyer = (await db.doc(`accounts/${uid}`).get()).data();
-    if (!isPaymentTester(uid, buyer)) {
+    if (!paymentsOpenFor(uid, buyer)) {
       await paymentRef.set({ status: "void-sandbox", closedAt: Date.now() }, { merge: true });
       await releaseHold(db, pending.hold);
       console.warn("Midtrans webhook: sandbox payment from a non-tester voided", order_id);

@@ -45,3 +45,35 @@ export function paymentsOpenFor(uid, account) {
 export function isSettled(transactionStatus, fraudStatus) {
   return ["capture", "settlement"].includes(transactionStatus) && (fraudStatus == null || fraudStatus === "accept");
 }
+
+// Money going back after it was paid. Refunds and chargebacks used to be
+// ignored, so access and seats stayed with nothing flagged (audit S-19).
+// They are now recorded on the payment and flagged on the account for the
+// admin — never revoked automatically: what a refund takes away is the
+// owner's call, not this endpoint's.
+const REVERSALS = ["refund", "partial_refund", "chargeback", "partial_chargeback", "deny", "cancel", "expire", "failure"];
+const CLOSES = ["expire", "cancel", "deny", "failure"];
+
+// What a signed notification means for a payments/{order_id} record
+// (`payment.status`; `payment.paidAt` = it was paid at some point):
+// "grant" (first settlement), "duplicate" (settled again), "close" (an
+// unpaid order that will never be paid), "flag" (paid, then reversed — or
+// money landing on an order already closed), or "ignore" (still pending /
+// under review, out-of-order noise, sandbox voids).
+export function notificationAction(payment, transactionStatus, fraudStatus) {
+  const status = payment?.status;
+  const settled = isSettled(transactionStatus, fraudStatus);
+  if (status === "pending") {
+    if (settled) return "grant";
+    return CLOSES.includes(transactionStatus) ? "close" : "ignore";
+  }
+  if (status === "void-sandbox") return "ignore";
+  if (status === "paid" || payment?.paidAt) {
+    // Paid (or already reversed once — a partial refund turning into a full
+    // one updates it again).
+    if (settled) return status === "paid" ? "duplicate" : "ignore";
+    return REVERSALS.includes(transactionStatus) ? "flag" : "ignore";
+  }
+  // Closed unpaid as expired/cancelled/denied, yet Midtrans says it settled.
+  return settled ? "flag" : "ignore";
+}
