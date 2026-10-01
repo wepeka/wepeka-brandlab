@@ -116,6 +116,13 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
       return;
     }
     const status = await paymentStatus(planKey);
+    // A plan this account can't buy at all (anything on top of a Lifetime
+    // plan, a second queued downgrade) is said before any WhatsApp order or
+    // payment is offered.
+    if (status.refused) {
+      await showRefused(status.refused, planKey);
+      return;
+    }
     if (!status.open) {
       await showPaymentsClosed(status, planKey);
       return;
@@ -123,11 +130,12 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     await loadSnap(status);
     // Switching plans while one still runs: say what happens to the old
     // one (credit now, or queued until it ends) before any payment opens.
-    if (!(await confirmPlanSwitch(planKey, idToken))) return;
+    const confirmed = await confirmPlanSwitch(planKey, idToken);
+    if (!confirmed) return;
     const res = await fetch("/api/midtrans/create-transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ planKey }),
+      body: JSON.stringify({ planKey, ...confirmed }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
     const { token, orderId, amount, label } = await res.json();
@@ -156,26 +164,79 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
 // price; a downgrade waits until the current period ends. Add-ons and a
 // plain renewal go straight to payment.
 const PLAN_NAME_KEYS = ["starter", "pro", "studio", "founder", "founder-ultimate"];
-const planNameOf = (key) => t(`pricing.planName.${PLAN_NAME_KEYS.find((p) => key === p || key.startsWith(`${p}-`)) || "starter"}`);
+// Exact key first: "founder-ultimate" also starts with "founder-".
+const planNameOf = (key) => t(`pricing.planName.${PLAN_NAME_KEYS.find((p) => key === p) || PLAN_NAME_KEYS.find((p) => key.startsWith(`${p}-`)) || "starter"}`);
+const isPlanKey = (planKey) => PLAN_NAME_KEYS.some((p) => planKey === p || (planKey.startsWith(`${p}-`) && /-(monthly|yearly)$/.test(planKey)));
+const accountPlanKey = (plan, billing) => (["starter", "pro", "studio"].includes(plan) ? `${plan}-${billing || "monthly"}` : plan);
+const longDate = (ms) => (ms ? new Date(ms).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long", year: "numeric" }) : "");
+
+// A plan the server won't sell this account (create-transaction's `code`):
+// its own words, plus the WhatsApp route where the team sorts it out by hand.
+async function showRefused(refusal, planKey) {
+  const known = ["lifetime-owned", "lifetime-top", "lifetime-manual", "scheduled"].includes(refusal?.code);
+  const text = known ? t(`pricing.refused.${refusal.code}`, { date: longDate(refusal.startsAt) }) : escapeHtml(refusal?.error || t("pricing.err.start"));
+  const viaWa = ["lifetime-owned", "lifetime-manual"].includes(refusal?.code);
+  const wa = `https://wa.me/${PAYMENT_WA_NUMBER}?text=${encodeURIComponent(t("pricing.refused.waMessage", { item: planNameOf(planKey), email: auth.currentUser?.email || "-" }))}`;
+  const { openModal } = await import("../modals.js");
+  openModal({
+    title: t("pricing.refused.title"),
+    bodyHTML: `
+      <p style="margin:0 0 16px;">${text}</p>
+      ${viaWa ? `<a class="btn btn-primary btn-block" href="${wa}" target="_blank" rel="noopener noreferrer">${icon("chat", { size: 15 })}${t("pricing.pending.wa")}</a>` : ""}`,
+  });
+}
+
+// Says what a plan purchase does to the plan already running before Snap
+// opens. Resolves to what create-transaction needs along with the planKey
+// ({} when there's nothing to confirm), or null when the buyer backs out or
+// the server refuses. Unused value the new price can't absorb is spelled
+// out and needs its own explicit OK (`acceptForfeit`, audit S-23).
 async function confirmPlanSwitch(planKey, idToken) {
   const account = getCachedAccount();
-  const isPlan = PLAN_NAME_KEYS.some((p) => planKey === p || (planKey.startsWith(`${p}-`) && /-(monthly|yearly)$/.test(planKey)));
-  if (!isPlan || !["starter", "pro", "studio"].includes(account?.plan) || accessState(account) !== "paid") return true;
+  // Nothing running to switch from (trial, lapsed): just buy.
+  if (!isPlanKey(planKey) || accessState(account) !== "paid") return {};
   const res = await fetch("/api/midtrans/create-transaction", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
     body: JSON.stringify({ planKey, quoteOnly: true }),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
-  const q = await res.json();
-  if (q.mode !== "now" && q.mode !== "later") return true;
+  const q = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (q?.code) {
+      await showRefused(q, planKey);
+      return null;
+    }
+    throw new Error(q?.error || t("pricing.err.createTx"));
+  }
+  const next = account.scheduledPlan?.plan ? planNameOf(accountPlanKey(account.scheduledPlan.plan, account.scheduledPlan.billing)) : "";
+  const vars = {
+    from: planNameOf(accountPlanKey(account.plan, account.billing)), to: planNameOf(planKey), next,
+    price: rp(q.price), credit: rp(q.credit || 0), pay: rp(q.amount),
+    forfeit: rp(q.forfeit || 0), value: rp((q.credit || 0) + (q.forfeit || 0)),
+    date: longDate(q.startsAt || q.scheduledStartsAt),
+  };
+  let title;
+  let message;
+  if (q.mode === "now" && q.lifetimeUpgrade) {
+    title = t("pricing.switch.lifetimeTitle", vars);
+    message = t("pricing.switch.lifetimeBody", vars);
+  } else if (q.mode === "now") {
+    title = t("pricing.switch.upTitle", vars);
+    message = t(q.credit ? "pricing.switch.upBody" : "pricing.switch.upBodyNoCredit", vars);
+    if (q.replacesScheduled && next) message += ` ${t("pricing.switch.scheduledNote", vars)}`;
+  } else if (q.mode === "later") {
+    title = t("pricing.switch.downTitle", vars);
+    message = t("pricing.switch.downBody", vars);
+  } else if (q.mode === "renew" && q.scheduledStartsAt && next) {
+    title = t("pricing.switch.renewTitle", vars);
+    message = t("pricing.switch.renewBody", vars);
+  } else {
+    return {};
+  }
+  if (q.forfeit) message += `<br><br><b>${t("pricing.switch.forfeitNote", vars)}</b>`;
   const { confirmDialog } = await import("../modals.js");
-  const vars = { from: planNameOf(`${account.plan}-${account.billing || "monthly"}`), to: planNameOf(planKey), price: rp(q.price), credit: rp(q.credit || 0), pay: rp(q.amount), date: q.startsAt ? new Date(q.startsAt).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long", year: "numeric" }) : "" };
-  return confirmDialog({
-    title: t(q.mode === "now" ? "pricing.switch.upTitle" : "pricing.switch.downTitle", vars),
-    message: t(q.mode === "now" ? (q.credit ? "pricing.switch.upBody" : "pricing.switch.upBodyNoCredit") : "pricing.switch.downBody", vars),
-    confirmLabel: t("pricing.switch.pay", vars),
-  });
+  const ok = await confirmDialog({ title, message, confirmLabel: t(q.forfeit ? "pricing.switch.payForfeit" : "pricing.switch.pay", vars), danger: !!q.forfeit });
+  return ok ? { acceptForfeit: !!q.forfeit } : null;
 }
 
 // After Snap reports success on the pricing page itself: wait for the

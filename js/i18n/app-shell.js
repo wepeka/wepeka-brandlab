@@ -334,6 +334,22 @@ export default {
   "pricing.switch.downTitle": { en: "Move to {to} from {date}", id: "Pindah ke {to} mulai {date}" },
   "pricing.switch.downBody": { en: "You keep {from} until it ends on {date}; {to} starts then (no refund for the rest of the current period). You pay {pay} now for {to}'s first period.", id: "Kamu tetap pakai {from} sampai habis tanggal {date}, lalu {to} mulai (sisa periode sekarang tidak dikembalikan). Bayar {pay} sekarang untuk periode pertama {to}." },
   "pricing.switch.pay": { en: "Pay {pay}", id: "Bayar {pay}" },
+  // Unused value that doesn't fit under the new price (api/_plans.js
+  // creditQuote `forfeit`) — always said out loud, never lost silently.
+  "pricing.switch.forfeitNote": { en: "What's left of your current plan ({value}) is worth more than {to}, so {forfeit} of it is lost. To use all of it, pick a bigger plan instead (the yearly one, for example).", id: "Sisa nilai paketmu ({value}) lebih besar dari harga {to}, jadi {forfeit} hangus. Supaya terpakai semua, pilih paket yang lebih besar (misalnya versi tahunan)." },
+  "pricing.switch.payForfeit": { en: "Pay {pay}, lose {forfeit}", id: "Bayar {pay}, {forfeit} hangus" },
+  "pricing.switch.scheduledNote": { en: "Your scheduled move to {next} is cancelled — what you paid for it comes off the price too.", id: "Jadwal pindah ke {next} dibatalkan — yang sudah kamu bayar untuk itu ikut dipotong." },
+  "pricing.switch.renewTitle": { en: "Renew {from}", id: "Perpanjang {from}" },
+  "pricing.switch.renewBody": { en: "{from} gets one more period. Your scheduled move to {next} moves back to {date}. You pay {pay}.", id: "{from} diperpanjang satu periode. Jadwal pindah ke {next} ikut mundur ke {date}. Kamu bayar {pay}." },
+  "pricing.switch.lifetimeTitle": { en: "Upgrade to Agency Lifetime", id: "Upgrade ke Agency Lifetime" },
+  "pricing.switch.lifetimeBody": { en: "Your Founder Lifetime becomes Agency Lifetime today — 15 brands, still paid once. You only pay the difference: {price} − {credit} (your Founder seat) = {pay}.", id: "Founder Lifetime kamu jadi Agency Lifetime mulai hari ini — 15 brand, tetap sekali bayar. Kamu cukup bayar selisihnya: {price} − {credit} (harga Founder kamu) = {pay}." },
+  // Why a plan can't be bought (create-transaction's 409 `code`).
+  "pricing.refused.title": { en: "Not available for your account", id: "Belum bisa untuk akunmu" },
+  "pricing.refused.lifetime-owned": { en: "Your account is already Lifetime — there's no plan to buy on top. Want to move to a different one? Message us on WhatsApp.", id: "Akun kamu sudah Lifetime — nggak perlu beli paket lagi. Mau pindah ke paket lain? Chat kami lewat WhatsApp." },
+  "pricing.refused.lifetime-top": { en: "You're on Agency Lifetime, the top plan. More brands or AI credits come as add-ons.", id: "Kamu sudah di Agency Lifetime, paket tertinggi. Tambah brand atau kredit AI lewat add-on." },
+  "pricing.refused.lifetime-manual": { en: "Your upgrade to Agency Lifetime is worked out by the Wepeka team — you pay the difference from what your Founder seat cost. Message us on WhatsApp.", id: "Upgrade ke Agency Lifetime untuk akunmu dihitung tim Wepeka — kamu cukup bayar selisih dari harga Founder yang sudah kamu bayar. Chat kami lewat WhatsApp." },
+  "pricing.refused.scheduled": { en: "You've already scheduled a move to another plan from {date}. A different plan can be bought once that one starts.", id: "Kamu sudah menjadwalkan pindah paket mulai {date}. Paket lain bisa dibeli setelah jadwal itu mulai." },
+  "pricing.refused.waMessage": { en: "Hi Wepeka! About my Brandlab plan ({item}). My account email: {email}", id: "Halo Wepeka! Soal paket Brandlab saya ({item}). Email akun saya: {email}" },
   "pricing.addons.sub": { en: "Only when you need them — paid right here and added to your account automatically.", id: "Cuma kalau butuh — bayar langsung di sini, otomatis masuk ke akunmu." },
   "pricing.addons.credits300": { en: "Top-up 300 AI credits", id: "Top-up 300 kredit AI" },
   "pricing.addons.credits500": { en: "Top-up 500 AI credits", id: "Top-up 500 kredit AI" },

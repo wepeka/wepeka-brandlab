@@ -231,3 +231,23 @@ describe("a Lifetime account is never overwritten (S-15)", () => {
     assert.equal(d.patch.subscriptionExpiresAt, null);
   });
 });
+
+describe("value an upgrade can't absorb is reported, never lost silently (S-23)", () => {
+  test("Pro yearly with a year left → Studio monthly: pays Rp 1.000, and the lost ~Rp 551rb is in the quote", () => {
+    const q = switchQuote(sub("pro", "yearly", 365), "studio-monthly", 249000, t0);
+    assert.equal(q.amount, 1000);
+    assert.equal(q.credit, 248000);
+    assert.equal(q.forfeit, 551000);
+    assert.equal(q.credit + q.forfeit, 799000);
+  });
+  test("Studio yearly → Founder: the forfeit is the yearly value above the Founder price", () => {
+    const q = switchQuote(sub("studio", "yearly", 365), "founder", 499000, t0);
+    assert.equal(q.amount, 1000);
+    assert.equal(q.forfeit, 1990000 - 498000);
+  });
+  test("the yearly version of the same move keeps all of it", () => {
+    const q = switchQuote(sub("pro", "yearly", 365), "studio-yearly", 1990000, t0);
+    assert.equal(q.credit, 799000);
+    assert.equal("forfeit" in q, false);
+  });
+});

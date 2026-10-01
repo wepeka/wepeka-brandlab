@@ -45,7 +45,8 @@ export default async function handler(req, res) {
   // costs (the WhatsApp fallback message quotes it). quoteOnly: just say what
   // it would cost (the "switch plan" confirmation shows the credit / start
   // date before Snap opens). autoRenew: false opts out of saving the card even
-  // where auto-renew is available.
+  // where auto-renew is available. acceptForfeit: the buyer confirmed that
+  // unused value beyond the new price is lost (switchQuote `forfeit`).
   const { planKey, quoteOnly = false, statusOnly = false, autoRenew = true } = req.body || {};
   const plan = PLANS[planKey] || ADDONS[planKey];
 
@@ -131,6 +132,17 @@ export default async function handler(req, res) {
   if (quote.mode === "refused") return res.status(409).json(refusalBody(quote));
   amount = quote.amount;
   if (quoteOnly) return res.status(200).json({ ...quote, price });
+  // Unused value that doesn't fit under the new price is lost (switchQuote
+  // `forfeit`) — only ever with the buyer's explicit OK from the switch
+  // confirmation (js/views/pricing.js), never silently. An older open tab
+  // without that confirmation gets told instead of charged.
+  if (quote.forfeit > 0 && req.body?.acceptForfeit !== true) {
+    return res.status(409).json({
+      error: `Sisa nilai paketmu lebih besar dari harga paket baru — Rp ${quote.forfeit.toLocaleString("id-ID")} akan hangus. Muat ulang halaman lalu konfirmasi dulu.`,
+      code: "forfeit",
+      forfeit: quote.forfeit,
+    });
+  }
   const recurring = RECURRING_ON && autoRenew !== false && !!recurringFor(planKey);
 
   // Midtrans caps order_id at 50 chars: "bl-" + 28-char uid + "-" + base36
@@ -177,7 +189,7 @@ export default async function handler(req, res) {
       uid, planKey, plan: plan.plan || planKey, amount, status: "pending", createdAt: Date.now(),
       // `price` = the plan's own price before any credit (a Lifetime's worth
       // for a later Founder → Agency upgrade, api/_plans.js settlePlanPurchase).
-      mode: quote.mode, price, credit: quote.credit || 0, ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
+      mode: quote.mode, price, credit: quote.credit || 0, ...(quote.forfeit ? { forfeit: quote.forfeit } : {}), ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
       ...(quote.lifetimeUpgrade ? { lifetimeUpgrade: true } : {}),
       // Buyer's browser context for the webhook's Meta Purchase event (api/_meta.js).
       meta: metaContext(req),

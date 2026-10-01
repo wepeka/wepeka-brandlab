@@ -166,11 +166,19 @@ function scheduledValue(scheduled, end) {
 const refused = (code, extra = {}) => ({ mode: "refused", code, amount: 0, credit: 0, ...extra });
 
 // `value` (unused paid time, in rupiah) off `price`, rounded down to Rp 100,
-// never below MIN_CHARGE.
+// never below MIN_CHARGE. Whatever doesn't fit under the new price is lost —
+// e.g. Pro yearly with a year left → Studio monthly pays Rp 1.000 and
+// ~Rp 551rb of the old year is gone. That used to happen silently (audit
+// S-23); now it's `forfeit`, which the switch confirmation spells out and
+// create-transaction.js only accepts with an explicit OK (`acceptForfeit`).
+// Owner's rule kept as is: an upgrade starts now, never a refund or a
+// carried-over balance (2026-09-29) — a bigger plan (the yearly one) is
+// what keeps the value.
 function creditQuote(price, value, extra = {}) {
   const full = Math.max(0, Math.floor(value / 100) * 100);
   const credit = Math.max(0, Math.min(full, price - MIN_CHARGE));
-  return { mode: "now", amount: price - credit, credit, ...extra };
+  const forfeit = full - credit;
+  return { mode: "now", amount: price - credit, credit, ...(forfeit > 0 ? { forfeit } : {}), ...extra };
 }
 
 // A Lifetime account is never sold another plan on top — it used to read
