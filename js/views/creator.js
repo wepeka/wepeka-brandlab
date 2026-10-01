@@ -599,7 +599,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
 // otherwise this list only shows what's still in progress, sorted so the
 // most time-sensitive piece is first.
 export function render(root, { brandId, initialContentId }) {
-  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set() };
+  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set(), revealEditor: !!initialContentId };
   // Konten Baru → the same content drawer every other screen uses; the
   // new piece is then selected here, opening straight on its drafting panel.
   state.startNewContent = (defaults = {}) =>
@@ -609,7 +609,10 @@ export function render(root, { brandId, initialContentId }) {
       defaults: { status: "idea", ...defaults },
       onSaved: (made) => {
         const newest = made || [...listContent(brandId)].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-        if (newest) state.selectedId = newest.id;
+        if (newest) {
+          state.selectedId = newest.id;
+          state.revealEditor = true;
+        }
         refresh();
       },
     });
@@ -619,7 +622,10 @@ export function render(root, { brandId, initialContentId }) {
   // attached — never an empty Creator.
   const applyNavContext = (ctx) => {
     if (!ctx) return;
-    if (ctx.contentId) state.selectedId = ctx.contentId;
+    if (ctx.contentId) {
+      state.selectedId = ctx.contentId;
+      state.revealEditor = true;
+    }
     if (ctx.intent === "new-content") setTimeout(() => state.startNewContent(ctx.defaults || {}), 0);
     // Coming from a Brainstorm idea ("Buatkan script"): open the AI writer.
     if (ctx.intent === "script" && ctx.contentId) {
@@ -726,6 +732,7 @@ function paint(root, brandId, state, refresh) {
         </div>
       </div>
       <div class="creator-main">
+        ${selected ? `<button type="button" class="creator-back-list" data-back-to-list>${icon("arrowUp", { size: 14 })}${t("cr.backToList", { n: items.length })}</button>` : ""}
         ${selected ? mainPanel(selected, campaigns, series) : emptyPanel()}
         <a class="link" href="#/brand/${brandId}/content/calendar" style="display:block;text-align:center;font-size:12.5px;margin-top:4px;">${icon("calendar", { size: 13 })} ${t("cr.openCalendar")}</a>
       </div>
@@ -744,9 +751,22 @@ function paint(root, brandId, state, refresh) {
     row.addEventListener("click", () => {
       state.selectedId = row.dataset.select;
       paint(root, brandId, state, refresh);
+      revealOnPhone(qs(".creator-main", root));
     });
   });
   wireClickableCards(root, "[data-select]");
+  qs("[data-back-to-list]", root)?.addEventListener("click", () => {
+    const list = qs(".creator-sidebar-list", root);
+    const active = qs(".creator-item.active", root);
+    // The list scrolls on its own; bring the open piece into its view too.
+    if (list && active) list.scrollTop += active.getBoundingClientRect().top - list.getBoundingClientRect().top - 8;
+    revealOnPhone(qs(".creator-sidebar", root));
+    active?.focus({ preventScroll: true });
+  });
+  if (state.revealEditor && selected) {
+    state.revealEditor = false;
+    requestAnimationFrame(() => revealOnPhone(qs(".creator-main", root), { instant: true }));
+  }
 
   qsa("[data-delete-content]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
@@ -1126,6 +1146,16 @@ function dueBadge(c) {
   if (c.scheduleDate < today) return `<span class="due-badge due-overdue">${t("cr.due.overdue")}</span>`;
   if (c.scheduleDate === today) return `<span class="due-badge due-today">${t("cr.due.today")}</span>`;
   return `<span class="due-badge due-soon">${t("cr.due.on", { date: formatDate(c.scheduleDate) })}</span>`;
+}
+
+// Below 860px the list sits above the editor, so picking a piece used to
+// repaint something below the fold and look like nothing happened. On a
+// narrow screen this brings the editor (or, from "Daftar konten", the list)
+// to the top; no animation for people who asked for reduced motion.
+function revealOnPhone(el, { instant = false } = {}) {
+  if (!el || !window.matchMedia?.("(max-width: 860px)").matches) return;
+  const calm = instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
 }
 
 // Separates "still drafting" from what's been submitted onward — each
