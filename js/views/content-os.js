@@ -33,9 +33,9 @@ const SUB_TABS = [
 // narrow phones, where all five sub-tabs don't fit in one screen width.
 export function contentTabsHTML(brandId, activeSub) {
   return `<div class="cos-tabs-wrap" style="margin:-4px 0 20px;">
-      <div class="tabs cos-tabs">
-        ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}">${t(tab.labelKey)}</a>`).join("")}
-      </div>
+      <nav class="tabs cos-tabs" aria-label="${t("nav.content")}">
+        ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}" ${activeSub === tab.key ? `aria-current="page"` : ""}>${t(tab.labelKey)}</a>`).join("")}
+      </nav>
     </div>`;
 }
 

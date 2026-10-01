@@ -3204,6 +3204,13 @@ main.view.view-leave{ opacity:0; transform: translateY(-6px); transition: opacit
   .consultant-fab{ right:16px; bottom:16px; }
 }
 
+/* No connection (js/layout.js wireOfflineBanner): a banner across the top;
+   the page and the sticky header move down by its height. */
+.offline-banner{ position:fixed; top:0; left:0; right:0; z-index:45; display:flex; align-items:center; justify-content:center; gap:8px; padding:7px 16px; background:#ffc94a; color:#1c1610; font-size:13px; font-weight:700; line-height:1.35; text-align:center; }
+.offline-banner svg{ flex:none; }
+body.is-offline{ padding-top: var(--offline-h, 34px); }
+body.is-offline .topbar{ top: var(--offline-h, 34px); }
+
 /* Visible back button (js/back-link.js) */
 .page-back-btn{ display:inline-flex; align-items:center; gap:6px; padding:6px 13px 6px 9px; border-radius: var(--radius-pill); border:1px solid var(--border); background: var(--surface); color: var(--text); font-size:13px; font-weight:700; letter-spacing:0; text-transform:none; text-decoration:none; line-height:1.2; transition: border-color .15s, background .15s; }
 .page-back-btn svg{ flex:none; color: var(--accent); }

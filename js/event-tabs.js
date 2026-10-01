@@ -29,13 +29,16 @@ export function eventTabsHTML(brandId, goal, active) {
   if (!goal) return "";
   const eventId = goal.installed?.campaigns?.event?.id || null;
   const camps = goalCampaigns(brandId, goal);
-  const tab = (href, label, on) => `<a class="tab ${on ? "active" : ""}" href="${href}">${esc(label)}</a>`;
+  // Each "tab" opens another page, so this is a small nav with the open
+  // page marked aria-current — not an ARIA tablist (that promised tabs and
+  // panels that weren't there).
+  const tab = (href, label, on) => `<a class="tab ${on ? "active" : ""}" href="${href}" ${on ? `aria-current="page"` : ""}>${esc(label)}</a>`;
   return `<div class="cos-tabs-wrap ev-tabs" style="margin:-4px 0 20px;">
-      <div class="tabs cos-tabs" role="tablist" aria-label="${esc(goal.name || t("roadmap.defaultName"))}">
+      <nav class="tabs cos-tabs" aria-label="${esc(goal.name || t("roadmap.defaultName"))}">
         ${tab(`#/brand/${brandId}/goals/${goal.id}`, t("evtabs.plan"), active === "plan")}
         ${camps.length
           ? camps.map((c) => tab(`#/brand/${brandId}/campaigns/${c.id}`, c.id === eventId ? t("evtabs.targets") : c.name || t("camp.untitled"), active === c.id)).join("")
           : `<span class="tab is-disabled" title="${esc(t("evtabs.targetsLater"))}" aria-disabled="true">${esc(t("evtabs.targets"))}</span>`}
-      </div>
+      </nav>
     </div>`;
 }

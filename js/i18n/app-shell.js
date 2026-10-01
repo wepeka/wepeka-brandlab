@@ -20,9 +20,9 @@ export default {
   "app.aiUsage.outMonth": { en: "<b>{used} of {limit}</b> used. This month's credits are used up — they reset automatically on the 1st.", id: "<b>{used} dari {limit}</b> dipakai. Credit bulan ini habis, reset otomatis tanggal 1." },
   "app.aiUsage.explainMonth": { en: "Each AI request (scripts, ideas, reply suggestions, the consultant, auto-schedule) counts as 1. Your credits reset on the 1st of every month.", id: "Tiap kali kamu minta AI (naskah, ide, saran jawaban, konsultan, jadwal otomatis) dihitung 1 AI credit. Reset tiap tanggal 1." },
   "app.aiUsage.titleTotal": { en: "AI credits for your trial", id: "AI credit buat trial kamu" },
-  "app.aiUsage.leftTotal": { en: "<b>{used} of {limit}</b> used. {left} left for your whole 30-day trial.", id: "<b>{used} dari {limit}</b> dipakai. Sisa {left} buat 30 hari trial kamu." },
+  "app.aiUsage.leftTotal": { en: "<b>{used} of {limit}</b> used. {left} left for your whole {days}-day trial.", id: "<b>{used} dari {limit}</b> dipakai. Sisa {left} buat {days} hari trial kamu." },
   "app.aiUsage.outTotal": { en: "<b>{used} of {limit}</b> used. That's the whole trial's AI pool — upgrade to keep generating.", id: "<b>{used} dari {limit}</b> dipakai. Itu semua AI credit trial kamu — upgrade buat lanjut generate." },
-  "app.aiUsage.explainTotal": { en: "Each AI request (scripts, ideas, reply suggestions, the consultant, auto-schedule) counts as 1. This is one pool for your entire 30-day trial — it doesn't reset day to day.", id: "Tiap kali kamu minta AI (naskah, ide, saran jawaban, konsultan, jadwal otomatis) dihitung 1 AI credit. Ini satu paket credit buat seluruh 30 hari trial kamu — nggak reset tiap hari." },
+  "app.aiUsage.explainTotal": { en: "Each AI request (scripts, ideas, reply suggestions, the consultant, auto-schedule) counts as 1. This is one pool for your entire {days}-day trial — it doesn't reset day to day.", id: "Tiap kali kamu minta AI (naskah, ide, saran jawaban, konsultan, jadwal otomatis) dihitung 1 AI credit. Ini satu paket credit buat seluruh {days} hari trial kamu — nggak reset tiap hari." },
   "app.showPassword": { en: "Show password", id: "Tampilkan password" },
   "app.hidePassword": { en: "Hide password", id: "Sembunyikan password" },
   "app.confirm.title": { en: "Are you sure?", id: "Yakin?" },
@@ -419,5 +419,8 @@ export default {
   "auth.wepeka.login": { en: "Continue with your Wepeka account", id: "Lanjut pakai akun Wepeka" },
   "auth.wepeka.registerCta": { en: "Register on wepeka.com", id: "Daftar di wepeka.com" },
   "auth.wepeka.note": { en: "One account for wepeka.com Community and Brandlab — no second password.", id: "Satu akun buat Community wepeka.com dan Brandlab — nggak perlu password kedua." },
+  // js/layout.js: shown while the browser has no connection.
+  "app.offline": { en: "You're offline — your changes are saved once you're back online.", id: "Kamu sedang offline — perubahan disimpan saat online lagi." },
+  "app.backOnline": { en: "Back online — saving your changes.", id: "Online lagi — perubahan sedang disimpan." },
   "auth.wepeka.failed": { en: "That Wepeka sign-in link didn't work. Try again from wepeka.com.", id: "Link masuk dari Wepeka-nya nggak kepakai. Coba lagi dari wepeka.com." },
 };
