@@ -373,9 +373,18 @@ function ownedNoteHTML(owned) {
 // Seats gone = sold + held by a checkout still open (meta/founderSlots
 // .holds, api/_plans.js seatsTaken — keep in sync): a held seat is priced
 // and capped like a sold one until its Snap window closes (audit S-17).
-export function seatsTakenOf(slots, field, now = Date.now()) {
-  const held = Object.values(slots?.holds?.[field] || {}).filter((until) => Number(until) > now).length;
+export function seatsTakenOf(slots, field, now = Date.now(), exceptKey = null) {
+  const held = Object.entries(slots?.holds?.[field] || {}).filter(([key, until]) => key !== exceptKey && Number(until) > now).length;
   return (Number(slots?.[field]) || 0) + held;
+}
+
+// The viewer's own hold key — the same opaque key as api/_plans.js
+// holdKeyFor — so their own open checkout never counts against them (the
+// server skips it too): no false "sold out" or second-wave price after they
+// close Snap at the last seat or the last first-wave seat.
+export async function holdKeyOf(uid) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`brandlab-seat:${uid}`));
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
 
 function openTier(sold) {
@@ -617,16 +626,17 @@ export function render(root, { user, account, backHref, locked } = {}) {
   // Add-ons are a second decision: only accounts that already pay see them.
   const showAddons = !!uid && !["trial", "expired", "none"].includes(accessState(account));
   let slots = null;
+  let myHold = null;
   // null until the server answers; { open:false } swaps the "pay securely
   // via Midtrans" line for the WhatsApp note (api/_payments.js).
   let payState = null;
   const sel = { brands: 1, yearly: false };
 
   const paint = () => {
-  const open = openTier(slots ? seatsTakenOf(slots, FOUNDER.slotField) : null);
+  const open = openTier(slots ? seatsTakenOf(slots, FOUNDER.slotField, Date.now(), myHold) : null);
   const founderSoldOut = open >= FOUNDER.tiers.length;
   const tier = FOUNDER.tiers[Math.min(open, FOUNDER.tiers.length - 1)];
-  const agencySoldOut = seatsTakenOf(slots, AGENCY.slotField) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+  const agencySoldOut = seatsTakenOf(slots, AGENCY.slotField, Date.now(), myHold) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
   const faqVars = {
     days: TRIAL_DAYS,
     cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField],
@@ -738,13 +748,14 @@ export function render(root, { user, account, backHref, locked } = {}) {
   // The live sold-count decides which Founder wave is open (and whether
   // anything is sold out) — it is never displayed. Repaint only if it
   // changes what the page says.
-  getDoc(doc(fdb, "meta", "founderSlots"))
-    .then((snap) => {
+  Promise.all([getDoc(doc(fdb, "meta", "founderSlots")), uid ? holdKeyOf(uid).catch(() => null) : null])
+    .then(([snap, key]) => {
       if (!root.isConnected) return;
       const before = openTier(null);
       slots = snap.exists() ? snap.data() : {};
-      const agencyGone = seatsTakenOf(slots, AGENCY.slotField) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
-      if (openTier(seatsTakenOf(slots, FOUNDER.slotField)) === before && !agencyGone) return;
+      myHold = key;
+      const agencyGone = seatsTakenOf(slots, AGENCY.slotField, Date.now(), myHold) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+      if (openTier(seatsTakenOf(slots, FOUNDER.slotField, Date.now(), myHold)) === before && !agencyGone) return;
       repaintInPlace();
     })
     .catch((err) => console.warn("Founder slot count unavailable", err));

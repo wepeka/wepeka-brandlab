@@ -413,8 +413,11 @@ export function reserveSeat(slotsDoc, slot, key, plan, now = Date.now(), ms = HO
   const taken = seatsTaken(slotsDoc, slot, now, key);
   if (taken >= SLOT_CAPS[slot]) return null;
   const holds = liveHolds(slotsDoc, slot, now);
+  // The account's earlier hold (an older order of theirs that may still be
+  // paid, e.g. an issued VA) — put back if this checkout then fails.
+  const previous = holds[key] ?? null;
   holds[key] = now + ms;
-  return { holds, until: now + ms, price: seatPrice(plan, taken) };
+  return { holds, until: now + ms, previous, price: seatPrice(plan, taken) };
 }
 // A paid seat: one more sold, its hold gone. `overCap`: sold past the cap
 // (its hold had already lapsed and the seat went to someone else) — it is
@@ -427,9 +430,15 @@ export function convertSeat(slotsDoc, slot, key, now = Date.now()) {
 }
 // An order that will never be paid gives its seat back — unless the
 // account reopened checkout since, and the hold now belongs to that order.
-export function releaseSeat(slotsDoc, slot, key, until, now = Date.now()) {
+// `previous`: the hold this one replaced (reserveSeat) — a checkout that
+// failed to open restores it instead of freeing a seat an older order of the
+// same account can still settle.
+export function releaseSeat(slotsDoc, slot, key, until, now = Date.now(), previous = null) {
   const holds = liveHolds(slotsDoc, slot, now);
-  if (key && Number(holds[key]) === Number(until)) delete holds[key];
+  if (key && Number(holds[key]) === Number(until)) {
+    if (Number(previous) > now) holds[key] = Number(previous);
+    else delete holds[key];
+  }
   return holds;
 }
 // What a seat change writes to meta/founderSlots: dotted paths for an

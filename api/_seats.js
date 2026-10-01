@@ -22,20 +22,21 @@ export async function holdSeat(db, plan, uid, now = Date.now()) {
     const held = reserveSeat(snap.exists ? snap.data() : {}, plan.slot, key, plan, now);
     if (!held) return null;
     writeSeats(tx, ref, snap, seatFields(plan.slot, { holds: held.holds }));
-    return { price: held.price, hold: { slot: plan.slot, key, until: held.until } };
+    return { price: held.price, hold: { slot: plan.slot, key, until: held.until }, previous: held.previous };
   });
 }
 
 // Gives a hold back (a checkout that failed to open, an order that expired
 // or was cancelled). Never throws — at worst the hold lapses on its own.
-export async function releaseHold(db, hold, now = Date.now()) {
+// `previous` (from holdSeat) restores the account's earlier hold instead.
+export async function releaseHold(db, hold, now = Date.now(), previous = null) {
   if (!hold?.slot || !hold.key) return;
   const ref = db.doc(SLOTS_DOC);
   try {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) return;
-      tx.update(ref, seatFields(hold.slot, { holds: releaseSeat(snap.data(), hold.slot, hold.key, hold.until, now) }).update);
+      tx.update(ref, seatFields(hold.slot, { holds: releaseSeat(snap.data(), hold.slot, hold.key, hold.until, now, previous) }).update);
     });
   } catch (err) {
     console.error("seat hold release failed", hold.slot, err?.message);

@@ -118,6 +118,7 @@ export default async function handler(req, res) {
   const db = adminDb();
   let amount = plan.amount;
   let hold = null;
+  let previousHold = null;
   if (plan.slot) {
     if (quoteOnly) {
       const taken = seatsTaken((await db.doc(SLOTS_DOC).get()).data(), plan.slot, Date.now(), holdKeyFor(uid));
@@ -128,11 +129,12 @@ export default async function handler(req, res) {
       if (!held) return res.status(409).json({ error: "Slot paket ini sudah habis.", code: "sold-out" });
       amount = held.price;
       hold = held.hold;
+      previousHold = held.previous;
     }
   }
   // Anything below that stops this checkout gives the seat straight back.
   const refuse = async (status, body) => {
-    await releaseHold(db, hold);
+    await releaseHold(db, hold, Date.now(), previousHold);
     return res.status(status).json(body);
   };
 

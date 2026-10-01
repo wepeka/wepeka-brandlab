@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import { PLANS, HOLD_MS, holdKeyFor, seatsTaken, reserveSeat, convertSeat, releaseSeat, seatFields } from "../api/_plans.js";
 import { holdSeat, releaseHold } from "../api/_seats.js";
-import { seatsTakenOf } from "../js/views/pricing.js";
+import { seatsTakenOf, holdKeyOf } from "../js/views/pricing.js";
 
 const now = Date.UTC(2026, 9, 1, 3);
 const F = "founderSlotsSold";
@@ -50,6 +50,22 @@ describe("seat holds: the math", () => {
     const doc = { holds: { [F]: { a: now + 1000 } } };
     assert.deepEqual(releaseSeat(doc, F, "a", now + 1000, now), {});
     assert.deepEqual(releaseSeat(doc, F, "a", now + 999, now), { a: now + 1000 }, "refreshed by a newer checkout: kept");
+  });
+  test("a checkout that fails to open puts the account's older hold back", () => {
+    const doc = { [F]: 49, holds: { [F]: { a: now + 1000 } } };
+    const again = reserveSeat(doc, F, "a", founder, now);
+    assert.equal(again.previous, now + 1000);
+    const after = { ...doc, holds: { [F]: again.holds } };
+    assert.deepEqual(releaseSeat(after, F, "a", again.until, now, again.previous), { a: now + 1000 }, "older order still payable: seat stays held");
+    assert.deepEqual(releaseSeat(after, F, "a", again.until, now + 2000, again.previous), {}, "older hold already lapsed: seat freed");
+    assert.equal(reserveSeat({ [F]: 1 }, F, "a", founder, now).previous, null);
+  });
+  test("the pricing page skips the viewer's own hold, with the server's key", async () => {
+    const key = await holdKeyOf("uid-1");
+    assert.equal(key, holdKeyFor("uid-1"));
+    const doc = { [F]: 49, holds: { [F]: { [key]: now + 1000 } } };
+    assert.equal(seatsTakenOf(doc, F, now), 50);
+    assert.equal(seatsTakenOf(doc, F, now, key), 49);
   });
   test("hold keys are opaque, stable per account", () => {
     assert.equal(holdKeyFor("uid-1"), holdKeyFor("uid-1"));
