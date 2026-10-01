@@ -426,9 +426,9 @@ function rowHTML({ c, perf, m }, campaignsById) {
   return `
     <tr data-id="${c.id}">
       <td class="cell-title">${escapeText(c.title || t("common.untitled"))}</td>
-      <td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${c.format || "—"}</div></td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaign.name || t("common.untitled"))}</span>` : "—"}</td>
-      <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span></td>
+      <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${escapeText(c.status)}"><span class="status-dot"></span>${escapeText(STATUS_LABELS[c.status] || c.status)}</span></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf.views) : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.engagement"))}">${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
@@ -458,7 +458,7 @@ function openEngagementQueueList({ brandId, allQueue, refresh }) {
                <span class="platform-pill">${platformIcon(c.platform)}</span>
                <div style="flex:1;min-width:0;">
                  <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(c.title || t("common.untitled"))}</div>
-                 <div class="text-faint" style="font-size:11.5px;">${c.platform || "—"} · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}${c.performance?.confirmedAt ? "" : t("contentList.eq.neverFilled")}</div>
+                 <div class="text-faint" style="font-size:11.5px;">${escapeText(c.platform || "—")} · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}${c.performance?.confirmedAt ? "" : t("contentList.eq.neverFilled")}</div>
                </div>
                <button type="button" class="btn btn-secondary btn-sm" data-eq-fill="${c.id}">${icon("chart", { size: 13 })}${t("contentList.eq.fill")}</button>
              </div>`
@@ -530,7 +530,7 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     bodyHTML: `
       <div style="margin-bottom:14px;">
         <div style="font-weight:700;font-size:14px;">${escapeText(c.title || t("common.untitled"))}</div>
-        <div class="text-faint" style="font-size:12px;"><span class="platform-pill">${platformIcon(c.platform)} ${c.platform || "—"}</span> · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}</div>
+        <div class="text-faint" style="font-size:12px;"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span> · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}</div>
       </div>
       <div class="field">
         <label>${t("contentList.qf.screenshotLabel")}</label>
@@ -703,14 +703,14 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.format")}</div>
       <select class="select" id="fp-format">
         <option value="">${t("contentList.fp.allFormats")}</option>
-        ${settings.formats.map((f) => `<option value="${f.name}" ${state.format === f.name ? "selected" : ""}>${f.name}</option>`).join("")}
+        ${settings.formats.map((f) => `<option value="${escapeText(f.name)}" ${state.format === f.name ? "selected" : ""}>${escapeText(f.name)}</option>`).join("")}
       </select>
     </div>
     <div class="filter-panel-section">
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.platform")}</div>
       <select class="select" id="fp-platform">
         <option value="">${t("contentList.fp.allPlatforms")}</option>
-        ${settings.platforms.map((p) => `<option value="${p.name}" ${state.platform === p.name ? "selected" : ""}>${p.name}</option>`).join("")}
+        ${settings.platforms.map((p) => `<option value="${escapeText(p.name)}" ${state.platform === p.name ? "selected" : ""}>${escapeText(p.name)}</option>`).join("")}
       </select>
     </div>
     ${

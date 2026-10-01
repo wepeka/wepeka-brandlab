@@ -480,7 +480,7 @@ export function wireShell({ brandId }) {
     if (!menu) return;
     const others = listBrands().filter((b) => b.id !== brandId);
     menu.innerHTML = `
-      ${others.map((b) => `<button data-go="${b.id}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`).join("")}
+      ${others.map((b) => `<button data-go="${escapeHtml(b.id)}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`).join("")}
       ${others.length ? '<div class="menu-divider"></div>' : ""}
       <button data-go="all">${icon("grid", { size: 15 })}${t("nav.allBrands")}</button>
     `;

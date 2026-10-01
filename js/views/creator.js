@@ -1239,7 +1239,7 @@ function sidebarRow(c, active) {
       <span class="status-pill status-${c.status}" style="padding:3px 8px;"><span class="status-dot"></span></span>
       <div class="ti">
         <div class="t">${escapeHtml(c.title || t("common.untitled"))}</div>
-        <div class="m">${c.platform || "—"} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
+        <div class="m">${escapeHtml(c.platform || "—")} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
         ${c.scheduleDate ? `<div class="creator-item-due">${dueBadge(c)}</div>` : ""}
       </div>
       ${

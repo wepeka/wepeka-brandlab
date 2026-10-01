@@ -150,7 +150,7 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
       <div class="page-eyebrow" style="margin-bottom:12px;">${t("series.edit.section.basic")}</div>
       <div class="field">
         <label>${t("series.edit.description")}</label>
-        <textarea class="textarea" id="s-description" style="min-height:60px;" placeholder="${escapeAttr(t("series.edit.descriptionPh"))}">${draft.description}</textarea>
+        <textarea class="textarea" id="s-description" style="min-height:60px;" placeholder="${escapeAttr(t("series.edit.descriptionPh"))}">${escapeText(draft.description)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
@@ -191,11 +191,11 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
       </div>
       <div class="field">
         <label>${t("series.edit.structure")}</label>
-        <textarea class="textarea" id="s-structure" style="min-height:70px;" placeholder="${escapeAttr(t("series.edit.structurePh"))}">${draft.structure}</textarea>
+        <textarea class="textarea" id="s-structure" style="min-height:70px;" placeholder="${escapeAttr(t("series.edit.structurePh"))}">${escapeText(draft.structure)}</textarea>
       </div>
       <div class="field">
         <label>${t("series.edit.typicalHook")}</label>
-        <textarea class="textarea" id="s-typicalHook" style="min-height:50px;">${draft.typicalHook}</textarea>
+        <textarea class="textarea" id="s-typicalHook" style="min-height:50px;">${escapeText(draft.typicalHook)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
@@ -209,19 +209,19 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
       </div>
       <div class="field">
         <label>${t("series.edit.ctaStyle")}</label>
-        <textarea class="textarea" id="s-ctaStyle" style="min-height:50px;">${draft.ctaStyle}</textarea>
+        <textarea class="textarea" id="s-ctaStyle" style="min-height:50px;">${escapeText(draft.ctaStyle)}</textarea>
       </div>
       <div class="field">
         <label>${t("series.edit.visualStyle")}</label>
-        <textarea class="textarea" id="s-visualStyle" style="min-height:50px;">${draft.visualStyle}</textarea>
+        <textarea class="textarea" id="s-visualStyle" style="min-height:50px;">${escapeText(draft.visualStyle)}</textarea>
       </div>
       <div class="field">
         <label>${t("series.edit.avoid")}</label>
-        <textarea class="textarea" id="s-thingsToAvoid" style="min-height:50px;">${draft.thingsToAvoid}</textarea>
+        <textarea class="textarea" id="s-thingsToAvoid" style="min-height:50px;">${escapeText(draft.thingsToAvoid)}</textarea>
       </div>
       <div class="field">
         <label>${t("series.edit.additional")}</label>
-        <textarea class="textarea" id="s-additionalInstructions" style="min-height:50px;">${draft.additionalInstructions}</textarea>
+        <textarea class="textarea" id="s-additionalInstructions" style="min-height:50px;">${escapeText(draft.additionalInstructions)}</textarea>
       </div>
     `,
     footHTML: `

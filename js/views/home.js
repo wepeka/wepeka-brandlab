@@ -774,9 +774,9 @@ function scheduleRowsHTML(overdue, upNext, lateTotal = 0) {
       <div class="top-content-row" data-open-content="${c.id}" style="cursor:pointer;">
         <div class="ti">
           <div class="t">${esc(c.title || t("beginner.untitled"))}</div>
-          <div class="m">${c.platform || "—"} · ${formatDate(c.scheduleDate)}</div>
+          <div class="m">${esc(c.platform || "—")} · ${formatDate(c.scheduleDate)}</div>
         </div>
-        <span class="tag tag-${(c.funnel || "").toLowerCase()}">${funnelLabel(c.funnel)}</span>
+        <span class="tag tag-${esc((c.funnel || "").toLowerCase())}">${esc(funnelLabel(c.funnel))}</span>
       </div>
     `);
   });

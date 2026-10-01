@@ -261,9 +261,9 @@ function openAutoScheduleConfirm(proposed, refresh) {
           .map(
             (p, i) => `
           <div class="auto-schedule-row">
-            <span class="tag tag-${p.content.funnel.toLowerCase()}">${funnelShort(p.content.funnel)}</span>
+            <span class="tag tag-${escapeHtml((p.content.funnel || "").toLowerCase())}">${escapeHtml(funnelShort(p.content.funnel))}</span>
             <span class="auto-schedule-title">${escapeHtml(p.content.title || t("common.untitled"))}</span>
-            <input class="input" type="date" data-schedule-index="${i}" value="${p.date}" style="width:auto;" />
+            <input class="input" type="date" data-schedule-index="${i}" value="${/^\d{4}-\d{2}-\d{2}$/.test(p.date || "") ? p.date : ""}" style="width:auto;" />
           </div>`
           )
           .join("")}
@@ -584,15 +584,15 @@ function agendaRow(c, campaignById) {
   const dt = new Date(c.scheduleDate || c.publishedDate);
   const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
   return `
-    <div class="agenda-row" data-id="${c.id}">
+    <div class="agenda-row" data-id="${escapeHtml(c.id)}">
       <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0,3)}</div></div>
       <div class="ti" style="flex:1;min-width:0;">
         <div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.title || t("common.untitled"))}</div>
-        <div class="text-muted" style="font-size:12.5px;margin-top:2px;">${c.platform || "—"} · ${c.format || "—"}</div>
+        <div class="text-muted" style="font-size:12.5px;margin-top:2px;">${escapeHtml(c.platform || "—")} · ${escapeHtml(c.format || "—")}</div>
       </div>
       ${campaign ? `<span class="tag" style="background:color-mix(in srgb, var(--brand-tint) 14%, transparent);color:var(--brand-tint);">${escapeHtml(campaign.name)}</span>` : ""}
-      <span class="tag tag-${c.funnel.toLowerCase()}">${funnelShort(c.funnel)}</span>
-      <span class="status-pill status-${c.status}"><span class="status-dot"></span>${STATUS_LABELS[c.status]}</span>
+      <span class="tag tag-${escapeHtml((c.funnel || "").toLowerCase())}">${escapeHtml(funnelShort(c.funnel))}</span>
+      <span class="status-pill status-${escapeHtml(c.status)}"><span class="status-dot"></span>${escapeHtml(STATUS_LABELS[c.status] || c.status)}</span>
     </div>
   `;
 }

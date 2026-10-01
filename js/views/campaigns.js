@@ -444,23 +444,23 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
       </div>
       <div class="field">
         <label>${t("camp.edit.audience")} <span class="text-faint" style="font-weight:400;">${t("camp.edit.audienceHint")}</span></label>
-        <textarea class="textarea" id="c-audience" style="min-height:60px;">${draft.targetAudience}</textarea>
+        <textarea class="textarea" id="c-audience" style="min-height:60px;">${escapeText(draft.targetAudience)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.problem")}</label>
-        <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.problemPh"))}">${draft.problemOrOpportunity}</textarea>
+        <textarea class="textarea" id="c-problem" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.problemPh"))}">${escapeText(draft.problemOrOpportunity)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.insight")}</label>
-        <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.insightPh"))}">${draft.insight}</textarea>
+        <textarea class="textarea" id="c-insight" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.insightPh"))}">${escapeText(draft.insight)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.bigIdea")}</label>
-        <textarea class="textarea" id="c-bigidea" style="min-height:60px;">${draft.bigIdea}</textarea>
+        <textarea class="textarea" id="c-bigidea" style="min-height:60px;">${escapeText(draft.bigIdea)}</textarea>
       </div>
       <div class="field">
         <label>${t("camp.edit.keyMessage")}</label>
-        <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.keyMessagePh"))}">${draft.keyMessage}</textarea>
+        <textarea class="textarea" id="c-message" style="min-height:60px;" placeholder="${escapeAttr(t("camp.edit.keyMessagePh"))}">${escapeText(draft.keyMessage)}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
@@ -475,16 +475,16 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
       </div>
       <div class="field">
         <label>${t("camp.edit.channels")}</label>
-        <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="${t("camp.edit.channelsPh")}">${listToLines(draft.channels)}</textarea>
+        <textarea class="textarea" id="c-channels" style="min-height:60px;" placeholder="${t("camp.edit.channelsPh")}">${escapeText(listToLines(draft.channels))}</textarea>
       </div>
       <div class="row-2">
         <div class="field" style="margin-bottom:0;">
           <label>${t("camp.edit.startDate")}</label>
-          <input class="input" type="date" id="c-start" value="${draft.startDate}" />
+          <input class="input" type="date" id="c-start" value="${escapeAttr(draft.startDate)}" />
         </div>
         <div class="field" style="margin-bottom:0;">
           <label>${t("camp.edit.endDate")}</label>
-          <input class="input" type="date" id="c-end" value="${draft.endDate}" />
+          <input class="input" type="date" id="c-end" value="${escapeAttr(draft.endDate)}" />
         </div>
       </div>
 
@@ -505,7 +505,7 @@ function openCampaignModal({ brandId, campaign = null, objective = null, aiDraft
             }
           </div>
           <div class="text-faint" style="font-size:11.5px;margin-bottom:6px;">${escapeText(info.description)}</div>
-          <textarea class="textarea" id="phase-goal-${i}" style="min-height:50px;" placeholder="${escapeAttr(t("camp.edit.phaseGoalPh"))}">${p.goal}</textarea>
+          <textarea class="textarea" id="phase-goal-${i}" style="min-height:50px;" placeholder="${escapeAttr(t("camp.edit.phaseGoalPh"))}">${escapeText(p.goal)}</textarea>
         </div>`;
         })
         .join("")}

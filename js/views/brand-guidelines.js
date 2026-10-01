@@ -106,6 +106,19 @@ function ensureGoogleFont(family) {
 // TTF/OTF exports from some foundries won't, hence the friendly nudge.
 const MAX_CUSTOM_FONT_BYTES = 500 * 1024;
 
+// Font names and brand colors end up inside style="" attributes (and the
+// PDF). A font named after its file — or a value from an old import —
+// could carry quotes or "<" and break out of them, so a font name keeps
+// only letters, digits, spaces, dots, dashes and underscores, and a color
+// has to be a #hex. Applied when a name is typed and when a brand loads.
+export function safeFontName(name) {
+  return String(name || "").replace(/[^\p{L}\p{N} ._-]/gu, "").replace(/\s+/g, " ").trim();
+}
+function safeHex(c) {
+  return /^#[0-9a-f]{3,8}$/i.test(String(c || "").trim()) ? String(c).trim() : "";
+}
+const safeMap = (obj, fn) => Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => [k, fn(v)]));
+
 const loadedCustomFonts = new Set();
 function ensureCustomFont(name, dataUrl) {
   if (!name || !dataUrl || loadedCustomFonts.has(name)) return;
@@ -140,12 +153,12 @@ function answersFromBrand(brand) {
     mascots: bg.mascots || [],
     colorFeelings: bg.colorFeelings || [],
     colorFormula: bg.colorFormula || "",
-    colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...(bg.colors || {}) },
+    colors: { primary: "", secondary: "", accent: "", background: "", text: "", ...safeMap(bg.colors, safeHex) },
     typographyFeelings: bg.typographyFeelings || [],
     fontSector: bg.fontSector || "",
-    fonts: { primary: "", secondary: "", accent: "", ...(bg.fonts || {}) },
-    customFonts: { ...(bg.customFonts || {}) },
-    extraFonts: bg.extraFonts || [],
+    fonts: { primary: "", secondary: "", accent: "", ...safeMap(bg.fonts, safeFontName) },
+    customFonts: Object.fromEntries(Object.entries(bg.customFonts || {}).map(([k, v]) => [safeFontName(k), v])),
+    extraFonts: (bg.extraFonts || []).map((f) => ({ ...f, family: safeFontName(f.family) })),
     typeSpacing: {
       primary: { ...TYPE_SPACING_DEFAULTS.primary, ...(bg.typeSpacing?.primary || {}) },
       secondary: { ...TYPE_SPACING_DEFAULTS.secondary, ...(bg.typeSpacing?.secondary || {}) },
@@ -159,7 +172,7 @@ function answersFromBrand(brand) {
     // asks before silently overwriting what someone already wrote.
     aiCopy: { valueProposition: null, colorEssence: null, edited: { valueProposition: false, colorEssence: {} }, ...(bg.aiCopy || {}) },
     bookStyle: BOOK_STYLE_KEYS.includes(bg.bookStyle) ? bg.bookStyle : "classic",
-    bookPhoto: bg.bookPhoto || "",
+    bookPhoto: /^(data:image\/|https:\/\/)/.test(bg.bookPhoto || "") ? bg.bookPhoto.replace(/['"()\\]/g, "") : "",
   };
 }
 
@@ -1351,8 +1364,8 @@ function wireTypographyStep(root, state, refresh) {
         e.target.value = "";
         return;
       }
-      const defaultName = file.name.replace(/\.(ttf|otf|woff2?|)$/i, "").trim() || "Custom Font";
-      const name = await promptDialog({ title: t("bg.type.nameTitle"), label: t("bg.type.nameLabel"), placeholder: defaultName, value: defaultName, confirmLabel: t("bg.type.useFont") });
+      const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || "Custom Font";
+      const name = safeFontName(await promptDialog({ title: t("bg.type.nameTitle"), label: t("bg.type.nameLabel"), placeholder: escapeHtml(defaultName), value: defaultName, confirmLabel: t("bg.type.useFont") }));
       e.target.value = "";
       if (!name) return;
       const dataUrl = await fileToDataURL(file);
@@ -1375,7 +1388,7 @@ function wireTypographyStep(root, state, refresh) {
     const label = await promptDialog({ title: t("bg.type.extraKindTitle"), label: t("bg.type.extraKindLabel"), placeholder: t("bg.type.extraKindDefault"), value: t("bg.type.extraKindDefault"), confirmLabel: t("guidelines.next") });
     e.target.value = "";
     if (!label) return;
-    const defaultName = file.name.replace(/\.(ttf|otf|woff2?|)$/i, "").trim() || label;
+    const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || safeFontName(label) || "Custom Font";
     const dataUrl = await fileToDataURL(file);
     state.answers.customFonts[defaultName] = dataUrl;
     state.answers.extraFonts = [...state.answers.extraFonts, { label, family: defaultName }];
@@ -1819,7 +1832,7 @@ function wireApplicationsStep(root, state, refresh) {
 function mockupStageStyle(a) {
   const c = a.colors;
   const dir = VISUAL_DIRECTIONS[a.visualDirection[0]] || { radius: "12px" };
-  return `--bb-primary:${c.primary || "#333"};--bb-secondary:${c.secondary || "#666"};--bb-accent:${c.accent || "#999"};--bb-bg:${c.background || "#fff"};--bb-text:${c.text || "#222"};--bb-font-primary:'${a.fonts.primary || "Inter"}';--bb-font-secondary:'${a.fonts.secondary || "Inter"}';--bb-radius:${dir.radius};`;
+  return `--bb-primary:${c.primary || "#333"};--bb-secondary:${c.secondary || "#666"};--bb-accent:${c.accent || "#999"};--bb-bg:${c.background || "#fff"};--bb-text:${c.text || "#222"};--bb-font-primary:'${safeFontName(a.fonts.primary) || "Inter"}';--bb-font-secondary:'${safeFontName(a.fonts.secondary) || "Inter"}';--bb-radius:${dir.radius};`;
 }
 
 function renderMockup(id, answers, brand) {
@@ -2516,7 +2529,7 @@ const SPECIMEN_ROLE_KEY = { primary: "primary", secondary: "secondary", accent: 
 function typeSpecimenSplitPageHTML(brand, a, chapter, { title, desc, family, lineHeight, letterSpacing }) {
   const phrase = brand.brandDNA?.tagline || brand.name;
   const category = fontCategoryLine(family);
-  const fam = `font-family:'${family}';`;
+  const fam = `font-family:'${safeFontName(family)}';`;
   return `
     <div class="brandbook-page brandbook-print-page bbk-page bbk-type">
       <div class="bbk-type-side">
@@ -2593,7 +2606,7 @@ function typographySpacingBody(a, brand) {
           (v) => `
         <div class="bbk-leading ${v.ok ? "bbk-leading-ok" : ""}">
           <div class="bbk-leading-head"><span class="${v.ok ? "bbk-ok" : "bbk-x"}">${v.ok ? "✓" : "✕"}</span>${escapeHtml(v.label)}</div>
-          <div class="bbk-leading-text" style="font-family:'${family}';line-height:${v.lineHeight};letter-spacing:${sp.letterSpacing}em;">${escapeHtml(sample)}</div>
+          <div class="bbk-leading-text" style="font-family:'${safeFontName(family)}';line-height:${v.lineHeight};letter-spacing:${sp.letterSpacing}em;">${escapeHtml(sample)}</div>
         </div>
       `
         )
