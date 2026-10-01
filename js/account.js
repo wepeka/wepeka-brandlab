@@ -191,17 +191,69 @@ export function brandLimitOf(account = cachedAccount, now = Date.now()) {
   return base + bought + rented;
 }
 
-// Brands that are preview-only because a monthly slot lapsed: the active
-// (not archived) brands beyond the limit, newest first to go. Only ever
-// applies to an account that has rented a slot — an older account already
-// over its limit for any other reason is never suddenly locked. Archiving
-// an older brand frees its place, so the owner picks which ones stay open.
+// Brands that are preview-only: the active (not archived) brands beyond
+// the limit, newest first to go. This used to apply only to accounts that
+// had once rented a monthly slot, so a Studio → Starter downgrade kept
+// using all 10 brands (audit S-16); now every account over its limit is
+// held to it — a lapsed slot, a downgrade, or brands written around the
+// app. Nothing is deleted; archiving an older brand frees its place, so the
+// owner picks which ones stay open. Wepeka's own team account is exempt.
+const isActiveBrand = (b) => !b.archived && !b.deletedAt;
 export function lockedBrandIds(brands, account = cachedAccount, now = Date.now()) {
-  if (!(account?.brandSlotsUntil || []).length || isAdmin(account?.uid)) return new Set();
+  if (!account || isAdmin(account?.uid) || isAdmin(currentUid())) return new Set();
   const limit = brandLimitOf(account, now);
-  const active = (brands || []).filter((b) => !b.archived && !b.deletedAt)
+  const active = (brands || []).filter(isActiveBrand)
     .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || String(a.id).localeCompare(String(b.id)));
   return new Set(active.slice(limit).map((b) => b.id));
+}
+
+// ---- "Impor JSON" guard (audit S-16 / S-20) --------------------------------
+// js/store.js importJSON() runs every backup file through this before a
+// single write: a bounded size, ids Firestore can take as plain doc ids
+// (no "/" paths into other collections), brand colors that are hex codes
+// (they end up inside style="" attributes), and — the billing part — no
+// more active brands than the plan allows (an import used to create brands
+// with no limit check at all). Throws an Error whose message is shown as
+// is; JSON.parse's SyntaxError passes through for the "not a backup" text.
+export const IMPORT_MAX_CHARS = 20 * 1024 * 1024;
+const IMPORT_DOC_MAX_CHARS = 1000 * 1000; // Firestore caps a doc at 1 MiB
+const IMPORT_COLLECTIONS = ["brands", "content", "campaigns", "routineTemplate", "brainstorms"];
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const hexOrBlank = (c) => (typeof c === "string" && HEX_COLOR.test(c.trim()) ? c.trim() : "");
+
+export function checkImport(json, existingBrands = [], account = cachedAccount, now = Date.now()) {
+  if (typeof json !== "string" || json.length > IMPORT_MAX_CHARS) throw new Error(t("pricing.import.tooBig", { mb: IMPORT_MAX_CHARS / 1024 / 1024 }));
+  const parsed = JSON.parse(json);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("pricing.import.badData"));
+  for (const name of IMPORT_COLLECTIONS) {
+    if (parsed[name] == null) continue;
+    if (!Array.isArray(parsed[name])) throw new Error(t("pricing.import.badData"));
+    for (const item of parsed[name]) {
+      if (!item || typeof item !== "object" || typeof item.id !== "string" || !SAFE_ID.test(item.id)) throw new Error(t("pricing.import.badData"));
+      if (JSON.stringify(item).length > IMPORT_DOC_MAX_CHARS) throw new Error(t("pricing.import.docTooBig"));
+    }
+  }
+  parsed.brands = (parsed.brands || []).map((b) => {
+    const colors = b.brandGuidelines?.colors;
+    return {
+      ...b,
+      ...(b.color != null ? { color: hexOrBlank(b.color) } : {}),
+      ...(colors && typeof colors === "object"
+        ? { brandGuidelines: { ...b.brandGuidelines, colors: Object.fromEntries(Object.entries(colors).map(([k, v]) => [k, hexOrBlank(v)])) } }
+        : {}),
+    };
+  });
+  if (!isAdmin(account?.uid) && !isAdmin(currentUid())) {
+    // The brands this account would hold afterwards: the backup's, plus any
+    // it already has that the backup doesn't overwrite (import never deletes).
+    const imported = new Set(parsed.brands.map((b) => b.id));
+    const before = (existingBrands || []).filter(isActiveBrand).length;
+    const after = (existingBrands || []).filter((b) => isActiveBrand(b) && !imported.has(b.id)).length + parsed.brands.filter(isActiveBrand).length;
+    const limit = brandLimitOf(account, now);
+    if (after > limit && after > before) throw new Error(t("pricing.import.overLimit", { n: after, limit }));
+  }
+  return parsed;
 }
 export const isBrandLocked = (brandId, brands, account = cachedAccount) => lockedBrandIds(brands, account).has(brandId);
 

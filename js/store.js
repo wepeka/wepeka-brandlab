@@ -2410,7 +2410,10 @@ export function exportJSON() {
 // other write above, this is deliberately awaited by its caller rather than
 // fire-and-forget, since it's a big batch operation the UI should wait on.
 export async function importJSON(json) {
-  const parsed = JSON.parse(json);
+  // Size, doc ids, brand colors and the plan's brand limit are checked
+  // before anything is written (js/account.js checkImport; audit S-16/S-20).
+  const { checkImport } = await import("./account.js");
+  const parsed = checkImport(json, db.brands);
   const next = { ...defaultDB(), ...parsed };
   // Stamp ownerId on every imported doc regardless of what the backup file
   // says — otherwise an imported doc with no/stale ownerId would be

@@ -427,6 +427,11 @@ export default {
   "pricing.stack.fine": { en: "Agency rates are a typical range for small-business accounts. Brandlab doesn't design or post for you — it gives you the strategy, ideas, schedule and evaluation to run it yourself.", id: "Harga agency adalah kisaran umum untuk akun UMKM. Brandlab nggak bikinin desain atau postingin kontenmu — Brandlab kasih strategi, ide, jadwal, dan evaluasinya supaya kamu bisa jalanin sendiri." },
   "pricing.alreadyHave": { en: "Already have an account?", id: "Sudah punya akun?" },
   "pricing.loginCta": { en: "Log in", id: "Masuk" },
+  // "Impor JSON" refused before anything is written (js/account.js checkImport).
+  "pricing.import.tooBig": { en: "This backup file is too big (over {mb} MB).", id: "File backup ini terlalu besar (lebih dari {mb} MB)." },
+  "pricing.import.docTooBig": { en: "One item in this backup is too big to save — remove large images from it and export again.", id: "Ada isi backup yang terlalu besar untuk disimpan — kecilkan gambarnya lalu ekspor ulang." },
+  "pricing.import.badData": { en: "This file isn't a Brandlab backup, or it was edited by hand.", id: "File ini bukan backup Brandlab, atau isinya sudah diubah manual." },
+  "pricing.import.overLimit": { en: "This backup would leave {n} active brands, and your plan holds {limit}. Archive brands first, or add a brand slot.", id: "Backup ini bikin brand aktif jadi {n}, padahal paketmu cuma muat {limit}. Arsipkan brand dulu, atau tambah slot brand." },
   // A Lifetime account's pricing page (js/views/pricing.js ownedLifetime).
   "pricing.owned.title": { en: "You're on Lifetime", id: "Kamu sudah Lifetime" },
   "pricing.owned.founder": { en: "Founder Lifetime is yours — no subscription needed. What's left: upgrade to Agency Lifetime by paying just the difference, and the add-ons below.", id: "Founder Lifetime sudah jadi milikmu — nggak perlu langganan. Yang masih bisa: upgrade ke Agency Lifetime cukup bayar selisihnya, dan add-on di bawah." },
