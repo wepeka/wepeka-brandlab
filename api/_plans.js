@@ -5,6 +5,8 @@
 //
 // js/views/pricing.js shows the same amounts for display only — the amount
 // actually charged always comes from here, keyed by planKey.
+import { createHash } from "node:crypto";
+
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
@@ -356,6 +358,74 @@ export function founderAmount(sold) {
 // that doc carries the shared AI API keys and must stay signed-in-only,
 // while the pricing page needs this number for logged-out visitors too.
 export const SLOTS_DOC = "meta/founderSlots";
+
+// ---- Capped seats: holds (audit S-17) ----------------------------------------
+// The cap and the price wave used to be checked only when a checkout opened,
+// and the webhook counted the seat with no check at all — so everyone who
+// opened a checkout at seat #15 paid Rp 499rb, and the last seat could sell
+// several times over. Now opening a checkout HOLDS a seat for as long as its
+// Snap window lasts, plus a margin for a late notification:
+// meta/founderSlots.holds.<slot>.<key> = until (ms). A hold counts against
+// the cap and the price wave exactly like a sold seat; the webhook turns it
+// into a sale; an expired/cancelled order gives it back; one past `until`
+// simply stops counting. One hold per account (key = holdKeyFor(uid), a
+// hash — the doc is public): reopening the checkout refreshes it instead of
+// taking a second seat. Remaining = cap − sold − live holds, which is what
+// js/views/pricing.js shows (and wepeka.com's landing should, too).
+export const SEAT_CHECKOUT_MINUTES = 60;
+export const HOLD_MS = (SEAT_CHECKOUT_MINUTES + 15) * 60 * 1000;
+
+export const holdKeyFor = (uid) => createHash("sha256").update(`brandlab-seat:${uid}`).digest("hex").slice(0, 16);
+
+function liveHolds(slotsDoc, slot, now) {
+  return Object.fromEntries(Object.entries(slotsDoc?.holds?.[slot] || {}).filter(([, until]) => Number(until) > now));
+}
+// Seats sold or held by an open checkout — not counting `exceptKey`'s own
+// hold, so reopening your checkout never competes with yourself.
+export function seatsTaken(slotsDoc, slot, now = Date.now(), exceptKey = null) {
+  const held = Object.keys(liveHolds(slotsDoc, slot, now)).filter((key) => key !== exceptKey).length;
+  return (Number(slotsDoc?.[slot]) || 0) + held;
+}
+export const seatPrice = (plan, taken) => (plan.tiered ? founderAmount(taken) : plan.amount);
+
+// Hold a seat for `key`: null when every seat is sold or held; else the
+// slot's live holds with this one in (expired ones dropped), its end, and
+// the price wave it falls in.
+export function reserveSeat(slotsDoc, slot, key, plan, now = Date.now(), ms = HOLD_MS) {
+  const taken = seatsTaken(slotsDoc, slot, now, key);
+  if (taken >= SLOT_CAPS[slot]) return null;
+  const holds = liveHolds(slotsDoc, slot, now);
+  holds[key] = now + ms;
+  return { holds, until: now + ms, price: seatPrice(plan, taken) };
+}
+// A paid seat: one more sold, its hold gone. `overCap`: sold past the cap
+// (its hold had already lapsed and the seat went to someone else) — it is
+// still granted, since it's paid, and flagged for the admin.
+export function convertSeat(slotsDoc, slot, key, now = Date.now()) {
+  const holds = liveHolds(slotsDoc, slot, now);
+  if (key) delete holds[key];
+  const sold = (Number(slotsDoc?.[slot]) || 0) + 1;
+  return { sold, holds, overCap: sold > SLOT_CAPS[slot] };
+}
+// An order that will never be paid gives its seat back — unless the
+// account reopened checkout since, and the hold now belongs to that order.
+export function releaseSeat(slotsDoc, slot, key, until, now = Date.now()) {
+  const holds = liveHolds(slotsDoc, slot, now);
+  if (key && Number(holds[key]) === Number(until)) delete holds[key];
+  return holds;
+}
+// What a seat change writes to meta/founderSlots: dotted paths for an
+// update (each replaces that one value — the holds map is rewritten whole),
+// or the nested form for the doc's very first write.
+export function seatFields(slot, { sold, holds }) {
+  const update = { [`holds.${slot}`]: holds };
+  const set = { holds: { [slot]: holds } };
+  if (sold != null) {
+    update[slot] = sold;
+    set[slot] = sold;
+  }
+  return { update, set };
+}
 
 // planKeys sold by the pre-subscription pricing page. No longer purchasable,
 // but a payment started back then can still settle — webhook.js keeps

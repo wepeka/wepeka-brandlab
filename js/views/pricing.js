@@ -370,6 +370,14 @@ function ownedNoteHTML(owned) {
 // Index of the wave currently on sale, from the live sold-count. Unknown
 // count (still loading / read failed) shows the first wave — the amount
 // actually charged is decided server-side either way.
+// Seats gone = sold + held by a checkout still open (meta/founderSlots
+// .holds, api/_plans.js seatsTaken — keep in sync): a held seat is priced
+// and capped like a sold one until its Snap window closes (audit S-17).
+export function seatsTakenOf(slots, field, now = Date.now()) {
+  const held = Object.values(slots?.holds?.[field] || {}).filter((until) => Number(until) > now).length;
+  return (Number(slots?.[field]) || 0) + held;
+}
+
 function openTier(sold) {
   const i = FOUNDER.tiers.findIndex((tier) => (sold || 0) < tier.upTo);
   return i === -1 ? FOUNDER.tiers.length : i;
@@ -615,10 +623,10 @@ export function render(root, { user, account, backHref, locked } = {}) {
   const sel = { brands: 1, yearly: false };
 
   const paint = () => {
-  const open = openTier(slots?.[FOUNDER.slotField]);
+  const open = openTier(slots ? seatsTakenOf(slots, FOUNDER.slotField) : null);
   const founderSoldOut = open >= FOUNDER.tiers.length;
   const tier = FOUNDER.tiers[Math.min(open, FOUNDER.tiers.length - 1)];
-  const agencySoldOut = (Number(slots?.[AGENCY.slotField]) || 0) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+  const agencySoldOut = seatsTakenOf(slots, AGENCY.slotField) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
   const faqVars = {
     days: TRIAL_DAYS,
     cap: FOUNDER_SLOT_CAPS[FOUNDER.slotField],
@@ -735,8 +743,8 @@ export function render(root, { user, account, backHref, locked } = {}) {
       if (!root.isConnected) return;
       const before = openTier(null);
       slots = snap.exists() ? snap.data() : {};
-      const agencyGone = (Number(slots[AGENCY.slotField]) || 0) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
-      if (openTier(slots[FOUNDER.slotField]) === before && !agencyGone) return;
+      const agencyGone = seatsTakenOf(slots, AGENCY.slotField) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
+      if (openTier(seatsTakenOf(slots, FOUNDER.slotField)) === before && !agencyGone) return;
       repaintInPlace();
     })
     .catch((err) => console.warn("Founder slot count unavailable", err));

@@ -3,7 +3,8 @@
 // client, same principle wpk-dp's own storefront already uses ("server-
 // authoritative pricing"). See js/views/pricing.js for the caller.
 import { adminDb, requireAuth } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, founderAmount, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, switchQuote, recurringFor } from "../_plans.js";
+import { PLANS, ADDONS, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, SEAT_CHECKOUT_MINUTES, switchQuote, recurringFor, holdKeyFor, seatsTaken, seatPrice } from "../_plans.js";
+import { holdSeat, releaseHold } from "../_seats.js";
 import { RECURRING_ON } from "../_midtrans.js";
 import { metaContext } from "../_meta.js";
 import { MIDTRANS_IS_PRODUCTION, MIDTRANS_CLIENT_KEY, paymentsOpenFor } from "../_payments.js";
@@ -61,7 +62,7 @@ export default async function handler(req, res) {
       let amount = plan.amount;
       if (plan.slot && plan.tiered) {
         const slotsSnap = await adminDb().doc(SLOTS_DOC).get();
-        amount = founderAmount(Number(slotsSnap.data()?.[plan.slot]) || 0);
+        amount = seatPrice(plan, seatsTaken(slotsSnap.data(), plan.slot, Date.now(), holdKeyFor(uid)));
       }
       Object.assign(status, { label: plan.label, amount });
       // A plan this account may not buy at all (a Lifetime account, a second
@@ -109,27 +110,38 @@ export default async function handler(req, res) {
   const precheck = PLANS[planKey] ? switchQuote(account, planKey, plan.amount) : null;
   if (precheck?.mode === "refused") return res.status(409).json(refusalBody(precheck));
 
-  // Founder slots are a hard cap — refuse to even start a payment once the
-  // counter is full. The webhook is what actually increments it, so a
-  // checkout opened before the last slot sold can still settle — but only
-  // inside its 60-minute Snap window (below); someone who has already paid
-  // is never refused.
+  // Founder / Agency seats are a hard cap. Opening the checkout HOLDS a seat
+  // (api/_seats.js, api/_plans.js reserveSeat) — counted against the cap
+  // and the price wave like a sold one until the Snap window below closes —
+  // so two buyers at the last seat (or the last Rp 499rb seat) can't both
+  // get it; the webhook turns the hold into a sale. A quote only looks.
+  const db = adminDb();
   let amount = plan.amount;
+  let hold = null;
   if (plan.slot) {
-    const slotsSnap = await adminDb().doc(SLOTS_DOC).get();
-    const sold = Number(slotsSnap.data()?.[plan.slot]) || 0;
-    if (sold >= SLOT_CAPS[plan.slot]) {
-      return res.status(409).json({ error: "Slot paket ini sudah habis." });
+    if (quoteOnly) {
+      const taken = seatsTaken((await db.doc(SLOTS_DOC).get()).data(), plan.slot, Date.now(), holdKeyFor(uid));
+      if (taken >= SLOT_CAPS[plan.slot]) return res.status(409).json({ error: "Slot paket ini sudah habis.", code: "sold-out" });
+      amount = seatPrice(plan, taken);
+    } else {
+      const held = await holdSeat(db, plan, uid);
+      if (!held) return res.status(409).json({ error: "Slot paket ini sudah habis.", code: "sold-out" });
+      amount = held.price;
+      hold = held.hold;
     }
-    if (plan.tiered) amount = founderAmount(sold);
   }
+  // Anything below that stops this checkout gives the seat straight back.
+  const refuse = async (status, body) => {
+    await releaseHold(db, hold);
+    return res.status(status).json(body);
+  };
 
   // A plan while another subscription runs replaces it, never stacks:
   // upgrade = now, minus what's left of the old period; downgrade = starts
   // when the current period ends (api/_plans.js switchQuote).
   const price = amount;
   const quote = PLANS[planKey] ? switchQuote(account, planKey, price) : { mode: "new", amount: price, credit: 0 };
-  if (quote.mode === "refused") return res.status(409).json(refusalBody(quote));
+  if (quote.mode === "refused") return refuse(409, refusalBody(quote));
   amount = quote.amount;
   if (quoteOnly) return res.status(200).json({ ...quote, price });
   // Unused value that doesn't fit under the new price is lost (switchQuote
@@ -137,7 +149,7 @@ export default async function handler(req, res) {
   // confirmation (js/views/pricing.js), never silently. An older open tab
   // without that confirmation gets told instead of charged.
   if (quote.forfeit > 0 && req.body?.acceptForfeit !== true) {
-    return res.status(409).json({
+    return refuse(409, {
       error: `Sisa nilai paketmu lebih besar dari harga paket baru — Rp ${quote.forfeit.toLocaleString("id-ID")} akan hangus. Muat ulang halaman lalu konfirmasi dulu.`,
       code: "forfeit",
       forfeit: quote.forfeit,
@@ -164,10 +176,10 @@ export default async function handler(req, res) {
         // Auto-renew: Snap offers to save the card; the webhook turns the
         // saved card into a Midtrans subscription (api/_plans.js recurringFor).
         ...(recurring ? { credit_card: { secure: true, save_card: true }, user_id: uid } : {}),
-        // A capped seat is priced and checked against the cap when this
-        // checkout opens; an hour-long window keeps a stale open checkout
-        // from settling long after the last seat (or the price wave) is gone.
-        ...(plan.slot ? { expiry: { unit: "minutes", duration: 60 } } : {}),
+        // A capped seat is held only for this long (api/_plans.js HOLD_MS
+        // adds a margin for a late notification), so a stale open checkout
+        // can't settle long after the last seat (or the price wave) is gone.
+        ...(plan.slot ? { expiry: { unit: "minutes", duration: SEAT_CHECKOUT_MINUTES } } : {}),
         // Carried straight through to the webhook payload — safer than
         // parsing uid/planKey back out of order_id's own text.
         custom_field1: uid,
@@ -180,17 +192,20 @@ export default async function handler(req, res) {
       // Surface Midtrans's own reason (never a key) so a misconfigured
       // dashboard/env is diagnosable from the toast instead of Vercel logs.
       const reason = Array.isArray(data?.error_messages) ? data.error_messages.join("; ") : data?.status_message || `HTTP ${midtransRes.status}`;
-      return res.status(502).json({ error: `Gagal membuat transaksi pembayaran. Midtrans: ${reason}` });
+      return refuse(502, { error: `Gagal membuat transaksi pembayaran. Midtrans: ${reason}` });
     }
     // The webhook trusts THIS record for uid/planKey/amount, keyed on
     // order_id (which Midtrans's signature does cover) — not custom_field1/2,
     // which travel unsigned and could otherwise be edited in flight.
-    await adminDb().doc(`payments/${orderId}`).set({
+    await db.doc(`payments/${orderId}`).set({
       uid, planKey, plan: plan.plan || planKey, amount, status: "pending", createdAt: Date.now(),
       // `price` = the plan's own price before any credit (a Lifetime's worth
       // for a later Founder → Agency upgrade, api/_plans.js settlePlanPurchase).
       mode: quote.mode, price, credit: quote.credit || 0, ...(quote.forfeit ? { forfeit: quote.forfeit } : {}), ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
       ...(quote.lifetimeUpgrade ? { lifetimeUpgrade: true } : {}),
+      // The seat this checkout holds (api/_seats.js): the webhook converts
+      // it, an expired/cancelled order gives it back.
+      ...(hold ? { hold } : {}),
       // Buyer's browser context for the webhook's Meta Purchase event (api/_meta.js).
       meta: metaContext(req),
     });
@@ -199,6 +214,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ token: data.token, orderId, amount, label: plan.label });
   } catch (err) {
     console.error("create-transaction error", err);
-    return res.status(500).json({ error: "Gagal menghubungi Midtrans." });
+    return refuse(500, { error: "Gagal menghubungi Midtrans." });
   }
 }

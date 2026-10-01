@@ -5,7 +5,8 @@
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, convertSeat, releaseSeat, seatFields } from "../_plans.js";
+import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
 import { MIDTRANS_IS_PRODUCTION, isPaymentTester, isSettled } from "../_payments.js";
@@ -77,6 +78,8 @@ export default async function handler(req, res) {
     // An order that will never be paid stops showing as "pending".
     if (["expire", "cancel", "deny"].includes(transaction_status) && pending.status === "pending") {
       await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
+      // The Founder/Agency seat it held goes back on sale right away.
+      await releaseHold(db, pending.hold);
     }
     return res.status(200).json({ ok: true, ignored: transaction_status });
   }
@@ -94,6 +97,7 @@ export default async function handler(req, res) {
     const buyer = (await db.doc(`accounts/${uid}`).get()).data();
     if (!isPaymentTester(uid, buyer)) {
       await paymentRef.set({ status: "void-sandbox", closedAt: Date.now() }, { merge: true });
+      await releaseHold(db, pending.hold);
       console.warn("Midtrans webhook: sandbox payment from a non-tester voided", order_id);
       return res.status(200).json({ ok: true, ignored: "sandbox" });
     }
@@ -123,8 +127,9 @@ export default async function handler(req, res) {
   // does retry the same notification, and a retry must not extend the
   // subscription a second time, take a second Founder slot, or double-count
   // revenue in the admin dashboard's per-account total.
+  const slotsRef = plan.slot ? db.doc(SLOTS_DOC) : null;
   const firstTime = await db.runTransaction(async (tx) => {
-    const [freshPaymentSnap, accountSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef)]);
+    const [freshPaymentSnap, accountSnap, slotsSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef), slotsRef ? tx.get(slotsRef) : null]);
     if (!freshPaymentSnap.exists || freshPaymentSnap.data().status !== "pending") return false;
 
     // A Brand Book art style only joins the account's owned list.
@@ -174,16 +179,26 @@ export default async function handler(req, res) {
     if (decision.issue) {
       tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, needsReview: decision.issue }, { merge: true });
       tx.set(accountRef, { paymentIssue: { orderId: order_id, status: decision.issue, planKey, at: now } }, { merge: true });
+      // Nothing applied, so no seat either: the one this order held goes back.
+      if (slotsRef && pending.hold?.key && slotsSnap?.exists) {
+        tx.update(slotsRef, seatFields(plan.slot, { holds: releaseSeat(slotsSnap.data(), plan.slot, pending.hold.key, pending.hold.until, now) }).update);
+      }
       console.warn("Midtrans webhook: paid order needs review", order_id, decision.issue);
       return "issue";
     }
+    // A capped seat: its hold becomes a sale (api/_plans.js convertSeat). One
+    // sold past the cap — its hold had lapsed and the seat went to someone
+    // else — is still granted, since it's paid, and flagged for the admin.
+    const seat = decision.takesSeat ? convertSeat(slotsSnap?.data(), plan.slot, pending.hold?.key, now) : null;
+    const review = decision.review || (seat?.overCap ? "over-cap" : undefined);
     const patch = { ...decision.patch };
     if (decision.grantBookStyles) patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
-    // Applied, but worth a look (e.g. a Founder who paid Agency's full price).
-    if (decision.review) patch.paymentIssue = { orderId: order_id, status: decision.review, planKey, at: now };
+    // Applied, but worth a look (a Founder who paid Agency's full price, a
+    // seat past the cap).
+    if (review) patch.paymentIssue = { orderId: order_id, status: review, planKey, at: now };
     tx.set(accountRef, patch, { merge: true });
-    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}), ...(decision.review ? { needsReview: decision.review } : {}) }, { merge: true });
-    if (decision.takesSeat) tx.set(db.doc(SLOTS_DOC), { [plan.slot]: FieldValue.increment(1) }, { merge: true });
+    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}), ...(review ? { needsReview: review } : {}) }, { merge: true });
+    if (seat) writeSeats(tx, slotsRef, slotsSnap, seatFields(plan.slot, { sold: seat.sold, holds: seat.holds }));
     return true;
   });
 
