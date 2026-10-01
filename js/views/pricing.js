@@ -46,8 +46,8 @@ const PAYMENT_WA_NUMBER = SUPPORT_WA_NUMBER;
 // client key all come from the server (api/_payments.js, via
 // create-transaction's `statusOnly`), so going live with Midtrans is an env
 // change in Vercel, never a code change here. Until then checkout is closed
-// to customers and every buy button leads to WhatsApp instead. Anything
-// unexpected reads as closed — the WhatsApp route always works.
+// to customers and every buy button says "Segera hadir" instead. Anything
+// unexpected reads as closed.
 async function paymentStatus(planKey) {
   try {
     const idToken = await auth.currentUser?.getIdToken();
@@ -78,19 +78,15 @@ function loadSnap({ production, clientKey }) {
   return snapScriptPromise;
 }
 
-// Checkout closed: the same purchase, ordered on WhatsApp with the exact
-// item and price the server would have charged, plus the account's email so
-// the team can activate it on the right account.
-async function showPaymentsClosed(status, planKey) {
-  const { openModal } = await import("../modals.js");
-  const item = status.label ? `${status.label}${status.amount ? ` — ${rp(status.amount)}` : ""}` : planKey;
-  const message = t("pricing.closed.waMessage", { item, email: auth.currentUser?.email || "-" });
-  const wa = `https://wa.me/${PAYMENT_WA_NUMBER}?text=${encodeURIComponent(message)}`;
+// Checkout closed: every purchase happens on this site, so until online
+// payment opens a buy button only says it's coming — no WhatsApp order.
+async function showPaymentsClosed() {
+  const { openModal, closeOverlay } = await import("../modals.js");
   openModal({
-    title: t("pricing.closed.title"),
-    bodyHTML: `
-      <p style="margin:0 0 16px;">${t("pricing.closed.body", { item: escapeHtml(item) })}</p>
-      <a class="btn btn-primary btn-block" href="${wa}" target="_blank" rel="noopener noreferrer">${icon("chat", { size: 15 })}${t("pricing.closed.cta")}</a>`,
+    title: t("pricing.closed.soonTitle"),
+    bodyHTML: `<p style="margin:0;">${t("pricing.closed.body")}</p>`,
+    footHTML: `<button type="button" class="btn btn-primary" data-soon-ok>${t("common.close")}</button>`,
+    onMount: (overlay) => overlay.querySelector("[data-soon-ok]").addEventListener("click", () => closeOverlay(overlay)),
   });
 }
 
@@ -117,14 +113,14 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     }
     const status = await paymentStatus(planKey);
     // A plan this account can't buy at all (anything on top of a Lifetime
-    // plan, a second queued downgrade) is said before any WhatsApp order or
+    // plan, a second queued downgrade) is said before "coming soon" or any
     // payment is offered.
     if (status.refused) {
       await showRefused(status.refused, planKey);
       return;
     }
     if (!status.open) {
-      await showPaymentsClosed(status, planKey);
+      await showPaymentsClosed();
       return;
     }
     await loadSnap(status);
@@ -628,7 +624,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
   let slots = null;
   let myHold = null;
   // null until the server answers; { open:false } swaps the "pay securely
-  // via Midtrans" line for the WhatsApp note (api/_payments.js).
+  // via Midtrans" line for the "coming soon" note (api/_payments.js).
   let payState = null;
   const sel = { brands: 1, yearly: false };
 

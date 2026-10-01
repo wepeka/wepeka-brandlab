@@ -4,7 +4,10 @@
 // for free. Owner's decision (2026-10-01): while MIDTRANS_IS_PRODUCTION is not
 // "true", online checkout is closed to everyone except Wepeka's own team and
 // the demo accounts the Midtrans reviewer uses to approve the production
-// account; everyone else is sent to WhatsApp (js/views/pricing.js).
+// account. Revised the same day: no WhatsApp orders — everyone else sees
+// "Segera hadir" (js/views/pricing.js), except accounts the owner opens by
+// hand from the wepeka.com admin (accounts/{uid}.paymentAccess, written
+// only by firebase-admin; clients can't set it).
 //
 // Going live = set MIDTRANS_IS_PRODUCTION=true, MIDTRANS_SERVER_KEY and
 // MIDTRANS_CLIENT_KEY (production values) in Vercel, then redeploy. No code
@@ -37,7 +40,7 @@ export function isPaymentTester(uid, account) {
 }
 
 export function paymentsOpenFor(uid, account) {
-  return MIDTRANS_IS_PRODUCTION || isPaymentTester(uid, account);
+  return MIDTRANS_IS_PRODUCTION || isPaymentTester(uid, account) || account?.paymentAccess === true;
 }
 
 // Card payments Midtrans flags for review ("challenge") are not paid yet —
