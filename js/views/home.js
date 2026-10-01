@@ -16,7 +16,7 @@ import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analyti
 import { openReportModal, reportDue, reportReminderHTML, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
-import { computeSignals, topSignal } from "../brand-pulse.js";
+import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
 import { openConsultantPanel, openWeekPlan } from "../consultant-panel.js";
 import { postingLine } from "../brand-learning.js";
@@ -339,9 +339,7 @@ const COMPANION_ACTION_KINDS = ["content-sales", "viral", "follower-jump", "sale
 const MOMENTS_SHOWN = 3;
 
 function greetingSentence(brand, now) {
-  const h = now.getHours();
-  const key = h < 11 ? "companion.greeting.morning" : h < 17 ? "companion.greeting.afternoon" : "companion.greeting.evening";
-  return t(key, { brand: esc(brand.name) });
+  return t(greetingKey(now.getHours()), { brand: esc(brand.name) });
 }
 
 // Quick actions the current signals earn (at most two), as buttons only —

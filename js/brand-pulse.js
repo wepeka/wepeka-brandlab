@@ -445,3 +445,14 @@ export function topSignal(signals = []) {
   }
   return null;
 }
+
+// Which greeting fits the hour, in Indonesian day parts — 01:00 is still
+// "Malam", not "Pagi": 04–10 pagi, 11–14 siang, 15–17 sore, 18–03 malam.
+// One place for the Home Teman card and the Teman chat's greeting, so the
+// two never say different things at the same moment.
+export function greetingKey(hour) {
+  if (hour >= 4 && hour <= 10) return "companion.greeting.morning";
+  if (hour >= 11 && hour <= 14) return "companion.greeting.midday";
+  if (hour >= 15 && hour <= 17) return "companion.greeting.afternoon";
+  return "companion.greeting.evening";
+}
