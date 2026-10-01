@@ -295,7 +295,10 @@ function paint(root, brandId, brand, state, refresh) {
       isReview
         ? reviewHTML(brand, state)
         : `<div class="brandbook-layout">
-             <div class="brandbook-left">${stepHTML(step, state, brand)}</div>
+             <div class="brandbook-left">
+               <button type="button" class="bb-preview-jump" data-bb-preview-jump>${icon("eye", { size: 15 })}${t("bg.previewJump")}</button>
+               ${stepHTML(step, state, brand)}
+             </div>
              <div class="brandbook-right">${progressivePreviewHTML(brand, state.answers)}</div>
            </div>`
     }
@@ -313,6 +316,20 @@ function wireTabs(root, state, refresh) {
       state.stepIndex = Number(btn.dataset.bbTab);
       refresh();
     });
+  });
+  // Phones: the tabs are one sideways-scrolling row — keep the open one in
+  // sight. The preview sits under the form there, so "Lihat preview" jumps
+  // down to it (no animation for reduced motion).
+  const row = qs(".bb-tab-row", root);
+  const active = qs(".bb-tab.active", root);
+  if (row && active && row.scrollWidth > row.clientWidth) {
+    const r = row.getBoundingClientRect();
+    const a = active.getBoundingClientRect();
+    row.scrollLeft += a.left - r.left - (r.width - a.width) / 2;
+  }
+  qs("[data-bb-preview-jump]", root)?.addEventListener("click", () => {
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    qs(".brandbook-right", root)?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
   });
 }
 

@@ -1956,6 +1956,21 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .bb-tab.done{ background: var(--health-good-soft); border-color: var(--health-good); color: var(--health-good); }
 .bb-tab.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-text,#fff); }
 .bb-tab.done.active{ background:var(--accent); border-color:var(--accent); color:var(--accent-text,#fff); }
+/* Phones: 8 pill tabs ~30px tall wrapped onto 2-3 rows; now one row that
+   scrolls sideways (the open tab is scrolled into view), each tab 44px. */
+@media (max-width: 640px){
+  .bb-tab-row{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; margin-left:-16px; margin-right:-16px; padding:0 16px 12px; }
+  .bb-tab-row::-webkit-scrollbar{ display:none; }
+  .bb-tab{ flex:none; min-height:44px; padding:0 16px; font-size:13px; white-space:nowrap; }
+}
+/* Where the preview drops below the form, a button at the top of the form
+   jumps down to it. */
+.bb-preview-jump{ display:none; }
+@media (max-width:960px){
+  .bb-preview-jump{ display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0 0 14px; padding:0 16px; border-radius:999px; border:1px solid var(--border); background: var(--surface); color: var(--text); font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; }
+  .bb-preview-jump svg{ color: var(--accent); }
+  .brandbook-right{ scroll-margin-top: 76px; }
+}
 
 /* Overall Brand Guidelines completion — same isStepFilled() count the tab
    checkmarks use, so this bar and the tabs never disagree. */

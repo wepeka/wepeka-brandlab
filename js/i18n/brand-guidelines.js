@@ -227,6 +227,8 @@ export default {
   "bg.tour.body": { en: "Unlike Brand DNA, you can open any section first — there's no fixed order. Start with what you already know.", id: "Beda dari Brand DNA — klik bagian mana aja duluan, nggak harus berurutan. Mulai dari yang udah kamu tahu." },
   "bg.review.eyebrow": { en: "Review", id: "Review" },
   "bg.pageTitle": { en: "Brand Book", id: "Brand Book" },
+  // Phones only: the live preview sits below the form.
+  "bg.previewJump": { en: "See preview", id: "Lihat preview" },
   "bg.foundation.sub": { en: "Pulled straight from Brand DNA — no need to explain your brand twice.", id: "Diambil langsung dari Brand DNA — nggak perlu jelasin brand kamu dua kali." },
   "bg.foundation.brandName": { en: "Brand name", id: "Nama brand" },
   "bg.foundation.tagline": { en: "Tagline", id: "Tagline" },
