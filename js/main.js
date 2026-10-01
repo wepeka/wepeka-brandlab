@@ -54,6 +54,15 @@ setPlainLanguageResolver(() => getMode() === "guided");
 // never touch any of that, so there's no reason to make them wait for it.
 
 const app = document.getElementById("app");
+
+// The "Selamat datang" video (admin slot `akun-baru`): once per account,
+// after the account exists and before the Pemula/Pro picker. Silent when it
+// isn't published; never blocks the picker if anything fails.
+function playWelcomeVideo() {
+  return import("./guide-videos.js")
+    .then((m) => m.playVideoGate("akun-baru"))
+    .catch((e) => console.warn("welcome video unavailable", e));
+}
 let cleanup = null;
 
 function parseRoute(hash) {
@@ -294,6 +303,7 @@ function onAccountChange(user, account) {
       if (firstEverOpen) {
         modePickerShown = true;
         app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
+        await playWelcomeVideo();
         await renderModePicker(document.getElementById("mode-root"));
       }
       storeReady = true;
@@ -420,6 +430,8 @@ async function renderRoute() {
   if (!hasChosenMode() && !modePickerShown) {
     modePickerShown = true;
     app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
+    await playWelcomeVideo();
+    if (token !== renderToken) return;
     await renderModePicker(document.getElementById("mode-root"));
     if (token !== renderToken) return;
   }

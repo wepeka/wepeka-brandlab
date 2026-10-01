@@ -2979,6 +2979,14 @@ function wireDocument() {
   document.addEventListener("keydown", docKeydown);
 }
 
+// Once per account, and only when that video is published (or for the
+// admin's preview); a failure never keeps the chat closed.
+function tanyaVideoFirst() {
+  return import("./guide-videos.js")
+    .then((m) => m.playVideoGate("tanya-brandlab"))
+    .catch(() => {});
+}
+
 export function mountConsultantPanel(brandId) {
   if (!brandId) return unmountConsultantPanel();
   if (mountedBrandId === brandId) return;
@@ -2993,7 +3001,10 @@ export function mountConsultantPanel(brandId) {
   fab.className = "consultant-fab";
   fab.setAttribute("aria-label", t("cons.fabLabel"));
   fab.innerHTML = icon("chat", { size: 22 });
-  fab.addEventListener("click", () => {
+  fab.addEventListener("click", async () => {
+    // The first press ever: the "Tanya Brandlab" video (admin slot
+    // `tanya-brandlab`) plays first, then the chat opens.
+    if (!isOpen) await tanyaVideoFirst();
     // Pemula: the round button always opens the one simple box.
     if (!isOpen && isGuided()) setMode(brandId, "auto");
     togglePanel(brandId, !isOpen);
@@ -3008,7 +3019,10 @@ export function mountConsultantPanel(brandId) {
     hint.id = "consultant-fab-hint";
     hint.className = "consultant-fab-hint";
     hint.textContent = t("consultant.fabHint");
-    hint.addEventListener("click", () => togglePanel(brandId, true));
+    hint.addEventListener("click", async () => {
+      await tanyaVideoFirst();
+      togglePanel(brandId, true);
+    });
     document.body.appendChild(hint);
     writeFlag(HINT_SEEN_PREFIX, "consultant");
   }

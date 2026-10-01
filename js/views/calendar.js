@@ -128,17 +128,30 @@ function holidayForDate(dateISO) {
   return fixed ? { label: t(`cal.holiday.${fixed}`), cuti: false } : null;
 }
 
+// Whether the Content Bank was left open — a per-browser convenience, so it
+// stays where the person left it between visits. Storage can be blocked
+// (private window); the bank then just starts open.
+const BANK_OPEN_KEY = "contentos:cal-bank-open";
+function readBankOpen() {
+  try { return localStorage.getItem(BANK_OPEN_KEY) !== "0"; } catch { return true; }
+}
+function writeBankOpen(open) {
+  try { localStorage.setItem(BANK_OPEN_KEY, open ? "1" : "0"); } catch {}
+}
+
 export function render(root, { brandId }) {
-  const state = { view: "month", cursor: new Date(), highlightId: null };
+  const state = { view: "month", cursor: new Date(), highlightId: null, bankOpen: readBankOpen(), bankCampaignId: null, placingId: null };
   // Arriving from a campaign ("Jadwalkan …"): jump to that piece's month,
-  // or — when it has no date yet — open its editor so the date can be set.
+  // or — when it has no date yet — open the Bank on it, scoped to that
+  // campaign, so it can be dragged (or tapped) onto a day.
   const navCtx = consumeNavContext();
   const refresh = () => paint(root, brandId, state, refresh);
   if (navCtx) {
     const c = navCtx.contentId ? getContent(navCtx.contentId) : null;
     state.highlightId = navCtx.contentId || null;
+    state.bankCampaignId = navCtx.campaignId || null;
     if (c?.scheduleDate || c?.publishedDate) state.cursor = new Date((c.scheduleDate || c.publishedDate) + "T00:00:00");
-    else if (c) setTimeout(() => openContentEditor({ brandId, contentId: c.id, onSaved: refresh }), 0);
+    else if (c || navCtx.campaignId || navCtx.intent === "schedule") state.bankOpen = true;
   }
   refresh();
   // Once per mount — paint() runs again on every db:change.
@@ -157,6 +170,144 @@ function itemsForBrand(brandId) {
     if (!c.scheduleDate) return false;
     return c.scheduleDate >= todayISO;
   });
+}
+
+// ---------- Content Bank ----------
+// Everything with no date yet, grouped by how far along it is — the
+// backlog you drag out of and onto a day. Dropping just sets a date; it
+// doesn't touch status, same as dragging an already-scheduled item.
+// Content whose date passed without being published drops off the grid
+// (itemsForBrand), so it sits at the top of the Bank instead, ready to be
+// moved to a new date — it never just vanishes.
+const BANK_GROUPS = [
+  { labelKey: "calendar.bank.drafting", statuses: ["idea", "draft"] },
+  { labelKey: "calendar.bank.execution", statuses: ["production"] },
+  { labelKey: "calendar.bank.editing", statuses: ["editing"] },
+  { labelKey: "calendar.bank.readyToUpload", statuses: ["scheduled"] },
+];
+
+function bankPool(brandId, campaignId = null) {
+  const todayISO = localISODate();
+  const pool = listContent(brandId).filter((c) => (!campaignId || c.campaignId === campaignId) && c.status !== "published" && c.status !== "archived" && !c.publishedDate);
+  return {
+    overdue: pool.filter((c) => c.scheduleDate && c.scheduleDate < todayISO),
+    unscheduled: pool.filter((c) => !c.scheduleDate),
+  };
+}
+
+function bankCount(brandId) {
+  const { overdue, unscheduled } = bankPool(brandId);
+  return overdue.length + unscheduled.length;
+}
+
+function contentBankHTML(brandId, state) {
+  const campaign = state.bankCampaignId ? listCampaigns(brandId).find((c) => c.id === state.bankCampaignId) : null;
+  const { overdue, unscheduled } = bankPool(brandId, campaign?.id);
+  const groups = [
+    ...(overdue.length ? [{ labelKey: "calendar.bank.overdue", items: overdue, overdue: true }] : []),
+    ...BANK_GROUPS.map((g) => ({ ...g, items: unscheduled.filter((c) => g.statuses.includes(c.status)) })).filter((g) => g.items.length),
+  ];
+  return `
+    <aside class="content-bank" id="content-bank" aria-label="${t("calendar.bank.title")}">
+      <div class="content-bank-head">
+        <span>${icon("layers", { size: 14 })}${t("calendar.bank.title")}</span>
+        <button type="button" class="icon-btn" id="close-bank" aria-label="${t("common.close")}" title="${t("common.close")}">${icon("x", { size: 13 })}</button>
+      </div>
+      <p class="content-bank-hint">${t("calendar.bank.hint")}</p>
+      ${campaign ? `<div class="content-bank-scope"><span class="tag">${escapeHtml(campaign.name)}</span><button type="button" class="icon-btn" id="bank-clear-campaign" title="${t("cal.bank.showAll")}" aria-label="${t("cal.bank.showAll")}">${icon("x", { size: 11 })}</button></div>` : ""}
+      <div class="content-bank-list">
+        ${
+          groups.length
+            ? groups
+                .map(
+                  (g) => `
+          <div class="content-bank-group ${g.overdue ? "is-overdue" : ""}">
+            <div class="content-bank-group-head">${t(g.labelKey)} <span>${g.items.length}</span></div>
+            ${g.items
+              .map(
+                (c) => `
+              <div class="bank-item ${state.highlightId === c.id ? "is-highlight" : ""} ${state.placingId === c.id ? "is-placing" : ""}" draggable="true" data-bank-id="${escapeHtml(c.id)}" title="${escapeHtml(c.title || t("common.untitled"))}">
+                <button type="button" class="bank-item-open" data-bank-open="${escapeHtml(c.id)}">
+                  <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel] || "var(--text-faint)"}"></span>
+                  <span class="bank-item-text">
+                    <span class="bank-item-title">${escapeHtml(c.title || t("common.untitled"))}</span>
+                    <span class="bank-item-meta">${escapeHtml([c.platform, c.format].filter(Boolean).join(" · ") || funnelShort(c.funnel) || "")}${g.overdue ? ` · ${escapeHtml(formatCellDate(c.scheduleDate))}` : ""}</span>
+                  </span>
+                </button>
+                <button type="button" class="icon-btn bank-item-place" data-bank-place="${escapeHtml(c.id)}" title="${t("calendar.bank.place")}" aria-label="${t("calendar.bank.place")}">${icon("calendar", { size: 13 })}</button>
+              </div>`
+              )
+              .join("")}
+          </div>`
+                )
+                .join("")
+            : `<div class="content-bank-empty">${t("calendar.bank.empty")}</div>`
+        }
+      </div>
+      <div class="content-bank-drop" aria-hidden="true">${icon("layers", { size: 14 })}${t("calendar.bank.dropBack")}</div>
+    </aside>
+  `;
+}
+
+function wireContentBank(root, brandId, state, refresh) {
+  const bank = qs("#content-bank", root);
+  if (!bank) return;
+  qs("#close-bank", bank).addEventListener("click", () => { state.bankOpen = false; state.placingId = null; writeBankOpen(false); refresh(); });
+  qs("#bank-clear-campaign", bank)?.addEventListener("click", () => { state.bankCampaignId = null; refresh(); });
+  qsa("[data-bank-id]", bank).forEach((el) => {
+    el.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", el.dataset.bankId);
+      e.dataTransfer.effectAllowed = "move";
+      el.classList.add("is-dragging");
+    });
+    el.addEventListener("dragend", () => el.classList.remove("is-dragging"));
+  });
+  // Click the piece = open it, same as anywhere else in Konten.
+  qsa("[data-bank-open]", bank).forEach((btn) => {
+    btn.addEventListener("click", () => openContentEditor({ brandId, contentId: btn.dataset.bankOpen, onSaved: refresh }));
+  });
+  // The calendar icon = "put this on a day" without dragging (touch
+  // screens can't drag): the next date tapped gets it.
+  qsa("[data-bank-place]", bank).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.bankPlace;
+      state.placingId = state.placingId === id ? null : id;
+      if (state.placingId) state.view = "month";
+      refresh();
+      if (state.placingId) qs(".cal-grid", root)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
+  // Dragging something already on the calendar back into the Bank takes
+  // its date off — same as "Hapus dari kalender", just by hand.
+  bank.addEventListener("dragover", (e) => {
+    if (!root.classList.contains("is-cal-dragging")) return;
+    e.preventDefault();
+    bank.classList.add("drag-over");
+  });
+  bank.addEventListener("dragleave", (e) => { if (!bank.contains(e.relatedTarget)) bank.classList.remove("drag-over"); });
+  bank.addEventListener("drop", (e) => {
+    bank.classList.remove("drag-over");
+    if (!root.classList.contains("is-cal-dragging")) return;
+    e.preventDefault();
+    root.classList.remove("is-cal-dragging");
+    const id = e.dataTransfer.getData("text/plain");
+    const c = id ? getContent(id) : null;
+    if (!c || c.status === "published" || !c.scheduleDate) return;
+    updateContent(id, { scheduleDate: "" });
+    toast(t("calendar.bank.movedBack"));
+  });
+}
+
+// "Tap a date for …" — the no-drag way to schedule from the Bank.
+function placingBarHTML(state) {
+  const c = getContent(state.placingId);
+  if (!c) { state.placingId = null; return ""; }
+  return `
+    <div class="cal-placing-bar" role="status">
+      ${icon("calendar", { size: 15 })}
+      <span>${t("calendar.bank.placing", { title: `<b>${escapeHtml(c.title || t("common.untitled"))}</b>` })}</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="cancel-placing">${t("common.cancel")}</button>
+    </div>`;
 }
 
 // This used to also read the routineTemplate collection and merge in a
@@ -322,6 +473,7 @@ function paint(root, brandId, state, refresh) {
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
       <div class="flex gap-8">
+        <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
         <button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
       </div>
@@ -338,7 +490,11 @@ function paint(root, brandId, state, refresh) {
         ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${t(`calendar.view.${v}`)}</button>`).join("")}
       </div>
     </div>
-    <div id="cal-body"></div>
+    ${state.placingId ? placingBarHTML(state) : ""}
+    <div class="cal-layout ${state.bankOpen ? "has-bank" : ""} ${state.placingId ? "is-placing" : ""}">
+      <div id="cal-body"></div>
+      ${state.bankOpen ? contentBankHTML(brandId, state) : ""}
+    </div>
   `;
 
   // The header button has no date, so the new piece wouldn't show on the
@@ -376,6 +532,14 @@ function paint(root, brandId, state, refresh) {
   });
   wireHelpButtons(root);
   setPageGuide(() => startCalendarGuide(brandId));
+  qs("#toggle-bank").addEventListener("click", () => {
+    state.bankOpen = !state.bankOpen;
+    if (!state.bankOpen) state.placingId = null;
+    writeBankOpen(state.bankOpen);
+    refresh();
+  });
+  qs("#cancel-placing")?.addEventListener("click", () => { state.placingId = null; refresh(); });
+  wireContentBank(root, brandId, state, refresh);
   qs("#cal-prev").addEventListener("click", () => { step(state, -1); paint(root, brandId, state, refresh); });
   qs("#cal-next").addEventListener("click", () => { step(state, 1); paint(root, brandId, state, refresh); });
   qs("#cal-today").addEventListener("click", () => { state.cursor = new Date(); paint(root, brandId, state, refresh); });
@@ -464,7 +628,7 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
     </div>
   `;
 
-  wireDragAndOpen(body, brandId, refresh);
+  wireDragAndOpen(body, brandId, refresh, state);
   wireSeriesGhosts(body);
 }
 
@@ -598,12 +762,17 @@ function agendaRow(c, campaignById) {
   `;
 }
 
-function wireDragAndOpen(body, brandId, refresh) {
+function wireDragAndOpen(body, brandId, refresh, state = {}) {
+  // Marks "something from the grid is being dragged" on the page, so the
+  // Bank knows to take it back (a Bank item dropped on the Bank is a no-op).
+  const page = body.closest(".cal-layout")?.parentElement || body;
   qsa(".cal-item", body).forEach((el) => {
     el.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData("text/plain", el.dataset.id);
       e.dataTransfer.effectAllowed = "move";
+      page.classList.add("is-cal-dragging");
     });
+    el.addEventListener("dragend", () => page.classList.remove("is-cal-dragging"));
     el.addEventListener("click", (e) => {
       e.stopPropagation();
       openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh });
@@ -623,11 +792,22 @@ function wireDragAndOpen(body, brandId, refresh) {
     cell.addEventListener("drop", (e) => {
       e.preventDefault();
       cell.classList.remove("drag-over");
+      page.classList.remove("is-cal-dragging");
       const id = e.dataTransfer.getData("text/plain");
       if (!id) return;
       assignToDate(brandId, id, cell.dataset.date);
     });
     cell.addEventListener("click", (e) => {
+      // Placing from the Bank (its calendar icon): this tap is the date.
+      if (state.placingId) {
+        e.stopPropagation();
+        if (isPast()) { toast(t("calendar.pastDate"), "error"); return; }
+        const id = state.placingId;
+        state.placingId = null;
+        assignToDate(brandId, id, cell.dataset.date);
+        refresh();
+        return;
+      }
       if (e.target.closest(".cal-item")) return;
       if (isPast()) {
         toast(t("calendar.pastDate"), "error");

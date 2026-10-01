@@ -70,8 +70,12 @@ export function resizeImageFile(file, { maxDimension = 800, quality = 0.85, form
       const img = new Image();
       img.onerror = reject;
       img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDimension || height > maxDimension) {
+        const isSvg = file.type === "image/svg+xml";
+        // An SVG may have no intrinsic size at all; it's a vector, so it is
+        // drawn at the full maxDimension either way.
+        let width = img.width || maxDimension;
+        let height = img.height || maxDimension;
+        if (isSvg || width > maxDimension || height > maxDimension) {
           const scale = maxDimension / Math.max(width, height);
           width = Math.round(width * scale);
           height = Math.round(height * scale);
@@ -80,7 +84,10 @@ export function resizeImageFile(file, { maxDimension = 800, quality = 0.85, form
         canvas.width = width;
         canvas.height = height;
         canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-        const outFormat = format || (file.type === "image/png" ? "image/png" : "image/jpeg");
+        // Anything that can carry transparency stays PNG — a transparent
+        // logo saved as JPEG came back on a black box.
+        const keepsAlpha = file.type === "image/png" || isSvg;
+        const outFormat = format || (keepsAlpha ? "image/png" : "image/jpeg");
         resolve(canvas.toDataURL(outFormat, quality));
       };
       img.src = reader.result;

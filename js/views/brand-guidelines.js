@@ -595,28 +595,75 @@ function logoVariantSlotsHTML(state) {
 }
 
 // A concrete "go make one yourself" path instead of just pointing at the
-// paid WPK service — sketch on paper first (forces an actual idea to
-// exist before asking AI to guess one), upload that sketch to ChatGPT
-// along with a ready-made prompt, so there's a real starting point to
-// react to instead of a blank "draw me a logo" request.
-function logoAiPromptText(brand, a) {
-  const personality = brand.brandBuilder?.personality?.primary?.length ? brand.brandBuilder.personality.primary.join(", ") : "";
-  const desc = brand.businessDescription || brand.brandDNA?.positioning || "";
-  const colorLine = a.colors.primary
-    ? a.colors.secondary
-      ? t("bg.logoPrompt.color2", { primary: a.colors.primary, secondary: a.colors.secondary })
-      : t("bg.logoPrompt.color1", { primary: a.colors.primary })
-    : "";
-  return [
+// paid WPK service: three prompts for ChatGPT, in the order they're used —
+// (1) three concepts to pick from, (2) the chosen one redrawn as the final
+// logo on a transparent background, (3) that logo rebuilt as a real SVG
+// (paths, outlined text) plus a 4000 px transparent PNG. Each step's rules
+// are what makes the next one work: flat solid shapes vectorize cleanly, a
+// transparent PNG drops straight into the Brand Book.
+function logoPromptColors(a) {
+  const hexes = [a.colors?.primary, a.colors?.secondary].filter(Boolean).filter((h, i, arr) => arr.indexOf(h) === i);
+  return hexes;
+}
+function logoPromptBrief(brand) {
+  const pb = brand.brandBuilder?.personality;
+  const traits = pb?.primary?.length ? pb.primary : brand.brandDNA?.personality || [];
+  // Trailing full stop dropped: the sentence around it adds its own.
+  const desc = (brand.businessDescription || brand.brandDNA?.positioning || "").trim().replace(/[.\s]+$/, "");
+  return { traits: traits.filter(Boolean).slice(0, 5).join(", "), desc };
+}
+function logoAiPrompts(brand, a) {
+  const { traits, desc } = logoPromptBrief(brand);
+  const hexes = logoPromptColors(a);
+  const colorLine = hexes.length === 2
+    ? t("bg.logoPrompt.color2", { primary: hexes[0], secondary: hexes[1] })
+    : hexes.length === 1
+      ? t("bg.logoPrompt.color1", { primary: hexes[0] })
+      : t("bg.logoPrompt.colorFree");
+  const first = [
     desc ? t("bg.logoPrompt.introDesc", { name: brand.name, desc }) : t("bg.logoPrompt.intro", { name: brand.name }),
-    personality ? t("bg.logoPrompt.personality", { traits: personality }) : "",
-    t("bg.logoPrompt.style"),
-    `${t("bg.logoPrompt.form")}${colorLine ? `\n${colorLine}` : ""}`,
+    traits ? t("bg.logoPrompt.personality", { traits }) : "",
+    colorLine,
     t("bg.logoPrompt.sketch"),
-    t("bg.logoPrompt.variations"),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    t("bg.logoPrompt.rules", { name: brand.name }),
+    t("bg.logoPrompt.concepts"),
+  ].filter(Boolean).join("\n\n");
+  const final = t("bg.logoPrompt.final", { name: brand.name, colors: hexes.length ? ` (${hexes.join(", ")})` : "" });
+  return [first, final, t("bg.logoPrompt.svg")];
+}
+
+// The moodboard as one generated image: a 3×3 photo collage in the brand's
+// visual direction, colors and real-world subject (same industry hints the
+// Pinterest keywords use), plus a swatch row — no text, since image models
+// misspell it.
+function moodboardGptPromptText(brand, a) {
+  const moods = a.visualDirection.map((d) => directionLabel(d)).join(" + ");
+  const keywords = a.visualDirection.map((d) => MOODBOARD_PROMPT_KEYWORDS[d]).filter(Boolean).join("; ");
+  const hint = moodboardIndustryHint(brand);
+  const { traits, desc } = logoPromptBrief(brand);
+  const hexes = [a.colors?.primary, a.colors?.secondary, a.colors?.accent].filter(Boolean).filter((h, i, arr) => arr.indexOf(h) === i);
+  const feel = (a.colorFeelings || []).map((f) => feelingLabel(f).toLowerCase()).slice(0, 3).join(", ");
+  return [
+    t("bg.moodPrompt.intro", { name: brand.name, sector: desc ? t("bg.moodPrompt.sector", { sector: desc }) : "" }),
+    t("bg.moodPrompt.direction", { moods, keywords }),
+    hint ? t("bg.moodPrompt.subject", { hint }) : "",
+    traits ? t("bg.moodPrompt.character", { traits }) : "",
+    hexes.length ? t("bg.moodPrompt.colors", { colors: hexes.join(", ") }) : "",
+    feel ? t("bg.moodPrompt.feel", { feel }) : "",
+    t("bg.moodPrompt.rules"),
+  ].filter(Boolean).join("\n\n");
+}
+
+// One copyable prompt box: label, the text, a copy button.
+function gptPromptBoxHTML(label, text) {
+  return `
+    <div class="gpt-prompt">
+      <div class="gpt-prompt-head">
+        <span>${escapeHtml(label)}</span>
+        <button type="button" class="btn btn-secondary btn-sm" data-copy-gpt>${icon("copy", { size: 12 })}${t("guidelines.logo.copyPrompt")}</button>
+      </div>
+      <pre class="gpt-prompt-text">${escapeHtml(text)}</pre>
+    </div>`;
 }
 
 // **bold** → <b>, everything else escaped.
@@ -626,7 +673,8 @@ const richText = (text) => escapeHtml(text || "").replace(/\*\*(.+?)\*\*/g, "<b>
 // ChatGPT (prompt + link), then upload it right here. Until a logo is
 // uploaded the Logo section — and the Brand Builder stage — stay unfinished.
 function noLogoGuideHTML(state, brand) {
-  const prompt = logoAiPromptText(brand, state.answers);
+  const prompts = logoAiPrompts(brand, state.answers);
+  const labels = [t("guidelines.logo.promptStep1"), t("guidelines.logo.promptStep2"), t("guidelines.logo.promptStep3")];
   return `
     <div class="card dark-surface card-tight" style="font-size:12.5px;line-height:1.6;color:var(--text-muted);margin-bottom:12px;">
       <p style="margin:0 0 8px;">${richText(t("guidelines.logo.forms"))}</p>
@@ -640,11 +688,9 @@ function noLogoGuideHTML(state, brand) {
         <li>${t("guidelines.logo.chatgptS3")}</li>
         <li>${t("guidelines.logo.chatgptS4")}</li>
       </ol>
-      <pre id="logo-ai-prompt" style="white-space:pre-wrap;font-family:inherit;font-size:12px;line-height:1.6;background:var(--surface-2);border-radius:var(--radius-md);padding:14px;margin:0 0 10px;color:var(--text);">${escapeHtml(prompt)}</pre>
-      <div class="flex gap-8" style="flex-wrap:wrap;">
-        <button type="button" class="btn btn-secondary btn-sm" id="copy-logo-prompt">${icon("copy", { size: 12 })}${t("guidelines.logo.copyPrompt")}</button>
-        <a class="btn btn-primary btn-sm" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">${icon("bot", { size: 12 })}${t("guidelines.logo.openChatgpt")} ↗</a>
-      </div>
+      ${prompts.map((p, i) => gptPromptBoxHTML(labels[i], p)).join("")}
+      <p class="text-faint" style="font-size:11.5px;line-height:1.55;margin:0 0 10px;">${t("guidelines.logo.svgTip")}</p>
+      <a class="btn btn-primary btn-sm" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">${icon("bot", { size: 12 })}${t("guidelines.logo.openChatgpt")} ↗</a>
     </div>
     <div class="card dark-surface logo-ai-upload">
       <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">${icon("upload", { size: 13 })} ${t("guidelines.logo.uploadAiTitle")}</div>
@@ -782,14 +828,21 @@ function wireLogoStep(root, state, refresh) {
     refresh();
     toast(t("bg.logo.paletteApplied"));
   });
-  qs("#copy-logo-prompt", root)?.addEventListener("click", async () => {
-    const text = qs("#logo-ai-prompt", root)?.textContent || "";
-    try {
-      await navigator.clipboard.writeText(text);
-      toast(t("guidelines.logo.promptCopied"));
-    } catch {
-      toast(t("bg.copyFail"), "error");
-    }
+  wireGptPromptCopy(root);
+}
+
+// Every "Salin prompt" next to a ChatGPT prompt box (logo + moodboard).
+function wireGptPromptCopy(root) {
+  qsa("[data-copy-gpt]", root).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const text = btn.closest(".gpt-prompt")?.querySelector(".gpt-prompt-text")?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        toast(t("guidelines.logo.promptCopied"));
+      } catch {
+        toast(t("bg.copyFail"), "error");
+      }
+    });
   });
 }
 
@@ -1554,6 +1607,14 @@ function moodboardHTML(state, brand) {
     </details>
     <div style="margin-top:16px;">
       <div class="flex items-center gap-6" style="font-size:11.5px;font-weight:700;margin-bottom:8px;">${t("guidelines.moodboard.label")} <span class="text-faint" style="font-weight:400;">${t("guidelines.moodboard.optional")}</span>${helpButtonHTML("term-moodboard")}</div>
+      ${a.visualDirection.length ? `
+      <div class="card dark-surface card-tight mb-gpt">
+        <div style="font-size:12.5px;font-weight:700;margin-bottom:4px;">${icon("bot", { size: 13 })} ${t("guidelines.moodboard.gptTitle")}</div>
+        <p class="text-faint" style="font-size:11.5px;line-height:1.55;margin:0 0 10px;">${t("guidelines.moodboard.gptBody")}</p>
+        ${gptPromptBoxHTML(t("guidelines.moodboard.gptPrompt"), moodboardGptPromptText(brand, a))}
+        <p class="text-faint" style="font-size:11.5px;line-height:1.55;margin:0 0 10px;">${t("bg.moodPrompt.after")}</p>
+        <a class="btn btn-primary btn-sm" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">${icon("bot", { size: 12 })}${t("guidelines.logo.openChatgpt")} ↗</a>
+      </div>` : ""}
       <div class="mb-prompt-block">
         <div class="mb-prompt-title">${t("guidelines.moodboard.promptTitle")}</div>
         ${moodboardPromptsHTML(state, brand)}
@@ -1577,6 +1638,7 @@ function moodboardHTML(state, brand) {
 }
 
 function wireDirectionStep(root, state, refresh) {
+  wireGptPromptCopy(root);
   qsa("[data-direction]", root).forEach((el) => {
     el.addEventListener("change", () => {
       const d = el.dataset.direction;
