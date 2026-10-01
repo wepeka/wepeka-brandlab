@@ -184,3 +184,16 @@ describe("paid extras: AI Sepuasnya + top-up credits", () => {
     assert.equal(db.store["aiUsage/u"].count, 4);
   });
 });
+
+describe("plans the quota table doesn't know (S-25)", () => {
+  test("an unknown plan gets Starter's 20/day, not more", () => {
+    assert.deepEqual(quotaFor({ plan: "mystery", status: "active" }, "u"), { period: "day", limit: 20 });
+    assert.ok(quotaFor({ plan: "mystery" }, "u").limit <= quotaFor({ plan: "starter" }, "u").limit);
+  });
+  test("the old pay-once plans keep the 50/day they were sold with", () => {
+    for (const plan of ["lifetime", "builder", "content-os"]) assert.equal(quotaFor({ plan, status: "active" }, "u").limit, 50, plan);
+  });
+  test("a never-paid 'free' account has no AI", () => {
+    assert.equal(quotaFor({ plan: "free", status: "active" }, "u").limit, 0);
+  });
+});

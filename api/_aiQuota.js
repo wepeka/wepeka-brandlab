@@ -12,10 +12,19 @@
 // — same shape the old settings/{uid}.aiUsage carried, just owned by the
 // server now (firestore.rules: client can read its own, never write it).
 
-export const DEFAULT_AI_DAILY_LIMIT = 50;
+// A plan this table doesn't know gets Starter's allowance, never more
+// (audit S-25: unknown plans used to get 50/day, more than Starter).
+export const DEFAULT_AI_DAILY_LIMIT = 20;
 
 // Mirrors js/ai-usage.js's PLAN_QUOTA exactly — keep the two in sync.
+// The pre-subscription plans are listed by name so they keep the 50/day
+// they were sold with ("keep what they were sold", js/ai-usage.js) — only
+// the fallback for anything unknown went down.
 export const PLAN_QUOTA = {
+  lifetime: { period: "day", limit: 50 },
+  builder: { period: "day", limit: 50 },
+  "content-os": { period: "day", limit: 50 },
+  monthly: { period: "day", limit: 50 },
   trial: { period: "total", limit: 60 },
   starter: { period: "day", limit: 20 },
   pro: { period: "day", limit: 60 },
@@ -46,8 +55,10 @@ function isSubscriptionLapsed(account) {
   const until = Number(account?.subscriptionExpiresAt);
   return ["starter", "pro", "studio"].includes(account?.plan) && until > 0 && until <= Date.now();
 }
+// "free" (an account from before trials, never paid) has no AI either —
+// it used to fall through to the default allowance.
 export function isReadOnlyAccount(account) {
-  return account?.status === "readonly" || isTrialExpired(account) || isSubscriptionLapsed(account);
+  return account?.status === "readonly" || account?.plan === "free" || isTrialExpired(account) || isSubscriptionLapsed(account);
 }
 
 // { period, limit } for this account right now — mirrors js/ai-usage.js's
