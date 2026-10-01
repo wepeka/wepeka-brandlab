@@ -1121,7 +1121,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .help-popover-body{ font-size:12.5px; line-height:1.55; color: var(--text-muted); margin:0; }
 
 /* "Konsultasi AI" floating chat (js/consultant-panel.js) */
-.consultant-fab{ position:fixed; right:24px; bottom:24px; z-index:65; width:52px; height:52px; border-radius:50%; background: var(--accent); color:#fff; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transition: transform .15s ease; }
+.consultant-fab{ position:fixed; right:24px; bottom:24px; z-index:65; width:52px; height:52px; border-radius:50%; background: var(--accent); color: var(--accent-text); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transition: transform .15s ease; }
 .consultant-fab:hover{ transform: scale(1.06); }
 .consultant-fab.is-open{ background: var(--surface-2); color: var(--text); }
 .consultant-panel{ position:fixed; right:24px; bottom:88px; z-index:65; width:360px; max-width:calc(100vw - 32px); height:min(520px, calc(100vh - 120px)); background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
@@ -1130,7 +1130,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .consultant-panel-body{ flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
 .consultant-msg{ max-width:85%; padding:9px 12px; border-radius:14px; font-size:13px; line-height:1.5; white-space:pre-wrap; }
 .consultant-msg-assistant{ align-self:flex-start; background: var(--surface-2); border-bottom-left-radius:4px; }
-.consultant-msg-user{ align-self:flex-end; background: var(--accent); color:#fff; border-bottom-right-radius:4px; }
+.consultant-msg-user{ align-self:flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius:4px; }
 .consultant-msg-pending{ opacity:.55; }
 .consultant-nav-buttons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .consultant-nav-btn{ display:inline-flex; align-items:center; gap:5px; padding:6px 10px; border-radius:999px; background: var(--surface); border:1px solid var(--border); color: var(--accent); font-size:12px; font-weight:700; cursor:pointer; }
@@ -3525,15 +3525,21 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
    "Tanya Brandlab" (js/consultant-panel.js): one floating chat in front of
    three engines. Each reply wears a small engine label; the label (and the
    idea cards under it) borrow that engine's accent via --cp-accent.
+   Anything FILLED with the accent (your bubbles, the send button, an idea's
+   main button) uses --cp-fill/--cp-on-fill instead: white text on the
+   bright green/blue/purple read at 2.3-4:1, so filled surfaces take a
+   darker shade of the same hue (>=5:1 with white), and the app's own amber
+   keeps its dark --accent-text. In light theme the bright hues used as TEXT
+   (labels, tabs) also step down to their darker shade.
    ============================================================ */
-.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; transition: border-color .25s; }
+.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); --cp-fill: var(--accent); --cp-on-fill: var(--accent-text); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; --chat-consultant-fill:#15803d; --chat-brainstorm-fill:#2563eb; --chat-companion-fill:#9333ea; transition: border-color .25s; }
 /* the open tab colours the whole panel: header icon, tab, user bubbles, send button */
-.consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
-.consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
-.consultant-panel[data-mode="companion"]{ --cp-accent: var(--chat-companion); border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
+.consultant-panel[data-mode="companion"]{ --cp-accent: var(--chat-companion); --cp-fill: var(--chat-companion-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
 .consultant-panel .consultant-panel-head{ background: color-mix(in srgb, var(--cp-accent) 10%, transparent); }
-.consultant-panel .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
-.consultant-panel .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
+.consultant-panel .consultant-msg-user{ background: var(--cp-fill); color: var(--cp-on-fill); }
+.consultant-panel .consultant-panel-input .icon-btn{ background: var(--cp-fill); color: var(--cp-on-fill); border-radius:50%; transition: background .25s; }
 .cp-head{ gap:10px; }
 .cp-head-main{ display:flex; align-items:center; gap:10px; min-width:0; }
 .cp-head-main b{ display:block; font-size:14px; line-height:1.2; }
@@ -3544,9 +3550,9 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 /* one reply, one engine label */
 .cp-engine{ display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color: var(--cp-accent); margin-bottom:4px; }
 .cp-engine svg{ width:11px; height:11px; }
-.consultant-msg[data-engine="consultant"]{ --cp-accent: var(--chat-consultant); }
-.consultant-msg[data-engine="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
-.consultant-msg[data-engine="companion"]{ --cp-accent: var(--chat-companion); }
+.consultant-msg[data-engine="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; }
+.consultant-msg[data-engine="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; }
+.consultant-msg[data-engine="companion"]{ --cp-accent: var(--chat-companion); --cp-fill: var(--chat-companion-fill); --cp-on-fill:#fff; }
 /* "Ask this in another tab" — the model's handoff or the keyword hint, one tap */
 .cp-switch{ margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-muted); }
 .cp-switch .consultant-starter{ display:inline-flex; align-items:center; gap:4px; padding:4px 9px; font-size:11.5px; }
@@ -3557,7 +3563,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cp-idea-title{ font-weight:800; font-size:13px; line-height:1.35; }
 .cp-idea-why{ font-size:12px; color: var(--text-muted); margin-top:3px; line-height:1.45; }
 .cp-idea-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.cp-idea .btn-primary{ background: var(--cp-accent); border-color: var(--cp-accent); color:#fff; }
+.cp-idea .btn-primary{ background: var(--cp-fill, var(--cp-accent)); border-color: var(--cp-fill, var(--cp-accent)); color: var(--cp-on-fill, #fff); }
 /* a moment the Teman offers for brand memory */
 .cp-moment{ border-color: color-mix(in srgb, var(--chat-companion) 45%, var(--border)); }
 .cp-moment-tag{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color: var(--chat-companion); margin-bottom:4px; }
@@ -3701,7 +3707,7 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 .offer-opt-main small, .offer-opt-price small{ font-size:11.5px; color: var(--text-muted); }
 .offer-opt-price{ display:flex; flex-direction:column; align-items:flex-end; flex:none; }
 .offer-opt-price strong{ font-family: var(--font-display); font-size:17px; white-space:nowrap; }
-.offer-badge{ position:absolute; top:-9px; left:12px; padding:2px 8px; border-radius:999px; background: var(--accent); color:#fff; font-size:10.5px; font-weight:700; letter-spacing:.02em; }
+.offer-badge{ position:absolute; top:-9px; left:12px; padding:2px 8px; border-radius:999px; background: var(--accent); color: var(--accent-text); font-size:10.5px; font-weight:700; letter-spacing:.02em; }
 .offer-opt:has(.offer-badge){ padding-top:18px; }
 .offer-opt:not(.is-featured) .offer-badge{ background: color-mix(in srgb, var(--accent) 22%, var(--bg-raised)); color: var(--accent); }
 .offer-note{ display:flex; align-items:flex-start; gap:6px; margin:2px 2px 0; font-size:12px; line-height:1.45; color: var(--text-muted); }
@@ -3766,18 +3772,18 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
    Same chat as the floating panel (js/consultant-panel.js), laid out in the
    Brainstorm grid: conversations | chat | saved ideas. */
 body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ display:none; }
-.cp-page-chat{ --cp-accent: var(--accent); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; display:flex; flex-direction:column; min-width:0; margin:0; padding:0; height:calc(100vh - 250px); height:calc(100dvh - 250px); min-height:520px; overflow:hidden; }
-.cp-page-chat[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); }
-.cp-page-chat[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); }
-.cp-page-chat[data-mode="companion"]{ --cp-accent: var(--chat-companion); }
-.cp-page-chat .consultant-msg-user{ background: var(--cp-accent); color:#fff; }
+.cp-page-chat{ --cp-accent: var(--accent); --cp-fill: var(--accent); --cp-on-fill: var(--accent-text); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; --chat-consultant-fill:#15803d; --chat-brainstorm-fill:#2563eb; --chat-companion-fill:#9333ea; display:flex; flex-direction:column; min-width:0; margin:0; padding:0; height:calc(100vh - 250px); height:calc(100dvh - 250px); min-height:520px; overflow:hidden; }
+.cp-page-chat[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; }
+.cp-page-chat[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; }
+.cp-page-chat[data-mode="companion"]{ --cp-accent: var(--chat-companion); --cp-fill: var(--chat-companion-fill); --cp-on-fill:#fff; }
+.cp-page-chat .consultant-msg-user{ background: var(--cp-fill); color: var(--cp-on-fill); }
 /* the page grid follows the tab: Brainstorm = rail | chat | ideas, Teman = chat | memory, Konsultan = chat */
 .cp-page[data-mode="consultant"]{ grid-template-columns: minmax(0,1fr); }
 .cp-page[data-mode="companion"]{ grid-template-columns: minmax(0,1fr) 270px; }
 .cp-memory .companion-moment-row{ align-items:flex-start; }
 .cp-memory .companion-moment-row .tag{ margin-top:1px; }
 .cp-memory .bs-card-actions{ margin-top:12px; }
-.cp-page-chat .consultant-panel-input .icon-btn{ background: var(--cp-accent); color:#fff; border-radius:50%; transition: background .25s; }
+.cp-page-chat .consultant-panel-input .icon-btn{ background: var(--cp-fill); color: var(--cp-on-fill); border-radius:50%; transition: background .25s; }
 .cp-page-chat .consultant-panel-input textarea:focus{ border-color: var(--cp-accent); }
 .cp-page-chat .cp-scope{ padding:10px 18px 10px; border-bottom:1px solid var(--border); }
 .cp-page-chat .consultant-panel-body{ padding:16px 18px; }
@@ -3859,6 +3865,9 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 @media (max-width:760px){ .cp-page-chat .cp-toolbar{ padding:10px 12px 2px; } }
 .cp-toolbar .cp-back-here{ display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; color: var(--text-muted); }
 .menu.cp-menu{ z-index:70; max-width:min(300px, calc(100vw - 24px)); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; }
+/* Light theme: the engine hues used as text on near-white (labels, tabs,
+   menu icons) were 2.2-3.7:1 — their darker shades read at 5-7:1. */
+:root[data-theme="light"] .consultant-panel, :root[data-theme="light"] .cp-page-chat, :root[data-theme="light"] .menu.cp-menu{ --chat-consultant:#15803d; --chat-brainstorm:#1d4ed8; --chat-companion:#7e22ce; }
 .cp-menu .cp-menu-mode{ align-items:flex-start; --t: var(--accent); }
 .cp-menu .cp-menu-mode[data-engine="consultant"]{ --t: var(--chat-consultant); } .cp-menu .cp-menu-mode[data-engine="brainstorm"]{ --t: var(--chat-brainstorm); } .cp-menu .cp-menu-mode[data-engine="companion"]{ --t: var(--chat-companion); }
 .cp-menu .cp-menu-mode > svg:first-child{ color: var(--t); margin-top:2px; }
@@ -4328,7 +4337,7 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 /* Same 1240px breakpoint as .bottom-nav above: once the topbar hides the
    plan badge and updates button, this is their only remaining home. */
 @media (max-width: 720px){ .menu-mobile-only{ display:flex !important; } .menu-divider.menu-mobile-only{ display:block !important; } }
-.menu .menu-count{ margin-left:auto; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background: var(--accent); color:#fff; font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+.menu .menu-count{ margin-left:auto; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background: var(--accent); color: var(--accent-text); font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
 #app-menu-btn{ position:relative; }
 .app-menu-badge{ display:none; }
 @media (max-width: 720px){ .app-menu-badge:not([hidden]){ display:block; position:absolute; top:4px; right:4px; width:9px; height:9px; min-width:0; padding:0; border-radius:50%; } }
