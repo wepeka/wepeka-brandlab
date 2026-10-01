@@ -97,16 +97,22 @@ function paintList(root, brandId, brand, refresh) {
         <h1>${t("camp.list.eyebrow")}</h1>
         <p class="page-head-brand">${escapeText(brand.name)}</p>
       </div>
-      <div class="flex gap-8" style="flex-wrap:wrap;">
-        <a class="btn btn-secondary" href="#/brand/${brandId}/sales" id="open-sales">${icon("chart", { size: 16 })}${t("camp.list.salesTracker")}</a>
-        <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
-      </div>
+      <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>
     </div>
-    <p class="page-sub" style="margin-bottom:24px;">${
+    <p class="page-sub" style="margin-bottom:14px;">${
       getMode() === "guided"
         ? t("camp.list.subGuided")
         : t("camp.list.subPro")
     }</p>
+    <!-- Pelacak Penjualan used to be a second header button next to "new",
+         which read as another kind of goal. It's a tool the goals read from
+         (Sales Growth counts what's logged there), so it sits here as a
+         labelled link that says what it is for. -->
+    <a class="camp-sales-link" href="#/brand/${brandId}/sales" id="open-sales">
+      <span class="camp-sales-link-icon">${icon("money", { size: 16 })}</span>
+      <span class="camp-sales-link-text"><b>${t("camp.list.salesTracker")}</b><small>${t("camp.list.salesTrackerSub")}</small></span>
+      ${icon("arrowRight", { size: 14 })}
+    </a>
     ${growBrand.length ? growBrandSectionHTML(growBrand, insights) : ""}
     ${eventCards.length ? `<section class="camp-section">${sectionHeadHTML("event", t("camp.section.events"), t("camp.section.eventsSub"), eventCards.length)}<div class="brand-grid">${eventCards.join("")}</div></section>` : ""}
     ${
@@ -332,7 +338,7 @@ function campaignKind(campaign, track) {
 // created. AI's job starts one step later — inside a phase, helping write
 // content ideas that actually match this brand's voice — not drafting the
 // campaign's own strategy copy nobody asked for.
-const CAMPAIGN_QUICK_TEMPLATES = [
+const campaignQuickTemplates = () => [
   // Two templates only. "Grow Brand" is the Goal Plan (js/goal-plan.js):
   // growing social media, building a community and getting sales are the
   // same journey with a different main number, so they're one template whose
@@ -346,6 +352,7 @@ const CAMPAIGN_QUICK_TEMPLATES = [
 
 function openNewCampaignFlow({ brandId, onSaved }) {
   const brand = getBrand(brandId);
+  const templates = campaignQuickTemplates();
   // is shown as "Segera hadir" in every mode until it's ready — the flow
   // itself is kept, just not reachable from here.
   const overlay = openModal({
@@ -353,7 +360,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
     bodyHTML: `
       <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("camp.new.intro")}</p>
       <div class="content-view-grid">
-        ${CAMPAIGN_QUICK_TEMPLATES.map((tpl) => `
+        ${templates.map((tpl) => `
           <button type="button" class="content-view-card${tpl.recommended ? " is-recommended" : ""}" data-quick-template="${tpl.id}">
             ${tpl.recommended ? `<span class="campaign-reco-badge">${icon("sparkle", { size: 12 })}${tpl.recommended}</span>` : ""}
             <div class="icon-wrap">${icon(tpl.icon, { size: 20 })}</div>
@@ -368,7 +375,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
 
   qsa("[data-quick-template]", overlay).forEach((btn) => {
     btn.addEventListener("click", () => {
-      const template = CAMPAIGN_QUICK_TEMPLATES.find((t) => t.id === btn.dataset.quickTemplate);
+      const template = templates.find((t) => t.id === btn.dataset.quickTemplate);
       closeOverlay(overlay);
       if (template.id === "goal") {
         openGoalWizard({ brandId, brand, onSaved });

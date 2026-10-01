@@ -4,7 +4,7 @@
 export default {
   // ---------- Page / list ----------
   "roadmap.title": { en: "Plan toward a date", id: "Rencana menuju tanggal" },
-  "roadmap.sub": { en: "Name a goal and its date. Brandlab reads your brand, then plots the campaigns, weekly posts and deadlines that get you there.", id: "Sebut tujuan dan tanggalnya. Brandlab membaca kondisi brand-mu, lalu memetakan campaign, konten mingguan, dan deadline menuju ke sana." },
+  "roadmap.sub": { en: "Name the event and its date. Brandlab reads your brand, then plots the campaigns, weekly posts and deadlines that get you there.", id: "Sebut acaranya dan tanggalnya. Brandlab membaca kondisi brand-mu, lalu memetakan campaign, konten mingguan, dan deadline menuju ke sana." },
   "roadmap.new": { en: "New dated plan", id: "Rencana baru" },
   "roadmap.defaultName": { en: "My event", id: "Event-ku" },
   "roadmap.guidedOne": { en: "One goal at a time in Beginner mode. Finish or archive the current one first.", id: "Mode Pemula: satu tujuan dulu. Selesaikan atau arsipkan yang sekarang sebelum bikin baru." },
@@ -255,9 +255,9 @@ export default {
   "roadmap.menu.archive": { en: "Archive", id: "Arsipkan" },
   "roadmap.menu.delete": { en: "Delete goal", id: "Hapus tujuan" },
   "roadmap.menu.deleteTitle": { en: "Delete this goal?", id: "Hapus tujuan ini?" },
-  "roadmap.menu.deleteMsg": { en: "Only the goal is removed. Its campaigns and calendar posts stay where they are.", id: "Hanya tujuannya yang dihapus. Campaign dan konten di kalender tetap ada." },
+  "roadmap.menu.deleteMsg": { en: "Only the plan is removed. Its Targets & checklist and calendar posts stay where they are.", id: "Hanya rencananya yang dihapus. Target & checklist dan konten di kalender tetap ada." },
   "roadmap.menu.archiveCampaignsTitle": { en: "Archive its campaigns too?", id: "Arsipkan juga campaign-nya?" },
-  "roadmap.menu.archiveCampaignsMsg": { en: "This goal installed {n} campaign(s). They'll keep their content either way — only whether they move to Archived is up to you.", id: "Tujuan ini memasang {n} campaign. Kontennya tetap ada apa pun pilihannya — cuma menentukan campaign-nya pindah ke Arsip atau tidak." },
+  "roadmap.menu.archiveCampaignsMsg": { en: "This plan installed {n} campaign(s). They keep their content either way — you only choose whether they move to Archived too.", id: "Rencana ini memasang {n} campaign. Kontennya tetap ada apa pun pilihannya — kamu cuma menentukan campaign-nya ikut pindah ke Arsip atau tidak." },
   "roadmap.menu.archiveCampaignsYes": { en: "Archive them", id: "Arsipkan" },
   "roadmap.menu.archiveCampaignsNo": { en: "Leave as is", id: "Biarkan saja" },
 
