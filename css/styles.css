@@ -4253,7 +4253,13 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    tidak bisa dikalahkan cara lain. Tidak menyentuh angka di tile/badge/pill
    (class-nya sendiri, bukan .text-faint), jadi layout kecil itu aman. */
 @media (max-width: 640px){
-  .input, .select, .textarea{ font-size:16px; }
+  /* Every control you type into, whatever class or inline style it has: a
+     single 12-13px one (the chat box, the status pill, an inline phase
+     name, the period picker) is enough for iOS to zoom the page on focus.
+     !important because those sizes come from more specific selectors and
+     style="" attributes. */
+  .input, .select, .textarea, select, textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="hidden"]){ font-size:16px !important; }
   .page-sub{ font-size:15px; }
   .field .hint, .hint, .ev-field-hint, .text-faint{ font-size:13px !important; }
 }
