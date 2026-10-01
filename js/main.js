@@ -545,6 +545,42 @@ function decodeWepekaTokenUid(token) {
   }
 }
 
+// Strings for the account-switch question below — main.js's own, like
+// APP_ERROR_TEXT above.
+const SSO_TEXT = {
+  id: {
+    title: "Ganti akun?",
+    body: (current, incoming) => `Kamu sedang masuk sebagai <b>${current}</b>. Link dari wepeka.com ini akan memasukkan kamu sebagai <b>${incoming}</b>.`,
+    confirm: "Masuk sebagai akun itu",
+    cancel: (current) => `Tetap sebagai ${current}`,
+  },
+  en: {
+    title: "Switch accounts?",
+    body: (current, incoming) => `You're signed in as <b>${current}</b>. This link from wepeka.com would sign you in as <b>${incoming}</b>.`,
+    confirm: "Sign in as that account",
+    cancel: (current) => `Stay as ${current}`,
+  },
+};
+
+// Who a Wepeka token signs in as — without touching this tab's session:
+// the token is tried on a throwaway, in-memory Firebase Auth instance (a
+// custom token stays valid for its hour, so the real sign-in can reuse it).
+async function wepekaTokenIdentity(token) {
+  const { app } = await import("./firebase.js");
+  const { initializeApp, deleteApp } = await import("https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js");
+  const { initializeAuth, inMemoryPersistence, signInWithCustomToken, signOut } = await import("https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js");
+  const probe = initializeApp(app.options, `sso-probe-${Date.now()}`);
+  try {
+    const probeAuth = initializeAuth(probe, { persistence: inMemoryPersistence });
+    const { user } = await signInWithCustomToken(probeAuth, token);
+    const who = { uid: user.uid, email: user.email || user.uid };
+    await signOut(probeAuth).catch(() => {});
+    return who;
+  } finally {
+    await deleteApp(probe).catch(() => {});
+  }
+}
+
 async function consumeWepekaToken() {
   const m = location.hash.match(/^#\/sso\?t=([^&]+)(?:&to=([a-z]+))?/);
   if (!m) return;
@@ -558,15 +594,35 @@ async function consumeWepekaToken() {
   history.replaceState(null, "", location.pathname + location.search);
   location.hash = "#/";
   try {
-    // A token minted for a different account than the one already signed
-    // into this tab: tear down that session before switching, so its store
-    // doesn't briefly keep rendering under the new uid.
+    // A token for a DIFFERENT account than the one already signed into this
+    // tab is never applied silently (audit S-21: any page could link here
+    // with its own token and quietly swap the visitor into the attacker's
+    // account). The persisted session is restored first so "already signed
+    // in" is known; then the visitor is asked, with both emails shown. No
+    // one signed in, or the same account: as frictionless as before.
+    await auth.authStateReady?.();
+    const current = auth.currentUser;
     const incomingUid = decodeWepekaTokenUid(token);
-    if (auth.currentUser && incomingUid && auth.currentUser.uid !== incomingUid) {
-      await logout();
-      teardownApp();
-      storeReady = false;
-      subscribedUid = null;
+    if (current && incomingUid !== current.uid) {
+      const incoming = await wepekaTokenIdentity(token);
+      if (incoming.uid !== current.uid) {
+        const tx = SSO_TEXT[getLang() === "en" ? "en" : "id"];
+        const currentEmail = escapeHtml(current.email || current.uid);
+        const { confirmDialog } = await import("./modals.js");
+        const ok = await confirmDialog({
+          title: tx.title,
+          message: tx.body(currentEmail, escapeHtml(incoming.email)),
+          confirmLabel: tx.confirm,
+          cancelLabel: tx.cancel(currentEmail),
+        });
+        if (!ok) return;
+        // Tear the current session down before switching, so its store
+        // doesn't briefly keep rendering under the new uid.
+        await logout();
+        teardownApp();
+        storeReady = false;
+        subscribedUid = null;
+      }
     }
     await loginWithWepekaToken(token);
     unlockPaywall();
