@@ -104,8 +104,23 @@ export function trialDaysLeft(account) {
   if (!isTrial(account)) return 0;
   return Math.max(0, Math.ceil((Number(account.trialEndsAt) - Date.now()) / (24 * 60 * 60 * 1000)));
 }
+// A paid period that has run out is read-only from its last second, like a
+// trial — not only once the daily cron flips status (firestore.rules
+// enforces the same on writes; audit S-22).
+export function isSubscriptionLapsed(account, now = Date.now()) {
+  const ends = account?.subscriptionExpiresAt;
+  return !!account && account.plan !== "trial" && typeof ends === "number" && ends <= now;
+}
 export function isReadOnly(account) {
-  return account?.status === "readonly" || isTrialExpired(account);
+  return account?.status === "readonly" || isTrialExpired(account) || isSubscriptionLapsed(account);
+}
+// JS mirror of firestore.rules' accountActive(): may this account write
+// brands/content/settings right now? Kept here so the rule is unit-tested
+// (tests/account-writable.test.mjs) — keep the two in sync.
+export function writableByRules(account, now = Date.now()) {
+  if (!account || account.status !== "active" || account.plan === "free") return false;
+  if (account.plan === "trial") return Number(account.trialEndsAt) > now;
+  return !isSubscriptionLapsed(account, now);
 }
 export function isDeactivated(account) {
   return account?.status === "deactivated";

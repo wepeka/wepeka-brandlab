@@ -64,12 +64,22 @@ service cloud.firestore {
     // content directly via the console even though the app itself never
     // lets them reach that code path), a lapsed monthly plan
     // (status=="readonly"), and an admin-deactivated account.
+    // Mirrored in js/account.js writableByRules() (tested there) — keep the
+    // two in sync.
     function accountActive() {
       let acc = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data;
       return request.auth != null && acc.status == 'active' && acc.plan != 'free'
         // A trial stops being writable the moment it ends, without waiting
         // for the daily cron (api/cron/check-expiry.js) to flip its status.
-        && (acc.plan != 'trial' || acc.trialEndsAt > request.time.toMillis());
+        && (acc.plan != 'trial' || acc.trialEndsAt > request.time.toMillis())
+        // Same for a paid period (audit S-22): a lapsed subscription used to
+        // keep writing until the cron's next run. No end date (Lifetime) or
+        // a non-number = no limit, exactly like the cron and accessState().
+        && paidTimeLeft(acc);
+    }
+    function paidTimeLeft(acc) {
+      let ends = acc.get('subscriptionExpiresAt', null);
+      return acc.plan == 'trial' || ends == null || !(ends is number) || ends > request.time.toMillis();
     }
     function isOwner(data) {
       return request.auth != null && data.ownerId == request.auth.uid;

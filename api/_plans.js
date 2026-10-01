@@ -307,6 +307,24 @@ export function settlePlanPurchase(account, planKey, pending = {}, now = Date.no
   return { patch, grantBookStyles: true, takesSeat: !!plan.slot, ...(review ? { review } : {}) };
 }
 
+// One auto-renew charge for a subscription: one more period on the plan it
+// was made for (from its own end, or from now once lapsed), or null for a
+// stray charge. Like any payment it re-opens a lapsed account but leaves a
+// deactivated one deactivated (audit S-22); a queued downgrade moves back
+// by the same period, as with a manual renewal.
+export function renewalChargePatch(account, planKey, now = Date.now()) {
+  const plan = PLANS[planKey];
+  if (!plan?.durationMs) return null;
+  const acc = withDueSchedule(account, now);
+  if (acc.plan !== plan.plan || (acc.billing || "monthly") !== plan.billing) return null;
+  const end = Math.max(now, Number(acc.subscriptionExpiresAt) || 0);
+  const patch = { ...(dueSchedulePatch(account, now) || {}), subscriptionExpiresAt: end + plan.durationMs };
+  if (acc.status !== "deactivated") patch.status = "active";
+  const next = acc.scheduledPlan?.plan ? acc.scheduledPlan : null;
+  if (next) patch.scheduledPlan = { ...next, startsAt: Number(next.startsAt) + plan.durationMs, endsAt: (Number(next.endsAt) || end) + plan.durationMs };
+  return patch;
+}
+
 // ---- Auto-renew (Midtrans Subscription API, card only for now) ----------
 // Behind MIDTRANS_RECURRING=true (Midtrans has to enable recurring on the
 // production merchant first). The first payment goes through Snap with

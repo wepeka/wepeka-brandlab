@@ -5,7 +5,7 @@
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, convertSeat, releaseSeat, seatFields } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
 import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
@@ -297,11 +297,11 @@ async function applyRenewalCharge(db, { orderId, name, grossAmount, paid }) {
     const plan = PLANS[sub.planKey];
     const addon = ADDONS[sub.planKey];
     if (plan) {
-      // Only renews the plan it was made for; a plan switch disables it,
-      // so a charge for anything else is a stray and changes nothing.
-      if (acc.plan === plan.plan && (acc.billing || "monthly") === plan.billing) {
-        tx.set(accountRef, { status: "active", subscriptionExpiresAt: Math.max(now, Number(acc.subscriptionExpiresAt) || 0) + plan.durationMs }, { merge: true });
-      }
+      // Only renews the plan it was made for (a plan switch disables it, so
+      // a charge for anything else is a stray and changes nothing), and
+      // never re-activates an account an admin deactivated.
+      const patch = renewalChargePatch(acc, sub.planKey, now);
+      if (patch) tx.set(accountRef, patch, { merge: true });
     } else if (addon?.aiUnlimitedMs) {
       tx.set(accountRef, { aiUnlimitedUntil: Math.max(now, Number(acc.aiUnlimitedUntil) || 0) + addon.aiUnlimitedMs }, { merge: true });
     } else if (addon?.addBrandSlotMs) {
