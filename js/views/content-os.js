@@ -1,4 +1,3 @@
-import { backLinkHTML } from "../back-link.js";
 import { getBrand } from "../store.js";
 import { brandDnaCompleteness, brandDnaDone } from "../brand-progress.js";
 import { icon } from "../icons.js";
@@ -67,7 +66,7 @@ export function render(root, { brandId, sub, contentId }) {
   // has none, so a page never shows the same guide twice.
 
   root.innerHTML = `
-    <div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${backLinkHTML(`#/brand/${brandId}`, t("nav.home"))}${activeSub === "list" ? "" : ` · ${t("nav.content")}`}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>
+    ${activeSub === "list" ? "" : `<div class="page-eyebrow flex items-center gap-6" style="margin-bottom:14px;">${t("nav.content")}${activeSub === "series" ? `${helpButtonHTML("content-os")}${guideVideoButtonHTML("content-os")}` : ""}</div>`}
     ${contentTabsHTML(brandId, activeSub)}
     ${dnaHintHTML(brandId, brand)}
     <div id="cos-mount"></div>
