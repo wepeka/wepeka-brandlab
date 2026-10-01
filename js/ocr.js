@@ -2,7 +2,12 @@
 // first time someone actually drops a screenshot — nothing loads up front.
 import { t } from "./i18n.js";
 
+// Pinned, with Subresource Integrity (sha384 of this exact file; audit
+// S-25). Note: Tesseract itself then fetches its worker and language data
+// from its own default CDN at run time — SRI on this loader doesn't cover
+// those.
 const TESSERACT_URL = "https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js";
+const TESSERACT_INTEGRITY = "sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F";
 
 let loadingPromise = null;
 function loadTesseract() {
@@ -11,6 +16,8 @@ function loadTesseract() {
   loadingPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = TESSERACT_URL;
+    script.integrity = TESSERACT_INTEGRITY;
+    script.crossOrigin = "anonymous";
     script.onload = resolve;
     script.onerror = () => reject(new Error(t("integr.ocr.loadFailed")));
     document.head.appendChild(script);

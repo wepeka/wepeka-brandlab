@@ -84,6 +84,8 @@ class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
 
-with Server(("", PORT), Handler) as httpd:
+# Loopback only (audit S-25): binding "" served this folder — and the
+# /api/ai proxy with whatever token a browser sends — to the whole network.
+with Server(("127.0.0.1", PORT), Handler) as httpd:
     print(f"Serving Wepeka Brandlab at http://localhost:{PORT} (caching disabled)")
     httpd.serve_forever()
