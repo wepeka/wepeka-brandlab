@@ -5,7 +5,7 @@
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase } from "../_plans.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
 import { MIDTRANS_IS_PRODUCTION, isPaymentTester, isSettled } from "../_payments.js";
@@ -163,45 +163,34 @@ export default async function handler(req, res) {
       return true;
     }
 
-    // A downgrade bought while a bigger plan still runs: the current plan
-    // stays until its period ends, the new one is queued behind it
-    // (api/cron/check-expiry.js switches it over on the day).
-    if (pending.mode === "later" && plan.durationMs && Number(pending.startsAt) > now) {
-      tx.set(accountRef, {
-        scheduledPlan: { plan: plan.plan, billing: plan.billing, brandLimit: plan.brandLimit, startsAt: Number(pending.startsAt) },
-        subscriptionExpiresAt: Number(pending.startsAt) + plan.durationMs,
-      }, { merge: true });
-      tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, scheduled: true }, { merge: true });
-      return true;
+    // A plan: what it does to the account is decided against the account
+    // as it is NOW (api/_plans.js settlePlanPurchase) — a queued downgrade
+    // waits for the running plan's own period, a renewal adds to it, and an
+    // order that can no longer apply the way it was sold (a second queued
+    // downgrade) is recorded as paid and flagged for the admin instead of
+    // being forced onto the account.
+    const decision = settlePlanPurchase(accountSnap.data() || {}, planKey, pending, now);
+    if (decision.issue) {
+      tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, needsReview: decision.issue }, { merge: true });
+      tx.set(accountRef, { paymentIssue: { orderId: order_id, status: decision.issue, planKey, at: now } }, { merge: true });
+      console.warn("Midtrans webhook: paid order needs review", order_id, decision.issue);
+      return "issue";
     }
-
-    const patch = { plan: plan.plan, status: "active", paidAt: now, trialEndsAt: null, scheduledPlan: null };
-    if (plan.billing) patch.billing = plan.billing;
-    if (plan.brandLimit) patch.brandLimit = plan.brandLimit;
-    if (plan.durationMs) {
-      // Renewing the same plan early adds to the time left instead of
-      // throwing it away; switching plans starts a fresh period from today.
-      const current = accountSnap.data() || {};
-      // Same plan AND same billing only — monthly → yearly of the same plan
-      // is an upgrade whose unused days already came off the price
-      // (switchQuote), so they must not be added on top as well.
-      const stillRunning = current.plan === plan.plan && (current.billing || "monthly") === plan.billing && Number(current.subscriptionExpiresAt) > now;
-      patch.subscriptionExpiresAt = (stillRunning ? current.subscriptionExpiresAt : now) + plan.durationMs;
-    } else {
-      patch.subscriptionExpiresAt = null;
-      patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
-    }
-
+    const patch = { ...decision.patch };
+    if (decision.grantBookStyles) patch.bookStyles = FieldValue.arrayUnion(...LIFETIME_BOOK_STYLES);
     tx.set(accountRef, patch, { merge: true });
-    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now }, { merge: true });
-    if (plan.slot) tx.set(db.doc(SLOTS_DOC), { [plan.slot]: FieldValue.increment(1) }, { merge: true });
+    tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}) }, { merge: true });
+    if (decision.takesSeat) tx.set(db.doc(SLOTS_DOC), { [plan.slot]: FieldValue.increment(1) }, { merge: true });
     return true;
   });
 
   // Auto-renew bookkeeping happens after the unlock is committed and never
-  // fails the notification: a problem here only means no auto-renew.
-  if (firstTime) {
+  // fails the notification: a problem here only means no auto-renew. A paid
+  // order flagged for review changed nothing, so it leaves auto-renew alone.
+  if (firstTime === true) {
     await syncAutoRenew(db, { uid, planKey, pending, orderId: order_id }).catch((err) => console.error("Midtrans webhook: auto-renew setup failed", order_id, err?.message));
+  }
+  if (firstTime) {
     // Meta Purchase, once per order (retries have firstTime false). Same
     // event id as the browser pixel in js/views/pricing.js payPlan. Awaited
     // (Vercel may freeze the function after the response) but never throws.

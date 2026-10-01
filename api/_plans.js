@@ -103,6 +103,19 @@ export const ADDON_ELIGIBLE_PLANS = ["founder", "founder-ultimate", "lifetime"];
 // of the old period comes off the new price. Moving down starts only when
 // the current period ends (paid now, no refund, no credit). Same plan again
 // = a plain renewal that adds to the time left. Owner's decision, 2026-09-29.
+//
+// The running plan's OWN period end and a queued downgrade are kept apart
+// (audit S-14, 2026-10-01): accounts/{uid}.subscriptionExpiresAt is when ALL
+// paid time runs out (what access, the rules and the cron read), while
+// scheduledPlan.startsAt is when the running plan itself ends. Before this,
+// every "later" purchase took its start from subscriptionExpiresAt — which
+// the previous "later" purchase had already pushed out — so a Studio
+// subscriber who kept buying Starter "for later" never dropped to Starter
+// (150 days of Studio for Rp 543rb), and an upgrade credited the queued
+// Starter days at Studio's rate. Now: one queued downgrade at a time, the
+// credit only covers the running plan's own period (plus the queued plan's
+// prepaid value, at its own price, when an upgrade replaces it), and a
+// renewal moves the queued plan back instead of swallowing it.
 const TIER_RANK = { starter: 1, pro: 2, studio: 3, founder: 10, "founder-ultimate": 11 };
 const LIFETIME_KEYS = ["founder", "founder-ultimate", "lifetime"];
 export const MIN_CHARGE = 1000;
@@ -111,25 +124,140 @@ function rankOf(plan, billing) {
   const base = TIER_RANK[plan] || 0;
   return base >= 10 ? base : base + (billing === "yearly" ? 0.5 : 0);
 }
+const keyOf = (plan, billing) => `${plan}-${billing || "monthly"}`;
+
+// A queued downgrade whose day has come is the plan already, even before the
+// daily cron (api/cron/check-expiry.js) writes it — the patch both use.
+// Status is never part of it: switching plans must not re-activate an
+// account an admin deactivated (audit S-22).
+export function dueSchedulePatch(account, now = Date.now()) {
+  const next = account?.scheduledPlan;
+  if (!next?.plan || !(Number(next.startsAt) <= now)) return null;
+  return { plan: next.plan, billing: next.billing, brandLimit: next.brandLimit, scheduledPlan: null };
+}
+function withDueSchedule(account, now) {
+  const due = dueSchedulePatch(account, now);
+  return due ? { ...account, ...due } : { ...(account || {}) };
+}
+
+// The subscription running right now, or null: its planKey, when its own
+// period ends (`periodEnd`), when all paid time ends (`end`), and the
+// downgrade queued behind it, if any.
+export function runningSubscription(account, now = Date.now()) {
+  const acc = withDueSchedule(account, now);
+  if (!isPaidAccount(acc, now) || !SUBSCRIPTION_PLANS.includes(acc.plan)) return null;
+  const end = Number(acc.subscriptionExpiresAt);
+  if (!(end > now)) return null;
+  const scheduled = acc.scheduledPlan?.plan ? acc.scheduledPlan : null;
+  const periodEnd = scheduled ? Math.min(Number(scheduled.startsAt), end) : end;
+  return { key: keyOf(acc.plan, acc.billing), plan: acc.plan, billing: acc.billing || "monthly", periodEnd, end, scheduled };
+}
+
+// What a queued downgrade was paid for and hasn't started: its own price for
+// its own length (one period at most — accounts stacked before this fix
+// only get one period back).
+function scheduledValue(scheduled, end) {
+  const p = PLANS[keyOf(scheduled.plan, scheduled.billing)];
+  if (!p?.durationMs) return 0;
+  const length = Math.max(0, (Number(scheduled.endsAt) || end) - Number(scheduled.startsAt));
+  return p.amount * Math.min(1, length / p.durationMs);
+}
+
+const refused = (code, extra = {}) => ({ mode: "refused", code, amount: 0, credit: 0, ...extra });
+
+// `value` (unused paid time, in rupiah) off `price`, rounded down to Rp 100,
+// never below MIN_CHARGE.
+function creditQuote(price, value, extra = {}) {
+  const full = Math.max(0, Math.floor(value / 100) * 100);
+  const credit = Math.max(0, Math.min(full, price - MIN_CHARGE));
+  return { mode: "now", amount: price - credit, credit, ...extra };
+}
 
 // What buying `planKey` costs this account right now, and when it starts.
-// mode: "new" (nothing running), "renew" (same plan), "now" (upgrade,
-// with `credit` = the unused part of the current period), "later"
-// (downgrade, starts at `startsAt`). `price` is the plan's own price (for a
-// tiered Founder plan, the tier price the caller already resolved).
+// mode: "new" (nothing running), "renew" (same plan; `scheduledStartsAt` =
+// where a queued downgrade moves to), "now" (upgrade, with `credit` = the
+// unused part of the current period), "later" (downgrade, starts at
+// `startsAt`), "refused" (`code` says why — create-transaction answers 409).
+// `price` is the plan's own price (for a tiered Founder plan, the tier
+// price the caller already resolved).
 export function switchQuote(account, planKey, price, now = Date.now()) {
   const target = PLANS[planKey];
   if (!target) return null;
-  const running = isPaidAccount(account, now) && SUBSCRIPTION_PLANS.includes(account.plan) && Number(account.subscriptionExpiresAt) > now;
-  if (!running) return { mode: "new", amount: price, credit: 0 };
-  const currentKey = `${account.plan}-${account.billing || "monthly"}`;
-  if (currentKey === planKey) return { mode: "renew", amount: price, credit: 0 };
-  const current = PLANS[currentKey];
-  const up = rankOf(target.plan, target.billing) > rankOf(account.plan, account.billing || "monthly");
-  if (!up) return { mode: "later", amount: price, credit: 0, startsAt: Number(account.subscriptionExpiresAt) };
-  const left = Math.max(0, Number(account.subscriptionExpiresAt) - now);
-  const credit = current ? Math.floor((current.amount * Math.min(1, left / current.durationMs)) / 100) * 100 : 0;
-  return { mode: "now", amount: Math.max(MIN_CHARGE, price - credit), credit: Math.min(credit, price - MIN_CHARGE) };
+  const run = runningSubscription(account, now);
+  if (!run) return { mode: "new", amount: price, credit: 0 };
+  if (run.key === planKey) {
+    return run.scheduled
+      ? { mode: "renew", amount: price, credit: 0, scheduledStartsAt: run.periodEnd + target.durationMs }
+      : { mode: "renew", amount: price, credit: 0 };
+  }
+  if (rankOf(target.plan, target.billing) <= rankOf(run.plan, run.billing)) {
+    // One queued downgrade at a time — a second one would push the first
+    // (and the running plan's end with it) out again.
+    if (run.scheduled) return refused("scheduled", { startsAt: run.periodEnd });
+    return { mode: "later", amount: price, credit: 0, startsAt: run.periodEnd };
+  }
+  const current = PLANS[run.key];
+  const left = Math.max(0, run.periodEnd - now);
+  let value = current ? current.amount * Math.min(1, left / current.durationMs) : 0;
+  if (run.scheduled) value += scheduledValue(run.scheduled, run.end);
+  return creditQuote(price, value, run.scheduled ? { replacesScheduled: true } : {});
+}
+
+// What a settled plan purchase writes onto accounts/{uid} — the webhook runs
+// it inside its transaction, the tests run it directly. Returns
+// { patch, scheduled?, grantBookStyles?, takesSeat? } or, when the order can
+// no longer be applied the way it was sold, { issue } (paid, nothing
+// changed; the admin sorts it out). `pending` is the payments/{order_id}
+// record create-transaction.js wrote.
+export function settlePlanPurchase(account, planKey, pending = {}, now = Date.now()) {
+  const plan = PLANS[planKey] || LEGACY_PLANS[planKey];
+  if (!plan) return { issue: "unknown-plan" };
+  const due = dueSchedulePatch(account, now) || {};
+  const acc = withDueSchedule(account, now);
+  const run = runningSubscription(acc, now);
+  // Paying re-opens a lapsed ("readonly") account, never one an admin
+  // deactivated — that stays the admin's call (audit S-22).
+  const status = acc.status === "deactivated" ? {} : { status: "active" };
+
+  // A downgrade bought while a bigger plan runs: it waits for the running
+  // plan's own period to end (api/cron/check-expiry.js switches it over).
+  if (pending.mode === "later" && plan.durationMs && run && run.key !== keyOf(plan.plan, plan.billing)) {
+    // Two "later" checkouts opened before either was paid: the second one
+    // can't queue behind the first without stacking (see switchQuote).
+    if (run.scheduled) return { issue: "schedule-conflict" };
+    const startsAt = run.periodEnd;
+    const endsAt = startsAt + plan.durationMs;
+    return {
+      patch: { ...due, scheduledPlan: { plan: plan.plan, billing: plan.billing, brandLimit: plan.brandLimit, startsAt, endsAt }, subscriptionExpiresAt: endsAt },
+      scheduled: true,
+    };
+  }
+
+  const patch = { ...due, plan: plan.plan, paidAt: now, trialEndsAt: null, ...status };
+  if (plan.billing) patch.billing = plan.billing;
+  if (plan.brandLimit) patch.brandLimit = plan.brandLimit;
+  if (plan.durationMs) {
+    if (run && run.key === keyOf(plan.plan, plan.billing)) {
+      // Renewing the same plan early adds a period to the running one — from
+      // its own end, so a queued downgrade moves back by the same amount
+      // instead of being turned into time on the bigger plan.
+      patch.subscriptionExpiresAt = run.end + plan.durationMs;
+      patch.scheduledPlan = run.scheduled
+        ? { ...run.scheduled, startsAt: run.periodEnd + plan.durationMs, endsAt: (Number(run.scheduled.endsAt) || run.end) + plan.durationMs }
+        : null;
+    } else {
+      // New plan or upgrade: a fresh period from today. Monthly → yearly of
+      // the same plan is an upgrade whose unused days (and any queued
+      // downgrade's prepaid value) already came off the price (switchQuote),
+      // so nothing is added on top.
+      patch.subscriptionExpiresAt = now + plan.durationMs;
+      patch.scheduledPlan = null;
+    }
+    return { patch };
+  }
+  patch.subscriptionExpiresAt = null;
+  patch.scheduledPlan = null;
+  return { patch, grantBookStyles: true, takesSeat: !!plan.slot };
 }
 
 // ---- Auto-renew (Midtrans Subscription API, card only for now) ----------
