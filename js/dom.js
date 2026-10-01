@@ -415,7 +415,7 @@ export function listToLines(list) {
 // scrollX math, correct whether `anchor` is sticky, fixed, or normal flow),
 // this function itself handles the toggle-closes-if-already-open check, and
 // the entrance/exit animations are plain CSS driven off .menu / .menu-closing.
-let openMenuState = null; // { el, anchor, outsideClickHandler }
+let openMenuState = null; // { el, anchor, outsideClickHandler, keyHandler, resizeObserver }
 
 function animateMenuOut(el) {
   const finish = () => el.remove();
@@ -426,10 +426,46 @@ function animateMenuOut(el) {
 
 export function closeMenu() {
   if (!openMenuState) return;
-  const { el, outsideClickHandler } = openMenuState;
+  const { el, outsideClickHandler, keyHandler, resizeObserver } = openMenuState;
   document.removeEventListener("click", outsideClickHandler);
+  document.removeEventListener("keydown", keyHandler, true);
+  resizeObserver?.disconnect();
   openMenuState = null;
   animateMenuOut(el);
+}
+
+// Callers place a menu right under its trigger, which runs off the bottom
+// of the screen (or under the phone's bottom bar) for a trigger low on the
+// page, and off the right edge for one near it. Once the menu has its
+// content: pull it back inside horizontally, flip it above the trigger when
+// it doesn't fit below, and if it fits neither way pin it to the visible
+// area and let it scroll.
+const MENU_MARGIN = 8;
+function fitMenuToViewport(menu, anchor) {
+  if (!menu.isConnected) return;
+  menu.style.maxHeight = "";
+  const r = menu.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const nav = document.querySelector(".bottom-nav");
+  const navTop = nav && nav.getClientRects().length ? nav.getBoundingClientRect().top : window.innerHeight;
+  const floor = Math.min(window.innerHeight, navTop) - MENU_MARGIN;
+  if (r.right > vw - MENU_MARGIN || r.left < MENU_MARGIN) {
+    menu.style.left = `${Math.max(MENU_MARGIN, Math.min(r.left, vw - MENU_MARGIN - r.width))}px`;
+    menu.style.right = "auto";
+  }
+  if (r.bottom <= floor) return;
+  const a = anchor?.getBoundingClientRect?.();
+  const above = a ? a.top - 6 - r.height : -1;
+  if (above >= MENU_MARGIN) {
+    menu.style.top = `${above}px`;
+    return;
+  }
+  const top = Math.max(MENU_MARGIN, Math.min(r.top, floor - r.height));
+  menu.style.top = `${top}px`;
+  if (top + r.height > floor) {
+    menu.style.maxHeight = `${Math.max(120, floor - top)}px`;
+    menu.style.overflowY = "auto";
+  }
 }
 
 // Opens a new anchored menu, closing whatever menu was previously open first.
@@ -454,6 +490,24 @@ export function openMenu(anchor, { className = "", top, left, right } = {}) {
     if (!menu.contains(e.target)) closeMenu();
   };
   setTimeout(() => document.addEventListener("click", outsideClickHandler));
-  openMenuState = { el: menu, anchor, outsideClickHandler };
+  // Escape closes just the menu (capture + stop, so a modal or the chat
+  // panel underneath doesn't also close) and hands focus back.
+  const keyHandler = (e) => {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();
+    closeMenu();
+    anchor?.focus?.();
+  };
+  document.addEventListener("keydown", keyHandler, true);
+  // The caller fills the menu after this returns (sometimes later still):
+  // fit it whenever its size changes, before it's painted.
+  let resizeObserver = null;
+  if (typeof ResizeObserver === "function") {
+    resizeObserver = new ResizeObserver(() => fitMenuToViewport(menu, anchor));
+    resizeObserver.observe(menu);
+  } else {
+    requestAnimationFrame(() => fitMenuToViewport(menu, anchor));
+  }
+  openMenuState = { el: menu, anchor, outsideClickHandler, keyHandler, resizeObserver };
   return menu;
 }

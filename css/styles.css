@@ -1087,7 +1087,10 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    correct viewport coordinates. No scrollY/scrollX math needed anywhere,
    and it's correct whether the trigger button lives in a normal-flow
    container or inside the position:sticky topbar. */
-.menu{ position:fixed; z-index:60; min-width:170px; background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-md); padding:6px; box-shadow: var(--shadow-lg); transform-origin:top; animation: menu-pop-in .14s ease-out; }
+/* z-index 75: above the phone's bottom bar (60), the floating chat/notes
+   (65-66) and modal overlays (70), so a menu opened from any of them is
+   never drawn underneath. js/dom.js keeps it inside the viewport. */
+.menu{ position:fixed; z-index:75; min-width:170px; background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-md); padding:6px; box-shadow: var(--shadow-lg); transform-origin:top; animation: menu-pop-in .14s ease-out; }
 .menu.menu-closing{ animation: menu-pop-out .12s ease-in forwards; pointer-events:none; }
 @keyframes menu-pop-in{ from{ opacity:0; transform: scale(.97) translateY(-4px); } to{ opacity:1; transform: scale(1) translateY(0); } }
 @keyframes menu-pop-out{ to{ opacity:0; transform: scale(.97) translateY(-4px); } }
@@ -1126,7 +1129,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .consultant-fab{ position:fixed; right:24px; bottom:24px; z-index:65; width:52px; height:52px; border-radius:50%; background: var(--accent); color: var(--accent-text); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transition: transform .15s ease; }
 .consultant-fab:hover{ transform: scale(1.06); }
 .consultant-fab.is-open{ background: var(--surface-2); color: var(--text); }
-.consultant-panel{ position:fixed; right:24px; bottom:88px; z-index:65; width:360px; max-width:calc(100vw - 32px); height:min(520px, calc(100vh - 120px)); background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
+.consultant-panel{ position:fixed; right:24px; bottom:88px; z-index:65; width:360px; max-width:calc(100vw - 32px); height:min(520px, calc(100vh - 120px)); height:min(520px, calc(100dvh - 120px)); background: var(--bg-raised); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); display:flex; flex-direction:column; overflow:hidden; }
 .consultant-panel[hidden]{ display:none; }
 .consultant-panel-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:700; flex:none; }
 .consultant-panel-body{ flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
@@ -1173,7 +1176,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .drawer-head h2{ font-size:19px; }
 .drawer-body{ flex:1; overflow-y:auto; padding:24px; }
 .drawer-foot{ padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
-.modal-body{ padding:24px; max-height: calc(100vh - 160px); overflow-y: auto; }
+.modal-body{ padding:24px; max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); overflow-y: auto; }
 .modal-foot{ padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px; }
 
 .intro-pitch{ font-size:14.5px; line-height:1.65; color: var(--text); margin:0 0 14px; }
@@ -3552,7 +3555,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
    keeps its dark --accent-text. In light theme the bright hues used as TEXT
    (labels, tabs) also step down to their darker shade.
    ============================================================ */
-.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); --cp-accent: var(--accent); --cp-fill: var(--accent); --cp-on-fill: var(--accent-text); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; --chat-consultant-fill:#15803d; --chat-brainstorm-fill:#2563eb; --chat-companion-fill:#9333ea; transition: border-color .25s; }
+.consultant-panel{ width:400px; height:min(660px, calc(100vh - 110px)); height:min(660px, calc(100dvh - 110px)); --cp-accent: var(--accent); --cp-fill: var(--accent); --cp-on-fill: var(--accent-text); --chat-consultant:#22c55e; --chat-brainstorm:#3b82f6; --chat-companion:#a855f7; --chat-consultant-fill:#15803d; --chat-brainstorm-fill:#2563eb; --chat-companion-fill:#9333ea; transition: border-color .25s; }
 /* the open tab colours the whole panel: header icon, tab, user bubbles, send button */
 .consultant-panel[data-mode="consultant"]{ --cp-accent: var(--chat-consultant); --cp-fill: var(--chat-consultant-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
 .consultant-panel[data-mode="brainstorm"]{ --cp-accent: var(--chat-brainstorm); --cp-fill: var(--chat-brainstorm-fill); --cp-on-fill:#fff; border-color: color-mix(in srgb, var(--cp-accent) 55%, var(--border)); }
@@ -3620,7 +3623,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .notes-fab.is-open{ transform:none; background: var(--surface-2); }
 .notes-fab-count{ position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f5c542; color:#1a1a1a; font-size:10.5px; font-weight:800; line-height:18px; text-align:center; }
 .notes-fab-count:empty{ display:none; }
-.notes-float{ position:fixed; right:88px; bottom:84px; z-index:66; width:360px; max-width:calc(100vw - 24px); max-height:min(560px, calc(100vh - 120px)); display:flex; flex-direction:column; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); border:1px solid color-mix(in srgb, #f5c542 45%, var(--border)); border-top:4px solid #f5c542; border-radius:14px; box-shadow: var(--shadow-lg); overflow:hidden; }
+.notes-float{ position:fixed; right:88px; bottom:84px; z-index:66; width:360px; max-width:calc(100vw - 24px); max-height:min(560px, calc(100vh - 160px)); max-height:min(560px, calc(100dvh - 160px)); display:flex; flex-direction:column; background: color-mix(in srgb, #f5c542 9%, var(--bg-raised)); border:1px solid color-mix(in srgb, #f5c542 45%, var(--border)); border-top:4px solid #f5c542; border-radius:14px; box-shadow: var(--shadow-lg); overflow:hidden; }
 .notes-float[hidden]{ display:none; }
 .notes-head{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px 6px; }
 .notes-title{ display:flex; align-items:center; gap:6px; font-weight:800; font-size:14px; }
@@ -3632,7 +3635,7 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 @media (max-width: 640px){
   .notes-fab{ right:68px; bottom:16px; width:40px; height:40px; }
-  .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 110px); }
+  .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 144px); max-height:calc(100dvh - 144px); }
 }
 .scratch-hint{ font-size:11.5px; color: var(--text-faint); margin:0 0 10px; line-height:1.45; }
 .scratch-add{ min-height:0; font-size:13px; margin-bottom:10px; }
@@ -4344,11 +4347,15 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   :root[data-theme="light"] .bottom-nav{ background: color-mix(in srgb, var(--brand-tint) 10%, color-mix(in srgb, var(--bg) 94%, transparent)); }
   .bottom-nav .tab{ flex-direction:column; justify-content:center; gap:3px; padding:6px 2px; min-height:52px; font-size:11.5px; min-width:0; border-radius:14px; }
   .bottom-nav .tab svg{ width:20px; height:20px; }
-  /* Room for the bar: page end, the chat button, notes and toasts sit above it. */
-  body:has(.bottom-nav) main.view{ padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  /* Room for the bar: page end, the chat button, notes and toasts sit above it.
+     The page ends 136px up so its last card clears the chat and notes
+     buttons (their tops sit ~120px up) instead of hiding under them. */
+  body:has(.bottom-nav) main.view{ padding-bottom: calc(136px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .consultant-fab{ bottom: calc(76px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .consultant-fab-hint{ bottom: calc(82px + env(safe-area-inset-bottom)); }
-  body:has(.bottom-nav) .notes-float{ bottom: calc(130px + env(safe-area-inset-bottom)); }
+  /* Its top used to land ~20px above the screen: 130px up with a height of
+     100vh - 110px. Now capped to end below the 60px header. */
+  body:has(.bottom-nav) .notes-float{ bottom: calc(130px + env(safe-area-inset-bottom)); max-height: calc(100vh - 206px - env(safe-area-inset-bottom)); max-height: calc(100dvh - 206px - env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .notes-fab{ bottom: calc(80px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .toast-root{ bottom: calc(140px + env(safe-area-inset-bottom)); }
   body.tour-active .bottom-nav{ z-index:59; }
