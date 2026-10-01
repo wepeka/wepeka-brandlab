@@ -2,7 +2,7 @@
 // #app) so a background store-driven rerender never yanks them away mid-edit.
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { qsa } from "./dom.js";
+import { qsa, escapeHtml } from "./dom.js";
 
 // Accessibility plumbing shared by openModal/openDrawer: each overlay is a
 // dialog (role="dialog", aria-modal, aria-labelledby pointing at its own
@@ -148,6 +148,10 @@ export function confirmDialog({ title = t("app.confirm.title"), message = "", co
   });
 }
 
+// `title` and `label` are markup, like every other dialog's (callers escape
+// user text in them); `placeholder` and `value` are plain text — often the
+// owner's own data, e.g. a milestone target or a font name — and go into
+// attributes, so they are always escaped here (audit S-20).
 export function promptDialog({ title, label, placeholder = "", value = "", confirmLabel = t("common.save") }) {
   return new Promise((resolve) => {
     const overlay = openModal({
@@ -155,7 +159,7 @@ export function promptDialog({ title, label, placeholder = "", value = "", confi
       bodyHTML: `
         <div class="field" style="margin-bottom:0;">
           <label>${label}</label>
-          <input class="input" id="prompt-input" placeholder="${placeholder}" value="${value.replace(/"/g, "&quot;")}" />
+          <input class="input" id="prompt-input" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}" />
         </div>
       `,
       footHTML: `
