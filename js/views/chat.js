@@ -1,6 +1,7 @@
 // "Tanya Brandlab" — the full page of the app's one chat
 // (js/consultant-panel.js). This file is only the frame: title, help and
-// tour. The chat, its conversations (Obrolan) and what it saves (ideas,
+// tour (the Panduan pill: this page's tour and the "Tanya Brandlab"
+// video). The chat, its conversations (Obrolan) and what it saves (ideas,
 // brand memory) are the same component the round chat button opens, so
 // both sizes are one conversation with one set of features — never two
 // copies. It has its own address, under no tab: it isn't part of Campaign
@@ -17,6 +18,7 @@ import { consumeNavContext } from "../nav-context.js";
 import { mountChatPage, applyChatContext, chatScopeInfo } from "../consultant-panel.js";
 import { escapeHtml as esc, qs } from "../dom.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { t } from "../i18n.js";
@@ -40,7 +42,7 @@ export function render(root, { brandId, threadId = null }) {
   const campaign = chatScopeInfo(brandId).campaign;
   qs("#chat-head", root).innerHTML = `
     <div>
-      <div class="page-eyebrow flex items-center gap-6">${campaign ? backLinkHTML(`#/brand/${brandId}/campaigns/${campaign.id}`, campaign.name || t("nav.campaigns")) : backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${esc(brand.name)}${helpButtonHTML("brainstorm")}</div>
+      <div class="page-eyebrow flex items-center gap-6">${campaign ? backLinkHTML(`#/brand/${brandId}/campaigns/${campaign.id}`, campaign.name || t("nav.campaigns")) : backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${esc(brand.name)}${helpButtonHTML("brainstorm")}${guideVideoButtonHTML("chat")}</div>
       <h1>${t("chat.title")}</h1>
       <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:680px;">${t("chat.page.sub")}</p>
     </div>`;

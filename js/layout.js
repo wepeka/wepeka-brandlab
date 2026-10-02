@@ -306,9 +306,9 @@ function aiUsagePopoverHTML() {
 // Sales Tracker under Tujuan — neither is listed here.
 // On phones the topbar is one row (brand switcher + ⋯), so the trial badge
 // and "Update" live at the top of this menu there (.menu-mobile-only). Help
-// that isn't about the page on screen (ask the AI, intro video, website
+// that isn't about the page on screen (ask the AI, every guide video, website
 // tour) is here too — the page's own help is its "Panduan" pill.
-function appMenuHTML(brandId, canShowIntroVideo) {
+function appMenuHTML(brandId, hasVideos) {
   const mode = getMode();
   const other = mode === "guided" ? "advanced" : "guided";
   const account = getCachedAccount();
@@ -321,7 +321,7 @@ function appMenuHTML(brandId, canShowIntroVideo) {
     <button type="button" class="menu-mobile-only" data-go="#/updates">${icon("megaphone", { size: 15 })}${t("ann.topbar")}${unread ? `<span class="menu-count">${unread > 9 ? "9+" : unread}</span>` : ""}</button>
     <div class="menu-divider menu-mobile-only"></div>
     ${brandId ? `<button type="button" data-act="consultant">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
-    ${canShowIntroVideo ? `<button type="button" data-act="intro">${icon("play", { size: 15 })}${t("help.introVideo")}</button>` : ""}
+    ${hasVideos ? `<button type="button" data-act="videos">${icon("play", { size: 15 })}${t("guide.library.menu")}</button>` : ""}
     <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
     <div class="menu-divider"></div>
     <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
@@ -421,15 +421,18 @@ export function wireShell({ brandId }) {
   const menuBtn = qs("#app-menu-btn");
   menuBtn?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    // guide-videos.js is only needed to decide whether "Video pengenalan"
-    // belongs in this menu (canShowVideo) and to actually play it — loaded
-    // here, on first ⋯ click, instead of statically at boot. Cached after
-    // the first click, same as consultant-panel.js/tour.js above.
-    const { canShowVideo, openIntroVideo } = await import("./guide-videos.js");
+    // guide-videos.js is only needed to decide whether "Video panduan"
+    // belongs in this menu (any video published) and to open that list —
+    // loaded here, on first ⋯ click, instead of statically at boot. Cached
+    // after the first click, same as consultant-panel.js/tour.js above. A
+    // first click can land before the published list has arrived: wait for
+    // it a moment rather than leave the row out.
+    const { libraryVideoKeys, openVideoLibrary, guideVideosReady } = await import("./guide-videos.js");
+    await Promise.race([guideVideosReady, new Promise((r) => setTimeout(r, 800))]);
     if (menuBtn !== qs("#app-menu-btn")) return; // shell rebuilt while this awaited
     const menu = menuBelow(menuBtn, { className: "app-menu", width: 250 });
     if (!menu) return;
-    menu.innerHTML = appMenuHTML(brandId, canShowVideo("kenalan"));
+    menu.innerHTML = appMenuHTML(brandId, libraryVideoKeys().length > 0);
     menu.addEventListener("click", async (ev) => {
       const go = ev.target.closest("[data-go]");
       if (go) {
@@ -443,7 +446,7 @@ export function wireShell({ brandId }) {
       closeMenu();
       if (act === "mode") showModeSwitched(toggleMode());
       else if (act === "consultant") openConsultantPanel();
-      else if (act === "intro") openIntroVideo();
+      else if (act === "videos") openVideoLibrary();
       else if (act === "tour") startOnboardingTour();
       else if (act === "theme") toggleTheme();
       else if (act === "ai") {

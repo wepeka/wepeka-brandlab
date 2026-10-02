@@ -524,10 +524,45 @@ export function startPageTour() {
 }
 const startWebsiteTour = () => import("./tour.js").then((m) => m.startOnboardingTour()).catch((e) => console.warn("tur tidak bisa dibuka", e));
 
-// The intro video on demand (the topbar "?" menu): same three answers, and
-// "Tur website" runs the website tour.
-export function openIntroVideo() {
-  whenReady().then(() => openGuideVideo("kenalan", { onTour: startWebsiteTour, tourLabel: t("guide.video.choices.tour"), hint: false }));
+// Every guide video in one list, for the topbar ⋯ menu ("Video panduan"):
+// the welcome videos first, then the chat, then one per app. Only the
+// published ones; the admin also sees the rest, marked "belum diupload".
+const LIBRARY_ORDER = ["akun-baru", "kenalan", "tanya-brandlab", "brand-builder", "campaign", "content-os", "copy", "sales"];
+export const libraryVideoKeys = () => LIBRARY_ORDER.filter((key) => canShowVideo(key));
+
+// The list as a modal; picking one closes it and plays that video with the
+// usual three answers ("Tur website" runs the website tour).
+export function openVideoLibrary() {
+  return whenReady().then(() => {
+    const keys = libraryVideoKeys();
+    if (!keys.length) return null;
+    const rows = keys
+      .map((key) => {
+        const v = GUIDE_VIDEOS[key];
+        const n = videoParts(key).length;
+        const meta = !isLive(key) ? t("guide.library.notUploaded") : [n > 1 ? t("guide.library.parts", { n }) : "", fmtTime(v.seconds)].filter(Boolean).join(" · ");
+        return `
+        <li>
+          <button type="button" class="gv-part" data-gv-lib="${escapeHtml(key)}">
+            <span class="gv-part-num">${icon("play", { size: 11 })}</span>
+            <span class="gv-part-title">${escapeHtml(v.title)}</span>
+            <span class="gv-part-time">${escapeHtml(meta)}</span>
+          </button>
+        </li>`;
+      })
+      .join("");
+    const overlay = openModal({
+      title: t("guide.library.title"),
+      bodyHTML: `<p class="text-muted gv-library-sub">${t("guide.library.sub")}</p><ol class="gv-parts gv-library">${rows}</ol>`,
+    });
+    overlay.addEventListener("click", (e) => {
+      const btn = e.target instanceof Element ? e.target.closest("[data-gv-lib]") : null;
+      if (!btn) return;
+      closeOverlay(overlay);
+      openGuideVideo(btn.dataset.gvLib, { onTour: startWebsiteTour, tourLabel: t("guide.video.choices.tour"), hint: false });
+    });
+    return overlay;
+  });
 }
 
 // ---------- "Already seen" ----------
@@ -670,7 +705,7 @@ function pageHelpMenu(btn) {
     <div class="page-help-actions">
       ${hasTour ? `<button type="button" data-ph="tour">${icon("target", { size: 15 })}${t("help.pageGuide")}</button>` : ""}
       ${hasVideo ? `<button type="button" data-ph="video">${icon("play", { size: 15 })}${t("guide.video.btnTitle")}</button>` : ""}
-      ${inBrand ? `<button type="button" data-ph="ai">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
+      ${inBrand && guideKey !== "chat" ? `<button type="button" data-ph="ai">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
     </div>`;
   menu.addEventListener("click", (ev) => {
     const act = ev.target.closest("[data-ph]")?.dataset.ph;

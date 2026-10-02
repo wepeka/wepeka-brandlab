@@ -11,6 +11,7 @@ export default {
   "chat.mode.aria": { en: "Which chat", id: "Obrolan yang mana" },
   "chat.expand": { en: "Open full page", id: "Buka halaman penuh" },
   "chat.shrink": { en: "Back to the small chat", id: "Kecilkan lagi" },
+  "chat.video": { en: "Replay the guide video", id: "Putar ulang video panduan" },
   "chat.copy": { en: "Copy", id: "Salin" },
   "chat.copied": { en: "Copied", id: "Tersalin" },
   "chat.copyFailed": { en: "Couldn't copy — select the text and copy it by hand.", id: "Gagal menyalin — blok teksnya lalu salin manual." },

@@ -1523,6 +1523,11 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .gv-part.is-current .gv-part-num{ background: var(--accent); color: var(--accent-text); }
 .gv-part-title{ flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gv-part-time{ font-size:11.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+/* Topbar ⋯ → "Video panduan": every guide video, the same rows as the part list */
+.gv-library-sub{ margin:0; font-size:13px; }
+.gv-library{ max-height:none; }
+.gv-library .gv-part-num{ background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); color: var(--accent); }
+.gv-library .gv-part-time{ flex:none; }
 
 body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 @media (max-width: 720px){

@@ -169,6 +169,7 @@ let reopenSmall = false; // "Kecilkan": reopen the panel once the page is gone
 let ideasFocus = false; // page: saved ideas blown up into a focused view
 let flashIdeas = false; // page: light up the saved ideas after a save
 let carryDraft = ""; // typed text carried across a size switch / navigation
+let tanyaVideoOn = false; // the "Tanya Brandlab" guide video is published: the head's ▶ replays it
 // Screenshots attached to the message being typed (an insight page, a
 // retention graph): the full image goes to the model once, in memory only;
 // the thumbnail is what the sent bubble keeps. brandId -> [{ full, thumb }]
@@ -1192,6 +1193,7 @@ function panelHTML(brandId) {
       </div>
       <div class="cp-head-actions">
         ${has && mode !== "auto" ? `<button type="button" class="icon-btn" data-chat-clear aria-label="${t(`chat.clear.${mode}`)}" title="${t(`chat.clear.${mode}`)}" ${pending ? "disabled" : ""}>${icon("trash", { size: 14 })}</button>` : ""}
+        <button type="button" class="icon-btn" data-chat-video aria-label="${t("chat.video")}" title="${t("chat.video")}" ${tanyaVideoOn ? "" : "hidden"}>${icon("play", { size: 14 })}</button>
         <button type="button" class="icon-btn" data-chat-expand aria-label="${t("chat.expand")}" title="${t("chat.expand")}">${icon("expand", { size: 14 })}</button>
         <button type="button" class="icon-btn" data-chat-close aria-label="${t("common.close")}">${icon("x", { size: 14 })}</button>
       </div>
@@ -1476,6 +1478,7 @@ function wire(host, brandId, input, history) {
   // Size, close, new, delete.
   on("[data-chat-close]", () => togglePanel(brandId, false));
   on("[data-chat-expand]", () => expandToPage(brandId));
+  on("[data-chat-video]", () => replayTanyaVideo(brandId));
   on("[data-chat-shrink]", () => shrinkToPanel());
   on("[data-chat-new]", () => { startConversation(brandId, { auto: mode === "auto" }); tails.delete(tailKey(brandId, mode)); rerender({ focus: true }); });
   const confirmDelete = () => confirmDialog({ title: t("bs.ideas.deleteThreadConfirm.title"), message: t("bs.ideas.deleteThreadConfirm.body"), confirmLabel: t("bs.ideas.deleteThread"), danger: true });
@@ -2987,6 +2990,33 @@ function tanyaVideoFirst() {
     .catch(() => ({ tour: false }));
 }
 
+// The head's ▶ shows once that video turns out to be published (or for
+// the admin's preview); the list arrives after the panel may have painted.
+function checkTanyaVideo() {
+  import("./guide-videos.js")
+    .then((m) => m.guideVideosReady.then(() => m.canShowVideo("tanya-brandlab")))
+    .then((on) => {
+      tanyaVideoOn = on;
+      document.querySelectorAll("[data-chat-video]").forEach((b) => { b.hidden = !on; });
+    })
+    .catch(() => {});
+}
+
+// ▶: the same video again, any time, over the open chat. "Tur website"
+// closes the chat first so the tour has the screen to itself.
+function replayTanyaVideo(brandId) {
+  import("./guide-videos.js")
+    .then((m) => m.openGuideVideo("tanya-brandlab", {
+      tourLabel: t("guide.video.choices.tour"),
+      onClose: (choice) => {
+        if (choice !== "tour") return;
+        togglePanel(brandId, false);
+        m.startTour();
+      },
+    }))
+    .catch((e) => console.warn("tanya video unavailable", e));
+}
+
 export function mountConsultantPanel(brandId) {
   if (!brandId) return unmountConsultantPanel();
   if (mountedBrandId === brandId) return;
@@ -2994,6 +3024,7 @@ export function mountConsultantPanel(brandId) {
   mountedBrandId = brandId;
   restoreChat(brandId);
   wireDocument();
+  checkTanyaVideo();
 
   const fab = document.createElement("button");
   fab.type = "button";

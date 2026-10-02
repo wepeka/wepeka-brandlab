@@ -46,7 +46,6 @@ const CORE = {
   "contentEditor.tab.schedule": { en: "Schedule", id: "Jadwal" },
   "contentEditor.advanced": { en: "Advanced", id: "Lanjutan" },
   "menu.modeSwitch": { en: "{current} mode · switch to {other}", id: "Mode {current} · pindah ke {other}" },
-  "help.introVideo": { en: "Intro video", id: "Video perkenalan" },
   "help.pageGuide": { en: "Guide for this page", id: "Panduan halaman ini" },
   "help.askAi": { en: "Ask Brandlab", id: "Tanya Brandlab" },
   "help.tour": { en: "Website tour", id: "Tur website" },

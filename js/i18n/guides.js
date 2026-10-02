@@ -75,6 +75,12 @@ export default {
   "guide.video.choices.tour": { en: "Website tour", id: "Tur website" },
   "guide.video.choices.done": { en: "Got it", id: "Sudah paham" },
   "guide.video.offer.replay": { en: "You can replay the explainer here anytime.", id: "Kamu bisa putar ulang video penjelasannya di sini kapan aja." },
+  // Every guide video in one list (topbar ⋯ → "Video panduan")
+  "guide.library.menu": { en: "Guide videos", id: "Video panduan" },
+  "guide.library.title": { en: "Guide videos", id: "Video panduan" },
+  "guide.library.sub": { en: "Pick one to watch it again.", id: "Pilih videonya buat ditonton lagi." },
+  "guide.library.parts": { en: "{n} videos", id: "{n} video" },
+  "guide.library.notUploaded": { en: "not uploaded yet", id: "belum diupload" },
 
   "guide.creator.existing.title": { en: "Pick up where you left off", id: "Lanjutin yang sudah ada" },
   "guide.creator.existing.body": { en: "These are the pieces you're working on. **Click** one to continue.", id: "Ini daftar konten yang lagi kamu kerjain. **Klik** salah satu buat lanjut." },
