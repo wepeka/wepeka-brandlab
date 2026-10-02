@@ -64,9 +64,9 @@ const isLive = (key) => {
 const adminPreview = () => isAdmin(currentUid());
 export const canShowVideo = (key) => !!GUIDE_VIDEOS[key] && (isLive(key) || adminPreview());
 
-// `seconds` is the declared length. For an embed (YouTube/Vimeo) it is also
-// the fallback for "the video has ended", since an iframe can't be watched
-// from here — so keep it equal to the real recording's length.
+// `seconds` is the declared length. For Vimeo it is also "the video has
+// ended" (an iframe can't be watched from here), and for YouTube until its
+// IFrame API answers — so keep it equal to the real recording's length.
 export const GUIDE_VIDEOS = {
   // Plays once, right after the account exists and before the Pemula/Pro
   // picker (js/main.js → playVideoGate).
@@ -197,11 +197,17 @@ export function videoKeyForGuide(guideKey) {
   return videoRefForGuide(guideKey)?.video || null;
 }
 
+// Every way a YouTube link gets copied: watch?v= (v anywhere in the query,
+// e.g. after si= or feature=), youtu.be/, Shorts, Live, embed, the
+// no-cookie domain, m./music. hosts, a YouTube Studio page. A YouTube ID is
+// always 11 characters.
+const YOUTUBE_RE = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/|v\/|video\/)|youtu\.be\/)([\w-]{11})(?![\w-])/i;
+
 // "…/watch?v=ID" | "…/ID" | "https://cdn/x.mp4" → what kind of player to build.
 export function parseVideoSrc(src) {
-  const s = String(src || "");
+  const s = String(src || "").trim();
   if (!s) return { kind: "none", id: "" };
-  const yt = s.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{6,})/);
+  const yt = s.match(YOUTUBE_RE);
   if (yt) return { kind: "youtube", id: yt[1] };
   const vimeo = s.match(/vimeo\.com\/(?:video\/)?(\d+)/);
   if (vimeo) return { kind: "vimeo", id: vimeo[1] };
@@ -209,11 +215,13 @@ export function parseVideoSrc(src) {
 }
 
 // fs=0 / no native fullscreen: the player's own fullscreen button enlarges
-// the whole frame, so the watermark stays on screen.
-function embedUrl(src, start = 0, autoplay = false) {
+// the whole frame, so the watermark stays on screen. enablejsapi + origin
+// let the YouTube IFrame API (see watchYouTubeEnd) hear when it ends.
+export function embedUrl(src, start = 0, autoplay = false) {
   const p = parseVideoSrc(src);
   const at = Math.max(0, Math.floor(Number(start) || 0));
-  if (p.kind === "youtube") return `https://www.youtube.com/embed/${p.id}?rel=0&playsinline=1&fs=0&modestbranding=1${autoplay ? "&autoplay=1" : ""}${at ? `&start=${at}` : ""}`;
+  const origin = typeof location !== "undefined" && /^https?:/.test(location.origin) ? `&origin=${encodeURIComponent(location.origin)}` : "";
+  if (p.kind === "youtube") return `https://www.youtube.com/embed/${p.id}?rel=0&playsinline=1&fs=0&modestbranding=1&enablejsapi=1${origin}${autoplay ? "&autoplay=1" : ""}${at ? `&start=${at}` : ""}`;
   if (p.kind === "vimeo") return `https://player.vimeo.com/video/${p.id}${autoplay ? "?autoplay=1" : ""}${at ? `#t=${at}s` : ""}`;
   return null;
 }
@@ -223,6 +231,50 @@ function embedUrl(src, start = 0, autoplay = false) {
 function fileUrl(src, start = 0) {
   const at = Math.max(0, Math.floor(Number(start) || 0));
   return at ? `${src}#t=${at}` : src;
+}
+
+// The official YouTube IFrame API, fetched the first time a YouTube part
+// plays. A failed load is forgotten so the next part can try again.
+let youTubeApi = null;
+function loadYouTubeApi() {
+  if (typeof window === "undefined" || typeof document === "undefined") return Promise.reject(new Error("no browser"));
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (youTubeApi) return youTubeApi;
+  youTubeApi = new Promise((resolve, reject) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof prev === "function") prev();
+      resolve(window.YT);
+    };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.async = true;
+    s.onerror = () => {
+      youTubeApi = null;
+      s.remove();
+      reject(new Error("YouTube IFrame API failed to load"));
+    };
+    document.head.appendChild(s);
+  });
+  return youTubeApi;
+}
+
+// Hooks the YouTube API onto a player already on the page: `onReady` once
+// it answers (from then on its own end event is trusted), `onEnded` when the
+// video really finishes — a pause, a buffer or a blocked autoplay no longer
+// count as watched. `isCurrent` drops a player that has since been replaced.
+function watchYouTubeEnd(frame, { isCurrent, onReady, onEnded }) {
+  loadYouTubeApi()
+    .then((YT) => {
+      if (!isCurrent() || !frame.isConnected) return;
+      new YT.Player(frame, {
+        events: {
+          onReady: () => { if (isCurrent()) onReady(); },
+          onStateChange: (e) => { if (isCurrent() && e.data === YT.PlayerState.ENDED) onEnded(); },
+        },
+      });
+    })
+    .catch(() => {});
 }
 
 // The watermark every guide video carries: the part's title top-left and
@@ -268,7 +320,8 @@ export function guideVideoWidgetHTML(videoKey, { compact = false, start = 0, aut
   }
   const embed = embedUrl(p.src, start, autoplay);
   if (embed) {
-    return `<div class="guide-video-frame has-wm${size}"><iframe src="${escapeHtml(embed)}" title="${escapeHtml(p.title || v.title)}" allow="autoplay; encrypted-media"></iframe>${watermarkHTML(subtitle)}</div>`;
+    const yt = parseVideoSrc(p.src).kind === "youtube" ? " data-yt" : "";
+    return `<div class="guide-video-frame has-wm${size}"><iframe${yt} src="${escapeHtml(embed)}" title="${escapeHtml(p.title || v.title)}" allow="autoplay; encrypted-media"></iframe>${watermarkHTML(subtitle)}</div>`;
   }
   return `<div class="guide-video-frame has-wm${size}"><video src="${escapeHtml(fileUrl(p.src, start))}" controls controlslist="nofullscreen nodownload" disablepictureinpicture playsinline preload="metadata"${autoplay ? " autoplay" : ""}></video>${watermarkHTML(subtitle)}</div>`;
 }
@@ -360,6 +413,9 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
   const prevBtn = overlay.querySelector('[data-vc="prev"]');
   const nextBtn = overlay.querySelector('[data-vc="next"]');
   let ending = null;
+  // Bumped every time a part starts, so a YouTube player that was replaced
+  // (or a modal that closed) can't end the part playing now.
+  let playId = 0;
   let tourTaken = false;
   let choice = "done";
 
@@ -381,11 +437,13 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     if (current < parts.length - 1) playPart(current + 1);
     else showChoices();
   };
-  // A real video announces its own end; an embed can't be watched from here
-  // without its player API, so fall back to the declared length. The
-  // placeholder has nothing to play at all, so it asks straight away.
+  // A real video announces its own end, and so does YouTube through its
+  // IFrame API. Vimeo — or YouTube before its API answers, or if it never
+  // loads — falls back to the declared length. The placeholder has nothing
+  // to play at all, so it asks straight away.
   const watchForEnd = () => {
     if (ending) { clearTimeout(ending); ending = null; }
+    const id = ++playId;
     choicesHead.hidden = true;
     if (!real) return showChoices();
     const el = stage.querySelector("video");
@@ -395,8 +453,17 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
         if (el.duration && el.currentTime >= el.duration - 1) el.currentTime = 0;
       }, { once: true });
       el.addEventListener("ended", partEnded, { once: true });
+      return;
     }
-    else ending = setTimeout(partEnded, Math.max(5, (partSeconds() || 60) - (Number(start) || 0)) * 1000);
+    ending = setTimeout(partEnded, Math.max(5, (partSeconds() || 60) - (Number(start) || 0)) * 1000);
+    const yt = stage.querySelector("iframe[data-yt]");
+    if (yt) {
+      watchYouTubeEnd(yt, {
+        isCurrent: () => id === playId && overlay.isConnected,
+        onReady: () => { if (ending) { clearTimeout(ending); ending = null; } },
+        onEnded: partEnded,
+      });
+    }
   };
   function playPart(i, { from = 0 } = {}) {
     current = Math.min(Math.max(0, i), parts.length - 1);
