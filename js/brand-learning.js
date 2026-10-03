@@ -20,6 +20,7 @@
 // AI remembered. Also here: data-based sentences that replace generic
 // advice ("Konsisten itu kuncinya") — postingLine(), bestPostsLine().
 import { getBrand, updateBrand, organicViews, localISODate, getSettings, listContent } from "./store.js";
+import { hookOf } from "./script-format.js";
 import { computeContentMetrics } from "./formulas.js";
 import { t, getLang } from "./i18n.js";
 
@@ -73,17 +74,9 @@ export function rememberTaste(brandId, { rating, note = "", output = "", feature
 
 // ---------- 2. Best posts ----------
 
-// The hook of a script: the text under a HOOK label, else Slide 1 of a
-// carousel, else its first line.
-export function hookOf(script) {
-  const s = String(script || "").replace(/\r/g, "");
-  if (!s.trim()) return "";
-  const labelled = s.match(/(?:^|\n)\s*\**\s*HOOK\s*\**:?\s*\n([\s\S]*?)(?:\n\s*\n|\n\s*\**\s*ISI|$)/i);
-  if (labelled && labelled[1].trim()) return labelled[1].trim();
-  const slide = s.match(/(?:^|\n)\s*Slide\s*1\s*:?\s*\n?([^\n]+)/i);
-  if (slide) return slide[1].trim();
-  return s.split("\n").find((l) => l.trim())?.trim() || "";
-}
+// hookOf (the HOOK beat, an old HOOK label, Slide 1, or the first line)
+// lives in js/script-format.js with the rest of the script shape.
+export { hookOf };
 
 const publishedAt = (c) => (c.publishedDate ? new Date(c.publishedDate + "T12:00:00").getTime() : 0);
 
@@ -114,7 +107,7 @@ export function monthRows(content, settings, month) {
     .filter((c) => c.status === "published" && (c.publishedDate || "").startsWith(month))
     .map((c) => {
       const m = computeContentMetrics(c, settings);
-      return { title: c.title || "", format: c.format || "", funnel: c.funnel || "", views: organicViews(c), er: m.engagementRate, hook: clip(hookOf(c.script), 100) };
+      return { title: c.title || "", format: c.format || "", funnel: c.funnel || "", views: organicViews(c), er: m.engagementRate, hook: clip(hookOf(c.script), 100), hookType: c.hookType || "" };
     })
     .filter((r) => (r.views ?? null) !== null || (r.er ?? null) !== null);
 }

@@ -6,7 +6,11 @@ import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext, go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine } from "../ai.js";
+import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine, durationToSeconds } from "../ai.js";
+import { HOOK_TYPES, SCRIPT_STRUCTURES, orderedHookTypes, recommendedHookTypes, recommendedStructures, hookTypeByKey } from "../knowledge/hook-types.js";
+import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText } from "../script-format.js";
+import { openScriptFocus } from "../script-focus.js";
+import { getLang } from "../i18n.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
 import { basisHTML } from "../brand-learning.js";
@@ -16,7 +20,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
-import { funnelFieldHTML, wireFunnelField, statusLabel } from "../funnel-field.js";
+import { funnelFieldHTML, wireFunnelField, statusLabel, funnelShort } from "../funnel-field.js";
 import { setPageGuide } from "../section-guide.js";
 import { openWeekPlanMenu, openScriptChat } from "../consultant-panel.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
@@ -103,17 +107,98 @@ function notify(title, body) {
   }
 }
 
-// Generates hooks, a HOOK/ISI PEMBAHASAN-format script, and a caption —
-// onInsert receives { hook } / { script } / { caption } depending on which
-// button was clicked, and the caller decides which field to drop it into.
-// `val` is what goes into the AI prompt (unchanged); `label` is the chip text.
+// Generates hooks, a shoot-ready beat script (js/script-format.js) and a
+// caption — onInsert receives { hook } / { script } / { caption } depending
+// on which button was clicked, and the caller decides which field to drop it
+// into. `val` is what goes into the AI prompt (js/ai.js durationToSeconds
+// turns it into a word budget); `label` is the chip text. Real lengths, not
+// "<1 menit": a 15-second and a 55-second video are different scripts.
 const DURATION_OPTIONS = [
-  { val: "<1 menit", label: t("cr.ai.dur.lt1") },
-  { val: "1:30 menit", label: t("cr.ai.dur.90s") },
-  { val: "2 menit", label: t("cr.ai.dur.2m") },
-  { val: ">2 menit", label: t("cr.ai.dur.gt2") },
+  { val: "15 dtk", label: t("cr.ai.dur.15") },
+  { val: "30 dtk", label: t("cr.ai.dur.30") },
+  { val: "60 dtk", label: t("cr.ai.dur.60") },
+  { val: "90 dtk", label: t("cr.ai.dur.90") },
+  { val: "2-3 menit", label: t("cr.ai.dur.long") },
   { val: "Custom", label: t("cr.ai.dur.custom") },
 ];
+const defaultDuration = (format) => (/long|panjang|youtube/i.test(format || "") ? "2-3 menit" : /story/i.test(format || "") ? "15 dtk" : "30 dtk");
+const HOOK_CHIPS_SHOWN = 6;
+const MAX_HOOK_TYPES = 3;
+
+// "Tipe hook": the owner picks up to three kinds of opening (or leaves it
+// on Campur and the AI tries three different ones). The ones that suit this
+// piece's funnel come first with a dot — recommended, never pre-picked.
+function hookTypePickerHTML(funnel, picked, showAll) {
+  const rec = recommendedHookTypes(funnel);
+  const ordered = orderedHookTypes(funnel);
+  const chip = (h, i) => {
+    const on = picked.includes(h.key);
+    const hidden = !showAll && i >= HOOK_CHIPS_SHOWN && !on;
+    return `<button type="button" class="hook-chip${on ? " active" : ""}${rec.includes(h.key) ? " is-rec" : ""}" data-hook-type="${h.key}" aria-pressed="${on}" ${hidden ? "hidden" : ""}>${t(`hook.type.${h.key}.label`)}${rec.includes(h.key) ? `<span class="hook-rec-dot" aria-hidden="true"></span>` : ""}</button>`;
+  };
+  const hiddenCount = ordered.filter((h, i) => i >= HOOK_CHIPS_SHOWN && !picked.includes(h.key)).length;
+  return `
+    <div class="field hook-type-field" id="hook-type-field">
+      <div class="creator-field-head">
+        <label style="margin-bottom:0;">${t("cr.ai.hookType")}</label>
+        <span class="hook-rec-legend"><span class="hook-rec-dot" aria-hidden="true"></span>${escapeHtml(t("cr.ai.recommendedTitle", { funnel: funnelShort(funnel) }))}</span>
+      </div>
+      <div class="hook-chips" role="group" aria-label="${escapeHtml(t("cr.ai.hookType"))}">
+        <button type="button" class="hook-chip hook-chip-mix${picked.length ? "" : " active"}" data-hook-mix aria-pressed="${!picked.length}">${icon("sparkle", { size: 12 })}${t("cr.ai.hookMix")}</button>
+        ${ordered.map(chip).join("")}
+        ${hiddenCount ? `<button type="button" class="hook-chip hook-chip-more" data-hook-more>${t("cr.ai.hookMore", { n: hiddenCount })}</button>` : ""}
+      </div>
+      <div class="hook-type-help">${picked.length
+        ? picked.map((k) => `<p><b>${t(`hook.type.${k}.label`)}</b> — ${escapeHtml(t(`hook.type.${k}.desc`))} <span class="text-faint">${escapeHtml(t(`hook.type.${k}.ex`))}</span></p>`).join("")
+        : `<p class="text-faint">${t("cr.ai.hookTypeHint")}</p>`}</div>
+    </div>`;
+}
+
+// "Alur isi": one choice, so a dropdown (the hook chips are already a row).
+function structurePickerHTML(funnel, picked) {
+  const rec = recommendedStructures(funnel);
+  return `
+    <div class="field">
+      <label for="ai-structure">${t("cr.ai.structure")}</label>
+      <select class="select" id="ai-structure">
+        ${SCRIPT_STRUCTURES.map((s) => `<option value="${s.key}" ${s.key === picked ? "selected" : ""}>${escapeHtml(t(`script.struct.${s.key}.label`))}${rec.includes(s.key) ? ` · ${escapeHtml(t("cr.ai.recommended"))}` : ""}</option>`).join("")}
+      </select>
+      <p class="hook-type-help text-faint" id="ai-structure-help" style="margin-top:6px;">${escapeHtml(t(`script.struct.${picked}.desc`))}</p>
+    </div>`;
+}
+
+// One hook as a card: its type, the line to say, and — for a video — what
+// goes on screen and what the first second shows, plus why it should work.
+// `inScript`: the script preview opens with this hook; `used`: the owner
+// put it into the piece ("Pakai") — two different things.
+function hookCardHTML(h, i, { inScript = false, used = false, restore = false, carousel = false } = {}) {
+  const o = typeof h === "string" ? { say: h } : h || {};
+  const badge = o.type && hookTypeByKey(o.type) ? `<span class="hook-type-badge">${t(`hook.type.${o.type}.label`)}</span>` : "";
+  const flag = inScript ? `<span class="hook-in-script">${icon("check", { size: 11 })}${t("cr.ai.inScript")}</span>` : "";
+  return `
+    <div class="card card-tight hook-card${inScript ? " is-in-script" : ""}">
+      <div class="hook-card-main">
+        ${badge || flag ? `<div class="hook-card-tags">${badge}${flag}</div>` : ""}
+        <div class="hook-say">${escapeHtml(hookText(o))}</div>
+        ${o.onScreen ? `<div class="hook-layer"><span>${t("cr.ai.hookOnScreen")}</span>${escapeHtml(o.onScreen)}</div>` : ""}
+        ${o.visual ? `<div class="hook-layer"><span>${carousel ? t("cr.ai.hookCover") : t("cr.ai.hookVisual")}</span>${escapeHtml(o.visual)}</div>` : ""}
+        ${o.why ? `<div class="hook-why">${escapeHtml(o.why)}</div>` : ""}
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm${used ? " is-used" : ""}" ${restore ? `data-restore-hook="${i}"` : `data-insert-hook="${i}"`} style="flex:none;">${used ? t("cr.ai.hookUsed") : t("cr.ai.use")}</button>
+    </div>`;
+}
+
+// The script as beat cards (what to film / screen text / what to say) with
+// its real length, instead of one grey block of text.
+function scriptPreviewHTML(text, targetSec = null) {
+  const beats = scriptBeatsHTML(text, escapeHtml);
+  const { words, seconds } = scriptLength(text);
+  const over = targetSec && seconds > targetSec * 1.25;
+  return `
+    ${beats ? `<div class="ai-length${over ? " is-over" : ""}">${icon("clock", { size: 12 })}${t("cr.ai.lengthBadge", { s: seconds, w: words })}${over ? ` · ${escapeHtml(t("cr.ai.lengthOver", { t: targetSec }))}` : ""}</div>` : ""}
+    <div class="card card-tight ai-script-preview${beats ? " has-beats" : ""}">${beats || escapeHtml(text)}</div>
+    ${beats ? `<p class="text-faint ai-script-hint">${t("cr.ai.scriptHint")}</p>` : ""}`;
+}
 
 // lite: pass a field name ("script" or "caption") to show a stripped-down
 // version — just the prompt box (pre-filled from that field) and Generate,
@@ -128,7 +213,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
     return;
   }
 
-  const state = { funnel: content.funnel || "TOFU", duration: DURATION_OPTIONS[0].val };
+  const state = { funnel: content.funnel || "TOFU", duration: defaultDuration(content.format), hookTypes: [], structure: "auto", showAllHooks: false };
+  const isCarouselPiece = isCarouselContent(content);
   // #6/#7: once every field this modal is for has a "used" click (any
   // batch — Generate More gives independent alternatives, not a pipeline,
   // so a script from batch 1 + a caption from batch 2 still counts), the
@@ -167,13 +253,15 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         lite
           ? ""
           : `
-      <div class="field" style="margin-bottom:14px;">
+      ${isCarouselPiece ? "" : `<div class="field" style="margin-bottom:14px;">
         <label>${t("cr.ai.duration")}</label>
         <div class="chip-select" id="ai-duration-chips">
           ${DURATION_OPTIONS.map((d) => `<button type="button" data-val="${d.val}" class="${state.duration === d.val ? "active" : ""}">${d.label}</button>`).join("")}
         </div>
         <input class="input" id="ai-duration-custom" aria-label="${t("cr.ai.durationCustomAria")}" style="margin-top:8px;${state.duration === "Custom" ? "" : "display:none;"}" placeholder="${t("cr.ai.durationPh")}" />
-      </div>`
+      </div>`}
+      <div id="hook-type-wrap">${hookTypePickerHTML(state.funnel, state.hookTypes, state.showAllHooks)}</div>
+      ${structurePickerHTML(state.funnel, state.structure)}`
       }
 
       <button type="button" class="btn btn-primary btn-block" id="ai-generate">${icon("bot", { size: 14 })}${t("cr.ai.generate")}</button>
@@ -200,6 +288,28 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
 
   const micBtn = overlay.querySelector("#ai-mic");
   if (micBtn) wireMic(micBtn, overlay.querySelector("#ai-prompt"));
+
+  // Hook type chips: Campur clears the pick; a type toggles (max three).
+  const hookWrap = overlay.querySelector("#hook-type-wrap");
+  const redrawHookTypes = () => { if (hookWrap) hookWrap.innerHTML = hookTypePickerHTML(state.funnel, state.hookTypes, state.showAllHooks); };
+  hookWrap?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    if (btn.hasAttribute("data-hook-mix")) state.hookTypes = [];
+    else if (btn.hasAttribute("data-hook-more")) state.showAllHooks = true;
+    else if (btn.dataset.hookType) {
+      const k = btn.dataset.hookType;
+      if (state.hookTypes.includes(k)) state.hookTypes = state.hookTypes.filter((x) => x !== k);
+      else if (state.hookTypes.length >= MAX_HOOK_TYPES) { toast(t("cr.ai.hookMax"), "info"); return; }
+      else state.hookTypes = [...state.hookTypes, k];
+    }
+    redrawHookTypes();
+  });
+  overlay.querySelector("#ai-structure")?.addEventListener("change", (e) => {
+    state.structure = e.target.value;
+    const help = overlay.querySelector("#ai-structure-help");
+    if (help) help.textContent = t(`script.struct.${state.structure}.desc`);
+  });
 
   const customDurationInput = overlay.querySelector("#ai-duration-custom");
   overlay.querySelectorAll("#ai-duration-chips button").forEach((btn) => {
@@ -228,6 +338,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       funnel: state.funnel,
       prompt,
       duration: state.duration === "Custom" ? customDurationInput?.value.trim() : state.duration,
+      hookTypes: state.hookTypes,
+      structure: state.structure,
+      audienceLanguage: brand?.audienceLanguage || "",
       // Full brand context (DNA + personality + tone of voice + visual
       // guidelines + active campaigns) instead of just the legacy
       // aiVoiceGuide string — see ai.js buildFullContext.
@@ -264,9 +377,10 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
     if (!hooksList?.length) return;
     hooksList.forEach((hook) => {
       createContent(content.brandId, {
-        title: (hook.split("\n")[0] || "").trim().slice(0, 80) || content.title || t("next.untitled"),
+        title: (hookText(hook).split("\n")[0] || "").trim().slice(0, 80) || content.title || t("next.untitled"),
         idea: content.idea || "",
         script: applyHook(scriptText || "", hook, ""),
+        ...(hook?.type ? { hookType: hook.type } : {}),
         caption: captionText || "",
         funnel: state.funnel,
         campaignId: content.campaignId || "",
@@ -289,15 +403,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
     const isCarousel = slides.length > 0;
     const hooksHTML = hooksList.length
       ? `<div class="page-eyebrow" style="margin-bottom:8px;">${t("cr.ai.hookOptions")}${label}</div>
-         ${hooksList
-           .map(
-             (h, i) => `
-           <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
-             <span style="font-size:13px;">${escapeHtml(h)}</span>
-             <button type="button" class="btn btn-secondary btn-sm" data-restore-hook="${i}" style="flex:none;">${t("cr.ai.use")}</button>
-           </div>`
-           )
-           .join("")}`
+         ${hooksList.map((h, i) => hookCardHTML(h, i, { restore: true, carousel: isCarousel })).join("")}`
       : "";
     const scriptBody = isCarousel
       ? slides.map((s, i) => `
@@ -305,7 +411,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
              <div class="page-eyebrow" style="margin-bottom:4px;font-size:11px;">${escapeHtml(t("cr.ai.slideLabel", { n: s.slideNumber || i + 1 }))}</div>
              <div style="white-space:pre-wrap;font-size:13px;">${escapeHtml(s.text || "")}</div>
            </div>`).join("")
-      : draft.script ? `<div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(draft.script)}</div>` : "";
+      : draft.script ? scriptPreviewHTML(draft.script) : "";
     const scriptHTML = draft.script || isCarousel
       ? `<div class="page-eyebrow" style="margin:14px 0 8px;">${isCarousel ? t("cr.ai.fullCarousel") : t("cr.ai.fullScript")}${label}</div>
          ${scriptBody}
@@ -340,7 +446,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       });
     });
     qs("[data-restore-script]", el)?.addEventListener("click", () => {
-      onInsert({ script: draft.script, hook: pickedHook, funnel: state.funnel });
+      onInsert({ script: pickedHook ? applyHook(draft.script, pickedHook) : draft.script, hook: pickedHook || (draft.hooks || [])[0] || "", funnel: state.funnel });
       toast((draft.slides || []).length ? t("cr.ai.carouselInserted") : t("cr.ai.scriptInserted"));
       used.script = true;
       maybeAutoClose();
@@ -441,39 +547,32 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       const eyebrowRegenBtn = (label) =>
         `<button type="button" class="icon-btn regen-btn" title="${label}" aria-label="${label}" style="width:22px;height:22px;">${icon("refresh", { size: 12 })}</button>`;
 
+      // The hook the script on screen opens with: the one picked, else the
+      // first (generateScript writes the script around hooks[0]).
+      let hookList = hooks;
+      const openerHook = () => pickedHook || hookList[0] || "";
       function renderHooksSection(list, usedParams) {
+        hookList = list;
         const el = batchEl.querySelector("#hooks-section");
+        const inScript = hookText(openerHook());
         el.innerHTML = list.length
           ? `<div class="creator-field-head" style="margin-bottom:8px;">
                <div class="page-eyebrow" style="margin-bottom:0;">${t("cr.ai.hookOptions")}${suffix}</div>
                ${eyebrowRegenBtn(t("cr.ai.regenHooks"))}
              </div>
-             ${list
-               .map(
-                 (h, i) => `
-               <div class="card card-tight" style="margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
-                 <span style="font-size:13px;">${escapeHtml(h)}</span>
-                 <button type="button" class="btn btn-secondary btn-sm${h === pickedHook ? " is-used" : ""}" data-insert-hook="${i}" style="flex:none;">${h === pickedHook ? t("cr.ai.hookUsed") : t("cr.ai.use")}</button>
-               </div>`
-               )
-               .join("")}`
+             ${list.map((h, i) => hookCardHTML(h, i, { inScript: hookText(h) === inScript, used: !!pickedHook && hookText(h) === hookText(pickedHook), carousel: isCarouselPiece })).join("")}`
           : "";
-        if (list.length && !demo) mountAiFeedback(el, { brandId: brand?.id, feature: "creator-hooks", prompt: feedbackPrompt(usedParams), output: list });
-        const cards = el.querySelectorAll("[data-insert-hook]");
-        cards.forEach((b) => {
+        if (list.length && !demo) mountAiFeedback(el, { brandId: brand?.id, feature: "creator-hooks", prompt: feedbackPrompt(usedParams), output: list.map(hookText) });
+        el.querySelectorAll("[data-insert-hook]").forEach((b) => {
           b.addEventListener("click", () => {
             const hook = list[Number(b.dataset.insertHook)];
-            if (hook === pickedHook) return;
-            // Cards stay put: the picked one flips to "Dipakai ✓", the rest
-            // remain clickable so the choice can still be swapped.
+            if (hookText(hook) === hookText(pickedHook)) return;
+            // Every hook leads into the same body, so picking another just
+            // swaps the HOOK beat — in the piece and in the preview below.
             onInsert({ hook, prevHook: pickedHook });
             pickedHook = hook;
             toast(t("cr.ai.hookInserted"));
-            cards.forEach((c) => {
-              const on = c === b;
-              c.classList.toggle("is-used", on);
-              c.innerHTML = on ? t("cr.ai.hookUsed") : t("cr.ai.use");
-            });
+            renderHooksSection(list, usedParams);
             if (scriptState?.text) renderScriptSection(scriptState.text, scriptState.params, scriptState.slides);
           });
         });
@@ -481,7 +580,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
           const regenBtn = el.querySelector(".regen-btn");
           regenBtn.disabled = true;
           try {
-            const regenParams = genParams({ only: "hooks" });
+            // New hooks of the types chosen now, written to lead into the
+            // body already on screen, and not repeating the ones shown.
+            const regenParams = genParams({ only: "hooks", body: scriptState?.text || "", avoidHooks: list.map(hookText) });
             const { hooks: newHooks } = demo ? await demoGenerateScript(regenParams) : await generateScript(ai, regenParams);
             renderHooksSection(newHooks, regenParams);
           } catch (e) {
@@ -495,7 +596,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       // generateScript() was asked for a carousel format.
       function renderScriptSection(rawText, usedParams, rawSlides = []) {
         scriptState = { text: rawText, params: usedParams, slides: rawSlides };
-        const text = pickedHook ? applyHook(rawText, pickedHook) : rawText;
+        const text = pickedHook ? applyHook(rawText, pickedHook, "", { lang: getLang() }) : rawText;
         const slides = pickedHook && rawSlides.length ? parseSlides(text).map((s, i) => ({ ...s, slideNumber: i + 1 })) : rawSlides;
         const el = batchEl.querySelector("#script-section");
         const isCarousel = slides.length > 0;
@@ -512,7 +613,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
              </div>`
               )
               .join("")
-          : `<div class="card card-tight" style="white-space:pre-wrap;font-size:13px;margin-bottom:10px;">${escapeHtml(text)}</div>`;
+          : scriptPreviewHTML(text, out.targetSec);
         el.innerHTML = text
           ? `<div class="creator-field-head" style="margin:14px 0 8px;">
                <div class="page-eyebrow" style="margin-bottom:0;">${label}${suffix}</div>
@@ -545,7 +646,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         );
         if (text && !demo) mountAiFeedback(el, { brandId: brand?.id, feature: isCarousel ? "creator-carousel" : "creator-script", prompt: feedbackPrompt(usedParams), output: text });
         el.querySelector(".use-script-btn")?.addEventListener("click", (e) => {
-          onInsert({ script: text, hook: pickedHook, funnel: state.funnel });
+          onInsert({ script: text, hook: openerHook(), funnel: state.funnel });
           toast(isCarousel ? t("cr.ai.carouselInserted") : t("cr.ai.scriptInserted"));
           const b = e.currentTarget;
           b.classList.add("is-used");
@@ -558,7 +659,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
           const regenBtn = el.querySelector(".regen-btn");
           regenBtn.disabled = true;
           try {
-            const regenParams = genParams({ only: "script" });
+            // A new body that pays off the hook on screen.
+            const regenParams = genParams({ only: "script", hook: openerHook() });
             const { script: newScript, slides: newSlides } = demo ? await demoGenerateScript(regenParams) : await generateScript(ai, regenParams);
             renderScriptSection(newScript, regenParams, newSlides || []);
           } catch (e) {
@@ -937,11 +1039,62 @@ function paint(root, brandId, state, refresh) {
     wireFunnelField(root, "f-funnel-picker", pickFunnel);
   });
 
+  // "Layar penuh": the script on one big page (js/script-focus.js), with the
+  // script chat docked beside it. mousedown keeps the textarea's focus, so
+  // its blur-save (and the repaint it triggers) can't swallow the click.
+  // The length under the Script box follows the text as it is typed.
+  qs("#f-script", root)?.addEventListener("input", (e) => {
+    const note = qs("#script-len-note", root);
+    if (!note) return;
+    note.hidden = !e.target.value.trim();
+    note.querySelector("span").textContent = t("cr.ai.lengthBadge", scriptLengthVars(e.target.value));
+  });
+  const focusBtn = qs("#script-focus-open", root);
+  focusBtn?.addEventListener("mousedown", (e) => e.preventDefault());
+  focusBtn?.addEventListener("click", () => {
+    const contentId = selected.id;
+    const save = (text) => {
+      const el = qs("#f-script", root);
+      if (el && el.value !== text) el.value = text;
+      if ((getContent(contentId)?.script || "") === text) return;
+      updateContent(contentId, { script: text });
+      flashSaved();
+    };
+    const focus = openScriptFocus({
+      title: qs("#f-title", root)?.value || selected.title || "",
+      value: qs("#f-script", root)?.value ?? selected.script ?? "",
+      lang: getLang(),
+      onChange: save,
+      onClose: (text) => save(text),
+      onTeleprompter: (text) => openTeleprompter(spokenText(text), { title: selected.title || t("common.untitled") }),
+      onDiscuss: () =>
+        openScriptChat({
+          contentId,
+          title: selected.title || "",
+          docked: true,
+          getCurrent: () => ({ ...(getContent(contentId) || selected), script: focus.value }),
+          applyRevision: (target, text) => {
+            if (target === "script") {
+              focus.setValue(text);
+              save(text);
+              return;
+            }
+            const el = qs("#f-caption", root);
+            if (el) el.value = text;
+            updateContent(contentId, { caption: text });
+            flashSaved();
+          },
+        }),
+    });
+  });
+
   const tpBtn = qs("#open-teleprompter", root);
   if (tpBtn) {
     tpBtn.addEventListener("click", () => {
       const currentScript = qs("#f-script", root)?.value ?? selected.script;
-      openTeleprompter(currentScript, { title: selected.title || t("common.untitled") });
+      // A beat script holds directions too (Visual / Teks layar): only the
+      // lines to say go on the prompter.
+      openTeleprompter(spokenText(currentScript), { title: selected.title || t("common.untitled") });
     });
   }
 
@@ -960,14 +1113,16 @@ function paint(root, brandId, state, refresh) {
       } else {
         const scriptEl = qs("#f-script", root);
         const current = scriptEl ? scriptEl.value : selected.script || "";
-        const next = applyHook(script || current, hook, prevHook);
+        const next = applyHook(script || current, hook, prevHook, { lang: getLang() });
         if (scriptEl) scriptEl.value = next;
-        updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}) });
+        // hookType: which kind of opening this piece uses (js/knowledge/
+        // hook-types.js) — kept so performance can later be read per type.
+        updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}), ...(hook?.type ? { hookType: hook.type } : {}) });
         // A brand-new piece has no title yet — the chosen hook is a good
         // working title, so the sidebar doesn't fill up with t("common.untitled").
         const titleEl = qs("#f-title", root);
-        if (titleEl && !titleEl.value.trim() && hook) {
-          titleEl.value = hook.split("\n")[0].trim().slice(0, 80);
+        if (titleEl && !titleEl.value.trim() && hookText(hook)) {
+          titleEl.value = hookText(hook).split("\n")[0].trim().slice(0, 80);
           updateContent(selected.id, { title: titleEl.value });
         }
         // Carousel view has slide cards instead of the textarea — repaint them.
@@ -1030,9 +1185,9 @@ function paint(root, brandId, state, refresh) {
         } else {
           const scriptEl = qs("#f-script", root);
           const current = scriptEl ? scriptEl.value : selected.script || "";
-          const next = applyHook(script || current, hook, prevHook);
+          const next = applyHook(script || current, hook, prevHook, { lang: getLang() });
           if (scriptEl) scriptEl.value = next;
-          updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}) });
+          updateContent(selected.id, { script: next, ...(funnel ? { funnel } : {}), ...(hook?.type ? { hookType: hook.type } : {}) });
           if (!scriptEl) refresh();
         }
         flashSaved();
@@ -1575,50 +1730,8 @@ function readyToUploadPanel(c) {
 // sheet, and every AI prompt keep reading one string, and an AI-generated
 // carousel parses straight back into cards.
 const isCarouselContent = (c) => (c?.format || "").toLowerCase().includes("carousel");
-const SLIDE_MARKER = /^\s*Slide\s+(\d+)\s*:?\s*$/i;
-
-function parseSlides(script) {
-  const text = (script || "").replace(/\r/g, "");
-  if (!text.trim()) return [];
-  const slides = [];
-  let current = null;
-  text.split("\n").forEach((line) => {
-    if (SLIDE_MARKER.test(line)) {
-      current = { text: "" };
-      slides.push(current);
-      return;
-    }
-    if (!current) {
-      current = { text: "" };
-      slides.push(current);
-    }
-    current.text += (current.text ? "\n" : "") + line;
-  });
-  return slides.map((s) => ({ text: s.text.replace(/^\n+|\n+$/g, "") }));
-}
-const serializeSlides = (slides) => slides.map((s, i) => `Slide ${i + 1}\n${(s.text || "").trim()}`).join("\n\n");
-
-// Puts `hook` into a script: swaps the text under the "HOOK" label (up to
-// "ISI PEMBAHASAN"), swaps Slide 1 of a carousel, else puts it on the first
-// line. `prevHook` is the hook this replaces when there's no label to
-// anchor on, so re-picking doesn't stack hooks.
-export function applyHook(script, hook, prevHook = "") {
-  const text = (script || "").replace(/\r/g, "");
-  const h = (hook || "").trim();
-  if (!h) return text;
-  if (!text.trim()) return h;
-  if (/^\s*Slide\s+\d+\s*:?\s*$/im.test(text)) {
-    const slides = parseSlides(text);
-    slides[0].text = h;
-    return serializeSlides(slides);
-  }
-  const label = "^([ \\t]*[*#_>]*[ \\t]*HOOK[ \\t]*[*_:]*[ \\t]*\\n)([\\s\\S]*?)";
-  const labelled = text.match(new RegExp(label + "(?=\\n[ \\t]*\\n[ \\t]*[*#_>]*[ \\t]*ISI PEMBAHASAN)", "i")) || text.match(new RegExp(label + "(?=\\n[ \\t]*\\n|$)", "i"));
-  if (labelled) return labelled[1] + h + text.slice(labelled[0].length);
-  const prev = (prevHook || "").trim();
-  const rest = prev && text.trimStart().startsWith(prev) ? text.trimStart().slice(prev.length).replace(/^\s+/, "") : text;
-  return rest ? h + "\n\n" + rest : h;
-}
+// parseSlides / serializeSlides / applyHook live in js/script-format.js.
+const scriptLengthVars = (text) => { const { words, seconds } = scriptLength(text); return { s: seconds, w: words }; };
 
 function slidesFieldHTML(c) {
   const slides = parseSlides(c.script);
@@ -1694,10 +1807,12 @@ function draftingPanel(c, campaigns, series = []) {
         <div class="creator-field-head">
           <label for="f-script" style="margin-bottom:0;">${t("cr.f.script")}</label>
           <div class="flex items-center gap-6">
+            <button type="button" class="btn btn-ghost btn-sm script-focus-btn" id="script-focus-open" title="${escapeHtml(t("cr.focus.openTitle"))}">${icon("expand", { size: 13 })}${t("cr.focus.open")}</button>
             <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
           </div>
         </div>
         <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}">${escapeHtml(c.script || "")}</textarea>
+        <p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>
       </div>`}
       <div class="field">
         <div class="creator-field-head">

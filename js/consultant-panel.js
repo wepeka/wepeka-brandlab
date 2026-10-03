@@ -67,7 +67,9 @@ import { analyzeScreenshot } from "./ocr.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
-import { parseDirectives, renderLightMarkdown } from "./ai-directives.js";
+import { parseDirectives, renderLightMarkdown, serializeDirectives } from "./ai-directives.js";
+import { routeByRules } from "./chat-router.js";
+import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
 import { go } from "./nav-context.js";
 import { icon } from "./icons.js";
@@ -85,8 +87,11 @@ const AUTO_VIEW_MAX = 60; // messages the merged Otomatis view shows
 const SHORT_FOLLOW_UP = 25; // "iya", "yang kedua": stays with the last engine
 // Pemula mode never shows the mode row: one box, Otomatis.
 const isGuided = () => getMode() !== "advanced";
-const HISTORY_FOR_MODEL = 12;
-const COMPANION_HISTORY_FOR_MODEL = 16;
+// Messages of the conversation sent with each new one (js/ai.js chatTurns
+// sends them as real turns). 12 → 24: a brainstorm that reaches a script
+// is easily 10+ messages, and the model used to lose the start of it.
+const HISTORY_FOR_MODEL = 24;
+const COMPANION_HISTORY_FOR_MODEL = 24;
 const THREAD_TITLE_MAX = 60;
 const MEMORY_ASIDE_LIMIT = 8;
 const SESSIONS_CAP = 40;
@@ -453,26 +458,10 @@ const hasMessages = (brandId, mode = modeOf(brandId)) => historyFor(brandId, mod
 
 // ---- "This belongs to another tab" ---------------------------------------------
 
-// Word-boundary keyword rules, Indonesian + English — free, no model call.
-// They used to route every message; now they only power the hint chip
-// under a reply when the message clearly reads like another tab's job.
-// Teman wins when it matches at all (feelings first); Brainstorm and
-// Konsultan only decide when exactly one of them matches.
-const RULES = {
-  companion: /\b(capek|cape|lelah|males|malas|bosan|bosen|stres|stress|pusing|semangat|takut|khawatir|nyerah|menyerah|sedih|senang|seneng|curhat|kesel|kesal|overwhelmed|tired|burnout|exhausted|frustrated|nggak tahu mulai|gak tau mulai|bingung mulai|cerita|tadi ada|barusan|hari ini ada)\b/i,
-  brainstorm: /\b(ide|idea|ideas|brainstorm|inspirasi|konten apa|bikin apa|posting apa|post apa|topik|angle|hook|mentok|buntu|stuck|kasih ide|script|scriptnya|skrip|naskah|narasi|voice ?over)\b/i,
-  consultant: /\b(performa|performance|engagement|data|angka|statistik|follower|followers|reach|views|campaign|jadwal|schedule|kalender|calendar|overdue|level|milestone|strategi|strategy|analisa|analisis|berapa|how many|kenapa konten|why is|di mana|dimana|gimana caranya|cara|benchmark|target)\b/i,
-};
+// Keyword routing lives in js/chat-router.js (free, no model call; a
+// request to write wins over every other word). In Otomatis it decides
+// first; in a single tab it only powers the hint chip under a reply.
 const HINT_MIN_LENGTH = 25; // a short follow-up ("iya", "yang kedua") is never a hint
-
-function routeByRules(text) {
-  if (RULES.companion.test(text)) return "companion";
-  const idea = RULES.brainstorm.test(text);
-  const data = RULES.consultant.test(text);
-  if (idea && !data) return "brainstorm";
-  if (data && !idea) return "consultant";
-  return null;
-}
 
 function lastEngine(history) {
   for (let i = history.length - 1; i >= 0; i--) if (history[i].role === "assistant" && history[i].engine && !history[i].ephemeral) return history[i].engine;
@@ -545,15 +534,21 @@ function buildSnapshot(brandId) {
 // In a single log it is that log. `lastId` is the question just stored.
 function historyForModel(brandId, cur, logMessages, lastId, max = HISTORY_FOR_MODEL) {
   const rows = cur === "auto"
-    ? autoEntries(brandId).filter((e) => (e.role === "user" || e.role === "assistant") && e.text && e.msgId !== lastId)
-    : logMessages.filter((m) => m.text && m.id !== lastId).map((m) => ({ role: m.role, text: m.text, ...(m.blocks || {}) }));
-  // The cards are part of what the owner saw: "yang pertama" means the
-  // first idea card, so their titles ride along with the reply's text.
-  const withCards = (m) => {
-    const cards = [...(m.ideas || []), ...(m.saves || [])].map((x, i) => `${i + 1}. ${x.title}`);
-    return cards.length ? `${m.text}\n${cards.join("\n")}` : m.text;
-  };
-  return rows.slice(-max).map((m) => ({ role: m.role, text: m.role === "assistant" ? withCards(m) : m.text }));
+    ? autoEntries(brandId).filter((e) => (e.role === "user" || e.role === "assistant") && (e.text || e.scripts?.length || e.ideas?.length || e.weekPlan) && e.msgId !== lastId)
+    : logMessages.filter((m) => (m.text || m.blocks) && m.id !== lastId).map((m) => ({ role: m.role, text: m.text || "", ...(m.blocks || {}) }));
+  // The cards are part of what the owner saw — "yang pertama" means the
+  // first idea card, "ganti hook-nya" means the script just written — so
+  // every reply goes back with its ideas, script, plan… as the directive
+  // lines the model wrote (js/ai-directives.js serializeDirectives).
+  const toTurn = (m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m) : m.text });
+  // A long thread keeps its first exchange (what the owner came for) next
+  // to the latest messages, instead of losing it off the top.
+  if (rows.length > max) {
+    const firstUser = rows.findIndex((r) => r.role === "user");
+    const head = firstUser >= 0 ? rows.slice(firstUser, firstUser + 2) : [];
+    return [...head, ...rows.slice(-(max - head.length))].map(toTurn);
+  }
+  return rows.map(toTurn);
 }
 
 // A destination button must be about what the answer talks about: a
@@ -809,6 +804,15 @@ function attachStripHTML(brandId) {
   return `<div class="cp-attach">${list.map((a, i) => `<div class="cp-attach-item"><img src="${esc(a.thumb)}" alt="" /><button type="button" data-attach-remove="${i}" aria-label="${t("chat.image.remove")}" title="${t("chat.image.remove")}">${icon("x", { size: 10 })}</button></div>`).join("")}</div>`;
 }
 
+// A chat-written beat script is stored in the same canonical shape Creator's
+// writer produces (timings worked out from the narration, same labels), so
+// the two never look different; anything else is kept as written.
+function normalizedScript(text) {
+  const parsed = parseScript(text);
+  if (!parsed || !parsed.beats.some((b) => b.say)) return text;
+  return renderScript(parsed.beats, { lang: /^\s*(Voice|On-screen text)\s*:/im.test(text) ? "en" : "id" });
+}
+
 // "Script siap syuting": a script the AI wrote ([[script:…]], see
 // js/ai-directives.js), shown whole and readable, with one button that
 // approves it into a real draft in Creator — script and caption filled in.
@@ -818,7 +822,7 @@ function scriptCardHTML(sc, ref) {
     <div class="cp-script">
       <div class="cp-script-head">${icon("teleprompter", { size: 14 })}<span>${t("chat.script.label")}</span>${meta ? `<small>${esc(meta)}</small>` : ""}</div>
       <div class="cp-script-title">${esc(sc.title)}</div>
-      <div class="cp-script-body">${renderLightMarkdown(sc.script)}</div>
+      <div class="cp-script-body">${scriptBeatsHTML(sc.script, esc) || renderLightMarkdown(sc.script)}</div>
       ${sc.caption ? `<div class="cp-script-caption"><b>${t("chat.script.caption")}</b><p>${esc(sc.caption)}</p></div>` : ""}
       <div class="cp-script-actions">
         ${sc.contentId
@@ -894,7 +898,8 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
           ? `<button type="button" class="btn btn-ghost btn-sm" data-rev-undo="${esc(key)}">${t("cr.disc.undo")}</button>`
           : `<span class="text-faint" style="font-size:12px;">${icon("check", { size: 12 })} ${t("cr.disc.applied")}</span>`
         : `<button type="button" class="btn btn-primary btn-sm" data-rev-apply="${esc(key)}">${r.target === "caption" ? t("cr.disc.applyCaption") : t("cr.disc.applyScript")}</button>`;
-    return `<div class="cp-idea"><div class="cp-idea-title">${esc(r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript"))}</div><div class="cp-idea-why" style="white-space:pre-wrap;">${esc(r.text)}</div>${action ? `<div style="margin-top:8px;">${action}</div>` : ""}</div>`;
+    const beats = r.target === "script" ? scriptBeatsHTML(r.text, esc) : "";
+    return `<div class="cp-idea"><div class="cp-idea-title">${esc(r.target === "caption" ? t("cr.disc.revCaption") : t("cr.disc.revScript"))}</div>${beats ? `<div class="cp-script-body">${beats}</div>` : `<div class="cp-idea-why" style="white-space:pre-wrap;">${esc(r.text)}</div>`}${action ? `<div style="margin-top:8px;">${action}</div>` : ""}</div>`;
   }).join("") + (isLast && h.threadId && scriptHosts.get(h.threadId)?.onRegenerate && getBrainstorm(h.threadId)?.mode === "script"
     ? `<div class="disc-regen"><button type="button" class="btn btn-primary btn-sm" data-script-regen="script">${icon("refresh", { size: 12 })}${t("cr.disc.regenScript")}</button><button type="button" class="btn btn-secondary btn-sm" data-script-regen="hook">${icon("refresh", { size: 12 })}${t("cr.disc.regenHook")}</button></div>`
     : "");
@@ -919,9 +924,13 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   const asksHTML = isLast && h.asks?.length
     ? `<div class="consultant-followups cp-asks"><div class="consultant-starters">${h.asks.slice(0, 2).map((q) => starterChip(q, h.engine)).join("")}</div></div>`
     : "";
-  // A Brainstorm question with nothing to pick yet: skip to ideas, or answer.
-  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan
-    ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-chat-go-ideas>${icon("sparkle", { size: 13 })}${t("bs.go.ideas")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-answer>${icon("chat", { size: 13 })}${t("bs.go.answer")}</button></div>`
+  // Under a Brainstorm answer with nothing to pick yet (a discussion, an
+  // analysis): one tap turns the talk into something real — a shoot-ready
+  // script from it, or three ideas. "Diskusi lalu langsung jadi", without
+  // copying anything out to another app. Only when the reply brought no
+  // follow-up chips of its own (those already offer the same next step).
+  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan && !h.revisions?.length && !h.asks?.length && getBrainstorm(h.threadId)?.mode !== "script"
+    ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-chat-make-script>${icon("teleprompter", { size: 13 })}${t("chat.make.script")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-go-ideas>${icon("sparkle", { size: 13 })}${t("chat.make.ideas")}</button></div>`
     : "";
   // The recap offer (Teman, un-recapped chat from before today).
   const nudgeHTML = h.nudge ? `<div class="cp-idea-actions" style="margin-top:8px;"><button type="button" class="btn btn-secondary btn-sm" data-chat-recap>${icon("sparkle", { size: 12 })}${t("companion.recap.button")}</button></div>` : "";
@@ -1148,7 +1157,7 @@ function chatCoreHTML(brandId, full) {
   const noticeHTML = noKeyNotice ? `<div class="consultant-msg consultant-msg-assistant cp-notice">${t("bs.noKey")}${setupLink}</div>` : "";
   // "Langsung kasih ide" — Brainstorm only, and not twice when the fork
   // under the last question already offers it.
-  const ideasNow = (mode === "brainstorm" || mode === "auto") && !forkShown;
+  const ideasNow = (mode === "brainstorm" || mode === "auto") && !forkShown && currentThread(brandId)?.mode !== "script";
   const hint = hints.get(brandId)?.mode === mode ? hints.get(brandId) : null;
   const autoRow = hasScope(activeScope(brandId)) ? scopeRowHTML(brandId, info, full) : full && expandedFrom ? `<div class="cp-scope cp-info">${rowTailHTML(brandId, full)}</div>` : "";
   // Konsultan's one-line "what this tab is" note now lives in the mode
@@ -1547,7 +1556,7 @@ function wire(host, brandId, input, history) {
   });
   on("[data-chat-more]", () => sendMessage(brandId, t("bs.opt.moreMsg"), { engine: "brainstorm", bsMode: "ideas" }));
   on("[data-chat-go-ideas]", () => sendMessage(brandId, t("bs.ideasNow.message"), { engine: "brainstorm", bsMode: "ideas" }));
-  on("[data-chat-answer]", () => { answerHint = true; if (mode === "auto") seedEngine.set(brandId, "brainstorm"); else setMode(brandId, "brainstorm"); rerender({ focus: true }); });
+  on("[data-chat-make-script]", () => sendMessage(brandId, t("chat.make.scriptMsg"), { engine: "brainstorm" }));
 
   // "Salin": the answer's text, without the buttons under it.
   on("[data-chat-copy]", async (btn) => {
@@ -1615,7 +1624,7 @@ function wire(host, brandId, input, history) {
     const sc = h?.scripts?.[j];
     if (!sc || sc.contentId) return;
     const item = draftFromScope(brandId, { title: sc.title, funnel: sc.funnel, idea: h.question ? t("cons.draftIdea", { question: h.question }) : "" });
-    updateContent(item.id, { ...matchFormat(sc.format), script: sc.script, caption: sc.caption || "", status: "draft" });
+    updateContent(item.id, { ...matchFormat(sc.format), script: normalizedScript(sc.script), caption: sc.caption || "", status: "draft" });
     sc.contentId = item.id;
     syncThreadBlocks(h);
     toast(t("chat.script.savedToast", { title: sc.title }));
@@ -2331,7 +2340,7 @@ function openMetricsPicker(brandId, h) {
 // talking. A revision can be applied (and undone) straight from the reply —
 // with no Creator open, it goes into the saved piece directly.
 const SCRIPT_CHIPS = ["critique", "hook", "angle", "shorter", "brand"];
-const SCRIPT_HISTORY = 12;
+const SCRIPT_HISTORY = 20;
 const scriptHosts = new Map(); // threadId -> { contentId, getCurrent, applyRevision, onRegenerate }
 const scriptUndo = new Map(); // "threadId|msgId|i" -> text before the revision went in
 // A script talk is about one piece; closing the chat hands it back to
@@ -2346,7 +2355,10 @@ function leaveScriptThread(brandId) {
   qs("#consultant-panel")?.classList.remove("is-above-modal");
 }
 
-export function openScriptChat({ contentId, title = "", getCurrent = null, applyRevision = null, onRegenerate = null } = {}) {
+// `docked`: opened from Creator's full-screen script page (js/script-focus.js)
+// — on a wide screen the panel then sits as a column beside the script
+// instead of floating over it (css: .consultant-panel.is-docked).
+export function openScriptChat({ contentId, title = "", getCurrent = null, applyRevision = null, onRegenerate = null, docked = false } = {}) {
   const brandId = page ? page.brandId : mountedBrandId;
   if (!brandId || !contentId) return;
   const threadId = `script-${contentId}`;
@@ -2357,6 +2369,8 @@ export function openScriptChat({ contentId, title = "", getCurrent = null, apply
   togglePanel(brandId, true, { focus: true });
   // Opened from inside a dialog (Creator's AI writer): sit above it.
   qs("#consultant-panel")?.classList.toggle("is-above-modal", !!document.querySelector(".overlay"));
+  qs("#consultant-panel")?.classList.toggle("is-docked", docked);
+  document.body.classList.toggle("script-focus-docked", docked);
 }
 
 function scriptPiece(th) {
@@ -2366,7 +2380,9 @@ function scriptPiece(th) {
 
 async function sendScriptMessage(brandId, th, text, ai) {
   if (pending) return;
-  const history = (th.messages || []).slice(-SCRIPT_HISTORY);
+  // The revisions it proposed go back with each reply, so "pendekin lagi"
+  // works on the version on the table rather than the original.
+  const history = (th.messages || []).slice(-SCRIPT_HISTORY).map((m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m.blocks) : m.text }));
   appendBrainstormMessage(th.id, { role: "user", text });
   pending = true;
   streamShown = "";
@@ -2395,10 +2411,14 @@ async function sendScriptMessage(brandId, th, text, ai) {
       },
     });
     const parsed = parseDirectives(reply);
+    const blocks = {
+      ...(parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : {}),
+      ...(parsed.asks.length ? { asks: parsed.asks.slice(0, 2) } : {}),
+    };
     appendBrainstormMessage(th.id, {
       role: "assistant",
       text: parsed.cleanText,
-      blocks: parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : null,
+      blocks: Object.keys(blocks).length ? blocks : null,
     });
   } catch (err) {
     toast(err instanceof AiApiError ? err.message : t("cr.disc.fail"), "error");
@@ -2501,148 +2521,167 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
     const brand = getBrand(brandId);
     const pulseText = pulseNow(brandId);
 
-    if (picked === "brainstorm" && (bsMode === "week" || (bsMode === "chat" && planEntry))) {
-      let th = currentThread(brandId);
-      if (!th) {
-        const scope = activeScope(brandId);
-        th = createBrainstorm(brandId, { mode: "chat", title: text.slice(0, THREAD_TITLE_MAX), campaignId: scope.goalId ? null : scope.campaignId || null, stageId: scope.stageId || null, contentId: scope.contentId || null, goalId: scope.goalId || null, seriesId: scope.seriesId || null });
-        if (sessionId) patchSession(brandId, sessionId, { threadId: th.id });
-        else brainstormThread.set(brandId, th.id);
-        pendingScope.delete(brandId);
-        syncPageUrl(brandId);
+    // Konsultan and Teman answer a message that isn't theirs with ONLY a
+    // handoff line (js/ai.js HANDOFF_RULE_*); it goes straight on to that
+    // assistant, once, so the owner gets the real answer in this same turn
+    // instead of "the Brainstorm tab does that" and a question to repeat.
+    let reroute = null;
+    for (let hop = 0; hop < 2; hop++) {
+      if (hop) {
+        picked = reroute;
+        reroute = null;
+        if (cur !== "auto") setMode(brandId, picked);
       }
-      appendBrainstormMessage(th.id, { role: "user", text, sessionId });
-      tails.delete(tk);
-      const isRevision = bsMode === "chat" && !!planEntry;
-      const settings = getSettings();
-      const formatNames = (settings.formats || []).map((f) => f.name).filter(Boolean);
-      const contentAll = listContent(brandId);
-      const campaigns = listCampaigns(brandId);
-      const activeCampaigns = activeCampaignsFor(campaigns);
-      // A campaign scope is "sticky" for this plan: pick one explicitly
-      // (the entry menu, or the footer's scope select on "Ganti semua") and
-      // every later revision — typed in chat, or a per-row "Ganti ide ini"
-      // — keeps generating for that same campaign without having to say so
-      // again. "Ganti semua" is the only way to change or clear it.
-      const scopeCampaignId = bsMode === "week" ? campaignId : isRevision ? planEntry.weekPlan.campaignId || null : null;
-      const scopeCampaign = scopeCampaignId ? getCampaign(scopeCampaignId) : null;
-      let slots, currentItems = null;
-      if (isRevision) {
-        currentItems = planEntry.weekPlan.items;
-        slots = currentItems.map((it) => it.date);
-      } else {
-        const plan = planWeek({ todayISO: localISODate(), cadence: brand?.contentCadence, content: contentAll, count: weekCount || undefined });
-        slots = plan.slots;
-      }
-      // Ritme Kerja's series days ("Rabu = Bedah Brand"). A revision keeps
-      // each row's own series, even if the owner moved its date.
-      const allSeries = listSeries(brandId);
-      const days = seriesDays(brand?.contentCadence, allSeries);
-      const slotSeries = new Map();
-      if (isRevision) currentItems.forEach((it) => { const s = it.seriesId ? getSeries(it.seriesId) : null; if (s) slotSeries.set(it.date, s); });
-      else slots.forEach((d) => { const s = seriesForDate(days, d); if (s) slotSeries.set(d, s); });
-      if (!slots.length) {
-        appendBrainstormMessage(th.id, { role: "assistant", text: t("chat.week.noRoom"), blocks: {}, sessionId });
-      } else {
-        const result = await generateWeekPlan(ai, {
-          brand, campaigns: activeCampaigns, campaign: scopeCampaign, slots, formats: formatNames,
-          existingTitles: contentAll.filter((c) => !c.archived && !c.deletedAt).map((c) => c.title).filter(Boolean),
-          pulseText, current: currentItems, request: isRevision ? text : "",
-          seriesOverview: buildSeriesOverview(allSeries, contentAll, { days }),
-          seriesSlots: [...slotSeries].map(([date, series]) => ({ date, series, episodes: seriesEpisodeTitles(series, contentAll) })),
-        });
-        if (!isRevision || result.changed) {
-          const normalized = normalizePlanItems(result.items, slots, { campaigns: activeCampaigns, formats: formatNames, forceCampaign: scopeCampaign, slotSeries });
-          appendBrainstormMessage(th.id, { role: "assistant", text: result.note || "", blocks: { weekPlan: { v: 1, campaignId: scopeCampaign?.id || "", items: normalized, savedAt: null, closed: false } }, sessionId });
+      if (picked === "brainstorm" && (bsMode === "week" || (bsMode === "chat" && planEntry))) {
+        let th = currentThread(brandId);
+        if (!th) {
+          const scope = activeScope(brandId);
+          th = createBrainstorm(brandId, { mode: "chat", title: text.slice(0, THREAD_TITLE_MAX), campaignId: scope.goalId ? null : scope.campaignId || null, stageId: scope.stageId || null, contentId: scope.contentId || null, goalId: scope.goalId || null, seriesId: scope.seriesId || null });
+          if (sessionId) patchSession(brandId, sessionId, { threadId: th.id });
+          else brainstormThread.set(brandId, th.id);
+          pendingScope.delete(brandId);
+          syncPageUrl(brandId);
+        }
+        appendBrainstormMessage(th.id, { role: "user", text, sessionId });
+        tails.delete(tk);
+        const isRevision = bsMode === "chat" && !!planEntry;
+        const settings = getSettings();
+        const formatNames = (settings.formats || []).map((f) => f.name).filter(Boolean);
+        const contentAll = listContent(brandId);
+        const campaigns = listCampaigns(brandId);
+        const activeCampaigns = activeCampaignsFor(campaigns);
+        // A campaign scope is "sticky" for this plan: pick one explicitly
+        // (the entry menu, or the footer's scope select on "Ganti semua") and
+        // every later revision — typed in chat, or a per-row "Ganti ide ini"
+        // — keeps generating for that same campaign without having to say so
+        // again. "Ganti semua" is the only way to change or clear it.
+        const scopeCampaignId = bsMode === "week" ? campaignId : isRevision ? planEntry.weekPlan.campaignId || null : null;
+        const scopeCampaign = scopeCampaignId ? getCampaign(scopeCampaignId) : null;
+        let slots, currentItems = null;
+        if (isRevision) {
+          currentItems = planEntry.weekPlan.items;
+          slots = currentItems.map((it) => it.date);
         } else {
-          appendBrainstormMessage(th.id, { role: "assistant", text: result.note || t("chat.week.talkFallback"), blocks: { planTalk: true }, sessionId });
+          const plan = planWeek({ todayISO: localISODate(), cadence: brand?.contentCadence, content: contentAll, count: weekCount || undefined });
+          slots = plan.slots;
         }
-      }
-    } else if (picked === "brainstorm") {
-      let th = currentThread(brandId);
-      if (!th) {
-        const scope = activeScope(brandId);
-        // "Buat Bedah Brand tentang Nike": naming an existing series in the
-        // first message of a brand-wide conversation makes it that series'.
-        if (!hasScope(scope)) {
+        // Ritme Kerja's series days ("Rabu = Bedah Brand"). A revision keeps
+        // each row's own series, even if the owner moved its date.
+        const allSeries = listSeries(brandId);
+        const days = seriesDays(brand?.contentCadence, allSeries);
+        const slotSeries = new Map();
+        if (isRevision) currentItems.forEach((it) => { const s = it.seriesId ? getSeries(it.seriesId) : null; if (s) slotSeries.set(it.date, s); });
+        else slots.forEach((d) => { const s = seriesForDate(days, d); if (s) slotSeries.set(d, s); });
+        if (!slots.length) {
+          appendBrainstormMessage(th.id, { role: "assistant", text: t("chat.week.noRoom"), blocks: {}, sessionId });
+        } else {
+          const result = await generateWeekPlan(ai, {
+            brand, campaigns: activeCampaigns, campaign: scopeCampaign, slots, formats: formatNames,
+            existingTitles: contentAll.filter((c) => !c.archived && !c.deletedAt).map((c) => c.title).filter(Boolean),
+            pulseText, current: currentItems, request: isRevision ? text : "",
+            seriesOverview: buildSeriesOverview(allSeries, contentAll, { days }),
+            seriesSlots: [...slotSeries].map(([date, series]) => ({ date, series, episodes: seriesEpisodeTitles(series, contentAll) })),
+          });
+          if (!isRevision || result.changed) {
+            const normalized = normalizePlanItems(result.items, slots, { campaigns: activeCampaigns, formats: formatNames, forceCampaign: scopeCampaign, slotSeries });
+            appendBrainstormMessage(th.id, { role: "assistant", text: result.note || "", blocks: { weekPlan: { v: 1, campaignId: scopeCampaign?.id || "", items: normalized, savedAt: null, closed: false } }, sessionId });
+          } else {
+            appendBrainstormMessage(th.id, { role: "assistant", text: result.note || t("chat.week.talkFallback"), blocks: { planTalk: true }, sessionId });
+          }
+        }
+      } else if (picked === "brainstorm") {
+        let th = currentThread(brandId);
+        if (!th) {
+          const scope = activeScope(brandId);
+          // "Buat Bedah Brand tentang Nike": naming an existing series in the
+          // first message of a brand-wide conversation makes it that series'.
+          if (!hasScope(scope)) {
+            const detected = findSeriesByNameInText(brandId, text);
+            if (detected) { scope.seriesId = detected.id; toast(t("series.autoDetected", { name: detected.name })); }
+          }
+          th = createBrainstorm(brandId, { mode: "chat", title: text.slice(0, THREAD_TITLE_MAX), campaignId: scope.goalId ? null : scope.campaignId || null, stageId: scope.stageId || null, contentId: scope.contentId || null, goalId: scope.goalId || null, seriesId: scope.seriesId || null });
+          if (sessionId) patchSession(brandId, sessionId, { threadId: th.id });
+          else brainstormThread.set(brandId, th.id);
+          pendingScope.delete(brandId);
+          syncPageUrl(brandId);
+        } else if (!hasScope(threadScope(th))) {
+          // Same, later on: "sekarang ide buat Bedah Brand" three messages
+          // into a brand-wide chat turns it into that series' conversation.
           const detected = findSeriesByNameInText(brandId, text);
-          if (detected) { scope.seriesId = detected.id; toast(t("series.autoDetected", { name: detected.name })); }
+          if (detected) { th = updateBrainstorm(th.id, { seriesId: detected.id }) || getBrainstorm(th.id); toast(t("series.autoDetected", { name: detected.name })); }
         }
-        th = createBrainstorm(brandId, { mode: "chat", title: text.slice(0, THREAD_TITLE_MAX), campaignId: scope.goalId ? null : scope.campaignId || null, stageId: scope.stageId || null, contentId: scope.contentId || null, goalId: scope.goalId || null, seriesId: scope.seriesId || null });
-        if (sessionId) patchSession(brandId, sessionId, { threadId: th.id });
-        else brainstormThread.set(brandId, th.id);
-        pendingScope.delete(brandId);
-        syncPageUrl(brandId);
-      } else if (!hasScope(threadScope(th))) {
-        // Same, later on: "sekarang ide buat Bedah Brand" three messages
-        // into a brand-wide chat turns it into that series' conversation.
-        const detected = findSeriesByNameInText(brandId, text);
-        if (detected) { th = updateBrainstorm(th.id, { seriesId: detected.id }) || getBrainstorm(th.id); toast(t("series.autoDetected", { name: detected.name })); }
-      }
-      const asked = appendBrainstormMessage(th.id, { role: "user", text, sessionId });
-      tails.delete(tk);
-      const scope = threadScope(th);
-      const info = scopeInfo(brandId, scope);
-      const eventCampaign = eventCampaignFor(brandId, { campaignId: scope.campaignId, goalId: scope.goalId });
-      const all = getBrainstorm(th.id)?.messages || [];
-      const threadHistory = historyForModel(brandId, cur, all, asked?.id);
-      // Everything already put in front of the owner counts as "don't repeat".
-      // (Used to also spread in this thread's own `ideas[]` — a save-time
-      // copy of the exact same text savedIdeasFor already returns from the
-      // one ideas inbox now, so that second copy is redundant.)
-      const shown = all.flatMap((m) => (m.blocks?.ideas || []).map((i) => i.title));
-      const savedIdeas = [...new Set([...shown, ...savedIdeasFor(brandId).items.map((i) => i.text)])];
-      const campaigns = listCampaigns(brandId);
-      const contentAll = listContent(brandId);
-      const raw = await chatBrainstorm(ai, {
-        brand, campaigns, pulseText, savedIdeas,
-        campaign: info.campaign, stageText: info.stageText, content: info.content, series: info.series, goalId: scope.goalId || null, eventCampaign,
-        seriesEpisodes: seriesEpisodeTitles(info.series, contentAll),
-        seriesOverview: info.series ? "" : buildSeriesOverview(listSeries(brandId), contentAll, { days: seriesDays(brand?.contentCadence, listSeries(brandId)) }),
-        history: threadHistory, message: text, mode: bsMode,
-        turns: all.filter((m) => m.role === "user").length,
-        onText: streamInto,
-      });
-      const { cleanText, ideas, drafts, asks, tasks, handoff, saves, scripts } = parseDirectives(raw.trim());
-      // A step is filed under the event; without one it is kept as an idea.
-      const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
-      const allIdeas = [...ideas, ...(eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why })))];
-      appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}) }, sessionId });
-    } else if (picked === "companion") {
-      const thread = ensureCompanionThread(brandId);
-      const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId });
-      tails.delete(tk);
-      updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
-      const msgs = getCompanionThread(brandId)?.messages || [];
-      const threadHistory = historyForModel(brandId, cur, msgs, asked?.id, COMPANION_HISTORY_FOR_MODEL);
-      const raw = await companionChat(ai, { brand, pulseText, history: threadHistory, message: text, kinds: MOMENT_KINDS });
-      const { cleanText, ideas, asks, moments, handoff } = parseDirectives(raw.trim());
-      appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { asks, moments, handoff, ...(ideas.length ? { ideas } : {}) }, sessionId });
-    } else {
-      const thread = ensureConsultThread(brandId);
-      const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId, blocks: images.length ? { images: images.map((a) => a.thumb) } : null });
-      tails.delete(tk);
-      const msgs = getConsultThread(brandId)?.messages || [];
-      const prior = historyForModel(brandId, cur, msgs, asked?.id);
-      const snapshotText = buildSnapshot(brandId);
-      // A provider that can't see pictures still gets the screenshot's text
-      // (js/ocr.js) — the numbers, not the graph.
-      let imageText = "";
-      let modelImages = [];
-      if (images.length) {
-        if (aiCanSeeImages(ai)) modelImages = images.map((a) => a.full);
-        else {
-          const texts = [];
-          for (const a of images) { try { texts.push((await analyzeScreenshot(a.full)).text.trim()); } catch { /* unreadable */ } }
-          imageText = texts.filter(Boolean).join("\n---\n") || t("chat.image.ocrEmpty");
-          toast(t("chat.image.ocrNote"), "info");
+        const asked = appendBrainstormMessage(th.id, { role: "user", text, sessionId });
+        tails.delete(tk);
+        const scope = threadScope(th);
+        const info = scopeInfo(brandId, scope);
+        const eventCampaign = eventCampaignFor(brandId, { campaignId: scope.campaignId, goalId: scope.goalId });
+        const all = getBrainstorm(th.id)?.messages || [];
+        const threadHistory = historyForModel(brandId, cur, all, asked?.id);
+        // Everything already put in front of the owner counts as "don't repeat".
+        // (Used to also spread in this thread's own `ideas[]` — a save-time
+        // copy of the exact same text savedIdeasFor already returns from the
+        // one ideas inbox now, so that second copy is redundant.)
+        const shown = all.flatMap((m) => (m.blocks?.ideas || []).map((i) => i.title));
+        const savedIdeas = [...new Set([...shown, ...savedIdeasFor(brandId).items.map((i) => i.text)])];
+        const campaigns = listCampaigns(brandId);
+        const contentAll = listContent(brandId);
+        const raw = await chatBrainstorm(ai, {
+          brand, campaigns, pulseText, savedIdeas,
+          campaign: info.campaign, stageText: info.stageText, content: info.content, series: info.series, goalId: scope.goalId || null, eventCampaign,
+          seriesEpisodes: seriesEpisodeTitles(info.series, contentAll),
+          seriesOverview: info.series ? "" : buildSeriesOverview(listSeries(brandId), contentAll, { days: seriesDays(brand?.contentCadence, listSeries(brandId)) }),
+          history: threadHistory, message: text, mode: bsMode,
+          turns: all.filter((m) => m.role === "user").length,
+          onText: streamInto,
+        });
+        const { cleanText, ideas, drafts, asks, tasks, handoff, saves, scripts } = parseDirectives(raw.trim());
+        // A step is filed under the event; without one it is kept as an idea.
+        const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
+        const allIdeas = [...ideas, ...(eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why })))];
+        appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}) }, sessionId });
+      } else if (picked === "companion") {
+        const thread = ensureCompanionThread(brandId);
+        const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId });
+        tails.delete(tk);
+        updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
+        const msgs = getCompanionThread(brandId)?.messages || [];
+        const threadHistory = historyForModel(brandId, cur, msgs, asked?.id, COMPANION_HISTORY_FOR_MODEL);
+        const raw = await companionChat(ai, { brand, pulseText, history: threadHistory, message: text, kinds: MOMENT_KINDS });
+        const { cleanText, ideas, asks, moments, handoff } = parseDirectives(raw.trim());
+        if (!hop && !cleanText && handoff && handoff !== "companion") {
+          removeBrainstormMessage(thread.id, asked?.id);
+          reroute = handoff;
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { asks, moments, handoff, ...(ideas.length ? { ideas } : {}) }, sessionId });
+      } else {
+        const thread = ensureConsultThread(brandId);
+        const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId, blocks: images.length ? { images: images.map((a) => a.thumb) } : null });
+        tails.delete(tk);
+        const msgs = getConsultThread(brandId)?.messages || [];
+        const prior = historyForModel(brandId, cur, msgs, asked?.id);
+        const snapshotText = buildSnapshot(brandId);
+        // A provider that can't see pictures still gets the screenshot's text
+        // (js/ocr.js) — the numbers, not the graph.
+        let imageText = "";
+        let modelImages = [];
+        if (images.length) {
+          if (aiCanSeeImages(ai)) modelImages = images.map((a) => a.full);
+          else {
+            const texts = [];
+            for (const a of images) { try { texts.push((await analyzeScreenshot(a.full)).text.trim()); } catch { /* unreadable */ } }
+            imageText = texts.filter(Boolean).join("\n---\n") || t("chat.image.ocrEmpty");
+            toast(t("chat.image.ocrNote"), "info");
+          }
         }
+        const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: prior, question: text, onText: streamInto, kinds: MOMENT_KINDS, images: modelImages, imageText });
+        const parsed = parseDirectives(reply.trim());
+        const { cleanText, asks, handoff, moments, metrics } = parsed;
+        const nav = relevantNav(parsed.nav, cleanText);
+        if (!hop && !cleanText && handoff && handoff !== "consultant" && !images.length) {
+          removeBrainstormMessage(thread.id, asked?.id);
+          reroute = handoff;
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || reply.trim(), blocks: { nav, asks, handoff, moments, ...(metrics ? { metrics } : {}) }, sessionId });
       }
-      const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: prior, question: text, onText: streamInto, kinds: MOMENT_KINDS, images: modelImages, imageText });
-      const parsed = parseDirectives(reply.trim());
-      const { cleanText, asks, handoff, moments, metrics } = parsed;
-      const nav = relevantNav(parsed.nav, cleanText);
-      appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || reply.trim(), blocks: { nav, asks, handoff, moments, ...(metrics ? { metrics } : {}) }, sessionId });
+      if (!reroute) break;
     }
 
     // In a single-engine view: when the message plainly reads like another
@@ -2770,7 +2809,11 @@ function togglePanel(brandId, open, { seed = "", focus = null } = {}) {
     renderPanel(page.brandId, { focus: true });
     return;
   }
-  if (!open) leaveScriptThread(brandId);
+  if (!open) {
+    leaveScriptThread(brandId);
+    qs("#consultant-panel")?.classList.remove("is-docked");
+    document.body.classList.remove("script-focus-docked");
+  }
   isOpen = open;
   const panel = qs("#consultant-panel");
   const fab = qs("#consultant-fab");

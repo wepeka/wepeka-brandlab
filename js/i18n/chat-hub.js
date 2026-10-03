@@ -206,4 +206,9 @@ export default {
   "chat.week.regenItem": { en: "Try a different idea for this day", id: "Coba ide lain untuk hari ini" },
   "chat.week.regenItemTitle": { en: "Try a different idea for this day (uses 1 AI credit)", id: "Coba ide lain untuk hari ini (pakai 1 AI credit)" },
   "chat.week.regenItemMsg": { en: "Try a different idea for {date} (\"{title}\") only — keep every other day as-is.", id: "Coba ide lain untuk {date} (\"{title}\") saja — hari lain jangan diubah." },
+
+  // "Diskusi lalu langsung jadi" (js/consultant-panel.js, under a discussion reply)
+  "chat.make.script": { en: "Turn into a script", id: "Jadikan script" },
+  "chat.make.ideas": { en: "3 content ideas", id: "Kasih 3 ide konten" },
+  "chat.make.scriptMsg": { en: "Turn what we just discussed into a shoot-ready video script for my brand — take the strongest angle and stick to my brand's facts.", id: "Jadikan script video siap syuting dari diskusi kita barusan — ambil angle paling kuat buat brand-ku, pakai fakta brand-ku." },
 };

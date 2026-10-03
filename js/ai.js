@@ -10,6 +10,8 @@ import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { isAdmin, currentUid } from "./account.js";
 import { brandVoiceText, listBrandIdeas } from "./store.js";
+import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
+import { renderScript } from "./script-format.js";
 
 class AiApiError extends Error {}
 
@@ -74,7 +76,7 @@ function proxyError(code, extra = {}) {
 // text (non-stream) or feeds `onText(fullTextSoFar)` as SSE chunks arrive
 // (stream) — same onText(text, {whole}) contract callModel always offered
 // its callers, so nothing downstream of callModel had to change.
-async function callProxy(system, userPrompt, maxTokens, { temperature, json = false, images = [], stream = false, countUsage = true, feature = "" } = {}, onText = null) {
+async function callProxy(system, userPrompt, maxTokens, { temperature, json = false, images = [], stream = false, countUsage = true, feature = "", history = [] } = {}, onText = null) {
   let token;
   try {
     token = await auth.currentUser?.getIdToken();
@@ -91,7 +93,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
     res = await fetch("/api/ai", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature }),
+      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature, ...(history.length ? { history } : {}) }),
       signal: ctrl.signal,
     });
   } catch {
@@ -210,7 +212,7 @@ export function aiCanSeeImages(ai) {
 // where it can't — the caller decides whether to animate a reply that
 // arrived all at once. `images`: data: URLs sent along with the prompt
 // (Claude / Gemini only — DeepSeek refuses them, see aiCanSeeImages).
-async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [], feature = "" } = {}) {
+async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [], feature = "", history = [] } = {}) {
   if (countUsage && aiLimitReached()) {
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
@@ -219,7 +221,7 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
       : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
     throw quotaOutError(key, { limit, period });
   }
-  return callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature }, onText);
+  return callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature, history }, onText);
 }
 
 export async function testAiConnection(ai) {
@@ -227,124 +229,262 @@ export async function testAiConnection(ai) {
   return true;
 }
 
-// Generates hook variations, a full script (always in the fixed HOOK /
-// ISI PEMBAHASAN format), and a caption. Takes the same structured
-// questions the app's wizard asks up front — funnel stage (with its own
-// follow-up: MOFU asks what to demonstrate, BOFU asks what's being sold),
-// target duration, the video's goal, an optional pasted article for source
-// material, and the brand's own voice guide — instead of one vague prompt,
-// so the model has the same context a human writer would ask for.
-// `only`: pass "hooks" | "script" | "caption" to regenerate just that one
-// piece (e.g. the hook wasn't landing but the script was fine) instead of
-// redoing all three every time — cheaper and doesn't disturb what the user
-// already accepted. Omit for the original all-three-at-once behavior.
+// Creator's script writer — "naskah siap syuting". The model fills in JSON
+// (three-layer hooks + timed beats); js/script-format.js turns that into the
+// one script string the app stores, so the layout, labels and timing are
+// always the same however the model phrased them.
+//
+// What the owner chooses in the modal (js/views/creator.js) steers it:
+// `hookTypes` (keys from js/knowledge/hook-types.js, up to 3; empty = the
+// model mixes 3 different types), `structure` (the ALUR of the body, "auto"
+// = the model picks), and the length (`duration`, e.g. "30 dtk"), which
+// becomes a narration word budget instead of a vague "<1 menit".
+//
+// Every hook opens the SAME body (same promise), so the owner can swap
+// hooks for free — "Pakai" just replaces the HOOK beat (applyHook).
+// `only`: "hooks" | "script" | "caption" regenerates just that part;
+// `body` (the script on screen) keeps new hooks leading into it, and
+// `hook` (the one picked) keeps a rewritten body following it.
+// Returns { hooks: [{ type, say, onScreen, visual, why }], script, beats,
+// caption, slides, angle, targetSec }.
+export function durationToSeconds(duration, format = "") {
+  const s = String(duration || "").toLowerCase().replace(",", ".");
+  if (!s.trim()) return /long|panjang|youtube/i.test(format) ? 150 : /story/i.test(format) ? 15 : 30;
+  if (s.includes("<1")) return 45; // the old "<1 menit" chip
+  const mmss = s.match(/(\d+):(\d{2})/);
+  if (mmss) return Number(mmss[1]) * 60 + Number(mmss[2]);
+  const range = s.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)/);
+  const n = range ? (Number(range[1]) + Number(range[2])) / 2 : Number((s.match(/\d+(?:\.\d+)?/) || [])[0]);
+  if (!Number.isFinite(n) || n <= 0) return 30;
+  const minutes = /m(e)?n|min|menit/.test(s) && !/detik|dtk|sec|\bs\b/.test(s);
+  return Math.round(Math.min(600, Math.max(8, minutes ? n * 60 : n)));
+}
+
+// How strong short-form video works — the craft every script prompt reasons
+// with (short-form specific, unlike the book principles in
+// MARKETING_FRAMEWORKS_CONTEXT, which suit strategy more than a 30-second video).
+export const SHORT_FORM_CRAFT = `
+How strong short-form videos work (apply it, never mention it):
+- One video = one idea and one promise. The hook makes the promise, the body pays it off, nothing else gets in.
+- The first frame must work on mute: bold text on screen + a visual action. Most people start watching without sound.
+- Write for the ear: short spoken sentences (mostly under 12 words), everyday words, the way this brand talks to a friend. No written-language connectors ("selain itu", "adapun", "oleh karena itu").
+- Specific beats general: the brand's real product names, prices, places and hours. One concrete detail is worth more than three adjectives.
+- Show, don't claim: every claim in what is said has something on camera that proves it.
+- Keep it moving: something changes every beat — the shot, the angle or the text — so there is never dead air.
+- Pay off before the ask: the viewer gets the value first; the call to action comes last, once.
+- Realistic to shoot: the brand's own place, products and people, filmed with a phone. No actors, drones, studios or stock footage unless asked.`.trim();
+
+// Scripts get their own, stricter version of COPY_FACTS_RULE: invented
+// urgency and invented personal stories were what the old prompt slipped
+// into BOFU scripts ("stok terbatas", "aku dulu juga gitu").
+const SCRIPT_FACTS_RULE = [
+  "FACTS ARE FIXED: every number, price, opening hour, place, product and name from the brand context or the owner's input is repeated exactly (\"Rp15.000\" stays \"Rp15.000\", \"jam 1 malam\" stays \"jam 1 malam\").",
+  "ABOUT THE BUSINESS ITSELF — how it makes, sources, prepares or delivers things, its services, policies, guarantees, opening times, prices and offers — state ONLY what the brand context or the owner's input says. Never add a step, a habit or a policy to sound richer (no \"direbus tiap hari\", \"boleh lihat dapurnya\", \"gratis ongkir\", \"garansi\" unless given). General knowledge about the product category (what real palm sugar looks like, why small classes help) is fine. When a beat needs a process the facts don't describe, make the Visual a filming instruction (\"rekam proses kalian menyiapkan gula aren\") and keep the narration to what is known — wrong: \"Tiap hari kita lelehkan sendiri\" (not in the facts); right: \"Ini gula aren Blitar yang kami pakai.\"",
+  "NEVER INVENT urgency or proof: no stock limits, deadlines or pressure (\"stok terbatas\", \"jangan sampai kehabisan\", \"hari ini aja\", \"buruan\") unless the input says so; no testimonials, ratings, statistics, awards, customer counts or results that aren't given; no made-up numbers about anyone else either (how long other places make people wait, what others charge); no personal experience of the owner (\"aku dulu juga…\") and no customer story presented as something that really happened.",
+  "If one real detail would make the video much stronger and it isn't given, write a placeholder like [isi: jumlah pelanggan per hari] — at most one per script — instead of making it up.",
+].join(" ");
+
+// The CTA beat asks for one thing; the model's habit is to tack a second one
+// on ("…mampir malam ini. Simpan dulu videonya.").
+const ONE_ASK = " One ask only — never two in a row (not \"mampir malam ini, simpan juga videonya\").";
+const FUNNEL_CTA = {
+  TOFU: "Funnel: TOFU (awareness). The goal is to be stopped for and remembered, not to sell. The CTA beat asks for ONE light thing — follow, save, comment, or tag a friend — and mentions the brand naturally, not as a pitch.",
+  MOFU: "Funnel: MOFU (consideration). The goal is trust: show how it works or why it is different. The CTA beat asks for ONE thing — save it, ask in the comments/DM, or try something — with the brand as the one who can help.",
+  BOFU: "Funnel: BOFU (conversion). The goal is a purchase/booking/visit. The CTA beat gives ONE clear step using the brand's own call to action and the exact offer from the facts (product, price, period, where to order).",
+};
+
+// Beats after the hook (the CTA included) for a video of `sec` seconds.
+function bodyBeatCount(sec) {
+  if (sec <= 20) return [2, 2];
+  if (sec <= 40) return [3, 4];
+  if (sec <= 70) return [4, 5];
+  if (sec <= 110) return [5, 7];
+  return [6, 9];
+}
+
+// The model writes "COMMON MISTAKE" or "Bikin penasaran" as often as the
+// key itself — read any of those back to the catalog key.
+const HOOK_TYPE_ALIASES = {
+  curiosity: ["curiosity", "penasaran", "curiosity gap"],
+  contrarian: ["contrarian", "lawan arus"],
+  mistake: ["mistake", "kesalahan", "common mistake"],
+  result: ["result", "hasil", "result first"],
+  number: ["number", "angka", "specific number"],
+  story: ["story", "cerita", "drop-in"],
+  callout: ["callout", "call-out", "call out", "panggil"],
+  pov: ["pov", "relatable", "relate"],
+  secret: ["secret", "behind", "rahasia", "balik layar", "dapur"],
+  versus: ["versus", " vs", "perbandingan", "comparison"],
+  warning: ["warning", "peringatan"],
+  test: ["test", "experiment", "uji"],
+};
+function hookTypeKeyOf(raw) {
+  const s = ` ${String(raw || "").toLowerCase().replace(/[_]/g, " ")}`;
+  if (HOOK_TYPE_ALIASES[s.trim()]) return s.trim();
+  return Object.keys(HOOK_TYPE_ALIASES).find((k) => HOOK_TYPE_ALIASES[k].some((a) => s.includes(a))) || "";
+}
+
+function cleanHook(h, allowed) {
+  if (!h || typeof h !== "object") return typeof h === "string" && h.trim() ? { type: "", say: h.trim(), onScreen: "", visual: "", why: "" } : null;
+  const say = String(h.say || h.text || h.hook || "").trim();
+  if (!say) return null;
+  const type = hookTypeKeyOf(h.type);
+  return {
+    type: allowed.has(type) ? type : "",
+    say: say.slice(0, 300),
+    onScreen: String(h.onScreen || h.on_screen || h.text_on_screen || "").trim().slice(0, 120),
+    visual: String(h.visual || "").trim().slice(0, 300),
+    why: String(h.why || "").trim().slice(0, 240),
+  };
+}
+
 export async function generateScript(
   ai,
-  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [] }
+  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [], hookTypes = [], structure = "auto", audienceLanguage = "", body = "", hook = null, avoidHooks = [] }
 ) {
   const wantsHooks = !only || only === "hooks";
   const wantsScript = !only || only === "script";
   const wantsCaption = !only || only === "caption";
-  // #1: a Carousel is a stack of still slides, not a spoken video script —
-  // ask the model for a slide array instead of forcing the HOOK/ISI
-  // PEMBAHASAN shape onto something nobody narrates.
   const isCarousel = (format || "").toLowerCase().includes("carousel");
-  const responseShape = [
-    wantsHooks ? '"hooks": ["hook 1", "hook 2", "hook 3"]' : "",
-    wantsScript
-      ? isCarousel
-        ? '"slides": [{"slideNumber": 1, "text": "..."}, {"slideNumber": 2, "text": "..."}]'
-        : '"script": "HOOK\\n...\\n\\nISI PEMBAHASAN\\n..."'
-      : "",
-    wantsCaption
-      ? hashtags.length
-        ? `"caption": "a short caption for the post, ending with exactly these hashtags and no others: ${hashtags.join(" ")}"`
-        : '"caption": "a short caption for the post, with 3-5 relevant hashtags"'
-      : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
-  const system = [
-    isCarousel ? "You are a short-form social media carousel writer." : "You are a short-form social video scriptwriter.",
-    outputLanguageRule(),
-    MARKETING_FRAMEWORKS_CONTEXT,
-    NATURAL_WRITING_CONTEXT,
-    wantsScript
-      ? isCarousel
-        ? "Write the on-slide text for a carousel post as an array of slides, in \"slides\": one short, punchy block of text per slide (not spoken narration). Slide 1 is the cover/hook that stops the scroll, the middle slides each carry exactly one clear point, and the last slide closes with a takeaway or CTA. Use 5 to 8 slides unless the content clearly needs fewer or more."
-        : [
-            "The script MUST always use exactly this section format, with these two Indonesian labels in capitals, nothing else:",
-            "HOOK",
-            "(1-2 sentences that stop the scroll)",
-            "",
-            "ISI PEMBAHASAN",
-            "(the main content, delivered in the brand's voice)",
-          ].join("\n")
-      : "",
-    only === "hooks" ? "Only write hooks (the opening 1-2 sentences that stop the scroll) — no full script, no caption." : "",
-    only === "caption" ? "Only write a caption — no hooks, no script." : "",
-    brandContext
-      ? `Brand context — write FOR this audience and IN this brand's voice. The tone-of-voice settings, personality traits, and words to avoid below are rules, not suggestions:\n${brandContext}`
-      : "No specific brand voice was given — keep it natural and conversational.",
-    // Series Context sits between Brand Context and the current topic: the
-    // brand's own voice always wins on tone conflicts, the series just adds
-    // its recurring concept/structure/hook style on top.
-    seriesContext || "",
-    "FACTS ARE FIXED: any number, price, opening hour, place name, or product name that appears in the brand context or the user's input must be repeated exactly as given (e.g. 'jam 1 malam' stays 'jam 1 malam', 'Rp15.000' stays 'Rp15.000') — never round, convert, or paraphrase them, and never invent new figures.",
-    articleText && wantsScript ? "An article/reference text is provided below — pull the most relevant, attention-worthy points from it for ISI PEMBAHASAN instead of inventing unrelated content." : "",
-    `Respond ONLY with valid JSON, no markdown code fences, exactly this shape: {${responseShape}}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const lang = audienceLanguage || getLang();
+  const sec = durationToSeconds(duration, format);
+  const min = Math.round(sec * 2.1);
+  const max = Math.round(sec * 2.7);
+  const [minBeats, maxBeats] = bodyBeatCount(sec);
+  const avgBeats = (minBeats + maxBeats) / 2;
+  const perBeatMin = Math.max(6, Math.floor((min - 9) / avgBeats));
+  const perBeatMax = Math.max(perBeatMin + 3, Math.floor((max - 9) / avgBeats));
+  const f = FUNNELS_CTA_KEY(funnel);
+  const picked = [...new Set((hookTypes || []).filter((k) => hookTypeByKey(k)))].slice(0, 3);
+  const allowed = new Set(HOOK_TYPES.map((h) => h.key));
+  const struct = structureByKey(structure);
+  const hookCount = picked.length === 1 ? 3 : picked.length === 2 ? 4 : 3;
 
-  const funnelLine = {
-    TOFU: "Funnel stage: TOFU (awareness) — goal is to stop the scroll and be memorable, not to sell.",
-    MOFU: `Funnel stage: MOFU (consideration) — the video should demonstrate/show: ${mofuGoal || "(not specified — infer something reasonable)"}.`,
-    BOFU: `Funnel stage: BOFU (conversion) — the video should sell/push toward: ${bofuOffer || "(not specified — infer something reasonable)"}.`,
-  }[funnel || "TOFU"];
-  // #5: production effort is independent of funnel stage — a TOFU idea can
-  // still be asked for as an "agak niat" bigger production, and a BOFU pitch
-  // can still be asked for as a single quick take.
+  const hookRules = wantsHooks
+    ? [
+        isCarousel
+          ? `HOOKS — write ${hookCount} alternative COVER slides (slide 1). Each: "say" = the cover headline, max 9 words, the promise of the carousel; "visual" = what the cover image shows (one concrete photo idea); "why" = one short plain sentence: why this would make THIS audience swipe; "type" = its hook type key; "onScreen" = "".`
+          : `HOOKS — write ${hookCount} hooks. Each hook has three layers that work together: "say" = the first spoken line, max 12 words (under 10 is better: it must be said in about 3 seconds), carrying the promise of the video; "onScreen" = max 7 words of bold text overlay, readable on mute and not a copy of "say"; "visual" = what the very first frame shows — one concrete action or close-up that can really be filmed (never "aesthetic shot" or "b-roll"); plus "why" = one short plain sentence: why this would stop THIS audience scrolling; and "type" = its hook type key.`,
+        "All hooks open the SAME video: they make the same promise and lead into the same body, so any of them can be swapped in without changing the rest. They must differ in approach, not just in wording. Never open with a greeting (\"Hai guys\", \"Halo semuanya\"), \"Di video ini\", or the brand name alone.",
+        picked.length
+          ? `Hook types to use (${picked.length === 1 ? `all ${hookCount} hooks are this type, each a clearly different take on it` : picked.length === 2 ? "two hooks of each type" : "one hook of each type"}):\n${picked.map((k) => `- ${k}: ${hookTypeByKey(k).rule}`).join("\n")}`
+          : `Hook types: pick ${hookCount} DIFFERENT types from this list — the ones that fit this piece and funnel best:\n${HOOK_TYPES.map((h) => `- ${h.key}: ${h.rule}`).join("\n")}`,
+        avoidHooks.length ? `Hooks already shown to the owner (write new ones, don't reuse these):\n${avoidHooks.slice(0, 9).map((h) => `- ${h}`).join("\n")}` : "",
+      ].filter(Boolean).join("\n")
+    : "";
+
+  const bodyRules = wantsScript
+    ? isCarousel
+      ? [
+          `SLIDES — after the cover, write the remaining slides (4 to 7) as "slides": one short block of on-slide text each (max ~25 words, not narration). One clear point per slide${struct.beats ? `, following this flow: ${struct.beats}` : ", in the flow that fits the topic best"}; the last slide is the takeaway + one call to action.`,
+        ].join("\n")
+      : [
+          `BODY — after the hook: ${minBeats === maxBeats ? minBeats : `${minBeats}-${maxBeats}`} beats, the last one being the CTA.${struct.beats ? ` Follow this flow: ${struct.beats} → CTA.` : " Pick the flow that fits this piece (problem → fix, a short story, steps, a list, myth vs fact, before → after, behind the scenes) and stick to it."}`,
+          `Each beat: "label" = 1-3 words in capitals naming what the beat does, in the output language (e.g. MASALAH, BUKTI, LANGKAH 1, CTA); "visual" = what to film — the shot and the action, concrete, different from the beat before; "onScreen" = a short text overlay or ""; "say" = the exact words, 2-3 short spoken sentences, about ${perBeatMin}-${perBeatMax} words (the CTA beat may be shorter).`,
+          `LENGTH — the video is about ${sec} seconds: the narration of ONE hook plus all beats together is between ${min} and ${max} words — NEVER more than ${max}. Cut information before you cut clarity.`,
+        ].join("\n")
+    : "";
+
   const effortLine =
     effort === "involved"
-      ? "Execution effort: this can be a more involved production — multiple shots/angles, a location change, props, or a short narrative are all fine if they serve the content."
-      : "Execution effort: keep this extremely easy to execute — something one person can shoot in a single take with no special props, crew, or editing, and post within minutes.";
+      ? "Production: this can be a bigger shoot — several locations, props, other people on camera, or a short narrative are fine if they serve the idea."
+      : "Production: keep it simple to shoot — one person with a phone, in the brand's own place, a few shots (talking to camera plus close-ups of the product, place or process). No crew, no special props.";
 
-  const user = [
-    `Platform: ${platform || "Instagram"}`,
-    `Format: ${format || "Reels"}`,
-    funnelLine,
+  const shape = [
+    wantsHooks ? '"angle": "one sentence: the single promise of this video"' : "",
+    wantsHooks ? '"hooks": [{"type": "hook type key", "say": "...", "onScreen": "...", "visual": "...", "why": "..."}]' : "",
+    wantsScript ? (isCarousel ? '"slides": [{"text": "..."}]' : '"beats": [{"label": "...", "visual": "...", "onScreen": "...", "say": "..."}]') : "",
+    wantsCaption
+      ? hashtags.length
+        ? `"caption": "a short caption (2-4 sentences) that adds what the video doesn't say — a question to the audience, the offer, or a detail taken from the facts (never a new one) — ending with exactly these hashtags and no others: ${hashtags.join(" ")}"`
+        : '"caption": "a short caption (2-4 sentences) that adds what the video doesn\'t say — a question to the audience, the offer, or a detail taken from the facts (never a new one) — with 3-5 relevant hashtags"'
+      : "",
+  ].filter(Boolean).join(", ");
+
+  const system = [
+    isCarousel
+      ? "You write Instagram/TikTok carousel posts for small businesses in Indonesia: a cover that stops the scroll and slides that are easy to read in two seconds each."
+      : "You are a short-form video scriptwriter for small businesses in Indonesia. You write scripts an owner can shoot alone with one phone and understand at a glance: every beat says what to SHOW, what TEXT goes on screen and what to SAY.",
+    outputLanguageRule({ audienceLanguage: lang }),
+    SHORT_FORM_CRAFT,
+    NATURAL_WRITING_CONTEXT,
+    hookRules,
+    bodyRules,
+    only === "caption" ? "Only write the caption — no hooks, no script." : "",
+    FUNNEL_CTA[f] + ONE_ASK + (f === "MOFU" && mofuGoal ? ` What it should demonstrate: ${mofuGoal}.` : "") + (f === "BOFU" && bofuOffer ? ` What it sells: ${bofuOffer}.` : ""),
     effortLine,
-    duration ? `Target duration: ${duration}` : "",
-    goal ? `Goal of this specific video: ${goal}` : "",
+    SCRIPT_FACTS_RULE,
+    brandContext
+      ? `Brand context — write FOR this audience and IN this brand's voice. Tone-of-voice settings, personality traits, the form of address and words to avoid are rules, not suggestions:\n${brandContext}`
+      : "No brand context was given — keep it natural and conversational.",
+    seriesContext || "",
+    articleText && wantsScript ? "A reference text is given below — build the body from its most relevant, attention-worthy points instead of inventing unrelated content." : "",
+    `Before answering, check: ${[wantsHooks ? "every hook is short, from the requested types and opens the same promise" : "", wantsScript && !isCarousel ? `the narration of one hook plus the beats stays under ${max} words, there is exactly one ask and it sits in the last beat` : "", "every sentence about how the business works, what it offers or how it does things is in the facts (delete any that isn't), and no urgency or proof is added"].filter(Boolean).join("; ")}.`,
+    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {${shape}}`,
+  ].filter(Boolean).join("\n\n");
+
+  const hookLine = hook ? (typeof hook === "string" ? hook : [hook.say, hook.onScreen && `(on screen: ${hook.onScreen})`, hook.visual && `(first frame: ${hook.visual})`].filter(Boolean).join(" ")) : "";
+  const user = [
+    `Platform: ${platform || "Instagram"} · Format: ${format || "Reels"} · Target length: ${isCarousel ? "one carousel post" : `${sec} seconds`}`,
+    goal ? `Goal of this piece: ${goal}` : "",
     campaignLine ? `This piece belongs to campaign: ${campaignLine}` : "",
     title ? `Title: ${title}` : "",
     idea ? `Idea so far: ${idea}` : "",
-    prompt ? `What this content should be about: ${prompt}` : "",
-    !title && !idea && !prompt ? "No title, idea, or description given — infer something reasonable and generic for this brand/platform/format." : "",
-    // #5: a free-text brief from the "discuss with AI" field — audience
-    // size, budget, or any other context the user typed — the generated
-    // content should follow this closely, as if a creative brief.
-    brief ? `\n--- Creative brief from the user (follow this closely) ---\n${brief.slice(0, 3000)}` : "",
-    articleText ? `\n--- Reference article/text ---\n${articleText.slice(0, 6000)}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    prompt ? `What the owner wants this content to be about: ${prompt}` : "",
+    !title && !idea && !prompt ? "No topic given — pick the single most useful topic for this brand right now from its context, and say it in \"angle\"." : "",
+    only === "script" && hookLine ? `The video opens with this hook — it is already written, so do NOT repeat it or rephrase it as a beat; "beats" start right AFTER it and pay off its promise: ${hookLine}` : "",
+    only === "hooks" && body.trim() ? `\n--- The body these hooks must lead into (do not rewrite it) ---\n${body.slice(0, 3000)}` : "",
+    brief ? `\n--- Creative brief from the owner (follow it closely) ---\n${brief.slice(0, 3000)}` : "",
+    articleText ? `\n--- Reference text ---\n${articleText.slice(0, 6000)}` : "",
+  ].filter(Boolean).join("\n");
 
-  const raw = await callModel(ai, system, user, 1600, { json: true, feature: "script" });
+  const maxTokens = only === "caption" ? 500 : only === "hooks" ? 1000 : only === "script" ? 1800 : 2600;
+  const raw = await callModel(ai, system, user, maxTokens, { json: true, feature: "script", temperature: SCRIPT_TEMPERATURE });
   const parsed = parseJsonObject(raw);
   if (!parsed) throw new AiApiError(t("ai.error.unreadable"));
-  const slides = isCarousel && Array.isArray(parsed.slides)
-    ? parsed.slides.map((s, i) => ({ slideNumber: Number(s?.slideNumber) || i + 1, text: String(s?.text || "").trim() })).filter((s) => s.text)
-    : [];
-  // `script` still carries a flat string too — everywhere else in the app
-  // (content.script field, teleprompter, PDF export) reads one script
-  // string, so a carousel's slides are joined into the same shape while
-  // `slides` (used by the Creator Studio result view) keeps them separate.
-  const script = slides.length ? slides.map((s) => `Slide ${s.slideNumber}\n${s.text}`).join("\n\n") : parsed.script || "";
-  if (wantsScript && !script) throw new AiApiError(t("ai.error.unreadable"));
-  return { hooks: parsed.hooks || [], script, caption: parsed.caption || "", slides };
+
+  const hooks = (Array.isArray(parsed.hooks) ? parsed.hooks : []).map((h) => cleanHook(h, allowed)).filter(Boolean).slice(0, 4);
+  if (wantsHooks && !hooks.length) throw new AiApiError(t("ai.error.unreadable"));
+  // The caption has come back under another key ("Caption", "captions")
+  // often enough to look for it rather than drop it.
+  const captionKey = Object.keys(parsed).find((k) => /^captions?$/i.test(k));
+  const captionRaw = captionKey ? parsed[captionKey] : "";
+  const caption = String(Array.isArray(captionRaw) ? captionRaw[0] || "" : captionRaw || "").trim();
+  if (isCarousel) {
+    const rest = (Array.isArray(parsed.slides) ? parsed.slides : []).map((s) => String(typeof s === "string" ? s : s?.text || "").trim()).filter(Boolean);
+    const cover = hooks[0]?.say || (hook ? (typeof hook === "string" ? hook : hook.say) : "");
+    const slides = (cover ? [cover, ...rest] : rest).map((text, i) => ({ slideNumber: i + 1, text }));
+    if (wantsScript && rest.length === 0) throw new AiApiError(t("ai.error.unreadable"));
+    const script = slides.map((s) => `Slide ${s.slideNumber}\n${s.text}`).join("\n\n");
+    return { hooks, script: wantsScript ? script : "", beats: [], caption, slides: wantsScript ? slides : [], angle: String(parsed.angle || "").trim(), targetSec: null };
+  }
+  const beats = (Array.isArray(parsed.beats) ? parsed.beats : [])
+    .map((b) => ({ label: String(b?.label || "").trim(), visual: String(b?.visual || "").trim(), onScreen: String(b?.onScreen || b?.on_screen || "").trim(), say: String(b?.say || "").trim() }))
+    .filter((b) => b.say || b.visual);
+  if (wantsScript && !beats.length) throw new AiApiError(t("ai.error.unreadable"));
+  const opener = hooks[0] || (hook && typeof hook === "object" ? hook : hook ? { say: String(hook) } : null);
+  dropRepeatedHook(beats, opener);
+  const script = wantsScript ? renderScript([...(opener ? [{ label: "HOOK", ...opener }] : []), ...beats], { lang }) : "";
+  return { hooks, script, beats, caption, slides: [], angle: String(parsed.angle || "").trim(), targetSec: sec };
 }
+// Lower than the provider default (1.0): the facts rule holds noticeably
+// better (tested against DeepSeek, 2026-10-03), and the three hooks still
+// differ because the prompt asks for different types.
+const SCRIPT_TEMPERATURE = Number(globalThis.__SCRIPT_TEMP__) || 0.7;
+// The model sometimes writes the hook again as the first beat ("MASALAH:
+// <the hook> + one more line") — the script would then say it twice.
+const normWords = (x) => String(x || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+function dropRepeatedHook(beats, opener) {
+  const h = normWords(opener?.say);
+  if (!h || !beats.length) return;
+  const first = beats[0];
+  const said = normWords(first.say);
+  if (!said.startsWith(h)) return;
+  const rest = String(first.say).trim().replace(/^[\s\S]*?[.!?…](\s+|$)/, "").trim();
+  if (rest && normWords(rest) !== said) beats[0] = { ...first, say: rest, onScreen: normWords(first.onScreen) === normWords(opener.onScreen) ? "" : first.onScreen };
+  else beats.shift();
+}
+const FUNNELS_CTA_KEY = (f) => (["TOFU", "MOFU", "BOFU"].includes(String(f || "").toUpperCase()) ? String(f).toUpperCase() : "TOFU");
 
 // Shared by Copy Studio's generate and rewrite — the one rule that matters
 // most for copy a business posts under its own name.
@@ -368,13 +508,22 @@ function parseJsonObject(raw) {
 }
 
 // Every chat-shaped feature below (consultant, brainstorm, companion,
-// discuss-a-script) folds its thread's history into one plain-text
-// transcript in the user turn. Capping it here means the cap holds no
-// matter how much history a caller happens to hand in — fewer tokens spent
-// re-reading old turns, which matters a lot on a chat that fires on every
-// message.
-function recentHistory(history = [], n = 8) {
-  return history.length > n ? history.slice(-n) : history;
+// discuss-a-script) sends its thread as real conversation turns
+// ({ role, content }, api/ai.js `history`), not a transcript pasted into one
+// message: the model keeps track of who said what, and the provider's
+// prefix cache reuses every earlier turn, so a long chat stays cheap.
+// It used to keep only the last 8 messages — four exchanges — which is why
+// a chat "forgot" the script it wrote a minute ago and asked again.
+// The caller (js/consultant-panel.js historyForModel) also keeps the very
+// first exchange when a thread is longer than this, so the original ask
+// never falls off.
+const CHAT_TURNS = 24;
+const TURN_CHARS = 8000;
+export function chatTurns(history = [], n = CHAT_TURNS) {
+  return history
+    .slice(-n)
+    .map((h) => ({ role: h.role === "assistant" ? "assistant" : "user", content: String(h.text ?? h.content ?? "").slice(0, TURN_CHARS) }))
+    .filter((h) => h.content.trim());
 }
 
 function normalizeCopyVariant(v) {
@@ -1189,7 +1338,7 @@ export async function summarizeMonthLessons(ai, { brand, month, rows }) {
     "Each lesson is ONE short sentence built on a comparison the numbers actually show (a format vs the others, a funnel stage, a hook style, a topic) with the figure in it — e.g. 'Reels edukasi rata-rata 2x views dibanding foto produk (3.100 vs 1.400).' Never generic advice, never a number that isn't in the data, and skip anything the data is too thin to show.",
     'Respond ONLY with valid JSON, no markdown fences: {"lessons":["...","..."]}',
   ].join("\n\n");
-  const table = rows.map((r) => `- "${r.title}" | ${r.format || "?"} | ${r.funnel || "?"} | views ${r.views ?? "?"} | ER ${r.er === null || r.er === undefined ? "?" : Number(r.er).toFixed(1) + "%"}${r.hook ? ` | hook: ${r.hook}` : ""}`).join("\n");
+  const table = rows.map((r) => `- "${r.title}" | ${r.format || "?"} | ${r.funnel || "?"} | views ${r.views ?? "?"} | ER ${r.er === null || r.er === undefined ? "?" : Number(r.er).toFixed(1) + "%"}${r.hook ? ` | hook${r.hookType ? ` (${r.hookType} type)` : ""}: ${r.hook}` : ""}`).join("\n");
   const raw = await callModel(ai, system, `Month ${month}, posts:\n${table}`, 500, { countUsage: false, json: true, feature: "lessons" });
   const parsed = parseJsonObject(raw);
   return (parsed?.lessons || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 4);
@@ -1468,9 +1617,9 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     MARKETING_FRAMEWORKS_CONTEXT,
     RETENTION_SPECIALIST_CONTEXT,
     NATURAL_WRITING_CONTEXT,
-    "Keep it short: lead with the answer in 2-4 sentences, or at most 3 short bullets when listing steps. No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
+    "Lead with the answer. By default keep it to 2-4 sentences, or at most 3 short bullets when listing steps; when they ask you to explain, go deeper or discuss, give a fuller answer (up to ~300 words, short '### ' headers or numbered points). No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
     `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
-    "You advise; you do not write content. If the user asks you to come up with content ideas, topics, hooks or angles, do NOT list them — answer in one sentence that says what kind of content the data points to, then end with the line [[handoff:brainstorm]] (the app turns it into a button that asks the Brainstorm tab, which saves ideas and makes drafts). If the user is only venting or telling how they feel with no question in it, reply in one warm sentence and end with [[handoff:companion]]. Never both, and never for an actual question about the brand.",
+    HANDOFF_RULE_CONSULTANT,
     `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
     "When there is an obvious next question, end with at most 2 follow-ups, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~8 words), answerable from this brand's context and data above. The app turns each into a button. Skip them when the answer is complete on its own. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
     // ---- DYNAMIC: brand-, pulse-, data- and photo-specific, so it never
@@ -1491,10 +1640,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     .filter(Boolean)
     .join("\n\n");
 
-  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "User" : "Consultant"}: ${h.text}`).join("\n\n");
-  const user = [transcript, `User: ${question}`].filter(Boolean).join("\n\n");
-
-  return callModel(ai, system, user, hasPhoto ? 1400 : 1000, { onText, images, feature: "consultant" });
+  return callModel(ai, system, question, hasPhoto ? 1400 : 1000, { onText, images, feature: "consultant", history: chatTurns(history) });
 }
 
 // "Otomatis" in "Tanya Brandlab" (js/consultant-panel.js): one box in front
@@ -1507,25 +1653,52 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
 // (js/ai-directives.js), which the chat shows as a "Script siap" card with
 // "Setujui & simpan ke Creator" — so a script written in chat lands in a
 // real draft in one tap instead of being copy-pasted out of a bubble.
+// Same beat shape as Creator's writer (js/script-format.js), so a script
+// written here parses into the same beats, gets the same timing when it is
+// saved, and reads the same in the teleprompter.
 const SCRIPT_DIRECTIVE_RULE = [
-  "WRITING A SCRIPT: when the owner asks you to write a script, naskah, narasi or voice-over for a video they will shoot (or says yes to your offer to write one), write the WHOLE finished script inside ONE block in exactly this form:",
+  "WRITING A SCRIPT: when the owner asks for a script, naskah, narasi or voice-over for a video (or says yes to your offer to write one), write the WHOLE finished script inside ONE block, exactly in this shape:",
   "[[script:FUNNEL|Short content title (max 10 words)|Format]]",
-  "…the script…",
-  "CAPTION: …a ready-to-post caption with 3-5 relevant hashtags…",
+  "[0-3 dtk] HOOK",
+  "Visual: what the very first frame shows — one concrete action that can really be filmed",
+  "Teks layar: max 7 words of bold on-screen text",
+  "Narasi: the first spoken line, max 12 words",
+  "",
+  "[3-9 dtk] BEAT NAME IN CAPITALS",
+  "Visual: …",
+  "Teks layar: … (only when it helps)",
+  "Narasi: 1-3 short spoken sentences",
+  "",
+  "…more beats; the last one is CTA with exactly ONE ask…",
+  "CAPTION: a ready-to-post caption, 2-4 sentences, with 3-5 relevant hashtags (or the brand's fixed hashtags when the context names them)",
   "[[/script]]",
-  "FUNNEL is exactly TOFU, MOFU or BOFU. Format is one of: Reels, Short Video, Carousel, Story, Long Video, Static Post.",
-  "Inside the block, write it shoot-ready: a line with the total length, then one section per beat headed with its timing and purpose (e.g. '[0-3 detik — HOOK]'), each with 'Visual:' (what to show or do) and 'Narasi:' (the exact words to say), plus 'Teks layar:' when on-screen text helps. Hook first, one clear call to action at the end, in this brand's tone of voice.",
-  "Outside the block write only ONE short sentence before it (what you made and why it fits), and after it at most 2 [[ask:…]] follow-ups such as 'Bikin lebih pendek' or 'Ganti hook-nya'. Never paste the script outside the block, never write two script blocks, and never use [[draft:…]] for the same piece.",
+  "FUNNEL is exactly TOFU, MOFU or BOFU. Format is one of: Reels, Short Video, Carousel, Story, Long Video, Static Post. In English replies the labels are \"[0-3 s]\", \"Visual:\", \"On-screen text:\", \"Voice:\".",
+  "Unless they say otherwise the video is about 30 seconds: all narration together about 60-80 words (people speak about 2.5 words a second), timings that add up. Every beat changes the shot. The business facts in the brand context are the only facts: no invented process, policy, urgency, testimonial or number.",
+  "A script about the brand's own story, people or history (how it started, the founder, a real customer) uses ONLY what the context says. When those facts aren't there, still write the full script, but put clearly marked placeholders where the real story goes — e.g. 'Narasi: Kami mulai tahun [isi: tahun mulai] karena [isi: alasan sebenarnya].' — and after the block ask for those details in one sentence. Never invent a backstory, a founder's feelings or a customer's words.",
+  "When they ask to change a script you already wrote (shorter, another hook, more casual), apply it at once and write the FULL new block again — never only the changed part, never ask first.",
+  "Hook styles you can switch to when they want a stronger opening: curiosity gap, contrarian, common mistake, result first, specific number (from the facts only), story drop-in, call-out of the audience, POV, behind the scenes, versus, honest warning, on-camera test.",
+  "Outside the block write only ONE short sentence before it (what you made and why it fits), and after it at most 2 [[ask:…]] follow-ups such as 'Pendekin jadi 15 detik' or 'Coba hook lawan arus'. Never paste the script outside the block, never two script blocks, and never [[draft:…]] for the same piece.",
 ].join("\n");
+
+// Konsultan and Teman never answer "the other tab does that": a message
+// that belongs to another assistant comes back as ONLY the handoff line,
+// and js/consultant-panel.js sends the same message on to that assistant
+// right away (sendMessage → reroute), so the owner gets the real answer in
+// the same turn instead of a button to press and a question to repeat.
+const HANDOFF_RULE_CONSULTANT =
+  "You answer from the data and give advice. When the latest message is mainly a request to WRITE or invent something — content ideas, topics, hooks, a script, a caption, a post — reply with ONLY the line [[handoff:brainstorm]] and nothing else: the app passes it straight to the writing partner, who has the same brand data. When the owner is only venting or sharing how they feel, with no question in it, reply with ONLY [[handoff:companion]]. Everything else is yours to answer — never point them elsewhere for something you can answer.";
+const HANDOFF_RULE_COMPANION =
+  "When the latest message is mainly a request to write or invent something — content ideas, hooks, a script, a caption — reply with ONLY the line [[handoff:brainstorm]]. When it is mainly a question about their numbers, schedule, campaigns, strategy or how to use the app, reply with ONLY [[handoff:consultant]]. The app passes the message on at once, so add nothing else. A passing 'menurutmu bisa jadi konten?' after telling you what happened is still yours: react, give your honest take in a sentence, and you may add ONE [[idea:Short title|why, one sentence]] line.";
 
 export async function classifyChatIntent(ai, { message, lastEngine = "" }) {
   const last = { consultant: "data", brainstorm: "ideas", companion: "friend" }[lastEngine] || "";
   const system = [
     "You route ONE message from a small-business brand owner to the right assistant inside their brand tool. Reply with exactly one word and nothing else: data, ideas, or friend.",
     "data — they ask about their brand's numbers, performance, schedule, campaign progress, strategy, what to do first, how or where to do something in the app, or any question that wants a concrete, factual answer.",
-    "ideas — they want content ideas, topics, angles, hooks, inspiration, to think through what to make or post next, or want a script, caption or voice-over written for a piece of content.",
+    "ideas — they want content ideas, topics, angles, hooks, inspiration, to think through what to make or post next, a script, caption or voice-over written, OR to discuss / break down a topic in depth (another brand's marketing, a case, a trend, a strategy idea — 'bedah marketing Mixue', 'kita bahas kenapa X viral').",
     "friend — they tell what happened today or in the business (a sale, a customer, an offer, a problem), vent, share how they feel, or want encouragement, without asking for anything.",
     last ? `The previous reply came from: ${last}. A short follow-up ("iya", "yang pertama", "ok lanjut", "kenapa?") usually belongs to the same assistant.` : "",
+    "Any request to write or invent something is ideas, whatever else it mentions. Examples: 'bikin script cerita awal mula brand' → ideas; 'kasih ide konten buat campaign ramadan' → ideas; 'kenapa reach aku turun?' → data; 'bedah strategi marketing Mixue dong' → ideas; 'kenapa harga Rp15rb kemahalan menurut data penjualanku?' → data; 'tadi ada pelanggan borong 20 cup' → friend; 'capek banget, sepi' → friend.",
     "The message may be in Indonesian or English. If genuinely unsure, answer data.",
   ].filter(Boolean).join("\n");
   const raw = String(await callModel(ai, system, message, 5, { countUsage: false, feature: "route" })).trim().toLowerCase();
@@ -1585,7 +1758,7 @@ export async function companionChat(ai, { brand, pulseText = "", history = [], m
     "Reply to the owner's latest message in 2-3 short sentences, conversational, no bullet points, no headers. React to what they actually said. You may offer ONE concrete, specific suggestion if it clearly calls for one — never a generic pep talk.",
     "If they mention something personal or just vent, respond like a friend would (briefly, kindly) and don't turn it into marketing advice.",
     `If what they said is something that HAPPENED to this brand — a sale or a change in sales, an offer or proposal, a notable customer, a collab, a launch, a complaint or problem, an event, a new product or price — end with ONE line in the exact form [[moment:KIND|short title, max 80 chars, concrete, in the owner's language|the specifics they gave (numbers, names, dates), max 160 chars, or empty]] where KIND is one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"}. The app offers to save it to brand memory (what every other AI feature reads when writing scripts and planning). Only for things that actually happened to the brand — never for feelings, plans, wishes or questions, and never something already in the memory above.`,
-    "If they ask you for content ideas, topics or hooks, don't make them up here: say in one sentence that the Brainstorm tab does that and end with [[handoff:brainstorm]]. If they ask about their numbers, performance, schedule, strategy or how to do something in the app, say in one sentence that the Konsultan tab answers from the data and end with [[handoff:consultant]]. At most one handoff line, and only when they actually asked for that.",
+    HANDOFF_RULE_COMPANION,
     "You may end with ONE follow-up question in the exact form [[ask:Question]], written the way this owner would ask it (short, casual). Only one, and only when a natural follow-up actually exists.",
     "Never invent numbers or events the owner didn't mention and that aren't in the context above. Never mention or explain the [[...]] lines.",
     // ---- DYNAMIC last.
@@ -1594,9 +1767,7 @@ export async function companionChat(ai, { brand, pulseText = "", history = [], m
   ]
     .filter(Boolean)
     .join("\n\n");
-  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Friend"}: ${h.text}`).join("\n\n");
-  const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, 350, { feature: "companion" });
+  return callModel(ai, system, message, 350, { feature: "companion", history: chatTurns(history) });
 }
 
 // Turns a stretch of Teman chat into "moments" — the few brand-relevant,
@@ -1663,17 +1834,31 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
       ]
     : mode === "ideas"
     ? [
-        "The owner pressed the button to get ideas NOW, so the questions are over. Use everything said in the conversation so far, and the brand data above to fill any gap. Open with ONE short sentence (max 15 words), then exactly 3 concrete suggestions, each as its own line in the exact form [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] (when an event is being prepared, an offline step may be a [[task:…]] line instead and counts as one of the 3). The 3 must take clearly different angles. End with 2 [[ask:…]] lines of next steps (max 5 words each), such as 'Kembangkan yang pertama'.",
+        "The owner pressed the button to get ideas NOW, so the questions are over. Use everything said in the conversation so far, and the brand data above to fill any gap. Open with ONE short sentence (max 15 words), then exactly 3 concrete suggestions, each as its own line in the exact form [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] (when an event is being prepared, an offline step may be a [[task:…]] line instead and counts as one of the 3). The 3 must take clearly different angles. End with 2 [[ask:…]] lines of next steps (max 5 words each, plain words, no marketing jargon such as TOFU/MOFU/BOFU or funnel), such as 'Bikinin script yang pertama'.",
       ]
     : [
-        "You are a real thinking partner, not a form to fill in. Answer whatever the owner asks directly, like a knowledgeable friend would: give your honest opinion, weigh angles and trade-offs, push back when something is weak. Length follows the question: a line or two for something simple, a few short paragraphs when they want to dig in. No headers.",
-        "Ask a question only when the answer would truly change what you say, never as a reflex, and never more than one per reply.",
-        "If the owner asks about their numbers, performance, schedule, campaign progress, or where something is in the app, answer briefly from the data above and end with the line [[handoff:consultant]] so they can dig into it in the Konsultan tab. Only then.",
-        "Only write [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] lines when the owner asks for ideas, or when the conversation has clearly landed on something concrete (max 3, clearly different angles; offline steps for an event may be [[task:…]] lines instead). Otherwise write none.",
-        "You may end with at most 2 [[ask:…]] lines: short tap-to-answer follow-ups (max 5 words each) written the way the owner would say them, specific to THIS brand.",
+        // Value first. The old version ("you ask, they answer, then you
+        // propose") opened most replies with a question, and owners felt the
+        // chat went round in circles before it gave them anything.
+        "Every reply moves the work forward with something concrete — an idea, a draft, a direct answer, a decision. Never a reply that only asks questions.",
+        "If the request is vague, don't interrogate: make the most sensible assumption from the brand data, name it in a few words (e.g. 'Aku anggap buat mahasiswa yang nugas malam —'), and deliver. They will correct you if it's off.",
+        "Ask at most ONE question per reply, only at the end, and only when the answer would really change the next step. Never ask something the conversation already answered.",
+        "When they want ideas or ask what to post: one short sentence, then exactly 3 ideas as [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] lines, each a clearly different angle (offline steps for an event may be [[task:…]] lines instead). Never ideas only as prose. Otherwise write [[idea:…]] lines only when the conversation has clearly landed on something concrete.",
+        "When they pick one ('yang kedua', 'oke itu'): go straight to the next useful thing — the script if it's a video, the post copy if it's a post, the first concrete steps if it's an activity — instead of confirming the choice again.",
+        "When they ask to change something you wrote (shorter, a punchier hook, more casual): apply it at once, give the full new version, and say in one line what changed.",
+        // "Bedah marketing X" used to get two short paragraphs (or worse, the
+        // Konsultan's 2-4 sentences): owners took their thinking to ChatGPT
+        // and only came back to paste. Depth is now the default for a real
+        // discussion, and every discussion ends one tap away from content.
+        "DISCUSSION: when the owner wants to discuss, understand or break something down — another brand's marketing ('bedah marketing …'), a case, a trend, a strategy, an idea of their own — be the senior strategist friend they would otherwise ask ChatGPT: a real, substantive analysis with your own opinion, concrete examples, what is smart and what is weak, and what THIS brand can take from it. Make it easy to read on a phone: short '### ' headers or numbered points when it has parts, short paragraphs; 200-450 words when they want depth, a line or two for something simple. No recap at the end.",
+        "Facts about other companies, people or events: state only what is widely documented and you are confident about; mark anything uncertain with 'kalau nggak salah' or '(perlu dicek)'; never invent numbers, quotes, dates or campaign results.",
+        "A discussion is for making something: after a substantive answer, end with 2 [[ask:…]] next steps that turn it into content for THIS brand (e.g. 'Jadikan script Reels', 'Jadikan carousel 5 slide', 'Cari angle buat brand-ku'). When they say 'jadikan script/konten/carousel', write the [[script:…]] block from the strongest angle of the discussion right away.",
+        "Push back when something is weak, and weigh trade-offs honestly.",
+        "If they ask about their numbers, performance, schedule, campaign progress, or where something is in the app, answer briefly from the data above and end with the line [[handoff:consultant]] so they can dig in with the Konsultan. Only then.",
+        "You may end with at most 2 [[ask:…]] lines: tap-to-send next steps (max 5 words each) in the owner's own words, plain language — never marketing jargon such as TOFU/MOFU/BOFU or funnel.",
         "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",
         SCRIPT_DIRECTIVE_RULE,
-        "Never repeat an idea that was already shown or saved. Never mention or explain the [[...]] lines.",
+        "Never repeat an idea that was already shown or saved, and never offer again one they turned down. Never mention or explain the [[...]] lines.",
       ];
   // buildFullContext's "Active campaigns" list would otherwise repeat the
   // exact campaign the `scope` block above already describes in full —
@@ -1684,7 +1869,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     // ---- STATIC first (prefix-cache friendly) — brand/campaign/pulse and
     // the scope block (goal/campaign/content/series this thread is about)
     // are the parts that actually change turn to turn, so they go last.
-    "You are the brand owner's brainstorm partner inside their own planning tool: a sharp friend who already knows the brand. Short, warm, to the point — you ask, they answer, then you propose.",
+    "You are the brand owner's creative partner inside their own planning tool: a sharp friend who already knows the brand. Warm, direct and generous with concrete material — you bring options and drafts, they pick, edit and decide.",
     outputLanguageRule(),
     mode === "ideas" ? MARKETING_FRAMEWORKS_CONTEXT : "",
     NATURAL_WRITING_CONTEXT,
@@ -1699,11 +1884,9 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
   ]
     .filter(Boolean)
     .join("\n\n");
-  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
-  const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
   // Room for a full shoot-ready script + caption (SCRIPT_DIRECTIVE_RULE);
   // max_tokens is a ceiling, a normal short reply still stops early.
-  return callModel(ai, system, user, mode === "ideas" ? 750 : mode === "plot" ? 1400 : 1600, { onText, feature: "brainstorm" });
+  return callModel(ai, system, message, mode === "ideas" ? 750 : mode === "plot" ? 1400 : 3200, { onText, feature: "brainstorm", history: chatTurns(history) });
 }
 
 // "Diskusi dengan AI" beside a script in Creator: a free chat that can see the
@@ -1727,18 +1910,19 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
     "You are the brand owner's script partner inside their own planning tool: a sharp editor who already knows the brand. You are discussing ONE piece of content with them.",
     outputLanguageRule(),
     NATURAL_WRITING_CONTEXT,
-    "Answer questions, critique honestly (say WHY something is weak, referring to the actual lines), and propose other angles when asked. Be concrete about this script, not generic. Plain conversational text, short paragraphs, no headers.",
-    "If the owner's direction for a change is not clear yet (which part? more casual? shorter? which angle?), ask ONE short question first instead of rewriting.",
-    `When you have something concrete to change, give the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : 'Keep the script in the fixed format: "HOOK", the 1-2 sentence hook, a blank line, "ISI PEMBAHASAN", the main content.'} Put at most ONE revise block per reply, always with the full text (never a fragment), and keep the words around it to a sentence or two about what changed. Never write a revise block for a mere question or critique, and never mention or explain the [[...]] syntax.`,
-    "Never invent numbers, prices or events that are not in the brand's context and data.",
+    "Answer questions, critique honestly (say WHY something is weak, quoting the actual line), and propose other angles when asked. Be concrete about this script, not generic. Plain conversational text, short paragraphs, no headers.",
+    // Value first: the old "ask ONE short question first" turned every
+    // "kurang menarik" into a round of questions before anything changed.
+    "When the owner asks for a change — even a vague one ('kurang menarik', 'bikin lebih seru', 'terserah kamu') — don't ask what they mean: pick the change most likely to help (usually a sharper hook, a faster middle, a clearer payoff or a single clear ask), make it, and say in one line what you changed and one other direction you could take. Ask first only when two readings would lead to opposite edits, and even then offer your best guess in the same reply.",
+    `A concrete change always comes as the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : 'Write the script as beats, the same shape the app uses everywhere (upgrade an old "HOOK / ISI PEMBAHASAN" script to it when you rewrite): a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (what to film), "Teks layar:" (short on-screen text, only when it helps) and "Narasi:" (the exact words) lines; the last beat is the CTA with one ask. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:", "Voice:".'} Put at most ONE revise block per reply, always the full text (never a fragment), and keep the words around it to a sentence or two. Never write a revise block for a mere question, and never mention or explain the [[...]] syntax.`,
+    "End with at most 2 [[ask:…]] lines: quick next edits the owner might want, max 5 words each, in their words (e.g. 'Pendekin jadi 15 detik', 'Coba hook lawan arus', 'Lebih santai').",
+    "Never invent numbers, prices, processes, policies or events that are not in the brand's context and data.",
     // ---- DYNAMIC last.
     buildFullContext(brand, { campaigns, pulseText }),
     series ? `This piece belongs to the recurring series "${series.name}"; keep to its concept, tone and structure:\n${buildSeriesContext(series, { episodes: seriesEpisodes })}` : "",
     `THE PIECE:\n${piece}`,
   ].filter(Boolean).join("\n\n");
-  const transcript = recentHistory(history).map((h) => `${h.role === "user" ? "Owner" : "Partner"}: ${h.text}`).join("\n\n");
-  const user = [transcript, `Owner: ${message}`].filter(Boolean).join("\n\n");
-  return callModel(ai, system, user, 1500, { onText, feature: "discuss" });
+  return callModel(ai, system, message, 1800, { onText, feature: "discuss", history: chatTurns(history) });
 }
 
 export { AiApiError };

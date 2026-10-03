@@ -86,15 +86,23 @@ export async function demoPhaseContent({ phase } = {}) {
 // `only` the same way (regenerate just hooks or just script). Creator's own
 // 👍/👎 strip is never mounted on this output (see creator.js) so a sample
 // never lands in the aiFeedback eval set.
+// Same shape as ai.js generateScript: three-layer hooks with a type, and a
+// beat script (js/script-format.js) that opens with the first hook.
 export async function demoGenerateScript({ only } = {}) {
   await wait();
-  const hooks = [t("demo.script.hook1"), t("demo.script.hook2"), t("demo.script.hook3")];
+  const hooks = [
+    { type: "curiosity", say: t("demo.script.hook1"), onScreen: "", visual: "", why: "" },
+    { type: "pov", say: t("demo.script.hook2"), onScreen: "", visual: "", why: "" },
+    { type: "story", say: t("demo.script.hook3"), onScreen: "", visual: "", why: "" },
+  ];
   const script = t("demo.script.body");
   const caption = t("demo.script.caption");
   return {
     hooks: !only || only === "hooks" ? hooks : [],
     script: !only || only === "script" ? script : "",
     caption: !only || only === "caption" ? caption : "",
+    slides: [],
+    targetSec: 30,
   };
 }
 

@@ -4913,3 +4913,93 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .consultant-panel.is-above-modal{ z-index:80; }
 /* Beranda · Jadwal berikutnya: the one place late pieces are listed and moved. */
 .home-late-bar{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 12px; margin-bottom:6px; border-radius: var(--radius-md); background: var(--health-poor-soft); color: var(--health-poor); font-size:13px; font-weight:600; }
+
+/* ---------- Script writer v2 (js/views/creator.js, js/script-format.js) ---------- */
+/* Tipe hook: chips, the funnel's recommended ones marked with a dot. */
+.hook-type-field .creator-field-head{ margin-bottom:8px; gap:8px; flex-wrap:wrap; }
+.hook-rec-legend{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color: var(--text-faint); }
+.hook-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.hook-chip{ position:relative; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background: var(--surface); color: var(--text-muted); padding:7px 12px; border-radius: var(--radius-pill); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; transition: border-color .15s, background .15s, color .15s; }
+.hook-chip:hover{ border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--text); }
+.hook-chip.active{ background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.hook-chip-mix.active{ background: var(--text); color: var(--bg); border-color: var(--text); }
+.hook-chip-more{ border-style:dashed; color: var(--text-faint); }
+.hook-chip[hidden]{ display:none; }
+.hook-rec-dot{ width:6px; height:6px; border-radius:50%; background: var(--accent); flex:none; }
+.hook-type-help{ margin-top:8px; font-size:12.5px; line-height:1.5; color: var(--text-muted); }
+.hook-type-help p{ margin:0 0 4px; }
+.hook-type-help b{ color: var(--text); }
+
+/* A hook card: type, the line, the screen text and the first second. */
+.hook-card{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:8px; }
+.hook-card.is-in-script{ border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.hook-card-main{ min-width:0; flex:1; }
+.hook-card-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+.hook-type-badge{ font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); }
+.hook-in-script{ display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:700; color: var(--health-good); }
+.hook-say{ font-size:14px; font-weight:700; line-height:1.4; color: var(--text); overflow-wrap:anywhere; }
+.hook-layer{ margin-top:5px; font-size:12px; line-height:1.45; color: var(--text-muted); overflow-wrap:anywhere; }
+.hook-layer span{ display:inline-block; min-width:84px; margin-right:6px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; color: var(--text-faint); }
+.hook-why{ margin-top:6px; font-size:11.5px; font-style:italic; color: var(--text-faint); }
+@media (max-width: 520px){ .hook-card{ flex-direction:column; gap:10px; } .hook-card > .btn{ align-self:flex-start; } .hook-layer span{ display:block; min-width:0; margin:0 0 1px; } }
+
+/* The script as beats: timing + name, then Visual / Teks layar / Narasi. */
+.ai-length{ display:inline-flex; align-items:center; gap:5px; margin:0 0 8px; font-size:12px; font-weight:700; color: var(--text-muted); }
+.ai-length.is-over{ color: var(--health-average); }
+.ai-script-preview{ margin-bottom:8px; font-size:13px; white-space:pre-wrap; }
+.ai-script-preview.has-beats{ white-space:normal; padding:6px; }
+.ai-script-hint{ font-size:11.5px; margin:0 0 10px; }
+.ai-script-preview .beats-meta{ display:none; }
+.script-len-note{ display:flex; align-items:center; gap:5px; font-size:11.5px; margin:6px 0 0; }
+.beats{ display:flex; flex-direction:column; gap:6px; }
+.beats-meta{ margin:2px 4px 2px; font-size:12px; font-weight:700; color: var(--text-muted); }
+.beat{ border:1px solid var(--border-soft); border-radius:10px; padding:8px 10px; background: var(--surface); }
+.beat.is-hook{ border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.beat-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:4px; }
+.beat-time{ font-size:11px; font-weight:700; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space:nowrap; }
+.beat-label{ font-size:11.5px; font-weight:800; letter-spacing:.04em; color: var(--accent); overflow-wrap:anywhere; }
+.beat-note{ margin:0 0 4px; font-size:12px; color: var(--text-muted); }
+.beat-row{ display:grid; grid-template-columns: 78px 1fr; gap:8px; margin-top:3px; font-size:12.5px; line-height:1.45; }
+.beat-row p{ margin:0; color: var(--text-muted); overflow-wrap:anywhere; }
+.beat-k{ font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; color: var(--text-faint); padding-top:2px; }
+.beat-say p{ color: var(--text); font-weight:600; }
+@media (max-width: 520px){ .beat-row{ grid-template-columns:1fr; gap:1px; } }
+.cp-script-body .beats{ margin:4px 0; }
+.cp-script-body .beat{ background: var(--surface-2); }
+/* Headers in a longer chat discussion ("### Kenapa viral"). */
+.consultant-md h4.md-h{ margin:12px 0 4px; font-size:13.5px; font-weight:800; color: var(--text); }
+.consultant-md h4.md-h:first-child{ margin-top:0; }
+
+/* ---------- Layar penuh: writing a script full screen (js/script-focus.js) ---------- */
+.script-focus-btn{ white-space:nowrap; }
+/* No overflow:hidden on body here: on a phone it let the page's own
+   too-wide bits stretch the layout viewport (the editor rendered 776px wide). */
+.script-focus{ --dock-w: 0px; position:fixed; inset:0 var(--dock-w) 0 0; z-index:75; display:flex; flex-direction:column; background: var(--bg); animation: panel-in .2s ease both; }
+.script-focus-head{ display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); background: var(--bg-raised); flex:none; flex-wrap:wrap; }
+.script-focus-title{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.script-focus-title strong{ font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.script-focus-len{ font-size:12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.script-focus-actions{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.script-focus-actions .btn[aria-pressed="true"]{ background: var(--accent-soft); color: var(--text); }
+.script-focus-body{ flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; align-items:center; padding:28px 20px 16px; }
+.script-focus-text, .script-focus-preview{ width:100%; max-width:780px; }
+.script-focus-text{ flex:1; min-height:60vh; resize:none; border:none; outline:none; background:transparent; color: var(--text); font:inherit; font-size:17px; line-height:1.75; padding:0; caret-color: var(--accent); }
+.script-focus-text::placeholder{ color: var(--text-faint); opacity:1; }
+.script-focus-preview .beat{ padding:12px 14px; }
+.script-focus-preview .beat-row{ font-size:14.5px; grid-template-columns: 96px 1fr; }
+.script-focus-plain{ font-size:16px; line-height:1.7; color: var(--text); }
+.script-focus-hint{ width:100%; max-width:780px; margin:12px 0 0; font-size:12px; color: var(--text-faint); }
+body.script-focus-open .consultant-panel{ z-index:86; }
+body.script-focus-open .consultant-fab{ visibility:hidden; }
+@media (min-width: 1024px){
+  body.script-focus-docked .script-focus{ --dock-w: min(420px, 36vw); }
+  body.script-focus-open.script-focus-docked .consultant-panel.is-docked{ top:0; right:0; bottom:0; left:auto; width:min(420px, 36vw); max-width:none; height:100vh; height:100dvh; border-radius:0; border-width:0 0 0 1px; box-shadow:none; }
+}
+@media (max-width: 640px){
+  .script-focus-head{ padding:10px 12px; gap:8px; }
+  .script-focus-actions .btn span{ display:none; }
+  .script-focus-actions .btn{ padding-left:10px; padding-right:10px; }
+  .script-focus-body{ padding:16px 16px 12px; }
+  .script-focus-text{ font-size:16px; }
+  .script-focus-hint{ display:none; }
+}

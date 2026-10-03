@@ -56,7 +56,10 @@ export function parseDirectives(rawText) {
     // A rewrite of the script/caption being discussed: multi-line, so it is
     // pulled out first. An unterminated tag (reply cut off, or still
     // streaming) is hidden rather than shown raw.
-    .replace(/\[\[revise:(script|caption)\]\]([\s\S]*?)\[\[\/revise\]\]/gi, (_, target, body) => {
+    // The model closes it as [[/revise]] or, about as often, [[/revise:script]]
+    // — both count (the second used to be read as "never closed", which
+    // hid the whole revision: "ini versi barunya" with nothing under it).
+    .replace(/\[\[revise:(script|caption)\]\]([\s\S]*?)\[\[\/revise(?::(?:script|caption))?\]\]/gi, (_, target, body) => {
       const text = body.trim();
       if (text && revisions.length < 2 && !revisions.some((r) => r.target === target.toLowerCase())) revisions.push({ target: target.toLowerCase(), text });
       return "";
@@ -67,7 +70,7 @@ export function parseDirectives(rawText) {
     // "Script siap" card with "Setujui & simpan" — the chat never saves by
     // itself. A "CAPTION:" line inside splits off the caption. Unterminated
     // (still streaming, or cut off) is hidden rather than shown raw.
-    .replace(/\[\[script:([^\]\n]*)\]\]([\s\S]*?)\[\[\/script\]\]/gi, (_, head, body) => {
+    .replace(/\[\[script:([^\]\n]*)\]\]([\s\S]*?)\[\[\/script(?::[^\]\n]*)?\]\]/gi, (_, head, body) => {
       const [funnel = "", title = "", format = ""] = head.split("|").map((x) => x.trim());
       const text = body.trim();
       if (!text || scripts.length >= MAX_SCRIPTS) return "";
@@ -110,7 +113,9 @@ export function parseDirectives(rawText) {
       }
       return "";
     })
-    .replace(/\[\[idea:([^|\]\n]+)\|([^\]\n]+)\]\]/gi, (_, title, why) => {
+    // [[idea:Title|why]] — a third part some replies add ("|Reels") is
+    // dropped instead of showing up at the end of the "why".
+    .replace(/\[\[idea:([^|\]\n]+)\|([^|\]\n]+)(?:\|[^\]\n]*)?\]\]/gi, (_, title, why) => {
       const cleanTitle = title.trim().slice(0, 140);
       if (cleanTitle && ideas.length < MAX_IDEAS && !ideas.some((i) => i.title === cleanTitle)) {
         ideas.push({ title: cleanTitle, why: why.trim().slice(0, 400) });
@@ -160,6 +165,28 @@ export function parseDirectives(rawText) {
   return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, handoff, metrics };
 }
 
+// What the model wrote last time, as it wrote it: the reply's text plus its
+// cards turned back into directive lines. The chat history sent with the
+// next message uses this — before, only the text went back, so the model
+// never saw the script or ideas it had just written ("ganti hook-nya" got a
+// script written from scratch) and slowly stopped using the [[…]] lines it
+// no longer saw itself use.
+export function serializeDirectives(text, blocks = {}) {
+  const b = blocks || {};
+  const out = [String(text || "").trim()];
+  (b.ideas || []).forEach((i) => i?.title && out.push(`[[idea:${i.title}|${i.why || ""}]]`));
+  (b.scripts || []).forEach((sc) => {
+    if (!sc?.script) return;
+    out.push(`[[script:${sc.funnel || "TOFU"}|${sc.title || ""}|${sc.format || ""}]]\n${sc.script}${sc.caption ? `\nCAPTION: ${sc.caption}` : ""}\n[[/script]]`);
+  });
+  (b.revisions || []).forEach((r) => r?.text && out.push(`[[revise:${r.target}]]\n${r.text}\n[[/revise]]`));
+  (b.drafts || []).forEach((d) => d?.title && out.push(`[[draft:${d.funnel || "TOFU"}|${d.title}]]`));
+  (b.saves || []).forEach((x) => x?.title && out.push(`[[save:${x.title}|${x.why || ""}]]`));
+  (b.tasks || []).forEach((x) => x?.title && out.push(`[[task:${x.title}|${x.why || ""}]]`));
+  if (b.weekPlan?.items?.length) out.push(`(Week plan shown as a card:)\n${b.weekPlan.items.map((it) => `- ${it.date}: ${it.title}${it.angle ? ` — ${it.angle}` : ""}`).join("\n")}`);
+  return out.filter(Boolean).join("\n");
+}
+
 // The model answers in light markdown (bold, italics, numbered/bulleted
 // lists) even when asked not to — render that subset after escaping,
 // instead of showing raw asterisks to the user. Anything else stays
@@ -176,6 +203,9 @@ export function renderLightMarkdown(text) {
   const isItem = (l) => /^\s*(\d+)[.)]\s+/.test(l) || /^\s*[-•]\s+/.test(l);
   lines.forEach((raw, i) => {
     const line = raw.trimEnd();
+    // "### Kenapa viral" — short section headers in a longer discussion.
+    const head = line.match(/^\s*#{1,4}\s+(.+)$/);
+    if (head) { closeList(); out.push(`<h4 class="md-h">${inline(head[1].replace(/\s*#+\s*$/, ""))}</h4>`); return; }
     const ol = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
     const ul = line.match(/^\s*[-•]\s+(.*)$/);
     if (ol || ul) {

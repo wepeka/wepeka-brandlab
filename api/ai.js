@@ -1,8 +1,8 @@
 // Server-side AI proxy — the ONLY place that ever holds a provider API key
 // now (DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY, set in Vercel's
 // env, never in Firestore). js/ai.js's callProxy() is the one client-side
-// caller: it sends { system, user, maxTokens, temperature, json, stream,
-// images, countUsage, feature } with a Firebase ID token, and gets back
+// caller: it sends { system, user, history, maxTokens, temperature, json,
+// stream, images, countUsage, feature } with a Firebase ID token, and gets back
 // either { text, usage } or, when `stream` is true, a text/event-stream of
 // `data: {"delta":"..."}` lines ending in `data: [DONE]`.
 //
@@ -24,6 +24,32 @@ const FREE_CALLS_PER_DAY = 150;
 // far below what it takes to run up a bill with one request.
 const MAX_INPUT_CHARS = 200_000;
 const MAX_IMAGES = 6;
+// Earlier turns of a chat, sent as real conversation turns ({ role:
+// "user"|"assistant", content }) instead of a transcript pasted into one
+// message — the model follows who said what, and the provider's prefix
+// cache reuses everything up to the newest turn.
+const MAX_HISTORY = 40;
+
+// Untrusted input → alternating turns that start with the owner. Same-role
+// neighbours are merged (Anthropic refuses two in a row), empty ones dropped.
+export function cleanHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const m of raw.slice(-MAX_HISTORY)) {
+    const role = m?.role === "assistant" ? "assistant" : m?.role === "user" ? "user" : null;
+    const content = typeof m?.content === "string" ? m.content.trim() : "";
+    if (!role || !content) continue;
+    const last = out[out.length - 1];
+    if (last && last.role === role) last.content = `${last.content}\n\n${content}`;
+    else out.push({ role, content });
+  }
+  while (out.length && out[0].role !== "user") out.shift();
+  // The newest message is sent separately as `user`, so history ends on the
+  // assistant's turn; a trailing owner turn would make two in a row.
+  if (out.length && out[out.length - 1].role === "user") out.pop();
+  return out;
+}
+const historyChars = (h) => h.reduce((a, m) => a + m.content.length, 0);
 
 // Vercel: stream the response body instead of buffering it whole before
 // sending — required for the SSE path below to actually arrive incrementally.
@@ -58,6 +84,15 @@ class AiProxyError extends Error {
 
 // One user turn for the Messages API: screenshots first, then the text —
 // same shape js/ai.js built client-side before this moved server-side.
+function claudeMessages(history, userPrompt, images) {
+  return [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: claudeUserContent(userPrompt, images) }];
+}
+function geminiContents(history, userPrompt, images) {
+  return [
+    ...history.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+    { role: "user", parts: [...images.map(dataUrlToInlinePart).filter(Boolean), { text: userPrompt }] },
+  ];
+}
 function claudeUserContent(userPrompt, images = []) {
   if (!images.length) return userPrompt;
   return [
@@ -74,7 +109,7 @@ function dataUrlToInlinePart(dataUrl) {
   const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || "");
   return m ? { inlineData: { mimeType: m[1], data: m[2] } } : null;
 }
-function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false } = {}) {
+function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false, history = [] } = {}) {
   return {
     model: DEEPSEEK_MODEL,
     max_tokens: maxTokens,
@@ -83,6 +118,7 @@ function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false
     ...(stream ? { stream: true } : {}),
     messages: [
       { role: "system", content: system },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: userPrompt },
     ],
   };
@@ -118,7 +154,7 @@ function providerError(status, body) {
   return new AiProxyError("provider", message || `HTTP ${status}`, 502, retryable);
 }
 
-async function callNonStream({ provider, apiKey, system, user, maxTokens, temperature, json, images }) {
+async function callNonStream({ provider, apiKey, system, user, history = [], maxTokens, temperature, json, images }) {
   if (provider === "gemini") {
     const res = await providerFetch(
       `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -127,7 +163,7 @@ async function callNonStream({ provider, apiKey, system, user, maxTokens, temper
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ parts: [...images.map(dataUrlToInlinePart).filter(Boolean), { text: user }] }],
+          contents: geminiContents(history, user, images),
           ...(temperature !== undefined ? { generationConfig: { temperature } } : {}),
         }),
       },
@@ -141,7 +177,7 @@ async function callNonStream({ provider, apiKey, system, user, maxTokens, temper
     if (images.length) throw new AiProxyError("noVision", "DeepSeek can't read images.", 400, false);
     const res = await providerFetch(
       DEEPSEEK_API_BASE,
-      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, json })) },
+      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, json, history })) },
       NON_STREAM_TIMEOUT_MS
     );
     const body = await readJsonSafe(res);
@@ -159,7 +195,7 @@ async function callNonStream({ provider, apiKey, system, user, maxTokens, temper
         max_tokens: maxTokens,
         ...(temperature !== undefined ? { temperature } : {}),
         system,
-        messages: [{ role: "user", content: claudeUserContent(user, images) }],
+        messages: claudeMessages(history, user, images),
       }),
     },
     NON_STREAM_TIMEOUT_MS
@@ -239,9 +275,9 @@ async function pumpAnthropicSse(body, onDelta) {
 // no streaming path wired up here (this app has never needed it) — it just
 // resolves in one shot and hands its whole answer over as a single delta,
 // same fallback the old client-side code gave a non-streaming provider.
-async function callStream({ provider, apiKey, system, user, maxTokens, temperature, images }, onDelta) {
+async function callStream({ provider, apiKey, system, user, history = [], maxTokens, temperature, images }, onDelta) {
   if (provider === "gemini") {
-    const { text } = await callNonStream({ provider, apiKey, system, user, maxTokens, temperature, images, json: false });
+    const { text } = await callNonStream({ provider, apiKey, system, user, history, maxTokens, temperature, images, json: false });
     if (text) onDelta(text);
     return;
   }
@@ -249,7 +285,7 @@ async function callStream({ provider, apiKey, system, user, maxTokens, temperatu
     if (images.length) throw new AiProxyError("noVision", "DeepSeek can't read images.", 400, false);
     const res = await providerFetch(
       DEEPSEEK_API_BASE,
-      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, stream: true })) },
+      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, stream: true, history })) },
       STREAM_TIMEOUT_MS
     );
     if (!res.ok || !res.body) throw providerError(res.status, await readJsonSafe(res));
@@ -266,7 +302,7 @@ async function callStream({ provider, apiKey, system, user, maxTokens, temperatu
         stream: true,
         ...(temperature !== undefined ? { temperature } : {}),
         system,
-        messages: [{ role: "user", content: claudeUserContent(user, images) }],
+        messages: claudeMessages(history, user, images),
       }),
     },
     STREAM_TIMEOUT_MS
@@ -301,12 +337,14 @@ export default async function handler(req, res) {
     images = [],
     countUsage = true,
     feature = "",
+    history: historyRaw = [],
   } = req.body || {};
+  const history = cleanHistory(historyRaw);
 
   // An ended trial or lapsed plan has no AI (the app shows the pricing
   // screen instead); refuse here too so the endpoint can't be used directly.
   if (!isAdminUid(uid) && isReadOnlyAccount(account)) return res.status(403).json({ error: "readonly" });
-  if (typeof system !== "string" || typeof user !== "string" || system.length + user.length > MAX_INPUT_CHARS) {
+  if (typeof system !== "string" || typeof user !== "string" || system.length + user.length + historyChars(history) > MAX_INPUT_CHARS) {
     return res.status(413).json({ error: "too-large" });
   }
   if (!Array.isArray(images) || images.length > MAX_IMAGES) return res.status(400).json({ error: "images" });
@@ -354,7 +392,7 @@ export default async function handler(req, res) {
       "X-Accel-Buffering": "no",
     });
     try {
-      await callStream({ provider, apiKey, system, user, maxTokens, temperature, images }, (delta) => {
+      await callStream({ provider, apiKey, system, user, history, maxTokens, temperature, images }, (delta) => {
         res.write(`data: ${JSON.stringify({ delta })}\n\n`);
       });
       if (charged) await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
@@ -369,7 +407,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { text } = await withOneRetry(() => callNonStream({ provider, apiKey, system, user, maxTokens, temperature, json: wantJson, images }));
+    const { text } = await withOneRetry(() => callNonStream({ provider, apiKey, system, user, history, maxTokens, temperature, json: wantJson, images }));
     let usageOut = { used, limit: quota.limit, period: quota.period };
     if (charged) {
       const next = await consumeQuota(db, uid, quota.period, new Date(), { limit: quota.limit });
