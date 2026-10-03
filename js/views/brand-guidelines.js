@@ -90,7 +90,7 @@ const BOOK_STYLES = [
 const BOOK_STYLE_KEYS = BOOK_STYLES.map((s) => s.key);
 
 const loadedFonts = new Set();
-function ensureGoogleFont(family) {
+export function ensureGoogleFont(family) {
   if (!family || loadedFonts.has(family)) return;
   loadedFonts.add(family);
   const link = document.createElement("link");

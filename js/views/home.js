@@ -1,12 +1,14 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents } from "../store.js";
 import { icon } from "../icons.js";
-import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards } from "../dom.js";
+import { initials, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { openContentEditor } from "./content-editor.js";
 import { celebrateBuilderCompleteIfFlagged, consumeDnaJustCompleted, consumeVisualBasicsJustDone } from "./brand-builder.js";
+import { ensureGoogleFont } from "./brand-guidelines.js";
+import { getCachedAccount, isReadOnly } from "../account.js";
 import { funnelLabel } from "../funnel-field.js";
 import { brandTopAction } from "../next-action.js";
 import { getMode } from "../mode.js";
@@ -494,20 +496,15 @@ function paint(root, brandId, state, refresh) {
   const hasPublishedContent = content.some((c) => c.status === "published");
 
   root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
-        <h1>${esc(brand.name)}</h1>
-        <p class="page-sub">${!identityDone ? t("home.sub.identity") : journey.doneCount < journey.steps.length ? t("beginner.sub.identityDone", { n: journey.steps.length - journey.doneCount }) : t("beginner.sub.allDone")}</p>
-        ${streakWeeks >= 2 ? `<p class="home-streak">${t("home.streak.line", { n: streakWeeks })}</p>` : ""}
-      </div>
-      <div class="home-head-side">
-        ${hasPublishedContent ? `<button type="button" class="btn btn-secondary btn-sm" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}${t("rep.btn")}</button>` : ""}
-        ${avatarHTML(brand, "width:64px;height:64px;border-radius:16px;font-size:24px;flex:none;")}
-      </div>
-    </div>
+    ${brandHeroHTML(brand, {
+      sub: !identityDone ? t("home.sub.identity") : journey.doneCount < journey.steps.length ? t("beginner.sub.identityDone", { n: journey.steps.length - journey.doneCount }) : t("beginner.sub.allDone"),
+      streakWeeks,
+      hasPublishedContent,
+    })}
 
     ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content, top) : identityHeroHTML(brandId, brand)}
+
+    ${recentContentHTML(brandId, content)}
 
     ${reportDue(brand, content) ? reportReminderHTML(brand) : ""}
 
@@ -549,6 +546,7 @@ function paint(root, brandId, state, refresh) {
   `;
 
   wireHelpButtons(root);
+  wireBrandHero(root, brandId);
   wireGoalCard(root, { brandId });
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
   if (!collapsed.has("companion")) wireCompanionCard(root, { brandId, refresh });
@@ -583,6 +581,139 @@ function paint(root, brandId, state, refresh) {
     const hero = qs("#journey-hero", root);
     if (hero) showCalloutBubble(hero, t("beginner.callout.builderDone"));
   }
+}
+
+// ---- Brand header ----------------------------------------------------------
+// The one picture on the page, made from what the owner already put in the
+// Brand Book: logo, tagline (set in the brand's own font), palette and font
+// names, over a soft wash of the brand color (--brand-tint, js/layout.js) —
+// or over the owner's own cover photo when they've added one. The fuller the
+// Brand Book, the more the page looks like their brand.
+
+const HEX = /^#[0-9a-f]{3,8}$/i;
+const isImageUrl = (u) => typeof u === "string" && (u.startsWith("data:image/") || u.startsWith("https://"));
+
+function brandHeroHTML(brand, { sub, streakWeeks, hasPublishedContent }) {
+  const bg = brand.brandGuidelines || {};
+  const logo = bg.logo?.dataUrl || brand.avatar || "";
+  const cover = isImageUrl(brand.coverPhoto) ? brand.coverPhoto : "";
+  const canEdit = !isReadOnly(getCachedAccount());
+  const tagline = (brand.brandDNA?.tagline || "").trim();
+  const font = (bg.fonts?.primary || "").trim();
+  if (font && tagline && !bg.customFonts?.[font]) ensureGoogleFont(font);
+  const swatches = ["primary", "secondary", "accent"].map((k) => bg.colors?.[k]).filter((c) => c && HEX.test(c));
+  const fonts = [bg.fonts?.primary, bg.fonts?.secondary].filter(Boolean);
+  const identity = swatches.length || fonts.length
+    ? `<div class="brand-hero-identity">
+        ${swatches.map((c) => `<span class="brand-hero-swatch" style="background:${c}" title="${c}"></span>`).join("")}
+        ${fonts.length ? `<span class="brand-hero-fonts">${fonts.map(esc).join(" · ")}</span>` : ""}
+      </div>`
+    : "";
+  const coverButtons = !canEdit
+    ? ""
+    : cover
+      ? `<button type="button" class="btn btn-secondary btn-sm brand-hero-btn" data-cover-pick title="${t("home.cover.change")}">${icon("image", { size: 13 })}<span>${t("home.cover.change")}</span></button>
+         <button type="button" class="btn btn-secondary btn-sm brand-hero-btn" data-cover-remove title="${t("home.cover.remove")}" aria-label="${t("home.cover.remove")}">${icon("trash", { size: 13 })}</button>`
+      : `<button type="button" class="btn btn-secondary btn-sm brand-hero-btn" data-cover-pick title="${t("home.cover.addTitle")}">${icon("image", { size: 13 })}<span>${t("home.cover.add")}</span></button>`;
+  return `
+    <section class="glass-card brand-hero${cover ? " has-cover" : ""}">
+      <div class="brand-hero-art" aria-hidden="true">
+        ${cover ? `<img class="brand-hero-cover" src="${esc(cover)}" alt="" /><span class="brand-hero-shade"></span>` : "<span></span><span></span>"}
+      </div>
+      <div class="brand-hero-top">
+        <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
+        <div class="brand-hero-actions">
+          ${coverButtons}
+          ${hasPublishedContent ? `<button type="button" class="btn btn-secondary btn-sm brand-hero-btn" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}<span>${t("rep.btn")}</span></button>` : ""}
+          ${canEdit ? `<input type="file" accept="image/*" data-cover-input hidden />` : ""}
+        </div>
+      </div>
+      <div class="brand-hero-main">
+        ${isImageUrl(logo) ? `<img class="brand-hero-logo is-image" src="${esc(logo)}" alt="" />` : `<div class="brand-hero-logo">${esc(initials(brand.name))}</div>`}
+        <div class="brand-hero-text">
+          <h1>${esc(brand.name)}</h1>
+          ${tagline ? `<p class="brand-hero-tagline"${font ? ` style="font-family:'${esc(font)}', var(--font-display), serif"` : ""}>${esc(tagline)}</p>` : ""}
+          <p class="brand-hero-sub">${sub}</p>
+          ${identity}
+        </div>
+      </div>
+      ${streakWeeks >= 2 ? `<p class="brand-hero-streak">${t("home.streak.line", { n: streakWeeks })}</p>` : ""}
+    </section>`;
+}
+
+// The brand doc (logo, custom fonts, everything) has to stay under
+// Firestore's 1 MiB per-document limit, so the photo is shrunk first and
+// refused, with a reason, when it still wouldn't fit next to the rest.
+const BRAND_DOC_BUDGET = 900 * 1024;
+
+function wireBrandHero(root, brandId) {
+  const input = qs("[data-cover-input]", root);
+  qs("[data-cover-pick]", root)?.addEventListener("click", () => input?.click());
+  input?.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      const dataUrl = await resizeImageFile(file, { maxDimension: 1280, quality: 0.72, format: "image/jpeg" });
+      const brand = getBrand(brandId);
+      if (!brand) return;
+      const rest = JSON.stringify({ ...brand, coverPhoto: "" }).length;
+      if (rest + dataUrl.length > BRAND_DOC_BUDGET) {
+        toast(t("home.cover.tooBig"), "error");
+        return;
+      }
+      updateBrand(brandId, { coverPhoto: dataUrl });
+      toast(t("home.cover.saved"));
+    } catch {
+      toast(t("home.cover.failed"), "error");
+    }
+  });
+  qs("[data-cover-remove]", root)?.addEventListener("click", () => {
+    updateBrand(brandId, { coverPhoto: "" });
+    toast(t("home.cover.removed"));
+  });
+}
+
+// ---- Latest content --------------------------------------------------------
+// A thin row of tiles so the page has something to look at: the cover
+// (thumbnail) when the post has one, otherwise a brand-colored tile with the
+// format. Published first (newest), topped up with what's coming next.
+
+const FORMAT_ICON = { reels: "play", video: "play", story: "image", carousel: "layers", feed: "image", photo: "image" };
+
+function recentContentHTML(brandId, content) {
+  const live = content.filter((c) => !c.archived && c.status !== "archived");
+  const published = live.filter((c) => c.status === "published").sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""));
+  const coming = live.filter((c) => c.status !== "published" && c.scheduleDate).sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
+  const items = [...published, ...coming].slice(0, 4);
+  if (!items.length) return "";
+  const tiles = items
+    .map((c) => {
+      const fmt = (c.format || "").toLowerCase();
+      const date = c.status === "published" ? c.publishedDate : c.scheduleDate;
+      const thumb = isImageUrl(c.thumbnail) ? c.thumbnail : "";
+      return `
+        <button type="button" class="recent-tile${thumb ? " has-cover" : ""}" data-open-content="${c.id}" title="${esc(c.title || "")}">
+          ${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" />` : `<span class="recent-tile-icon">${icon(FORMAT_ICON[fmt] || "image", { size: 18 })}</span>`}
+          ${c.format ? `<span class="recent-tile-format">${esc(c.format)}</span>` : ""}
+          <span class="recent-tile-meta">
+            <span class="recent-tile-title">${esc(c.title || t("beginner.untitled"))}</span>
+            ${date ? `<span class="recent-tile-date">${c.status === "published" ? "" : icon("clock", { size: 10 })}${formatDate(date)}</span>` : ""}
+          </span>
+        </button>`;
+    })
+    .join("");
+  return `
+    <section class="recent-strip">
+      <div class="recent-strip-head">
+        <span class="recent-strip-title">${t("home.recent.title")}</span>
+        <a class="link" href="#/brand/${brandId}/content/list">${t("home.recent.all")}</a>
+      </div>
+      <div class="recent-strip-row">
+        ${tiles}
+        <a class="recent-tile recent-tile-new" href="#/brand/${brandId}/content/creator">${icon("plus", { size: 18 })}<span>${t("home.recent.new")}</span></a>
+      </div>
+    </section>`;
 }
 
 // ---- Hero ------------------------------------------------------------------
