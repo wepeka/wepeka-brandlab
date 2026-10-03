@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS } from "../store.js";
 import { icon } from "../icons.js";
 import { initials, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -9,7 +9,7 @@ import { openContentEditor } from "./content-editor.js";
 import { celebrateBuilderCompleteIfFlagged, consumeDnaJustCompleted, consumeVisualBasicsJustDone } from "./brand-builder.js";
 import { ensureGoogleFont } from "./brand-guidelines.js";
 import { getCachedAccount, isReadOnly } from "../account.js";
-import { funnelLabel } from "../funnel-field.js";
+import { funnelLabel, statusLabel } from "../funnel-field.js";
 import { brandTopAction } from "../next-action.js";
 import { getMode } from "../mode.js";
 import { t } from "../i18n.js";
@@ -675,9 +675,9 @@ function wireBrandHero(root, brandId) {
 }
 
 // ---- Latest content --------------------------------------------------------
-// A thin row of tiles so the page has something to look at: the cover
-// (thumbnail) when the post has one, otherwise a brand-colored tile with the
-// format. Published first (newest), topped up with what's coming next.
+// A thin row of small text cards — format, title, stage, date — so the page
+// shows the brand's actual work at a glance. Published first (newest),
+// topped up with what's coming next.
 
 const FORMAT_ICON = { reels: "play", video: "play", story: "image", carousel: "layers", feed: "image", photo: "image" };
 
@@ -687,18 +687,20 @@ function recentContentHTML(brandId, content) {
   const coming = live.filter((c) => c.status !== "published" && c.scheduleDate).sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
   const items = [...published, ...coming].slice(0, 4);
   if (!items.length) return "";
-  const tiles = items
+  const cards = items
     .map((c) => {
-      const fmt = (c.format || "").toLowerCase();
       const date = c.status === "published" ? c.publishedDate : c.scheduleDate;
-      const thumb = isImageUrl(c.thumbnail) ? c.thumbnail : "";
+      const kind = [c.platform, c.format].filter(Boolean).join(" · ");
       return `
-        <button type="button" class="recent-tile${thumb ? " has-cover" : ""}" data-open-content="${c.id}" title="${esc(c.title || "")}">
-          ${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" />` : `<span class="recent-tile-icon">${icon(FORMAT_ICON[fmt] || "image", { size: 18 })}</span>`}
-          ${c.format ? `<span class="recent-tile-format">${esc(c.format)}</span>` : ""}
-          <span class="recent-tile-meta">
-            <span class="recent-tile-title">${esc(c.title || t("beginner.untitled"))}</span>
-            ${date ? `<span class="recent-tile-date">${c.status === "published" ? "" : icon("clock", { size: 10 })}${formatDate(date)}</span>` : ""}
+        <button type="button" class="recent-card" data-open-content="${c.id}">
+          <span class="recent-card-top">
+            <span class="recent-card-icon">${icon(FORMAT_ICON[(c.format || "").toLowerCase()] || "edit", { size: 14 })}</span>
+            <span class="recent-card-format">${esc(kind || t("beginner.untitled"))}</span>
+          </span>
+          <span class="recent-card-title">${esc(c.title || t("beginner.untitled"))}</span>
+          <span class="recent-card-foot">
+            <span class="status-pill status-${esc(c.status)}"><span class="status-dot"></span>${esc(statusLabel(c.status, STATUS_LABELS))}</span>
+            ${date ? `<span class="recent-card-date">${formatDate(date)}</span>` : ""}
           </span>
         </button>`;
     })
@@ -710,8 +712,8 @@ function recentContentHTML(brandId, content) {
         <a class="link" href="#/brand/${brandId}/content/list">${t("home.recent.all")}</a>
       </div>
       <div class="recent-strip-row">
-        ${tiles}
-        <a class="recent-tile recent-tile-new" href="#/brand/${brandId}/content/creator">${icon("plus", { size: 18 })}<span>${t("home.recent.new")}</span></a>
+        ${cards}
+        <a class="recent-card recent-card-new" href="#/brand/${brandId}/content/creator">${icon("plus", { size: 16 })}<span>${t("home.recent.new")}</span></a>
       </div>
     </section>`;
 }

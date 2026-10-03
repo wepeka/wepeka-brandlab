@@ -5071,37 +5071,24 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
 .recent-strip-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 2px 10px; }
 .recent-strip-title{ font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--text-muted); }
 .recent-strip-head .link{ font-size:12px; font-weight:700; }
-.recent-strip-row{ display:grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap:12px; }
-.recent-tile{
-  position:relative; display:block; aspect-ratio:1/1; padding:0; overflow:hidden; border-radius:16px; cursor:pointer; text-align:left; font:inherit; color:#fff;
-  border:1px solid color-mix(in srgb, var(--brand-tint) 30%, transparent);
-  background: linear-gradient(160deg, color-mix(in srgb, var(--brand-tint) 55%, #1a1720), color-mix(in srgb, var(--brand-tint) 18%, #0e0c13));
+.recent-strip-row{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)) minmax(0,.7fr); gap:12px; }
+.recent-card{
+  display:flex; flex-direction:column; gap:10px; min-width:0; padding:14px; border-radius:16px; cursor:pointer; text-align:left; font:inherit; color: var(--text);
+  background: var(--surface); border:1px solid var(--border);
   transition: transform .15s ease, border-color .15s ease;
 }
-.recent-tile:nth-child(2n){ background: linear-gradient(160deg, color-mix(in srgb, var(--brand-tint) 30%, #1a1720), color-mix(in srgb, var(--brand-tint) 8%, #0e0c13)); }
-.recent-tile:hover{ transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand-tint) 65%, transparent); }
-.recent-tile > img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-.recent-tile-icon{ position:absolute; top:42%; left:50%; transform:translate(-50%,-50%); width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background: rgba(255,255,255,.14); }
-.recent-tile-format{ position:absolute; top:10px; left:10px; padding:3px 8px; border-radius:999px; font-size:10.5px; font-weight:700; background: rgba(0,0,0,.35); }
-.recent-tile-meta{ position:absolute; left:0; right:0; bottom:0; display:flex; flex-direction:column; gap:3px; padding:28px 12px 12px; background: linear-gradient(to top, rgba(0,0,0,.7), transparent); }
-.recent-tile-title{ font-size:12.5px; font-weight:700; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.recent-tile-date{ display:flex; align-items:center; gap:4px; font-size:11px; color: rgba(255,255,255,.72); }
-.recent-tile.recent-tile-new{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:transparent; border:1.5px dashed var(--border); color: var(--text-muted); font-size:12.5px; font-weight:700; text-decoration:none; }
-.recent-tile.recent-tile-new:hover{ color: var(--accent); border-color: var(--accent); }
+.recent-card:hover{ transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand-tint) 55%, var(--border)); }
+.recent-card-top{ display:flex; align-items:center; gap:8px; min-width:0; font-size:11.5px; font-weight:700; color: var(--text-muted); }
+.recent-card-icon{ flex:none; width:28px; height:28px; border-radius:9px; display:grid; place-items:center; background: color-mix(in srgb, var(--brand-tint) 20%, transparent); color: var(--brand-tint-fg, var(--accent)); }
+.recent-card-format{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.recent-card-title{ flex:1; font-size:13.5px; font-weight:700; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.recent-card-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.recent-card-foot .status-pill{ padding:3px 9px; font-size:11px; animation:none; box-shadow:none; }
+.recent-card-date{ font-size:11.5px; color: var(--text-faint); white-space:nowrap; }
+.recent-card.recent-card-new{ align-items:center; justify-content:center; gap:6px; background:transparent; border:1.5px dashed var(--border); color: var(--text-muted); font-size:12.5px; font-weight:700; text-decoration:none; }
+.recent-card.recent-card-new:hover{ color: var(--accent); border-color: var(--accent); }
 @media (max-width:640px){
   .recent-strip-row{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:4px; }
-  .recent-tile{ flex:0 0 42%; aspect-ratio:4/5; scroll-snap-align:start; }
-  .recent-tile-icon{ top:36%; width:38px; height:38px; }
+  .recent-card{ flex:0 0 68%; scroll-snap-align:start; }
+  .recent-card.recent-card-new{ flex-basis:32%; }
 }
-
-/* Below the header on Beranda the widgets step back: flat, quieter, tighter
-   (dark theme; light theme already has its own quiet cards above). */
-.view-home .dash-widget-card, .view-home .report-remind{ animation:none; box-shadow:none; border-color: rgba(255,255,255,.08); }
-.view-home .dash-widget-card{ padding:18px 22px; margin-bottom:16px; }
-.view-home .dash-widget-card .dash-widget-backdrop, .view-home .report-remind{ background: rgba(255,255,255,.03); backdrop-filter:none; -webkit-backdrop-filter:none; }
-.view-home .dash-widget-card .dash-widget-glow{ display:none; }
-.view-home .dash-widget-card:hover, .view-home .report-remind:hover{ transform:none; box-shadow:none; border-color: rgba(255,255,255,.14); }
-.view-home .dash-widget-card-head{ margin-bottom:14px; }
-.view-home .dash-widget-card-icon{ width:34px; height:34px; border-radius:10px; }
-.view-home .dash-widget-card-title h2{ font-size:15px; }
-.view-home .report-remind{ margin-bottom:16px; }
