@@ -5,7 +5,7 @@
 // Planning is js/goal-roadmap.js, writing is js/goal-actions.js, "how is it
 // going" is js/goal-progress.js — this file only draws and wires.
 import {
-  getBrand, listGoals, getGoal, createGoal, updateGoal, deleteGoal, listContent, listCampaigns, getSettings, onChange, updateBrandInsights, setCadenceUploadsPerWeek,
+  getBrand, listGoals, getGoal, createGoal, updateGoal, deleteGoal, archiveGoal, unarchiveGoal, getCampaign, updateCampaign, listContent, listCampaigns, getSettings, onChange, updateBrandInsights, setCadenceUploadsPerWeek,
   localISODate, daysBetween, formatEventDate, phaseNameLabel, eventLeanLevel, milestoneLabel, unitLabel, EVENT_ROLES, EVENT_PARTICIPATION_TYPES,
 } from "../store.js";
 import { readCondition, addDays, weekStart, isISODate, AUDIENCE_PER_SEAT } from "../goal-roadmap.js";
@@ -136,7 +136,7 @@ export function openGoalWizard({ brandId }) {
     objectives: [],
   });
   const dots = () => `<div class="copy-steps">${[1, 2].map((n) => `<span class="copy-step-dot ${n === st.step ? "is-current" : n < st.step ? "is-done" : ""}"></span>`).join("")}<span class="copy-step-label">${t("roadmap.wizard.step", { n: st.step, total: 2 })}</span>${st.step > 1 ? `<button type="button" class="btn btn-ghost btn-sm copy-back" id="rw-back">${icon("chevronLeft", { size: 13 })}${t("common.back")}</button>` : ""}</div>`;
-  const err = () => (st.error ? `<p class="ev-error">${esc(st.error)}</p>` : "");
+  const err = () => (st.error ? `<p class="ev-error" role="alert">${esc(st.error)}</p>` : "");
   const numField = (id, label, val, { hint = "", ph = "0" } = {}) => `
     <div class="field"><label for="${id}">${label}</label>
       <input class="input" id="${id}" inputmode="numeric" autocomplete="off" value="${val === null || val === undefined || val === "" ? "" : formatNumber(val)}" placeholder="${esc(ph)}" />
@@ -153,7 +153,7 @@ export function openGoalWizard({ brandId }) {
       <div class="field"><label>${t("roadmap.wizard.role")}</label>
         <div class="chip-select" id="rw-role">${EVENT_ROLES.map((r) => `<button type="button" data-val="${r.id}" class="${st.role === r.id ? "active" : ""}" title="${esc(r.description)}">${esc(r.label)}</button>`).join("")}</div></div>
       ${st.role === "participant" ? `<div class="field"><label for="rw-ptype">${t("roadmap.wizard.ptype")}</label><select class="input" id="rw-ptype">${EVENT_PARTICIPATION_TYPES.map((p) => `<option value="${p.id}" ${st.ptype === p.id ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></div>` : ""}
-      ${numField("rw-seats", t("roadmap.wizard.seats"), st.seats, { hint: `<span id="rw-scale-hint">${scaleHint(st.seats)}</span>`, ph: "150" })}
+      ${numField("rw-seats", t("roadmap.wizard.seats"), st.seats, { hint: `<span id="rw-scale-hint">${scaleHint(st.seats)}</span>`, ph: t("roadmap.wizard.seatsPh") })}
       <div class="field"><label for="rw-loc">${t("roadmap.wizard.location")} <span class="copy-optional">${t("goal.sales.optional")}</span></label><input class="input" id="rw-loc" maxlength="80" autocomplete="off" value="${esc(st.location)}" /></div>
       <div class="field"><label>${t("roadmap.wizard.ticketed")}</label>
         <div class="chip-select" id="rw-ticketed"><button type="button" data-val="yes" class="${st.ticketed === true ? "active" : ""}">${t("roadmap.wizard.ticketYes")}</button><button type="button" data-val="no" class="${st.ticketed === false ? "active" : ""}">${t("roadmap.wizard.ticketNo")}</button></div></div>
@@ -195,6 +195,9 @@ export function openGoalWizard({ brandId }) {
   function paint() {
     root.innerHTML = st.step === 1 ? step1() : step2();
     wire();
+    // The wizard is taller than a phone screen: a validation message sits
+    // above the button at the bottom, so bring it into view.
+    if (st.error) qs(".ev-error", root)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   function keepFields() {
     if (st.step === 1) {
@@ -256,7 +259,7 @@ export function openGoalWizard({ brandId }) {
 
 function condRowHTML(r) {
   const label = t(`roadmap.read.${r.key}.label`);
-  const eff = t(`roadmap.read.${r.key}.effect.${r.status}`, { n: AUDIENCE_PER_SEAT });
+  const eff = t(`roadmap.read.${r.key}.effect.${r.free ? "free" : r.status}`, { n: AUDIENCE_PER_SEAT });
   return `
     <div class="rg-cond-row">
       <div class="rg-cond-main"><b>${esc(label)}</b><span class="rg-cond-src">${esc(r.source || "")}</span></div>
@@ -395,14 +398,21 @@ function paintDetail(root, brandId, goalId, state, refresh) {
     if (!menu) return;
     menu.innerHTML = `
       ${goal.status === "active" ? `<button data-act="complete">${icon("check", { size: 15 })}${t("roadmap.menu.complete")}</button>` : ""}
-      <button data-act="archive">${icon("archive", { size: 15 })}${t("roadmap.menu.archive")}</button>
+      ${goal.status === "archived" && !goal.autoStatus ? `<button data-act="unarchive">${icon("refresh", { size: 15 })}${t("roadmap.menu.unarchive")}</button>` : goal.status === "archived" ? "" : `<button data-act="archive">${icon("archive", { size: 15 })}${t("roadmap.menu.archive")}</button>`}
       <button data-act="delete">${icon("trash", { size: 15 })}${t("roadmap.menu.delete")}</button>`;
     menu.addEventListener("click", async (ev) => {
       const act = ev.target.closest("[data-act]")?.dataset.act;
       if (!act) return;
       closeMenu();
-      if (act === "complete") { updateGoal(brandId, goalId, { status: "completed" }); toast(t("roadmap.menu.completed")); }
-      else if (act === "archive") { updateGoal(brandId, goalId, { status: "archived" }); location.hash = `#/brand/${brandId}/campaigns`; }
+      if (act === "complete") {
+        updateGoal(brandId, goalId, { status: "completed" });
+        // The Event campaign finishes with its plan.
+        const ev = goal.installed?.campaigns?.event?.id ? getCampaign(goal.installed.campaigns.event.id) : null;
+        if (ev && ev.status !== "archived") updateCampaign(ev.id, { status: "completed", autoCompleted: false });
+        toast(t("roadmap.menu.completed"));
+      }
+      else if (act === "archive") { archiveGoal(brandId, goalId); toast(t("roadmap.menu.archived")); location.hash = `#/brand/${brandId}/campaigns`; }
+      else if (act === "unarchive") { unarchiveGoal(brandId, goalId); toast(t("roadmap.menu.unarchived")); }
       else if (act === "delete") {
         const ok = await confirmDialog({ title: t("roadmap.menu.deleteTitle"), message: t("roadmap.menu.deleteMsg"), confirmLabel: t("common.delete"), danger: true });
         if (!ok) return;
@@ -599,7 +609,7 @@ export function openReplanDialog({ brandId, goal, preset = {} }) {
   const today = localISODate();
   const draft = goal.status === "draft";
   const st = {
-    date: goal.targetDate, seats: goal.inputs?.expectedAudience ?? null, capacity: goal.inputs?.capacityPerWeek ?? null,
+    name: goal.name || "", date: goal.targetDate, seats: goal.inputs?.expectedAudience ?? null, capacity: goal.inputs?.capacityPerWeek ?? null,
     push: preset.pushPerWeek ?? goal.inputs?.pushPerWeek ?? null,
   };
   const overlay = openModal({
@@ -607,6 +617,7 @@ export function openReplanDialog({ brandId, goal, preset = {} }) {
     bodyHTML: `
       <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${draft ? t("roadmap.replan.subDraft") : t("roadmap.replan.sub")}</p>
       <div class="rg-replan-fields">
+        <div class="field"><label for="rp-name">${t("roadmap.wizard.name")}</label><input class="input" id="rp-name" maxlength="80" autocomplete="off" value="${esc(st.name)}" />${draft ? "" : `<p class="ev-field-hint">${t("roadmap.replan.nameHint")}</p>`}</div>
         <div class="field"><label for="rp-date">${t("roadmap.wizard.date")}</label><input class="input" id="rp-date" type="date" min="${addDays(today, 1)}" value="${esc(st.date)}" /></div>
         <div class="field"><label for="rp-seats">${t("roadmap.wizard.seats")}</label><input class="input" id="rp-seats" inputmode="numeric" value="${st.seats ? formatNumber(st.seats) : ""}" /></div>
         <div class="field"><label for="rp-cap">${t("roadmap.replan.capacity")}</label><input class="input" id="rp-cap" inputmode="numeric" value="${st.capacity ? st.capacity : ""}" placeholder="${goal.roadmap?.capacity?.perWeek ?? ""}" />${goal.roadmap?.capacity?.perWeek ? `<p class="ev-field-hint">${t("roadmap.replan.capacityHint", { n: goal.roadmap.capacity.perWeek })}</p>` : ""}</div>
@@ -617,12 +628,14 @@ export function openReplanDialog({ brandId, goal, preset = {} }) {
   });
   let last = null;
   const read = () => {
+    st.name = qs("#rp-name", overlay).value;
     st.date = qs("#rp-date", overlay).value;
     st.seats = toNum(qs("#rp-seats", overlay).value);
     st.capacity = toNum(qs("#rp-cap", overlay).value);
     st.push = toNum(qs("#rp-push", overlay).value);
   };
-  const over = () => ({ targetDate: st.date, inputs: { expectedAudience: st.seats ?? goal.inputs?.expectedAudience ?? null, capacityPerWeek: st.capacity, pushPerWeek: st.push } });
+  const cleanName = () => st.name.trim();
+  const over = () => ({ targetDate: st.date, name: cleanName(), inputs: { ...(cleanName() ? { eventName: cleanName() } : {}), expectedAudience: st.seats ?? goal.inputs?.expectedAudience ?? null, capacityPerWeek: st.capacity, pushPerWeek: st.push } });
   const box = qs("#rp-diff", overlay);
   const apply = qs("#rp-apply", overlay);
   function recompute() {
@@ -646,13 +659,13 @@ export function openReplanDialog({ brandId, goal, preset = {} }) {
       <div class="rg-eyebrow">${t("roadmap.diff.title")}</div>
       ${draft ? `<p style="font-size:13px;">${esc(t("roadmap.diff.draft", { slots: prev.plan.slots.length }))}</p>` : d.empty ? `<p class="text-faint" style="font-size:13px;">${t("roadmap.diff.empty")}</p>` : `<ul class="rg-diff-list">${lines}</ul>`}
       ${ws.map((w) => `<p class="rg-warn" style="font-size:12.5px;">${icon("info", { size: 12 })} ${esc(warnHTML(w))}</p>`).join("")}`;
-    apply.disabled = !draft && d.empty && st.date === goal.targetDate;
+    apply.disabled = !draft && d.empty && st.date === goal.targetDate && (cleanName() || goal.name) === goal.name;
   }
-  ["#rp-date", "#rp-seats", "#rp-cap", "#rp-push"].forEach((sel) => qs(sel, overlay).addEventListener("input", () => { clearTimeout(recompute.t); recompute.t = setTimeout(recompute, 200); }));
+  ["#rp-name", "#rp-date", "#rp-seats", "#rp-cap", "#rp-push"].forEach((sel) => qs(sel, overlay).addEventListener("input", () => { clearTimeout(recompute.t); recompute.t = setTimeout(recompute, 200); }));
   qs("[data-cancel]", overlay).addEventListener("click", () => closeOverlay(overlay));
   apply.addEventListener("click", () => {
     if (!last || last.errors?.length) return;
-    if (draft) updateGoal(brandId, goal.id, { targetDate: st.date, inputs: { ...(goal.inputs || {}), ...over().inputs }, roadmap: last.plan });
+    if (draft) updateGoal(brandId, goal.id, { ...(cleanName() ? { name: cleanName() } : {}), targetDate: st.date, inputs: { ...(goal.inputs || {}), ...over().inputs }, roadmap: last.plan });
     else applyReplan(brandId, goal.id, { plan: last.plan, diff: last.diff, over: over() });
     closeOverlay(overlay);
     toast(t("roadmap.replan.done"));

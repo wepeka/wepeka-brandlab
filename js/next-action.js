@@ -14,7 +14,7 @@
 //   new-content  → new content picker with campaign context
 //   info         → no button
 import { campaignStages, activeStageIndex, readStage, ladderAdvanceState, campaignActivities, STALE_DAYS } from "./campaign-metrics.js";
-import { localISODate, daysBetween } from "./store.js";
+import { localISODate, daysBetween, formatEventDate } from "./store.js";
 import { getMode } from "./mode.js";
 import { levelReminders } from "./goal-plan.js";
 import { t } from "./i18n.js";
@@ -49,7 +49,7 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
   // 1. Scheduled date passed, still not published.
   const overdue = linked.filter((c) => c.scheduleDate && c.scheduleDate < today && c.status !== "published").sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
   if (overdue[0]) {
-    push({ id: "overdue", priority: 1, label: t("next.overdue.label", { title: title(overdue[0]) }), why: t("next.overdue.why", { date: overdue[0].scheduleDate, why: contentWhy }), cta: { type: "creator", label: t("next.overdue.cta"), contentId: overdue[0].id, intent: "publish" } });
+    push({ id: "overdue", priority: 1, label: t("next.overdue.label", { title: title(overdue[0]) }), why: t("next.overdue.why", { date: formatEventDate(overdue[0].scheduleDate), why: contentWhy }), cta: { type: "creator", label: t("next.overdue.cta"), contentId: overdue[0].id, intent: "publish" } });
   }
 
   // 2. Profile numbers the campaign depends on are stale or missing.
@@ -176,7 +176,7 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
 export function brandTopAction({ brand, campaigns, content, settings }) {
   let best = null;
   campaigns
-    .filter((c) => c.status !== "archived")
+    .filter((c) => c.status !== "archived" && !(c.eventPlan && c.status === "completed"))
     .forEach((campaign) => {
       const a = nextActions({ brand, campaign, content, settings, limit: 1 })[0];
       if (a && (!best || a.priority < best.action.priority)) best = { campaign, action: a };

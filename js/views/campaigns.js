@@ -3,7 +3,7 @@ import {
   listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
   CAMPAIGN_OBJECTIVES, CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES, CAMPAIGN_STATUSES, CAMPAIGN_STATUS_LABELS, CAMPAIGN_PHASE_TEMPLATE,
   phaseNameLabel, TRASH_DAYS,
-  daysBetween, formatEventDate, localISODate, listGoals,
+  daysBetween, formatEventDate, localISODate, listGoals, getGoal, settleFinishedEvents, planIdeasNote,
 } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -27,7 +27,7 @@ import { openGoalWizard } from "./goal-wizard.js";
 // campaign with no goalId. Roadmap ke Tujuan's wizard is the one true event
 // intake now — it carries goalId + dates through to the audience/community
 // lanes too, so both entry points open the same flow.
-import { openGoalWizard as openEventGoalWizard } from "./goal-roadmap.js";
+import { openGoalWizard as openEventGoalWizard, openReplanDialog } from "./goal-roadmap.js";
 
 // Reuses the existing status-pill color classes (defined for Content's own
 // idea/draft/production/editing/scheduled/published/archived vocabulary)
@@ -38,13 +38,19 @@ const CAMPAIGN_STATUS_PILL_CLASS = { planning: "status-draft", active: "status-s
 
 export function render(root, { brandId, campaignId }) {
   const state = { stageIndex: null, celebrateIndex: null, advancing: false };
-  const refresh = () => paint(root, brandId, campaignId, state, refresh);
+  const refresh = () => { settleFinishedEvents(brandId); paint(root, brandId, campaignId, state, refresh); };
   refresh();
   // Once per mount (list and detail are separate routes/mounts) — paint()
   // runs again on every db:change.
   if (campaignId) startCampaignDetailGuideOnMount(brandId, campaignId);
   else startCampaignListGuideOnMount(brandId);
   return onChange(refresh);
+}
+
+function editCampaign(brandId, campaign, onSaved) {
+  const goal = campaign.eventPlan && campaign.goalId ? getGoal(brandId, campaign.goalId) : null;
+  if (goal) openReplanDialog({ brandId, goal });
+  else openCampaignModal({ brandId, campaign, onSaved });
 }
 
 function paint(root, brandId, campaignId, state, refresh) {
@@ -59,7 +65,10 @@ function paint(root, brandId, campaignId, state, refresh) {
       location.hash = `#/brand/${brandId}/campaigns`;
       return;
     }
-    paintDetail(root, brandId, brand, campaign, state, refresh, { openEdit: () => openCampaignModal({ brandId, campaign, onSaved: refresh }) });
+    // An Event is edited through its plan (name, date, size, rhythm), which
+    // moves the phases, deadlines and calendar together — the generic campaign
+    // form would only change the campaign and leave the plan behind.
+    paintDetail(root, brandId, brand, campaign, state, refresh, { openEdit: () => editCampaign(brandId, campaign, refresh) });
     return;
   }
   paintList(root, brandId, brand, refresh);
@@ -191,7 +200,7 @@ function paintList(root, brandId, brand, refresh) {
       const linkedCount = content.filter((c) => c.campaignId === id).length;
       const ok = await confirmDialog({
         title: t("camp.list.deleteTitle"),
-        message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
+        message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${planIdeasNote(getCampaign(id))}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
         confirmLabel: t("delete.toTrash.confirm"),
         danger: true,
       });
@@ -220,12 +229,12 @@ function paintList(root, brandId, brand, refresh) {
         closeMenu();
         const campaign = getCampaign(id);
         if (act === "edit") {
-          openCampaignModal({ brandId, campaign, onSaved: refresh });
+          editCampaign(brandId, campaign, refresh);
         } else if (act === "delete") {
           const linkedCount = content.filter((c) => c.campaignId === id).length;
           const ok = await confirmDialog({
             title: t("camp.list.deleteTitle"),
-            message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
+            message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${planIdeasNote(getCampaign(id))}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
             confirmLabel: t("delete.toTrash.confirm"),
             danger: true,
           });

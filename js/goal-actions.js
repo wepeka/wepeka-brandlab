@@ -190,6 +190,9 @@ export function applyReplan(brandId, goalId, { plan, diff, over = {} }) {
     });
     const eventLane = plan.lanes.find((l) => l.id === "event");
     updateCampaign(live.id, {
+      // An event that had finished on its own (settleFinishedEvents) reopens
+      // when its date moves to the future.
+      ...(live.autoCompleted ? { status: "planning", autoCompleted: false } : {}),
       startDate: eventLane.startDate, endDate: plan.target,
       eventPlan: { ...live.eventPlan, eventDate: plan.target, setup: { ...(live.eventPlan.setup || {}), eventDate: plan.target, campaignStartDate: eventLane.startDate, expectedAudience: over.inputs?.expectedAudience ?? live.eventPlan.setup?.expectedAudience ?? null }, phases },
     });
@@ -225,8 +228,13 @@ export function applyReplan(brandId, goalId, { plan, diff, over = {} }) {
   // installed.slots as is. Slots in the plan with no content (deleted by the
   // owner from the calendar) are NOT recreated — their absence is a decision.
 
+  const newName = String(over.name || "").trim();
+  if (newName && newName !== goal.name) {
+    if (live) updateCampaign(live.id, { name: newName, ...(live.eventPlan ? { eventPlan: { ...live.eventPlan, setup: { ...(live.eventPlan.setup || {}), eventName: newName } } } : {}) });
+  }
   const doneTasks = new Map((goal.tasks || []).map((tk) => [tk.id, tk.done]));
   updateGoal(brandId, goalId, {
+    ...(newName ? { name: newName } : {}),
     targetDate: plan.target, inputs: { ...(goal.inputs || {}), ...(over.inputs || {}) }, roadmap: plan, installed,
     tasks: (plan.tasks || []).map((tk) => ({ ...tk, done: !!doneTasks.get(tk.id) })), status: goal.status === "draft" ? "draft" : "active",
   });

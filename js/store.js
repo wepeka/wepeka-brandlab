@@ -1646,6 +1646,18 @@ export function eventPhaseDateLabel(phase, eventDate) {
     : !phase.preEvent && /^(Hari-H|Event day)/i.test(phase.dateLabel || "");
   return eventDay ? t("store.eventDayLabel", { date: formatEventDate(phase.dateTo) }) : formatEventRange(phase.dateFrom, phase.dateTo);
 }
+// The window a stored event phase really covers. Campaigns built before the
+// fix above stored pre-event phases ending ON the event date and Post-Event
+// starting on it, so H-day belonged to three phases; read them as if the
+// event date were Event Day's alone. Only trims — never widens.
+export function eventPhaseWindow(phase, eventDate) {
+  let { dateFrom, dateTo } = phase || {};
+  if (!eventDate || !dateFrom || !dateTo) return { dateFrom, dateTo };
+  const isDay = dateFrom === dateTo && dateTo === eventDate;
+  if (!isDay && dateFrom < eventDate && dateTo >= eventDate && phase.preEvent !== false) dateTo = addDays(eventDate, -1);
+  else if (!isDay && dateFrom === eventDate && dateTo > eventDate) dateFrom = addDays(eventDate, 1);
+  return { dateFrom, dateTo };
+}
 // Whole days from `fromISO` to `toISO` (negative when `to` is earlier).
 export function daysBetween(fromISO, toISO) {
   const a = new Date(fromISO + "T00:00:00").getTime();
@@ -1789,7 +1801,10 @@ export function buildEventPhases(phaseTemplatesFull, { eventDate, campaignStartD
     let dateTo;
     if (isPreEventPhase(p)) {
       dateFrom = cursor;
-      dateTo = addDays(eventDate, Math.min(0, Math.round(p.offsetTo * factor)));
+      // Pre-event phases stop the day BEFORE the event: the event date itself
+      // belongs to Event Day alone (a phase window that also contained it made
+      // H-day open on "Conversion" and count one post twice).
+      dateTo = addDays(eventDate, Math.min(-1, Math.round(p.offsetTo * factor)));
       if (dateTo < dateFrom) {
         // No days left for this phase: fold into the last pre-event phase
         // that did fit, or carry forward when none has yet.
@@ -1805,7 +1820,8 @@ export function buildEventPhases(phaseTemplatesFull, { eventDate, campaignStartD
       }
       cursor = addDays(dateTo, 1);
     } else {
-      dateFrom = p.offsetFrom === null ? start : addDays(eventDate, p.offsetFrom);
+      // Post-event starts the day AFTER the event (see the note above).
+      dateFrom = p.offsetFrom === null ? start : addDays(eventDate, p.offsetFrom === 0 && p.offsetTo > 0 ? 1 : p.offsetFrom);
       dateTo = addDays(eventDate, p.offsetTo);
     }
     const eventDay = p.offsetFrom === 0 && p.offsetTo === 0;
@@ -2108,9 +2124,30 @@ function goalOwningEventCampaign(c) {
   const g = (getBrand(c.brandId)?.goals || []).find((x) => x.id === c.goalId);
   return g && g.installed?.campaigns?.event?.id === c.id ? g : null;
 }
+// The ideas an Event plan put on the calendar that nobody has touched yet
+// (still an idea, same day, same title). They are the plan's, not the owner's
+// work, so they go to Trash with the event and come back with it.
+export function untouchedPlanIdeaIds(c) {
+  const g = goalOwningEventCampaign(c);
+  if (!g) return [];
+  return Object.values(g.installed?.slots || {})
+    .map((rec) => ({ rec, item: rec?.contentId ? getContent(rec.contentId) : null }))
+    .filter(({ rec, item }) => item && !item.deletedAt && item.status === "idea" && item.scheduleDate === rec.date && (item.title || "") === (rec.title || ""))
+    .map(({ item }) => item.id);
+}
+// One sentence for the delete dialog when an Event's own ideas go with it.
+export function planIdeasNote(c) {
+  const n = untouchedPlanIdeaIds(c).length;
+  return n ? `${t("camp.list.deletePlanIdeas", { count: n })} ` : "";
+}
 export function deleteCampaign(id) {
   const c = getCampaign(id);
   if (!c) return;
+  untouchedPlanIdeaIds(c).forEach((cid) => {
+    const item = getContent(cid);
+    item.trashedWithCampaign = c.id;
+    deleteContent(cid);
+  });
   c.deletedAt = Date.now();
   persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
   const g = goalOwningEventCampaign(c);
@@ -2121,8 +2158,47 @@ export function restoreCampaign(id) {
   if (!c || !c.deletedAt) return;
   c.deletedAt = null;
   persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+  (db.content || []).filter((x) => x.trashedWithCampaign === c.id && x.deletedAt).forEach((x) => { x.trashedWithCampaign = null; restoreContent(x.id); });
   const g = goalOwningEventCampaign(c);
   if (g && g.archivedWithCampaign === c.id) updateGoal(c.brandId, g.id, { status: g.statusBeforeArchive || "active", archivedWithCampaign: null, statusBeforeArchive: null });
+}
+// An Event campaign whose last phase has passed is over. Nobody had to press
+// anything for its PLAN to read as completed (effectiveGoalStatus); this does
+// the same for the campaign, so it stops nagging from Home and drops out of the
+// pulse/calendar lists that only look at running campaigns. `autoCompleted`
+// remembers it was us, so moving the date later (applyReplan) can reopen it.
+export function eventCampaignEnd(c) {
+  if (!c?.eventPlan) return "";
+  const ends = (c.eventPlan.phases || []).map((p) => p.dateTo).filter(Boolean).sort();
+  return ends[ends.length - 1] || c.eventPlan.eventDate || c.endDate || "";
+}
+export function settleFinishedEvents(brandId, today = localISODate()) {
+  listCampaigns(brandId).forEach((c) => {
+    if (!c.eventPlan || !["planning", "active"].includes(c.status)) return;
+    const end = eventCampaignEnd(c);
+    if (end && end < today) updateCampaign(c.id, { status: "completed", autoCompleted: true });
+  });
+}
+// Archiving an event plan archives the campaigns it created with it (their
+// content stays where it is, same as Trash); un-archiving brings both back.
+export function archiveGoal(brandId, id) {
+  const g = (getBrand(brandId)?.goals || []).find((x) => x.id === id);
+  if (!g || g.status === "archived") return false;
+  const created = Object.values(g.installed?.campaigns || {}).filter((x) => x?.created !== false).map((x) => x.id);
+  created.forEach((cid) => {
+    const c = getCampaign(cid);
+    if (c && c.status !== "archived") updateCampaign(cid, { status: "archived", statusBeforeArchive: c.status });
+  });
+  updateGoal(brandId, id, { status: "archived", statusBeforeArchive: g.status });
+  return true;
+}
+export function unarchiveGoal(brandId, id) {
+  const g = (getBrand(brandId)?.goals || []).find((x) => x.id === id);
+  if (!g || g.status !== "archived") return false;
+  (db.campaigns || []).filter((c) => c.brandId === brandId && c.goalId === id && c.status === "archived" && c.statusBeforeArchive).forEach((c) => updateCampaign(c.id, { status: c.statusBeforeArchive, statusBeforeArchive: null }));
+  const back = g.statusBeforeArchive && g.statusBeforeArchive !== "archived" ? g.statusBeforeArchive : g.installed?.campaigns?.event?.id ? "active" : "draft";
+  updateGoal(brandId, id, { status: back, statusBeforeArchive: null, archivedWithCampaign: null });
+  return true;
 }
 // "Hapus permanen" — unlinks its content (same as the old hard delete did)
 // then actually removes the campaign doc.

@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents } from "../store.js";
 import { icon } from "../icons.js";
 import { avatarHTML, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -46,7 +46,7 @@ const TOUR_STEPS = [
 
 export function render(root, { brandId }) {
   const state = { topContentPeriod: "all" };
-  const refresh = () => paint(root, brandId, state, refresh);
+  const refresh = () => { settleFinishedEvents(brandId); paint(root, brandId, state, refresh); };
   refresh();
   return onChange(refresh);
 }

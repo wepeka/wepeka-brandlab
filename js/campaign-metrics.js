@@ -14,7 +14,7 @@
 import {
   listContent, listCampaigns, campaignContentPool, contentMetricTotal, consecutiveActiveWeeks, streakBreakInDays,
   getBrandInsights, insightsBaseline, getSettings, missionState, localISODate, daysBetween, cadenceComplianceWeeks,
-  milestoneLabel, milestoneDescription, unitLabel, phaseNameLabel, missionText, eventPhaseDateLabel,
+  milestoneLabel, milestoneDescription, unitLabel, phaseNameLabel, missionText, eventPhaseDateLabel, eventPhaseWindow,
 } from "./store.js";
 import { computeContentMetrics } from "./formulas.js";
 import { campaignSalesStats } from "./sales-tracker.js";
@@ -484,9 +484,10 @@ export function campaignStages(campaign) {
   if (campaign.eventPlan?.phases?.length) {
     const today = localISODate();
     return campaign.eventPlan.phases.map((p, i) => {
-      const state = today < p.dateFrom ? "upcoming" : today > p.dateTo ? "past" : "current";
-      const dateLabel = eventPhaseDateLabel(p, campaign.eventPlan.eventDate);
-      const stage = { id: p.id, index: i, kind: "window", name: phaseNameLabel(p.name), description: "", tagline: dateLabel, dateFrom: p.dateFrom, dateTo: p.dateTo, dateLabel, mergedFrom: (p.mergedFrom || []).map(phaseNameLabel), state, raw: p };
+      const win = eventPhaseWindow(p, campaign.eventPlan.eventDate);
+      const state = today < win.dateFrom ? "upcoming" : today > win.dateTo ? "past" : "current";
+      const dateLabel = eventPhaseDateLabel({ ...p, ...win }, campaign.eventPlan.eventDate);
+      const stage = { id: p.id, index: i, kind: "window", name: phaseNameLabel(p.name), description: "", tagline: dateLabel, dateFrom: win.dateFrom, dateTo: win.dateTo, dateLabel, mergedFrom: (p.mergedFrom || []).map(phaseNameLabel), state, raw: p };
       stage.milestones = (p.milestones || []).map((m) => normalizeMilestone(m, { campaign, stage }));
       return stage;
     });
@@ -559,7 +560,9 @@ export function readMilestone(ms, ctx, stage = null) {
   const started = isCheck ? !!r.current : (r.current || 0) > 0 || (!r.auto && logged);
   let status = ms.notApplicable ? "na" : met ? "done" : started ? "progress" : "empty";
   if (stage?.kind === "window" && stage.state === "past" && !met && !ms.notApplicable) status = started ? "partial" : "missed";
-  const action = !ms.notApplicable && !met ? (r.stale && r.update ? r.update : r.update && !r.auto ? r.update : r.improve || r.update) : null;
+  // A ticked checklist step keeps one small action: take the tick back.
+  const undoTick = !ms.notApplicable && met && isCheck && r.update && !(ms.key === "concept" && ms.track === "community") ? { ...r.update, label: t("camp.m.undoTick") } : null;
+  const action = !ms.notApplicable && !met ? (r.stale && r.update ? r.update : r.update && !r.auto ? r.update : r.improve || r.update) : undoTick;
   return {
     ...r,
     milestone: ms,

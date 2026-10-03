@@ -7,7 +7,7 @@
 // entry is the "Catat angka" sheet for things the app can't observe.
 import { backLinkHTML } from "../back-link.js";
 import {
-  getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric,
+  getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric, planIdeasNote,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS, campaignContentPool,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote, TRASH_DAYS,
   listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea,
@@ -133,7 +133,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     ${state.celebrateIndex !== undefined && state.celebrateIndex !== null && stages[state.celebrateIndex]?.state === "completed" ? celebrateHTML(stages[state.celebrateIndex], stages[state.celebrateIndex + 1]) : ""}
     ${headline ? headlineHTML(headline, stageRead, stage) : ""}
     ${guided ? "" : pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions })}
-    ${guided ? "" : proToolbarHTML()}
+    ${guided ? "" : proToolbarHTML(campaign)}
     ${guided ? "" : proTabsHTML(campaign, stages, acts, tab, brandId)}
     ${tab === "ideas" ? ideasWidgetHTML(campaign, state, brandId) : ""}
     ${tab === "plan" ? planRoadmapHTML(campaign, stages, ctx) : ""}
@@ -1215,11 +1215,13 @@ function pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions }) {
 // The three ways to make something, in one row — they used to sit at the
 // bottom of the Activity card. Ids unchanged (cd-brainstorm is a tour
 // stop; cd-content-plan / cd-new-content are wired in paintDetail).
-function proToolbarHTML() {
+// An Event already has its dated content plan (the Rencana tab), so the AI
+// content planner — a second, separate one — is not offered there.
+function proToolbarHTML(campaign) {
   return `
     <div class="cd-toolbar">
       <button type="button" class="btn btn-primary glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 14 })}${t("camp.toolbar.brainstorm")}</button>
-      <button type="button" class="btn btn-secondary" id="cd-content-plan" title="${esc(t("camp.cplan.btnTitle"))}">${icon("calendar", { size: 14 })}${t("camp.cplan.btn")}</button>
+      ${campaign?.eventPlan ? "" : `<button type="button" class="btn btn-secondary" id="cd-content-plan" title="${esc(t("camp.cplan.btnTitle"))}">${icon("calendar", { size: 14 })}${t("camp.cplan.btn")}</button>`}
       <button type="button" class="btn btn-secondary" id="cd-new-content">${icon("plus", { size: 14 })}${t("camp.detail.newContent")}</button>
     </div>`;
 }
@@ -1402,6 +1404,15 @@ function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh,
         openCommunityIdentityModal({ campaign, milestone: m, refresh });
         return;
       }
+      // A plain checklist step is one tap: tick it (or untick it) right here.
+      // The sheet below stays for the tracked numbers.
+      if (m && m.metric === "manual.check") {
+        const was = ctx.campaign.manualMetrics?.[m.id]?.done ?? !!m.legacy?.done;
+        setCampaignManualMetric(campaign.id, m.id, { done: !was });
+        toast(t(was ? "camp.detail.unticked" : "camp.detail.ticked"));
+        refresh();
+        return;
+      }
       openManualSheet({ campaign, stage, ctx, refresh, focusId: cta.milestoneId });
       return;
     }
@@ -1465,8 +1476,8 @@ function openManualSheet({ campaign, stage, ctx, refresh, focusId = null }) {
     });
     qsa("[data-sheet-check]", overlay).forEach((cb) => {
       const id = cb.dataset.sheetCheck;
-      const prev = !!ctx.campaign.manualMetrics?.[id]?.done;
-      if (cb.checked === prev && ctx.campaign.manualMetrics?.[id]) return;
+      // Only what the owner actually changed in this sheet is written.
+      if (cb.checked === cb.defaultChecked) return;
       setCampaignManualMetric(campaign.id, id, { done: cb.checked });
       changed++;
     });
@@ -1666,7 +1677,7 @@ function openMoreMenu(btn, { brandId, brand, campaign, stage, stages, ctx, refre
       const linkedCount = ctx.content.filter((c) => c.campaignId === campaign.id).length;
       const ok = await confirmDialog({
         title: t("camp.list.deleteTitle"),
-        message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
+        message: `${linkedCount ? t("camp.list.deleteLinked", { count: linkedCount }) + " " : ""}${planIdeasNote(campaign)}${t("delete.toTrash.suffix", { days: TRASH_DAYS })}`,
         confirmLabel: t("delete.toTrash.confirm"),
         danger: true,
       });

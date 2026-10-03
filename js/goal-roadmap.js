@@ -177,7 +177,7 @@ export function readCondition({ brand, content = [], campaigns = [], settings = 
   const ticketPrice = Number(inputs.ticketPrice) > 0 ? Number(inputs.ticketPrice) : ticket?.price || null;
   const ticketed = inputs.ticketed === true || (inputs.ticketed !== false && !!ticket);
   rows.push({
-    key: "offer", status: ticketed ? (ticketPrice ? "ok" : "warn") : "unknown",
+    key: "offer", free: !ticketed && inputs.ticketed === false, status: ticketed ? (ticketPrice ? "ok" : "warn") : inputs.ticketed === false ? "ok" : "unknown",
     value: ticketed ? (ticketPrice ? `Rp ${Number(ticketPrice).toLocaleString(numLocale())}` : t("roadmap.read.offer.noPrice")) : t("roadmap.read.offer.free"),
     source: ticket ? t("roadmap.read.offer.src.tracker") : ticketed ? t("roadmap.read.src.typed") : t("roadmap.read.offer.src.none"),
   });
@@ -310,7 +310,9 @@ export function planRoadmap({ goal, brand, content = [], campaigns = [], setting
 
   // ---- Event lane
   const phases = buildEventPhases(templates, { eventDate: target, campaignStartDate: eventStart, scaleId: eventScaleFor(seats).id, expectedAudience: seats || null });
-  if (skip.size) phases.forEach((p) => { p.milestones = p.milestones.filter((m) => !skip.has(m.label)); });
+  // A free event still takes sign-ups (RSVP), but has no ticket sales to total.
+  const freeOrganizer = inputs.ticketed === false && role === "organizer";
+  if (skip.size || freeOrganizer) phases.forEach((p) => { p.milestones = p.milestones.filter((m) => !skip.has(m.label) && !(freeOrganizer && /penjualan\/revenue/i.test(m.label))); });
   assignDueDates(phases, cond.firstEvent ? FIRST_EVENT_BUFFER_DAYS : BUFFER_DAYS);
   const lean = eventLeanLevel(seats || null, eventScaleFor(seats).id);
   if (lean) w("leanEvent", "info", { seats, n: phases.reduce((a, p) => a + p.milestones.length, 0), level: lean });

@@ -11,7 +11,7 @@
 //   later    not yet time
 // The Home card's readiness bar, the lane "on track" flags and the weekly
 // brief all read from these same items.
-import { getContent, getCampaign, localISODate, daysBetween, milestoneLabel } from "./store.js";
+import { getContent, getCampaign, localISODate, daysBetween, milestoneLabel, eventPhaseWindow } from "./store.js";
 import { addDays, weekStart, readCondition } from "./goal-roadmap.js";
 import { t } from "./i18n.js";
 
@@ -73,7 +73,7 @@ export function goalProgress({ goal, brand, content = [], campaigns = [], settin
   const weekSlots = items.filter((i) => i.kind === "slot" && i.date >= ws && i.date <= we);
   let cond = null;
   try { cond = readCondition({ brand, content, campaigns, settings, today, inputs: goal.inputs || {} }); } catch { cond = null; }
-  const eventPhaseNow = (plan?.eventPhases || []).find((p) => today >= p.dateFrom && today <= p.dateTo) || null;
+  const eventPhaseNow = (plan?.eventPhases || []).find((p) => { const w = eventPhaseWindow(p, plan.target); return today >= w.dateFrom && today <= w.dateTo; }) || null;
   const needsRefresh = !!plan?.horizonEnd && plan.horizonEnd < addDays(today, 14);
   const nextDeadline = items.find((i) => i.kind !== "slot" && i.state !== "done" && i.date >= today) || null;
   return {
