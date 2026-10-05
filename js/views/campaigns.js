@@ -13,7 +13,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { startCampaignListGuide, startCampaignListGuideOnMount, startCampaignDetailGuideOnMount } from "../guides/campaign-guide.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { DEMO_TOAST } from "../tour-demo.js";
 import { campaignStages, activeStageIndex, campaignHeadline, TRACK_ICON } from "../campaign-metrics.js";
@@ -50,7 +50,62 @@ export function render(root, { brandId, campaignId }) {
 function editCampaign(brandId, campaign, onSaved) {
   const goal = campaign.eventPlan && campaign.goalId ? getGoal(brandId, campaign.goalId) : null;
   if (goal) openReplanDialog({ brandId, goal });
+  else if (isLadderCampaign(campaign)) openLadderEditDialog({ campaign, onSaved });
   else openCampaignModal({ brandId, campaign, onSaved });
+}
+
+// Grow Brand (and older level-ladder) campaigns run on their levels, not on
+// the legacy 7-phase journey — the generic form showed those 7 template
+// phases and wrote `phases` back on save. Their Edit is just the name:
+// levels and targets come from the plan.
+function isLadderCampaign(campaign) {
+  return !campaign.eventPlan && (!!campaign.missions?.length || !!campaign.goalPlan);
+}
+function openLadderEditDialog({ campaign, onSaved }) {
+  const shown = campaignDisplayName(campaign.name || "");
+  const overlay = openModal({
+    title: t("camp.edit.title"),
+    bodyHTML: `
+      <div class="field">
+        <label for="c-name">${t("camp.edit.name")}</label>
+        <input class="input" id="c-name" placeholder="${escapeAttr(t("camp.edit.namePh"))}" value="${escapeAttr(shown)}" />
+      </div>
+      <div class="field">
+        <label for="c-status">${t("camp.edit.status")}</label>
+        <select class="select" id="c-status">
+          ${CAMPAIGN_STATUSES.map((s) => `<option value="${s}" ${(campaign.status || "planning") === s ? "selected" : ""}>${CAMPAIGN_STATUS_LABELS[s]}</option>`).join("")}
+        </select>
+      </div>
+      <p class="hint" style="margin:0;">${icon("info", { size: 12 })}<span>${t("camp.ladderEdit.note")}</span></p>`,
+    footHTML: `
+      <button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button>
+      <button class="btn btn-primary" data-save>${icon("check", { size: 15 })}${t("common.save")}</button>`,
+    onMount: (el) => setTimeout(() => el.querySelector("#c-name")?.focus(), 30),
+  });
+  overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
+  overlay.querySelector("[data-save]").addEventListener("click", () => {
+    const input = overlay.querySelector("#c-name");
+    const name = input.value.trim();
+    if (!name) {
+      toast(t("camp.edit.nameRequired"), "error");
+      input.focus();
+      return;
+    }
+    // Saved untouched → keep the stored name (Pemula is shown a plain
+    // version of it; that display text shouldn't overwrite the original).
+    // Status stays editable here: it's the only way to pause, archive or
+    // reopen a Grow Brand campaign (e.g. after "Paksa naik level" by mistake).
+    const patch = {};
+    if (name !== shown) patch.name = name;
+    const status = overlay.querySelector("#c-status")?.value;
+    if (status && status !== (campaign.status || "planning")) patch.status = status;
+    if (Object.keys(patch).length) {
+      updateCampaign(campaign.id, patch);
+      toast(t("camp.edit.updated"));
+    }
+    closeOverlay(overlay);
+    onSaved?.();
+  });
 }
 
 function paint(root, brandId, campaignId, state, refresh) {
@@ -254,7 +309,8 @@ function campaignCard(brandId, campaign, allContent, brand) {
   const idx = activeStageIndex(campaign, stages, allContent);
   const stage = stages[idx];
   const head = stage ? campaignHeadline(campaign, stages, idx, ctx) : null;
-  const action = nextActions({ ...ctx, limit: 1 })[0];
+  // A finished campaign has nothing left to nudge about.
+  const action = campaign.status === "completed" ? null : nextActions({ ...ctx, limit: 1 })[0];
   const where =
     stage?.kind === "level" ? `${t("camp.levelOf", { n: idx + 1, total: stages.length })} · ${escapeText(stage.name)}` : stage?.kind === "window" ? `${escapeText(stage.name)} · ${escapeText(stage.dateLabel)}` : stage ? t("camp.phaseNamed", { name: escapeText(stage.name) }) : "";
   const pct = head ? Math.round(head.reading.pct * 100) : 0;
@@ -284,7 +340,7 @@ function campaignCard(brandId, campaign, allContent, brand) {
         <span class="status-pill ${CAMPAIGN_STATUS_PILL_CLASS[campaign.status] || ""}"><span class="status-dot"></span>${CAMPAIGN_STATUS_LABELS[campaign.status] || campaign.status}</span>
       </div>`
       }
-      <h3>${escapeText(campaign.name || t("camp.untitled"))}</h3>
+      <h3>${escapeText(campaignDisplayName(campaign.name) || t("camp.untitled"))}</h3>
       <div class="meta" style="margin-bottom:10px;">${where}</div>
       ${
         head && head.reading.target && !head.reading.isCheck
@@ -355,7 +411,7 @@ const campaignQuickTemplates = () => [
   // the brand's own figures. The old fixed ladders (grow-social /
   // grow-personal ladders, removed from js/store.js) are no longer offered for new
   // campaigns; existing ones keep working unchanged.
-  { id: "goal", label: t("camp.new.tpl.goal"), objective: "awareness", icon: "sparkle", description: t("camp.new.goalDesc"), recommended: t("camp.new.goalReco") },
+  { id: "goal", label: t("camp.new.tpl.goal"), objective: "awareness", icon: "sparkle", description: t(getMode() === "guided" ? "camp.new.goalDescGuided" : "camp.new.goalDesc"), recommended: t("camp.new.goalReco") },
   { id: "event", label: t("camp.new.tpl.event"), objective: "event", icon: "calendar", description: t("camp.new.eventDesc") },
 ];
 

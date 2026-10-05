@@ -16,10 +16,6 @@ import { getLang } from "./i18n.js";
 // key -> { id: {title, body}, en: {title, body} }. Body is 1-3 short
 // sentences: what it is, then how to use it.
 const HELP_CONTENT = {
-  "brand-home": {
-    id: { title: "Beranda Brand", body: "Titik mulai tiap kali buka brand ini — ringkasan cepat apa yang perlu dikerjain (Brand DNA belum selesai, campaign yang belum ada kontennya, jadwal konten yang bolong) plus jalan pintas ke Brand Builder, tab Konten, Tujuan, dan Pelacak Penjualan." },
-    en: { title: "Brand Home", body: "Your starting point every time you open this brand — a quick summary of what needs doing (unfinished Brand DNA, campaigns with no content yet, gaps in your content schedule) plus shortcuts to Brand Builder, the Content tab, Goals, and the Sales Tracker." },
-  },
   "brand-builder-hub": {
     id: { title: "Brand Builder", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalah, positioning, nama, tagline) dan Brand Book (identitas visual — logo, warna, tipografi, tone of voice). Isi Brand DNA dulu kalau brand ini masih baru, baru lanjut ke Guidelines." },
     en: { title: "Brand Builder", body: "Two doors: Brand DNA (the foundation — customers, problem, positioning, name, tagline) and the Brand Book (visual identity — logo, colors, typography, tone of voice). Start with Brand DNA if the brand is new, then move on to Guidelines." },
@@ -57,8 +53,8 @@ const HELP_CONTENT = {
     en: { title: "What is the Brand Book?", body: "Your brand's rulebook for how it looks and sounds — like a dress code. Logo and how to use it, colors, fonts, visual direction and tone of voice, so every piece of content and design (whoever makes it) looks like the same brand. Sections can be done in any order; the result downloads as a Brand Book (PDF)." },
   },
   "settings": {
-    id: { title: "Pengaturan", body: "Berlaku ke semua brand kamu, bukan per-brand: daftar brand, bahasa, akun & paket, Sampah (yang dihapus, bisa dipulihkan 30 hari), dan di mode Pro juga daftar platform/format serta backup data." },
-    en: { title: "Settings", body: "Applies to all your brands, not just one: your brand list, language, account & plan, Trash (deleted items, restorable for 30 days), and in Pro the platform/format lists and data backup." },
+    id: { title: "Pengaturan", body: "Berlaku ke semua brand kamu, bukan per-brand: daftar brand, bahasa, akun & paket, Sampah (yang dihapus, bisa dipulihkan 30 hari), dan backup data. Di mode Pro ada juga daftar platform & format konten." },
+    en: { title: "Settings", body: "Applies to all your brands, not just one: your brand list, language, account & plan, Trash (deleted items, restorable for 30 days) and data backup. Pro also adds the platform and content format lists." },
   },
   "sales": {
     id: { title: "Pelacak Penjualan", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, campaign Sales Growth, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. Brandlab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },

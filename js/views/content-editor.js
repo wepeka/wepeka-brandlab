@@ -332,6 +332,10 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
 
   qs("#f-status", el).addEventListener("change", (e) => {
     draft.status = e.target.value;
+    // Published needs a publish date (Kalender and the streak read it):
+    // today, on the owner's own calendar — filled in where they can see it.
+    const published = qs("#f-published", el);
+    if (draft.status === "published" && published && !published.value) published.value = localISODate();
     updateStatusRow();
   });
 
@@ -409,6 +413,9 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
       publishedDate: qs("#f-published", el).value,
       publishedUrl: qs("#f-url", el).value.trim(),
     };
+    // A "published" piece saved with no date used to drop off Kalender and
+    // out of the posting streak — it gets today (local date, not UTC).
+    if (patch.status === "published" && !patch.publishedDate) patch.publishedDate = localISODate();
 
     if (contentId) {
       updateContent(contentId, patch);

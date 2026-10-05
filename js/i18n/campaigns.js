@@ -418,7 +418,7 @@ export default {
   "store.msd.meaningfulDms": { en: "Direct messages from people who actually ask, open up, or offer something — not spam or template messages.", id: "Pesan langsung dari orang yang beneran nanya, curhat, atau nawarin sesuatu — bukan spam atau pesan template." },
   "store.msd.meaningfulComments": { en: "Comments that actually respond to your content — not just an emoji or \"nice post\".", id: "Komentar yang isinya beneran nanggepin konten kamu — bukan cuma emoji atau \"nice post\"." },
   "store.msd.highErVideos": { en: "Videos whose engagement rate (likes + comments + shares + saves divided by reach) breaks 10% — a sign the content really resonates. 10% is normal for accounts under 5K followers; bigger accounts usually run lower, so adjust the target if needed.", id: "Video yang engagement rate-nya (like+komen+share+save dibagi reach) tembus 10%+ — tanda kontennya resonate kuat. Angka 10% wajar buat akun di bawah 5K followers; akun besar biasanya lebih rendah, jadi sesuaikan target kalau perlu." },
-  "store.msd.healthyEr": { en: "Compare your account's average engagement rate (see Content List in the Content tab) with the thresholds in Settings → Performance Benchmarks — check this if your average is above \"Average\". Don't let followers grow while engagement drops.", id: "Bandingin rata-rata engagement rate akun kamu (lihat Daftar Konten di tab Konten) dengan ambang batas di Pengaturan → Tolok Ukur Performa — centang kalau rata-ratamu di atas \"Rata-rata\". Jangan cuma followers yang naik tapi engagement-nya malah turun." },
+  "store.msd.healthyEr": { en: "Check the colour of each piece's engagement rate in the Content List (Content tab): green = healthy, yellow = average, red = underperforming. Tick this once most of your content is yellow or green. Don't let followers grow while engagement drops.", id: "Cek warna engagement rate tiap konten di Daftar Konten (tab Konten): hijau = sehat, kuning = cukup, merah = kurang. Centang kalau kebanyakan kontenmu sudah kuning atau hijau. Jangan cuma followers yang naik tapi engagement-nya malah turun." },
   "store.msd.engagementHealthy": { en: "Your engagement rate shouldn't drop even as followers grow — quality has to rise along with quantity.", id: "Engagement rate-nya nggak boleh jatuh biarpun followers naik — kualitas harus ikut naik, bukan cuma kuantitas." },
   "store.msd.recurringEngagers": { en: "People who engage with more than one of your posts — showing they really follow along, not just passing by.", id: "Orang yang engage ke lebih dari satu konten kamu — nunjukkin mereka beneran ngikutin, bukan cuma numpang lewat." },
   "store.msd.aboveAvgPosts": { en: "Content that does far better than the rest of your content — usually a sign you've found \"a format that clicks\".", id: "Konten yang hasilnya jauh di atas rata-rata konten kamu yang lain — biasanya nandain kamu nemu \"format yang kena\"." },
@@ -529,7 +529,7 @@ export default {
   "camp.list.subGuided": { en: "Everything this brand is working toward: Grow Brand (followers, community and sales, level by level) and Events (getting ready for a date). Each one has its own targets, a Brainstorm and the ideas you keep for it.", id: "Semua yang lagi dikejar brand ini: Grow Brand (followers, komunitas, penjualan — naik level demi level) dan Event (persiapan menuju satu tanggal). Tiap tujuan punya target, Brainstorm, dan ide simpanannya sendiri." },
   "camp.list.subPro": { en: "What this brand is working toward right now — each piece of content is linked to a campaign (and a stage of its journey) so you can see which goal it serves.", id: "Yang lagi dikejar brand ini sekarang — tiap konten dikaitkan ke sebuah campaign (dan tahap perjalanannya) supaya kelihatan tujuan mana yang sedang dilayani." },
   "camp.list.emptyTitle": { en: "No campaigns yet", id: "Belum ada campaign" },
-  "camp.list.emptyGuided": { en: "Tap <b>New goal</b>, pick Grow Brand or Event, give it a name — done. Its first step is ready to work on right away.", id: "Klik <b>Tujuan baru</b>, pilih Grow Brand atau Event, kasih nama — selesai. Langkah pertamanya langsung siap dikerjakan." },
+  "camp.list.emptyGuided": { en: "Tap <b>New goal</b>, pick Grow Brand or Event, then answer a few short questions. Its first step is ready to work on right away.", id: "Klik <b>Tujuan baru</b>, pilih Grow Brand atau Event, lalu jawab beberapa pertanyaan singkat. Langkah pertamanya langsung siap dikerjakan." },
   "camp.list.emptyPro": { en: "Create one to give a set of content one goal, one message, and one journey — if you're not sure, start with Grow Brand.", id: "Bikin satu buat ngasih sekumpulan konten satu tujuan, satu pesan, dan satu perjalanan — kalau bingung, mulai dari Grow Brand." },
   "camp.list.deleteTitle": { en: "Move this campaign to Trash?", id: "Pindahkan campaign ini ke Sampah?" },
   "camp.list.deletePlanIdeas": { en: "{count} content idea(s) this event's plan put on your calendar go to Trash with it (anything you wrote or edited stays).", id: "{count} ide konten dari rencana event ini ikut dipindah ke Sampah (yang sudah kamu tulis atau edit tetap ada)." },
@@ -819,6 +819,7 @@ export default {
   // ---------- Grow Brand (js/goal-plan.js, js/views/goal-wizard.js) ----------
   "camp.new.tpl.goal": { en: "Grow Brand", id: "Grow Brand" },
   "camp.new.goalDesc": { en: "Deploys up to three campaigns at once — Social Media Growth, Community Growth and Sales Growth, each tracked on its own. Answer a few questions and the system plots the levels and targets from your own numbers.", id: "Menjalankan sampai tiga campaign sekaligus — Social Media Growth, Community Growth, dan Sales Growth, masing-masing dilacak sendiri-sendiri. Jawab beberapa pertanyaan, sistem yang plot level dan target dari angka brand-mu sendiri." },
+  "camp.new.goalDescGuided": { en: "Run up to three goals at once — growing on social media, building a community and raising sales, each tracked on its own. Answer a few questions and the system plots the levels and targets from your own numbers.", id: "Jalankan sampai tiga tujuan sekaligus — tumbuh di sosmed, bangun komunitas, dan naikkan penjualan, masing-masing dilacak sendiri-sendiri. Jawab beberapa pertanyaan, sistem yang plot level dan target dari angka brand-mu sendiri." },
   "camp.new.goalReco": { en: "Targets calculated from your own numbers", id: "Target dihitung dari angka brand-mu sendiri" },
   "store.mission.gb1.name": { en: "Get Known", id: "Dikenal" },
   "store.mission.gb1.desc": { en: "Focus: audience. Lock in your upload rhythm and find the content formats that reach new people.", id: "Fokus: audiens. Kunci ritme upload dan cari format konten yang menjangkau orang baru." },
@@ -1030,6 +1031,28 @@ export default {
   "goal.launch.err.followers": { en: "Fill in your followers today (0 is fine) and a target higher than that.", id: "Isi followers hari ini (0 juga boleh) dan target yang lebih tinggi dari itu." },
   "goal.launch.err.members": { en: "Fill in your member count today (0 is fine) and a target higher than that.", id: "Isi jumlah member hari ini (0 juga boleh) dan target yang lebih tinggi dari itu." },
   "goal.launch.err.hasQ": { en: "Pick whether you already have a community.", id: "Pilih dulu, kamu sudah punya komunitas atau belum." },
+  // Pemula names for the three tracks — the wizard's own titles and, via
+  // js/i18n.js campaignDisplayName, the start of the stored campaign name
+  // ("Social Media Growth (Instagram) Kopi Senja" reads "Tumbuh di Sosmed
+  // (Instagram) Kopi Senja"). The stored name itself never changes.
+  "goal.launch.socialTitlePlain": { en: "Grow on social media", id: "Tumbuh di Sosmed" },
+  "goal.launch.communityTitlePlain": { en: "Build a community", id: "Bangun Komunitas" },
+  "goal.launch.salesTitlePlain": { en: "Grow sales", id: "Naikkan Penjualan" },
+  // Pemula's select screen starts with nothing ticked — the owner picks;
+  // Social carries this badge as the suggested first one.
+  "goal.select.recommended": { en: "Recommended to start", id: "Disarankan buat mulai" },
+  "goal.select.subGuided": { en: "Tick the ones you want to run. Just starting? One is plenty.", id: "Centang yang mau kamu jalankan. Baru mulai? Satu dulu aja cukup." },
+  // Pemula's one-paragraph version of goal.disclaimer.1–4 (same checkbox).
+  "goal.disclaimer.short": { en: "Every number here is an estimate from where you are today, not a guarantee. Whether you reach it depends on uploading consistently, making good content, and things outside this app (algorithms, your product, the market).", id: "Semua angka di sini perkiraan dari posisimu hari ini, bukan jaminan. Tercapai atau nggak tergantung konsistensi upload, kualitas konten, dan hal di luar aplikasi (algoritma, produk, pasar)." },
+  // After "Jalankan Grow Brand": the wizard shows the next step instead of
+  // just closing. The button opens the existing chat week plan (nothing is
+  // created until the owner ticks and saves ideas there).
+  "goal.done.titleOne": { en: "Done — your campaign is running!", id: "Siap — campaign-mu sudah jalan!" },
+  "goal.done.titleMany": { en: "Done — {n} campaigns are running!", id: "Siap — {n} campaign sudah jalan!" },
+  "goal.done.next": { en: "Next step: plan this week's content. Brandlab suggests ideas for your upload days — you pick which ones to keep.", id: "Langkah berikutnya: rencanakan konten minggu ini. Brandlab kasih usulan ide buat hari upload-mu — kamu yang pilih mana yang disimpan." },
+  "goal.done.later": { en: "Later", id: "Nanti aja" },
+  // Edit on a Grow Brand (level ladder) campaign: only the name.
+  "camp.ladderEdit.note": { en: "Levels and targets follow the Grow Brand plan, so they aren't edited here.", id: "Level dan target-nya ikut rencana Grow Brand, jadi nggak diubah di sini." },
 
   // ---------- Cross-campaign intelligence (js/cross-campaign.js) ----------
   // ---------- Grow Brand v3: Sales Growth ----------

@@ -1,12 +1,12 @@
 import { listGoals, getBrand, listSeries, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, ROUTINE_DAY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
-import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "../dom.js";
+import { qs, qsa, toast, escapeHtml, openMenu, closeMenu, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { suggestSchedule, hasAiKey } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { goalItems } from "../goal-progress.js";
-import { t, getLang } from "../i18n.js";
+import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
@@ -140,7 +140,11 @@ function writeBankOpen(open) {
 }
 
 export function render(root, { brandId }) {
-  const state = { view: "month", cursor: new Date(), highlightId: null, bankOpen: readBankOpen(), bankCampaignId: null, placingId: null };
+  // Phones open on the week list: a 7-column month grid leaves ~46px per
+  // day, too narrow to read a title. Month stays one tap away (and is used
+  // when placing a piece from the Bank).
+  const narrow = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+  const state = { view: narrow ? "week" : "month", cursor: new Date(), highlightId: null, bankOpen: readBankOpen(), bankCampaignId: null, placingId: null };
   // Arriving from a campaign ("Jadwalkan …"): jump to that piece's month,
   // or — when it has no date yet — open the Bank on it, scoped to that
   // campaign, so it can be dragged (or tapped) onto a day.
@@ -168,7 +172,10 @@ function itemsForBrand(brandId) {
   return listContent(brandId).filter((c) => {
     if (c.publishedDate) return true;
     if (!c.scheduleDate) return false;
-    return c.scheduleDate >= todayISO;
+    // A published piece saved without a publish date (older data) stays on
+    // its scheduled day — the Bank skips published pieces, so dropping it
+    // here made it vanish from Kalender altogether.
+    return c.status === "published" || c.scheduleDate >= todayISO;
   });
 }
 
@@ -214,7 +221,7 @@ function contentBankHTML(brandId, state) {
         <button type="button" class="icon-btn" id="close-bank" aria-label="${t("common.close")}" title="${t("common.close")}">${icon("x", { size: 13 })}</button>
       </div>
       <p class="content-bank-hint">${t("calendar.bank.hint")}</p>
-      ${campaign ? `<div class="content-bank-scope"><span class="tag">${escapeHtml(campaign.name)}</span><button type="button" class="icon-btn" id="bank-clear-campaign" title="${t("cal.bank.showAll")}" aria-label="${t("cal.bank.showAll")}">${icon("x", { size: 11 })}</button></div>` : ""}
+      ${campaign ? `<div class="content-bank-scope"><span class="tag">${escapeHtml(campaignDisplayName(campaign.name))}</span><button type="button" class="icon-btn" id="bank-clear-campaign" title="${t("cal.bank.showAll")}" aria-label="${t("cal.bank.showAll")}">${icon("x", { size: 11 })}</button></div>` : ""}
       <div class="content-bank-list">
         ${
           groups.length
@@ -530,7 +537,7 @@ function paint(root, brandId, state, refresh) {
         <h1>${t("contentOs.tab.calendar")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
       </div>
-      <div class="flex gap-8">
+      <div class="flex gap-8 cal-head-actions">
         <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
         <button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>
         <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
@@ -545,7 +552,7 @@ function paint(root, brandId, state, refresh) {
       </div>
       ${goalWeek ? `<a class="cal-goalchip" href="#/brand/${brandId}/goals" title="${escapeHtml(t("roadmap.cal.goalChip"))}">${icon("target", { size: 12 })}${t("roadmap.cal.weekChip", { slots: goalWeek.slots, deadlines: goalWeek.deadlines })}</a>` : ""}
       <div class="segmented" style="width:150px;">
-        ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${t(`calendar.view.${v}`)}</button>`).join("")}
+        ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
       </div>
     </div>
     ${state.placingId ? placingBarHTML(state) : ""}
@@ -665,18 +672,18 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
     const ghost = ghosts.get(iso(day));
 
     cells += `
-      <div class="cal-cell ${outside ? "outside" : ""} ${sameDay(day, today) ? "today" : ""} ${iso(day) < todayISO ? "is-past" : ""} ${holiday ? (holiday.cuti ? "cuti" : "holiday") : ""} ${eventNames ? "event-day" : ""}" data-date="${iso(day)}" ${holiday ? `title="${escapeHtml(holiday.label)}"` : eventNames ? `title="${t("cal.eventDayTitle", { names: escapeHtml(eventNames.join(", ")) })}"` : ""}>
+      <div class="cal-cell ${outside ? "outside" : ""} ${sameDay(day, today) ? "today" : ""} ${iso(day) < todayISO ? "is-past" : ""} ${holiday ? (holiday.cuti ? "cuti" : "holiday") : ""} ${eventNames ? "event-day" : ""}" data-date="${iso(day)}" aria-label="${escapeHtml([formatCellDate(iso(day)), holiday?.label].filter(Boolean).join(" · "))}" ${holiday ? `title="${escapeHtml(holiday.label)}"` : eventNames ? `title="${t("cal.eventDayTitle", { names: escapeHtml(eventNames.join(", ")) })}"` : ""}>
         <div class="cal-date">${day.getDate()}${eventNames ? `<span class="cal-event-star" aria-label="${t("cal.eventDay")}">★</span>` : ""}</div>
         ${holiday ? `<div class="cal-holiday-label">${escapeHtml(holiday.label)}</div>` : ""}
         ${dlShown.map((d) => `<div class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}" title="${escapeHtml(`${t("roadmap.cal.deadline")}: ${d.label}`)}">${escapeHtml(d.label)}</div>`).join("")}
         ${shown.map((c) => {
           const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
-          const itemTitle = campaign ? `${c.title} · ${campaign.name}` : c.title;
+          const itemTitle = campaign ? `${c.title} · ${campaignDisplayName(campaign.name)}` : c.title;
           const isSlot = !!c.fromGoal && c.status === "idea";
           return `
           <div class="cal-item ${isSlot ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="${c.status === "published" ? "false" : "true"}" data-id="${c.id}" title="${escapeHtml(isSlot ? `${itemTitle} — ${t("roadmap.cal.slot")}` : itemTitle)}">
             <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>
-            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaign.name)}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
+            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaignDisplayName(campaign.name))}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
             ${escapeHtml(c.title || t("common.untitled"))}
           </div>`;
         }).join("")}
@@ -696,6 +703,10 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
 
   wireDragAndOpen(body, brandId, refresh, state);
   wireSeriesGhosts(body);
+  // Keyboard: Tab reaches each upcoming day and each item; Enter/Space does
+  // what a click does (the handlers above). Past days only answer "can't
+  // schedule in the past", so they're left out of the tab order.
+  wireClickableCards(body, ".cal-item, .cal-cell:not(.is-past)");
 }
 
 // A thin Gantt-lite strip above the month grid — one row per active
@@ -741,7 +752,7 @@ function campaignTimelineHTML(campaigns, monthDate) {
       }
       return `
         <div class="cal-timeline-row ${phases.length ? "has-phases" : ""}">
-          <a class="cal-timeline-label" href="#/brand/${c.brandId}/campaigns/${c.id}" title="${escapeHtml(c.name || "")}">${escapeHtml(c.name || t("calendar.untitledCampaign"))}</a>
+          <a class="cal-timeline-label" href="#/brand/${c.brandId}/campaigns/${c.id}" title="${escapeHtml(campaignDisplayName(c.name) || "")}">${escapeHtml(campaignDisplayName(c.name) || t("calendar.untitledCampaign"))}</a>
           <div class="cal-timeline-track">${bar}</div>
         </div>
       `;
@@ -755,7 +766,7 @@ function eventDayMarkers(campaigns) {
   const map = new Map();
   campaigns.forEach((c) => {
     const d = c.eventPlan?.eventDate;
-    if (d && c.status !== "archived") map.set(d, [...(map.get(d) || []), c.name || t("cal.eventFallback")]);
+    if (d && c.status !== "archived") map.set(d, [...(map.get(d) || []), campaignDisplayName(c.name) || t("cal.eventFallback")]);
   });
   return map;
 }
@@ -805,6 +816,7 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
   qsa("[data-id]", body).forEach((el) => {
     el.addEventListener("click", () => openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh }));
   });
+  wireClickableCards(body, ".agenda-row[data-id]");
   wireSeriesGhosts(body);
   qs("#agenda-empty-new", body)?.addEventListener("click", () => {
     openContentEditor({ brandId, stay: true, defaults: { scheduleDate: iso(rangeStart), status: "idea" }, onSaved: refresh });
@@ -821,7 +833,7 @@ function agendaRow(c, campaignById) {
         <div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.title || t("common.untitled"))}</div>
         <div class="text-muted" style="font-size:12.5px;margin-top:2px;">${escapeHtml(c.platform || "—")} · ${escapeHtml(c.format || "—")}</div>
       </div>
-      ${campaign ? `<span class="tag" style="background:color-mix(in srgb, var(--brand-tint) 14%, transparent);color:var(--brand-tint);">${escapeHtml(campaign.name)}</span>` : ""}
+      ${campaign ? `<span class="tag" style="background:color-mix(in srgb, var(--brand-tint) 14%, transparent);color:var(--brand-tint);">${escapeHtml(campaignDisplayName(campaign.name))}</span>` : ""}
       <span class="tag tag-${escapeHtml((c.funnel || "").toLowerCase())}">${escapeHtml(funnelShort(c.funnel))}</span>
       <span class="status-pill status-${escapeHtml(c.status)}"><span class="status-dot"></span>${escapeHtml(STATUS_LABELS[c.status] || c.status)}</span>
     </div>

@@ -21,7 +21,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 
 const TOUR_STEPS = [
   { selector: ".cp-page-chat .consultant-panel-input", title: t("chat.title"), body: t("chat.tour.chat") },
@@ -42,7 +42,7 @@ export function render(root, { brandId, threadId = null }) {
   const campaign = chatScopeInfo(brandId).campaign;
   qs("#chat-head", root).innerHTML = `
     <div>
-      <div class="page-eyebrow flex items-center gap-6">${campaign ? backLinkHTML(`#/brand/${brandId}/campaigns/${campaign.id}`, campaign.name || t("nav.campaigns")) : backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${esc(brand.name)}${helpButtonHTML("brainstorm")}${guideVideoButtonHTML("chat")}</div>
+      <div class="page-eyebrow flex items-center gap-6">${campaign ? backLinkHTML(`#/brand/${brandId}/campaigns/${campaign.id}`, campaignDisplayName(campaign.name) || t("nav.campaigns")) : backLinkHTML(`#/brand/${brandId}`, t("nav.home"))} · ${esc(brand.name)}${helpButtonHTML("brainstorm")}${guideVideoButtonHTML("chat")}</div>
       <h1>${t("chat.title")}</h1>
       <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:680px;">${t("chat.page.sub")}</p>
     </div>`;

@@ -15,6 +15,7 @@ import {
   listContent, listCampaigns, campaignContentPool, contentMetricTotal, consecutiveActiveWeeks, streakBreakInDays,
   getBrandInsights, insightsBaseline, getSettings, missionState, localISODate, daysBetween, cadenceComplianceWeeks,
   milestoneLabel, milestoneDescription, unitLabel, phaseNameLabel, missionText, eventPhaseDateLabel, eventPhaseWindow,
+  performanceCheckDue,
 } from "./store.js";
 import { computeContentMetrics } from "./formulas.js";
 import { campaignSalesStats } from "./sales-tracker.js";
@@ -32,6 +33,27 @@ const isPublished = (c) => c.status === "published";
 const num = (v) => (v === null || v === undefined || v === "" ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 const lower = (s) => (s || "").toLowerCase();
 
+// The Grow Brand wizard's named platforms. Its "Lainnya" choice
+// (goalPlan.platform "other") is for everything else — YouTube, LinkedIn,
+// Threads, a platform added in Pengaturan.
+const NAMED_SOCIAL_PLATFORMS = ["instagram", "tiktok", "facebook"];
+// Is this piece of content on `platform` (a goalPlan.platform id)? Its own
+// `platform` field, or any platform it was ticked as uploaded to in Creator
+// ("Selesai" used to save only uploadedPlatforms). "other" takes content on
+// a platform outside the named three, plus untagged content that wasn't
+// ticked as uploaded to one of them: a "Lainnya" campaign can't stamp a
+// platform name on what's made for it, so its own drafts stay untagged.
+export function contentOnPlatform(c, platform) {
+  const p = lower(platform).trim();
+  if (!p) return true;
+  const own = lower(c.platform).trim();
+  const ticked = Object.entries(c.uploadedPlatforms || {}).filter(([, on]) => on).map(([k]) => lower(k).trim());
+  if (p !== "other") return own === p || ticked.includes(p);
+  const outside = (k) => !NAMED_SOCIAL_PLATFORMS.includes(k);
+  if (own) return outside(own) || ticked.some(outside);
+  return !ticked.length || ticked.some(outside);
+}
+
 // Content that counts for a milestone: the campaign's pool, then the
 // milestone's own filter (phase, event window, format, tag).
 export function poolFor(ctx, ms) {
@@ -39,11 +61,11 @@ export function poolFor(ctx, ms) {
   // Social Media Growth campaigns auto-link every piece of content, so two
   // concurrent social campaigns for different platforms (Instagram + TikTok)
   // would otherwise both count the brand's entire content list. Scope the
-  // pool to the campaign's own platform; content with no platform tag counts
-  // toward neither campaign rather than inflating both.
+  // pool to the campaign's own platform (contentOnPlatform above); content
+  // with no platform at all counts only toward a "Lainnya" campaign.
   const track = ctx.campaign.goalPlan?.track;
   const platform = ctx.campaign.goalPlan?.platform;
-  if (track === "social" && platform) pool = pool.filter((c) => lower(c.platform) === lower(platform));
+  if (track === "social" && platform) pool = pool.filter((c) => contentOnPlatform(c, platform));
   const f = ms.filter || {};
   if (f.phaseId) pool = pool.filter((c) => c.campaignPhaseId === f.phaseId);
   if (f.dateFrom && f.dateTo) pool = pool.filter((c) => {
@@ -57,15 +79,13 @@ export function poolFor(ctx, ms) {
   return pool;
 }
 
-// Published content in the pool whose performance was never confirmed, or
-// was confirmed more than STALE_DAYS ago — the data action for every
-// content.* metric is "fill these in".
+// Published content in the pool whose performance numbers are due — the
+// data action for every content.* metric is "fill these in". Same rule as
+// Konten's "Update Engagement" queue (store.js performanceCheckDue): asked
+// ~2 and ~7 days after publishing, never after ~30 days.
 function unconfirmedPublished(pool) {
-  const cutoff = Date.now() - STALE_DAYS * DAY;
-  return pool.filter(isPublished).filter((c) => {
-    const at = c.performance?.confirmedAt;
-    return !at || at < cutoff;
-  });
+  const now = Date.now();
+  return pool.filter((c) => performanceCheckDue(c, now));
 }
 
 const HOME_LABEL = Object.fromEntries(
@@ -612,6 +632,17 @@ export function campaignHeadline(campaign, stages, stageIndex, ctx) {
   return { milestone: ms, reading: readMilestone(ms, ctx, stage) };
 }
 
+// The follower count the campaign started from: what the Grow Brand wizard
+// recorded (goalPlan.current.followers), else the last Insights reading
+// taken at or before the campaign was created. null when nothing says.
+export function followersAtCampaignStart(campaign, ctx) {
+  const typed = num(campaign?.goalPlan?.current?.followers);
+  if (typed !== null) return typed;
+  const at = campaign?.createdAt || 0;
+  const base = ctx?.brand ? insightsBaseline(ctx.brand, campaignPlatform(ctx), at) : null;
+  return base && base.at <= at ? num(base.followers) : null;
+}
+
 // Ladder rule: a level is ready to advance the moment every required
 // milestone is met — no separate minimum-weeks wait. `minWeeks`/`weeksLeft`
 // are kept (always 0) only so levelGateHTML()'s older copy paths and the
@@ -623,7 +654,13 @@ export function ladderAdvanceState(campaign, stage, ctx) {
   // level succeeding — a brand that gets there off a handful of viral pieces
   // isn't held back waiting on the level's other required milestones (total
   // content published, active-weeks streak, etc.) to catch up too.
-  const followersMet = readings.some((r) => r.milestone.label === "Followers" && r.met);
+  // Only for growth that happened: a Followers target the account had
+  // already reached when the campaign began (a 1,500-follower account on a
+  // 1,000 checkpoint) never finishes a level by itself — that was "Level 1
+  // selesai" on the first open for doing nothing. A not-applicable Followers
+  // milestone never counts either.
+  const startFollowers = followersAtCampaignStart(campaign, ctx);
+  const followersMet = readings.some((r) => r.milestone.metric === "profile.followers" && !r.milestone.notApplicable && r.met && !(startFollowers !== null && (r.target ?? 0) <= startFollowers));
   const targetsMet = followersMet || (requiredTotal > 0 && requiredMet === requiredTotal);
   // Every level's consistency rule already lives as a visible milestone
   // (active weeks / cadence), so there's no hidden wait once every required

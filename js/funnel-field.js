@@ -52,7 +52,7 @@ export function funnelFieldHTML({ id, value, extraHead = "", fieldStyle = "" }) 
         <div class="creator-funnel-guided" id="${id}" data-funnel-field>
           ${FUNNELS.map(
             (f) => `
-            <button type="button" class="creator-funnel-guided-option ${value === f ? "active" : ""}" data-val="${f}">
+            <button type="button" class="creator-funnel-guided-option ${value === f ? "active" : ""}" data-val="${f}" aria-pressed="${value === f}">
               <strong>${t(`creator.funnel.guided.${f}.title`)}</strong>
               <span>${t(`creator.funnel.guided.${f}.desc`)}</span>
             </button>`
@@ -65,7 +65,7 @@ export function funnelFieldHTML({ id, value, extraHead = "", fieldStyle = "" }) 
     <div class="field" style="${fieldStyle}">
       ${head}
       <div class="chip-select" id="${id}" data-funnel-field>
-        ${FUNNELS.map((f) => `<button type="button" data-val="${f}" class="${value === f ? "active" : ""}">${f}</button>`).join("")}
+        ${FUNNELS.map((f) => `<button type="button" data-val="${f}" class="${value === f ? "active" : ""}" aria-pressed="${value === f}">${f}</button>`).join("")}
       </div>
     </div>
   `;
@@ -78,7 +78,7 @@ export function wireFunnelField(root, id, onPick) {
   if (!wrap) return;
   wrap.querySelectorAll("button[data-val]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      wrap.querySelectorAll("button[data-val]").forEach((b) => b.classList.toggle("active", b === btn));
+      wrap.querySelectorAll("button[data-val]").forEach((b) => { b.classList.toggle("active", b === btn); b.setAttribute("aria-pressed", String(b === btn)); });
       onPick(btn.dataset.val);
     });
   });
@@ -86,5 +86,5 @@ export function wireFunnelField(root, id, onPick) {
 
 // Reflects an externally-set value (e.g. AI detect) back onto the picker.
 export function setFunnelFieldValue(root, id, value) {
-  root.querySelector(`#${id}`)?.querySelectorAll("button[data-val]").forEach((b) => b.classList.toggle("active", b.dataset.val === value));
+  root.querySelector(`#${id}`)?.querySelectorAll("button[data-val]").forEach((b) => { b.classList.toggle("active", b.dataset.val === value); b.setAttribute("aria-pressed", String(b.dataset.val === value)); });
 }

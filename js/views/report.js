@@ -18,7 +18,7 @@ import { ensurePdfLibs } from "../pdf-libs.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml as esc, avatarHTML } from "../dom.js";
-import { t } from "../i18n.js";
+import { t, getLang } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
 
 const DAY = 86400000;
@@ -355,7 +355,7 @@ function reportBlocks(brand, start, end) {
           const dt = new Date(c.scheduleDate + "T12:00:00");
           return `
             <div class="rp2-tl-row">
-              <span class="rp2-tl-date" style="border-color:${accent}66"><b>${dt.getDate()}</b><small>${esc(dt.toLocaleDateString("id-ID", { month: "short" }))}</small></span>
+              <span class="rp2-tl-date" style="border-color:${accent}66"><b>${dt.getDate()}</b><small>${esc(dt.toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { month: "short" }))}</small></span>
               <span class="rp2-tl-title">${esc(c.title || t("common.untitled"))}</span>
               <span class="rp2-pill" style="background:${FUNNEL_COLOR[c.funnel] || "#999"}1a;color:${FUNNEL_COLOR[c.funnel] || "#666"}">${esc(funnelShort(c.funnel))}</span>
             </div>`;
@@ -461,7 +461,7 @@ export function openReportModal(brandId, { range = "week" } = {}) {
 
   const pickerHTML = () => `
     <div class="chip-select rp-range">
-      ${["week", "month", "overall", "custom"].map((k) => `<button type="button" data-range="${k}" class="${st.key === k ? "active" : ""}">${t(`rep.range.${k}`)}</button>`).join("")}
+      ${["week", "month", "overall", "custom"].map((k) => `<button type="button" data-range="${k}" class="${st.key === k ? "active" : ""}" aria-pressed="${st.key === k}">${t(`rep.range.${k}`)}</button>`).join("")}
     </div>
     ${st.key === "custom" ? `<div class="row-2" style="margin-top:10px;"><div class="field" style="margin-bottom:0;"><label>${t("rep.range.start")}</label><input class="input" type="date" id="rp-start" value="${st.start}" /></div><div class="field" style="margin-bottom:0;"><label>${t("rep.range.end")}</label><input class="input" type="date" id="rp-end" value="${st.end}" /></div></div>` : ""}`;
 

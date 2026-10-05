@@ -9,11 +9,11 @@ import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
 import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft, TRIAL_DAYS } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod, aiExtras } from "./ai-usage.js";
-import { identityDone } from "./brand-progress.js";
+import { identityDone, identityGate, identityGateCopy } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
 import { installTopUpNotice, canTopUp } from "./ai-topup.js";
 import { rememberLastBrand } from "./back-link.js";
-import { openModal, closeOverlay } from "./modals.js";
+import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
 // chunk in the app, and the whole reason the logged-out login/pricing
@@ -140,7 +140,7 @@ function notifPanelHTML({ overdue, dueToday, dueSoon }) {
 function bellHTML() {
   const { overdue } = listOverdueAndDueSoon();
   return `
-    <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="${t("topbar.notifications")}" aria-label="${t("topbar.notifications")}">
+    <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="${t("topbar.notifications")}" aria-label="${t("topbar.notifications")}" aria-haspopup="menu" aria-expanded="false">
       ${icon("bell", { size: 17 })}
       ${overdue.length ? `<span class="notif-badge">${overdue.length > 9 ? "9+" : overdue.length}</span>` : ""}
     </button>`;
@@ -191,12 +191,12 @@ export function shellHTML({ brandId, active }) {
     ? TABS.map((tab) => {
         const locked = lock && tab.gated;
         const label = t(tab.labelKey);
-        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(locked ? "lock" : tab.icon, { size: 16 })}${label}</a>`;
+        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" ${tab.matches.includes(active) ? `aria-current="page"` : ""} href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(locked ? "lock" : tab.icon, { size: 16 })}${label}</a>`;
       }).join("")
     : "";
 
   const brandSwitchHTML = brand
-    ? `<button class="brand-switch" id="brand-switch-btn" data-tour="brand-switch">
+    ? `<button class="brand-switch" id="brand-switch-btn" data-tour="brand-switch" aria-haspopup="menu" aria-expanded="false">
          ${avatarHTML(brand)}
          <span>${escapeHtml(brand.name)}</span>
          ${icon("chevronDown", { size: 14 })}
@@ -216,7 +216,7 @@ export function shellHTML({ brandId, active }) {
         ${planBadgeHTML()}
         ${modeConfig().bell ? bellHTML() : ""}
         ${updatesBtnHTML(active)}
-        <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" data-tour="settings">${icon("dots", { size: 18 })}<span class="notif-badge app-menu-badge" ${unreadCount() ? "" : "hidden"}></span></button>
+        <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" aria-haspopup="menu" aria-expanded="false" data-tour="settings">${icon("dots", { size: 18 })}<span class="notif-badge app-menu-badge" ${unreadCount() ? "" : "hidden"}></span></button>
       </div>
     </header>
     ${brand ? `<nav class="bottom-nav" aria-label="${t("nav.main")}">${tabsHTML}</nav>` : ""}
@@ -231,7 +231,10 @@ export function shellHTML({ brandId, active }) {
 export function updateShellForRoute({ active }) {
   qsa(".topbar .tabs .tab, .bottom-nav .tab").forEach((a) => {
     const tab = TABS.find((x) => x.key === a.dataset.tabKey);
-    a.classList.toggle("active", !!tab?.matches.includes(active));
+    const on = !!tab?.matches.includes(active);
+    a.classList.toggle("active", on);
+    if (on) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
   });
   const oldChip = qs(".nav-return");
   const html = returnChipHTML();
@@ -393,6 +396,23 @@ function wireOfflineBanner() {
   if (navigator.onLine === false) show();
 }
 
+// Pemula's locked Tujuan (the tab, and its step on Beranda): says exactly
+// what's still missing — Brand DNA, Warna, Font — and offers a button
+// straight to the first missing piece, instead of a toast with no way there.
+// Read fresh on click: the shell isn't repainted when only half the gate
+// changes (main.js keys it on identityDone).
+export async function explainIdentityGate(brandId) {
+  const brand = getBrand(brandId);
+  const gate = brand ? identityGate(brand) : null;
+  const copy = identityGateCopy(gate, t);
+  if (!copy) {
+    if (!gate?.done) toast(t("home.next.lockedToast"));
+    return;
+  }
+  const go = await confirmDialog({ title: t("gate.title"), message: escapeHtml(copy.message), confirmLabel: escapeHtml(copy.action), cancelLabel: t("gate.later") });
+  if (go && gate.href) location.hash = gate.href;
+}
+
 export function wireShell({ brandId }) {
   wireAnnouncements();
   wireOfflineBanner();
@@ -409,7 +429,7 @@ export function wireShell({ brandId }) {
   qsa("[data-locked-tab]").forEach((a) =>
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      toast(t("home.next.lockedToast"));
+      explainIdentityGate(brandId);
     })
   );
 

@@ -293,7 +293,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
           <label for="brand-description" style="margin-bottom:0;">${guided ? t("brands.form.descLabelGuided") : t("brands.form.descLabel")}</label>
           <div class="flex items-center gap-6">
             <button type="button" class="chip-icon-btn" id="brand-desc-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="brand-desc-ai">${icon("bot", { size: 13 })}${t("brandForm.aiHelp")}</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="brand-desc-ai">${icon("bot", { size: 13 })}${t("brandForm.aiHelp")}<span class="btn-cost">${t("ai.creditTag")}</span></button>
           </div>
         </div>
         <div class="warn-box info-box">

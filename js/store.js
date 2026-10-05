@@ -1168,8 +1168,27 @@ export function getContent(id) {
   if (c && !c.performance) c.performance = {};
   return c;
 }
+// The `platform` a piece made FOR this campaign should carry. A Social
+// Media Growth campaign only counts content on its own platform
+// (campaign-metrics.js poolFor), so a chat draft or a weekly-plan idea made
+// for "Social Media Growth (TikTok)" has to say TikTok — spelled the way
+// Pengaturan → Platform spells it. "" for a "Lainnya" campaign (untagged
+// content counts there), null for a campaign with no platform of its own
+// (the caller keeps whatever default it uses).
+const PLATFORM_CANON = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", youtube: "YouTube" };
+export function campaignContentPlatform(campaign, settings = db.settings) {
+  const gp = campaign?.goalPlan;
+  if (gp?.track !== "social") return null;
+  const id = String(gp.platform || "instagram").toLowerCase();
+  if (id === "other") return "";
+  const hit = (settings?.platforms || []).find((p) => String(p.id || "").toLowerCase() === id || String(p.name || "").toLowerCase() === id);
+  return hit?.name || PLATFORM_CANON[id] || id;
+}
 export function createContent(brandId, data = {}) {
   const item = { ...emptyContent(brandId), ...data, id: uid(), brandId, ownerId: ownerUid };
+  // Made for a Social Media Growth campaign without a platform of its own
+  // (chat drafts, plan ideas): it takes the campaign's, so it counts there.
+  if (!item.platform && item.campaignId) item.platform = campaignContentPlatform(getCampaign(item.campaignId)) || "";
   db.content.push(item);
   persist(() => setDoc(doc(fdb, "content", item.id), item));
   return item;
@@ -1470,23 +1489,33 @@ export function missionProgressionNote(campaign) {
   return campaign.missionProgressionNote;
 }
 
-export function consecutiveActiveWeeks(content, offsetDays = 0) {
-  const DAY = 86400000;
+// The one posting-streak definition (audit-1005): Beranda's header and the
+// content.streakWeeks milestones both read this, so they never disagree.
+// Day numbers come from the plain YYYY-MM-DD strings — the owner's own
+// calendar day (localISODate), never the UTC day, so a post published
+// before 07:00 WIB still counts for today.
+const DAY_MS = 86400000;
+const isoDayNumber = (iso) => Math.round(Date.parse(`${String(iso).slice(0, 10)}T00:00:00Z`) / DAY_MS);
+// { grace: true } lets the current 7-day window still be empty (the week
+// isn't over yet) and counts from the window before it — for the Beranda
+// header, so a weekly poster's 🔥 doesn't vanish on the morning of upload
+// day. Milestones and streakBreakInDays keep the strict count.
+export function consecutiveActiveWeeks(content, offsetDays = 0, now = new Date(), { grace = false } = {}) {
   const days = content
     .filter((c) => c.status === "published" && c.publishedDate)
-    .map((c) => Math.floor(new Date(c.publishedDate + "T12:00:00").getTime() / DAY))
+    .map((c) => isoDayNumber(c.publishedDate))
     .filter((d) => Number.isFinite(d));
   if (!days.length) return 0;
   // offsetDays > 0 asks "what would the streak be N days from now if
   // nothing new gets published" — see streakBreakInDays.
-  const today = Math.floor(Date.now() / DAY) + offsetDays;
+  const today = isoDayNumber(localISODate(now)) + offsetDays;
   let weeks = 0;
+  const hasPublish = (w) => days.some((d) => d >= today - w * 7 - 6 && d <= today - w * 7);
   // Week 0 = the last 7 days including today, week 1 = the 7 before, ...
   // Keep counting while each successive window has at least one publish.
-  for (let w = 0; w < 260; w++) {
-    const end = today - w * 7;
-    const start = end - 6;
-    if (!days.some((d) => d >= start && d <= end)) break;
+  const first = grace && !hasPublish(0) ? 1 : 0;
+  for (let w = first; w < 260; w++) {
+    if (!hasPublish(w)) break;
     weeks++;
   }
   return weeks;
@@ -1534,6 +1563,34 @@ export function streakBreakInDays(content, maxDays = 2) {
     if (consecutiveActiveWeeks(content, d) < weeks) return { days: d, weeks };
   }
   return null;
+}
+// Does this published post still need its performance numbers asked for?
+// At most twice per post: once ~2 days after it went up (first numbers),
+// once ~7 days after (they've settled) — and never again after ~30 days.
+// It used to re-ask every post every 7 days forever, so an active account
+// got "Isi performa 40 konten" each week. A check counts only when it
+// happened on/after the checkpoint it answers; one filled in on day 3
+// still gets the day-7 ask, one filled in on day 8 is done for good.
+export const PERF_CHECK_DAYS = [2, 7];
+export const PERF_CHECK_MAX_AGE_DAYS = 30;
+export function performanceCheckDue(c, now = Date.now()) {
+  if (c?.status !== "published") return false;
+  const DAY = 86400000;
+  const pubMs = c.publishedDate ? new Date(c.publishedDate + "T00:00:00").getTime() : Number(c.createdAt) || 0;
+  if (!Number.isFinite(pubMs) || !pubMs) return false;
+  const age = (now - pubMs) / DAY;
+  if (age < PERF_CHECK_DAYS[0] || age > PERF_CHECK_MAX_AGE_DAYS) return false;
+  const mark = [...PERF_CHECK_DAYS].reverse().find((d) => age >= d);
+  const at = Number(c.performance?.confirmedAt) || 0;
+  return !at || at < pubMs + mark * DAY;
+}
+// At least one real number (or a retention reading) in a performance
+// object — saving an empty "Isi performa" form is not a check, so it must
+// not stamp confirmedAt and silence the asks above.
+export function performanceHasNumbers(p) {
+  if (!p) return false;
+  const has = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
+  return METRIC_KEYS.some(({ key }) => has(p[key])) || !!p.retention;
 }
 // Sum of one performance metric (e.g. "shares", "saves") across published
 // content — per-platform breakdown when the item has one, flat
@@ -2108,7 +2165,11 @@ export function completeCampaignStage(campaignId, index, { completedAt = Date.no
   const c = getCampaign(campaignId);
   if (!c?.missions?.[index]) return null;
   const missions = c.missions.map((m, i) => (i === index ? { ...m, completedAt } : m));
-  return updateCampaign(campaignId, { missions });
+  // Finishing the last level finishes the campaign: a done Grow Brand ladder
+  // stops showing up as "running" (Beranda's top action, the pulse, the
+  // weekly plan, the Grow Brand wizard's "already running" check).
+  const finished = missions.every((m) => m.completedAt);
+  return updateCampaign(campaignId, { missions, ...(finished && ["planning", "active"].includes(c.status || "active") ? { status: "completed" } : {}) });
 }
 // Soft delete: the campaign moves to Trash as-is, content still linked to
 // it (campaignId untouched) so Restore below undoes this completely.

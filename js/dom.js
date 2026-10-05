@@ -25,9 +25,11 @@ export function formatNumber(n) {
   return num.toLocaleString(locale());
 }
 
+// Decimal separator follows the app language like formatNumber does — ID
+// screens read "4,5%" next to "1.234", not "4.5%".
 export function formatPercent(n, digits = 1) {
   if (n === null || n === undefined || !isFinite(n)) return "—";
-  return n.toFixed(digits) + "%";
+  return Number(n).toLocaleString(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits }) + "%";
 }
 
 export function formatDate(dateStr, opts = {}) {
@@ -192,8 +194,13 @@ export function toast(message, type = "success") {
     ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>'
     : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16v.01"/></svg>';
   el.innerHTML = `${glyph}<span>${escapeHtml(message)}</span>`;
+  // An error is announced at once (role=alert, on top of #toast-root's
+  // polite live region) and stays up twice as long — it usually says what
+  // to do next, which takes longer to read than "Tersimpan".
+  const isError = type === "error";
+  if (isError) el.setAttribute("role", "alert");
   root.appendChild(el);
-  setTimeout(() => el.remove(), 3200);
+  setTimeout(() => el.remove(), isError ? 6000 : 3200);
 }
 
 // Full-screen black "welcome" bumper, shown once right after someone lands
@@ -347,15 +354,44 @@ function parseRgb(rgb) {
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 
+// WCAG 2.x relative luminance (0 = black, 1 = white) and contrast ratio.
+function relativeLuminance([r, g, b]) {
+  const lin = (c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+export function contrastRatio(a, b) {
+  const pa = parseRgb(a);
+  const pb = parseRgb(b);
+  if (!pa || !pb) return 1;
+  const la = relativeLuminance(pa);
+  const lb = relativeLuminance(pb);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
 // A sampled logo color can land anywhere from near-black to near-white —
 // pick whichever existing text color (the same two already used everywhere
 // else) actually reads on top of it, rather than assuming one direction.
+// Decided by real WCAG contrast, not a YIQ brightness cut-off: the old
+// "YIQ > 140 → dark text" rule put light text on mid-bright colours like
+// #00bcd4 / #4caf50 / #2196f3 (2.1–2.9:1), where dark text reads far better.
+const TINT_TEXT_DARK = "#1c1610";
+const TINT_TEXT_LIGHT = "#f6f4f1";
 export function pickTintTextColor(rgb) {
+  if (!parseRgb(rgb)) return TINT_TEXT_DARK;
+  return contrastRatio(TINT_TEXT_DARK, rgb) >= contrastRatio(TINT_TEXT_LIGHT, rgb) ? TINT_TEXT_DARK : TINT_TEXT_LIGHT;
+}
+
+// The Brand Book keeps the original YIQ cut-off on purpose: it is the owner's
+// design document (swatches, chapter pages, logo-on-primary tile), and
+// switching rules would silently change books people already shared/printed.
+export function pickBookTextColor(rgb) {
   const parsed = parseRgb(rgb);
-  if (!parsed) return "#1c1610";
+  if (!parsed) return TINT_TEXT_DARK;
   const [r, g, b] = parsed;
-  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  return luminance > 140 ? "#1c1610" : "#f6f4f1";
+  return 0.299 * r + 0.587 * g + 0.114 * b > 140 ? TINT_TEXT_DARK : TINT_TEXT_LIGHT;
 }
 
 // For using the tint itself as small text/icon color directly on the app's
@@ -452,7 +488,8 @@ function animateMenuOut(el) {
 
 export function closeMenu() {
   if (!openMenuState) return;
-  const { el, outsideClickHandler, keyHandler, resizeObserver } = openMenuState;
+  const { el, anchor, outsideClickHandler, keyHandler, resizeObserver } = openMenuState;
+  if (typeof anchor?.setAttribute === "function") anchor.setAttribute("aria-expanded", "false");
   document.removeEventListener("click", outsideClickHandler);
   document.removeEventListener("keydown", keyHandler, true);
   resizeObserver?.disconnect();
@@ -511,6 +548,12 @@ export function openMenu(anchor, { className = "", top, left, right } = {}) {
   if (left !== undefined) menu.style.left = `${left}px`;
   if (right !== undefined) menu.style.right = `${right}px`;
   document.body.appendChild(menu);
+  // Screen readers: the trigger says it opens a popup and whether it's open
+  // (set here once, so no caller has to remember; closeMenu resets it).
+  if (typeof anchor?.setAttribute === "function") {
+    if (!anchor.hasAttribute?.("aria-haspopup")) anchor.setAttribute("aria-haspopup", "menu");
+    anchor.setAttribute("aria-expanded", "true");
+  }
 
   const outsideClickHandler = (e) => {
     if (!menu.contains(e.target)) closeMenu();

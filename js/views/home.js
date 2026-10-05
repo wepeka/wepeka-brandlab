@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, consecutiveActiveWeeks, eventCampaignEnd } from "../store.js";
 import { icon } from "../icons.js";
 import { initials, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -7,12 +7,14 @@ import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { openContentEditor } from "./content-editor.js";
 import { celebrateBuilderCompleteIfFlagged, consumeDnaJustCompleted, consumeVisualBasicsJustDone } from "./brand-builder.js";
-import { ensureGoogleFont } from "./brand-guidelines.js";
-import { getCachedAccount, isReadOnly } from "../account.js";
+import { ensureGoogleFont, ensureCustomFont } from "./brand-guidelines.js";
+import { getCachedAccount, isReadOnly, isTrial, trialDaysLeft } from "../account.js";
+import { campaignStages, campaignPlatform } from "../campaign-metrics.js";
+import { go } from "../nav-context.js";
 import { funnelLabel, statusLabel } from "../funnel-field.js";
 import { brandTopAction } from "../next-action.js";
 import { getMode } from "../mode.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
 import { openReportModal, reportDue, reportReminderHTML, snoozeReport } from "./report.js";
@@ -22,6 +24,7 @@ import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
 import { openConsultantPanel, openWeekPlan } from "../consultant-panel.js";
 import { postingLine } from "../brand-learning.js";
+import { brandDocFits } from "../brand-doc-size.js";
 
 // The brand's home, one file for both modes. The page answers one question
 // — "sekarang ngapain?" — with one hero card and one button:
@@ -140,29 +143,11 @@ function detectNewlyDoneSteps(brandId, steps) {
   return doneKeys.filter((k) => k !== "identity" && !prev.includes(k));
 }
 
-// Consecutive weeks (Mon–Sun) with at least one published content, counted
-// backward from the current week — or last week if nothing's published yet
-// this week, so a streak isn't wiped out mid-week before today's post goes
-// up. Deterministic from listContent(), no AI involved.
-function postingStreakWeeks(content, now) {
-  const weekStart = (d) => {
-    const day = (d.getDay() + 6) % 7; // 0 = Monday
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day).getTime();
-  };
-  const weeksWithPost = new Set(
-    content.filter((c) => c.status === "published" && c.publishedDate).map((c) => weekStart(new Date(c.publishedDate)))
-  );
-  if (!weeksWithPost.size) return 0;
-  const WEEK_MS = 7 * 86400000;
-  let cursor = weekStart(now);
-  if (!weeksWithPost.has(cursor)) cursor -= WEEK_MS;
-  let streak = 0;
-  while (weeksWithPost.has(cursor)) {
-    streak++;
-    cursor -= WEEK_MS;
-  }
-  return streak;
-}
+// The posting streak in the header is store.js's consecutiveActiveWeeks —
+// the same count (rolling 7-day windows on the owner's local dates) the
+// "minggu aktif" milestones and the streak-break nudge use (audit-1005),
+// with one allowance: the header passes { grace: true }, so the current
+// week may still be empty without the 🔥 disappearing on upload morning.
 
 // ---------- Insight actions (one-tap) ----------
 // Three of Brand Pulse's read-only signals turned into buttons that do the
@@ -199,8 +184,47 @@ function nextFreeUploadDays(usedDates, count, cadence) {
   }
   return dates;
 }
-// Monday–Sunday bounds for "this week", as ISO date strings — same
-// Monday-start convention as postingStreakWeeks() above.
+// The last day a late piece may move to, or null for no limit: a piece made
+// for a dated stage (an event's pre-event promo, a dated goal phase) belongs
+// inside that stage's window — moving it past the event would post a promo
+// for something that already happened.
+export function shiftLimitFor(c, campaigns) {
+  const campaign = c.campaignId ? campaigns.find((x) => x.id === c.campaignId) : null;
+  if (!campaign) return null;
+  const stage = c.campaignPhaseId ? campaignStages(campaign).find((s) => s.kind === "window" && s.id === c.campaignPhaseId) : null;
+  if (stage?.dateTo) return stage.dateTo;
+  return campaign.eventPlan ? eventCampaignEnd(campaign) || null : null;
+}
+// "Geser ke hari upload kosong": pairs each late piece with one of `dates`
+// (free upload days, ascending). Pieces with a limit (shiftLimitFor) go
+// first and take the earliest free day inside it — or tomorrow when no
+// upload day fits but the window is still open; a window that has already
+// closed keeps its piece where it is (`kept`), for the owner to decide.
+// Everything else takes the remaining days in order.
+export function planOverdueShift(late, dates, campaigns, tomorrow = null) {
+  if (!tomorrow) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    tomorrow = localISODate(d);
+  }
+  const pool = [...dates];
+  const moves = [];
+  const kept = [];
+  const items = late.map((c) => ({ c, limit: shiftLimitFor(c, campaigns) }));
+  items
+    .filter((x) => x.limit)
+    .sort((a, b) => a.limit.localeCompare(b.limit))
+    .forEach(({ c, limit }) => {
+      if (pool.length && pool[0] <= limit) moves.push({ c, date: pool.shift() });
+      else if (tomorrow <= limit) moves.push({ c, date: tomorrow });
+      else kept.push(c);
+    });
+  items.filter((x) => !x.limit).forEach(({ c }) => {
+    if (pool.length) moves.push({ c, date: pool.shift() });
+  });
+  return { moves, kept };
+}
+// Monday–Sunday bounds for "this week", as ISO date strings.
 function thisWeekRange(now) {
   const day = (now.getDay() + 6) % 7;
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
@@ -476,11 +500,16 @@ function paint(root, brandId, state, refresh) {
   ].filter(Boolean));
   const allOverdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId);
   const brandOverdue = allOverdue.filter((x) => !shownElsewhere.has(x.content.id));
+  // Up next = dated today or later only: overdue pieces already have their
+  // own rows above, and an undated "scheduled" piece has no date to show.
+  const todayISO = localISODate();
   const upNext = content
-    .filter((c) => c.status === "scheduled" && !shownElsewhere.has(c.id))
-    .sort((a, b) => (a.scheduleDate || "9999").localeCompare(b.scheduleDate || "9999"))
+    .filter((c) => c.status === "scheduled" && c.scheduleDate && c.scheduleDate >= todayISO && !shownElsewhere.has(c.id))
+    .sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate))
     .slice(0, 5);
   const scheduleRows = scheduleRowsHTML(brandOverdue, upNext, allOverdue.length);
+  // "Konten terbaru" skips whatever the hero or Jadwal already shows.
+  const shownInSchedule = new Set([...shownElsewhere, ...brandOverdue.slice(0, 3).map((x) => x.content.id), ...upNext.map((c) => c.id)]);
   const collapsed = new Set(brand.homeCollapsed || []);
   // Computed once per paint for the Teman card's greeting and action buttons.
   const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
@@ -489,7 +518,7 @@ function paint(root, brandId, state, refresh) {
   const goal = goalWidget({ brandId, brand, campaigns, content, identityDone });
   const newlyDoneSteps = detectNewlyDoneSteps(brandId, journey.steps);
   if (newlyDoneSteps.length) toast(t(`beginner.step.${newlyDoneSteps[0]}.celebrate`));
-  const streakWeeks = postingStreakWeeks(content, new Date());
+  const streakWeeks = consecutiveActiveWeeks(content, 0, new Date(), { grace: true });
   // Report PDF summarizes published content — nothing to report until the
   // brand has actually published something, so the button stays hidden
   // until then instead of opening an empty/meaningless report.
@@ -502,9 +531,11 @@ function paint(root, brandId, state, refresh) {
       hasPublishedContent,
     })}
 
+    ${trialReminderHTML()}
+
     ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content, top) : identityHeroHTML(brandId, brand)}
 
-    ${recentContentHTML(brandId, content)}
+    ${recentContentHTML(brandId, content, shownInSchedule, top?.action?.cta?.contentId || null)}
 
     ${reportDue(brand, content) ? reportReminderHTML(brand) : ""}
 
@@ -558,19 +589,26 @@ function paint(root, brandId, state, refresh) {
   qs("[data-report-snooze]", root)?.addEventListener("click", () => { snoozeReport(brandId); toast(t("rep.remind.snoozed")); refresh(); });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
 
+  qs("[data-today-cta]", root)?.addEventListener("click", () => { if (top) runTodayAction(top, { brandId, brand, content, refresh }); });
+  qs("[data-trial-dismiss]", root)?.addEventListener("click", () => {
+    dismissTrialReminder();
+    qs(".trial-remind", root)?.remove();
+  });
   qs("[data-shift-overdue]", root)?.addEventListener("click", () => {
     const late = allOverdue.map((x) => x.content);
     const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
-    const dates = nextFreeUploadDays(usedDates, late.length, brand.contentCadence);
-    late.forEach((c, i) => updateContent(c.id, { scheduleDate: dates[i] }));
-    toast(t("home.action.overdue.done", { n: late.length }));
+    const { moves, kept } = planOverdueShift(late, nextFreeUploadDays(usedDates, late.length, brand.contentCadence), campaigns);
+    moves.forEach(({ c, date }) => updateContent(c.id, { scheduleDate: date }));
+    if (moves.length) toast(t("home.action.overdue.done", { n: moves.length }));
+    if (kept.length) toast(t("home.action.overdue.kept", { n: kept.length }), "info");
     refresh();
   });
   qsa("[data-open-content]", root).forEach((el) => {
     el.addEventListener("click", () => openContentEditor({ brandId, contentId: el.dataset.openContent, onSaved: refresh }));
   });
   qsa("[data-locked-step]", root).forEach((el) => {
-    el.addEventListener("click", () => toast(t("home.next.lockedToast")));
+    // Same "what's left + go there" dialog as the locked Tujuan tab.
+    el.addEventListener("click", () => import("../layout.js").then((m) => m.explainIdentityGate(brandId)).catch(() => toast(t("home.next.lockedToast"))));
   });
   // Schedule rows and the analytics lists (top/retention posts) are divs.
   wireClickableCards(root, "[data-open-content], [data-locked-step]");
@@ -581,6 +619,45 @@ function paint(root, brandId, state, refresh) {
     const hero = qs("#journey-hero", root);
     if (hero) showCalloutBubble(hero, t("beginner.callout.builderDone"));
   }
+}
+
+// ---- Trial reminder (audit-1005) --------------------------------------------
+// On phones the topbar's trial badge is hidden, so the countdown lives here
+// too, in both modes: a small strip once 7, 3 and 1 day(s) are left. Closing
+// it hides it for the rest of the day only (per-device, try/catch'd).
+const TRIAL_REMIND_KEY = "wpk-trial-remind-dismissed";
+function trialReminderDismissedToday() {
+  try {
+    return localStorage.getItem(TRIAL_REMIND_KEY) === localISODate();
+  } catch {
+    return false;
+  }
+}
+function dismissTrialReminder() {
+  try {
+    localStorage.setItem(TRIAL_REMIND_KEY, localISODate());
+  } catch {
+    /* storage unavailable — it just shows again next paint */
+  }
+}
+export function trialReminderTier(account) {
+  if (!isTrial(account) || isReadOnly(account)) return null;
+  const days = trialDaysLeft(account);
+  if (days < 1 || days > 7) return null;
+  return days <= 1 ? "last" : days <= 3 ? "soon" : "week";
+}
+function trialReminderHTML() {
+  const account = getCachedAccount();
+  const tier = trialReminderTier(account);
+  if (!tier || trialReminderDismissedToday()) return "";
+  const days = trialDaysLeft(account);
+  return `
+    <div class="trial-remind is-${tier}" role="status">
+      <span class="trial-remind-icon">${icon("clock", { size: 15 })}</span>
+      <p class="trial-remind-text"><b>${esc(t(`home.trial.${tier}`, { n: days }))}</b> ${esc(t("home.trial.body"))}</p>
+      <a class="btn btn-secondary btn-sm trial-remind-cta" href="#/pricing">${esc(t("home.trial.cta"))}</a>
+      <button type="button" class="icon-btn trial-remind-close" data-trial-dismiss aria-label="${esc(t("common.close"))}" title="${esc(t("home.trial.dismiss"))}">${icon("x", { size: 13 })}</button>
+    </div>`;
 }
 
 // ---- Brand header ----------------------------------------------------------
@@ -600,7 +677,13 @@ function brandHeroHTML(brand, { sub, streakWeeks, hasPublishedContent }) {
   const canEdit = !isReadOnly(getCachedAccount());
   const tagline = (brand.brandDNA?.tagline || "").trim();
   const font = (bg.fonts?.primary || "").trim();
-  if (font && tagline && !bg.customFonts?.[font]) ensureGoogleFont(font);
+  // An uploaded font is registered from its own file (same helper the Brand
+  // Book uses); every other name loads from Google Fonts.
+  const customFont = font ? bg.customFonts?.[font] : "";
+  if (font && tagline) {
+    if (!customFont) ensureGoogleFont(font);
+    else if (typeof customFont === "string" && customFont.startsWith("data:")) ensureCustomFont(font, customFont);
+  }
   const swatches = ["primary", "secondary", "accent"].map((k) => bg.colors?.[k]).filter((c) => c && HEX.test(c));
   const fonts = [bg.fonts?.primary, bg.fonts?.secondary].filter(Boolean);
   const identity = swatches.length || fonts.length
@@ -643,9 +726,8 @@ function brandHeroHTML(brand, { sub, streakWeeks, hasPublishedContent }) {
 
 // The brand doc (logo, custom fonts, everything) has to stay under
 // Firestore's 1 MiB per-document limit, so the photo is shrunk first and
-// refused, with a reason, when it still wouldn't fit next to the rest.
-const BRAND_DOC_BUDGET = 900 * 1024;
-
+// refused, with a reason, when it still wouldn't fit next to the rest —
+// the same check every Brand Book upload uses (js/brand-doc-size.js).
 function wireBrandHero(root, brandId) {
   const input = qs("[data-cover-input]", root);
   qs("[data-cover-pick]", root)?.addEventListener("click", () => input?.click());
@@ -657,8 +739,7 @@ function wireBrandHero(root, brandId) {
       const dataUrl = await resizeImageFile(file, { maxDimension: 1280, quality: 0.72, format: "image/jpeg" });
       const brand = getBrand(brandId);
       if (!brand) return;
-      const rest = JSON.stringify({ ...brand, coverPhoto: "" }).length;
-      if (rest + dataUrl.length > BRAND_DOC_BUDGET) {
+      if (!brandDocFits(brand, { coverPhoto: dataUrl })) {
         toast(t("home.cover.tooBig"), "error");
         return;
       }
@@ -681,10 +762,16 @@ function wireBrandHero(root, brandId) {
 
 const FORMAT_ICON = { reels: "play", video: "play", story: "image", carousel: "layers", feed: "image", photo: "image" };
 
-function recentContentHTML(brandId, content) {
-  const live = content.filter((c) => !c.archived && c.status !== "archived");
+// `shownElsewhere`: pieces the hero or Jadwal card already list — an
+// upcoming one is left out here so it shows in one card only; `heroId` (the
+// hero's own piece) is left out even when it's already published.
+function recentContentHTML(brandId, content, shownElsewhere = new Set(), heroId = null) {
+  const today = localISODate();
+  const live = content.filter((c) => !c.archived && c.status !== "archived" && c.id !== heroId);
   const published = live.filter((c) => c.status === "published").sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""));
-  const coming = live.filter((c) => c.status !== "published" && c.scheduleDate).sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
+  // Coming = dated today or later, soonest first. Pieces whose date already
+  // passed sit in Jadwal's "lewat jadwal" rows, not here as "coming".
+  const coming = live.filter((c) => c.status !== "published" && c.scheduleDate && c.scheduleDate >= today && !shownElsewhere.has(c.id)).sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
   const items = [...published, ...coming].slice(0, 4);
   if (!items.length) return "";
   const cards = items
@@ -695,7 +782,7 @@ function recentContentHTML(brandId, content) {
         <button type="button" class="recent-card" data-open-content="${c.id}">
           <span class="recent-card-top">
             <span class="recent-card-icon">${icon(FORMAT_ICON[(c.format || "").toLowerCase()] || "edit", { size: 14 })}</span>
-            <span class="recent-card-format">${esc(kind || t("beginner.untitled"))}</span>
+            <span class="recent-card-format">${esc(kind || t("home.recent.noKind"))}</span>
           </span>
           <span class="recent-card-title">${esc(c.title || t("beginner.untitled"))}</span>
           <span class="recent-card-foot">
@@ -780,17 +867,15 @@ function identityHeroHTML(brandId, brand) {
 
 function todayHeroHTML(brandId, brand, campaigns, content, top) {
   let title, why, href, cta;
-  if (top && top.action.cta.type !== "info") {
+  let inPlace = false;
+  if (top) {
     const a = top.action;
     title = a.label;
     why = a.why;
-    cta = a.cta.label || t("beginner.today.doIt");
-    href = ctaHref(brandId, top.campaign, a.cta);
-  } else if (top) {
-    title = top.action.label;
-    why = top.action.why;
-    cta = "";
-    href = "";
+    const route = todayRoute(brandId, top.campaign, a);
+    cta = route.label || a.cta.label || t("beginner.today.doIt");
+    href = route.href || "";
+    inPlace = !!route.inPlace;
   } else if (!campaigns.length) {
     title = t("beginner.step.campaign.title");
     why = t("beginner.step.campaign.desc");
@@ -813,27 +898,57 @@ function todayHeroHTML(brandId, brand, campaigns, content, top) {
   }
   return `
     <section class="card glass-card journey-hero journey-hero-today" id="journey-hero">
-      <div class="journey-hero-eyebrow"><span class="journey-hero-step">${t("beginner.today.eyebrow")}</span>${top ? `<span class="journey-hero-time">${icon("bulb", { size: 12 })}${esc(top.campaign.name || "Campaign")}</span>` : ""}</div>
+      <div class="journey-hero-eyebrow"><span class="journey-hero-step">${t("beginner.today.eyebrow")}</span>${top ? `<span class="journey-hero-time">${icon("bulb", { size: 12 })}${esc(campaignDisplayName(top.campaign.name) || "Campaign")}</span>` : ""}</div>
       <h2>${esc(title)}</h2>
       <p>${esc(why)}</p>
-      ${cta && href ? `<a class="btn btn-primary journey-hero-cta" href="${href}">${esc(cta)}${icon("arrowRight", { size: 15 })}</a>` : ""}
+      ${cta && inPlace ? `<button type="button" class="btn btn-primary journey-hero-cta" data-today-cta>${esc(cta)}${icon("arrowRight", { size: 15 })}</button>` : cta && href ? `<a class="btn btn-primary journey-hero-cta" href="${href}">${esc(cta)}${icon("arrowRight", { size: 15 })}</a>` : ""}
     </section>
   `;
 }
 
-// next-action.js CTAs are routed by type; the campaign detail page owns the
-// ones that need a modal (insights/manual/performance/brainstorm), so those
-// land there — it highlights the matching row and button itself.
-function ctaHref(brandId, campaign, cta) {
+// next-action.js CTAs, routed by type. The ones that are a modal or the
+// chat (insights → Perbarui Insights, performance → Quick Fill, brainstorm
+// → Brainstorm chat on this campaign) open right here (`inPlace`, run by
+// runTodayAction); "Catat angka" lives on the campaign page with its sheet,
+// and the "info" ones (level ready, waiting weeks, a phase about to end)
+// get a button to the campaign page, where the level-up itself happens.
+function todayRoute(brandId, campaign, action) {
+  const cta = action.cta;
+  const campaignHref = `#/brand/${brandId}/campaigns/${campaign.id}`;
   switch (cta.type) {
     case "creator":
-      return `#/brand/${brandId}/content/creator/${cta.contentId}`;
+      return { href: `#/brand/${brandId}/content/creator/${cta.contentId}` };
     case "new-content":
-      return `#/brand/${brandId}/content/creator`;
+      return { href: `#/brand/${brandId}/content/creator` };
     case "calendar":
-      return `#/brand/${brandId}/content/calendar`;
+      return { href: `#/brand/${brandId}/content/calendar` };
+    case "insights":
+    case "performance":
+    case "brainstorm":
+      return { inPlace: true };
+    case "info":
+      return { href: campaignHref, label: t(action.id === "advance" ? "home.today.cta.levelUp" : action.id === "min-weeks" ? "home.today.cta.progress" : action.id === "window-end" ? "home.today.cta.targets" : "home.today.cta.campaign") };
     default:
-      return `#/brand/${brandId}/campaigns/${campaign.id}`;
+      return { href: campaignHref };
+  }
+}
+
+async function runTodayAction(top, { brandId, brand, content, refresh }) {
+  const { campaign, action } = top;
+  const cta = action.cta;
+  if (cta.type === "insights") {
+    const { openInsightsModal } = await import("./insights-modal.js");
+    openInsightsModal({ brandId, onSaved: refresh, reason: t("camp.detail.insightsReason"), platform: campaignPlatform({ brand, campaign, content }) });
+  } else if (cta.type === "performance") {
+    const c = content.find((x) => x.id === cta.contentId);
+    if (!c) return;
+    const { openQuickFillModal } = await import("./content-list.js");
+    openQuickFillModal({ c, onSaved: refresh });
+  } else if (cta.type === "brainstorm") {
+    // The same chat the campaign page's Brainstorm opens, on this campaign
+    // and stage — ideas come back as cards the owner picks, nothing is made.
+    const stage = campaignStages(campaign)[cta.stageIndex ?? 0] || null;
+    go(`#/brand/${brandId}/chat`, { fromLabel: t("nav.home"), campaignId: campaign.id, stageId: stage?.id || null, mode: "chat" });
   }
 }
 

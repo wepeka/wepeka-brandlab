@@ -27,6 +27,11 @@ export default {
   "chat.script.writing": { en: "Writing the script…", id: "Lagi nulis script…" },
   "chat.script.untitled": { en: "New script", id: "Script baru" },
   "chat.retry": { en: "Try again", id: "Coba lagi" },
+  // A reply that stopped before the end (connection dropped, or the
+  // script/revision never got closed): what arrived stays, marked.
+  "chat.cut.note": { en: "The answer got cut off — try again", id: "Jawaban kepotong — coba lagi" },
+  "chat.cut.partialScript": { en: "Script (unfinished)", id: "Script (belum selesai)" },
+  "chat.cut.partialRevision": { en: "New version (unfinished)", id: "Versi baru (belum selesai)" },
   "chat.scope.new": { en: "New conversation", id: "Obrolan baru" },
 
   // Otomatis (the default; the only view in Pemula mode)
@@ -34,7 +39,7 @@ export default {
   "chat.mode.tip.auto": { en: "Just ask. I pick whether you need advice, ideas, or someone to tell.", id: "Tanya aja. Aku yang milih kamu butuh saran, ide, atau tempat cerita." },
   "chat.placeholder.auto": { en: "Ask or tell me anything…", id: "Tanya atau cerita apa aja…" },
   "chat.placeholder.pending": { en: "AI is replying…", id: "AI lagi jawab…" },
-  "chat.placeholder.quota": { en: "Your AI quota is used up", id: "Kuota AI-mu sudah habis" },
+  "chat.placeholder.quota": { en: "You're out of AI credit", id: "AI credit-mu sudah habis" },
   "chat.input.aria": { en: "Message the AI", id: "Tulis pesan ke AI" },
   "chat.greeting.auto": {
     en: "Hi! Ask me anything about {brand}: how it's doing, what to post next, or just tell me what happened today. I'll work out what you need.",

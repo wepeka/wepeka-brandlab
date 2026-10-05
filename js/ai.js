@@ -75,7 +75,8 @@ function proxyError(code, extra = {}) {
 // /api/ai with a fresh Firebase ID token, and either returns the finished
 // text (non-stream) or feeds `onText(fullTextSoFar)` as SSE chunks arrive
 // (stream) — same onText(text, {whole}) contract callModel always offered
-// its callers, so nothing downstream of callModel had to change.
+// its callers, so nothing downstream of callModel had to change. A stream
+// that stops before the end also calls onText(fullText, { cut: true }).
 async function callProxy(system, userPrompt, maxTokens, { temperature, json = false, images = [], stream = false, countUsage = true, feature = "", history = [] } = {}, onText = null) {
   let token;
   try {
@@ -129,6 +130,13 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
   let buffer = "";
   let full = "";
   let streamErr = null;
+  // A complete answer ends with the server's "[DONE]" and no error event.
+  // Anything else (an error mid-answer, the connection dropping, the idle
+  // timeout below) is a cut-off reply: its text is still returned, as it
+  // always was, but onText hears once more with { cut: true } so a chat
+  // can say so and offer "Coba lagi" instead of passing it off as finished.
+  let sawDone = false;
+  let broke = false;
   // The fetch timeout above only covers the headers; a stream that goes
   // silent mid-answer would otherwise hang the caller forever.
   const STREAM_IDLE_MS = 45000;
@@ -138,7 +146,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
   });
   for (;;) {
     let chunk;
-    try { chunk = await readWithIdleTimeout(); } catch (e) { if (full) break; throw e instanceof AiApiError ? e : proxyError("network"); }
+    try { chunk = await readWithIdleTimeout(); } catch (e) { if (full) { broke = true; break; } throw e instanceof AiApiError ? e : proxyError("network"); }
     const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -149,7 +157,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
       const line = block.split("\n").find((l) => l.startsWith("data:"));
       if (!line) continue;
       const payload = line.slice(5).trim();
-      if (payload === "[DONE]") continue;
+      if (payload === "[DONE]") { sawDone = true; continue; }
       let ev;
       try {
         ev = JSON.parse(payload);
@@ -164,6 +172,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
     }
   }
   if (!full && streamErr) throw proxyError(streamErr.error, streamErr);
+  if (full && (broke || streamErr || !sawDone)) onText?.(full, { cut: true });
   return full;
 }
 

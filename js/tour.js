@@ -579,7 +579,12 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
   return true;
 }
 
-export function startOnboardingTour() {
+// `firstRun`: the automatic tour a brand-new account gets (js/guide-videos.js
+// playFirstRunIntro). It only walks through creating the brand and then ends
+// on Beranda's "Mulai Brand DNA" card — the first real step — instead of
+// ten more stops about tabs, chat and settings before a single DNA question.
+// Those stay in the full tour (⋯ menu → Tur website).
+export function startOnboardingTour({ firstRun = false } = {}) {
   const brands = listBrands();
   const hasBrands = brands.length > 0;
 
@@ -673,6 +678,24 @@ export function startOnboardingTour() {
   };
   const visible = (sel) => [...document.querySelectorAll(sel)].some((el) => el.getClientRects().length > 0);
 
+  if (firstRun) {
+    steps.push({
+      // Clicking the button itself opens Brand DNA and ends the tour.
+      selector: "#journey-hero .journey-hero-cta",
+      showIf: () => !!brandBase() || listBrands().length > 0,
+      beforeStep: goBrandHome,
+      waitTimeout: 6000,
+      title: t("tour.onb.startDna.title"),
+      body: t("tour.onb.startDna.body"),
+      interactive: { type: "click" },
+    });
+    runSpotlightTour(steps, {
+      keepOnNavigate: true,
+      onFinish: () => { document.body.classList.remove("tour-show-chat"); markTourDone(); },
+    });
+    return;
+  }
+
   // Once inside a brand the tour stays on its home and explains each app
   // from its row there — it doesn't walk people through Builder/Campaign/
   // Konten one after another; each of those pages has its own Video and
@@ -697,7 +720,8 @@ export function startOnboardingTour() {
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       waitTimeout: 6000,
-      title: "Brand Builder",
+      // Named like the tab it opens (nav.brand), not the old "Brand Builder".
+      title: t("nav.brand"),
       body: t("tour.onb.builder.body"),
     },
     {

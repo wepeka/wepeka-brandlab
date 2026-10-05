@@ -145,9 +145,9 @@ export function brandBaseline(content, settings = getSettings()) {
 // Six fixed checkpoints, the shape of the original Grow Social Media ladder
 // (1K → 3K → 10K → 25K → 50K) extended to 100K. The ladder a campaign gets
 // is the slice between where the account is today and the user's own
-// target: tiers already fully behind the account are dropped entirely (never
-// shown as a pre-completed "Level 1"), Level 1 is rebased to the account's
-// real current followers so it always reads as "where you are now", and the
+// target: tiers already fully behind the account (checkpoint reached) are
+// dropped entirely (never shown as a pre-completed "Level 1"), Level 1 runs
+// from the account's real current followers to the next checkpoint, and the
 // level that contains the target ends AT the target (so a 5,000 target ends
 // inside the 10K level, at 5,000).
 export const SOCIAL_LEVELS = [
@@ -160,17 +160,18 @@ export const SOCIAL_LEVELS = [
 ];
 export const SOCIAL_CHECKPOINTS = SOCIAL_LEVELS.map((l) => l.checkpoint);
 
-// Which tier the account is CURRENTLY working within — never the tier past
-// it. Reaching a checkpoint (even landing exactly on it) means that tier
-// becomes Level 1, not "already done": its other required milestones
-// (published content, streak, shares…) still have to happen for real. Only
-// tiers fully behind THAT one drop off the ladder — nothing is ever shown as
-// pre-completed just because a follower count already got there.
+// Which tier the account is CURRENTLY working within: the first one whose
+// checkpoint is still ahead of today's followers. A tier whose checkpoint
+// the account already reached (even landing exactly on it) is fully behind
+// it and drops off the ladder — it used to stay as Level 1 with its
+// Followers target already met, and the followers shortcut in
+// campaign-metrics.js ladderAdvanceState then finished it on the first
+// open: "Level 1 selesai" for doing nothing. Past the last checkpoint the
+// last tier is it (its target is the user's own, above today's count).
 export function placeStartSocialLevel({ followers }) {
   const f = Number(followers) || 0;
   const idx = SOCIAL_LEVELS.findIndex((l) => f < l.checkpoint);
-  const reached = idx === -1 ? SOCIAL_LEVELS.length - 1 : idx;
-  return { index: Math.max(0, reached - 1), reason: "checkpoint" };
+  return { index: idx === -1 ? SOCIAL_LEVELS.length - 1 : idx, reason: "checkpoint" };
 }
 
 // input: { platform, current: { followers }, target, months, uploadsPerWeek, startIndex, content, contentCadence }
@@ -188,9 +189,9 @@ export function buildSocialGrowthPlan(input) {
   const endIndex = Math.max(startIndex, reach === -1 ? SOCIAL_LEVELS.length - 1 : reach);
   // The ladder is the slice from startIndex onward — tiers before it are
   // dropped entirely (never shown, never "skipped"), and the first surviving
-  // tier's follower checkpoint is rebased to the account's real current
-  // count, so "Level 1" always reads as where the account genuinely stands
-  // today, not a number already passed or one still far ahead.
+  // tier's Followers row starts from the account's real current count (its
+  // baseline) and ends at the next checkpoint above it — never a number
+  // already passed.
   const levels = SOCIAL_LEVELS.slice(startIndex, endIndex + 1);
   const remaining = levels.length;
   const estWeeks = Math.max(6, Math.round((months * 4.345) / remaining));
@@ -201,7 +202,9 @@ export function buildSocialGrowthPlan(input) {
   const missions = levels.map((lvl, i) => {
     const abs = startIndex + i; // absolute tier index — keeps DM/collab targets tied to the tier's real depth, not its position in the (possibly shorter) ladder
     const last = i === levels.length - 1;
-    const cp = last ? target : i === 0 ? Math.max(current, lvl.checkpoint) : lvl.checkpoint;
+    // Level 1's Followers target is always above today's count — even when
+    // a caller passes a startIndex whose checkpoint is already behind it.
+    const cp = last ? target : i === 0 ? Math.max(current + 1, lvl.checkpoint) : lvl.checkpoint;
     const prevCp = i === 0 ? current : levels[i - 1].checkpoint;
     const lift = 1 + 0.2 * i;
     const seed = Math.max(1, prevCp * 0.002);

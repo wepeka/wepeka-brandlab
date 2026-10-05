@@ -23,7 +23,7 @@ import { getMode } from "./mode.js";
 function dayChipsHTML(id, selectedDays) {
   return `
     <div class="chip-select" id="${id}" style="flex-wrap:wrap;">
-      ${ROUTINE_DAYS.map((d) => `<button type="button" data-day="${d}" class="${selectedDays.has(d) ? "active" : ""}">${t(`calendar.dow.${d}`)}</button>`).join("")}
+      ${ROUTINE_DAYS.map((d) => `<button type="button" data-day="${d}" class="${selectedDays.has(d) ? "active" : ""}" aria-pressed="${selectedDays.has(d)}">${t(`calendar.dow.${d}`)}</button>`).join("")}
     </div>
   `;
 }
@@ -77,6 +77,7 @@ export function openContentCadenceSetup(brand) {
         if (daySet.has(d)) daySet.delete(d);
         else daySet.add(d);
         btn.classList.toggle("active", daySet.has(d));
+        btn.setAttribute("aria-pressed", String(daySet.has(d)));
       });
     });
   };
@@ -116,7 +117,7 @@ export function openContentCadenceSetup(brand) {
     const apply = (chipsId, daySet, days) => {
       daySet.clear();
       days.forEach((d) => daySet.add(d));
-      qsa(`#${chipsId} button`, overlay).forEach((b) => b.classList.toggle("active", daySet.has(b.dataset.day)));
+      qsa(`#${chipsId} button`, overlay).forEach((b) => { b.classList.toggle("active", daySet.has(b.dataset.day)); b.setAttribute("aria-pressed", String(daySet.has(b.dataset.day))); });
     };
     apply("cadence-shoot-chips", state.shootDays, ["mon"]);
     apply("cadence-edit-chips", state.editDays, ["tue"]);

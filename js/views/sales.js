@@ -29,7 +29,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { toast, formatNumber, formatDate, qs, qsa, escapeHtml as esc, avatarHTML, loadingHTML } from "../dom.js";
 import { readFlag, writeFlag, clearFlag } from "../seen-flags.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 
 // Products & Sales log can both grow long — collapsed once, they stay
 // collapsed (remembered locally per brand) instead of resetting every visit.
@@ -189,7 +189,7 @@ function sourcePickerHTML(sources) {
           <select class="select input" id="st-source">
             <option value="">${t("sales.log.sourceNone")}</option>
             ${group(t("sales.log.sourceEvents"), events.map((ev) => `<option value="c:${ev.id}">${esc(ev.name || "")}${ev.eventPlan?.eventDate ? ` — ${esc(formatDate(ev.eventPlan.eventDate, { year: undefined }))}` : ""}</option>`))}
-            ${group(t("sales.log.sourceCampaigns"), campaigns.map((c) => `<option value="c:${c.id}">${esc(c.name || t("camp.untitled"))}</option>`))}
+            ${group(t("sales.log.sourceCampaigns"), campaigns.map((c) => `<option value="c:${c.id}">${esc(campaignDisplayName(c.name) || t("camp.untitled"))}</option>`))}
             ${group(t("sales.log.sourceContent"), content.map((c) => `<option value="k:${c.id}">${esc(c.title || t("common.untitled"))}${c.publishedDate ? ` — ${esc(formatDate(c.publishedDate, { year: undefined }))}` : ""}</option>`))}
           </select>
           <p class="ev-field-hint">${t("sales.log.sourceHint")}</p>
@@ -230,7 +230,7 @@ function quickLogHTML(products, state, unit, sources) {
 
 function campaignLinkHTML(brandId, campaign) {
   return campaign
-    ? `<a class="card glass-card card-tight st-campaign" href="#/brand/${brandId}/campaigns/${campaign.id}">${icon("target", { size: 16 })}<span><b>${esc(campaign.name)}</b> — ${t("sales.campaign.synced")}</span>${icon("arrowRight", { size: 14 })}</a>`
+    ? `<a class="card glass-card card-tight st-campaign" href="#/brand/${brandId}/campaigns/${campaign.id}">${icon("target", { size: 16 })}<span><b>${esc(campaignDisplayName(campaign.name))}</b> — ${t("sales.campaign.synced")}</span>${icon("arrowRight", { size: 14 })}</a>`
     : `<a class="card glass-card card-tight st-campaign" href="#/brand/${brandId}/campaigns">${icon("target", { size: 16 })}<span>${t("sales.campaign.none")}</span>${icon("arrowRight", { size: 14 })}</a>`;
 }
 
@@ -317,7 +317,7 @@ function sourceTagHTML(e, brandId) {
     return c ? ` <span class="tag st-source-tag">${icon("edit", { size: 10 })}${esc(c.title || t("common.untitled"))}</span>` : "";
   }
   const camp = campaignId ? listCampaigns(brandId).find((x) => x.id === campaignId) : null;
-  return camp ? ` <span class="tag st-source-tag">${icon(camp.eventPlan ? "calendar" : "target", { size: 10 })}${esc(camp.name || "")}</span>` : "";
+  return camp ? ` <span class="tag st-source-tag">${icon(camp.eventPlan ? "calendar" : "target", { size: 10 })}${esc(campaignDisplayName(camp.name) || "")}</span>` : "";
 }
 
 function historyHTML(tracker, state, collapsed, brandId) {

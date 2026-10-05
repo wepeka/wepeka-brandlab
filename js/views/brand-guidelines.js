@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings } from "../store.js";
-import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickTintTextColor, loadingHTML } from "../dom.js";
+import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
 import {
@@ -9,7 +9,7 @@ import {
   VISUAL_DIRECTIONS, APPLICATION_TYPES, IMAGERY_STYLE_COPY,
   TONE_AXES, toneAxisDisplayLabel, toneExampleDisplay,
   feelingLabel, directionLabel, directionDescription,
-  FEELING_TYPE_VIBE, FEELING_TONE, FONT_PAIRINGS, sectorFromText,
+  FEELING_TYPE_VIBE, FEELING_TONE, FONT_PAIRINGS, sectorFromText, personalityProfile,
 } from "../brandbook-data.js";
 import { isBrandBuilderComplete, markBuilderJustCompleted, markVisualBasicsJustDone } from "./brand-builder.js";
 import { generateValueProposition, generateColorEssence, detectToneOfVoice, hasAiKey, AiApiError } from "../ai.js";
@@ -24,6 +24,7 @@ import { getMode } from "../mode.js";
 import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
+import { brandDocFits, guardBrandDocSize } from "../brand-doc-size.js";
 
 const TOUR_STEPS = [
   { selector: ".bb-tab-row", title: t("bg.tour.title"), body: t("bg.tour.body") },
@@ -120,7 +121,9 @@ function safeHex(c) {
 const safeMap = (obj, fn) => Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => [k, fn(v)]));
 
 const loadedCustomFonts = new Set();
-function ensureCustomFont(name, dataUrl) {
+// Exported for Beranda's brand header (js/views/home.js), which sets the
+// tagline in the brand's own font — uploaded ones included.
+export function ensureCustomFont(name, dataUrl) {
   if (!name || !dataUrl || loadedCustomFonts.has(name)) return;
   loadedCustomFonts.add(name);
   const style = document.createElement("style");
@@ -270,14 +273,27 @@ function sectionTabsHTML(state, a) {
 // WILL see on Review/PDF, and they used to show a bare "not generated"
 // while this bar (and brandBookProgress in brand-progress.js, which the
 // Home hero / Builder hub read) both still said done. See guidelineSectionDone("copy").
+// The label says what it counts ("Brand Book: 2/6 bagian terisi"), the
+// tooltip which six and what's still open — 7 tabs + Review next to "x/6"
+// read as a miscount. Pemula also sees the gate half ticked on its own
+// ("Warna & Font ✓"), matching Beranda's "Warna & Font · Selesai" row.
+function progressSectionLabel(k) {
+  return k === "copy" ? t("bg.review.missing.copy") : STEPS.find((s) => s.key === k)?.title || k;
+}
 function guidelinesProgressHTML(state) {
   const keys = BOOK_PROGRESS_SECTIONS;
-  const done = keys.filter((k) => isStepFilled(k, state.answers, state)).length;
+  const missing = keys.filter((k) => !isStepFilled(k, state.answers, state));
+  const done = keys.length - missing.length;
   const pct = Math.round((done / keys.length) * 100);
+  const title = missing.length ? t("guidelines.progressMissing", { list: missing.map(progressSectionLabel).join(", ") }) : t("guidelines.progressAll");
+  const basicsDone = isStepFilled("color", state.answers, state) && isStepFilled("typography", state.answers, state);
+  const basics = getMode() === "guided" && basicsDone && missing.length
+    ? `<span class="bb-progress-basics">${icon("check", { size: 11 })}${t("guidelines.progressBasics")}</span> · `
+    : "";
   return `
-    <div class="bb-progress">
+    <div class="bb-progress" title="${escapeHtml(title)}">
       <div class="bb-progress-bar"><span style="width:${pct}%;"></span></div>
-      <span class="bb-progress-label">${t("guidelines.progress", { done, total: keys.length })}</span>
+      <span class="bb-progress-label">${basics}${t("guidelines.progress", { done, total: keys.length })}</span>
     </div>
   `;
 }
@@ -483,6 +499,32 @@ function wireStep(root, brandId, brand, state, refresh) {
   if (step.key === "direction") wireDirectionStep(root, state, commit);
   if (step.key === "tone") wireToneStep(root, brandId, state, refresh);
   if (step.key === "applications") wireApplicationsStep(root, state, commit);
+  // The brand-character pick offered in place of a recommendation that has
+  // nothing to go on yet (characterPickerRecoHTML).
+  qsa("[data-brand-character]", root).forEach((el) =>
+    el.addEventListener("change", () => {
+      pickBrandCharacter(brandId, el.value);
+      refresh();
+    })
+  );
+}
+
+// Every Brand Book upload asks first whether the brand doc would still fit
+// under Firestore's 1 MiB (js/brand-doc-size.js), with `next` being the
+// answers exactly as the following commit would save them — and refuses
+// with a toast, before anything is written, when it wouldn't.
+function uploadFits(state, next) {
+  return guardBrandDocSize(getBrand(state.brand?.id) || state.brand, { brandGuidelines: next });
+}
+
+// An uploaded font nothing uses any more (its role switched to another
+// font, its extra-font row removed) can't be picked again from the UI but
+// still weighs up to 500 KB in the brand doc — drop it, so "hapus yang
+// lain" in the size warning actually frees room.
+function dropUnusedCustomFonts(a) {
+  const used = new Set([a.fonts.primary, a.fonts.secondary, a.fonts.accent, ...a.extraFonts.map((f) => f.family)].filter(Boolean));
+  a.customFonts = Object.fromEntries(Object.entries(a.customFonts || {}).filter(([k]) => used.has(k)));
+  return a;
 }
 
 // ---------- Step 1: Foundation (read-only recap of Brand DNA) ----------
@@ -520,7 +562,8 @@ function logoStepHTML(state, brand) {
       <div class="logo-gallery" style="margin-bottom:10px;">
         ${dataUrl
           ? `<div class="logo-thumb"><img src="${dataUrl}" alt="Logo" /><button type="button" class="logo-remove" id="logo-remove" aria-label="${t("common.remove")}" title="${t("common.remove")}">${icon("x", { size: 10 })}</button></div>`
-          : `<button type="button" class="logo-add-tile has-label" id="logo-add">${icon("upload", { size: 18 })}<span>${t("guidelines.logo.uploadMain")}</span></button>`}
+          : `<button type="button" class="logo-add-tile has-label" id="logo-add">${icon("upload", { size: 18 })}<span>${t("guidelines.logo.uploadMain")}</span></button>
+             ${brandPhoto(brand) ? `<button type="button" class="logo-add-tile has-label" id="logo-use-avatar" title="${escapeHtml(t("bg.logo.useAvatarTitle"))}"><img src="${brandPhoto(brand)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:6px;" /><span>${t("bg.logo.useAvatar")}</span></button>` : ""}`}
       </div>
       <input type="file" id="logo-file" accept="image/*" hidden />
       ${!dataUrl ? `<p class="text-faint" style="font-size:11.5px;">${t("guidelines.logo.pngHint")}</p>` : ""}
@@ -532,6 +575,14 @@ function logoStepHTML(state, brand) {
     ${hasLogo !== null ? mascotsHTML(state) : ""}
     ${navHTML(state, !isStepFilled("logo", state.answers))}
   `;
+}
+
+// The photo/logo uploaded when the brand was created (brands.js, the brand
+// avatar) — offered on the Logo step as a one-tap "use this", never put
+// there on its own. Only an image stored with the brand (data: URL).
+function brandPhoto(brand) {
+  const avatar = (getBrand(brand?.id) || brand)?.avatar || "";
+  return /^data:image\//.test(avatar) ? avatar.replace(/["'<>\s]/g, "") : "";
 }
 
 // Independent of hasLogo — a brand can have a mascot with no formal logo
@@ -770,10 +821,9 @@ function wireLogoStep(root, state, refresh) {
   qs("#logo-no", root)?.addEventListener("click", () => { state.answers.logo.hasLogo = false; state.answers.logo.dataUrl = ""; refresh(); });
   // Both the "Sudah punya" tile and the "upload hasil generate" tile land
   // here; an uploaded logo always means hasLogo = true from then on.
-  const uploadMainLogo = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    state.answers.logo.dataUrl = await resizeImageFile(file, { maxDimension: 600 });
+  const applyMainLogo = async (dataUrl) => {
+    if (!uploadFits(state, { ...state.answers, logo: { ...state.answers.logo, dataUrl, hasLogo: true } })) return;
+    state.answers.logo.dataUrl = dataUrl;
     state.answers.logo.hasLogo = true;
     refresh();
     toast(t("guidelines.logo.saved"));
@@ -785,6 +835,15 @@ function wireLogoStep(root, state, refresh) {
       // something worth blocking or erroring the whole step over.
     }
   };
+  const uploadMainLogo = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await applyMainLogo(await resizeImageFile(file, { maxDimension: 600 }));
+  };
+  qs("#logo-use-avatar", root)?.addEventListener("click", () => {
+    const photo = brandPhoto(state.brand);
+    if (photo) applyMainLogo(photo);
+  });
   qs("#logo-add", root)?.addEventListener("click", () => qs("#logo-file", root).click());
   qs("#logo-file", root)?.addEventListener("change", uploadMainLogo);
   qs("#logo-add-ai", root)?.addEventListener("click", () => qs("#logo-file-ai", root).click());
@@ -795,7 +854,9 @@ function wireLogoStep(root, state, refresh) {
     qs(`#logo-variant-file-${s.key}`, root)?.addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      state.answers.logo[`${s.key}DataUrl`] = await resizeImageFile(file, { maxDimension: 600 });
+      const dataUrl = await resizeImageFile(file, { maxDimension: 600 });
+      if (!uploadFits(state, { ...state.answers, logo: { ...state.answers.logo, [`${s.key}DataUrl`]: dataUrl } })) return;
+      state.answers.logo[`${s.key}DataUrl`] = dataUrl;
       refresh();
     });
     qs(`[data-logo-variant-remove="${s.key}"]`, root)?.addEventListener("click", () => {
@@ -807,11 +868,13 @@ function wireLogoStep(root, state, refresh) {
   qs("#mascot-file", root)?.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    // Sized and checked first, so nobody names a mascot that can't be saved.
+    const dataUrl = await resizeImageFile(file, { maxDimension: 500 });
+    if (!uploadFits(state, { ...state.answers, mascots: [...state.answers.mascots, { name: "", description: "", dataUrl }] })) { e.target.value = ""; return; }
     const name = await promptDialog({ title: t("bg.mascot.nameTitle"), label: t("bg.mascot.nameLabel"), placeholder: t("bg.mascot.namePlaceholder"), confirmLabel: t("guidelines.next") });
     if (!name) { e.target.value = ""; return; }
     const description = await promptDialog({ title: t("bg.mascot.descTitle", { name: escapeHtml(name) }), label: t("bg.mascot.descLabel"), placeholder: t("bg.mascot.descPlaceholder"), confirmLabel: t("bg.mascot.save") });
     e.target.value = "";
-    const dataUrl = await resizeImageFile(file, { maxDimension: 500 });
     state.answers.mascots = [...state.answers.mascots, { name, description: description || "", dataUrl }];
     refresh();
     toast(t("bg.added", { name }));
@@ -864,15 +927,44 @@ function recoCardHTML({ why, bodyHTML, actionId, actionLabel, applied }) {
         : `<button type="button" class="btn btn-secondary btn-sm" id="${actionId}">${icon("sparkle", { size: 12 })}${actionLabel}</button>`}
     </div>`;
 }
-function noFeelingRecoHTML(brand) {
-  return `<p class="bg-reco-missing">${icon("info", { size: 12 })}${t("bg.reco.noFeeling")} <a class="link" href="#/brand/${brand.id}/dna/identity">${t("bg.reco.noFeelingLink")}</a></p>`;
+// No brand character yet, so nothing to recommend from. It used to say "go
+// pick one in Brand DNA (last step)" and link out; the same choice is now
+// offered right here — the owner taps one, it's saved to the same field
+// (pickBrandCharacter), and the recommendation takes this card's place,
+// still applied only by its own button. Nothing is chosen for them.
+function characterPickerRecoHTML() {
+  return `
+    <div class="bg-reco">
+      <div class="bg-reco-head">${icon("sparkle", { size: 13 })}<b>${t("bg.reco.title")}</b><span>${t("bg.reco.pickCharacter")}</span></div>
+      <div class="bb-chip-row" style="margin:0;">${COLOR_FEELINGS.map((f) => `<label class="checkbox-chip"><input type="radio" name="bb-brand-character" data-brand-character value="${escapeHtml(f)}" />${escapeHtml(feelingLabel(f))}</label>`).join("")}</div>
+      <p class="text-faint" style="font-size:11.5px;margin:0;">${t("bg.reco.pickCharacterNote")}</p>
+    </div>`;
+}
+// The same write Brand DNA's last step makes (persistDna in brand-dna.js):
+// the feeling plus its recommended traits, marked as the owner's choice.
+function pickBrandCharacter(brandId, feeling) {
+  const brand = getBrand(brandId);
+  if (!brand || !COLOR_FEELINGS.includes(feeling)) return;
+  const profile = personalityProfile(feeling);
+  const bb = brand.brandBuilder || {};
+  const completedStages = [...new Set([...(bb.completedStages || []), "personality"])];
+  const patch = {
+    brandBuilder: { ...bb, completedStages, personality: { feeling, primary: [...profile.primary], secondary: [...profile.secondary], avoid: [...profile.avoid], source: "user" } },
+  };
+  // Older readers (AI context, the book's fallback) use DNA's flat trait
+  // list — filled only while empty, never over traits typed in DNA Review.
+  if (!(brand.brandDNA?.personality || []).length) patch.brandDNA = { ...(brand.brandDNA || {}), personality: [...profile.primary] };
+  updateBrand(brandId, patch);
+  toast(t("bg.reco.characterSaved", { feeling: feelingLabel(feeling) }));
 }
 const PALETTE_ROLES = ["primary", "secondary", "accent", "background", "text"];
 
 function colorRecoHTML(state, brand) {
   const feeling = brandFeeling(brand);
   const pal = COLOR_PALETTES[feeling]?.[0];
-  if (!pal) return noFeelingRecoHTML(brand);
+  // No character yet: the "Pilih kesan" chips right below use the exact same
+  // nine words, so a character picker here would be the same row twice.
+  if (!pal) return "";
   const c = state.answers.colors;
   return recoCardHTML({
     why: t("bg.reco.fromFeeling", { feeling: escapeHtml(feelingLabel(feeling)) }),
@@ -1318,7 +1410,7 @@ function fontRecoHTML(state, brand) {
   const feeling = brandFeeling(brand);
   const vibe = FEELING_TYPE_VIBE[feeling];
   const pair = vibe && FONT_PAIRINGS[vibe];
-  if (!pair) return noFeelingRecoHTML(brand);
+  if (!pair) return characterPickerRecoHTML();
   ensureGoogleFont(pair.primary); ensureGoogleFont(pair.secondary);
   const f = state.answers.fonts;
   return recoCardHTML({
@@ -1407,7 +1499,7 @@ function wireTypographyStep(root, state, refresh) {
     refresh();
   });
   ["primary", "secondary", "accent"].forEach((role) => {
-    qs(`#font-${role}`, root)?.addEventListener("change", (e) => { state.answers.fonts[role] = e.target.value; refresh(); });
+    qs(`#font-${role}`, root)?.addEventListener("change", (e) => { state.answers.fonts[role] = e.target.value; dropUnusedCustomFonts(state.answers); refresh(); });
     qs(`#upload-font-${role}`, root)?.addEventListener("click", () => qs(`#font-file-${role}`, root).click());
     qs(`#font-file-${role}`, root)?.addEventListener("change", async (e) => {
       const file = e.target.files[0];
@@ -1418,12 +1510,16 @@ function wireTypographyStep(root, state, refresh) {
         return;
       }
       const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || "Custom Font";
+      // Read and checked against the brand doc first, before asking a name.
+      const dataUrl = await fileToDataURL(file);
+      const a = state.answers;
+      if (!uploadFits(state, dropUnusedCustomFonts({ ...a, fonts: { ...a.fonts, [role]: defaultName }, customFonts: { ...a.customFonts, [defaultName]: dataUrl } }))) { e.target.value = ""; return; }
       const name = safeFontName(await promptDialog({ title: t("bg.type.nameTitle"), label: t("bg.type.nameLabel"), placeholder: escapeHtml(defaultName), value: defaultName, confirmLabel: t("bg.type.useFont") }));
       e.target.value = "";
       if (!name) return;
-      const dataUrl = await fileToDataURL(file);
       state.answers.customFonts[name] = dataUrl;
       state.answers.fonts[role] = name;
+      dropUnusedCustomFonts(state.answers);
       ensureCustomFont(name, dataUrl);
       refresh();
       toast(t("bg.added", { name }));
@@ -1438,11 +1534,14 @@ function wireTypographyStep(root, state, refresh) {
       e.target.value = "";
       return;
     }
+    const fileName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || "Custom Font";
+    const dataUrl = await fileToDataURL(file);
+    const a = state.answers;
+    if (!uploadFits(state, dropUnusedCustomFonts({ ...a, extraFonts: [...a.extraFonts, { label: "", family: fileName }], customFonts: { ...a.customFonts, [fileName]: dataUrl } }))) { e.target.value = ""; return; }
     const label = await promptDialog({ title: t("bg.type.extraKindTitle"), label: t("bg.type.extraKindLabel"), placeholder: t("bg.type.extraKindPh"), value: t("bg.type.extraKindDefault"), confirmLabel: t("guidelines.next") });
     e.target.value = "";
     if (!label) return;
     const defaultName = safeFontName(file.name.replace(/\.(ttf|otf|woff2?|)$/i, "")) || safeFontName(label) || "Custom Font";
-    const dataUrl = await fileToDataURL(file);
     state.answers.customFonts[defaultName] = dataUrl;
     state.answers.extraFonts = [...state.answers.extraFonts, { label, family: defaultName }];
     ensureCustomFont(defaultName, dataUrl);
@@ -1452,6 +1551,7 @@ function wireTypographyStep(root, state, refresh) {
   qsa("[data-remove-extra-font]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       state.answers.extraFonts = state.answers.extraFonts.filter((_, i) => i !== Number(btn.dataset.removeExtraFont));
+      dropUnusedCustomFonts(state.answers);
       refresh();
     });
   });
@@ -1667,7 +1767,16 @@ function wireDirectionStep(root, state, refresh) {
     e.target.value = "";
     if (!files.length) return;
     const added = await Promise.all(files.map((f) => resizeImageFile(f, { maxDimension: 700 }).then((dataUrl) => ({ dataUrl }))));
-    state.answers.moodboard = [...state.answers.moodboard, ...added];
+    // Photo by photo against the brand doc budget: what fits is added, the
+    // rest is refused with one toast (js/brand-doc-size.js).
+    const saved = getBrand(state.brand?.id) || state.brand;
+    let list = state.answers.moodboard;
+    added.forEach((item) => {
+      if (brandDocFits(saved, { brandGuidelines: { ...state.answers, moodboard: [...list, item] } })) list = [...list, item];
+    });
+    if (list.length < state.answers.moodboard.length + added.length) toast(t("brandDoc.tooBig"), "error");
+    if (list === state.answers.moodboard) return;
+    state.answers.moodboard = list;
     refresh();
   });
   qsa("[data-remove-moodboard]", root).forEach((btn) => {
@@ -1700,7 +1809,7 @@ function toneAxisRowHTML(axis, value) {
 function toneRecoHTML(state) {
   const feeling = brandFeeling(state.brand);
   const rec = FEELING_TONE[feeling];
-  if (!rec) return noFeelingRecoHTML(state.brand);
+  if (!rec) return characterPickerRecoHTML();
   const tv = state.tone;
   return recoCardHTML({
     why: t("bg.reco.fromFeeling", { feeling: escapeHtml(feelingLabel(feeling)) }),
@@ -1723,7 +1832,7 @@ function toneStepHTML(state) {
         <textarea class="textarea" id="tov-sample" aria-label="${escapeHtml(t("guidelines.tone.detectTitle"))}" style="min-height:80px;flex:1;" placeholder="${escapeHtml(t("guidelines.tone.detectPlaceholder"))}">${escapeHtml(state.toneSample)}</textarea>
         <button type="button" class="chip-icon-btn" id="tov-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" id="tov-detect" style="margin-top:8px;">${icon("bot", { size: 13 })}${t("guidelines.tone.detectBtn")}</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="tov-detect" style="margin-top:8px;">${icon("bot", { size: 13 })}${t("guidelines.tone.detectBtn")}<span class="btn-cost">${t("ai.creditTag")}</span></button>
       <div id="tov-detect-status" class="text-faint" style="font-size:11.5px;margin-top:6px;"></div>
     </details>
     <div style="margin-top:14px;">${toneRecoHTML(state)}</div>
@@ -2056,7 +2165,7 @@ function bookPrimary(a) {
 // two soft tints of the primary for panels).
 function brandThemeVars(a) {
   const p = bookPrimary(a);
-  return `${mockupStageStyle(a)}--bb-primary:${p};--bb-on-primary:${pickTintTextColor(p)};--bb-on-secondary:${pickTintTextColor(a.colors.secondary || "#666666")};--bb-on-accent:${pickTintTextColor(a.colors.accent || "#999999")};--bb-tint:${mixHex(p, "#ffffff", 0.93)};--bb-tint-2:${mixHex(p, "#ffffff", 0.84)};${bookStyleOf(a).photo && a.bookPhoto ? `--bbk-photo:url('${a.bookPhoto}');` : ""}`;
+  return `${mockupStageStyle(a)}--bb-primary:${p};--bb-on-primary:${pickBookTextColor(p)};--bb-on-secondary:${pickBookTextColor(a.colors.secondary || "#666666")};--bb-on-accent:${pickBookTextColor(a.colors.accent || "#999999")};--bb-tint:${mixHex(p, "#ffffff", 0.93)};--bb-tint-2:${mixHex(p, "#ffffff", 0.84)};${bookStyleOf(a).photo && a.bookPhoto ? `--bbk-photo:url('${a.bookPhoto}');` : ""}`;
 }
 
 // Picks a font size from the text's own length so a one-line tagline sets
@@ -2146,7 +2255,7 @@ function brandbookPageHTML({ chapter, title, lead, body, brand, a }) {
 // at render time so it reads on any primary, light or dark.
 function dividerPageHTML(chapter, brand, a) {
   return `
-    <div class="brandbook-page brandbook-print-page bbk-page bbk-divider bbk-fill-${(Number(chapter.num) - 1) % 3} ${pickTintTextColor(bookPrimary(a)) === "#1c1610" ? "" : "bbk-on-dark"}">
+    <div class="brandbook-page brandbook-print-page bbk-page bbk-divider bbk-fill-${(Number(chapter.num) - 1) % 3} ${pickBookTextColor(bookPrimary(a)) === "#1c1610" ? "" : "bbk-on-dark"}">
       <div class="bbk-inner">
         <div class="bbk-divider-num">${escapeHtml(chapter.num)}</div>
         <div class="bbk-head">
@@ -2172,7 +2281,7 @@ function dividerPageHTML(chapter, brand, a) {
 function splitCoverHTML(brand, a, { eyebrow, headline, sub, footLeft }) {
   const hasLogo = a.logo.hasLogo === true && !!a.logo.dataUrl;
   const bg = a.colors.background;
-  const panel = bg && pickTintTextColor(bg) === "#1c1610" ? bg : "#ffffff";
+  const panel = bg && pickBookTextColor(bg) === "#1c1610" ? bg : "#ffffff";
   return `
     <div class="brandbook-page brandbook-print-page bbk-page bbk-cover">
       <div class="bbk-cover-field">
@@ -2453,7 +2562,7 @@ function logoUsageBody(a) {
   const bgs = [
     { label: t("bg.book.bgLight"), bg: "#ffffff", invert: false },
     { label: t("bg.book.bgDark"), bg: BOOK_INK, invert: true },
-    { label: t("bg.role.primary"), bg: p, invert: pickTintTextColor(p) !== "#1c1610" },
+    { label: t("bg.role.primary"), bg: p, invert: pickBookTextColor(p) !== "#1c1610" },
   ];
   const donts = [
     { label: t("bg.book.dontStretch"), img: "transform:scaleX(1.55);" },
@@ -2463,7 +2572,7 @@ function logoUsageBody(a) {
   return `
     <div class="bbk-rows">
       <div class="bbk-cols" style="flex:1.15;">
-        ${bgs.map((b) => `<div class="bbk-tile" style="background:${b.bg};color:${pickTintTextColor(b.bg)};"><img src="${a.logo.dataUrl}" style="${b.invert ? "filter:brightness(0) invert(1);" : ""}" alt="${escapeHtml(t("bg.book.logoOn", { bg: b.label }))}" /><span class="bbk-tile-label">${escapeHtml(b.label)}</span></div>`).join("")}
+        ${bgs.map((b) => `<div class="bbk-tile" style="background:${b.bg};color:${pickBookTextColor(b.bg)};"><img src="${a.logo.dataUrl}" style="${b.invert ? "filter:brightness(0) invert(1);" : ""}" alt="${escapeHtml(t("bg.book.logoOn", { bg: b.label }))}" /><span class="bbk-tile-label">${escapeHtml(b.label)}</span></div>`).join("")}
       </div>
       <div class="bbk-cols" style="flex:1;">
         ${donts.map((d) => `<div class="bbk-tile bbk-tile-dont" style="${d.bg ? `background:${d.bg};` : ""}"><span class="bbk-x">✕</span><img src="${a.logo.dataUrl}" style="${d.img}" alt="" /><span class="bbk-tile-label">${escapeHtml(d.label)}</span></div>`).join("")}
@@ -2499,7 +2608,7 @@ function colorPaletteBody(a) {
           const hex = a.colors[k];
           const rgb = hexToRgb(hex), cmyk = hexToCmyk(hex);
           return `
-          <div class="bbk-swatch" style="flex:${flex[k]};background:${hex};color:${pickTintTextColor(hex)};">
+          <div class="bbk-swatch" style="flex:${flex[k]};background:${hex};color:${pickBookTextColor(hex)};">
             <div class="bbk-swatch-role">${roleLabel(k)}</div>
             <div class="bbk-swatch-codes">
               <div class="bbk-swatch-hex">${hex.toUpperCase()}</div>
@@ -2526,7 +2635,7 @@ function colorEssenceBody(a) {
         .map(
           (k) => `
         <div class="bbk-essence">
-          <div class="bbk-essence-fill" style="background:${a.colors[k]};color:${pickTintTextColor(a.colors[k])};"><span>${roleLabel(k)}</span><span>${a.colors[k].toUpperCase()}</span></div>
+          <div class="bbk-essence-fill" style="background:${a.colors[k]};color:${pickBookTextColor(a.colors[k])};"><span>${roleLabel(k)}</span><span>${a.colors[k].toUpperCase()}</span></div>
           <div class="bbk-essence-text bbk-clamp-8 ${essence[k].length > 140 ? "is-long" : ""}" style="font-size:${fitSize(essence[k], [[110, 20], [200, 16.5], [300, 14]], 12.5)}px;">${escapeHtml(essence[k])}</div>
         </div>
       `
@@ -2554,7 +2663,7 @@ function colorUsageBody(a) {
   return `
     <div class="bbk-cols">
       <div style="flex:0 0 44%;display:flex;flex-direction:column;">
-        <div class="bbk-ratio">${["primary", "secondary", "accent"].filter((k) => a.colors[k]).map((k) => `<span style="flex:${share[k]};background:${a.colors[k]};color:${pickTintTextColor(a.colors[k])};">${share[k]}%</span>`).join("")}</div>
+        <div class="bbk-ratio">${["primary", "secondary", "accent"].filter((k) => a.colors[k]).map((k) => `<span style="flex:${share[k]};background:${a.colors[k]};color:${pickBookTextColor(a.colors[k])};">${share[k]}%</span>`).join("")}</div>
         <div class="bbk-roles">
           ${roles.map((k) => `<div class="bbk-role"><i style="background:${a.colors[k]};"></i><div><b>${roleLabel(k)}</b> — ${escapeHtml(t(`bg.book.roleCopy.${k}`))}</div></div>`).join("")}
         </div>
@@ -2974,7 +3083,7 @@ function valuePropEditorHTML(brand, a) {
     <div class="bbk-copy-editor">
       <div class="bbk-copy-editor-head">
         <strong>${t("bg.copy.vp.title")}</strong>
-        <button type="button" class="btn btn-secondary btn-sm" id="vp-ai-fill">${icon("bot", { size: 12 })}${t("bg.copy.aiFill")}</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="vp-ai-fill">${icon("bot", { size: 12 })}${t("bg.copy.aiFill")}<span class="btn-cost">${t("ai.creditTag")}</span></button>
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t(fromDna && pillars.length ? "bg.copy.vp.fromDna" : fromDna ? "bg.copy.vp.noDna" : "bg.copy.vp.own")}</p>
       <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("bg.copy.vp.format")}</p>
@@ -2997,7 +3106,7 @@ function essenceEditRowHTML(k, a) {
         <label for="essence-${k}">${roleLabel(k)} · ${hex.toUpperCase()}</label>
         <textarea class="textarea" id="essence-${k}" data-essence-text="${k}" maxlength="160" placeholder="${escapeHtml(t("bg.copy.ce.placeholder"))}">${escapeHtml(a.aiCopy?.colorEssence?.[k] || "")}</textarea>
       </div>
-      <button type="button" class="chip-icon-btn" data-essence-ai="${k}" aria-label="${t("bg.copy.aiFillOne")}" title="${t("bg.copy.aiFillOne")}">${icon("bot", { size: 12 })}</button>
+      <button type="button" class="chip-icon-btn" data-essence-ai="${k}" aria-label="${t("bg.copy.aiFillOne")} (${t("ai.creditTag")})" title="${t("bg.copy.aiFillOne")} (${t("ai.creditTag")})">${icon("bot", { size: 12 })}</button>
     </div>
   `;
 }
@@ -3008,7 +3117,7 @@ function colorEssenceEditorHTML(a) {
     <div class="card dark-surface card-tight bbk-copy-editor" style="margin-top:18px;">
       <div class="bbk-copy-editor-head">
         <strong>${t("bg.copy.ce.title")}</strong>
-        ${roles.length ? `<button type="button" class="btn btn-secondary btn-sm" id="ce-ai-fill-all">${icon("bot", { size: 12 })}${t("bg.copy.aiFillAll")}</button>` : ""}
+        ${roles.length ? `<button type="button" class="btn btn-secondary btn-sm" id="ce-ai-fill-all">${icon("bot", { size: 12 })}${t("bg.copy.aiFillAll")}<span class="btn-cost">${t("ai.creditTag")}</span></button>` : ""}
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:2px 0 10px;">${t("bg.copy.ce.hint")}</p>
       ${
@@ -3391,7 +3500,9 @@ function wireBookStylePicker(root, brandId, state, refresh) {
     try {
       // Sized for a 1123px-wide artboard at the PDF's 2x, and JPEG so it
       // stays a small slice of the brand doc's 1MiB Firestore budget.
-      a.bookPhoto = await resizeImageFile(file.files[0], { maxDimension: 1600, quality: 0.72, format: "image/jpeg" });
+      const photo = await resizeImageFile(file.files[0], { maxDimension: 1600, quality: 0.72, format: "image/jpeg" });
+      if (!guardBrandDocSize(getBrand(brandId) || state.brand, { brandGuidelines: { ...a, bookPhoto: photo } })) return;
+      a.bookPhoto = photo;
       persist();
       refresh();
     } catch {

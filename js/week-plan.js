@@ -10,6 +10,7 @@
 // up a day that's already got something on it" true no matter what the
 // model returns.
 import { addDays, weekStart, weekdayOf, isISODate, DEFAULT_UPLOAD_ORDER } from "./goal-roadmap.js";
+import { routeByRules } from "./chat-router.js";
 
 const FUNNELS = ["TOFU", "MOFU", "BOFU"];
 const MAX_COUNT = 14; // a hard ceiling regardless of cadence — this is a week's plan, not a quarter's
@@ -226,5 +227,38 @@ export function currentPlanEntry(entries) {
     if (e.weekPlan && !e.weekPlan.savedAt && !e.weekPlan.closed) return e;
     return null; // the most recent real answer isn't a plan — no plan is open
   }
+  return null;
+}
+
+// Is a message typed while a plan card is open ABOUT that plan? It used to
+// be assumed so, always: "berapa followers aku?" or "aku capek" regenerated
+// the whole week (one AI credit) and got "rencana di atas tetap seperti
+// itu" back. Free, from the words only, in this order:
+//   "other" — a script/caption/hook for one of them: Brainstorm writes it
+//             in the chat (the card only holds titles and angles);
+//   "plan"  — it names a day or a row ("yang Rabu ganti lebih jualan",
+//             "nomor 2 jadi carousel");
+//   "other" — plainly a data question or a feeling (js/chat-router.js:
+//             "berapa followers aku?", "aku capek");
+//   "plan"  — it asks to change what's on the card ("semuanya lebih
+//             santai", "ganti yang lebih jualan", "rencananya kebanyakan jualan");
+//   null    — can't tell; the caller decides (Otomatis asks its router,
+//             the Brainstorm tab keeps treating it as plan talk).
+const PLAN_WRITE_ELSEWHERE = /\b(script|scriptnya|skrip|naskah|narasi|voice ?over|caption|captionnya|hook|hooknya|hooks)\b/i;
+const PLAN_ROW = new RegExp([
+  "\\b(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|hari minggu|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b",
+  "\\byang (pertama|kedua|ketiga|keempat|kelima|keenam|ketujuh|terakhir|ke-?\\d+)\\b",
+  "\\b(nomor|no\\.?|baris|row|item|idea)\\s*\\d+\\b|\\bide ke-?\\d+\\b|\\b(first|second|third|last) one\\b",
+].join("|"), "i");
+const PLAN_CHANGE = /\b(rencana|rencananya|plan|plannya|ganti|gantiin|ubah|ubahin|tukar|tuker|tukerin|geser|pindah|pindahin|hapus|buang|tambah|tambahin|lebih|semua|semuanya|sisanya|swap|change|replace|move|remove|all of them)\b/i;
+
+export function planMessageKind(text) {
+  const s = String(text || "").trim();
+  if (!s) return null;
+  if (PLAN_WRITE_ELSEWHERE.test(s)) return "other";
+  if (PLAN_ROW.test(s)) return "plan";
+  const route = routeByRules(s);
+  if (route === "consultant" || route === "companion") return "other";
+  if (PLAN_CHANGE.test(s)) return "plan";
   return null;
 }

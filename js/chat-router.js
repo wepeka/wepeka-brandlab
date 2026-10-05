@@ -26,14 +26,36 @@ const DATA = /\b(performa|performance|engagement|angka|statistik|insight|insight
 // (Brainstorm), not the Konsultan's short data answers — unless it is about
 // the owner's own numbers ("menurutmu kenapa reach aku turun").
 const DISCUSS = /\b(bahas|bahasin|diskusi|diskusiin|ngobrolin|bedah|breakdown|bongkar|jelasin|jelaskan|menurutmu|menurut kamu|pendapatmu|pendapat kamu|gimana kalau|explain|discuss|strategi|strategy|analisa|analisis)\b/i;
+// "Gimana cara bikin konten di kalender?" asks how the app works — it
+// isn't a request to write anything, whatever verb it uses. (Narrow on
+// purpose: "bikinin konten cara seduh kopi" and "caption buat menu baru"
+// are still requests.)
+const HOW_TO = /\b((?:gimana|gmn|gmana|bagaimana) cara(?:nya)?|caranya|how (?:do|can) i|di ?mana|where)\b/i;
+// A plain ask for ideas/words in the middle of a mood ("capek banget, kasih
+// ide dong") — Teman would only pass it on to Brainstorm. Only the
+// unmistakable asks and nouns: "minta" ("pelanggan minta konten gratis")
+// and "konten"/"post" ("capek bikin konten") are too often part of a vent.
+const ASK_FOR_WORDS = /\b(kasih|kasi|bantu|bantuin|tolong|give me|suggest)\s+(?:[\p{L}\d-]+\s+){0,2}?(ide|idenya|idea|ideas|caption|captionnya|hook|hooknya|script|scriptnya|skrip|naskah|tagline|judul)\b/iu;
+
+// A request to WRITE something ("bikinin caption promo", "tuliskan script
+// cerita awal mula brand"): the Konsultan and Teman answer one with only
+// [[handoff:brainstorm]] — a charged reply with nothing in it before
+// Brainstorm writes it — so js/consultant-panel.js sends these straight to
+// Brainstorm even from those tabs.
+export function isWriteRequest(text) {
+  const s = String(text || "");
+  return STRONG_WRITE.test(s) && CREATIVE_NOUN.test(s) && !HOW_TO.test(s);
+}
 
 export function routeByRules(text) {
   const s = String(text || "");
   if (!s.trim()) return null;
   // 1. "bikinin script…", "tolong tuliskan caption…" — even mid-feeling.
-  if (STRONG_WRITE.test(s) && CREATIVE_NOUN.test(s)) return "brainstorm";
+  if (isWriteRequest(s)) return "brainstorm";
   // 2. feelings and news ("capek kerja buat konten tiap hari", "tadi ada
   //    yang borong 20 cup, bisa jadi konten?") — Teman also files the news.
+  //    A clear ask for ideas outranks the mood, never the news.
+  if (FEELING.test(s) && !HAPPENED.test(s) && ASK_FOR_WORDS.test(s)) return "brainstorm";
   if (FEELING.test(s) || HAPPENED.test(s)) return "companion";
   // 3. "kasih ide konten buat campaign…", "ganti hook-nya"
   if (WEAK_WRITE.test(s)) return "brainstorm";

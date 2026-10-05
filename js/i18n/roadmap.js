@@ -243,7 +243,7 @@ export default {
   "roadmap.thisWeek": { en: "this week", id: "minggu ini" },
   "roadmap.weeks.title": { en: "Week by week", id: "Minggu demi minggu" },
   "roadmap.weeks.sub": { en: "Posts and deadlines in the order they fall.", id: "Konten dan deadline sesuai urutan tanggalnya." },
-  "roadmap.weeks.sum": { en: "{slots} posts · {deadlines} deadlines", id: "{slots} konten · {deadlines} deadline" },
+  "roadmap.weeks.sum": { en: "{slots} to post · {deadlines} due", id: "{slots} konten · {deadlines} deadline" },
   "roadmap.weeks.empty": { en: "No posts planned yet.", id: "Belum ada konten terencana." },
   "roadmap.dow.0": { en: "Sun", id: "Min" },
   "roadmap.dow.1": { en: "Mon", id: "Sen" },
@@ -308,7 +308,7 @@ export default {
   // ---------- Calendar / campaign detail ----------
   "roadmap.cal.deadline": { en: "Deadline", id: "Deadline" },
   "roadmap.cal.slot": { en: "Roadmap slot — an idea waiting to be written", id: "Jadwal konten roadmap — ide yang menunggu ditulis" },
-  "roadmap.cal.weekChip": { en: "This week: {slots} posts · {deadlines} deadlines", id: "Minggu ini: {slots} konten · {deadlines} deadline" },
+  "roadmap.cal.weekChip": { en: "This week: {slots} to post · {deadlines} due", id: "Minggu ini: {slots} konten · {deadlines} deadline" },
   "roadmap.cal.goalChip": { en: "Roadmap", id: "Roadmap" },
   "roadmap.ms.due": { en: "deadline {date}", id: "deadline {date}" },
   "roadmap.ms.overdue": { en: "deadline {date} passed", id: "deadline {date} terlewat" },

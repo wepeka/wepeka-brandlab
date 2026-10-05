@@ -35,8 +35,9 @@ import { getTracker, productStats, mergeProductsFromWizard, syncSalesCampaign } 
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { toast, formatNumber, qs, qsa, escapeHtml as esc } from "../dom.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
+import { openWeekPlan } from "../consultant-panel.js";
 
 const SOCIAL_PLATFORMS = ["instagram", "tiktok", "facebook", "other"];
 const onlyDigits = (v) => String(v ?? "").replace(/[^\d]/g, "");
@@ -76,19 +77,30 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
   const tracker = getTracker(getBrand(brandId) || brand);
   const trackedProducts = productStats(tracker).filter((s) => !s.product.archived).map((s) => ({ id: s.product.id, name: s.product.name, price: s.product.price || null, cost: s.product.cost ?? null, sold: s.sold, target: null, fromTracker: true }));
 
+  // Pemula starts with NOTHING ticked: all three pre-ticked meant a first
+  // goal of 5 screens and ~10 number fields before anything ran. The owner
+  // ticks what they want; Social carries a "Disarankan buat mulai" badge.
+  const guided = getMode() === "guided";
+  // Pemula reads the plain track names (same words its campaign cards use,
+  // js/i18n.js campaignDisplayName); Pro keeps the Grow Brand names.
+  const trackTitle = (k) => t(guided ? `goal.launch.${k}TitlePlain` : `goal.launch.${k}Title`);
+
   const state = {
     // "select" — pick which of the 3 to deploy; "wizard" — walk the
-    // per-track questions for what was picked (state.order).
+    // per-track questions for what was picked (state.order); "done" — what
+    // was created and the next step.
     phase: "select",
     selected: {
-      // Pre-ticked only for tracks that have never been launched at all —
-      // an already-running Social Media Growth campaign (on some platform)
-      // starts UNticked, so reopening the wizard doesn't silently re-offer
-      // it; the user explicitly ticks it again to add another platform.
-      social: socialAvailable && socialCampaigns.length === 0,
-      community: !communityRunning,
-      sales: !salesRunning,
+      // Pro: pre-ticked only for tracks that have never been launched at
+      // all — an already-running Social Media Growth campaign (on some
+      // platform) starts UNticked, so reopening the wizard doesn't silently
+      // re-offer it; the user explicitly ticks it again to add another
+      // platform. Pemula: nothing pre-ticked (see `guided` above).
+      social: !guided && socialAvailable && socialCampaigns.length === 0,
+      community: !guided && !communityRunning,
+      sales: !guided && !salesRunning,
     },
+    created: [],
     order: [],
     stepIdx: 0,
     platform: initialPlatform, followers: insightsFollowersFor(initialPlatform), followersTarget: null, uploadsPerWeek: cadenceUploads || 3,
@@ -139,10 +151,13 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
 
   // ---------- Screen 0: which campaigns to deploy this run ----------
   function selectStepHTML() {
+    // Pemula: a badge on Social (when it can still be ticked) — a
+    // suggestion only, the box stays unticked until the owner ticks it.
+    const recommend = (key, available) => guided && key === "social" && available && socialCampaigns.length === 0;
     const row = (key, title, available, sub) => `
       <label class="goal-select-row ${available ? "" : "is-disabled"}">
         <input type="checkbox" data-select="${key}" ${state.selected[key] ? "checked" : ""} ${available ? "" : "disabled"} />
-        <div class="goal-select-row-body"><b>${esc(title)}</b><p>${sub}</p></div>
+        <div class="goal-select-row-body">${recommend(key, available) ? `<span class="campaign-reco-badge" style="margin:0 0 6px;">${icon("sparkle", { size: 12 })}${t("goal.select.recommended")}</span>` : ""}<b>${esc(title)}</b><p>${sub}</p></div>
       </label>`;
     const socialSub = socialCampaigns.length === 0
       ? t("goal.select.socialSub")
@@ -151,11 +166,11 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         : t("goal.select.socialAllTaken");
     return `
       <h3 class="copy-q">${t("goal.select.title")}</h3>
-      <p class="text-muted" style="font-size:13px;margin:-6px 0 16px;">${t("goal.select.sub")}</p>
+      <p class="text-muted" style="font-size:13px;margin:-6px 0 16px;">${t(guided ? "goal.select.subGuided" : "goal.select.sub")}</p>
       <div class="goal-select-list">
-        ${row("social", t("goal.launch.socialTitle"), socialAvailable, socialSub)}
-        ${row("community", t("goal.launch.communityTitle"), !communityRunning, communityRunning ? t("goal.select.communityRunning") : t("goal.select.communitySub"))}
-        ${row("sales", t("goal.launch.salesTitle"), !salesRunning, salesRunning ? t("goal.select.salesRunning") : t("goal.select.salesSub"))}
+        ${row("social", trackTitle("social"), socialAvailable, socialSub)}
+        ${row("community", trackTitle("community"), !communityRunning, communityRunning ? t("goal.select.communityRunning") : t("goal.select.communitySub"))}
+        ${row("sales", trackTitle("sales"), !salesRunning, salesRunning ? t("goal.select.salesRunning") : t("goal.select.salesSub"))}
       </div>
       <button type="button" class="btn btn-primary btn-block" id="goal-select-next" ${Object.values(state.selected).some(Boolean) ? "" : "disabled"}>${t("camp.next")}${icon("arrowRight", { size: 14 })}</button>`;
   }
@@ -180,7 +195,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     const a = assessmentHTML(state.followers, state.followersTarget);
     return `
       ${progress()}
-      <h3 class="copy-q">${t("goal.launch.socialTitle")}</h3>
+      <h3 class="copy-q">${esc(trackTitle("social"))}</h3>
       <div class="field">
         <label>${t("goal.launch.platformQ")}</label>
         <div class="chip-select" id="goal-platform">${SOCIAL_PLATFORMS.map((p) => `<button type="button" data-val="${p}" class="${state.platform === p ? "active" : ""} ${socialTaken.has(p) ? "is-taken" : ""}" ${socialTaken.has(p) ? "disabled" : ""}>${esc(t(`goal.launch.platform.${p}`))}${socialTaken.has(p) ? ` <small>${t("goal.launch.platformTaken")}</small>` : ""}</button>`).join("")}</div>
@@ -203,7 +218,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     const a = state.hasExisting !== null ? assessmentHTML(state.members || 0, state.membersTarget) : null;
     return `
       ${progress()}
-      <h3 class="copy-q">${t("goal.launch.communityTitle")}</h3>
+      <h3 class="copy-q">${esc(trackTitle("community"))}</h3>
       <div class="field">
         <label>${t("goal.launch.hasQ")}</label>
         <div class="chip-select" id="goal-has">
@@ -263,7 +278,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     const estRevenue = namedProducts().reduce((sum, p) => sum + (p.price || 0) * (p.sold || 0), 0);
     return `
       ${progress()}
-      <h3 class="copy-q">${t("goal.launch.salesTitle")}</h3>
+      <h3 class="copy-q">${esc(trackTitle("sales"))}</h3>
       <p class="ev-runway">${icon("info", { size: 12 })}<span>${t("goal.sales.manualNote")}</span></p>
       <div class="field">
         <label>${t("goal.sales.modelQ")}</label>
@@ -326,17 +341,17 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     if (state.order.includes("social")) {
       const socialPlacement = placeStartSocialLevel({ followers: state.followers, baseline });
       const socialPlan = buildSocialGrowthPlan({ platform: state.platform, current: { followers: state.followers || 0 }, target: state.followersTarget, months: state.months, uploadsPerWeek: state.uploadsPerWeek, startIndex: socialPlacement.index, content, contentCadence: cad });
-      cols.push(planColumnHTML(`${t("goal.launch.socialTitle")} (${t(`goal.launch.platform.${state.platform}`)})`, socialPlan, socialPlacement));
+      cols.push(planColumnHTML(`${trackTitle("social")} (${t(`goal.launch.platform.${state.platform}`)})`, socialPlan, socialPlacement));
     }
     if (state.order.includes("community")) {
       const communityPlacement = placeStartCommunityLevel({ hasExisting: state.hasExisting, members: state.members });
       const communityPlan = buildCommunityGrowthPlan({ hasExisting: state.hasExisting, platformWhere: [...state.platformWhere], current: { members: state.hasExisting ? state.members || 0 : 0 }, target: state.membersTarget, months: state.months, startIndex: communityPlacement.index, content });
-      cols.push(planColumnHTML(t("goal.launch.communityTitle"), communityPlan, communityPlacement));
+      cols.push(planColumnHTML(trackTitle("community"), communityPlan, communityPlacement));
     }
     if (salesActive()) {
       const salesPlacement = placeStartSalesLevel({ model: state.salesModel, products: namedProducts() });
       const salesPlan = buildSalesGrowthPlan(salesInput());
-      cols.push(planColumnHTML(t("goal.launch.salesTitle"), salesPlan, salesPlacement));
+      cols.push(planColumnHTML(trackTitle("sales"), salesPlan, salesPlacement));
     }
     const gridClass = cols.length === 1 ? "is-one" : cols.length === 2 ? "is-two" : "is-three";
     return `
@@ -345,16 +360,46 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       <div class="goal-preview-grid ${gridClass}">${cols.join("")}</div>
       <div class="goal-disclaimer-box">
         <div class="goal-disclaimer-title">${icon("info", { size: 13 })}${t("goal.disclaimer.title")}</div>
-        ${[1, 2, 3, 4].map((n) => `<p>${esc(t(`goal.disclaimer.${n}`))}</p>`).join("")}
+        ${guided ? `<p>${esc(t("goal.disclaimer.short"))}</p>` : [1, 2, 3, 4].map((n) => `<p>${esc(t(`goal.disclaimer.${n}`))}</p>`).join("")}
         <label class="checkbox-chip"><input type="checkbox" id="goal-agree" ${state.agreed ? "checked" : ""} />${t("goal.disclaimer.agree")}</label>
       </div>
       <button type="button" class="btn btn-primary btn-block" id="goal-create" ${state.agreed ? "" : "disabled"}>${icon("check", { size: 14 })}${t("goal.launch.deploy")}</button>`;
+  }
+
+  // After deploy the wizard says what is running and offers the next step
+  // (it used to just close): plan this week's content in the chat —
+  // js/consultant-panel.js openWeekPlan, whose ideas stay suggestions until
+  // the owner ticks and saves them. Nothing is created from here.
+  function doneStepHTML() {
+    const list = state.created;
+    return `
+      <h3 class="copy-q">${esc(list.length > 1 ? t("goal.done.titleMany", { n: list.length }) : t("goal.done.titleOne"))}</h3>
+      <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;font-size:13.5px;font-weight:600;">
+        ${list.map((c) => `<li class="flex items-center gap-6">${icon("check", { size: 14 })}<span>${esc(campaignDisplayName(c.name || ""))}</span></li>`).join("")}
+      </ul>
+      <p class="text-muted" style="font-size:13px;margin:14px 0 16px;">${t("goal.done.next")}</p>
+      <button type="button" class="btn btn-primary btn-block" id="goal-done-week">${icon("sparkle", { size: 14 })}${t("chat.week.button")} · ${t("chat.week.cost")}</button>
+      <button type="button" class="btn btn-ghost btn-block" id="goal-done-later" style="margin-top:8px;">${t("goal.done.later")}</button>`;
+  }
+  function wireDone() {
+    qs("#goal-done-week", root)?.addEventListener("click", () => {
+      closeOverlay(overlay);
+      // One campaign made → plan the week for it; several → the usual plan
+      // across everything that's running.
+      openWeekPlan({ campaignId: state.created.length === 1 ? state.created[0].id : null });
+    });
+    qs("#goal-done-later", root)?.addEventListener("click", () => closeOverlay(overlay));
   }
 
   function paint() {
     if (state.phase === "select") {
       root.innerHTML = selectStepHTML();
       wireSelect();
+      return;
+    }
+    if (state.phase === "done") {
+      root.innerHTML = doneStepHTML();
+      wireDone();
       return;
     }
     const kind = stepKind();
@@ -545,7 +590,8 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       // Tujuan list with no message at all.
       try {
         finish();
-        closeOverlay(overlay);
+        state.phase = "done";
+        paint();
       } catch (e) {
         console.error("Grow Brand launch failed", e);
         toast(t("goal.launch.failed"), "error");
@@ -555,7 +601,6 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
 
   function finish() {
     const created = [];
-    const namesCreated = [];
     let cadenceChanged = null;
     if (state.order.includes("social")) {
       // The numbers typed here are the brand's own, not this campaign's
@@ -578,7 +623,6 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         missionProgressionNote: t("goal.rules.social"),
         goalPlan,
       }));
-      namesCreated.push(t("goal.launch.socialTitle"));
     }
     if (state.order.includes("community")) {
       const placement = placeStartCommunityLevel({ hasExisting: state.hasExisting, members: state.members });
@@ -597,7 +641,6 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         missionProgressionNote: t("goal.rules.community"),
         goalPlan,
       }));
-      namesCreated.push(t("goal.launch.communityTitle"));
     }
     if (salesActive()) {
       // Products go into Sales Tracker first (a name that already exists
@@ -618,10 +661,9 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         missionProgressionNote: t("goal.rules.sales"),
         goalPlan,
       }));
-      namesCreated.push(t("goal.launch.salesTitle"));
       syncSalesCampaign(brandId);
     }
-    toast(created.length > 1 ? t("goal.launch.deployedToastMany", { names: namesCreated.join(", ") }) : t("goal.launch.deployedToastOne", { name: created[0].name }));
+    state.created = created;
     if (cadenceChanged) toast(t("cadence.updatedFromWizard", { n: state.uploadsPerWeek }));
     onSaved?.();
     if (created.length === 1) location.hash = `#/brand/${brandId}/campaigns/${created[0].id}`;

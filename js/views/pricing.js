@@ -78,13 +78,28 @@ function loadSnap({ production, clientKey }) {
   return snapScriptPromise;
 }
 
+// The "payment opens soon" note under the hero, per visitor: a guest or an
+// account that never claimed a trial is pointed at the trial; an account
+// whose trial/plan ended (locked out of the app, audit-1005) is told what
+// still works — never "your access keeps running"; everyone else keeps
+// their running plan or trial until it ends.
+export function closedNoteKey(uid, account) {
+  if (!uid) return "pricing.closed.noteGuest";
+  const state = accessState(account);
+  if (state === "expired") return "pricing.closed.noteLocked";
+  if (state === "none") return "pricing.closed.noteGuest";
+  return "pricing.closed.note";
+}
+
 // Checkout closed: every purchase happens on this site, so until online
 // payment opens a buy button only says it's coming — no WhatsApp order.
+// A locked-out account also hears, gently, that its data is safe.
 async function showPaymentsClosed() {
   const { openModal, closeOverlay } = await import("../modals.js");
+  const locked = accessState(getCachedAccount()) === "expired";
   openModal({
     title: t("pricing.closed.soonTitle"),
-    bodyHTML: `<p style="margin:0;">${t("pricing.closed.body")}</p>`,
+    bodyHTML: `<p style="margin:0;">${t("pricing.closed.body")}</p>${locked ? `<p style="margin:10px 0 0;">${t("pricing.closed.lockedSafe")}</p>` : ""}`,
     footHTML: `<button type="button" class="btn btn-primary" data-soon-ok>${t("common.close")}</button>`,
     onMount: (overlay) => overlay.querySelector("[data-soon-ok]").addEventListener("click", () => closeOverlay(overlay)),
   });
@@ -673,7 +688,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
         ${payState && !payState.open ? `
           <div class="pricing-pending-help pricing-closed-note" role="status">
             <b>${t("pricing.closed.title")}</b>
-            <p>${t(uid ? "pricing.closed.note" : "pricing.closed.noteGuest")}</p>
+            <p>${t(closedNoteKey(uid, account))}</p>
           </div>` : ""}
         <div class="pricing-ways">
           ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}

@@ -1,8 +1,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeByRules } from "../js/chat-router.js";
-import { parseDirectives, serializeDirectives } from "../js/ai-directives.js";
+import { routeByRules, isWriteRequest } from "../js/chat-router.js";
+import { parseDirectives, serializeDirectives, isEmptyReply } from "../js/ai-directives.js";
 
 describe("routeByRules (Tanya Brandlab, Otomatis)", () => {
   const cases = [
@@ -36,10 +36,36 @@ describe("routeByRules (Tanya Brandlab, Otomatis)", () => {
     // …unless it is about the owner's own numbers: the model decides.
     ["menurutmu kenapa reach aku turun?", null],
     ["", null],
+    // A clear ask for ideas outranks the mood (Teman would only hand it
+    // on — a second AI credit); a vent or news stays with Teman.
+    ["capek banget, kasih ide konten dong", "brainstorm"],
+    ["lagi galau nih, tolong bantu cari hook", "brainstorm"],
+    ["kesel, pelanggan minta konten gratis terus", "companion"],
+    ["tadi ada yang borong, capek tapi seneng, kasih ide konten dari situ?", "companion"],
+    // "How do I…" in the app isn't a request to write.
+    ["gimana cara bikin konten di kalender?", "consultant"],
+    ["gimana caranya bikin hook yang bagus", "brainstorm"],
+    // …but a food menu or a how-to topic still is.
+    ["bikinin caption buat menu baru", "brainstorm"],
   ];
   for (const [text, want] of cases) {
     test(`${JSON.stringify(text)} → ${want}`, () => assert.equal(routeByRules(text), want));
   }
+});
+
+describe("isWriteRequest (Konsultan / Teman tab → straight to Brainstorm)", () => {
+  test("plain requests to write", () => {
+    assert.equal(isWriteRequest("bikinin caption promo akhir bulan"), true);
+    assert.equal(isWriteRequest("tolong tuliskan script cerita awal mula brand"), true);
+    assert.equal(isWriteRequest("buatkan 3 hook buat reels"), true);
+  });
+  test("not a request to write", () => {
+    assert.equal(isWriteRequest("kenapa reach aku turun?"), false);
+    assert.equal(isWriteRequest("gimana cara bikin konten di kalender?"), false);
+    assert.equal(isWriteRequest("di mana menu bikin konten?"), false);
+    assert.equal(isWriteRequest("aku capek"), false);
+    assert.equal(isWriteRequest(""), false);
+  });
 });
 
 describe("parseDirectives — what models actually write", () => {
@@ -69,6 +95,39 @@ describe("parseDirectives — what models actually write", () => {
     const p = parseDirectives("[[handoff:brainstorm]]");
     assert.equal(p.cleanText, "");
     assert.equal(p.handoff, "brainstorm");
+  });
+  test("a script cut off mid-way is kept as `partial`, not dropped", () => {
+    const p = parseDirectives("Ini script-nya:\n[[script:MOFU|Cerita Awal|Reels]]\n[0-3 dtk] HOOK\nNarasi: Dulu aku jualan dari gerobak");
+    assert.equal(p.cleanText, "Ini script-nya:");
+    assert.equal(p.scripts.length, 0);
+    assert.deepEqual(p.partial, { kind: "script", target: "script", title: "Cerita Awal", format: "Reels", funnel: "MOFU", text: "[0-3 dtk] HOOK\nNarasi: Dulu aku jualan dari gerobak" });
+  });
+  test("a partial ending inside a closing tag loses the tag", () => {
+    const p = parseDirectives("[[script:TOFU|Judul]]\nNarasi: Halo [[/scr");
+    assert.equal(p.partial.text, "Narasi: Halo");
+  });
+  test("an unclosed revision is kept as `partial` too", () => {
+    const p = parseDirectives("Versi baru:\n[[revise:caption]]Caption baru yang lebih");
+    assert.equal(p.revisions.length, 0);
+    assert.equal(p.partial.kind, "revise");
+    assert.equal(p.partial.text, "Caption baru yang lebih");
+  });
+  test("a complete reply has no partial", () => {
+    assert.equal(parseDirectives("Ini dia.\n[[script:TOFU|J]]\nNarasi: A\n[[/script]]").partial, null);
+  });
+  test("raw tags never reach the text: unknown, stray or half-written", () => {
+    assert.equal(parseDirectives("Oke [[unknown:apa]] siap.").cleanText, "Oke  siap.");
+    assert.equal(parseDirectives("Siap.\n[[/script]]").cleanText, "Siap.");
+    assert.equal(parseDirectives("Bentar ya [[scr").cleanText, "Bentar ya");
+    assert.equal(parseDirectives("Lihat [[catatan ini]] ya").cleanText, "Lihat [[catatan ini]] ya");
+  });
+  test("isEmptyReply: nothing to see or use", () => {
+    assert.equal(isEmptyReply(parseDirectives("")), true);
+    assert.equal(isEmptyReply(parseDirectives("[[unknown:x]]")), true);
+    assert.equal(isEmptyReply(parseDirectives("[[handoff:brainstorm]]")), false);
+    assert.equal(isEmptyReply(parseDirectives("[[idea:Judul|kenapa]]")), false);
+    assert.equal(isEmptyReply(parseDirectives("Halo")), false);
+    assert.equal(isEmptyReply(parseDirectives("[[script:TOFU|J]]\nNarasi: A")), false);
   });
 });
 

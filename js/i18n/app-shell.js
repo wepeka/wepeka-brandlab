@@ -285,12 +285,16 @@ export default {
   "pricing.pending.slowBody": { en: "This sometimes takes a few minutes. Don't pay again — refresh this page in a moment. If it still hasn't opened after 10 minutes, message us.", id: "Kadang butuh beberapa menit. Jangan bayar ulang — refresh halaman ini sebentar lagi. Kalau 10 menit belum terbuka juga, chat kami." },
   "pricing.pending.wa": { en: "Ask on WhatsApp", id: "Tanya lewat WhatsApp" },
   "pricing.closed.title": { en: "Online payment opens soon", id: "Pembayaran online segera dibuka" },
-  "pricing.closed.note": { en: "Online payment for plans and add-ons is being set up and will open right here, on this page. Your access keeps running in the meantime.", id: "Pembayaran online untuk paket dan add-on sedang disiapkan dan akan dibuka langsung di halaman ini. Aksesmu tetap jalan seperti biasa." },
+  "pricing.closed.note": { en: "Online payment for plans and add-ons is being set up and will open right here, on this page. A plan or trial that's running now stays active until it ends.", id: "Pembayaran online untuk paket dan add-on sedang disiapkan dan akan dibuka langsung di halaman ini. Paket atau trial yang sedang jalan tetap aktif sampai masa berlakunya habis." },
+  // audit-1005: the same note for an account whose trial/plan has ended
+  // (main.js shows it this page instead of the app) — what still works.
+  "pricing.closed.noteLocked": { en: "Online payment is being set up and will open right here, on this page. Until then nothing of yours is deleted — every brand, piece of content and campaign stays saved, and you can still view & download your Brand Book with the button above. Once you buy a plan, everything opens again just as you left it.", id: "Pembayaran online sedang disiapkan dan akan dibuka langsung di halaman ini. Sementara itu nggak ada yang dihapus — semua brand, konten, dan campaign kamu tetap tersimpan, dan Brand Book tetap bisa kamu lihat & unduh lewat tombol di atas. Begitu kamu beli paket, semuanya terbuka lagi persis seperti terakhir kamu tinggalkan." },
+  "pricing.closed.lockedSafe": { en: "Your brand data is safe and stays saved. Once payment opens and you buy a plan, everything comes back just as it was.", id: "Tenang, data brand kamu aman dan tetap tersimpan. Begitu pembayaran dibuka dan kamu beli paket, semuanya kembali seperti semula." },
   "pricing.closed.noteGuest": { en: "Online payment is being set up and will open right here, on this page. Meanwhile, start with the free trial.", id: "Pembayaran online sedang disiapkan dan akan dibuka langsung di halaman ini. Sambil menunggu, mulai dari trial gratis dulu." },
   "pricing.closed.soonTitle": { en: "Coming soon", id: "Segera hadir" },
   "pricing.closed.body": { en: "Online payment isn't open yet. Once it is, you can buy right here — no need to contact anyone.", id: "Pembayaran online belum dibuka. Begitu dibuka, kamu bisa beli langsung di sini — tanpa perlu menghubungi siapa pun." },
   "pricing.pending.waMessage": { en: "Hi, I've paid for Wepeka Brandlab but my access hasn't opened yet.", id: "Halo, saya sudah bayar Wepeka Brandlab tapi aksesnya belum terbuka." },
-  "pricing.trialNote": { en: "Not sure yet? Signing up starts a {days}-day free trial — every feature, no card.", id: "Masih ragu? Daftar langsung dapat trial gratis {days} hari — semua fitur, tanpa kartu." },
+  "pricing.trialNote": { en: "Not sure yet? Join the Wepeka Community (free), finish its two-step Trial Mission, then claim a free {days}-day trial — every feature, no card.", id: "Masih ragu? Gabung Wepeka Community (gratis), selesaikan Misi Trial-nya (dua langkah singkat), lalu klaim trial gratis {days} hari — semua fitur, tanpa kartu." },
   "pricing.locked.expiredTitle": { en: "Your trial or plan has ended", id: "Trial atau paket kamu sudah habis" },
   "pricing.locked.expiredBody": { en: "Your data is safe and waiting — pick a plan below to keep going.", id: "Data kamu aman dan tetap tersimpan — pilih paket di bawah buat lanjut." },
   "pricing.locked.bookCta": { en: "View & download your Brand Book", id: "Lihat & unduh Brand Book kamu" },
@@ -381,11 +385,11 @@ export default {
   "pricing.faq.trial.q": { en: "Is the {days}-day trial really free? Do I need a credit card?", id: "Trial {days} hari beneran gratis? Perlu kartu kredit?" },
   "pricing.faq.trial.a": { en: "Really free, and no card of any kind to start. You get every feature for {days} days with 1 brand and 60 AI credits (≈60 pieces of content) for the whole trial — enough to fill in your Brand DNA, plan a week of content, and watch the AI Consultant work from your own data.", id: "Beneran gratis, dan nggak perlu masukin kartu apa pun buat mulai. Kamu dapat semua fitur selama {days} hari, 1 brand, 60 AI credit (±60 konten) buat sepanjang trial — cukup buat isi Brand DNA, susun konten seminggu, dan lihat AI Consultant kerja dari data kamu sendiri." },
   "pricing.faq.after.q": { en: "After {days} days, do my brand and content disappear?", id: "Setelah {days} hari habis, brand dan konten saya hilang?" },
-  "pricing.faq.after.a": { en: "No. The account goes view-only — every Brand DNA, draft and calendar you made stays and can be opened anytime. You just can't generate or edit until you pick a plan. There's no forever-free plan, and nothing gets deleted.", id: "Tidak. Akun masuk mode lihat-saja — semua Brand DNA, draft, dan kalender yang udah kamu buat tetap ada dan bisa dibuka kapan saja. Cuma nggak bisa generate atau edit sampai kamu pilih paket. Nggak ada paket gratis selamanya, tapi juga nggak ada yang dihapus." },
+  "pricing.faq.after.a": { en: "No — nothing gets deleted. When the trial ends, Brandlab locks: the app can't be opened until you pick a plan, but every Brand DNA, piece of content, calendar and campaign you made stays saved. While it's locked you can still view and download each brand's Brand Book (PDF) from this page. Pick a plan and everything opens again just as you left it. There's no forever-free plan.", id: "Tidak, nggak ada yang dihapus. Begitu trial habis, Brandlab terkunci: aplikasinya nggak bisa dibuka sampai kamu pilih paket, tapi semua Brand DNA, konten, kalender, dan campaign yang udah kamu buat tetap tersimpan. Selama terkunci, Brand Book tiap brand masih bisa kamu lihat dan unduh (PDF) dari halaman ini. Begitu kamu pilih paket, semuanya terbuka lagi persis seperti terakhir kamu tinggalkan. Nggak ada paket gratis selamanya." },
   "pricing.faq.ai.q": { en: "Does the AI really know my brand, or is it generic like ChatGPT?", id: "AI-nya beneran ngerti brand saya, atau jawaban generik kayak ChatGPT?" },
   "pricing.faq.ai.a": { en: "The AI Consultant reads your brand's own data before answering — engagement rate, unpublished content, campaign progress. Ask \"how did this month go\" and the answer quotes your real numbers, not general tips.", id: "AI Consultant di Brandlab baca data brand kamu sendiri sebelum jawab — engagement rate, konten yang belum kepublish, progress campaign. Jadi kalau kamu tanya \"gimana performa bulan ini\", jawabannya nyebut angka asli kamu, bukan tips umum." },
   "pricing.faq.cancel.q": { en: "Can I stop anytime?", id: "Bisa berhenti kapan aja?" },
-  "pricing.faq.cancel.a": { en: "Yes. Nothing renews by itself — monthly or yearly, a plan simply runs to the end of its period and you decide whether to pay for the next one. If you don't, the account goes view-only and your data stays.", id: "Bisa. Nggak ada yang diperpanjang otomatis — bulanan atau tahunan, paket jalan sampai masa aktifnya habis, lalu kamu yang putuskan mau bayar periode berikutnya atau tidak. Kalau tidak, akun jadi mode lihat-saja dan datamu tetap ada." },
+  "pricing.faq.cancel.a": { en: "Yes. Nothing renews by itself — monthly or yearly, a plan simply runs to the end of its period and you decide whether to pay for the next one. If you don't, Brandlab locks until you pay again — your data stays saved, and your Brand Book can still be downloaded from this page.", id: "Bisa. Nggak ada yang diperpanjang otomatis — bulanan atau tahunan, paket jalan sampai masa aktifnya habis, lalu kamu yang putuskan mau bayar periode berikutnya atau tidak. Kalau tidak, Brandlab terkunci sampai kamu bayar lagi — datamu tetap tersimpan, dan Brand Book tetap bisa diunduh dari halaman ini." },
   "pricing.faq.credits.q": { en: "What counts as one AI credit?", id: "1 AI credit itu dihitungnya gimana?" },
   "pricing.faq.credits.a": { en: "Each request to the AI — a script, ideas, a Consultant answer, an auto-schedule — is 1 credit. Subscription credits reset every day; Founder credits reset every month.", id: "Tiap kali minta AI — naskah, ide, satu jawaban Consultant, satu auto-schedule — dihitung 1 credit. Credit paket langganan reset tiap hari; credit Founder reset tiap bulan." },
   "pricing.faq.slots.q": { en: "Is the Founder offer really that limited?", id: "Founder Lifetime beneran terbatas?" },
@@ -475,4 +479,26 @@ export default {
   "app.offline": { en: "You're offline — your changes are saved once you're back online.", id: "Kamu sedang offline — perubahan disimpan saat online lagi." },
   "app.backOnline": { en: "Back online — saving your changes.", id: "Online lagi — perubahan sedang disimpan." },
   "auth.wepeka.failed": { en: "That Wepeka sign-in link didn't work. Try again from wepeka.com.", id: "Link masuk dari Wepeka-nya nggak kepakai. Coba lagi dari wepeka.com." },
+
+  // ---- audit-1005: Beranda (js/views/home.js) + "Hari ini" (js/next-action.js) ----
+  // Trial countdown strip on Beranda (the topbar badge is hidden on phones).
+  "home.trial.week": { en: "{n} days left in your trial", id: "Trial kamu sisa {n} hari" },
+  "home.trial.soon": { en: "Only {n} days left in your trial", id: "Trial kamu sisa {n} hari lagi" },
+  "home.trial.last": { en: "Your trial ends within 24 hours", id: "Trial kamu berakhir dalam 24 jam" },
+  "home.trial.body": { en: "After that Brandlab locks until you pick a plan — your data stays safe and your Brand Book stays downloadable.", id: "Setelah itu Brandlab terkunci sampai kamu pilih paket — data kamu tetap aman dan Brand Book tetap bisa diunduh." },
+  "home.trial.cta": { en: "See plans", id: "Lihat paket" },
+  "home.trial.dismiss": { en: "Hide for today", id: "Sembunyikan untuk hari ini" },
+  // A latest-content card for a piece with no platform or format yet.
+  "home.recent.noKind": { en: "Content", id: "Konten" },
+  // "Geser ke hari upload kosong" left an event's piece alone: its phase is over.
+  "home.action.overdue.kept": { en: "{n} event piece(s) stayed put — their phase is already over. Open them in the Calendar to decide.", id: "{n} konten event nggak digeser karena fasenya sudah lewat — buka di Kalender buat atur sendiri." },
+  // "Hari ini" buttons for the info-only actions; each goes to the campaign page.
+  "home.today.cta.levelUp": { en: "Level up", id: "Naik level" },
+  "home.today.cta.progress": { en: "See progress", id: "Lihat progres" },
+  "home.today.cta.targets": { en: "See the open targets", id: "Lihat target yang belum tercapai" },
+  "home.today.cta.campaign": { en: "Open campaign", id: "Buka campaign" },
+  // The level only advances once the campaign page is opened — "ready", not "unlocked".
+  "next.advance.labelReady": { en: "All targets for this level are met — ready to level up", id: "Semua target level ini tercapai — siap naik level" },
+  // An idea/draft whose date passed: it was never made, so no "already uploaded?".
+  "next.overdueUnmade.why": { en: "It was scheduled for {date} but isn't made yet. Finish it first, then pick a new date.", id: "Jadwalnya {date} sudah lewat, tapi kontennya belum jadi. Selesaikan dulu, lalu pilih tanggal baru." },
 };

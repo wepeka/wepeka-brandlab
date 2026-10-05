@@ -45,7 +45,7 @@
 // Otomatis / Konsultan / Brainstorm / Teman lets the owner open one log on
 // its own; there a one-line chip offers another tab when a message clearly
 // belongs there (keyword rules, or the model's [[handoff:…]]).
-import { t, getLang } from "./i18n.js";
+import { t, getLang, campaignDisplayName } from "./i18n.js";
 import {
   getBrand, getSettings, listContent, listCampaigns, listOverdueAndDueSoon, createContent, addBrandIdea, updateBrand, updateBrandIdea, removeBrandIdea, listBrandIdeas, localISODate,
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, deleteBrainstorm,
@@ -62,13 +62,13 @@ import { computeContentMetrics } from "./formulas.js";
 import { brandDnaCompleteness } from "./brand-progress.js";
 import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, discussScript, buildSeriesOverview, seriesEpisodeTitles, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
 import { addDays, weekdayOf } from "./goal-roadmap.js";
-import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry, seriesDays, seriesForDate, missingEpisodes } from "./week-plan.js";
+import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry, planMessageKind, seriesDays, seriesForDate, missingEpisodes } from "./week-plan.js";
 import { analyzeScreenshot } from "./ocr.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
-import { parseDirectives, renderLightMarkdown, serializeDirectives } from "./ai-directives.js";
-import { routeByRules } from "./chat-router.js";
+import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply } from "./ai-directives.js";
+import { routeByRules, isWriteRequest } from "./chat-router.js";
 import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
 import { go } from "./nav-context.js";
@@ -292,7 +292,7 @@ export function scopeInfo(brandId, scope) {
   if (content) label = t("bs.scope.content", { title: content.title || t("beginner.untitled") });
   else if (series) label = t("series.pick", { name: series.name });
   else if (goal) label = t("roadmap.bs.scope", { name: goal.name || t("roadmap.defaultName") });
-  else if (campaign) label = t("bs.scope.campaign", { name: campaign.name }) + (stage ? t("bs.scope.stage", { stage: stage.name }) : "");
+  else if (campaign) label = t("bs.scope.campaign", { name: campaignDisplayName(campaign.name) }) + (stage ? t("bs.scope.stage", { stage: stage.name }) : "");
   else label = t("bs.scope.brand");
   const stageText = stage ? `${stage.kind === "level" ? "Level" : "Phase"} "${stage.name}"${stage.dateLabel ? ` (${stage.dateLabel})` : ""}${stage.description ? ` — ${stage.description}` : ""}` : "";
   return { campaign, content, stage, series, label, stageText, goal, brandId };
@@ -375,6 +375,10 @@ function threadEntries(th, engine) {
       moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
       weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
+      // A reply that stopped before the end: "Coba lagi" re-asks the same
+      // stored question (and replaces this answer) — see askOnce.
+      cut: !!b.cut, partial: b.partial || null,
+      ...(b.cut && lastQuestionId ? { retry: lastQuestion, retryEngine: engine, retryRef: { threadId: th.id, msgId: lastQuestionId, dropId: m.id } } : {}),
     });
   });
   return out;
@@ -734,7 +738,7 @@ function weekPlanCardHTML(entry, index, campaigns, formats) {
   const closed = !!wp.closed;
   const campaignOptions = (selectedId) => [
     `<option value="" ${selectedId ? "" : "selected"}>${esc(t("chat.week.noCampaign"))}</option>`,
-    ...campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === selectedId ? "selected" : ""}>${esc(c.name)}</option>`),
+    ...campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === selectedId ? "selected" : ""}>${esc(campaignDisplayName(c.name))}</option>`),
   ].join("");
   const formatOptions = (selected) => [
     `<option value="" ${selected ? "" : "selected"}>${esc(t("chat.week.formatNone"))}</option>`,
@@ -778,7 +782,7 @@ function weekPlanCardHTML(entry, index, campaigns, formats) {
       </select>
       ${campaigns.length ? `<select class="input cp-week-count" data-week-scope aria-label="${esc(t("chat.week.scopeLabel"))}">
         <option value="" ${wp.campaignId ? "" : "selected"}>${esc(t("chat.week.scopeGeneral"))}</option>
-        ${campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === wp.campaignId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+        ${campaigns.map((c) => `<option value="${esc(c.id)}" ${c.id === wp.campaignId ? "selected" : ""}>${esc(campaignDisplayName(c.name))}</option>`).join("")}
       </select>` : ""}
       <button type="button" class="btn btn-secondary btn-sm" data-week-regen="${index}" title="${esc(t("chat.week.creditNote"))}">${icon("refresh", { size: 13 })}${t("chat.week.regen")}<span class="btn-cost">${t("chat.week.cost")}</span></button>
       <button type="button" class="btn btn-primary btn-sm" data-week-save="${index}" ${pickedCount ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("chat.week.save", { n: pickedCount })}</button>
@@ -954,8 +958,15 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   const toolsHTML = h.engine && !h.ephemeral
     ? `<div class="cp-msg-tools"><button type="button" class="cp-copy" data-chat-copy="${index}" title="${t("chat.copy")}">${icon("copy", { size: 12 })}<span>${t("chat.copy")}</span></button>${retryToggle}</div>`
     : "";
-  const retryHTML = h.retry ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-resend="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
-  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
+  // A cut-off reply keeps what did arrive — the unfinished script shown as
+  // reading only (no "Setujui & simpan": it isn't whole) — says so, and,
+  // when it is the newest answer, offers "Coba lagi".
+  const partialHTML = h.partial?.text
+    ? `<div class="cp-script is-partial"><div class="cp-script-head">${icon("teleprompter", { size: 14 })}<span>${t(h.partial.kind === "revise" ? "chat.cut.partialRevision" : "chat.cut.partialScript")}</span></div>${h.partial.title ? `<div class="cp-script-title">${esc(h.partial.title)}</div>` : ""}<div class="cp-script-body">${scriptBeatsHTML(h.partial.text, esc) || renderLightMarkdown(h.partial.text)}</div></div>`
+    : "";
+  const cutHTML = h.cut ? `<p class="cp-cut">${icon("info", { size: 12 })}<span>${t("chat.cut.note")}</span></p>` : "";
+  const retryHTML = h.retry && (!h.cut || isLast) ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-resend="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
+  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
 }
 
 // Brainstorm openers read from what is happening in the brand right now.
@@ -1166,7 +1177,7 @@ function chatCoreHTML(brandId, full) {
   return `
     ${toolbarHTML(brandId, full)}
     ${row}
-    <div class="consultant-panel-body" id="consultant-messages" aria-live="polite">
+    <div class="consultant-panel-body" id="consultant-messages" aria-live="polite" aria-busy="${pending ? "true" : "false"}">
       ${history.length ? (() => {
         // Only the newest weekPlan card in this transcript is interactive;
         // any earlier one (superseded by a revision or "Ganti semua")
@@ -1354,9 +1365,14 @@ function scrollToBottom() {
 // (the full reply is already in). Skipped when the OS asks for reduced motion.
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 let typewriterRaf = null;
+// The live region (#consultant-messages, aria-live) stays busy while the
+// letters appear, so a screen reader reads the finished answer once.
+let typewriterLive = null;
 export function typewriterReveal(el, { cps = 110, onTick } = {}) {
   if (!el || reducedMotion()) return;
   if (typewriterRaf) { cancelAnimationFrame(typewriterRaf); typewriterRaf = null; }
+  typewriterLive?.setAttribute("aria-busy", "false");
+  typewriterLive = null;
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const nodes = [];
   let n;
@@ -1365,6 +1381,8 @@ export function typewriterReveal(el, { cps = 110, onTick } = {}) {
   const total = nodes.reduce((sum, x) => sum + x.full.length, 0);
   nodes.forEach((x) => { x.node.nodeValue = ""; });
   el.classList.add("is-typing");
+  typewriterLive = el.closest?.("[aria-live]") || null;
+  typewriterLive?.setAttribute("aria-busy", "true");
   const start = performance.now();
   const frame = (now) => {
     const shown = Math.min(total, Math.floor(((now - start) / 1000) * cps));
@@ -1375,7 +1393,7 @@ export function typewriterReveal(el, { cps = 110, onTick } = {}) {
       left -= take;
     }
     onTick?.();
-    if (shown >= total) { typewriterRaf = null; el.classList.remove("is-typing"); return; }
+    if (shown >= total) { typewriterRaf = null; el.classList.remove("is-typing"); if (!pending) typewriterLive?.setAttribute("aria-busy", "false"); typewriterLive = null; return; }
     typewriterRaf = requestAnimationFrame(frame);
   };
   typewriterRaf = requestAnimationFrame(frame);
@@ -1561,9 +1579,10 @@ function wire(host, brandId, input, history) {
   // "Salin": the answer's text, without the buttons under it.
   on("[data-chat-copy]", async (btn) => {
     const h = history[Number(btn.dataset.chatCopy)];
-    if (!h?.text) return;
+    const copyText = [h?.text, h?.partial?.text].filter(Boolean).join("\n\n");
+    if (!copyText) return;
     try {
-      await navigator.clipboard.writeText(h.text);
+      await navigator.clipboard.writeText(copyText);
       btn.classList.add("is-done");
       const label = btn.querySelector("span");
       if (label) label.textContent = t("chat.copied");
@@ -1756,7 +1775,7 @@ function wire(host, brandId, input, history) {
     const { h, j } = refAt(btn.dataset.weekRegenItem);
     const it = h?.weekPlan?.items?.[j];
     if (!it || it.contentId) return;
-    sendMessage(brandId, t("chat.week.regenItemMsg", { date: formatDate(it.date), title: it.title }), { engine: "brainstorm", bsMode: "chat" });
+    sendMessage(brandId, t("chat.week.regenItemMsg", { date: formatDate(it.date), title: it.title }), { engine: "brainstorm", bsMode: "chat", planRevision: true });
   });
   on("[data-week-close]", (btn) => {
     const h = history[Number(btn.dataset.weekClose)];
@@ -1774,8 +1793,13 @@ function wire(host, brandId, input, history) {
     const platform = getSettings().platforms?.[0]?.name || "";
     const weekTag = wp.items[0]?.date || localISODate();
     todo.forEach((it) => {
+      // An idea for a Social Media Growth campaign gets that campaign's own
+      // platform (store.js createContent fills it when this is ""), not
+      // whatever platform is first in Pengaturan — a TikTok campaign's plan
+      // used to land as Instagram and never count.
+      const ownPlatform = it.campaignId && getCampaign(it.campaignId)?.goalPlan?.track === "social";
       const created = createContent(brandId, {
-        title: it.title, idea: it.angle, funnel: it.funnel, format: it.format || "", platform,
+        title: it.title, idea: it.angle, funnel: it.funnel, format: it.format || "", platform: ownPlatform ? "" : platform,
         status: "idea", scheduleDate: it.date, campaignId: it.campaignId || "", seriesId: it.seriesId || "", fromWeekPlan: weekTag,
       });
       it.contentId = created.id;
@@ -1880,7 +1904,8 @@ function wire(host, brandId, input, history) {
     const h = history[Number(btn.dataset.chatResend)];
     if (!h?.retry || pending) return;
     tails.delete(tailKey(brandId, modeOf(brandId)));
-    sendMessage(brandId, h.retry, { engine: h.retryEngine || null });
+    // The question is already stored from the first try: answer that one.
+    sendMessage(brandId, h.retry, { engine: h.retryEngine || null, retryRef: h.retryRef || null, planRevision: !!h.retryPlan });
   });
   on("[data-chat-recap-save]", (btn) => decideRecap(brandId, btn.dataset.chatRecapSave, true, host));
   on("[data-chat-recap-discard]", (btn) => decideRecap(brandId, btn.dataset.chatRecapDiscard, false, host));
@@ -1949,7 +1974,7 @@ function wireScope(host, brandId, on) {
       { id: "", label: t("bs.scope.brand") },
       ...listSeries(brandId).map((s) => ({ id: `series:${s.id}`, label: t("series.pick", { name: s.name }) })),
       ...listGoals(brandId).filter((g) => g.status !== "completed").map((g) => ({ id: `goal:${g.id}`, label: t("roadmap.bs.scope", { name: g.name || t("roadmap.defaultName") }) })),
-      ...listCampaigns(brandId).filter((c) => c.status !== "archived").map((c) => ({ id: c.id, label: t("bs.scope.campaign", { name: c.name }) })),
+      ...listCampaigns(brandId).filter((c) => c.status !== "archived").map((c) => ({ id: c.id, label: t("bs.scope.campaign", { name: campaignDisplayName(c.name) }) })),
     ];
     const currentId = scope.seriesId ? `series:${scope.seriesId}` : scope.goalId ? `goal:${scope.goalId}` : scope.campaignId || "";
     menu.innerHTML = `<div class="text-faint" style="font-size:11px;padding:6px 10px 4px;">${t("bs.scope.pickTitle")}</div>` + options.map((o) => `<button type="button" data-scope="${esc(o.id)}">${o.id === currentId && !scope.contentId ? icon("check", { size: 12 }) : ""}${esc(o.label)}</button>`).join("");
@@ -2235,6 +2260,10 @@ function pendingBubble(shown = "") {
   if (!messagesEl || qs("#consultant-pending", messagesEl)) return;
   const inner = shown ? `<div class="consultant-md">${renderLightMarkdown(shown)}</div>` : `<span class="typing-dots" role="status" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span>`;
   messagesEl.insertAdjacentHTML("beforeend", `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending is-new" id="consultant-pending">${inner}</div>`);
+  // The answer is rewritten on every streamed chunk; a screen reader would
+  // read each half-sentence again. Busy until finishReply: then the whole
+  // answer is announced once.
+  messagesEl.setAttribute("aria-busy", "true");
   scrollToBottom();
 }
 
@@ -2256,6 +2285,7 @@ function aiReady(brandId) {
 function finishReply(brandId, { streamed }) {
   pending = false;
   streamShown = "";
+  qs("#consultant-messages")?.setAttribute("aria-busy", "false");
   persistChat(brandId);
   // Closed mid-answer, or moved to another brand: the answer waits in the
   // history — nothing to draw now.
@@ -2378,17 +2408,63 @@ function scriptPiece(th) {
   return host?.getCurrent?.() || getContent(th.contentId) || {};
 }
 
-async function sendScriptMessage(brandId, th, text, ai) {
+// "Coba lagi" answers the question already stored from the first try
+// instead of storing it a second time (the model then saw it twice, and
+// the log showed it twice); a cut-off answer it replaces is dropped first.
+// `ref`: { threadId, msgId, dropId? } from the retry entry. Anything else
+// is a new message.
+// The cut-off reply a retry replaced, kept until the retry has answered:
+// if the new call fails, restoreDroppedReply puts the partial answer back
+// so whatever did arrive (a half script) isn't lost with it.
+let droppedOnRetry = null;
+function restoreDroppedReply() {
+  const d = droppedOnRetry;
+  droppedOnRetry = null;
+  if (!d) return;
+  const { role, text, at, blocks, sessionId } = d.msg;
+  appendBrainstormMessage(d.threadId, { role, text, at, blocks, sessionId });
+}
+function askOnce(threadId, msg, ref = null) {
+  droppedOnRetry = null;
+  if (ref?.threadId && ref.msgId) {
+    let msgs = getBrainstorm(ref.threadId)?.messages || [];
+    if (ref.dropId && msgs[msgs.length - 1]?.id === ref.dropId) {
+      droppedOnRetry = { threadId: ref.threadId, msg: msgs[msgs.length - 1] };
+      removeBrainstormMessage(ref.threadId, ref.dropId);
+      msgs = getBrainstorm(ref.threadId)?.messages || [];
+    }
+    const last = msgs[msgs.length - 1];
+    if (last?.id === ref.msgId && last.role === "user") {
+      if (ref.threadId === threadId) return last;
+      // Asked again in another log: don't leave it unanswered in this one.
+      removeBrainstormMessage(ref.threadId, ref.msgId);
+    }
+  }
+  return appendBrainstormMessage(threadId, msg);
+}
+
+// A reply counts as cut off when the stream stopped early (js/ai.js
+// onText { cut }), a script/revision block was never closed, or nothing
+// usable came back at all. It is stored with what did arrive, marked, so
+// the bubble says "Jawaban kepotong" with "Coba lagi" instead of passing a
+// half answer off as finished.
+function cutBlocks(parsed, streamCut) {
+  if (!streamCut && !parsed.partial && !isEmptyReply(parsed)) return {};
+  return { cut: true, ...(parsed.partial ? { partial: parsed.partial } : {}) };
+}
+
+async function sendScriptMessage(brandId, th, text, ai, retryRef = null) {
   if (pending) return;
+  const asked = askOnce(th.id, { role: "user", text }, retryRef);
   // The revisions it proposed go back with each reply, so "pendekin lagi"
   // works on the version on the table rather than the original.
-  const history = (th.messages || []).slice(-SCRIPT_HISTORY).map((m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m.blocks) : m.text }));
-  appendBrainstormMessage(th.id, { role: "user", text });
+  const history = (getBrainstorm(th.id)?.messages || th.messages || []).filter((m) => m.id !== asked?.id).slice(-SCRIPT_HISTORY).map((m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m.blocks) : m.text }));
   pending = true;
   streamShown = "";
   renderPanel(brandId, { keep: false });
   pendingBubble();
   let streamed = false;
+  let cut = false;
   try {
     const brand = getBrand(brandId);
     const piece = scriptPiece(th);
@@ -2401,7 +2477,8 @@ async function sendScriptMessage(brandId, th, text, ai) {
       seriesEpisodes: piece.seriesId ? seriesEpisodeTitles(getSeries(piece.seriesId), listContent(brandId)).filter((x) => x !== piece.title) : [],
       history,
       message: text,
-      onText: (soFar) => {
+      onText: (soFar, meta) => {
+        if (meta?.cut) cut = true;
         const shown = parseDirectives(soFar).cleanText;
         const bubble = qs("#consultant-pending");
         if (!shown || !bubble) return;
@@ -2414,6 +2491,7 @@ async function sendScriptMessage(brandId, th, text, ai) {
     const blocks = {
       ...(parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : {}),
       ...(parsed.asks.length ? { asks: parsed.asks.slice(0, 2) } : {}),
+      ...cutBlocks(parsed, cut),
     };
     appendBrainstormMessage(th.id, {
       role: "assistant",
@@ -2421,8 +2499,10 @@ async function sendScriptMessage(brandId, th, text, ai) {
       blocks: Object.keys(blocks).length ? blocks : null,
     });
   } catch (err) {
+    restoreDroppedReply();
     toast(err instanceof AiApiError ? err.message : t("cr.disc.fail"), "error");
   } finally {
+    droppedOnRetry = null;
     finishReply(brandId, { streamed });
   }
 }
@@ -2440,7 +2520,9 @@ function putRevision(th, target, text) {
   else if (th.contentId) updateContent(th.contentId, { [target]: text });
 }
 
-async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat", weekCount = null, campaignId = null } = {}) {
+// `planRevision`: a per-row "Ganti ide ini" — always about the open plan.
+// `retryRef`: "Coba lagi" — the stored question to answer again (askOnce).
+async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat", weekCount = null, campaignId = null, planRevision = false, retryRef = null } = {}) {
   // A photo always goes to the Konsultan: it is the engine that reads
   // numbers and has the brand's tracked data to compare them with.
   const images = attachments.get(brandId) || [];
@@ -2452,14 +2534,15 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   const ai = aiReady(brandId);
   if (!ai) return;
   const scriptTh = currentThread(brandId);
-  if (scriptTh?.mode === "script" && !images.length) return sendScriptMessage(brandId, scriptTh, text, ai);
+  if (scriptTh?.mode === "script" && !images.length) return sendScriptMessage(brandId, scriptTh, text, ai, retryRef);
   // Only now: with no AI key the photos stay in the composer, next to the notice.
   attachments.delete(brandId);
   answerHint = false;
   hints.delete(brandId);
   const tk = tailKey(brandId, cur);
   // Shown at once; stored in its engine's log once the engine is known.
-  tails.set(tk, [{ role: "user", text, images: images.map((a) => a.thumb) }]);
+  // A retry's question is already on screen (and stored).
+  tails.set(tk, retryRef ? [] : [{ role: "user", text, images: images.map((a) => a.thumb) }]);
   pending = true;
   streamShown = "";
   renderPanel(brandId, { keep: false });
@@ -2471,7 +2554,9 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   let streamed = false;
   let streamTimer = 0;
   let streamRaw = "";
-  const streamInto = (raw, { whole = false } = {}) => {
+  let streamCut = false; // js/ai.js: the stream stopped before its end
+  const streamInto = (raw, { whole = false, cut = false } = {}) => {
+    if (cut) streamCut = true;
     // A provider that can't stream hands the finished reply over in one
     // piece — leave it to finishReply's typewriter instead of slapping the
     // whole answer on screen at once.
@@ -2496,27 +2581,44 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
     }, 40);
   };
 
-  // A weekPlan card still open in THIS transcript owns the next message —
-  // in Otomatis as much as in the Pro Brainstorm tab — so a typed follow-up
-  // ("yang Rabu ganti lebih jualan"), or a per-row "Ganti ide ini" (which
-  // sends its own text with engine forced to "brainstorm", same as every
-  // other button-triggered chat message), revises it instead of being
-  // routed like a normal question. Never guessed from keywords (those
-  // misroute real revisions); the model itself says whether the message
-  // was even about the plan (generateWeekPlan's `changed`). Excluded: a
-  // photo (forces "consultant") or an explicit non-brainstorm engine.
-  const planEntry = (!engine || engine === "brainstorm") && !images.length && (cur === "auto" || cur === "brainstorm")
+  // A weekPlan card still open in THIS transcript — in Otomatis as much as
+  // in the Pro Brainstorm tab — takes a follow-up ABOUT it ("yang Rabu
+  // ganti lebih jualan", a per-row "Ganti ide ini") as a revision of the
+  // plan. Anything else is answered like any other message: "berapa
+  // followers aku?" or "aku capek" used to regenerate the whole week (an
+  // AI credit) and get "rencana di atas tetap seperti itu". Free word check
+  // first (js/week-plan.js planMessageKind); when the words can't tell,
+  // Otomatis lets its router decide (a revision only if it picks
+  // Brainstorm), and the Brainstorm tab treats it as plan talk, where the
+  // model still says whether anything changed (generateWeekPlan's
+  // `changed`). Excluded: a photo (forces "consultant") or an explicit
+  // non-brainstorm engine.
+  const openPlan = (!engine || engine === "brainstorm") && !images.length && (cur === "auto" || cur === "brainstorm")
     ? currentPlanEntry(cur === "auto" ? autoEntries(brandId) : threadEntries(currentThread(brandId), "brainstorm"))
     : null;
+  const planKind = openPlan && !planRevision ? planMessageKind(text) : null;
+  let planEntry = openPlan && (planRevision || planKind === "plan" || (planKind === null && cur === "brainstorm")) ? openPlan : null;
+
+  // Konsultan / Teman tab, and plainly a request to write ("bikinin caption
+  // promo"): both would answer it with only [[handoff:brainstorm]] — a
+  // charged reply with nothing in it — before Brainstorm wrote it (two AI
+  // credits for one answer). Straight to Brainstorm instead, the same
+  // switch the handoff makes.
+  const direct = (cur === "consultant" || cur === "companion") && !engine && !images.length && isWriteRequest(text) ? "brainstorm" : null;
 
   let picked = cur;
   let sessionId = null;
+  let askedRef = null; // the stored question, for "Coba lagi"
   try {
     if (cur === "auto") {
       sessionId = ensureSession(brandId, text).id;
       const seeded = seedEngine.get(brandId) || null;
       seedEngine.delete(brandId);
       picked = MODES.includes(engine) ? engine : planEntry || bsMode === "week" ? "brainstorm" : seeded || (await decideEngine(ai, text, historyFor(brandId, "auto")));
+      if (openPlan && !planEntry && planKind === null && picked === "brainstorm") planEntry = openPlan;
+    } else if (direct) {
+      picked = direct;
+      setMode(brandId, picked);
     }
     const brand = getBrand(brandId);
     const pulseText = pulseNow(brandId);
@@ -2532,6 +2634,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         reroute = null;
         if (cur !== "auto") setMode(brandId, picked);
       }
+      streamCut = false;
       if (picked === "brainstorm" && (bsMode === "week" || (bsMode === "chat" && planEntry))) {
         let th = currentThread(brandId);
         if (!th) {
@@ -2542,7 +2645,8 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           pendingScope.delete(brandId);
           syncPageUrl(brandId);
         }
-        appendBrainstormMessage(th.id, { role: "user", text, sessionId });
+        const askedPlan = askOnce(th.id, { role: "user", text, sessionId }, retryRef);
+        askedRef = askedPlan ? { threadId: th.id, msgId: askedPlan.id } : null;
         tails.delete(tk);
         const isRevision = bsMode === "chat" && !!planEntry;
         const settings = getSettings();
@@ -2610,7 +2714,8 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           const detected = findSeriesByNameInText(brandId, text);
           if (detected) { th = updateBrainstorm(th.id, { seriesId: detected.id }) || getBrainstorm(th.id); toast(t("series.autoDetected", { name: detected.name })); }
         }
-        const asked = appendBrainstormMessage(th.id, { role: "user", text, sessionId });
+        const asked = askOnce(th.id, { role: "user", text, sessionId }, retryRef);
+        askedRef = asked ? { threadId: th.id, msgId: asked.id } : null;
         tails.delete(tk);
         const scope = threadScope(th);
         const info = scopeInfo(brandId, scope);
@@ -2634,27 +2739,34 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           turns: all.filter((m) => m.role === "user").length,
           onText: streamInto,
         });
-        const { cleanText, ideas, drafts, asks, tasks, handoff, saves, scripts } = parseDirectives(raw.trim());
+        const parsed = parseDirectives(raw.trim());
+        const { cleanText, ideas, drafts, asks, tasks, handoff, saves, scripts } = parsed;
         // A step is filed under the event; without one it is kept as an idea.
         const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
         const allIdeas = [...ideas, ...(eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why })))];
-        appendBrainstormMessage(th.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}) }, sessionId });
+        // Only the clean text, never the raw [[…]] lines (cutBlocks covers a
+        // reply with nothing readable in it).
+        appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
       } else if (picked === "companion") {
         const thread = ensureCompanionThread(brandId);
-        const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId });
+        const asked = askOnce(thread.id, { role: "user", text, sessionId }, retryRef);
+        askedRef = asked ? { threadId: thread.id, msgId: asked.id } : null;
         tails.delete(tk);
         updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
         const msgs = getCompanionThread(brandId)?.messages || [];
         const threadHistory = historyForModel(brandId, cur, msgs, asked?.id, COMPANION_HISTORY_FOR_MODEL);
         const raw = await companionChat(ai, { brand, pulseText, history: threadHistory, message: text, kinds: MOMENT_KINDS });
-        const { cleanText, ideas, asks, moments, handoff } = parseDirectives(raw.trim());
+        const parsed = parseDirectives(raw.trim());
+        const { cleanText, ideas, asks, moments, handoff } = parsed;
         if (!hop && !cleanText && handoff && handoff !== "companion") {
           removeBrainstormMessage(thread.id, asked?.id);
+          askedRef = null;
           reroute = handoff;
-        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || raw.trim(), blocks: { asks, moments, handoff, ...(ideas.length ? { ideas } : {}) }, sessionId });
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { asks, moments, handoff, ...(ideas.length ? { ideas } : {}), ...cutBlocks(parsed, false) }, sessionId });
       } else {
         const thread = ensureConsultThread(brandId);
-        const asked = appendBrainstormMessage(thread.id, { role: "user", text, sessionId, blocks: images.length ? { images: images.map((a) => a.thumb) } : null });
+        const asked = askOnce(thread.id, { role: "user", text, sessionId, blocks: images.length ? { images: images.map((a) => a.thumb) } : null }, retryRef);
+        askedRef = asked ? { threadId: thread.id, msgId: asked.id } : null;
         tails.delete(tk);
         const msgs = getConsultThread(brandId)?.messages || [];
         const prior = historyForModel(brandId, cur, msgs, asked?.id);
@@ -2678,8 +2790,9 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         const nav = relevantNav(parsed.nav, cleanText);
         if (!hop && !cleanText && handoff && handoff !== "consultant" && !images.length) {
           removeBrainstormMessage(thread.id, asked?.id);
+          askedRef = null;
           reroute = handoff;
-        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText || reply.trim(), blocks: { nav, asks, handoff, moments, ...(metrics ? { metrics } : {}) }, sessionId });
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
       }
       if (!reroute) break;
     }
@@ -2688,20 +2801,28 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
     // tab's job, offer it there — free (keyword rules), never a model call.
     // Otomatis already routed it; "Bukan ini maksudmu?" covers the rest.
     if (sessionId) syncPageUrl(brandId);
-    const to = cur !== "auto" && text.length >= HINT_MIN_LENGTH ? routeByRules(text) : null;
+    const to = cur !== "auto" && !direct && text.length >= HINT_MIN_LENGTH ? routeByRules(text) : null;
     if (to && to !== cur) hints.set(brandId, { mode: cur, to, question: text });
   } catch (err) {
+    restoreDroppedReply();
     // The message itself, never a technical "Gagal: …" prefix, plus a
     // "Coba lagi" that resends the same question — no retyping.
-    const entry = { role: "assistant", text: err instanceof AiApiError ? err.message : t("cons.errorGeneric"), retry: text, retryEngine: picked !== cur ? picked : null };
-    // The question stays on screen if it never reached a log.
+    // `retryRef`: the question already stored before the call failed — the
+    // retry answers it instead of storing it again.
+    const entry = { role: "assistant", text: err instanceof AiApiError ? err.message : t("cons.errorGeneric"), retry: text, retryEngine: picked !== cur ? picked : null, retryRef: askedRef, retryPlan: !!planEntry && bsMode === "chat" };
+    // The question stays on screen if it never reached a log. Shown in the
+    // view now open — a tab may have just switched (straight to Brainstorm,
+    // or a handoff) before the call failed.
     const kept = (tails.get(tk) || []).filter((x) => x.role === "user");
-    tails.set(tk, [...kept, entry]);
+    const tkNow = tailKey(brandId, modeOf(brandId));
+    if (tkNow !== tk) tails.delete(tk);
+    tails.set(tkNow, [...kept, entry]);
   } finally {
     // A finally, not a call after the try/catch: if anything above the
     // catch block itself ever threw synchronously before reaching it,
     // `pending` used to stay stuck true and the composer stayed disabled
     // for the rest of the session.
+    droppedOnRetry = null;
     finishReply(brandId, { streamed });
   }
 }
@@ -2869,7 +2990,7 @@ export function openWeekPlan({ campaignId = null } = {}) {
   const campaign = campaignId ? getCampaign(campaignId) : null;
   openConsultantPanel({
     engine: "brainstorm", bsMode: "week", send: true, fresh: true, campaignId,
-    seed: campaign ? t("chat.week.seedCampaign", { name: campaign.name }) : t("chat.week.seed"),
+    seed: campaign ? t("chat.week.seedCampaign", { name: campaignDisplayName(campaign.name) }) : t("chat.week.seed"),
   });
 }
 

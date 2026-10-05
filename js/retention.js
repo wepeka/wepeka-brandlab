@@ -234,11 +234,13 @@ export function retentionSnapshotText(content) {
 // with null. Returns the patch for updateContent().
 export function mergeInsightsIntoPerformance(performance = {}, insights = {}, source = "ai") {
   const next = { ...performance };
+  let found = 0;
   Object.entries(insights.metrics || {}).forEach(([k, v]) => {
     const n = num(v);
-    if (n !== null) next[k] = Math.round(n);
+    if (n !== null) { next[k] = Math.round(n); found++; }
   });
   if (insights.retention && hasRetentionData(insights.retention)) {
+    found++;
     const prev = next.retention || {};
     const incoming = normalizeRetention({ ...insights.retention, source });
     const merged = { ...prev };
@@ -248,6 +250,7 @@ export function mergeInsightsIntoPerformance(performance = {}, insights = {}, so
     merged.analyzedAt = Date.now();
     next.retention = merged;
   }
-  next.confirmedAt = Date.now();
+  // A reading that found nothing isn't a performance check.
+  if (found) next.confirmedAt = Date.now();
   return next;
 }

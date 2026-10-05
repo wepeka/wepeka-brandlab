@@ -216,7 +216,7 @@ export default {
   "builder.hub.title": { en: "Brand Builder", id: "Brand Builder" },
   "builder.hub.sub": { en: "Start with your brand's foundation, then move on to its visual identity and guidelines.", id: "Mulai dari fondasi brand kamu, lalu lanjut ke identitas visual dan panduannya." },
   "builder.hub.intro": { en: "Fill in the Brand Builder — we'll save your brand info and use it across all your work.", id: "Isi Brand Builder, nanti info brand kamu disimpan dan dipakai otomatis di semua pekerjaanmu." },
-  "builder.progress.stages": { en: "{done}/{total} sections done", id: "{done}/{total} bagian selesai" },
+  "builder.progress.stages": { en: "{done}/{total} sections filled", id: "{done}/{total} bagian terisi" },
 
   // ---------- builder: personality stage ----------
 
@@ -248,6 +248,9 @@ export default {
   "bg.mascot.save": { en: "Save mascot", id: "Simpan maskot" },
   "bg.added": { en: "\"{name}\" added", id: "\"{name}\" ditambahkan" },
   "bg.logo.secondary": { en: "Secondary Logo", id: "Logo Sekunder" },
+  // Logo step: one tap reuses the photo uploaded when the brand was created.
+  "bg.logo.useAvatar": { en: "Use the photo you already uploaded", id: "Pakai foto yang sudah di-upload" },
+  "bg.logo.useAvatarTitle": { en: "The brand photo you uploaded when you created this brand", id: "Foto brand yang kamu upload waktu bikin brand ini" },
   "bg.logo.logotype": { en: "Logotype", id: "Logotype" },
   "bg.logo.fromLogoTitle": { en: "Colors from your logo", id: "Warna dari logo kamu" },
   "bg.logo.useForColor": { en: "Use for colors", id: "Pakai buat warna" },
@@ -327,8 +330,11 @@ export default {
   "bg.reco.useFonts": { en: "Use this font pair", id: "Pakai pasangan font ini" },
   "bg.reco.useTone": { en: "Use these positions", id: "Pakai posisi ini" },
   "bg.reco.fontsBody": { en: "{vibe} · {secondary} for body text", id: "{vibe} · {secondary} untuk teks isi" },
-  "bg.reco.noFeeling": { en: "Pick your brand's character in Brand DNA (last step) to get a Wepeka recommendation here.", id: "Pilih karakter brand di Brand DNA (langkah terakhir) supaya Wepeka bisa kasih rekomendasi di sini." },
-  "bg.reco.noFeelingLink": { en: "Open Brand DNA", id: "Buka Brand DNA" },
+  // No brand character yet: the same choice as Brand DNA's last step, offered
+  // right on the Brand Book step (characterPickerRecoHTML).
+  "bg.reco.pickCharacter": { en: "Pick your brand's character first — Wepeka recommends from it, and you still decide whether to use it.", id: "Pilih dulu karakter brand kamu — Wepeka kasih rekomendasi dari situ, kamu tetap yang putusin mau dipakai atau nggak." },
+  "bg.reco.pickCharacterNote": { en: "Same choice as \"Your brand's character\" in Brand DNA (last step) — change it there anytime.", id: "Ini pilihan yang sama dengan \"Karakter brand kamu\" di Brand DNA (langkah terakhir) — bisa diganti di sana kapan aja." },
+  "bg.reco.characterSaved": { en: "Brand character saved: {feeling}", id: "Karakter brand disimpan: {feeling}" },
   "bg.reco.sector": { en: "From your business description, it looks like: {sector}", id: "Dari deskripsi bisnismu, bidangnya mirip: {sector}" },
   "bg.reco.pickSector": { en: "Pick this", id: "Pilih ini" },
   "bg.reco.badge": { en: "Suggested", id: "Rekomendasi" },
@@ -527,4 +533,11 @@ export default {
   "bg.pdf.doneBody": { en: "Share it with whoever makes your content, designs or packaging. Next, put it to work:", id: "Kirim ke siapa pun yang bikin konten, desain, atau kemasanmu. Berikutnya, langsung pakai:" },
   "bg.pdf.nextGoal": { en: "Set a goal", id: "Pasang tujuan" },
   "bg.pdf.nextContent": { en: "Make content", id: "Bikin konten" },
+  // Brand Book header progress (guidelinesProgressHTML): what x/6 counts.
+  "guidelines.progressMissing": { en: "Still empty: {list}", id: "Belum terisi: {list}" },
+  "guidelines.progressAll": { en: "Every Brand Book section is filled", id: "Semua bagian Brand Book sudah terisi" },
+  "guidelines.progressBasics": { en: "Colors & fonts", id: "Warna & Font" },
+  // Any upload that would push the brand doc past Firestore's 1 MiB
+  // (js/brand-doc-size.js) — refused before saving.
+  "brandDoc.tooBig": { en: "This file would make your brand's data too big (limit about 1 MB). Try a smaller file, or remove something else first — e.g. moodboard photos, mascots or uploaded fonts.", id: "File ini bikin data brand kepenuhan (batas ±1 MB). Coba kecilkan dulu filenya, atau hapus yang lain — misalnya foto moodboard, maskot, atau font yang di-upload." },
 };

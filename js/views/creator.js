@@ -383,6 +383,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         ...(hook?.type ? { hookType: hook.type } : {}),
         caption: captionText || "",
         funnel: state.funnel,
+        platform: content.platform || "",
         campaignId: content.campaignId || "",
         campaignPhaseId: content.campaignPhaseId || "",
         seriesId: content.seriesId || "",
@@ -1257,8 +1258,13 @@ function paint(root, brandId, state, refresh) {
         toast(t("cr.pickPlatform"), "error");
         return;
       }
+      // A piece with no platform of its own takes the one it was ticked as
+      // uploaded to — campaign targets count content by platform, and an
+      // untagged post used to count toward no Social Media Growth at all.
+      const firstTicked = selected.platform ? null : uploadPlatformOptions(selected).find((p) => uploadedPlatforms[p.id]);
       updateContent(selected.id, {
         uploadedPlatforms,
+        ...(firstTicked ? { platform: firstTicked.name } : {}),
         status: "published",
         publishedDate: selected.publishedDate || localISODate(),
       });

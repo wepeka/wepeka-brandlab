@@ -111,3 +111,37 @@ export function brandBookProgress(brand = {}) {
 export function identityDone(brand = {}) {
   return brandDnaDone(brand) && visualBasicsDone(brand);
 }
+
+// The same gate, piece by piece: what still stands between this brand and
+// an open Tujuan tab, in the order the owner does it ("dna", "color",
+// "typography"), and where to go for the first one. The lock used to say
+// only "selesaikan identitas brand dulu" — which read as "Brand DNA" to
+// someone who had just finished it and was still locked out by Warna & Font.
+export function identityGate(brand = {}) {
+  const missing = [];
+  if (!brandDnaDone(brand)) missing.push("dna");
+  if (!guidelineSectionDone("color", brand)) missing.push("color");
+  if (!guidelineSectionDone("typography", brand)) missing.push("typography");
+  const first = missing[0] || null;
+  const id = brand.id || "";
+  const step = first === "dna" ? dnaResumeStep(brand) : null;
+  const href = !first ? null : first === "dna" ? `#/brand/${id}/dna${step ? `/${step}` : ""}` : `#/brand/${id}/guidelines/${first}`;
+  return { done: !first, missing, first, href };
+}
+
+// The words for that gate (the locked tab's dialog, Beranda's locked step):
+// names exactly what's left — "Tinggal Warna & Font" — and labels the button
+// that goes there. `t` is passed in so this file stays import-free.
+export function identityGateCopy(gate, t) {
+  if (!gate || gate.done) return null;
+  const visual = gate.missing.filter((k) => k !== "dna");
+  const visualLabel = visual.length > 1 ? t("gate.visual.both") : visual[0] === "color" ? t("gate.visual.color") : visual[0] === "typography" ? t("gate.visual.typography") : "";
+  const dna = gate.missing.includes("dna");
+  const message = dna && visual.length
+    ? t("gate.msg.dnaAndVisual", { visual: visualLabel })
+    : dna
+      ? t("gate.msg.dna")
+      : t("gate.msg.visual", { visual: visualLabel, min: visual.length > 1 ? 5 : 2 });
+  const action = gate.first === "dna" ? t("gate.go.dna") : t("gate.go.visual", { visual: visualLabel });
+  return { message, action };
+}

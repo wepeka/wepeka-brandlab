@@ -24,8 +24,11 @@
 <meta name="twitter:description" content="Bangun brand dan sistem kontenmu dalam satu tempat. Trial gratis 30 hari." />
 <meta name="twitter:image" content="https://www.wepeka.com/opengraph-image" />
 <meta name="theme-color" content="#0c0b0a" />
-<link rel="icon" href="assets/wepeka-favicon.png" type="image/png" />
+<link rel="icon" href="assets/wepeka-favicon-32.png" sizes="32x32" type="image/png" />
 <link rel="apple-touch-icon" href="assets/wepeka-apple-icon.png" />
+<!-- Firebase's SDK modules (js/firebase.js) load from gstatic as CORS
+     module requests: open that connection while the HTML is still parsing. -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <!-- The two fonts every screen renders with immediately (body text +
      headings, css/styles.css's @font-face) — preloaded so the browser
      fetches them in parallel with the stylesheet instead of discovering

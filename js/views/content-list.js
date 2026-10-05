@@ -1,7 +1,7 @@
-import { getBrand, listContent, getContent, listCampaigns, listSeries, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS } from "../store.js";
+import { getBrand, listContent, getContent, listCampaigns, listSeries, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS, performanceCheckDue, performanceHasNumbers } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
-import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText, loadingHTML } from "../dom.js";
+import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText, loadingHTML, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { confirmDialog, openModal, closeOverlay } from "../modals.js";
 import { openInstagramImportPicker } from "./instagram-import.js";
@@ -12,7 +12,7 @@ import { analyzeScreenshot } from "../ocr.js";
 import { extractInsightsFromImage, aiCanSeeImages, AiApiError } from "../ai.js";
 import { analyzeRetention, retentionVerdict, hasRetentionData, normalizeRetention, ratingLabel } from "../retention.js";
 import { getMode } from "../mode.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { consumeNavContext } from "../nav-context.js";
@@ -68,14 +68,12 @@ function ageBucket(c) {
   return AGE_BUCKETS.find((b) => days <= b.maxDays)?.key || "old";
 }
 
-// The Quick Engagement Update queue: published, and either never confirmed
-// or not re-checked in the last week — old numbers quietly going stale is
-// the whole reason this widget exists.
-const STALE_DAYS = 7;
+// The Quick Engagement Update queue: published posts whose numbers are due
+// — asked ~2 and ~7 days after publishing, never after ~30 days (store.js
+// performanceCheckDue, the same rule the campaign targets use). It used to
+// re-queue every post a week after its last check, forever.
 function needsEngagementUpdate(c) {
-  if (c.status !== "published") return false;
-  if (!c.performance?.confirmedAt) return true;
-  return (Date.now() - c.performance.confirmedAt) / 86400000 > STALE_DAYS;
+  return performanceCheckDue(c);
 }
 
 function paint(root, brandId, state, refresh) {
@@ -145,7 +143,7 @@ function paint(root, brandId, state, refresh) {
 
     <div class="toolbar">
       <div class="segmented" style="width:fit-content;flex:none;">
-        ${VIEWS.map((v) => `<button data-view="${v.key}" class="${state.view === v.key ? "active" : ""}">${t(v.labelKey)}</button>`).join("")}
+        ${VIEWS.map((v) => `<button data-view="${v.key}" class="${state.view === v.key ? "active" : ""}" aria-pressed="${state.view === v.key}">${t(v.labelKey)}</button>`).join("")}
       </div>
       <div class="search-box">
         ${icon("search", { size: 16 })}
@@ -153,7 +151,7 @@ function paint(root, brandId, state, refresh) {
       </div>
       <select class="select" id="filter-campaign" style="width:auto;">
         <option value="">${t("contentList.allCampaigns")}</option>
-        ${[...campaignsById.values()].map((c) => `<option value="${c.id}" ${state.campaignId === c.id ? "selected" : ""}>${escapeText(c.name || t("common.untitled"))}</option>`).join("")}
+        ${[...campaignsById.values()].map((c) => `<option value="${c.id}" ${state.campaignId === c.id ? "selected" : ""}>${escapeText(campaignDisplayName(c.name) || t("common.untitled"))}</option>`).join("")}
       </select>
       ${seriesList.length ? `<select class="select" id="filter-series" style="width:auto;">
         <option value="">${t("contentList.allSeries")}</option>
@@ -315,6 +313,9 @@ function paint(root, brandId, state, refresh) {
       }
     });
   });
+  // Keyboard: each row is a Tab stop and Enter/Space opens it (the click
+  // handler above). The markup keeps role="row" so the table stays a table.
+  wireClickableCards(root, "tr[data-id]");
 
   qsa("[data-quick-fill]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -424,10 +425,10 @@ function rowHTML({ c, perf, m }, campaignsById) {
   const isPublished = c.status === "published";
   const campaign = c.campaignId ? campaignsById.get(c.campaignId) : null;
   return `
-    <tr data-id="${c.id}">
+    <tr data-id="${c.id}" role="row">
       <td class="cell-title">${escapeText(c.title || t("common.untitled"))}</td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>
-      <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaign.name || t("common.untitled"))}</span>` : "—"}</td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaignDisplayName(campaign.name) || t("common.untitled"))}</span>` : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${escapeText(c.status)}"><span class="status-dot"></span>${escapeText(STATUS_LABELS[c.status] || c.status)}</span></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf.views) : "—"}</td>
@@ -672,7 +673,9 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
       if (hasRetentionData(raw)) performance.retention = { ...normalizeRetention(raw), analyzedAt: Date.now() };
       else if (perf.retention) performance.retention = null;
     }
-    performance.confirmedAt = Date.now();
+    // Only a save with real numbers counts as a check — an empty form keeps
+    // the post in the queue instead of silently marking it done.
+    if (performanceHasNumbers(performance)) performance.confirmedAt = Date.now();
     updateContent(c.id, { performance });
     closeOverlay(overlay);
     toast(t("contentList.qf.updatedToast", { title: c.title || t("common.untitled") }));

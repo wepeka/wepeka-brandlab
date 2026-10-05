@@ -13,7 +13,7 @@ import { WEPEKA_IG_HANDLE, WEPEKA_SITE_URL } from "../site-links.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { toast, formatNumber, qs, escapeHtml as esc } from "../dom.js";
 import { icon } from "../icons.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 
 let jsPdfLoading = null;
 function ensureJsPdf() {
@@ -117,7 +117,7 @@ async function drawStory(s) {
   });
   c.fillStyle = "rgba(255,255,255,0.6)";
   c.font = font(500, 38);
-  wrap(c, s.campaign.name || "", W - x * 2).slice(0, 2).forEach((line) => {
+  wrap(c, campaignDisplayName(s.campaign.name) || "", W - x * 2).slice(0, 2).forEach((line) => {
     c.fillText(line, x, y);
     y += 54;
   });

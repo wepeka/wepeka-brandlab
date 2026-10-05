@@ -15,7 +15,7 @@ import { getTracker, weeklySeries } from "./sales-tracker.js";
 import { computeContentMetrics } from "./formulas.js";
 import { crossCampaignInsights } from "./cross-campaign.js";
 import { campaignStages, activeStageIndex, campaignHeadline } from "./campaign-metrics.js";
-import { t } from "./i18n.js";
+import { t, campaignDisplayName } from "./i18n.js";
 import { learningText } from "./brand-learning.js";
 
 const DAY = 86400000;
@@ -347,7 +347,7 @@ function signalStaleCampaigns(campaignReadings, now) {
     out.push({
       kind: "stale-campaign",
       severity: "info",
-      title: t("pulse.staleCampaign.title", { name: campaign.name || t("camp.untitled") }),
+      title: t("pulse.staleCampaign.title", { name: campaignDisplayName(campaign.name) || t("camp.untitled") }),
       detail: t("pulse.staleCampaign.detail"),
       refs: { campaignId: campaign.id },
       at,

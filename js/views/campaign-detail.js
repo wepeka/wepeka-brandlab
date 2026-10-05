@@ -10,7 +10,7 @@ import {
   getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric, planIdeasNote,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS, campaignContentPool,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote, TRASH_DAYS,
-  listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea,
+  listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea, campaignContentPlatform,
 } from "../store.js";
 import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform } from "../campaign-metrics.js";
 import { getTracker, productStats, trackerTotals, eventSalesStats, campaignSalesStats, contentSalesStats } from "../sales-tracker.js";
@@ -35,7 +35,7 @@ import { startCampaignDetailGuide } from "../guides/campaign-guide.js";
 import { getMode } from "../mode.js";
 import { isTourDemo, DEMO_TOAST } from "../tour-demo.js";
 import { STATUS_LABELS_GUIDED, funnelShort } from "../funnel-field.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
@@ -89,7 +89,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
         completeCampaignStage(campaign.id, stage.index);
         state.stageIndex = Math.min(stage.index + 1, stages.length - 1);
         state.advancing = false;
-        toast(nextStage ? t("camp.detail.levelDone", { n: stage.index + 1, name: stage.name }) : t("celebrate.finalTitle", { name: campaign.name || "" }));
+        toast(nextStage ? t("camp.detail.levelDone", { n: stage.index + 1, name: stage.name }) : t("celebrate.finalTitle", { name: campaignDisplayName(campaign.name) || "" }));
       });
     }
   }
@@ -98,7 +98,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   const stageRead = stage ? readStage(stage, ctx) : { readings: [], met: 0, total: 0 };
   const actions = nextActions(ctx);
   const acts = campaignActivities(campaign, content);
-  const ctxLabel = t("camp.detail.ctxLabel", { name: campaign.name || "" }).trim();
+  const ctxLabel = t("camp.detail.ctxLabel", { name: campaignDisplayName(campaign.name) || "" }).trim();
 
   // Pro layout (user ask, 2026-09-26: "simpler, but add something cooler"):
   // headline → Pulse strip (pace, 8-week rhythm, content & ideas, next
@@ -120,7 +120,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${helpButtonHTML("campaign-detail")}${guideVideoButtonHTML("campaign-detail")}</div>
-        <h1>${esc(campaign.name || t("camp.untitled"))}</h1>
+        <h1>${esc(campaignDisplayName(campaign.name) || t("camp.untitled"))}</h1>
         <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}</p>
       </div>
       <div class="cd-head-actions" style="flex:none;">
@@ -582,7 +582,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
       addIdea(idea.text, "ai", idea.description || "");
     })
   );
-  qs("#cd-idea-discuss", root)?.addEventListener("click", () => go(`#/brand/${brand.id}/chat`, { fromLabel: campaign.name, campaignId: campaign.id, mode: "chat" }));
+  qs("#cd-idea-discuss", root)?.addEventListener("click", () => go(`#/brand/${brand.id}/chat`, { fromLabel: campaignDisplayName(campaign.name), campaignId: campaign.id, mode: "chat" }));
   qs("#cd-idea-ai", root).addEventListener("click", async () => {
     const ai = getSettings().ai || {};
     const btn = qs("#cd-idea-ai", root);
@@ -815,7 +815,7 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
     ? `<button type="button" class="btn btn-ghost" id="cp-back">${icon("refresh", { size: 13 })}${t("camp.cplan.again")}</button><button type="button" class="btn btn-primary" id="cp-add" ${picked().length ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("camp.cplan.add", { n: picked().length })}</button>`
     : `<span class="text-faint" style="font-size:11.5px;margin-right:auto;">${t("camp.cplan.credit")}</span><button type="button" class="btn btn-primary" id="cp-go" ${st.busy ? "disabled" : ""}>${icon("sparkle", { size: 14 })}${t("camp.cplan.go")}</button>`;
 
-  const overlay = openModal({ title: t("camp.cplan.title", { name: esc(campaign.name || "") }), wide: true, bodyHTML: formHTML(), footHTML: footHTML() });
+  const overlay = openModal({ title: t("camp.cplan.title", { name: esc(campaignDisplayName(campaign.name) || "") }), wide: true, bodyHTML: formHTML(), footHTML: footHTML() });
   const body = overlay.querySelector(".modal-body");
   const foot = overlay.querySelector(".modal-foot");
   const paint = () => {
@@ -859,7 +859,10 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
   const add = () => {
     const list = picked();
     if (!list.length) return;
-    const platform = settings.platforms?.[0]?.name || "";
+    // A Social Media Growth campaign's plan lands on its own platform (a
+    // TikTok campaign's ideas used to be stamped with Pengaturan's first
+    // platform and never count); other campaigns keep that default.
+    const platform = campaignContentPlatform(campaign, settings) ?? (settings.platforms?.[0]?.name || "");
     list.forEach((it) => {
       const stage = stageFor(stages, it.date, it.phase);
       createContent(brand.id, {

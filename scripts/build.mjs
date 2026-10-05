@@ -3,10 +3,10 @@
 // runs this — serve.py serves js/, css/, etc. straight from source, exactly
 // as before. This script only produces dist/: it bundles js/main.js (and
 // everything it statically or dynamically imports) into a minified,
-// code-split ESM build with esbuild, hashes the three CSS files, copies
+// code-split ESM build with esbuild, minifies + hashes the three CSS files, copies
 // fonts/assets/robots.txt across, and writes a dist/index.html that points
 // at all the hashed filenames.
-import { build } from "esbuild";
+import { build, transform } from "esbuild";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -35,8 +35,15 @@ function shortHash(buf) {
 // Copies one file to destDir under "<name>-<contentHash><ext>" and returns
 // that new filename (not the full path) — used for the CSS files, whose
 // hashed name has to be spliced back into dist/index.html's <link> tags.
-async function hashedCopy(srcFile, destDir) {
-  const buf = await fs.readFile(srcFile);
+// `minifyCss`: run it through esbuild's CSS minifier first (transform API:
+// no bundling, so url("../fonts/…") stays exactly as written). The hash is
+// taken from the minified bytes, so any real change still renames the file.
+async function hashedCopy(srcFile, destDir, { minifyCss = false } = {}) {
+  let buf = await fs.readFile(srcFile);
+  if (minifyCss) {
+    const out = await transform(buf.toString("utf8"), { loader: "css", minify: true, sourcefile: path.basename(srcFile), logLevel: "warning" });
+    buf = Buffer.from(out.code, "utf8");
+  }
   const ext = path.extname(srcFile);
   const base = path.basename(srcFile, ext);
   const outName = `${base}-${shortHash(buf)}${ext}`;
@@ -78,9 +85,11 @@ async function main() {
   // Which hashed file esbuild gave js/main.js's own entry point, so
   // dist/index.html's <script type="module"> can point straight at it.
   let mainEntryFile = null;
+  let mainEntryMeta = null;
   for (const [file, meta] of Object.entries(result.metafile.outputs)) {
     if (meta.entryPoint && path.resolve(ROOT, meta.entryPoint) === path.join(ROOT, "js/main.js")) {
       mainEntryFile = path.relative(DIST_JS, path.resolve(ROOT, file));
+      mainEntryMeta = meta;
       break;
     }
   }
@@ -96,7 +105,7 @@ async function main() {
   const cssFiles = ["styles.css", "auth.css", "campaign.css"];
   const cssHashed = {};
   for (const name of cssFiles) {
-    cssHashed[name] = await hashedCopy(path.join(ROOT, "css", name), DIST_CSS);
+    cssHashed[name] = await hashedCopy(path.join(ROOT, "css", name), DIST_CSS, { minifyCss: true });
   }
 
   // Fonts and images: copied byte-for-byte. Keeping dist/css/ and
@@ -114,14 +123,37 @@ async function main() {
   // preload hrefs are untouched — fonts/ isn't hashed, so they're already
   // correct for dist/ as written.
   let html = await fs.readFile(path.join(ROOT, "index.html"), "utf8");
+  // The entry's static imports (chunks shared with lazy views) are only
+  // discovered once main-*.js has downloaded and parsed; a modulepreload
+  // per chunk lets the browser fetch them in parallel with it instead.
+  // Dynamic import() chunks (the views) are deliberately left out.
+  const preloadTags = (mainEntryMeta.imports || [])
+    .filter((imp) => imp.kind === "import-statement" && !imp.external)
+    .map((imp) => `<link rel="modulepreload" href="js/${path.relative(DIST_JS, path.resolve(ROOT, imp.path)).split(path.sep).join("/")}" />`)
+    .join("\n");
   html = html.replace(
     '<script type="module" src="js/main.js"></script>',
-    `<script type="module" src="js/${mainEntryFile}"></script>`
+    `${preloadTags ? `${preloadTags}\n` : ""}<script type="module" src="js/${mainEntryFile}"></script>`
   );
   for (const name of cssFiles) {
     html = html.replaceAll(`href="css/${name}"`, `href="css/${cssHashed[name]}"`);
   }
   await fs.writeFile(path.join(DIST, "index.html"), html);
+
+  // vercel.json serves everything under /js/ and /css/ with
+  // "Cache-Control: immutable" for a year — only safe because every file
+  // written there carries a content hash in its name. Fail the build rather
+  // than ever ship an unhashed file under those paths.
+  const HASHED_NAME = /-[A-Za-z0-9]{8,10}\.(js|css)$/;
+  async function assertHashed(dir) {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) await assertHashed(p);
+      else if (!HASHED_NAME.test(entry.name)) throw new Error(`build.mjs: ${path.relative(DIST, p)} has no content hash, but vercel.json caches /js/ and /css/ as immutable`);
+    }
+  }
+  await assertHashed(DIST_JS);
+  await assertHashed(DIST_CSS);
 
   const jsCount = Object.keys(result.metafile.outputs).filter((f) => f.endsWith(".js")).length;
   console.log(`\ndist/ ready — entry js/${mainEntryFile}, ${jsCount} JS chunks, CSS: ${Object.values(cssHashed).join(", ")}`);

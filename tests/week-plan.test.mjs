@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { planSlots, planWeek, normalizePlanItems, activeCampaignsFor, currentPlanEntry, defaultWeeklyCount, normTitle, seriesDays, seriesForDate, missingEpisodes } from "../js/week-plan.js";
+import { planSlots, planWeek, normalizePlanItems, activeCampaignsFor, currentPlanEntry, planMessageKind, defaultWeeklyCount, normTitle, seriesDays, seriesForDate, missingEpisodes } from "../js/week-plan.js";
 
 describe("defaultWeeklyCount", () => {
   test("unconfigured cadence falls back to 3", () => {
@@ -274,4 +274,32 @@ describe("series days (Jadwal Kerja: Rabu = Bedah Brand)", () => {
     assert.equal(rows[0].seriesName, "Bedah Brand");
     assert.equal(rows[1].seriesId, "");
   });
+});
+
+describe("planMessageKind (an open plan card only takes messages about it)", () => {
+  const cases = [
+    // about the plan
+    ["yang Rabu ganti lebih jualan", "plan"],
+    ["nomor 2 jadi carousel aja", "plan"],
+    ["yang kedua kurang cocok", "plan"],
+    ["semuanya lebih santai dong", "plan"],
+    ["tukar yang Senin sama Kamis", "plan"],
+    ["jadwal yang Jumat geser ke Sabtu", "plan"],
+    ["swap the first one for something lighter", "plan"],
+    // clearly something else: answered like any other message
+    ["berapa followers aku?", "other"],
+    ["aku capek", "other"],
+    ["kenapa reach aku turun terus?", "other"],
+    ["tadi ada yang borong 20 cup", "other"],
+    // a script/caption for one of them: Brainstorm writes it in the chat
+    ["bikinin script buat yang Rabu", "other"],
+    ["caption buat ide pertama dong", "other"],
+    // can't tell: the caller decides
+    ["oke makasih", null],
+    ["hmm", null],
+    ["", null],
+  ];
+  for (const [text, want] of cases) {
+    test(`${JSON.stringify(text)} → ${want}`, () => assert.equal(planMessageKind(text), want));
+  }
 });

@@ -37,6 +37,13 @@ export function parseDirectives(rawText) {
   const scripts = [];
   let handoff = null;
   let metrics = null;
+  // The unclosed script/revision a reply ended inside (cut off, or the
+  // model never closed it): { kind, title, format, funnel, target, text }.
+  // Hidden from cleanText like before — while streaming it is still being
+  // written — but kept, so a finished reply can show what did arrive
+  // instead of an intro line with nothing under it.
+  let partial = null;
+  const partialBody = (body) => String(body || "").replace(/\[\[[^\]\n]*\]\]/g, "").replace(/\[\[[^\]]*$/, "").replace(/\[$/, "").trim();
   const cleanText = (rawText || "")
     .replace(/\[\[metrics:([^\]\n]+)\]\]/gi, (_, body) => {
       if (metrics) return "";
@@ -64,7 +71,11 @@ export function parseDirectives(rawText) {
       if (text && revisions.length < 2 && !revisions.some((r) => r.target === target.toLowerCase())) revisions.push({ target: target.toLowerCase(), text });
       return "";
     })
-    .replace(/\[\[revise:(?:script|caption)\]\][\s\S]*$/i, "")
+    .replace(/\[\[revise:(script|caption)\]\]([\s\S]*)$/i, (_, target, body) => {
+      const text = partialBody(body);
+      if (text) partial = { kind: "revise", target: target.toLowerCase(), title: "", format: "", funnel: "", text };
+      return "";
+    })
     // A finished script the owner asked for, ready to shoot:
     // [[script:FUNNEL|Title|Format]]…[[/script]] (format optional). Becomes a
     // "Script siap" card with "Setujui & simpan" — the chat never saves by
@@ -86,7 +97,13 @@ export function parseDirectives(rawText) {
       });
       return "";
     })
-    .replace(/\[\[script:[^\]\n]*\]\][\s\S]*$/i, "")
+    .replace(/\[\[script:([^\]\n]*)\]\]([\s\S]*)$/i, (_, head, body) => {
+      const [funnel = "", title = "", format = ""] = head.split("|").map((x) => x.trim());
+      const text = partialBody(body);
+      const f = funnel.toUpperCase();
+      if (text) partial = { kind: "script", target: "script", title: title.slice(0, 140), format: format.slice(0, 40), funnel: (FUNNELS || []).includes(f) ? f : "", text };
+      return "";
+    })
     .replace(/\[\[goto:campaign:([A-Za-z0-9_-]+)\]\]/g, (_, id) => {
       if (!nav.some((n) => n.key === `campaign:${id}`)) nav.push({ key: `campaign:${id}`, label: t("cons.nav.campaign"), path: `campaigns/${id}` });
       return "";
@@ -160,9 +177,23 @@ export function parseDirectives(rawText) {
       if (!handoff && HANDOFF_TARGETS.includes(k)) handoff = k;
       return "";
     })
+    // Whatever is left that still looks like a directive — a tag this
+    // parser doesn't know, a stray closing tag, or one cut off half-way
+    // ("[[script:TOFU|Jud") — is never shown to the owner as raw text.
+    .replace(/\[\[\/?[a-z][a-z-]*(?::[^\]\n]*)?\]\]/gi, "")
+    .replace(/\[\[[^\]]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, handoff, metrics };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, handoff, metrics, partial };
+}
+
+// Nothing the owner could see or use came back: no text, no card, no
+// button. The chat treats that like a cut-off reply (note + "Coba lagi")
+// instead of an empty bubble — or, before, the raw [[…]] lines.
+export function isEmptyReply(p) {
+  if (!p) return true;
+  return !p.cleanText && !p.partial && !p.handoff && !p.metrics
+    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts"].some((k) => (p[k] || []).length);
 }
 
 // What the model wrote last time, as it wrote it: the reply's text plus its

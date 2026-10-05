@@ -12,8 +12,8 @@
 //   manual       → Catat angka sheet (milestoneId)
 //   brainstorm   → Brainstorm modal for the active stage
 //   new-content  → new content picker with campaign context
-//   info         → no button
-import { campaignStages, activeStageIndex, readStage, ladderAdvanceState, campaignActivities, STALE_DAYS } from "./campaign-metrics.js";
+//   info         → no button on the campaign page (Beranda links to it)
+import { campaignStages, activeStageIndex, readStage, ladderAdvanceState, campaignActivities, poolFor, STALE_DAYS } from "./campaign-metrics.js";
 import { localISODate, daysBetween, formatEventDate } from "./store.js";
 import { getMode } from "./mode.js";
 import { levelReminders } from "./goal-plan.js";
@@ -38,18 +38,33 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
   const stage = stages[stageIndex];
   if (!stage) return [];
   const { readings } = readStage(stage, ctx);
-  const { linked } = campaignActivities(campaign, content);
+  // The content this campaign works with: a campaign that counts everything
+  // the brand makes (Social Media Growth, autoLinkAllContent) reads the same
+  // pool its milestones count (poolFor — platform-scoped), not only pieces
+  // linked by hand, so overdue/upload/in-progress actions fire for it too.
+  const linked = campaign.autoLinkAllContent ? poolFor(ctx, {}).filter((c) => !c.archived) : campaignActivities(campaign, content).linked;
   const today = localISODate();
   const out = [];
+  // Every candidate is collected, then sorted by priority and cut to
+  // `limit` at the end — cutting while pushing kept whichever came first in
+  // this file's order, not the most urgent one.
   const push = (a) => {
-    if (out.length < limit && !out.some((x) => x.id === a.id)) out.push(a);
+    if (!out.some((x) => x.id === a.id)) out.push(a);
   };
   const contentWhy = affects(readings, (m) => m.metric === "content.published" || m.metric === "content.streakWeeks") || t("next.contentWhy");
 
-  // 1. Scheduled date passed, still not published.
+  // 1. Scheduled date passed, still not published. "Sudah upload? Tandai
+  // terbit" only for a piece that was actually finished (status scheduled =
+  // ready to post); an idea or a draft whose date passed (a Rencana Minggu
+  // idea, say) was never made — that one gets a nudge to make it instead.
   const overdue = linked.filter((c) => c.scheduleDate && c.scheduleDate < today && c.status !== "published").sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
-  if (overdue[0]) {
-    push({ id: "overdue", priority: 1, label: t("next.overdue.label", { title: title(overdue[0]) }), why: t("next.overdue.why", { date: formatEventDate(overdue[0].scheduleDate), why: contentWhy }), cta: { type: "creator", label: t("next.overdue.cta"), contentId: overdue[0].id, intent: "publish" } });
+  const overdueReady = overdue.find((c) => c.status === "scheduled");
+  const overdueUnmade = overdue.find((c) => c.status !== "scheduled");
+  if (overdueReady) {
+    push({ id: "overdue", priority: 1, label: t("next.overdue.label", { title: title(overdueReady) }), why: t("next.overdue.why", { date: formatEventDate(overdueReady.scheduleDate), why: contentWhy }), cta: { type: "creator", label: t("next.overdue.cta"), contentId: overdueReady.id, intent: "publish" } });
+  }
+  if (overdueUnmade) {
+    push({ id: "overdue-unmade", priority: 1.2, label: `${STATUS_VERB[overdueUnmade.status] || t("next.verb.draft")} "${title(overdueUnmade)}"`, why: t("next.overdueUnmade.why", { date: formatEventDate(overdueUnmade.scheduleDate) }), cta: { type: "creator", label: t("next.wip.cta"), contentId: overdueUnmade.id, intent: "continue" } });
   }
 
   // 2. Profile numbers the campaign depends on are stale or missing.
@@ -102,7 +117,7 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
   }
 
   // 5. Work in progress, most ready first.
-  const wip = linked.filter((c) => ["draft", "production", "editing"].includes(c.status)).sort((a, b) => (READINESS[a.status] ?? 5) - (READINESS[b.status] ?? 5) || (a.scheduleDate || "9").localeCompare(b.scheduleDate || "9"));
+  const wip = linked.filter((c) => ["draft", "production", "editing"].includes(c.status) && c.id !== overdueUnmade?.id).sort((a, b) => (READINESS[a.status] ?? 5) - (READINESS[b.status] ?? 5) || (a.scheduleDate || "9").localeCompare(b.scheduleDate || "9"));
   if (wip[0]) {
     push({ id: `wip-${wip[0].id}`, priority: 5, label: `${STATUS_VERB[wip[0].status]} "${title(wip[0])}"`, why: contentWhy, cta: { type: "creator", label: t("next.wip.cta"), contentId: wip[0].id, intent: "continue" } });
   }
@@ -158,7 +173,10 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
   if (stage.kind === "level") {
     const adv = ladderAdvanceState(campaign, stage, ctx);
     if (adv.targetsMet && !adv.ready) push({ id: "min-weeks", priority: 10, label: t("next.minWeeks.label", { weeks: adv.weeksLeft }), why: t("next.minWeeks.why", { level: stage.index + 1, min: adv.minWeeks }), cta: { type: "info", label: "" } });
-    if (adv.ready) push({ id: "advance", priority: 11, label: t("next.advance.label"), why: t(getMode() === "guided" ? "next.advance.whyGuided" : "next.advance.why"), cta: { type: "info", label: "" } });
+    // "Ready", not "already open": the level only advances when the campaign
+    // page is opened (campaign-detail.js paintDetail), so Beranda can't say
+    // the next level is unlocked yet — its button goes there.
+    if (adv.ready) push({ id: "advance", priority: 11, label: t("next.advance.labelReady"), why: t(getMode() === "guided" ? "next.advance.whyGuided" : "next.advance.why"), cta: { type: "info", label: "" } });
   }
 
   // Event: window ending soon with required milestones open.
@@ -176,7 +194,7 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
 export function brandTopAction({ brand, campaigns, content, settings }) {
   let best = null;
   campaigns
-    .filter((c) => c.status !== "archived" && !(c.eventPlan && c.status === "completed"))
+    .filter((c) => c.status !== "archived" && c.status !== "completed" && !(c.missions?.length && c.missions.every((m) => m.completedAt)))
     .forEach((campaign) => {
       const a = nextActions({ brand, campaign, content, settings, limit: 1 })[0];
       if (a && (!best || a.priority < best.action.priority)) best = { campaign, action: a };

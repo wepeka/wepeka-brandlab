@@ -323,8 +323,8 @@ export default {
   "copy.tour.required.body": { en: "Fill in the fields marked with an asterisk first. AI only uses what you give it: names, prices, and customer quotes are never made up.", id: "Isi kolom bertanda bintang dulu. AI cuma pakai data yang kamu kasih: nama, harga, dan kata-kata pelanggan nggak akan dikarang." },
   "copy.tour.message.title": { en: "What do you want to say?", id: "Mau nyampein apa?" },
   "copy.tour.message.body": { en: "Tell it in your own words — messy is fine. There's a **mic** button if you'd rather talk.", id: "Ceritain pakai bahasamu sendiri, boleh berantakan. Ada tombol **mic** kalau lebih enak ngomong." },
-  "copy.tour.generate.title": { en: "Let AI write it", id: "Biar AI yang nulis" },
-  "copy.tour.generate.body": { en: "AI reads your brand's Brand DNA and tone of voice, then writes **3 options**. During the tour the results are **samples**, so no tokens are used. **Click.**", id: "AI baca Brand DNA dan tone of voice brand kamu, lalu bikin **3 pilihan**. Selama tur hasilnya **contoh**, jadi nggak makan token. **Klik.**" },
+  "copy.tour.generate.title": { en: "Get options from AI", id: "Minta pilihan dari AI" },
+  "copy.tour.generate.body": { en: "AI reads your brand's Brand DNA and tone of voice, then offers **3 options** — you pick one and edit it. During the tour the results are **samples**, so no AI credit is used. **Click.**", id: "AI baca Brand DNA dan tone of voice brand kamu, lalu kasih **3 pilihan** — kamu yang pilih dan edit. Selama tur hasilnya **contoh**, jadi nggak makan AI credit. **Klik.**" },
   "copy.tour.generate.hint": { en: "👆 Click the button, then wait for the results", id: "👆 Klik tombolnya, lalu tunggu hasilnya muncul" },
   "copy.tour.preview.title": { en: "Looks like the real thing", id: "Preview mirip aslinya" },
   "copy.tour.preview.body": { en: "Each option is shown the way it'll actually look (a Threads card, a WhatsApp chat, or a Story) so you can picture the result.", id: "Tiap pilihan ditampilkan kayak aslinya (kartu Threads, chat WhatsApp, atau Story) biar kebayang hasil jadinya." },
@@ -532,6 +532,9 @@ export default {
   "cr.focus.discuss": { en: "Discuss with AI", id: "Diskusi AI" },
   "cr.focus.ph": { en: "Write your script here.\n\n[0-3 s] HOOK\nVisual: what the first second shows\nOn-screen text: …\nVoice: the first line\n\nTip: press \"+ Part\" for the next section.", id: "Tulis script-mu di sini.\n\n[0-3 dtk] HOOK\nVisual: apa yang tampil di detik pertama\nTeks layar: …\nNarasi: kalimat pembuka\n\nTips: tekan \"+ Bagian\" buat bagian berikutnya." },
   "cr.focus.hint": { en: "Each part: [seconds] NAME, then Visual · On-screen text · Voice. The length is worked out from what you say. Esc to close.", id: "Tiap bagian: [detik] NAMA, lalu Visual · Teks layar · Narasi. Durasi dihitung dari Narasi. Esc buat tutup." },
+  // Same text in both languages on purpose: these two follow the SCRIPT's
+  // language (js/script-focus.js picks …En for an English script), not the
+  // UI's — English labels in an Indonesian script would break parseScript.
   "cr.focus.beatTemplate": { en: "[{from}-{to} dtk] BAGIAN BARU\nVisual: \nTeks layar: \nNarasi: ", id: "[{from}-{to} dtk] BAGIAN BARU\nVisual: \nTeks layar: \nNarasi: " },
   "cr.focus.beatTemplateEn": { en: "[{from}-{to} s] NEW PART\nVisual: \nOn-screen text: \nVoice: ", id: "[{from}-{to} s] NEW PART\nVisual: \nOn-screen text: \nVoice: " },
 };

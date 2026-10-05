@@ -49,7 +49,7 @@ const CORE = {
   "help.pageGuide": { en: "Guide for this page", id: "Panduan halaman ini" },
   "help.askAi": { en: "Ask Brandlab", id: "Tanya Brandlab" },
   "help.tour": { en: "Website tour", id: "Tur website" },
-  "nav.locked": { en: "Opens once your brand identity is done", id: "Terbuka setelah identitas brand selesai" },
+  "nav.locked": { en: "Opens once Brand DNA and colors & fonts are done", id: "Terbuka setelah Brand DNA dan Warna & Font selesai" },
   // Home (js/views/home.js)
   "home.eyebrow": { en: "Home", id: "Beranda" },
   "home.sub.identity": { en: "First things first: build your brand identity.", id: "Satu langkah dulu: bangun identitas brand kamu." },
@@ -66,7 +66,7 @@ const CORE = {
   "home.cover.tooBig": { en: "There's no room left for this photo next to your logo and fonts. Try a smaller photo.", id: "Foto ini nggak muat lagi di samping logo dan font brand kamu. Coba foto yang lebih kecil." },
   "home.cover.failed": { en: "Couldn't read that photo. Try another one.", id: "Foto ini nggak bisa dibaca. Coba foto lain." },
   "home.identity.title": { en: "Build your brand identity", id: "Bangun identitas brand" },
-  "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Finish this first — Konten is already open, and Tujuan unlocks once it's done.", id: "Brand DNA jadi dasar semua konten dan campaign. Selesaikan ini dulu — Konten sudah terbuka dari awal, dan Tujuan kebuka begitu ini selesai." },
+  "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Do Brand DNA, then colors & fonts — Konten is already open, and Tujuan unlocks once both are done.", id: "Brand DNA jadi dasar semua konten dan campaign. Isi Brand DNA, lalu Warna & Font — Konten sudah terbuka dari awal, dan Tujuan kebuka begitu keduanya selesai." },
   "home.identity.dna": { en: "Brand DNA", id: "Brand DNA" },
   "home.identity.book": { en: "Brand Book (colors, fonts, logo…)", id: "Brand Book (warna, font, logo…)" },
   "home.identity.bookBasics": { en: "Colors & fonts", id: "Warna & Font" },
@@ -84,7 +84,7 @@ const CORE = {
   "home.identity.ctaStart": { en: "Start Brand DNA", id: "Mulai Brand DNA" },
   "home.identity.ctaContinue": { en: "Continue Brand DNA", id: "Lanjutkan Brand DNA" },
   "home.identity.ctaBook": { en: "Set colors & fonts", id: "Lengkapi Warna & Font" },
-  "home.next.lockedToast": { en: "Finish your brand identity first — this opens right after.", id: "Selesaikan identitas brand dulu, bagian ini terbuka setelah itu." },
+  "home.next.lockedToast": { en: "This opens once Brand DNA and colors & fonts are done.", id: "Bagian ini terbuka setelah Brand DNA dan Warna & Font selesai." },
   "home.report": { en: "Report", id: "Laporan" },
   "topbar.toggleTheme": { en: "Toggle light/dark theme", id: "Ganti tema terang/gelap" },
   "topbar.notifications": { en: "Notifications", id: "Notifikasi" },
@@ -121,7 +121,7 @@ const CORE = {
   "set.plan.brands": { en: "Brands", id: "Brand" },
   "set.plan.trial": { en: "Free trial", id: "Trial gratis" },
   "set.plan.subscription": { en: "Subscription · {n} brand(s)", id: "Langganan · {n} brand" },
-  "set.plan.status.trial": { en: "{n} day(s) left", id: "Sisa {n} hari" },
+  "set.plan.status.trial": { en: "{n} days left", id: "Sisa {n} hari" },
   "set.plan.status.lifetime": { en: "Forever — paid once", id: "Selamanya — sekali bayar" },
   "set.plan.status.until": { en: "Active until {date}", id: "Aktif sampai {date}" },
   "set.plan.status.active": { en: "Active", id: "Aktif" },
@@ -450,7 +450,7 @@ const CORE = {
   // Welcome splash (js/main.js)
 
   // Intro modal + tour offer (js/brandlab-intro.js)
-  "intro.pitch": { en: "Brandlab gives your brand a complete, consistent identity — agency-level — without you having to be a designer or branding expert. You fill in what you know about your business; the system keeps the result tidy, consistent and ready to use.", id: "Brandlab bikin brand kamu punya identitas lengkap dan konsisten — setara hasil agency — tanpa kamu harus jadi desainer atau ahli branding. Kamu isi apa yang kamu tahu tentang bisnis kamu, sistem yang jaga hasilnya tetap rapi, konsisten, dan siap dipakai." },
+  "intro.pitch": { en: "Brandlab helps you build a complete, consistent brand identity step by step — without having to be a designer or branding expert. You fill in what you know about your business, the AI offers options and feedback, and you decide; the system keeps the result tidy, consistent and ready to use.", id: "Brandlab bantu kamu menyusun identitas brand yang lengkap dan konsisten, langkah demi langkah — tanpa harus jadi desainer atau ahli branding. Kamu isi apa yang kamu tahu tentang bisnismu, AI kasih pilihan dan masukan, kamu yang memutuskan; sistem yang jaga hasilnya tetap rapi, konsisten, dan siap dipakai." },
 
   // AI consultant (js/consultant-panel.js)
   "consultant.fabHint": { en: "You can ask AI, you know! 👋", id: "Kamu bisa tanya AI lho! 👋" },
@@ -470,7 +470,7 @@ const CORE = {
   "brandForm.descWarning": { en: "Every AI feature in Brandlab (Brand DNA, scripts, captions, auto-schedule, the AI consultant) reads this description. A vague description means vague AI results across the whole app.", id: "Semua fitur AI di Brandlab (Brand DNA, naskah, caption, jadwal otomatis, konsultan AI) membaca deskripsi ini. Deskripsi asal-asalan = hasil AI asal-asalan di seluruh aplikasi." },
   "brandForm.descChecklist": { en: "Include: what you sell, who buys it, where (city/online), price range, and what makes you different.", id: "Masukkan: jualan apa, siapa pembelinya, di mana (kota/online), kisaran harga, dan bedanya kamu dari yang lain." },
   "brandForm.aiHelp": { en: "Write with AI", id: "Bantu tulis pakai AI" },
-  "brandForm.aiNeedNotes": { en: "Type a few rough notes first (what you sell, for whom) — the AI will turn them into a proper description.", id: "Ketik dulu catatan kasar (jualan apa, buat siapa) — nanti AI yang rapiin jadi deskripsi lengkap." },
+  "brandForm.aiNeedNotes": { en: "Type a few rough notes first (what you sell, for whom) — the AI helps shape them into a draft description that you then check and edit.", id: "Ketik dulu catatan kasar (jualan apa, buat siapa) — AI bantu susun jadi draf deskripsi, lalu kamu cek dan edit sendiri." },
   "brandForm.aiWorking": { en: "AI is writing…", id: "AI lagi nulis…" },
   "brandForm.aiDone": { en: "Done — read it again and fix anything that isn't accurate.", id: "Jadi — baca ulang dan benerin kalau ada yang nggak sesuai." },
   "brandForm.aiNoKey": { en: "The AI isn't available right now. Try again in a moment — if it keeps happening, message the Wepeka team.", id: "AI-nya lagi belum bisa dipakai. Coba lagi sebentar — kalau masih, kabari tim Wepeka ya." },
@@ -498,7 +498,7 @@ const CORE = {
   "guidelines.step.tone": { en: "Tone of Voice", id: "Tone of Voice" },
   "guidelines.step.applications": { en: "Brand Applications", id: "Penerapan Brand" },
   "guidelines.step.review": { en: "Review & PDF", id: "Review & PDF" },
-  "guidelines.progress": { en: "{done}/{total} sections done", id: "{done}/{total} bagian selesai" },
+  "guidelines.progress": { en: "Brand Book: {done}/{total} sections filled", id: "Brand Book: {done}/{total} bagian terisi" },
   "guidelines.next": { en: "Next", id: "Lanjut" },
   "guidelines.finish": { en: "Done", id: "Selesai" },
   "guidelines.bookSaved": { en: "Brand Book saved", id: "Brand Book tersimpan" },
@@ -599,7 +599,7 @@ const CORE = {
   "set.trash.kind.campaign": { en: "Campaign", id: "Campaign" },
   "set.trash.kind.content": { en: "Content", id: "Konten" },
   "set.trash.kind.series": { en: "Series", id: "Seri" },
-  "set.trash.daysLeft": { en: "{n} day(s) left", id: "sisa {n} hari" },
+  "set.trash.daysLeft": { en: "{n} days left", id: "sisa {n} hari" },
   "set.trash.restore": { en: "Restore", id: "Pulihkan" },
   "set.trash.restored": { en: "Restored.", id: "Berhasil dipulihkan." },
   "set.trash.purgeAria": { en: "Delete \"{name}\" permanently", id: "Hapus permanen \"{name}\"" },
@@ -607,6 +607,40 @@ const CORE = {
   "set.trash.purgeMsg": { en: "This can't be undone — it won't be in Trash anymore.", id: "Ini nggak bisa dibatalkan — nggak akan ada lagi di Sampah." },
   "set.trash.purged": { en: "Deleted permanently.", id: "Terhapus permanen." },
 
+  // English singulars — used by t() instead of the key without ".one" when
+  // the count is exactly 1 (see singularKey below). The id text is the same
+  // as the base key's: Indonesian has no plural.
+  "home.streak.line.one": { en: "🔥 {n} week in a row posting!", id: "🔥 {n} minggu berturut-turut posting!" },
+  "set.plan.status.trial.one": { en: "{n} day left", id: "Sisa {n} hari" },
+  "set.trash.daysLeft.one": { en: "{n} day left", id: "sisa {n} hari" },
+  "cadence.updatedFromWizard.one": { en: "Work schedule updated: {n} upload a week. Change the days any time in Calendar → Work schedule.", id: "Jadwal Kerja diperbarui: {n} upload per minggu. Hari-harinya bisa diubah kapan saja di Kalender → Jadwal Kerja." },
+  "pricing.status.trial.one": { en: "Trial — {days} day left.", id: "Trial — sisa {days} hari." },
+  "integr.import.postsFound.one": { en: "{count} post found", id: "{count} postingan ditemukan" },
+  "roadmap.days.left.one": { en: "{n} day left", id: "{n} hari lagi" },
+  "roadmap.rel.ago.one": { en: "{n} day ago", id: "{n} hari lalu" },
+  "roadmap.rel.in.one": { en: "in {n} day", id: "{n} hari lagi" },
+  "roadmap.followersAge.one": { en: "last updated {n} day ago", id: "terakhir diperbarui {n} hari lalu" },
+  "roadmap.list.lanes.one": { en: "{n} lane", id: "{n} jalur" },
+  "roadmap.read.community.members.one": { en: "{n} member", id: "{n} member" },
+  "roadmap.read.rhythm.value.one": { en: "{n} post / week", id: "{n} konten / minggu" },
+  "roadmap.read.engagement.few.one": { en: "only {n} post with data", id: "baru {n} post berdata" },
+  "roadmap.warn.deferredSlots.one": { en: "{n} post is beyond the planning window and will appear when you re-plot closer to the date.", id: "{n} konten di luar jendela perencanaan dan muncul saat kamu atur ulang mendekati tanggal." },
+  "camp.m.daysAgo.one": { en: "{count} day ago", id: "{count} hari lalu" },
+  "camp.detail.daysToGo.one": { en: "{days} day to go", id: "{days} hari lagi" },
+  "camp.pulse.days.one": { en: "{n} day", id: "{n} hari" },
+  "camp.m.note.avgViews.one": { en: "average {count} view", id: "rata-rata {count} views" },
+  "camp.m.fillPerformanceCount.one": { en: "Fill in performance ({count} post)", id: "Isi performa ({count} konten)" },
+  "scratch.sentToast.one": { en: "{n} note sent to the chat.", id: "{n} coretan disetor ke chat." },
+  "rep.remind.published.one": { en: "{n} post published", id: "{n} konten terbit" },
+  "rep.remind.views.one": { en: "{n} view", id: "{n} views" },
+  "rep2.topSub.one": { en: "{n} post published · {healthy} healthy", id: "{n} konten terbit · {healthy} sehat" },
+  "rep2.funnelItem.one": { en: "{n} post · {er} avg. engagement", id: "{n} konten · interaksi {er}" },
+  "ret.widget.n.one": { en: "{n} post with data", id: "{n} konten ada data" },
+  "bha.views.one": { en: "{count} view", id: "{count} views" },
+  "learn.basis.views.one": { en: "{n} view", id: "{n} views" },
+  "copy.results.count.one": { en: "{n} option", id: "{n} pilihan" },
+  "copy.postCount.one": { en: "{n} post", id: "{n} post" },
+  "companion.memory.chatNote.one": { en: "Your chat with the Companion ({n} message) is stored separately and only the Companion reads it. Delete single messages from the card, or everything here.", id: "Obrolanmu dengan Teman Brand ({n} pesan) disimpan terpisah dan hanya dibaca Teman Brand. Hapus per pesan dari kartu, atau semuanya di sini." },
 };
 
 // Per-area dictionaries (js/i18n/*.js) are merged on top of CORE. Keys are
@@ -662,8 +696,37 @@ export function plainWords(str, lang = getLang()) {
     .replace(/(?<![{\w])(campaign)(s?)(?:-(nya|mu|ku))?(?![\w}])/gi, (m, word, plural, suffix) => cap(word, en ? (plural ? "goals" : "goal") : "tujuan") + (suffix && !en ? suffix : ""));
 }
 
+// Grow Brand campaigns are stored under their Pro track name ("Social Media
+// Growth (Instagram) Kopi Senja" — js/views/goal-wizard.js finish()). Pemula
+// reads the plain name instead (goal.launch.*TitlePlain). Display only: the
+// stored name never changes, so Pro — and any name the owner typed — reads
+// exactly what was saved. Only the leading template words are swapped.
+const TRACK_NAME_KEYS = [
+  ["Social Media Growth", "goal.launch.socialTitlePlain"],
+  ["Community Growth", "goal.launch.communityTitlePlain"],
+  ["Sales Growth", "goal.launch.salesTitlePlain"],
+];
+export function campaignDisplayName(name) {
+  if (!name || !plainLanguage()) return name;
+  for (const [prefix, key] of TRACK_NAME_KEYS) {
+    if (name === prefix || name.startsWith(`${prefix} `)) return t(key) + name.slice(prefix.length);
+  }
+  return name;
+}
+
+// English singulars: when the dictionary has a "<key>.one" entry, it
+// replaces <key> whenever the count passed in ({n}, else {count}, else
+// {days}) is exactly 1 — "1 day left", never "1 days left". The same idea
+// as the hand-picked …One/…Many key pairs, without a ternary at every call
+// site. Indonesian has no plural form, so it always reads <key>.
+function singularKey(key, vars) {
+  if (!vars || getLang() !== "en" || !DICT[`${key}.one`]) return key;
+  const n = vars.n ?? vars.count ?? vars.days;
+  return Number(n) === 1 ? `${key}.one` : key;
+}
+
 export function t(key, vars) {
-  const entry = DICT[key];
+  const entry = DICT[singularKey(key, vars)];
   let str = entry ? entry[getLang()] || entry.en : key;
   if (entry && plainLanguage()) str = plainWords(str);
   if (vars) for (const k in vars) str = str.split(`{${k}}`).join(vars[k]);

@@ -11,7 +11,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
-import { brandDnaCompleteness, brandDnaDone, missingDnaFields } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, missingDnaFields, visualBasicsDone } from "../brand-progress.js";
 import { markDnaJustCompleted } from "./brand-builder.js";
 import { t } from "../i18n.js";
 import { dnaExamples, businessKind } from "../dna-examples.js";
@@ -46,6 +46,9 @@ const TOUR_STEPS = [
 const lowerFirst = (s) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : "");
 const capFirst = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
 const stripEnd = (s) => (s || "").trim().replace(/[.!?]+$/, "");
+// "1 AI credit" on every button here that spends one — same pill as
+// "Rencanakan minggu ini" (.btn-cost); a tooltip never shows on touch.
+const costTagHTML = () => `<span class="btn-cost">${t("ai.creditTag")}</span>`;
 
 const AGE_RANGES = [t("dna.age.0to2"), t("dna.age.3to5"), t("dna.age.6to12"), t("dna.age.13to17"), "18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
 
@@ -369,7 +372,7 @@ function proBriefHTML() {
       <summary style="cursor:pointer;font-weight:700;font-size:13.5px;">${icon("sparkle", { size: 14 })} ${t("dna.proBrief.title")}</summary>
       <p class="text-faint" style="font-size:12px;margin:8px 0;">${t("dna.proBrief.hint")}</p>
       <textarea class="textarea" id="dna-pro-brief" rows="5" placeholder="${escapeHtml(t("dna.proBrief.ph"))}"></textarea>
-      <button type="button" class="btn btn-primary btn-sm" id="dna-pro-brief-go" style="margin-top:8px;">${icon("sparkle", { size: 13 })}${t("dna.proBrief.go")}</button>
+      <button type="button" class="btn btn-primary btn-sm" id="dna-pro-brief-go" style="margin-top:8px;">${icon("sparkle", { size: 13 })}${t("dna.proBrief.go")}${costTagHTML()}</button>
       <div id="dna-ai-fill-status"></div>
     </details>`;
 }
@@ -477,7 +480,7 @@ function narrativeFieldHTML({ field, label, guide, example, value, collapsed = f
       <p class="text-faint" style="font-size:11.5px;margin:0 0 8px;">${t("dna.field.writeFirst")}</p>
       <textarea class="textarea" id="ans-${field}" data-field="${field}" ${!label && ariaLabel ? `aria-label="${escapeHtml(ariaLabel)}"` : ""} ${maxWords ? `data-max-words="${maxWords}"` : ""} style="min-height:90px;" placeholder="${escapeHtml(t("dna.field.ownWordsPh"))}">${escapeHtml(value)}</textarea>
       ${maxWords ? wordCountHTML(`ans-${field}`, value, maxWords) : ""}
-      <button type="button" class="btn btn-secondary btn-block" data-polish="${field}" style="margin-top:8px;">${icon("bot", { size: 14 })}${t("dna.field.askAi")}</button>
+      <button type="button" class="btn btn-secondary btn-block" data-polish="${field}" style="margin-top:8px;">${icon("bot", { size: 14 })}${t("dna.field.askAi")}${costTagHTML()}</button>
       <div id="polish-status-${field}" style="margin-top:8px;"></div>
       <div id="polish-options-${field}"></div>
       ${example ? `<p class="text-faint" style="font-size:11.5px;margin:8px 0 0;"><em>${t("dna.field.example", { example: escapeHtml(example) })}</em></p>` : ""}
@@ -508,8 +511,7 @@ function autoGrow(el) {
   el.style.height = "auto";
   if (el.scrollHeight) el.style.height = `${el.scrollHeight + 2}px`;
 }
-// Direct listeners (not delegated): AI option picks dispatch a non-bubbling
-// "input" event on the box itself.
+// Direct listeners (not delegated): bound to each box as it's painted.
 function wireFieldExtras(root) {
   qsa("textarea[data-autogrow]", root).forEach((el) => {
     autoGrow(el);
@@ -616,7 +618,7 @@ function liveCardHTML(state, brand) {
   const v = liveValues(null, state, brand);
   return `
     <details class="dna-live" ${window.innerWidth > 900 ? "open" : ""}>
-      <summary>${icon("sparkle", { size: 14 })}<span>${t("dna.live.title")}</span><small class="dna-live-count-sum">${countAnswered(v)}/8</small></summary>
+      <summary>${icon("sparkle", { size: 14 })}<span>${t("dna.live.title")}</span><small class="dna-live-count-sum">${t("dna.live.count", { n: countAnswered(v), total: 8 })}</small></summary>
       <div class="dna-live-card" id="dna-live-card">${liveCardInnerHTML(v, state, brand)}</div>
     </details>`;
 }
@@ -627,7 +629,7 @@ function updateLiveCard(root, state, brand) {
   const v = liveValues(root, state, brand);
   card.innerHTML = liveCardInnerHTML(v, state, brand);
   const sum = qs(".dna-live-count-sum", root);
-  if (sum) sum.textContent = `${countAnswered(v)}/8`;
+  if (sum) sum.textContent = t("dna.live.count", { n: countAnswered(v), total: 8 });
 }
 
 // After the save that completes Brand DNA: show what it adds up to — the
@@ -647,9 +649,15 @@ function showDnaDoneModal(state, brand, next) {
     bodyHTML: `<p class="text-muted" style="margin:0 0 14px;font-size:14px;">${t("dna.done.sub")}</p><div class="dna-live-card dna-live-card-big">${liveCardInnerHTML(liveValues(null, state, brand), state, brand)}</div>`,
     footHTML: `<button class="btn btn-secondary" data-later>${t("dna.done.later")}</button><button class="btn btn-primary" data-next>${t("dna.done.next")}${icon("arrowRight", { size: 14 })}</button>`,
   });
-  overlay.querySelector("[data-later]").addEventListener("click", () => { closeOverlay(overlay); next(); });
+  // Pemula: Tujuan is still locked until Warna & Font — say so on the way
+  // out, so "Brand DNA jadi" isn't read as "everything's open now".
+  const later = () => {
+    if (getMode() === "guided" && !visualBasicsDone(getBrand(brand.id) || brand)) toast(t("dna.done.laterToast"), "info");
+    next();
+  };
+  overlay.querySelector("[data-later]").addEventListener("click", () => { closeOverlay(overlay); later(); });
   overlay.querySelector("[data-next]").addEventListener("click", () => { closeOverlay(overlay); location.hash = `#/brand/${brand.id}/guidelines/color`; });
-  overlay.querySelector("[data-close]")?.addEventListener("click", () => next());
+  overlay.querySelector("[data-close]")?.addEventListener("click", () => later());
 }
 
 function composePartHTML(part, value) {
@@ -664,7 +672,7 @@ function composePartHTML(part, value) {
       ${inner}
       ${part.type ? "" : examplesHTML(`part-${part.key}`, part.key)}
       ${showAiHelp ? `
-        <button type="button" class="btn btn-ghost btn-sm" data-polish-part="${part.key}" style="margin-top:4px;font-size:11.5px;">${icon("bot", { size: 12 })}${t("dna.part.aiHelp")}</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-polish-part="${part.key}" style="margin-top:4px;font-size:11.5px;">${icon("bot", { size: 12 })}${t("dna.part.aiHelp")}${costTagHTML()}</button>
         <div id="polish-status-part-${part.key}" style="margin-top:4px;"></div>
         <div id="polish-options-part-${part.key}"></div>
       ` : ""}
@@ -851,7 +859,7 @@ function optionCardsHTML(options) {
       </div>`
       )
       .join("")}
-    <button type="button" class="btn btn-secondary btn-block" data-more-options="1" style="margin-top:8px;">${icon("bot", { size: 14 })}${t("dna.ai.moreOptions")}</button>
+    <button type="button" class="btn btn-secondary btn-block" data-more-options="1" style="margin-top:8px;">${icon("bot", { size: 14 })}${t("dna.ai.moreOptions")}${costTagHTML()}</button>
   `;
 }
 
@@ -885,7 +893,9 @@ async function runSuggestOptions({ brand, question, guide, principle, textarea, 
       cardBtn.closest(".card").dataset.optionText = options[i];
       cardBtn.addEventListener("click", () => {
         textarea.value = options[i];
-        textarea.dispatchEvent(new Event("input"));
+        // Bubbles: the box's own listeners (Lanjut, the combined answer) and
+        // the page's live identity card all follow the pick.
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
         // Once one's picked, the sibling options are moot — close the whole
         // bubble instead of leaving 2 unchosen cards sitting there. The
         // rating strip stays (with which option won) until it's used.
@@ -1012,6 +1022,49 @@ function currentPartValues(root, step) {
   return parts;
 }
 
+// What a compose step's boxes add up to as one answer. Prefers the step's
+// own sentence template (a real description with cause → effect) over
+// gluing fragments together with periods. `parts` is { key: text | list }.
+function composeText(step, parts = {}) {
+  const partList = stepParts(step).map((p) => (p.type === "list" ? (parts[p.key] || []).join("; ") : parts[p.key]));
+  return (step.compose ? step.compose(parts).trim() : "") || joinParts(partList);
+}
+
+// Should the combined answer follow an edit in the boxes? `current` is the
+// combined text on screen, `before`/`after` what the boxes composed to
+// before and after the edit. Still empty, or still exactly what the boxes
+// made → follow (returns `after`). Anything else is the owner's own writing
+// (typed by hand, an AI option they picked) → returns null: leave it alone.
+export function followComposed(current, before, after) {
+  const cur = String(current || "").trim();
+  if (!cur || cur === String(before || "").trim()) return after;
+  return null;
+}
+
+// Answers edited in the boxes AFTER "Gabungkan" used to be lost: the saved
+// answer is the combined textarea, and it only re-composed while empty. Now
+// it keeps following the boxes until the owner writes in it themselves —
+// then it's left untouched and a note says "Gabungkan" refreshes it.
+function syncCombinedAnswer(root, state, step, before) {
+  const field = qs(`#ans-${step.field}`, root);
+  if (!field) return;
+  const after = composeText(step, state.parts[step.key] || {});
+  const next = followComposed(field.value, before, after);
+  const statusEl = qs("#compose-status", root);
+  if (next === null) {
+    if (statusEl && before !== after) statusEl.innerHTML = `<div class="text-faint" style="font-size:11.5px;">${t("dna.compose.stale")}</div>`;
+    return;
+  }
+  if (statusEl) statusEl.innerHTML = "";
+  // Still empty and hidden: Next / "Simpan progress" compose it anyway, and
+  // the live card already previews it — nothing to show yet.
+  if (!field.value.trim() && field.closest("[data-collapsed-field]")?.style.display === "none") return;
+  if (field.value === next) return;
+  field.value = next;
+  state.answers[step.field] = next;
+  if (step.syncField) state.answers[step.syncField] = next;
+}
+
 // Shared by the "Gabungkan" button and — since 3.2 — Next/"Simpan progress"
 // on a "compose" step: stitches the short box answers into the combined
 // textarea. Returns the composed string, or "" if every box was empty (the
@@ -1023,10 +1076,7 @@ function composeAnswerFromParts(root, state, step) {
   state.parts[step.key] = { ...(state.parts[step.key] || {}), ...parts };
   const answerField = qs(`#ans-${step.field}`, root);
   const answerWrap = answerField?.closest("[data-collapsed-field]") || answerField?.closest(".field");
-  const partList = stepParts(step).map((p) => (p.type === "list" ? (parts[p.key] || []).join("; ") : parts[p.key]));
-  // Prefer the step's own sentence template (a real description with
-  // cause → effect) over gluing fragments together with periods.
-  const composed = (step.compose ? step.compose(parts).trim() : "") || joinParts(partList);
+  const composed = composeText(step, parts);
   if (!composed) return "";
   if (answerField) answerField.value = composed;
   if (answerWrap) answerWrap.style.display = "";
@@ -1036,12 +1086,22 @@ function composeAnswerFromParts(root, state, step) {
 }
 
 function wireComposeOrFunnelStep(root, brandId, brand, state, step, refresh, updateNextState) {
+  // Any change to the boxes (typing, an example chip, an AI option, the
+  // proof list): keep the combined answer following them (see
+  // syncCombinedAnswer) and re-check Lanjut — it used to stay disabled
+  // after typing in the boxes until something else poked it.
+  const partsChanged = (before) => {
+    if (step.kind === "compose") syncCombinedAnswer(root, state, step, before);
+    updateNextState();
+  };
   // Every plain-text part input keeps the wizard's local scratch state in
   // sync as the user types, so switching Back/Next doesn't lose progress.
   stepParts(step).forEach((p) => {
     if (p.type === "list") return;
     qs(`#part-${p.key}`, root)?.addEventListener("input", () => {
+      const before = composeText(step, state.parts[step.key] || {});
       state.parts[step.key] = { ...(state.parts[step.key] || {}), [p.key]: qs(`#part-${p.key}`, root).value };
+      partsChanged(before);
     });
   });
 
@@ -1097,17 +1157,19 @@ function wireComposeOrFunnelStep(root, brandId, brand, state, step, refresh, upd
       const val = input.value.trim();
       if (!val) return;
       const current = state.parts[step.key] || {};
+      const before = composeText(step, current);
       const list = [...(current.proof || []), val];
       state.parts[step.key] = { ...current, proof: list };
       qs("#part-proof-list", root).innerHTML = list
         .map((v, i) => `<span class="dna-chip">${escapeHtml(v)}<button type="button" data-proof-remove="${i}" aria-label="${t("common.remove")}">${icon("x", { size: 10 })}</button></span>`)
         .join("");
-      wireProofRemove(root, state, step);
+      wireProofRemove(root, state, step, partsChanged);
       input.value = "";
+      partsChanged(before);
     };
     proofAdd.addEventListener("click", addProof);
     qs("#part-proof-new", root).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addProof(); } });
-    wireProofRemove(root, state, step);
+    wireProofRemove(root, state, step, partsChanged);
   }
 
   if (step.kind === "funnel3") {
@@ -1176,14 +1238,19 @@ function joinParts(values) {
     .join(" ");
 }
 
-function wireProofRemove(root, state, step) {
+function wireProofRemove(root, state, step, onChange) {
   qsa("[data-proof-remove]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       const idx = Number(btn.dataset.proofRemove);
       const current = state.parts[step.key] || {};
+      const before = composeText(step, current);
       const list = (current.proof || []).filter((_, i) => i !== idx);
       state.parts[step.key] = { ...current, proof: list };
       btn.closest(".dna-chip").remove();
+      // The chips left behind still carry their old indexes — renumber, or
+      // the next × removes the wrong proof.
+      qsa("[data-proof-remove]", root).forEach((b, i) => { b.dataset.proofRemove = i; });
+      onChange?.(before);
     });
   });
 }
@@ -1338,7 +1405,7 @@ function oneLinerCardHTML(state) {
       <div class="flex items-center justify-between" style="margin-bottom:4px;">
         <h3 id="oneliner-title" style="margin:0;font-size:15px;">${t("dna.oneLiner.title")}</h3>
         <button type="button" class="btn btn-secondary" id="gen-oneliner" ${hasEnough ? "" : "disabled"}>
-          ${icon("bot", { size: 14 })}${state.answers.oneLiner ? t("dna.oneLiner.retry") : t("dna.oneLiner.generate")}
+          ${icon("bot", { size: 14 })}${state.answers.oneLiner ? t("dna.oneLiner.retry") : t("dna.oneLiner.generate")}${costTagHTML()}
         </button>
       </div>
       <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("dna.oneLiner.desc")}</p>
@@ -1471,7 +1538,7 @@ function wireReview(root, brandId, brand, state, refresh) {
     if (!menu) return;
     const unanswered = 8 - countAnswered(state.answers);
     menu.innerHTML = `
-      ${unanswered > 0 ? `<button type="button" data-act="ai">${icon("sparkle", { size: 15 })}${t("dna.aiFill.btnRest")}</button>` : ""}
+      ${unanswered > 0 ? `<button type="button" data-act="ai">${icon("sparkle", { size: 15 })}${t("dna.aiFill.btnRest")}${costTagHTML()}</button>` : ""}
       <button type="button" data-act="pdf">${icon("download", { size: 15 })}${t("dna.review.downloadPdf")}</button>
       <div class="menu-divider"></div>
       <button type="button" class="danger" data-act="reset">${icon("refresh", { size: 15 })}${t("dna.reset.btn")}</button>
@@ -1502,7 +1569,7 @@ function wireReview(root, brandId, brand, state, refresh) {
         const line = await generateOneLiner(ai, { brand, answers: state.answers });
         state.answers.oneLiner = line;
         qs("#ans-oneLiner", root).value = line;
-        oneLinerBtn.innerHTML = `${icon("bot", { size: 14 })}${t("dna.oneLiner.retry")}`;
+        oneLinerBtn.innerHTML = `${icon("bot", { size: 14 })}${t("dna.oneLiner.retry")}${costTagHTML()}`;
         statusEl.innerHTML = "";
       } catch (e) {
         statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeHtml(e.message) : t("dna.ai.errorShort")}</span></div>`;

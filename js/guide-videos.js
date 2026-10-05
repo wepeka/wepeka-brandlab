@@ -636,9 +636,12 @@ function hintAfterTour() {
 export function playFirstRunIntro() {
   if (videoSeen("kenalan")) return;
   markVideoSeen("kenalan");
-  const startTour = () => import("./tour.js").then((m) => m.startOnboardingTour());
-  // No published intro yet: go straight to the tour the video would offer.
-  whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: startTour, tourLabel: t("guide.video.choices.tour"), hint: true }) : startTour()));
+  const startTour = (opts) => import("./tour.js").then((m) => m.startOnboardingTour(opts));
+  // No published intro yet: start the tour on its own — the short first-run
+  // version that ends on "Mulai Brand DNA" (the full one stays in the ⋯
+  // menu → Tur website). Pressing "Tur website" on the video is an explicit ask,
+  // so that still gets the full tour.
+  whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: () => startTour(), tourLabel: t("guide.video.choices.tour"), hint: true }) : startTour({ firstRun: true })));
 }
 
 // A video that stands in front of something, once per account. Resolves

@@ -36,6 +36,17 @@
   --mofu: #ffc94a;
   --bofu: #ff8a5c;
 
+  /* Content status colours (.status-idea … .status-archived, the status
+     pills). Tokens so light theme can deepen them — the dark-theme hues
+     were hard-coded and measured 1.4–2.5:1 as text on light surfaces. */
+  --status-idea: #a19b92;
+  --status-draft: #7ab8ff;
+  --status-production: #c792ff;
+  --status-editing: #ff9d5c;
+  --status-scheduled: #ffc94a;
+  --status-published: #3ddc84;
+  --status-archived: #6f6a62;
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 20px;
@@ -86,17 +97,26 @@
   --border-soft: #ece6da;
   --text: #201c17;
   --text-muted: #6d655a;
-  --text-faint: #756d5c;
+  /* audit-1005: faint/health/funnel text deepened to >=4.5:1 on --surface-2
+     (#f2efe7) and on their own soft-tint badges (were 3.2–4.46:1). */
+  --text-faint: #716958;
   --accent: #b4530a;
   --accent-text: #fffaf3;
   --accent-soft: rgba(180,83,10,.13);
-  --health-good: #1f9d5c;
-  --health-average: #a6780a;
-  --health-poor: #c8402c;
+  --health-good: #177444;
+  --health-average: #866108;
+  --health-poor: #b33927;
   --info: #2f6fb8;
-  --tofu: #2f6fb8;
-  --mofu: #a6780a;
-  --bofu: #c25a2f;
+  --tofu: #2c67ab;
+  --mofu: #866108;
+  --bofu: #a14b27;
+  --status-idea: #6b6459;
+  --status-draft: #2b66aa;
+  --status-production: #8240bd;
+  --status-editing: #a54816;
+  --status-scheduled: #835e08;
+  --status-published: #177445;
+  --status-archived: #6f6a62;
   --shadow-lg: 0 24px 60px -20px rgba(30,24,14,.18);
   --shadow-md: 0 12px 30px -14px rgba(30,24,14,.14);
   --shadow-sm: 0 2px 10px rgba(30,24,14,.08);
@@ -177,7 +197,11 @@ input,select,textarea{ font-family: inherit; font-size: inherit; color: inherit;
 h1,h2,h3,h4{ font-family: var(--font-display); font-weight: 900; margin: 0; letter-spacing: -0.01em; }
 ::selection{ background: var(--accent); color: var(--accent-text); }
 
-:focus-visible{ outline: 2px solid var(--brand-tint); outline-offset: 2px; border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-tint) 25%, transparent); }
+/* Two-tone ring (audit-1005): [element][2px --bg gap][2px brand outline]
+   [2px --text ring]. The brand colour alone vanished for very dark or very
+   pale brands (1.1–1.3:1 against the page); the outer --text ring always
+   contrasts the page background, in both themes and inside dark cards. */
+:focus-visible{ outline: 2px solid var(--brand-tint); outline-offset: 2px; border-radius: 4px; box-shadow: 0 0 0 2px var(--bg), 0 0 0 6px var(--text); }
 
 /* ============================================================
    Glow scrollbar + reusable glow animation
@@ -534,6 +558,12 @@ main.view.wide{ max-width: 1440px; }
   --health-average: #ffc94a; --health-average-soft: rgba(255,201,74,.16);
   --health-poor: #ff6a5c; --health-poor-soft: rgba(255,106,92,.16);
   --tofu: #7ab8ff; --mofu: #ffc94a; --bofu: #ff8a5c;
+  /* audit-1005: always-dark card, so --bg (the "on --text" colour of active
+     chips/segments) and the status hues stay dark-theme values here too —
+     in light theme a selected chip's text was #faf8f4 on #f5f3ff (1.03:1). */
+  --bg: #0c0b0a;
+  --status-idea: #a19b92; --status-draft: #7ab8ff; --status-production: #c792ff; --status-editing: #ff9d5c;
+  --status-scheduled: #ffc94a; --status-published: #3ddc84; --status-archived: #6f6a62;
   position:relative; isolation:isolate; color: var(--text);
   border-radius: var(--radius-lg); padding:24px;
   border: 1px solid rgba(255,255,255,.14);
@@ -703,6 +733,11 @@ main.view.wide{ max-width: 1440px; }
   --health-good: #3ddc84; --health-good-soft: rgba(61,220,132,.14);
   --health-average: #ffc94a; --health-average-soft: rgba(255,201,74,.14);
   --health-poor: #ff6a5c; --health-poor-soft: rgba(255,106,92,.14);
+  /* audit-1005: see .glass-card — keep the dark-theme --bg/status hues. */
+  --bg: #0c0b0a;
+  --tofu: #7ab8ff; --mofu: #ffc94a; --bofu: #ff8a5c;
+  --status-idea: #a19b92; --status-draft: #7ab8ff; --status-production: #c792ff; --status-editing: #ff9d5c;
+  --status-scheduled: #ffc94a; --status-published: #3ddc84; --status-archived: #6f6a62;
   background: color-mix(in srgb, var(--brand-tint) 7%, rgb(17,15,22));
   border: 1px solid rgba(255,255,255,.09);
   /* !important: this card is always dark, in both themes, so its text must
@@ -746,9 +781,9 @@ main.view.wide{ max-width: 1440px; }
 
 .status-pill{ display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius: var(--radius-pill); font-size:12px; font-weight:700; background: var(--surface-2); border:1px solid var(--border); color: var(--text-muted); transition: box-shadow .3s, background .3s, border-color .3s; }
 .status-dot{ width:7px; height:7px; border-radius:50%; background: currentColor; }
-.status-idea{ color:#a19b92; } .status-draft{ color:#7ab8ff; } .status-production{ color:#c792ff; }
-.status-editing{ color:#ff9d5c; }
-.status-scheduled{ color:#ffc94a; } .status-published{ color:#3ddc84; } .status-archived{ color:#6f6a62; }
+.status-idea{ color: var(--status-idea); } .status-draft{ color: var(--status-draft); } .status-production{ color: var(--status-production); }
+.status-editing{ color: var(--status-editing); }
+.status-scheduled{ color: var(--status-scheduled); } .status-published{ color: var(--status-published); } .status-archived{ color: var(--status-archived); }
 
 /* Each phase gets its own tinted pill, not just a colored dot — the whole
    badge shifts treatment as content moves through Idea → Execution →
@@ -1190,7 +1225,9 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
    Notification bell
    ============================================================ */
 .notif-badge{ position:absolute; top:-3px; right:-3px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background: var(--health-poor); color:#fff; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; border:2px solid var(--bg); }
-.notif-panel{ min-width:340px; max-width:380px; max-height:70vh; overflow-y:auto; padding:8px; }
+/* audit-1005: never wider than the screen (was a fixed 340px minimum, which
+   overflowed a 360px phone — fitMenuToViewport only moves a menu). */
+.notif-panel{ min-width:min(340px, calc(100vw - 16px)); max-width:min(380px, calc(100vw - 16px)); max-height:70vh; overflow-y:auto; padding:8px; }
 .notif-section-head{ padding:9px 10px 5px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color: var(--text-faint); }
 .notif-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:8px 10px; border-radius:8px; background:transparent; border:0; color: var(--text); cursor:pointer; }
 .notif-row:hover{ background: var(--surface-2); }
@@ -1218,6 +1255,14 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .drawer-foot{ padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
 .modal-body{ padding:24px; max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); overflow-y: auto; }
 .modal-foot{ padding:16px 24px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px; }
+/* audit-1005: on phones a footer's buttons (.btn is nowrap) wrap onto extra
+   rows and share each row, instead of spilling past the screen edge (Brand
+   Book PDF: Tutup/Print were off-screen at 360px; campaign share report). */
+@media (max-width: 640px){
+  .modal-foot{ flex-wrap:wrap; padding:12px 16px; }
+  .modal-foot > .btn{ flex:1 1 auto; min-width:0; white-space:normal; }
+  .drawer-foot{ flex-wrap:wrap; padding:12px 16px; }
+}
 
 .intro-pitch{ font-size:14.5px; line-height:1.65; color: var(--text); margin:0 0 14px; }
 
@@ -1634,9 +1679,42 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .cal-layout.is-placing .cal-cell:not(.is-past){ cursor:copy; }
 .cal-layout.is-placing .cal-cell:not(.is-past):hover{ outline:2px dashed var(--accent); outline-offset:-2px; }
 @media (max-width: 960px){
-  .cal-layout.has-bank{ grid-template-columns:1fr; }
+  .cal-layout.has-bank{ grid-template-columns:minmax(0,1fr); }
   .content-bank{ position:static; max-height:none; }
   .content-bank-list{ max-height:360px; }
+}
+/* Keyboard focus on a day / an item (js/views/calendar.js makes them Tab
+   stops): drawn inside the cell, since the grid clips anything outside. */
+.cal-cell:focus-visible{ outline-offset:-4px; box-shadow: inset 0 0 0 2px var(--text); border-radius:0; }
+.cal-item:focus-visible{ outline-offset:0; box-shadow: 0 0 0 3px var(--text); }
+/* === audit-1005: Kalender on phones (<=640px) ===
+   At 375px the page was 516px wide: the header's three buttons didn't wrap
+   ("Konten Baru" off-screen), the period label kept a 180px minimum, and
+   week-list rows kept every tag on one line. Phones now open on the week
+   list (calendar.js render); the month grid that's still one tap away gets
+   two-line chips with the funnel colour as a left edge bar, instead of a
+   one-line chip that showed two letters of the title. */
+@media (max-width: 640px){
+  .page-head > .flex:last-child{ flex-wrap:wrap; }
+  .cal-head-actions{ width:100%; }
+  .cal-head-actions > .btn{ flex:1 1 auto; }
+  .cal-head-actions > .btn-primary{ order:-1; flex-basis:100%; }
+  .cal-nav{ flex:1 1 100%; min-width:0; }
+  .cal-month-label{ min-width:0; flex:1; font-size:17px; }
+  .cal-dow{ padding:8px 0; font-size:10px; letter-spacing:0; }
+  .cal-cell{ height:auto; min-height:92px; padding:3px; gap:3px; }
+  .cal-item{ align-items:flex-start; white-space:normal; overflow-wrap:anywhere; font-size:10px; line-height:1.25; padding:3px 3px 3px 6px; min-height:30px; max-height:32px; border-radius:5px; }
+  .cal-item .swatch{ position:absolute; left:0; top:0; bottom:0; width:3px; height:auto; border-radius:0; }
+  .cal-item-campaign-dot{ position:absolute; right:2px; top:2px; width:4px; height:4px; }
+  .cal-more{ font-size:10px; padding-left:0; }
+  .cal-timeline-label{ width:84px; }
+  .agenda-row{ flex-wrap:wrap; gap:8px 12px; padding:12px 14px; }
+  .agenda-date{ width:40px; }
+  /* !important: .ti carries an inline flex:1 — this makes it take the row so
+     the tags drop to a second line, lined up under the title. */
+  .agenda-row > .ti{ flex:1 1 calc(100% - 52px) !important; }
+  .agenda-row > .ti + *{ margin-left:52px; }
+  .agenda-row > .tag{ max-width:calc(100% - 52px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 }
 
 /* Campaign timeline strip — a lightweight Gantt row per active campaign
@@ -2138,6 +2216,7 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .bb-progress-bar{ width:160px; height:6px; border-radius:999px; background:var(--surface-2); overflow:hidden; }
 .bb-progress-bar span{ display:block; height:100%; background:var(--health-good); border-radius:999px; transition:width .2s ease; }
 .bb-progress-label{ font-size:11px; font-weight:700; color:var(--text-muted); }
+.bb-progress-basics{ display:inline-flex; align-items:center; gap:3px; color:var(--health-good); }
 
 /* Progressive preview (right pane, edit view) — a blank sheet that only
    gains content as each section is actually filled in. Plain white/dark
@@ -3862,6 +3941,9 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .notes-scope button.is-active{ background: var(--surface); color: var(--text); }
 .notes-body{ padding:0 12px 12px; overflow:auto; min-height:0; }
 body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
+/* Phones: on the full chat page the composer needs the bottom corner — the
+   coretan button would sit on top of "Langsung kasih ide". */
+@media (max-width: 720px){ body.chat-page-open .notes-fab{ display:none; } }
 @media (max-width: 640px){
   .notes-fab{ right:68px; bottom:16px; width:40px; height:40px; }
   .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 144px); max-height:calc(100dvh - 144px); }
@@ -4051,6 +4133,8 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    line breaks into blank gaps between them. User text keeps pre-wrap. */
 .consultant-msg-assistant{ white-space:normal; }
 @media (max-width:760px){
+  /* Teman = chat | memory never stacked: at 360px the chat column was 38px. */
+  .cp-page[data-mode="companion"]{ grid-template-columns: minmax(0,1fr); }
   .cp-page-chat{ height:calc(100vh - 150px); height:calc(100dvh - 150px); min-height:460px; }
   .cp-page-chat .cp-scope, .cp-page-chat .consultant-panel-body, .cp-page-chat .consultant-panel-input{ padding-left:12px; padding-right:12px; }
   .cp-page-chat .cp-foot{ padding:0 12px 10px; }
@@ -4473,6 +4557,16 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   .icon-btn{ min-width:40px; min-height:40px; }
   .chip-select button, .checkbox-chip{ min-height:40px; }
   .tab{ min-height:44px; }
+  /* audit-1005: the small transparent icon buttons (22–30px: mic/attach/
+     edit/delete chips, sticky-note actions, Creator's row delete, the
+     password eye). Their glyph stays the same size; only the tappable
+     box grows. (.help-btn and .dash-widget-collapse-btn are .icon-btn, so
+     the rule above already makes them 40px here.) */
+  .chip-icon-btn:not(.bs-thread-del), .sn-act, .creator-item-delete{ min-width:40px; min-height:40px; }
+  .password-toggle-btn{ width:40px; height:40px; right:2px; }
+  /* These two sit absolutely on a corner/edge of something else, so they
+     keep their look and get an invisible 40px hit area instead. */
+  .logo-remove::after, .companion-msg-del::after{ content:""; position:absolute; left:50%; top:50%; width:40px; height:40px; transform:translate(-50%, -50%); border-radius:50%; }
 }
 
 /* Konten list on phones: each row becomes a small card (title + actions on
@@ -4625,6 +4719,39 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
   .cp-page[data-mtab="memory"] [data-pane="ideas"]{ display:none; }
   .cp-page-chat{ height: calc(100dvh - 300px); min-height: 420px; }
 }
+/* Phones, chat tab: the box to type in sits on screen without scrolling.
+   It used to start ~50px below the fold, under the bottom bar: the page
+   head (Kembali, Panduan, title, a two-line description), the tabs and
+   the Obrolan row took ~460px above a card sized 100dvh - 300px. Now the
+   head is one eyebrow line plus a small title, and the page is exactly
+   the screen between the top bar (60px) and the bottom bar: the chat card
+   takes whatever is left, its composer pinned at its bottom. The Ide /
+   Memori tabs keep the normal scrolling page. */
+@media (max-width: 720px){
+  body.chat-page-open #chat-head{ margin-bottom:8px; }
+  body.chat-page-open #chat-head .page-eyebrow{ margin-bottom:2px; }
+  body.chat-page-open #chat-head h1{ font-size:19px; line-height:1.25; margin:0; }
+  body.chat-page-open #chat-head p{ display:none; }
+  .cp-mtabs{ margin-bottom:8px; }
+}
+@supports selector(:has(*)){
+  @media (max-width: 720px){
+    main.view-chat:has(.cp-page[data-mtab="chat"]){
+      /* flex:none so this height wins over #app's flex:1 (which would size
+         it from 100vh — taller than the screen while Safari's toolbar shows) */
+      flex:none; display:flex; flex-direction:column; min-height:0;
+      height: calc(100vh - 60px); height: calc(100dvh - 60px);
+      padding-top:10px; padding-bottom: calc(74px + env(safe-area-inset-bottom));
+    }
+    main.view-chat:has(.cp-page[data-mtab="chat"]) > #chat-head{ flex:none; }
+    main.view-chat:has(.cp-page[data-mtab="chat"]) > #chat-page-host{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+    main.view-chat #chat-page-host > .cp-mtabs{ flex:none; }
+    main.view-chat #chat-page-host > .cp-page[data-mtab="chat"]{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; align-items:stretch; gap:8px; }
+    main.view-chat .cp-page[data-mtab="chat"] > .bs-threads{ flex:none; }
+    main.view-chat .cp-page[data-mtab="chat"] .bs-thread-list{ max-height:28vh; overflow-y:auto; }
+    main.view-chat .cp-page[data-mtab="chat"] > .cp-page-chat{ flex:1 1 auto; height:auto; min-height:240px; }
+  }
+}
 
 /* === UI polish: Tugas C — page titles, lighter Beranda, progress feel === */
 
@@ -4659,7 +4786,15 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 :root[data-theme="light"] .view-home .glass-card:not(.journey-hero){
   --surface: #ffffff; --surface-2: #f2efe7; --surface-hover: #ebe6db;
   --border: #e2dbcc; --border-soft: #ece6da;
-  --text: #201c17; --text-muted: #6d655a; --text-faint: #98907f;
+  --text: #201c17; --text-muted: #6d655a; --text-faint: #716958;
+  /* audit-1005: these cards are light here, so undo the glass card's
+     dark-only tokens too (faint was #98907f = 3.0:1; health/funnel/status
+     hues were the neon dark ones on white). Same values as the light :root. */
+  --bg: #faf8f4;
+  --health-good: #177444; --health-average: #866108; --health-poor: #b33927;
+  --tofu: #2c67ab; --mofu: #866108; --bofu: #a14b27;
+  --status-idea: #6b6459; --status-draft: #2b66aa; --status-production: #8240bd; --status-editing: #a54816;
+  --status-scheduled: #835e08; --status-published: #177445; --status-archived: #6f6a62;
   border-color: var(--border);
   box-shadow: var(--shadow-sm);
   animation: none;
@@ -4752,6 +4887,13 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cp-script-caption b{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color: var(--text-muted); margin-bottom:2px; }
 .cp-script-caption p{ margin:0; white-space:pre-wrap; color: var(--text); }
 .cp-script-actions{ display:flex; flex-wrap:wrap; gap:8px; padding:10px 12px 12px; }
+/* A cut-off reply: the unfinished script is reading only (dashed, no
+   "Setujui & simpan"), then the "Jawaban kepotong — coba lagi" line. */
+.cp-script.is-partial{ border-style:dashed; border-color: var(--border); }
+.cp-script.is-partial .cp-script-head{ color: var(--text-muted); background: var(--surface-2); }
+.cp-script.is-partial .cp-script-body{ padding-bottom:10px; }
+.cp-cut{ display:flex; align-items:flex-start; gap:6px; margin:8px 0 0; font-size:12px; line-height:1.45; font-weight:600; color: var(--text-muted); }
+.cp-cut svg{ flex:none; margin-top:2px; color: var(--health-average); }
 /* The "Kamu bisa tanya AI lho!" bubble sat on top of the Coretan button
    (both anchored ~86px from the right). It now starts left of Coretan. */
 .consultant-fab-hint{ right:142px; max-width:calc(100vw - 320px); }
@@ -5091,4 +5233,24 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
   .recent-strip-row{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:4px; }
   .recent-card{ flex:0 0 68%; scroll-snap-align:start; }
   .recent-card.recent-card-new{ flex-basis:32%; }
+}
+
+/* audit-1005: trial reminder — Beranda's small trial countdown strip
+   (js/views/home.js trialReminderHTML), shown at 7/3/1 day(s) left in both
+   modes; the topbar badge is hidden on phones. */
+.trial-remind{ display:flex; align-items:center; gap:10px; margin:0 0 18px; padding:10px 10px 10px 14px; border-radius:14px; border:1px solid var(--border); background: var(--surface); }
+.trial-remind.is-soon{ border-color: color-mix(in srgb, var(--health-average) 45%, var(--border)); background: var(--health-average-soft); }
+.trial-remind.is-last{ border-color: color-mix(in srgb, var(--health-poor) 45%, var(--border)); background: var(--health-poor-soft); }
+.trial-remind-icon{ flex:none; display:grid; place-items:center; width:28px; height:28px; border-radius:9px; background: var(--accent-soft); color: var(--accent); }
+.trial-remind.is-soon .trial-remind-icon{ background: transparent; color: var(--health-average); }
+.trial-remind.is-last .trial-remind-icon{ background: transparent; color: var(--health-poor); }
+.trial-remind-text{ flex:1; min-width:0; margin:0; font-size:12.5px; line-height:1.45; color: var(--text-muted); }
+.trial-remind-text b{ color: var(--text); }
+.trial-remind-cta{ flex:none; }
+.trial-remind-close{ flex:none; width:28px; height:28px; }
+@media (max-width:640px){
+  .trial-remind{ flex-wrap:wrap; }
+  .trial-remind-text{ flex-basis: calc(100% - 80px); }
+  .trial-remind-close{ order:1; }
+  .trial-remind-cta{ order:2; margin-left:38px; }
 }
