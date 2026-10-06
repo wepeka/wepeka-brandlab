@@ -1,5 +1,5 @@
 import { backLinkHTML } from "../back-link.js";
-import { getBrand, updateBrand, getSettings } from "../store.js";
+import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles } from "../store.js";
 import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
@@ -124,7 +124,9 @@ const loadedCustomFonts = new Set();
 // Exported for Beranda's brand header (js/views/home.js), which sets the
 // tagline in the brand's own font — uploaded ones included.
 export function ensureCustomFont(name, dataUrl) {
-  if (!name || !dataUrl || loadedCustomFonts.has(name)) return;
+  // An "asset:" ref whose file hasn't loaded yet isn't a font source — and
+  // must not mark the name loaded, or the real file would never register.
+  if (!name || !dataUrl || String(dataUrl).startsWith("asset:") || loadedCustomFonts.has(name)) return;
   loadedCustomFonts.add(name);
   const style = document.createElement("style");
   style.textContent = `@font-face{ font-family:'${name.replace(/['\\]/g, "")}'; src:url(${dataUrl}); font-display:swap; }`;
@@ -175,7 +177,9 @@ function answersFromBrand(brand) {
     // asks before silently overwriting what someone already wrote.
     aiCopy: { valueProposition: null, colorEssence: null, edited: { valueProposition: false, colorEssence: {} }, ...(bg.aiCopy || {}) },
     bookStyle: BOOK_STYLE_KEYS.includes(bg.bookStyle) ? bg.bookStyle : "classic",
-    bookPhoto: /^(data:image\/|https:\/\/)/.test(bg.bookPhoto || "") ? bg.bookPhoto.replace(/['"()\\]/g, "") : "",
+    // "asset:<id>" is accepted too (a later release may move the photo out
+    // of the brand doc, js/brand-assets.js): kept as is, never dropped.
+    bookPhoto: /^(data:image\/|https:\/\/|asset:[a-z0-9]+$)/.test(bg.bookPhoto || "") ? bg.bookPhoto.replace(/['"()\\]/g, "") : "",
   };
 }
 
@@ -218,6 +222,14 @@ export function render(root, { brandId, section }) {
     paint(root, brandId, state.brand, state, refresh);
   };
   refresh();
+  // Uploaded files load without blocking the page (js/store.js
+  // loadBrandAssets): once they're in, fill them into this page's own
+  // answers IN PLACE — the step handlers hold that object, so a photo or
+  // style picked meanwhile isn't lost (same files as stored: saving it
+  // changes nothing).
+  loadBrandAssets(brandId).then(() => {
+    if (root.isConnected && fillGuidelinesFiles(brandId, state.answers)) refresh();
+  });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
   return () => {};
 }
@@ -3578,6 +3590,9 @@ async function bakeImageFilters(host) {
 // pages blows past the browser's max canvas height and comes out blank.
 async function downloadBrandBookPdf(brand, a, onProgress) {
   if (!ownsBookStyle(bookStyleOf(a))) throw new Error("locked book style");
+  // Every file in the PDF, not a still-loading placeholder.
+  await loadBrandAssets(brand);
+  a = hydrateGuidelines(brand.id, a);
   await ensurePdfLibs();
   const wrap = document.createElement("div");
   wrap.innerHTML = `<div ${bookSheetAttrs(a, "bbk-export-host")}>${buildBrandBookPages(brand, a, { forExport: true }).join("")}</div>`;
@@ -3607,7 +3622,10 @@ async function downloadBrandBookPdf(brand, a, onProgress) {
 // PDF, straight from a brand doc, with no store and nothing editable. A
 // premium style the account doesn't own falls back to the free one instead
 // of refusing to open.
-export function openBrandBookReadOnly(brand) {
+export async function openBrandBookReadOnly(brand) {
+  // Read straight from Firestore (no store): its files live in
+  // brands/{id}/assets now, fetched here before the book is drawn.
+  brand = await withBrandAssets(brand);
   const a = answersFromBrand(brand);
   if (!ownsBookStyle(bookStyleOf(a))) a.bookStyle = BOOK_STYLES[0].key;
   openBrandBookPdf(brand, a);

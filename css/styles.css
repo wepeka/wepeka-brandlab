@@ -3,8 +3,8 @@
    Palette + type pulled straight from wepeka.com (warm near-black,
    amber accent, Grift Black display / JUST Sans body)
    ============================================================ */
-@font-face{ font-family:"Grift Black"; src:url("../fonts/grift-black.woff") format("woff"), url("../fonts/grift-black.ttf") format("truetype"); font-weight:900; font-style:normal; font-display:swap; }
-@font-face{ font-family:"JUST Sans"; src:url("../fonts/JUST Sans Regular.woff") format("woff"), url("../fonts/JUST Sans Regular.otf") format("opentype"); font-weight:400; font-style:normal; font-display:swap; }
+@font-face{ font-family:"Grift Black"; src:url("../fonts/grift-black.woff2") format("woff2"), url("../fonts/grift-black.woff") format("woff"), url("../fonts/grift-black.ttf") format("truetype"); font-weight:900; font-style:normal; font-display:swap; }
+@font-face{ font-family:"JUST Sans"; src:url("../fonts/JUST Sans Regular.woff2") format("woff2"), url("../fonts/JUST Sans Regular.woff") format("woff"), url("../fonts/JUST Sans Regular.otf") format("opentype"); font-weight:400; font-style:normal; font-display:swap; }
 @font-face{ font-family:"JUST Sans"; src:url("../fonts/JUST Sans SemiBold.woff2") format("woff2"); font-weight:600; font-style:normal; font-display:swap; }
 @font-face{ font-family:"JUST Sans"; src:url("../fonts/JUST Sans Bold.woff2") format("woff2"); font-weight:700; font-style:normal; font-display:swap; }
 @font-face{ font-family:"JUST Sans"; src:url("../fonts/JUST Sans ExBold.woff2") format("woff2"); font-weight:800; font-style:normal; font-display:swap; }
@@ -5272,4 +5272,179 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
   .trial-remind-text{ flex-basis: calc(100% - 80px); }
   .trial-remind-close{ order:1; }
   .trial-remind-cta{ order:2; margin-left:38px; }
+}
+
+/* reminders — Settings → Pengingat (js/reminders.js): icon + title + on/off
+   pill per channel card, and wrapping button rows. */
+.rem-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:14px; }
+.rem-icon{ flex:none; display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background: var(--accent-soft); color: var(--accent); }
+.rem-head-text{ flex:1; min-width:0; }
+.rem-title-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.rem-title-row .status-pill{ flex:none; }
+.rem-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+.rem-actions-quiet{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+.rem-link-row{ margin-bottom:10px; }
+.rem-link-row .input{ flex:1; min-width:0; font-size:12.5px; }
+
+/* ============================================================
+   Beranda tidy-up 2026-10-06 — js/views/home.js, js/weekly-recap.js,
+   js/ai-low-credit.js. One primary action (Hari ini, the only card with a
+   real glow), one weekly card (Minggu ini, the regular glass widget), quiet
+   extras (Lainnya: small cards, no breathing glow). Phones: one column in
+   reading order — the two column wrappers are display:contents there and
+   `order` sets the sequence. From 1080px: main column + side column.
+   ============================================================ */
+.home-notices{ display:flex; flex-direction:column; gap:10px; margin:0 0 18px; }
+.home-notices .trial-remind{ margin:0; }
+.home-layout{ display:flex; flex-direction:column; gap:18px; min-width:0; }
+.home-col{ display:contents; }
+.home-b-today{ order:1; }
+.home-b-recap{ order:2; }
+.home-b-week{ order:3; }
+.home-b-goal{ order:4; }
+.home-b-recent{ order:5; }
+.home-b-more{ order:6; }
+.home-layout .journey-hero, .home-layout .dash-widget-card, .home-layout .dash-widget-collapsed,
+.home-layout .recent-strip, .home-layout .journey-collapsed{ margin:0; }
+.home-analytics{ margin-top:32px; }
+@media (min-width:1080px){
+  .home-layout{ display:grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); gap:24px; align-items:start; }
+  .home-col{ display:flex; flex-direction:column; gap:24px; min-width:0; }
+}
+/* Accent as TEXT on Beranda's light-theme cards: the brand tint itself can
+   be pale (the default amber is ~2:1 on white), so it's deepened there. */
+:root[data-theme="light"] .view-home .dash-widget-card,
+:root[data-theme="light"] .view-home .glass-card:not(.journey-hero){ --home-accent-text: color-mix(in srgb, var(--brand-tint) 58%, #1a1206); }
+.view-home .dash-widget-card-actions .link{ color: var(--home-accent-text, var(--accent)); }
+.view-home .home-layout button.link{ border:0; background:none; padding:0; font:inherit; font-weight:700; cursor:pointer; color: var(--home-accent-text, var(--accent)); }
+
+/* Hari ini: a calm, steady glow (no pulse) and at most one quiet link. */
+.view-home .journey-hero-today{
+  border-color: color-mix(in srgb, var(--accent) 42%, rgba(255,255,255,.14));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent), 0 18px 48px -10px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.journey-hero-actions{ display:flex; align-items:center; gap:10px 18px; flex-wrap:wrap; margin-top:8px; }
+.journey-hero-actions .journey-hero-cta{ margin-top:0; }
+.journey-hero-secondary{ font-size:13px; font-weight:700; color: var(--text-muted); padding:8px 2px; }
+.journey-hero-secondary:hover{ color: var(--text); text-decoration:underline; text-underline-offset:3px; }
+@media (max-width:720px){
+  .journey-hero-actions{ width:100%; flex-direction:column; align-items:stretch; gap:4px; }
+  .journey-hero-secondary{ text-align:center; }
+}
+
+/* Minggu ini (js/weekly-recap.js weekCardParts) */
+.wk-section + .wk-section{ margin-top:16px; padding-top:14px; border-top:1px solid var(--border-soft); }
+.wk-section-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:10px; font-size:11.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); }
+.wk-count{ font-size:12px; font-weight:700; letter-spacing:0; text-transform:none; color: var(--text-muted); }
+.wk-stats{ display:grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap:8px; }
+.wk-stat{ display:flex; flex-direction:column; gap:3px; min-width:0; padding:10px 12px; border-radius:12px; background: var(--surface-2); }
+.wk-stat b{ font-family: var(--font-display); font-size:21px; line-height:1.1; color: var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.wk-stat b span{ font-size:14px; color: var(--text-muted); }
+.wk-stat small{ font-size:11.5px; line-height:1.35; color: var(--text-muted); }
+.wk-stat.is-good b{ color: var(--health-good); }
+.wk-best{ display:flex; align-items:center; gap:8px; width:100%; min-height:44px; margin-top:10px; padding:9px 12px; border-radius:12px; border:1px solid var(--border); background:transparent; color: var(--text); font:inherit; text-align:left; cursor:pointer; transition: border-color .15s; }
+.wk-best:hover{ border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.wk-best-label{ flex:none; display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; color: var(--home-accent-text, var(--accent)); }
+.wk-best-title{ flex:1; min-width:0; font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wk-best-meta{ flex:none; font-size:12px; color: var(--text-muted); }
+.wk-note{ margin:10px 0 0; font-size:12.5px; line-height:1.5; color: var(--text-muted); }
+.wk-rows .wk-note{ margin:0; }
+.wk-report{ display:flex; align-items:center; justify-content:space-between; gap:8px 10px; flex-wrap:wrap; margin-top:10px; padding:10px 12px; border-radius:12px; background: color-mix(in srgb, var(--accent) 10%, transparent); border:1px solid color-mix(in srgb, var(--accent) 32%, transparent); }
+.wk-report-text{ display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color: var(--text); }
+.wk-report-text svg{ flex:none; color: var(--home-accent-text, var(--accent)); }
+.wk-report-actions{ display:flex; gap:6px; }
+.wk-rows{ display:flex; flex-direction:column; }
+.wk-rows .home-late-bar{ margin-bottom:4px; }
+.wk-row{ cursor:pointer; min-height:48px; padding:10px 0; }
+.wk-row:hover .ti .t{ text-decoration:underline; text-underline-offset:2px; }
+.wk-date{ flex:none; width:40px; display:flex; flex-direction:column; align-items:center; padding:4px 0; border-radius:10px; background: var(--surface-2); line-height:1.1; }
+.wk-date b{ font-size:16px; }
+.wk-date small{ font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color: var(--text-muted); }
+.wk-late-text{ color: var(--health-poor) !important; }
+.wk-late-tag{ background: var(--health-poor-soft); color: var(--health-poor); }
+.wk-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:14px; }
+@media (max-width:480px){ .wk-foot .btn-primary, .wk-foot .btn-secondary{ flex:1 1 100%; justify-content:center; } }
+
+/* Finished Event / Grow Brand ladder (js/weekly-recap.js recapCardHTML) */
+.home-recap{ position:relative; padding:20px 22px; border-color: color-mix(in srgb, var(--health-good) 40%, rgba(255,255,255,.14)); }
+.home-recap:hover{ transform:none; }
+.home-recap-close{ position:absolute; top:10px; right:10px; width:34px; height:34px; }
+.home-recap-eyebrow{ display:inline-flex; align-items:center; gap:6px; margin-right:40px; font-size:12px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color: var(--health-good); }
+.home-recap h2{ margin:8px 40px 10px 0; font-size:22px; line-height:1.2; }
+.home-recap-stats{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
+.home-recap-stats li{ display:flex; align-items:flex-start; gap:8px; font-size:13.5px; line-height:1.45; }
+.home-recap-stats li svg{ flex:none; margin-top:3px; color: var(--health-good); }
+.home-recap-body{ margin:0 0 14px; font-size:13px; line-height:1.55; color: var(--text-muted); }
+.home-recap-actions{ display:flex; align-items:center; gap:10px 18px; flex-wrap:wrap; }
+.home-recap-actions .link{ font-size:13px; font-weight:700; color: var(--home-accent-text, var(--accent)); }
+@media (max-width:560px){ .home-recap-actions .btn{ width:100%; justify-content:center; } }
+
+/* Lainnya: small, quiet cards (no breathing glow, no lift) */
+.home-section-title{ margin:0 2px 10px; font-family: var(--font-body); font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--text-muted); }
+.home-more-list{ display:flex; flex-direction:column; gap:12px; }
+.home-mini{ padding:16px 18px; animation:none; }
+.home-mini:hover{ transform:none; }
+.home-mini-head{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.home-mini-head h3{ flex:1; min-width:0; font-family: var(--font-body); font-size:14px; font-weight:800; letter-spacing:0; color: var(--text); }
+.home-mini-icon{ flex:none; width:30px; height:30px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--home-accent-text, var(--accent)); }
+.home-mini-extra{ flex:none; }
+.home-mini-text{ margin:0; font-size:12.5px; line-height:1.5; color: var(--text-muted); }
+.home-mini .companion-greeting + .home-mini-text{ margin-top:6px; }
+.home-mini-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.home-mini .companion-greeting{ font-size:13px; }
+.home-mini .companion-actions{ margin-top:10px; }
+.home-mini-details{ margin-top:12px; padding-top:6px; border-top:1px solid var(--border-soft); }
+.home-mini-details > summary{ list-style:none; display:flex; align-items:center; gap:8px; min-height:40px; cursor:pointer; font-size:12.5px; font-weight:700; color: var(--text-muted); }
+.home-mini-details > summary::-webkit-details-marker{ display:none; }
+.home-mini-details > summary span{ flex:1; }
+.home-mini-details > summary:hover{ color: var(--text); }
+.home-mini-details > summary svg:last-child{ transition: transform .15s; }
+.home-mini-details[open] > summary svg:last-child{ transform: rotate(180deg); }
+.home-mini-details .companion-moments{ margin-top:2px; padding-top:0; border-top:0; }
+.home-mini-manage{ margin-top:8px; font-size:12px; }
+.home-more .journey-collapsed{ animation:none; }
+.home-more .journey-collapsed:hover{ transform:none; }
+
+/* Konten terbaru: three tiles + "Konten baru"; a 2×2 grid on phones
+   instead of a sideways-scrolling strip. */
+.recent-strip-title{ margin:0; font-family: var(--font-body); letter-spacing:.08em; }
+.home-layout .recent-strip-row{ grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, .75fr); }
+@media (max-width:640px){
+  .home-layout .recent-strip-row{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow:visible; scroll-snap-type:none; padding-bottom:0; }
+  .home-layout .recent-card{ flex:none; }
+  .home-layout .recent-card.recent-card-new{ min-height:96px; }
+}
+
+/* Low AI credit note (js/ai-low-credit.js) — same shape as the trial strip */
+.ai-low-note{ display:flex; align-items:center; gap:10px; padding:10px 10px 10px 14px; border-radius:14px; border:1px solid var(--border); background: var(--surface); }
+.ai-low-icon{ flex:none; display:grid; place-items:center; width:28px; height:28px; border-radius:9px; background: var(--accent-soft); color: var(--accent); }
+.ai-low-text{ flex:1; min-width:0; margin:0; font-size:12.5px; line-height:1.45; color: var(--text-muted); }
+.ai-low-link{ flex:none; font-size:12.5px; font-weight:700; color: var(--accent); }
+.ai-low-close{ flex:none; width:28px; height:28px; }
+@media (max-width:640px){
+  .ai-low-note{ flex-wrap:wrap; }
+  .ai-low-text{ flex-basis: calc(100% - 80px); }
+  .ai-low-close{ order:1; }
+  .ai-low-link{ order:2; margin-left:38px; }
+}
+
+/* Content Bank: saved ideas (js/views/calendar.js ideaGroupHTML) */
+.bank-item.is-idea{ border-style:dashed; background: transparent; }
+.bank-item-idea-icon{ flex:none; display:grid; place-items:center; width:18px; height:18px; margin-top:1px; border-radius:6px; background: var(--accent-soft); color: var(--accent); }
+/* Phones: a little less padding so 375px keeps room for the content. */
+@media (max-width:480px){
+  .home-layout .dash-widget-card{ padding:18px 16px; }
+  .home-layout .dash-widget-card-head{ margin-bottom:14px; }
+  .home-mini{ padding:14px 14px; }
+  .home-recap{ padding:18px 16px; }
+}
+/* ===== end Beranda tidy-up 2026-10-06 ===== */
+/* Beranda tidy-up: "Minggu ini" header on phones — the icon gives its width
+   to the title so "Minggu ini" and the date stay on one line each, next to
+   "Kalender →" and the collapse button. */
+@media (max-width: 640px){
+  .home-b-week .dash-widget-card-icon{ display:none; }
+  .home-b-week .dash-widget-card-title{ flex:1 1 auto; min-width:0; }
+  .home-b-week .dash-widget-card-title h2,
+  .home-b-week .dash-widget-card-title p{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 }

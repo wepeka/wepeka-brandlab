@@ -86,7 +86,8 @@ function usageTotal(u) {
 
 // Usage in the current window (today, this month on a monthly cap, or the
 // whole trial on a total cap) — read straight off the live aiUsage/{uid}
-// doc api/ai.js writes after every counted call.
+// doc api/ai.js writes when a counted call starts (and gives back when the
+// call fails, so a failed call shows up for a moment, then disappears).
 export function aiUsageToday() {
   const u = getAiUsageDoc();
   const period = aiQuotaPeriod();
@@ -122,7 +123,8 @@ export function aiLimitReached() {
 }
 export const aiPlanUsedUp = () => aiUsageToday() >= aiDailyLimit();
 
-// The server (api/ai.js) is what actually counts a call now, in the same
-// transaction that confirms it succeeded — nothing left for the client to
-// record. Kept as a no-op export so nothing that still imports it breaks.
+// The server (api/ai.js) is what actually counts a call now — charged in a
+// transaction before the AI is asked, refunded if no reply comes
+// (api/_aiQuota.js reserveCall/releaseCall) — nothing left for the client
+// to record. Kept as a no-op export so nothing that still imports it breaks.
 export function recordAiUsage() {}

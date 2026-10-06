@@ -14,7 +14,7 @@
 //   new-content  → new content picker with campaign context
 //   info         → no button on the campaign page (Beranda links to it)
 import { campaignStages, activeStageIndex, readStage, ladderAdvanceState, campaignActivities, poolFor, STALE_DAYS } from "./campaign-metrics.js";
-import { localISODate, daysBetween, formatEventDate } from "./store.js";
+import { localISODate, daysBetween, formatEventDate, performanceCheckDue, PERF_CHECK_DAYS } from "./store.js";
 import { getMode } from "./mode.js";
 import { levelReminders } from "./goal-plan.js";
 import { t } from "./i18n.js";
@@ -187,6 +187,38 @@ export function nextActions({ brand, campaign, content, settings, limit = 3 }) {
   }
 
   return out.sort((a, b) => a.priority - b.priority).slice(0, limit);
+}
+
+// "Isi angka" two days after posting: the newest published post whose
+// numbers are due (store.js performanceCheckDue — asked at day 2 and day 7,
+// never after day 30), as a dated brand-level action for Beranda's "Hari
+// ini". Only posts from the last two weeks — older ones wait in Konten's
+// "Update Engagement" list instead of crowding the one action on Home. Its
+// cta opens Quick Fill (js/views/content-list.js openQuickFillModal) right
+// there. Priority 3.5: after a late post, stale profile numbers and an
+// upload due within 3 days; before everything slower.
+export const PERF_CHECK_HOME_MAX_DAYS = 14;
+export function performanceCheckAction(content, now = Date.now()) {
+  const DAY = 86400000;
+  const pubMs = (c) => (c.publishedDate ? new Date(`${c.publishedDate}T00:00:00`).getTime() : Number(c.createdAt) || 0);
+  const due = content
+    .filter((c) => !c.archived && c.status === "published" && performanceCheckDue(c, now) && (now - pubMs(c)) / DAY <= PERF_CHECK_HOME_MAX_DAYS)
+    .sort((a, b) => pubMs(b) - pubMs(a));
+  const c = due[0];
+  if (!c) return null;
+  const days = Math.max(PERF_CHECK_DAYS[0], Math.floor((now - pubMs(c)) / DAY));
+  const more = due.length - 1;
+  const why = [t(days >= PERF_CHECK_DAYS[1] ? "next.perfCheck.why7" : "next.perfCheck.why2", { days }), more ? t("next.perfCheck.more", { n: more }) : ""].filter(Boolean).join(" ");
+  return { id: `perf-check-${c.id}`, priority: 3.5, label: t("next.perfCheck.label", { title: title(c) }), why, cta: { type: "performance", label: t("next.perfCheck.cta"), contentId: c.id } };
+}
+
+// Beranda's "Hari ini": the brand's top campaign action, unless a dated
+// "Isi angka" is more urgent. `campaign` is null for the brand-level one.
+export function brandTodayAction({ brand, campaigns, content, settings, now = Date.now() }) {
+  const top = brandTopAction({ brand, campaigns, content, settings });
+  const perf = performanceCheckAction(content, now);
+  if (perf && (!top || perf.priority < top.action.priority)) return { campaign: null, action: perf };
+  return top;
 }
 
 // The single most urgent action across a brand's active campaigns —

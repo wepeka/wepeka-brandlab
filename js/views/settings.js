@@ -2,7 +2,7 @@ import {
   getSettings, addPlatform, removePlatform, addFormat, removeFormat,
   getGlobalAiSettings, updateGlobalAiSettings, deleteLegacyGlobalAiKeys, updateGlobalBrandsBg,
   listBrands, archiveBrand, deleteBrand, listContent,
-  exportJSON, importJSON, resetAll, onChange,
+  exportJSON, prepareExport, importJSON, resetAll, onChange,
   listTrash, restoreTrashItem, purgeTrashItem, TRASH_DAYS, getBrand, localISODate,
 } from "../store.js";
 import { getMode } from "../mode.js";
@@ -21,6 +21,7 @@ import { aiDailyLimit, aiQuotaPeriod, aiUsageToday } from "../ai-usage.js";
 import { canTopUp } from "../ai-topup.js";
 import { t, getLang, setLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { renderRemindersPanel } from "../reminders.js";
 
 // One list for both modes. `pro` panels only show in Pro; the AI panel
 // only exists for the Wepeka admin account (it edits the shared key —
@@ -30,6 +31,8 @@ const PANELS = [
   { key: "brands", labelKey: "settings.panel.brands" },
   { key: "language", labelKey: "settings.panel.language" },
   { key: "account", labelKey: "settings.panel.account" },
+  // Opt-in upload reminders (js/reminders.js) — both modes; all off by default.
+  { key: "reminders", labelKey: "settings.panel.reminders" },
   { key: "platforms", labelKey: "settings.panel.platforms", pro: true },
   { key: "formats", labelKey: "settings.panel.formats", pro: true },
   // Sampah is its own panel so Pemula can reach it too — every delete dialog
@@ -84,6 +87,7 @@ function paint(root, state, refresh) {
   else if (state.panel === "data") renderData(content);
   else if (state.panel === "trash") renderTrash(content);
   else if (state.panel === "account") renderAccount(content);
+  else if (state.panel === "reminders") renderRemindersPanel(content);
 }
 
 function renderLanguage(content) {
@@ -373,7 +377,17 @@ function renderData(content) {
       <button class="btn btn-danger" id="reset-btn">${icon("trash", { size: 15 })}${t("set.data.resetBtn")}</button>
     </div>
   `;
-  qs("#export-btn").addEventListener("click", () => {
+  qs("#export-btn").addEventListener("click", async () => {
+    // Files, sales and chat threads load per brand: fetch the rest first —
+    // and if any of it can't be read, say so instead of a partial backup.
+    let skipped = [];
+    try {
+      skipped = (await prepareExport()) || [];
+    } catch (err) {
+      console.error("Backup export failed", err);
+      toast(t("store.syncLoadFailed", { what: t("store.sync.brands") }), "error");
+      return;
+    }
     const blob = new Blob([exportJSON()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -381,6 +395,12 @@ function renderData(content) {
     a.download = `brandlab-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    // A file a brand still pointed at but that no longer exists: left out —
+    // say which, so it can be uploaded again.
+    if (skipped.length) {
+      const list = skipped.map((f) => `${f.brandName} (${t(`store.fileKind.${f.kind}`)})`).join(", ");
+      toast(t("store.exportSkipped", { count: skipped.length, list }), "error");
+    }
   });
   qs("#import-btn").addEventListener("click", () => qs("#import-file").click());
   qs("#import-file").addEventListener("change", async (e) => {

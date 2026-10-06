@@ -88,6 +88,7 @@ export default {
   "ai.error.tooLarge": { en: "That's too much text to send to the AI at once — shorten it a little and try again.", id: "Teks yang dikirim ke AI terlalu panjang — persingkat sedikit, lalu coba lagi." },
   "ai.error.tooManyImages": { en: "Too many images at once — send up to 6.", id: "Kebanyakan gambar sekaligus — kirim maksimal 6." },
   "ai.error.deactivated": { en: "This account has been deactivated. Contact Wepeka for help.", id: "Akun ini sudah dinonaktifkan. Hubungi Wepeka untuk bantuan." },
+  "ai.error.busy": { en: "The AI is still working on your other requests. Wait until one finishes, then try again — no AI credit was used.", id: "AI masih mengerjakan permintaanmu yang lain. Tunggu salah satunya selesai, lalu coba lagi — AI credit kamu tidak terpakai." },
 
   // js/views/brands.js — the brand modal's audience-language select
   "ai.audienceLang.label": { en: "Audience language", id: "Bahasa audiens" },

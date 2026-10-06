@@ -46,6 +46,7 @@
 // its own; there a one-line chip offers another tab when a message clearly
 // belongs there (keyword rules, or the model's [[handoff:…]]).
 import { t, getLang, campaignDisplayName } from "./i18n.js";
+import { draftFromIdea } from "./idea-draft.js";
 import {
   getBrand, getSettings, listContent, listCampaigns, listOverdueAndDueSoon, createContent, addBrandIdea, updateBrand, updateBrandIdea, removeBrandIdea, listBrandIdeas, localISODate,
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, deleteBrainstorm,
@@ -323,17 +324,19 @@ function removeSavedScoped(brandId, id) {
 // Opened from an empty series day in the Calendar: the first draft of that
 // series lands on that date (once — the next one is undated as usual).
 const episodeDate = new Map(); // seriesId -> ISO date
-function draftFromScope(brandId, { title, idea = "", funnel = "TOFU", notes = "" }) {
+function scopePlacement(brandId) {
   const info = chatScopeInfo(brandId);
   const date = info.series ? episodeDate.get(info.series.id) : "";
   if (date) episodeDate.delete(info.series.id);
-  return createContent(brandId, {
+  return {
     ...(date && date >= localISODate() ? { scheduleDate: date } : {}),
-    title, funnel, idea, status: "idea", ...(notes ? { notes } : {}),
     campaignId: info.campaign?.id || "",
     campaignPhaseId: info.stage && info.stage.kind !== "level" ? info.stage.id : "",
     seriesId: info.series?.id || "",
-  });
+  };
+}
+function draftFromScope(brandId, { title, idea = "", funnel = "TOFU", notes = "" }) {
+  return createContent(brandId, { ...scopePlacement(brandId), title, funnel, idea, status: "idea", ...(notes ? { notes } : {}) });
 }
 
 // A clean Brainstorm conversation, optionally about something (a campaign,
@@ -2068,10 +2071,8 @@ function wireSavedIdeas(root, brandId, { rerender, close = () => {} }) {
   on("[data-chat-saved-draft]", (btn) => {
     const i = ideaById(btn.dataset.chatSavedDraft);
     if (!i) return;
-    // Notes and hook candidates travel with the idea into the draft.
-    const notes = [i.notes, i.hooks?.length ? `${t("bs.concept.hooksLabel")}:\n${i.hooks.map((h) => `- ${h}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
-    const c = draftFromScope(brandId, { title: i.text, idea: i.description || "", notes });
-    patchSavedScoped(brandId, i.id, { status: "used", contentId: c.id });
+    // Same path as dropping the idea on a date in Bank Konten (js/idea-draft.js).
+    const c = draftFromIdea(brandId, i, scopePlacement(brandId));
     ideasFocus = false;
     close();
     if (!page) togglePanel(brandId, false);
@@ -2166,10 +2167,10 @@ function openConceptModal(f, { isNew, onSave }) {
     title: isNew ? t("bs.concept.modalNew") : t("bs.concept.modalEdit"),
     wide: true,
     bodyHTML: `
-      <div class="field"><label>${t("bs.concept.title")}</label><input class="input" id="cm-title" maxlength="140" value="${esc(f.title || "")}" /></div>
-      <div class="field"><label>${t("bs.concept.angle")}</label><textarea class="textarea" id="cm-angle" style="min-height:64px;">${esc(f.angle || "")}</textarea></div>
-      <div class="field"><label>${t("bs.concept.notes")}</label><textarea class="textarea" id="cm-notes" style="min-height:90px;">${esc(f.notes || "")}</textarea></div>
-      <div class="field"><label>${t("bs.concept.hooks")}</label><textarea class="textarea" id="cm-hooks" style="min-height:90px;">${esc((f.hooks || []).join("\n"))}</textarea></div>`,
+      <div class="field"><label for="cm-title">${t("bs.concept.title")}</label><input class="input" id="cm-title" maxlength="140" value="${esc(f.title || "")}" /></div>
+      <div class="field"><label for="cm-angle">${t("bs.concept.angle")}</label><textarea class="textarea" id="cm-angle" style="min-height:64px;">${esc(f.angle || "")}</textarea></div>
+      <div class="field"><label for="cm-notes">${t("bs.concept.notes")}</label><textarea class="textarea" id="cm-notes" style="min-height:90px;">${esc(f.notes || "")}</textarea></div>
+      <div class="field"><label for="cm-hooks">${t("bs.concept.hooks")}</label><textarea class="textarea" id="cm-hooks" style="min-height:90px;">${esc((f.hooks || []).join("\n"))}</textarea></div>`,
     footHTML: `<button type="button" class="btn btn-secondary" id="cm-cancel">${t("common.cancel")}</button><button type="button" class="btn btn-primary" id="cm-save">${t("bs.concept.saveBtn")}</button>`,
   });
   overlay.querySelector("#cm-cancel").addEventListener("click", () => closeOverlay(overlay));

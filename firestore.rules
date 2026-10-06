@@ -36,9 +36,11 @@ service cloud.firestore {
     // doc, and this counter along with it, is now reserved exclusively by
     // the Admin SDK (wpk-dp's createTrialAccount()/createAccount(), or this
     // repo's Midtrans webhook), which bypasses these rules entirely.
+    // Read access closed (2026-10-06): no client reads it — only the Admin
+    // SDK does (wpk-dp brandlab-db.ts, this repo's webhook/seed scripts) —
+    // and any signed-in account could read the customer count off it.
     match /meta/accountCounter {
-      allow read: if request.auth != null;
-      allow write: if false;
+      allow read, write: if false;
     }
 
     // How many Founder Lifetime / Founder Ultimate slots are sold — shown
@@ -121,10 +123,152 @@ service cloud.firestore {
       return request.resource.data.ownerId == resource.data.ownerId;
     }
 
+    // ---- Plan brand limit, enforced here (2026-10-06) -------------------
+    // brandCounts/{uid} = { count, op, at }: how many of the account's
+    // brands are ACTIVE (not archived, not in Trash) — what js/account.js
+    // canCreateBrand/lockedBrandIds count. Only the server creates it (POST
+    // /api/brands/recount, Admin SDK — also the repair path). The client
+    // (js/store.js countOp) can only move it by one, in the same batch as a
+    // brand write that changes that brand's activeness, naming the brand
+    // (op) and stamped with the server time (at == request.time proves it's
+    // the same request). EVERY inactive → active move (a new brand,
+    // unarchive, restore from Trash) must keep the count within the plan's
+    // limit. Each check is short-circuited so an ordinary brand edit (no
+    // activeness change) costs no extra document read.
+    function brandCountPath() {
+      return /databases/$(database)/documents/brandCounts/$(request.auth.uid);
+    }
+    function brandActive(data) {
+      return data.get('archived', false) != true && data.get('deletedAt', null) == null;
+    }
+    // The fields that decide activeness can only hold what the app writes
+    // — deletedAt null/absent or a timestamp (ms > 0), archived a boolean
+    // (or null/absent) — so the app's truthiness checks, brandActive above
+    // and api/brands/recount.js agree on every value (0/false/"" would read
+    // "active" in the app but "inactive" here). Checked on create and when
+    // either field changes, so an old doc can still be edited otherwise.
+    function validActivityFields(data) {
+      return (data.get('deletedAt', null) == null || (data.deletedAt is number && data.deletedAt > 0))
+        && (data.get('archived', null) == null || data.archived is bool);
+    }
+    function activityFieldsChange() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['archived', 'deletedAt']);
+    }
+    function countMovedFor(brandId) {
+      let c = getAfter(brandCountPath()).data;
+      return c.op == brandId && c.at == request.time;
+    }
+    // An account with no brandCounts doc yet is not limited — every account
+    // today, until the new app's first load has the server recount it (and
+    // whatever an old tab of the previous release writes before that).
+    function countNotRequired() {
+      return !existsAfter(brandCountPath());
+    }
+    // The plan's limit, as js/account.js brandLimitOf counts it: brandLimit
+    // (missing = 3) + permanent slots + monthly slots. Rules can't drop the
+    // lapsed monthly slots, so every listed slot counts — a little looser
+    // than the app (nextBrandSlots reuses lapsed entries, so it stays small).
+    function brandLimit() {
+      let acc = get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data;
+      let base = acc.get('brandLimit', 3);
+      let extra = acc.get('extraBrands', 0);
+      let slots = acc.get('brandSlotsUntil', []);
+      return (base is int ? base : 3) + (extra is int && extra > 0 ? extra : 0) + (slots is list ? slots.size() : 0);
+    }
+    function isAdminUser() {
+      return request.auth.uid == 'iSwfTtIQm6VkYoHFbI6wl7BzBF53';
+    }
+
+    function countWithinLimit() {
+      return isAdminUser() || getAfter(brandCountPath()).data.count <= brandLimit();
+    }
+
     match /brands/{id} {
       allow read: if isOwner(resource.data);
-      allow create: if isOwner(request.resource.data) && accountActive();
-      allow update: if isOwner(resource.data) && accountActive() && keepsOwner();
+      allow create: if isOwner(request.resource.data) && accountActive()
+        && validActivityFields(request.resource.data)
+        && (!brandActive(request.resource.data) || countNotRequired()
+            || (countMovedFor(id) && countWithinLimit()));
+      allow update: if isOwner(resource.data) && accountActive() && keepsOwner()
+        && (!activityFieldsChange() || validActivityFields(request.resource.data))
+        && (brandActive(resource.data) == brandActive(request.resource.data) || countNotRequired()
+            || (countMovedFor(id) && (brandActive(resource.data) || countWithinLimit())));
+      allow delete: if isOwner(resource.data) && accountActive()
+        && (!brandActive(resource.data) || countNotRequired() || countMovedFor(id));
+    }
+
+    // The counter itself: only ever moved together with the brand it names.
+    function brandActiveBefore(brandId) {
+      let path = /databases/$(database)/documents/brands/$(brandId);
+      return exists(path) && get(path).data.ownerId == request.auth.uid && brandActive(get(path).data);
+    }
+    function brandActiveAfter(brandId) {
+      let path = /databases/$(database)/documents/brands/$(brandId);
+      return existsAfter(path) && getAfter(path).data.ownerId == request.auth.uid && brandActive(getAfter(path).data);
+    }
+    function validCountShape() {
+      let d = request.resource.data;
+      // lastRecountAt is the server's (recount throttle): kept, never set here.
+      return d.keys().hasOnly(['count', 'op', 'at', 'lastRecountAt'])
+        && !d.diff(resource.data).affectedKeys().hasAny(['lastRecountAt'])
+        && d.count is int && d.count >= 0
+        // A plain doc id: `op` goes into a path below, and a "/" could point
+        // it at some other doc the account owns.
+        && d.op is string && d.op.matches('[A-Za-z0-9_-]{1,128}') && d.at == request.time;
+    }
+    match /brandCounts/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      // Created (and repaired) only by the server's recount — never here.
+      allow create: if false;
+      allow update: if request.auth != null && request.auth.uid == uid && accountActive() && validCountShape()
+        && ((!brandActiveBefore(request.resource.data.op) && brandActiveAfter(request.resource.data.op)
+             && request.resource.data.count == resource.data.count + 1)
+         || (brandActiveBefore(request.resource.data.op) && !brandActiveAfter(request.resource.data.op)
+             && request.resource.data.count == resource.data.count - 1));
+      allow delete: if false;
+    }
+
+    // ---- A brand's own subcollections (2026-10-06) ----------------------
+    // Owner-only like everything else, through a denormalised ownerId (so
+    // the owner's `where("ownerId","==",uid)` queries need no extra read),
+    // and a create/update must also sit under a brand that same owner holds
+    // (getAfter: the brand may be created in the same batch).
+    function ownsBrandAfter(brandId) {
+      return getAfter(/databases/$(database)/documents/brands/$(brandId)).data.ownerId == request.auth.uid;
+    }
+    // Uploaded files (js/brand-assets.js): one data URL per doc, capped so
+    // the doc stays under Firestore's 1 MiB — mirrors ASSET_MAX_CHARS.
+    match /brands/{brandId}/assets/{assetId} {
+      allow read: if isOwner(resource.data);
+      allow create, update: if isOwner(request.resource.data) && accountActive()
+        && (resource == null || keepsOwner())
+        && request.resource.data.brandId == brandId
+        && assetId.matches('[A-Za-z0-9_-]{1,128}')
+        && request.resource.data.keys().hasOnly(['ownerId', 'brandId', 'kind', 'dataUrl', 'name', 'createdAt', 'unusedSince'])
+        // The sweep's two-phase mark (js/store.js sweepBrandAssets).
+        && (request.resource.data.get('unusedSince', null) == null || request.resource.data.unusedSince is timestamp)
+        && request.resource.data.kind in ['cover', 'logo', 'logo-secondary', 'logotype', 'mascot', 'moodboard', 'font']
+        && request.resource.data.dataUrl is string
+        && request.resource.data.dataUrl.size() <= 1000000
+        && request.resource.data.dataUrl.matches('data:[^,]*,.*')
+        && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 200
+        && ownsBrandAfter(brandId);
+      allow delete: if isOwner(resource.data) && accountActive();
+    }
+    // Sales log (js/sales-tracker.js): one doc per month,
+    // { ownerId, brandId, month, entries: [...] } — doc id "YYYY-MM" (or
+    // "undated"). Old inline entries move here as they are, so the entries
+    // themselves aren't shape-checked; Firestore's 1 MiB caps the doc.
+    match /brands/{brandId}/sales/{month} {
+      allow read: if isOwner(resource.data);
+      allow create, update: if isOwner(request.resource.data) && accountActive()
+        && (resource == null || keepsOwner())
+        && request.resource.data.brandId == brandId
+        && month.matches('[0-9]{4}-[0-9]{2}|undated')
+        && request.resource.data.get('month', month) == month
+        && request.resource.data.keys().hasOnly(['ownerId', 'brandId', 'month', 'entries'])
+        && request.resource.data.entries is list
+        && ownsBrandAfter(brandId);
       allow delete: if isOwner(resource.data) && accountActive();
     }
     match /content/{id} {

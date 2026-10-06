@@ -263,8 +263,8 @@ function optionCardsHTML(items, attr, selected) {
   `;
 }
 
-function chipsHTML(items, attr, selected) {
-  return `<div class="chip-select">${items.map((it) => `<button type="button" ${attr}="${it.key}" class="${selected === it.key ? "active" : ""}">${escapeHtml(it.label)}</button>`).join("")}</div>`;
+function chipsHTML(items, attr, selected, labelId = "") {
+  return `<div class="chip-select"${labelId ? ` role="group" aria-labelledby="${labelId}"` : ""}>${items.map((it) => `<button type="button" ${attr}="${it.key}" class="${selected === it.key ? "active" : ""}" aria-pressed="${selected === it.key}">${escapeHtml(it.label)}</button>`).join("")}</div>`;
 }
 
 function formatLabel(state) {
@@ -331,10 +331,10 @@ function wizardHTML(state, campaigns) {
 
 function formHTML(state, campaigns) {
   return `
-    <div class="field"><label>${t("copy.formatLabel")}</label>${chipsHTML(FORMAT_OPTIONS, "data-copy-format", state.format)}</div>
+    <div class="field"><label id="copy-format-label">${t("copy.formatLabel")}</label>${chipsHTML(FORMAT_OPTIONS, "data-copy-format", state.format, "copy-format-label")}</div>
     ${state.format === "other" ? customFormatHTML(state) : ""}
     ${specHTML(state)}
-    <div class="field"><label>${t("copy.goalLabel")}</label>${chipsHTML(GOAL_OPTIONS, "data-copy-goal", state.goal)}</div>
+    <div class="field"><label id="copy-goal-label">${t("copy.goalLabel")}</label>${chipsHTML(GOAL_OPTIONS, "data-copy-goal", state.goal, "copy-goal-label")}</div>
     ${detailsHTML(state)}
     ${messageHTML(state, false)}
     ${optionsHTML(state, campaigns)}
@@ -389,18 +389,18 @@ function optionsHTML(state, campaigns) {
     ${
       state.format === "threads"
         ? `<div class="field">
-             <label>${t("copy.threadShape")}</label>
-             <div class="segmented">
-               <button type="button" data-copy-thread-mode="single" class="${state.threadMode === "single" ? "active" : ""}">${t("copy.threadSingle")}</button>
-               <button type="button" data-copy-thread-mode="chain" class="${state.threadMode === "chain" ? "active" : ""}">${t("copy.threadChain")}</button>
+             <label id="copy-thread-label">${t("copy.threadShape")}</label>
+             <div class="segmented" role="group" aria-labelledby="copy-thread-label">
+               <button type="button" data-copy-thread-mode="single" class="${state.threadMode === "single" ? "active" : ""}" aria-pressed="${state.threadMode === "single"}">${t("copy.threadSingle")}</button>
+               <button type="button" data-copy-thread-mode="chain" class="${state.threadMode === "chain" ? "active" : ""}" aria-pressed="${state.threadMode === "chain"}">${t("copy.threadChain")}</button>
              </div>
            </div>`
         : ""
     }
     <div class="field">
-      <label>${t("copy.length")}</label>
-      <div class="segmented">
-        ${LENGTH_OPTIONS.map((l) => `<button type="button" data-copy-length="${l.key}" class="${state.length === l.key ? "active" : ""}">${l.label}</button>`).join("")}
+      <label id="copy-length-label">${t("copy.length")}</label>
+      <div class="segmented" role="group" aria-labelledby="copy-length-label">
+        ${LENGTH_OPTIONS.map((l) => `<button type="button" data-copy-length="${l.key}" class="${state.length === l.key ? "active" : ""}" aria-pressed="${state.length === l.key}">${l.label}</button>`).join("")}
       </div>
     </div>
     ${
@@ -509,7 +509,7 @@ function wireForm(ctx, guided) {
     qsa(`[${attr}]`, root).forEach((btn) =>
       btn.addEventListener("click", () => {
         state[key] = btn.getAttribute(attr);
-        qsa(`[${attr}]`, root).forEach((b) => b.classList.toggle("active", b === btn));
+        qsa(`[${attr}]`, root).forEach((b) => { b.classList.toggle("active", b === btn); b.setAttribute("aria-pressed", String(b === btn)); });
       })
     );
   segmented("data-copy-thread-mode", "threadMode");

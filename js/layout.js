@@ -1,5 +1,5 @@
 import { icon } from "./icons.js";
-import { listBrands, getBrand, listOverdueAndDueSoon } from "./store.js";
+import { listBrands, getBrand, listOverdueAndDueSoon, onChange } from "./store.js";
 import { logout } from "./auth.js";
 import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, pickTintForegroundLight, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
@@ -13,6 +13,7 @@ import { identityDone, identityGate, identityGateCopy } from "./brand-progress.j
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
 import { installTopUpNotice, canTopUp } from "./ai-topup.js";
 import { rememberLastBrand } from "./back-link.js";
+import { brandTintColor } from "./brand-tint.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
@@ -54,11 +55,12 @@ function startOnboardingTour() {
 // going to change until the avatar itself does.
 const tintCache = new Map();
 async function applyBrandTint(brand) {
-  // A manually-picked brand color (Edit Brand → Brand Color) always wins —
-  // it's instant (no image sampling) and is what the user explicitly chose
-  // as this brand's essence color. Falls back to auto-sampling the logo's
-  // dominant color only when no manual color has been set yet.
-  const source = brand?.color || brand?.avatar;
+  // The Brand Book's primary colour wins once it's set, then the colour
+  // picked for the brand (Edit Brand → Brand Color) — js/brand-tint.js.
+  // Both are instant (no image sampling). Falls back to auto-sampling the
+  // logo's dominant color only when neither exists yet.
+  const picked = brandTintColor(brand);
+  const source = picked || brand?.avatar;
   if (!source) {
     document.body.classList.remove("has-brand-tint");
     document.body.style.removeProperty("--brand-tint");
@@ -71,7 +73,7 @@ async function applyBrandTint(brand) {
     const cacheKey = brand.id + ":" + source;
     let tint = tintCache.get(cacheKey);
     if (!tint) {
-      const color = brand.color || (await getDominantColor(brand.avatar));
+      const color = picked || (await getDominantColor(brand.avatar));
       tint = { color, text: pickTintTextColor(color), fg: pickTintForeground(color), fgLight: pickTintForegroundLight(color) };
       tintCache.set(cacheKey, tint);
     }
@@ -87,6 +89,26 @@ async function applyBrandTint(brand) {
     document.body.style.removeProperty("--brand-tint-fg");
     document.body.style.removeProperty("--brand-tint-fg-light");
   }
+}
+
+// Changing the Brand Book's primary colour (or the brand colour) re-tints
+// the app straight away, without waiting for the next full shell render.
+// One subscription for the whole session; it follows whichever brand the
+// shell was last wired for.
+let tintBrandId = null;
+let tintWatching = false;
+function watchBrandTint(brandId) {
+  tintBrandId = brandId || null;
+  if (tintWatching) return;
+  tintWatching = true;
+  let last = null;
+  onChange(() => {
+    const b = tintBrandId ? getBrand(tintBrandId) : null;
+    const now = b ? brandTintColor(b) || b.avatar || "" : "";
+    if (now === last) return;
+    last = now;
+    if (b) applyBrandTint(b);
+  });
 }
 
 // The only place the shell reads the experience mode. Everything else in
@@ -425,6 +447,7 @@ export function wireShell({ brandId }) {
   });
 
   applyBrandTint(brandId ? getBrand(brandId) : null);
+  watchBrandTint(brandId);
 
   qsa("[data-locked-tab]").forEach((a) =>
     a.addEventListener("click", (e) => {

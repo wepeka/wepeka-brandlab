@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, consecutiveActiveWeeks, eventCampaignEnd } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign } from "../store.js";
 import { icon } from "../icons.js";
 import { initials, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -11,46 +11,65 @@ import { ensureGoogleFont, ensureCustomFont } from "./brand-guidelines.js";
 import { getCachedAccount, isReadOnly, isTrial, trialDaysLeft } from "../account.js";
 import { campaignStages, campaignPlatform } from "../campaign-metrics.js";
 import { go } from "../nav-context.js";
-import { funnelLabel, statusLabel } from "../funnel-field.js";
-import { brandTopAction } from "../next-action.js";
+import { statusLabel } from "../funnel-field.js";
+import { brandTodayAction } from "../next-action.js";
 import { getMode } from "../mode.js";
 import { t, campaignDisplayName } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
-import { openReportModal, reportDue, reportReminderHTML, snoozeReport } from "./report.js";
+import { openReportModal, reportDue, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
 import { openConsultantPanel, openWeekPlan } from "../consultant-panel.js";
 import { postingLine } from "../brand-learning.js";
+import { weekRecap, weekAhead, weekCardParts, finishedCampaignRecaps, recapCardHTML } from "../weekly-recap.js";
+import { lowCreditNoteHTML, wireLowCreditNote, installLowCreditWatch } from "../ai-low-credit.js";
 import { brandDocFits } from "../brand-doc-size.js";
 
-// The brand's home, one file for both modes. The page answers one question
-// — "sekarang ngapain?" — with one hero card and one button:
+// The brand's home, one file for both modes. A busy owner should get it in
+// five seconds on a phone, so the page has one fixed shape (2026-10-06):
 //
-//   1. identity not done  → the hero is Brand DNA / Warna & Font progress,
-//      the button goes to whichever half is still open;
-//   2. identity done      → the hero is "Hari ini": the single most urgent
-//      thing across the brand's campaigns (js/next-action.js).
+//   brand header   — cover photo, logo, tagline, palette, Panduan
+//   notices        — trial countdown, low AI credit (only when true)
+//   Hari ini       — ONE thing to do now, plus at most one quiet link:
+//                    identity not done → Brand DNA / Warna & Font progress;
+//                    otherwise the most urgent action (js/next-action.js
+//                    brandTodayAction: campaign actions, and "Isi angka"
+//                    two days after a post went up)
+//   recap          — once, when an Event / Grow Brand ladder just finished
+//   Minggu ini     — the weekly loop (js/weekly-recap.js): last 7 days,
+//                    next 7 days, the report PDF, "Isi jadwal minggu ini"
+//   Tujuan         — a running roadmap's own card, when there is one
+//   Konten terbaru — the brand's actual work at a glance
+//   Lainnya        — small quiet cards: Langkah dasar, Teman Brand, the
+//                    roadmap invite, and (Pro) the one-tap action
+//   Analitik       — Pro only, folded, below everything
 //
-// Under it: the three steps (identity → campaign → content) as a checklist,
-// the schedule (overdue + up next), and — Pro only — the analytics section.
+// Phones read it top to bottom in that order. From 1080px the page splits
+// into a main column (Hari ini, recap, Tujuan, Konten terbaru) and a side
+// column (Minggu ini, Lainnya). Each piece of content shows in ONE block.
 // The only mode-dependent bits are in HOME_CONFIG.
 const HOME_CONFIG = {
-  guided: { analytics: false, lockNext: true },
-  advanced: { analytics: true, lockNext: false },
+  guided: { analytics: false, lockNext: true, oneTap: false },
+  advanced: { analytics: true, lockNext: false, oneTap: true },
 };
 const config = () => HOME_CONFIG[getMode()] || HOME_CONFIG.guided;
 
+// Panduan halaman ini. Blocks that aren't always there are skipped at once
+// instead of making the tour wait for them.
+const shown = (sel) => () => !!document.querySelector(sel);
 const TOUR_STEPS = [
   { selector: "#journey-hero", title: t("beginner.tour.hero.title"), body: t("beginner.tour.hero.body") },
-  { selector: "#beginner-journey", title: t("beginner.tour.journey.title"), body: t("beginner.tour.journey.body") },
+  { selector: "#home-week", showIf: shown("#home-week"), title: t("beranda.tour.week.title"), body: t("beranda.tour.week.body") },
+  { selector: "#beginner-journey", showIf: shown("#beginner-journey"), title: t("beginner.tour.journey.title"), body: t("beginner.tour.journey.body") },
   { selector: "#consultant-fab", title: t("beginner.tour.ai.title"), body: t("beginner.tour.ai.body") },
 ];
 
 export function render(root, { brandId }) {
   const state = { topContentPeriod: "all" };
+  installLowCreditWatch();
   const refresh = () => { settleFinishedEvents(brandId); paint(root, brandId, state, refresh); };
   refresh();
   return onChange(refresh);
@@ -143,21 +162,14 @@ function detectNewlyDoneSteps(brandId, steps) {
   return doneKeys.filter((k) => k !== "identity" && !prev.includes(k));
 }
 
-// The posting streak in the header is store.js's consecutiveActiveWeeks —
-// the same count (rolling 7-day windows on the owner's local dates) the
-// "minggu aktif" milestones and the streak-break nudge use (audit-1005),
-// with one allowance: the header passes { grace: true }, so the current
-// week may still be empty without the 🔥 disappearing on upload morning.
+// The posting streak (Minggu ini, js/weekly-recap.js) is store.js's
+// consecutiveActiveWeeks — the same count (rolling 7-day windows on the
+// owner's local dates) the "minggu aktif" milestones and the streak-break
+// nudge use (audit-1005), with one allowance: Beranda passes { grace: true },
+// so the current week may still be empty without the 🔥 disappearing on
+// upload morning.
 
-// ---------- Insight actions (one-tap) ----------
-// Three of Brand Pulse's read-only signals turned into buttons that do the
-// actual work in one click instead of just pointing at a screen: schedule
-// more of what's already outperforming, clear an overdue pileup onto the
-// next free days, or seed the week with ideas straight from Brand DNA when
-// there's nothing going out at all (no AI call, so it still works with AI
-// off). Every action only shows when its precondition actually holds — no
-// button is ever rendered "just in case". Copy stays plain Indonesian
-// either way: t() already runs plainWords() under Pemula.
+// ---------- "Geser ke hari upload kosong" (Minggu ini's late bar) ----------
 function isWeekend(d) {
   const day = d.getDay();
   return day === 0 || day === 6;
@@ -224,35 +236,69 @@ export function planOverdueShift(late, dates, campaigns, tomorrow = null) {
   });
   return { moves, kept };
 }
-// Monday–Sunday bounds for "this week", as ISO date strings.
-function thisWeekRange(now) {
-  const day = (now.getDay() + 6) % 7;
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-  return { start: localISODate(start), end: localISODate(end) };
+
+// ---- Small quiet cards ("Lainnya") ---------------------------------------------
+// Everything that isn't the one thing to do now or this week's loop: same
+// glass family as the widgets, without the breathing glow, so nothing here
+// competes with Hari ini.
+function miniCardHTML({ iconName, title, bodyHTML, extraHead = "", cls = "" }) {
+  return `
+    <article class="glass-card home-mini${cls ? ` ${cls}` : ""}">
+      <div class="home-mini-head">
+        <span class="home-mini-icon">${icon(iconName, { size: 16 })}</span>
+        <h3>${title}</h3>
+        ${extraHead ? `<span class="home-mini-extra">${extraHead}</span>` : ""}
+      </div>
+      ${bodyHTML}
+    </article>`;
 }
 
-// What the last one-tap action just did, per brand — kept at module scope
-// so it survives the Home repaint that follows every write, and shown in
-// the widget (titles + a link to each item) until the owner closes it.
-// Without this the action only toasted "3 ideas created" and the owner had
-// no idea what was made or where it went.
-const actionResults = new Map(); // brandId -> { kind, items: [{ id, title, date }] }
+function moreSectionHTML(items) {
+  if (!items.length) return "";
+  return `
+    <section class="home-more home-b-more" aria-labelledby="home-more-title">
+      <h2 class="home-section-title" id="home-more-title">${t("beranda.more.title")}</h2>
+      <div class="home-more-list">${items.join("")}</div>
+    </section>`;
+}
 
-function buildInsightActions({ brandId, brand, content, signals, refresh }) {
+// No roadmap yet: the invite to make one (js/goal-card.js has the copy;
+// it used to be a full widget of its own).
+function goalPromoMiniHTML(brandId) {
+  return miniCardHTML({
+    iconName: "target",
+    title: t("roadmap.home.promo.title"),
+    bodyHTML: `<p class="home-mini-text">${t("roadmap.home.promo.body")}</p>
+      <div class="home-mini-actions"><a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/goals" data-rg-promo>${icon("target", { size: 13 })}${t("roadmap.home.promo.cta")}</a></div>`,
+  });
+}
+
+// <details> on Beranda (Langkah dasar, Memori brand) stay open across the
+// repaint every store change triggers — per brand, for this session.
+const openDetails = new Map(); // brandId -> Set(key)
+const isOpen = (brandId, key) => !!openDetails.get(brandId)?.has(key);
+function wireKeepOpen(root, brandId) {
+  qsa("details[data-keep-open]", root).forEach((d) =>
+    d.addEventListener("toggle", () => {
+      const set = openDetails.get(brandId) || new Set();
+      if (d.open) set.add(d.dataset.keepOpen);
+      else set.delete(d.dataset.keepOpen);
+      openDetails.set(brandId, set);
+    })
+  );
+}
+
+// ---- One-tap action (Pro, in "Lainnya") ------------------------------------------
+// A format that's clearly outperforming (js/brand-pulse.js signalTopFormat)
+// → follow-up ideas in the chat's Brainstorm. Ideas come back as cards the
+// owner picks and saves; nothing is created straight into Konten. The old
+// "minggu ini masih kosong" action is Minggu ini's "Isi jadwal minggu ini"
+// now, so the two never say the same thing twice.
+function buildInsightActions({ content, signals }) {
   const actions = [];
-  const remember = (kind, items) => {
-    actionResults.set(brandId, { kind, items: items.map((c) => ({ id: c.id, title: c.title, date: c.scheduleDate || "" })) });
-  };
-
-  // 1. A format/funnel combo is clearly outperforming (js/brand-pulse.js
-  // signalTopFormat) — offer to schedule two more like the best example.
   const topFormat = signals.find((s) => s.kind === "top-format" && s.refs?.contentId);
   const bestPost = topFormat ? content.find((c) => c.id === topFormat.refs.contentId) : null;
   if (topFormat && bestPost) {
-    // Ideas come from the chat (Tanya Brandlab, Brainstorm → idea cards the
-    // owner picks and saves), never created blind straight into Konten.
     actions.push({
       id: "top-format",
       icon: "sparkle",
@@ -268,86 +314,21 @@ function buildInsightActions({ brandId, brand, content, signals, refresh }) {
         }),
     });
   }
-
-  // 3. Nothing scheduled or published this week — offer "Rencanakan minggu
-  // ini" (js/consultant-panel.js openWeekPlan): the chat answers with one
-  // Rencana Minggu card, dated onto real free upload days and grounded in
-  // Brand DNA, and the owner ticks which to save. Nothing is created until then.
-  const { start, end } = thisWeekRange(new Date());
-  const hasThisWeek = content.some((c) => {
-    const d = c.publishedDate || c.scheduleDate;
-    return d && d >= start && d <= end;
-  });
-  const dna = brand.brandDNA || {};
-  const hasDna = [dna.targetAudience, dna.problemSolved, dna.successOutcome].some((x) => (x || "").trim());
-  if (!hasThisWeek && hasDna) {
-    actions.push({
-      id: "empty-week",
-      icon: "bulb",
-      text: t("home.action.emptyWeek.text"),
-      cta: t("home.action.emptyWeek.cta"),
-      run: () => openWeekPlan(),
-    });
-  }
-
   return actions;
 }
 
-function insightResultHTML(brandId) {
-  const r = actionResults.get(brandId);
-  if (!r || !r.items.length) return "";
-  const head = r.kind === "moved" ? t("home.action.result.moved", { n: r.items.length }) : t("home.action.result.ideas", { n: r.items.length });
-  const allHref = r.kind === "moved" ? `#/brand/${brandId}/content/calendar` : `#/brand/${brandId}/content/list`;
-  const allLabel = r.kind === "moved" ? t("home.action.result.calendar") : t("home.action.result.all");
-  return `
-    <div class="insight-result" role="status">
-      <div class="insight-result-head">
-        <span class="insight-result-title">${icon("check", { size: 15 })}${esc(head)}</span>
-        <button type="button" class="btn btn-ghost btn-sm" data-insight-dismiss>${esc(t("home.action.result.close"))}</button>
-      </div>
-      <ul class="insight-result-list">
-        ${r.items
-          .map(
-            (it) => `<li><a href="#/brand/${brandId}/content/creator/${esc(it.id)}">
-              <span class="insight-result-name">${esc(it.title || t("beginner.untitled"))}</span>
-              ${it.date ? `<span class="insight-result-date">${esc(formatDate(it.date))}</span>` : ""}
-              <span class="insight-result-open">${esc(t("home.action.result.open"))} ${icon("arrowRight", { size: 13 })}</span>
-            </a></li>`
-          )
-          .join("")}
-      </ul>
-      <a class="insight-result-all" href="${allHref}">${esc(allLabel)} ${icon("arrowRight", { size: 13 })}</a>
-    </div>`;
-}
-
-function insightActionsHTML(actions, brandId) {
-  return `
-    ${insightResultHTML(brandId)}
-    <div class="insight-action-list">
-      ${actions
-        .map(
-          (a) => `
-        <div class="insight-action-row">
-          <span class="insight-action-icon">${icon(a.icon, { size: 16 })}</span>
-          <span class="insight-action-text">${esc(a.text)}</span>
-          <button type="button" class="btn btn-primary btn-sm" data-insight-action="${a.id}">${esc(a.cta)}</button>
-        </div>`
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function wireInsightActions(root, actions, brandId, refresh) {
-  qs("[data-insight-dismiss]", root)?.addEventListener("click", () => {
-    actionResults.delete(brandId);
-    refresh();
+function insightMiniHTML(a) {
+  return miniCardHTML({
+    iconName: a.icon,
+    title: t("home.action.title"),
+    bodyHTML: `<p class="home-mini-text">${esc(a.text)}</p>
+      <div class="home-mini-actions"><button type="button" class="btn btn-secondary btn-sm" data-insight-action="${a.id}">${icon("bulb", { size: 13 })}${esc(a.cta)}</button></div>`,
   });
+}
+
+function wireInsightActions(root, actions) {
   qsa("[data-insight-action]", root).forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const action = actions.find((a) => a.id === btn.dataset.insightAction);
-      if (action) action.run();
-    });
+    btn.addEventListener("click", () => actions.find((a) => a.id === btn.dataset.insightAction)?.run());
   });
 }
 
@@ -397,7 +378,8 @@ function companionActionsHTML(signals, content, brandId) {
 }
 
 // The newest saved moments, each with its action (if the recap gave it one)
-// and a real delete — plus "Kelola" for the full brand memory.
+// and a real delete — plus "Kelola" for the full brand memory. Folded under
+// "Memori brand · N" on the card.
 function momentActionHTML(m, brandId) {
   const action = m.refs?.action;
   if (!action) return "";
@@ -410,9 +392,9 @@ function momentActionHTML(m, brandId) {
   return `<a class="companion-moment-action" href="${href}">${label}${icon("arrowRight", { size: 11 })}</a>`;
 }
 
-function momentsStripHTML(brand) {
-  const moments = savedMoments(brand).slice(0, MOMENTS_SHOWN);
-  const rows = moments
+function momentsListHTML(brand) {
+  const rows = savedMoments(brand)
+    .slice(0, MOMENTS_SHOWN)
     .map(
       (m) => `
       <div class="companion-moment-row">
@@ -425,36 +407,40 @@ function momentsStripHTML(brand) {
     .join("");
   return `
     <div class="companion-moments">
-      <div class="companion-moments-head">
-        <p class="companion-moments-title">${t("companion.memory.title")}</p>
-        <button type="button" class="link" id="companion-manage" style="font-size:11px;">${t("companion.moments.manage")}</button>
-      </div>
       ${rows || `<p class="text-faint" style="font-size:12px;margin:0;">${t("companion.memory.empty")}</p>`}
+      <button type="button" class="link home-mini-manage" id="companion-manage">${t("companion.moments.manage")}</button>
     </div>`;
 }
 
-function companionCardHTML(brand, { signals, content, now }) {
+// The way into the Teman tab of the one chat (js/consultant-panel.js),
+// never a second copy of it: today's greeting with the one signal that
+// stands out, "Cerita ke Teman Brand", the quick actions those signals earn,
+// and brand memory (brand.developmentLog, what every AI feature reads).
+function companionMiniHTML(brand, { signals, content, now, guided }) {
   const top = topSignal(signals);
   // A brand that's never posted and has nothing in brand memory yet hasn't
-  // had a "quiet week" — it's had no week at all. Greet it as day one
-  // instead of implying there was something (unremarkable) to report.
+  // had a "quiet week" — it's had no week at all. Greet it as day one.
   const isFirstDay = !content.length && !(brand.developmentLog || []).length;
   const unrecapped = unrecappedMessages(brand.id).filter((m) => m.role === "user").length;
-  const weekAgo = now.getTime() - 7 * 86400000;
-  const momentsThisWeek = savedMoments(brand).filter((e) => e.at >= weekAgo).length;
-  return {
-    extraHead: unrecapped ? `<button type="button" class="btn btn-secondary btn-sm" data-companion-open="recap" title="${esc(t("home.companion.unrecapped", { n: unrecapped }))}">${icon("sparkle", { size: 12 })}${t("companion.recap.button")} (${unrecapped})</button>` : "",
+  const moments = savedMoments(brand);
+  const recapBtn = unrecapped ? `<button type="button" class="btn btn-ghost btn-sm" data-companion-open="recap" title="${esc(t("home.companion.unrecapped", { n: unrecapped }))}">${icon("sparkle", { size: 12 })}${t("companion.recap.button")} (${unrecapped})</button>` : "";
+  return miniCardHTML({
+    iconName: "chat",
+    title: t("home.companion.title"),
+    extraHead: recapBtn,
+    cls: "home-mini-companion",
     bodyHTML: `
       <p class="companion-greeting">${greetingSentence(brand, now)} <b>${esc(top ? top.title : t(isFirstDay ? "companion.observation.firstDay" : "companion.observation.quiet"))}</b></p>
-      <p class="text-muted" style="font-size:12.5px;margin:6px 0 0;">${t("home.companion.sub")}</p>
+      ${guided ? `<p class="home-mini-text">${t("home.companion.sub")}</p>` : ""}
       <div class="companion-actions">
-        <button type="button" class="btn btn-primary btn-sm" data-companion-open="companion">${icon("heart", { size: 13 })}${t("home.companion.tell")}</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-companion-open="companion">${icon("heart", { size: 13 })}${t("home.companion.tell")}</button>
         ${companionActionsHTML(signals, content, brand.id)}
       </div>
-      ${momentsStripHTML(brand)}
-    `,
-    summary: momentsThisWeek ? t("companion.moments.summary", { n: momentsThisWeek }) : t("home.companion.summary.empty"),
-  };
+      <details class="home-mini-details" data-keep-open="memory"${isOpen(brand.id, "memory") ? " open" : ""}>
+        <summary>${icon("bookmark", { size: 13 })}<span>${moments.length ? t("beranda.companion.memory", { n: moments.length }) : t("beranda.companion.memoryEmpty")}</span>${icon("chevronDown", { size: 13 })}</summary>
+        ${momentsListHTML(brand)}
+      </details>`,
+  });
 }
 
 function wireCompanionCard(root, { brandId, refresh }) {
@@ -478,6 +464,7 @@ function paint(root, brandId, state, refresh) {
     return;
   }
   const cfg = config();
+  const guided = getMode() !== "advanced";
   // Both one-shot flags consumed separately (not `||` short-circuited) so
   // either one left set still gets cleared even when both fire the same visit.
   const wholeBuilderJustCompleted = celebrateBuilderCompleteIfFlagged(brandId);
@@ -485,119 +472,128 @@ function paint(root, brandId, state, refresh) {
   const identityJustDone = wholeBuilderJustCompleted || visualBasicsJustDone;
   if (consumeDnaJustCompleted(brandId)) toast(t("dna.celebrate.done"));
 
+  const now = new Date();
+  const settings = getSettings();
   const campaigns = listCampaigns(brandId);
   const content = listContent(brandId);
   const journey = buildSteps(brandId, brand, campaigns, content);
   const identityDone = journey.identityDone;
-  // Each piece shows up in ONE Home card. The hero's piece and the pieces a
-  // plan's own card (Tujuan · Minggu ini) already lists are left out of
-  // "Jadwal berikutnya" — one overdue post used to appear in up to four
-  // cards (hero, Tujuan, Aksi siap dipakai, Jadwal) at once.
-  const top = identityDone ? brandTopAction({ brand, campaigns, content, settings: getSettings() }) : null;
+  // Each piece shows up in ONE Home block. The hero's piece and the pieces a
+  // running plan's own card (Tujuan · Minggu ini) already lists stay out of
+  // Minggu ini's rows — one overdue post used to appear in up to four cards
+  // (hero, Tujuan, Aksi siap dipakai, Jadwal) at once.
+  const top = identityDone ? brandTodayAction({ brand, campaigns, content, settings, now: now.getTime() }) : null;
   const shownElsewhere = new Set([
     top?.action?.cta?.contentId,
     ...listGoals(brandId).filter((g) => g.status === "active" || g.status === "partial").flatMap((g) => Object.values(g.installed?.slots || {}).map((x) => x.contentId)),
   ].filter(Boolean));
   const allOverdue = listOverdueAndDueSoon().overdue.filter((x) => x.brand.id === brandId);
-  const brandOverdue = allOverdue.filter((x) => !shownElsewhere.has(x.content.id));
-  // Up next = dated today or later only: overdue pieces already have their
-  // own rows above, and an undated "scheduled" piece has no date to show.
-  const todayISO = localISODate();
-  const upNext = content
-    .filter((c) => c.status === "scheduled" && c.scheduleDate && c.scheduleDate >= todayISO && !shownElsewhere.has(c.id))
-    .sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate))
-    .slice(0, 5);
-  const scheduleRows = scheduleRowsHTML(brandOverdue, upNext, allOverdue.length);
-  // "Konten terbaru" skips whatever the hero or Jadwal already shows.
-  const shownInSchedule = new Set([...shownElsewhere, ...brandOverdue.slice(0, 3).map((x) => x.content.id), ...upNext.map((c) => c.id)]);
+  const late = allOverdue.map((x) => x.content).filter((c) => !shownElsewhere.has(c.id));
+  const hasPublished = content.some((c) => c.status === "published");
+  const recap = weekRecap({ brand, content, now, exclude: shownElsewhere });
+  const ahead = weekAhead({ content, now, exclude: shownElsewhere });
+  // "Konten terbaru" skips whatever Hari ini or Minggu ini already shows.
+  const shownAbove = new Set([...shownElsewhere, ...late.slice(0, 3).map((c) => c.id), ...ahead.rows.map((c) => c.id), recap.best?.content.id].filter(Boolean));
   const collapsed = new Set(brand.homeCollapsed || []);
   // Computed once per paint for the Teman card's greeting and action buttons.
-  const signals = computeSignals({ brand, content, campaigns, settings: getSettings() });
-  const companion = companionCardHTML(brand, { signals, content, now: new Date() });
-  const insightActions = buildInsightActions({ brandId, brand, content, signals, refresh });
+  const signals = computeSignals({ brand, content, campaigns, settings });
+  const insightActions = cfg.oneTap ? buildInsightActions({ content, signals }) : [];
   const goal = goalWidget({ brandId, brand, campaigns, content, identityDone });
+  // No plan yet → goalWidget returns the invite, which is a small card now.
+  const goalIsInvite = !!goal && !listGoals(brandId).some((g) => g.status !== "completed");
+  const recaps = finishedCampaignRecaps({ brand, campaigns, content, now });
   const newlyDoneSteps = detectNewlyDoneSteps(brandId, journey.steps);
   if (newlyDoneSteps.length) toast(t(`beginner.step.${newlyDoneSteps[0]}.celebrate`));
-  const streakWeeks = consecutiveActiveWeeks(content, 0, new Date(), { grace: true });
-  // Report PDF summarizes published content — nothing to report until the
-  // brand has actually published something, so the button stays hidden
-  // until then instead of opening an empty/meaningless report.
-  const hasPublishedContent = content.some((c) => c.status === "published");
+  // The week plan reads Brand DNA (who, what problem, what changes) and
+  // spends one AI credit, so it's offered once there's something to read.
+  const dna = brand.brandDNA || {};
+  const hasDna = [dna.targetAudience, dna.problemSolved, dna.successOutcome].some((x) => (x || "").trim());
+  // A brand on day one has no week to show yet.
+  const week = identityDone || content.length
+    ? weekCardParts({ brandId, recap, ahead, late, lateTotal: allOverdue.length, reportIsDue: reportDue(brand, content), hasPublished, canPlan: hasDna && !isReadOnly(getCachedAccount()), guided })
+    : null;
+  // All three basic steps done: the checklist has nothing left to say (each
+  // step lives on its own tab) — unless one of them was just finished.
+  const showSteps = journey.currentIndex !== -1 || identityJustDone || newlyDoneSteps.length > 0;
+
+  const weekHTML = week
+    ? `<div class="home-b-week" id="home-week">${
+        collapsed.has("week")
+          ? widgetCollapsedHTML("week", "calendar", t("beranda.week.title"), week.summary)
+          : widgetCardHTML("week", "calendar", t("beranda.week.title"), week.bodyHTML, {
+              sub: week.sub,
+              extraHead: `<a class="link" href="#/brand/${brandId}/content/calendar">${t("brandHome.upNext.calendarLink")}</a>`,
+            })
+      }</div>`
+    : "";
+  const goalHTML = goal && !goalIsInvite
+    ? `<div class="home-b-goal">${
+        collapsed.has(goal.key)
+          ? widgetCollapsedHTML(goal.key, goal.iconName, goal.title, goal.summary)
+          : widgetCardHTML(goal.key, goal.iconName, goal.title, goal.bodyHTML, { extraHead: goal.extraHead })
+      }</div>`
+    : "";
+  const moreItems = [
+    showSteps ? stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps, isOpen(brandId, "steps")) : "",
+    companionMiniHTML(brand, { signals, content, now, guided }),
+    goalIsInvite ? goalPromoMiniHTML(brandId) : "",
+    ...insightActions.map(insightMiniHTML),
+  ].filter(Boolean);
+  const notices = [trialReminderHTML(), lowCreditNoteHTML()].filter(Boolean);
 
   root.innerHTML = `
     ${brandHeroHTML(brand, {
       sub: !identityDone ? t("home.sub.identity") : journey.doneCount < journey.steps.length ? t("beginner.sub.identityDone", { n: journey.steps.length - journey.doneCount }) : t("beginner.sub.allDone"),
-      streakWeeks,
-      hasPublishedContent,
     })}
 
-    ${trialReminderHTML()}
+    ${notices.length ? `<div class="home-notices">${notices.join("")}</div>` : ""}
 
-    ${identityDone ? todayHeroHTML(brandId, brand, campaigns, content, top) : identityHeroHTML(brandId, brand)}
+    <div class="home-layout">
+      <div class="home-col home-col-main">
+        <div class="home-b-today">${identityDone ? todayHeroHTML(brandId, brand, campaigns, content, top) : identityHeroHTML(brandId, brand)}</div>
+        ${recaps[0] ? `<div class="home-b-recap">${recapCardHTML(recaps[0], { brandId })}</div>` : ""}
+        ${goalHTML}
+        ${recentContentHTML(brandId, content, shownAbove)}
+      </div>
+      <div class="home-col home-col-side">
+        ${weekHTML}
+        ${moreSectionHTML(moreItems)}
+      </div>
+    </div>
 
-    ${recentContentHTML(brandId, content, shownInSchedule, top?.action?.cta?.contentId || null)}
-
-    ${reportDue(brand, content) ? reportReminderHTML(brand) : ""}
-
-    ${
-      goal
-        ? collapsed.has(goal.key)
-          ? widgetCollapsedHTML(goal.key, goal.iconName, goal.title, goal.summary)
-          : widgetCardHTML(goal.key, goal.iconName, goal.title, goal.bodyHTML, { extraHead: goal.extraHead })
-        : ""
-    }
-
-    ${
-      collapsed.has("companion")
-        ? widgetCollapsedHTML("companion", "chat", t("home.companion.title"), companion.summary)
-        : widgetCardHTML("companion", "chat", t("home.companion.title"), companion.bodyHTML, { extraHead: companion.extraHead })
-    }
-
-    ${
-      insightActions.length || actionResults.has(brandId)
-        ? collapsed.has("insightActions")
-          ? widgetCollapsedHTML("insightActions", "sparkle", t("home.action.title"), t("home.action.summary", { n: insightActions.length }))
-          : widgetCardHTML("insightActions", "sparkle", t("home.action.title"), insightActionsHTML(insightActions, brandId))
-        : ""
-    }
-
-    ${
-      scheduleRows
-        ? collapsed.has("todo")
-          ? widgetCollapsedHTML("todo", "calendar", t("brandHome.upNext.title"), t("beginner.todo.summary", { count: Math.min(brandOverdue.length, 3) + upNext.length }))
-          : widgetCardHTML("todo", "calendar", t("brandHome.upNext.title"), `<div class="card card-tight guided-checklist" style="margin-bottom:0;">${scheduleRows}</div>`, {
-              extraHead: `<a class="link" href="#/brand/${brandId}/content/calendar">${t("brandHome.upNext.calendarLink")}</a>`,
-            })
-        : ""
-    }
-
-    ${journey.currentIndex === -1 && !identityJustDone && !newlyDoneSteps.length ? "" : stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps) /* all three done: the checklist has nothing left to say; each step lives on its own tab */}
-
-    ${cfg.analytics ? analyticsSectionHTML(content, getSettings(), state, "") : ""}
+    ${cfg.analytics ? `<div class="home-analytics">${analyticsSectionHTML(content, settings, state, "")}</div>` : ""}
   `;
 
   wireHelpButtons(root);
   wireBrandHero(root, brandId);
   wireGoalCard(root, { brandId });
   wireWidgetToggle(root, { collapsedList: brand.homeCollapsed, save: (next) => updateBrand(brandId, { homeCollapsed: next }), refresh });
-  if (!collapsed.has("companion")) wireCompanionCard(root, { brandId, refresh });
-  if ((insightActions.length || actionResults.has(brandId)) && !collapsed.has("insightActions")) wireInsightActions(root, insightActions, brandId, refresh);
+  wireCompanionCard(root, { brandId, refresh });
+  wireKeepOpen(root, brandId);
+  if (insightActions.length) wireInsightActions(root, insightActions);
   if (cfg.analytics) wireAnalyticsSection(root, state, refresh);
-  // One report, for both modes: the page-head button and the weekly nudge.
+  // One report, for both modes: Minggu ini's link and its weekly nudge.
   qs("#home-report", root)?.addEventListener("click", () => openReportModal(brandId));
   qsa("[data-report-open]", root).forEach((b) => b.addEventListener("click", () => openReportModal(brandId, { range: b.dataset.reportOpen })));
   qs("[data-report-snooze]", root)?.addEventListener("click", () => { snoozeReport(brandId); toast(t("rep.remind.snoozed")); refresh(); });
+  // "Isi jadwal minggu ini": the chat's week plan (ideas the owner ticks).
+  qs("[data-week-plan]", root)?.addEventListener("click", () => openWeekPlan());
+  wireRecapCard(root, { brandId, refresh });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
 
   qs("[data-today-cta]", root)?.addEventListener("click", () => { if (top) runTodayAction(top, { brandId, brand, content, refresh }); });
+  const dropEmptyNotices = () => { const box = qs(".home-notices", root); if (box && !box.children.length) box.remove(); };
   qs("[data-trial-dismiss]", root)?.addEventListener("click", () => {
     dismissTrialReminder();
     qs(".trial-remind", root)?.remove();
+    dropEmptyNotices();
   });
+  wireLowCreditNote(root);
+  qs("[data-ai-low-close]", root)?.addEventListener("click", () => setTimeout(dropEmptyNotices, 0));
   qs("[data-shift-overdue]", root)?.addEventListener("click", () => {
-    const late = allOverdue.map((x) => x.content);
+    const lateAll = allOverdue.map((x) => x.content);
     const usedDates = content.filter((c) => c.scheduleDate).map((c) => c.scheduleDate);
-    const { moves, kept } = planOverdueShift(late, nextFreeUploadDays(usedDates, late.length, brand.contentCadence), campaigns);
+    const { moves, kept } = planOverdueShift(lateAll, nextFreeUploadDays(usedDates, lateAll.length, brand.contentCadence), campaigns);
     moves.forEach(({ c, date }) => updateContent(c.id, { scheduleDate: date }));
     if (moves.length) toast(t("home.action.overdue.done", { n: moves.length }));
     if (kept.length) toast(t("home.action.overdue.kept", { n: kept.length }), "info");
@@ -611,7 +607,7 @@ function paint(root, brandId, state, refresh) {
     el.addEventListener("click", () => import("../layout.js").then((m) => m.explainIdentityGate(brandId)).catch(() => toast(t("home.next.lockedToast"))));
   });
   // Schedule rows and the analytics lists (top/retention posts) are divs.
-  wireClickableCards(root, "[data-open-content], [data-locked-step]");
+  wireClickableCards(root, "div[data-open-content], [data-locked-step]");
 
   // The exact moment Campaign/Konten unlock is the one time a small callout
   // on the hero is worth it, so the change of "what to do now" isn't missed.
@@ -619,6 +615,31 @@ function paint(root, brandId, state, refresh) {
     const hero = qs("#journey-hero", root);
     if (hero) showCalloutBubble(hero, t("beginner.callout.builderDone"));
   }
+}
+
+// The finished-goal card (js/weekly-recap.js): "Pasang tujuan berikutnya"
+// opens the Grow Brand goal wizard (the one Tujuan's "+ Tujuan baru"
+// recommends); closing it — or saving a new goal from it — is remembered on
+// the campaign (recapSeenAt), so it shows once on every device.
+function wireRecapCard(root, { brandId, refresh }) {
+  const markSeen = (id) => updateCampaign(id, { recapSeenAt: Date.now() });
+  qsa("[data-recap-dismiss]", root).forEach((b) =>
+    b.addEventListener("click", () => {
+      markSeen(b.dataset.recapDismiss);
+      refresh();
+    })
+  );
+  qsa("[data-recap-next]", root).forEach((b) =>
+    b.addEventListener("click", async () => {
+      const id = b.dataset.recapNext;
+      try {
+        const { openGoalWizard } = await import("./goal-wizard.js");
+        openGoalWizard({ brandId, brand: getBrand(brandId), onSaved: () => { markSeen(id); refresh(); } });
+      } catch {
+        location.hash = `#/brand/${brandId}/campaigns`;
+      }
+    })
+  );
 }
 
 // ---- Trial reminder (audit-1005) --------------------------------------------
@@ -670,7 +691,9 @@ function trialReminderHTML() {
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const isImageUrl = (u) => typeof u === "string" && (u.startsWith("data:image/") || u.startsWith("https://"));
 
-function brandHeroHTML(brand, { sub, streakWeeks, hasPublishedContent }) {
+// The posting streak and the report PDF used to sit here too; they're part
+// of Minggu ini now (js/weekly-recap.js), so the header is only the brand.
+function brandHeroHTML(brand, { sub }) {
   const bg = brand.brandGuidelines || {};
   const logo = bg.logo?.dataUrl || brand.avatar || "";
   const cover = isImageUrl(brand.coverPhoto) ? brand.coverPhoto : "";
@@ -707,7 +730,6 @@ function brandHeroHTML(brand, { sub, streakWeeks, hasPublishedContent }) {
         <div class="page-eyebrow flex items-center gap-6">${t("home.eyebrow")}${helpButtonHTML("home")}${guideVideoButtonHTML("home")}</div>
         <div class="brand-hero-actions">
           ${coverButtons}
-          ${hasPublishedContent ? `<button type="button" class="btn btn-secondary btn-sm brand-hero-btn" id="home-report" title="${t("rep.btnTitle")}">${icon("download", { size: 13 })}<span>${t("rep.btn")}</span></button>` : ""}
           ${canEdit ? `<input type="file" accept="image/*" data-cover-input hidden />` : ""}
         </div>
       </div>
@@ -720,7 +742,6 @@ function brandHeroHTML(brand, { sub, streakWeeks, hasPublishedContent }) {
           ${identity}
         </div>
       </div>
-      ${streakWeeks >= 2 ? `<p class="brand-hero-streak">${t("home.streak.line", { n: streakWeeks })}</p>` : ""}
     </section>`;
 }
 
@@ -762,17 +783,19 @@ function wireBrandHero(root, brandId) {
 
 const FORMAT_ICON = { reels: "play", video: "play", story: "image", carousel: "layers", feed: "image", photo: "image" };
 
-// `shownElsewhere`: pieces the hero or Jadwal card already list — an
-// upcoming one is left out here so it shows in one card only; `heroId` (the
-// hero's own piece) is left out even when it's already published.
-function recentContentHTML(brandId, content, shownElsewhere = new Set(), heroId = null) {
+// `shownElsewhere`: pieces Hari ini or Minggu ini already show (the hero's
+// own piece, this week's rows, the week's best post) — left out here so
+// each piece is in one block only. Three tiles plus "Konten baru": a 2×2
+// grid on phones (no sideways scrolling), one row on wider screens.
+const RECENT_TILES = 3;
+function recentContentHTML(brandId, content, shownElsewhere = new Set()) {
   const today = localISODate();
-  const live = content.filter((c) => !c.archived && c.status !== "archived" && c.id !== heroId);
+  const live = content.filter((c) => !c.archived && c.status !== "archived" && !shownElsewhere.has(c.id));
   const published = live.filter((c) => c.status === "published").sort((a, b) => (b.publishedDate || "").localeCompare(a.publishedDate || ""));
   // Coming = dated today or later, soonest first. Pieces whose date already
-  // passed sit in Jadwal's "lewat jadwal" rows, not here as "coming".
-  const coming = live.filter((c) => c.status !== "published" && c.scheduleDate && c.scheduleDate >= today && !shownElsewhere.has(c.id)).sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
-  const items = [...published, ...coming].slice(0, 4);
+  // passed sit in Minggu ini's "lewat jadwal" rows, not here as "coming".
+  const coming = live.filter((c) => c.status !== "published" && c.scheduleDate && c.scheduleDate >= today).sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate));
+  const items = [...published, ...coming].slice(0, RECENT_TILES);
   if (!items.length) return "";
   const cards = items
     .map((c) => {
@@ -793,9 +816,9 @@ function recentContentHTML(brandId, content, shownElsewhere = new Set(), heroId 
     })
     .join("");
   return `
-    <section class="recent-strip">
+    <section class="recent-strip home-b-recent">
       <div class="recent-strip-head">
-        <span class="recent-strip-title">${t("home.recent.title")}</span>
+        <h2 class="recent-strip-title">${t("home.recent.title")}</h2>
         <a class="link" href="#/brand/${brandId}/content/list">${t("home.recent.all")}</a>
       </div>
       <div class="recent-strip-row">
@@ -868,6 +891,7 @@ function identityHeroHTML(brandId, brand) {
 function todayHeroHTML(brandId, brand, campaigns, content, top) {
   let title, why, href, cta;
   let inPlace = false;
+  let secondary = "";
   if (top) {
     const a = top.action;
     title = a.label;
@@ -876,6 +900,10 @@ function todayHeroHTML(brandId, brand, campaigns, content, top) {
     cta = route.label || a.cta.label || t("beginner.today.doIt");
     href = route.href || "";
     inPlace = !!route.inPlace;
+    // The one quiet link: the plan this step belongs to (the whole picture),
+    // unless the button already goes there.
+    const planHref = top.campaign ? `#/brand/${brandId}/campaigns/${top.campaign.id}` : "";
+    if (planHref && href !== planHref) secondary = `<a class="link journey-hero-secondary" href="${planHref}">${t("beranda.today.seePlan")}</a>`;
   } else if (!campaigns.length) {
     title = t("beginner.step.campaign.title");
     why = t("beginner.step.campaign.desc");
@@ -896,25 +924,31 @@ function todayHeroHTML(brandId, brand, campaigns, content, top) {
     cta = t("beginner.step.content.ctaWrite");
     href = `#/brand/${brandId}/content/creator`;
   }
+  const button = cta && inPlace
+    ? `<button type="button" class="btn btn-primary journey-hero-cta" data-today-cta>${esc(cta)}${icon("arrowRight", { size: 15 })}</button>`
+    : cta && href
+      ? `<a class="btn btn-primary journey-hero-cta" href="${href}">${esc(cta)}${icon("arrowRight", { size: 15 })}</a>`
+      : "";
   return `
     <section class="card glass-card journey-hero journey-hero-today" id="journey-hero">
-      <div class="journey-hero-eyebrow"><span class="journey-hero-step">${t("beginner.today.eyebrow")}</span>${top ? `<span class="journey-hero-time">${icon("bulb", { size: 12 })}${esc(campaignDisplayName(top.campaign.name) || "Campaign")}</span>` : ""}</div>
+      <div class="journey-hero-eyebrow"><span class="journey-hero-step">${t("beginner.today.eyebrow")}</span>${top?.campaign ? `<span class="journey-hero-time">${icon("bulb", { size: 12 })}${esc(campaignDisplayName(top.campaign.name) || "Campaign")}</span>` : ""}</div>
       <h2>${esc(title)}</h2>
       <p>${esc(why)}</p>
-      ${cta && inPlace ? `<button type="button" class="btn btn-primary journey-hero-cta" data-today-cta>${esc(cta)}${icon("arrowRight", { size: 15 })}</button>` : cta && href ? `<a class="btn btn-primary journey-hero-cta" href="${href}">${esc(cta)}${icon("arrowRight", { size: 15 })}</a>` : ""}
+      ${button || secondary ? `<div class="journey-hero-actions">${button}${secondary}</div>` : ""}
     </section>
   `;
 }
 
 // next-action.js CTAs, routed by type. The ones that are a modal or the
-// chat (insights → Perbarui Insights, performance → Quick Fill, brainstorm
-// → Brainstorm chat on this campaign) open right here (`inPlace`, run by
-// runTodayAction); "Catat angka" lives on the campaign page with its sheet,
-// and the "info" ones (level ready, waiting weeks, a phase about to end)
-// get a button to the campaign page, where the level-up itself happens.
+// chat open right here (`inPlace`, run by runTodayAction): insights →
+// Perbarui Insights, performance → Quick Fill, manual → the campaign's own
+// "Catat angka" sheet, brainstorm → the Brainstorm chat on this campaign.
+// The "info" ones (level ready, waiting weeks, a phase about to end) get a
+// button to the campaign page, where the level-up itself happens.
+// `campaign` is null for a brand-level action ("Isi angka" after posting).
 function todayRoute(brandId, campaign, action) {
   const cta = action.cta;
-  const campaignHref = `#/brand/${brandId}/campaigns/${campaign.id}`;
+  const campaignHref = campaign ? `#/brand/${brandId}/campaigns/${campaign.id}` : "";
   switch (cta.type) {
     case "creator":
       return { href: `#/brand/${brandId}/content/creator/${cta.contentId}` };
@@ -926,6 +960,8 @@ function todayRoute(brandId, campaign, action) {
     case "performance":
     case "brainstorm":
       return { inPlace: true };
+    case "manual":
+      return campaign ? { inPlace: true } : {};
     case "info":
       return { href: campaignHref, label: t(action.id === "advance" ? "home.today.cta.levelUp" : action.id === "min-weeks" ? "home.today.cta.progress" : action.id === "window-end" ? "home.today.cta.targets" : "home.today.cta.campaign") };
     default:
@@ -944,7 +980,11 @@ async function runTodayAction(top, { brandId, brand, content, refresh }) {
     if (!c) return;
     const { openQuickFillModal } = await import("./content-list.js");
     openQuickFillModal({ c, onSaved: refresh });
-  } else if (cta.type === "brainstorm") {
+  } else if (cta.type === "manual" && campaign) {
+    // The sheet itself, over Beranda — not a trip to the campaign page.
+    const { openManualStepFromHome } = await import("./campaign-detail.js");
+    if (!openManualStepFromHome({ brandId, campaignId: campaign.id, milestoneId: cta.milestoneId || null, onDone: refresh })) location.hash = `#/brand/${brandId}/campaigns/${campaign.id}`;
+  } else if (cta.type === "brainstorm" && campaign) {
     // The same chat the campaign page's Brainstorm opens, on this campaign
     // and stage — ideas come back as cards the owner picks, nothing is made.
     const stage = campaignStages(campaign)[cta.stageIndex ?? 0] || null;
@@ -956,11 +996,11 @@ async function runTodayAction(top, { brandId, brand, content, refresh }) {
 
 // Folded under everything else: the one action up top is what to do now;
 // this is only the map, opened when someone wants it.
-function stepsHTML(journey, lockNext, celebrateIdentity, celebrateKeys = []) {
+function stepsHTML(journey, lockNext, celebrateIdentity, celebrateKeys = [], open = false) {
   const total = journey.steps.length;
   const rows = journey.steps.map((s, i) => stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys)).join("");
   return `
-      <details class="card glass-card card-tight journey journey-collapsed" id="beginner-journey">
+      <details class="card glass-card card-tight journey journey-collapsed" id="beginner-journey" data-keep-open="steps"${open ? " open" : ""}>
         <summary>
           <span class="journey-summary-check">${icon(journey.currentIndex === -1 ? "check" : "layers", { size: 14 })}</span>
           <span class="t">${t("beginner.journey.collapsed", { done: journey.doneCount, total })}</span>
@@ -995,38 +1035,4 @@ function stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys =
   return href
     ? `<a class="journey-step journey-step-${state === "open" ? "current" : state}${celebrate}" href="${href}"${appAttr}>${inner}</a>`
     : `<div class="journey-step journey-step-upcoming" data-locked-step${appAttr}>${inner}</div>`;
-}
-
-// ---- Schedule ------------------------------------------------------------------
-
-// `lateTotal`: every overdue piece of this brand (including the ones shown
-// in another card) — the one "move them" button for all of them lives here.
-function scheduleRowsHTML(overdue, upNext, lateTotal = 0) {
-  const rows = [];
-  if (lateTotal) {
-    rows.push(`<div class="home-late-bar"><span>${t("home.action.overdue.text", { n: lateTotal })}</span><button type="button" class="btn btn-secondary btn-sm" data-shift-overdue>${icon("calendar", { size: 13 })}${t("home.action.overdue.cta")}</button></div>`);
-  }
-  overdue.slice(0, 3).forEach((x) => {
-    rows.push(`
-      <div class="top-content-row" data-open-content="${x.content.id}" style="cursor:pointer;">
-        <div class="ti">
-          <div class="t">${esc(x.content.title || t("beginner.untitled"))}</div>
-          <div class="m" style="color:var(--health-poor);">${t("beginner.todo.overdue", { date: formatDate(x.content.scheduleDate) })}</div>
-        </div>
-        <span class="tag" style="background:var(--health-poor-soft);color:var(--health-poor);">${t("beginner.todo.late")}</span>
-      </div>
-    `);
-  });
-  upNext.forEach((c) => {
-    rows.push(`
-      <div class="top-content-row" data-open-content="${c.id}" style="cursor:pointer;">
-        <div class="ti">
-          <div class="t">${esc(c.title || t("beginner.untitled"))}</div>
-          <div class="m">${esc(c.platform || "—")} · ${formatDate(c.scheduleDate)}</div>
-        </div>
-        <span class="tag tag-${esc((c.funnel || "").toLowerCase())}">${esc(funnelLabel(c.funnel))}</span>
-      </div>
-    `);
-  });
-  return rows.join("");
 }

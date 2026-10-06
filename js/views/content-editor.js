@@ -109,10 +109,10 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
         <textarea class="textarea" id="f-idea" placeholder="${t("contentEditor.idea.placeholder")}">${escapeHtml(draft.idea || "")}</textarea>
       </div>
       <div class="field">
-        <label>${t("contentEditor.contentFor.label")}</label>
-        <div class="chip-select" id="f-quickpick">
-          <button type="button" data-quickpick="reels" ${buckets.reels ? "" : "disabled"} class="${quickPickActive(draft, buckets.reels) ? "active" : ""}">${t("contentEditor.quickpick.reels")}</button>
-          <button type="button" data-quickpick="tiktok" ${buckets.tiktok ? "" : "disabled"} class="${quickPickActive(draft, buckets.tiktok) ? "active" : ""}">${t("contentEditor.quickpick.tiktok")}</button>
+        <label id="f-quickpick-label">${t("contentEditor.contentFor.label")}</label>
+        <div class="chip-select" id="f-quickpick" role="group" aria-labelledby="f-quickpick-label">
+          <button type="button" data-quickpick="reels" ${buckets.reels ? "" : "disabled"} class="${quickPickActive(draft, buckets.reels) ? "active" : ""}" aria-pressed="${!!quickPickActive(draft, buckets.reels)}">${t("contentEditor.quickpick.reels")}</button>
+          <button type="button" data-quickpick="tiktok" ${buckets.tiktok ? "" : "disabled"} class="${quickPickActive(draft, buckets.tiktok) ? "active" : ""}" aria-pressed="${!!quickPickActive(draft, buckets.tiktok)}">${t("contentEditor.quickpick.tiktok")}</button>
         </div>
         <div class="text-faint" style="font-size:11px;margin-top:6px;">${t("contentEditor.quickpick.hint")}</div>
       </div>
@@ -350,7 +350,8 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
     draft.format = qs("#f-format", el).value;
     qsa("#f-quickpick button", el).forEach((btn) => {
       const combo = btn.dataset.quickpick === "reels" ? buckets.reels : buckets.tiktok;
-      btn.classList.toggle("active", quickPickActive(draft, combo));
+      btn.classList.toggle("active", !!quickPickActive(draft, combo));
+      btn.setAttribute("aria-pressed", String(!!quickPickActive(draft, combo)));
     });
   }
   qs("#f-platform", el).addEventListener("change", syncQuickPick);

@@ -32,8 +32,9 @@ import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
 import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS } from "../site-links.js";
-import { db as fdb, auth } from "../firebase.js";
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+// Firestore loads on demand (js/firebase.js loadFirestore): this page is
+// the logged-out landing, and it paints before the SDK is even fetched.
+import { db as fdb, auth, loadFirestore } from "../firebase.js";
 import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } from "../account.js";
 
 // Rupiah amounts with the thousands separator of the current language
@@ -578,7 +579,7 @@ async function openLockedBrandBook(uid, btn) {
   if (!uid) return;
   btn.disabled = true;
   try {
-    const { collection, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js");
+    const { collection, query, where, getDocs } = await loadFirestore();
     const snap = await getDocs(query(collection(fdb, "brands"), where("ownerId", "==", uid)));
     const brands = snap.docs.map((d) => d.data()).filter((b) => !b.archived);
     if (!brands.length) {
@@ -759,7 +760,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
   // The live sold-count decides which Founder wave is open (and whether
   // anything is sold out) — it is never displayed. Repaint only if it
   // changes what the page says.
-  Promise.all([getDoc(doc(fdb, "meta", "founderSlots")), uid ? holdKeyOf(uid).catch(() => null) : null])
+  Promise.all([loadFirestore().then(({ doc, getDoc }) => getDoc(doc(fdb, "meta", "founderSlots"))), uid ? holdKeyOf(uid).catch(() => null) : null])
     .then(([snap, key]) => {
       if (!root.isConnected) return;
       const before = openTier(null);

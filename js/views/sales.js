@@ -9,7 +9,7 @@
 // Logging and export are free for every account; the AI advice follows the
 // same Lifetime gate as Copy Studio. Still 100% manual entry — the page
 // says so, and nothing here asks for or shows ads metrics.
-import { getBrand, listCampaigns, listContent, getContent, getSettings, unitLabel, localISODate, updateBrand } from "../store.js";
+import { getBrand, listCampaigns, listContent, getContent, getSettings, unitLabel, localISODate, updateBrand, ensureBrandSales } from "../store.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import {
   getTracker, addProduct, updateProduct, logSale, deleteSale, clearAllSales, saveAdvice, productStats, trackerTotals, monthRange, weeklySeries,
@@ -68,6 +68,15 @@ export function render(root, { brandId }) {
 function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   const tracker = getTracker(brand);
+  // The log (month docs, js/store.js) still loading: totals from part of it
+  // would read as final — and the log form must not write over it.
+  // (Waited once: a log that can't load at all shows what there is.)
+  if (tracker.loading && !state.salesWaited) {
+    state.salesWaited = true;
+    root.innerHTML = loadingHTML(t("app.loading"));
+    ensureBrandSales(brandId).then(refresh, refresh);
+    return;
+  }
   const campaign = runningSalesCampaign(brandId);
   const unit = unitLabel(salesModel(campaign?.goalPlan?.model || tracker.model).unit);
   const active = tracker.products.filter((p) => !p.archived);

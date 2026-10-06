@@ -254,9 +254,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
           ? ""
           : `
       ${isCarouselPiece ? "" : `<div class="field" style="margin-bottom:14px;">
-        <label>${t("cr.ai.duration")}</label>
-        <div class="chip-select" id="ai-duration-chips">
-          ${DURATION_OPTIONS.map((d) => `<button type="button" data-val="${d.val}" class="${state.duration === d.val ? "active" : ""}">${d.label}</button>`).join("")}
+        <label id="ai-duration-label">${t("cr.ai.duration")}</label>
+        <div class="chip-select" id="ai-duration-chips" role="group" aria-labelledby="ai-duration-label">
+          ${DURATION_OPTIONS.map((d) => `<button type="button" data-val="${d.val}" class="${state.duration === d.val ? "active" : ""}" aria-pressed="${state.duration === d.val}">${d.label}</button>`).join("")}
         </div>
         <input class="input" id="ai-duration-custom" aria-label="${t("cr.ai.durationCustomAria")}" style="margin-top:8px;${state.duration === "Custom" ? "" : "display:none;"}" placeholder="${t("cr.ai.durationPh")}" />
       </div>`}
@@ -315,7 +315,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
   overlay.querySelectorAll("#ai-duration-chips button").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.duration = btn.dataset.val;
-      overlay.querySelectorAll("#ai-duration-chips button").forEach((b) => b.classList.toggle("active", b === btn));
+      overlay.querySelectorAll("#ai-duration-chips button").forEach((b) => { b.classList.toggle("active", b === btn); b.setAttribute("aria-pressed", String(b === btn)); });
       customDurationInput.style.display = state.duration === "Custom" ? "" : "none";
       if (state.duration === "Custom") customDurationInput.focus();
     });

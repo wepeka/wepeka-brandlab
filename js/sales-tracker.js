@@ -13,9 +13,13 @@
 // typed there land here (mergeProductsFromWizard), and the wizard pre-fills
 // from what's already here.
 //
-// STORAGE: on the brand document (`brand.salesTracker`), not a collection of
-// its own — no Firestore rules change, and a small brand's log (a few
-// thousand short rows at most) sits comfortably inside one document.
+// STORAGE: `brand.salesTracker` on the brand document — except the sales
+// log itself: entries live in one doc per month, brands/{brandId}/sales/
+// {YYYY-MM} (the log grew without bound inside a doc Firestore caps at
+// 1 MiB). js/store.js merges them back into `salesTracker.entries` in
+// memory and writes what a save added/removed, so everything here still
+// reads and writes the one `entries` array; old brands whose entries are
+// still inline read as before and move out on the next Sales Tracker save.
 //   { model, products: [{ id, name, price, cost, openingSold, discountPct,
 //     discountUntil, archived }], openingRevenue, entries: [{ id, productId,
 //     qty, amount, date, repeat, referral, note, eventId, source, at }],
@@ -29,26 +33,33 @@
 //
 // Still 100% manual entry: there is no sales backend and nothing here reads
 // or asks for ads data.
-import { getBrand, updateBrand, listCampaigns, updateCampaign, getContent, listContent, localISODate } from "./store.js";
+import { getBrand, updateBrand, listCampaigns, updateCampaign, getContent, listContent, localISODate, isBrandSalesReady, ensureBrandSales } from "./store.js";
 
 const DAY = 86400000;
 const uid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// `loading`: the brand's month docs (js/store.js) aren't in memory yet —
+// totals from `entries` are partial then, not final; asking starts the load
+// (the page repaints when it lands).
 export function getTracker(brand) {
   const s = brand?.salesTracker || {};
+  const loading = !!brand?.id && !isBrandSalesReady(brand.id);
+  if (loading) ensureBrandSales(brand.id);
   return {
     model: s.model || "product",
     products: Array.isArray(s.products) ? s.products : [],
     entries: Array.isArray(s.entries) ? s.entries : [],
     openingRevenue: num(s.openingRevenue),
     lastAdvice: s.lastAdvice || null,
+    loading,
   };
 }
 function save(brandId, patch) {
   const brand = getBrand(brandId);
   if (!brand) return null;
-  const next = { ...getTracker(brand), ...patch, updatedAt: Date.now() };
+  const { loading, ...tracker } = getTracker(brand);
+  const next = { ...tracker, ...patch, updatedAt: Date.now() };
   updateBrand(brandId, { salesTracker: next });
   syncSalesCampaign(brandId);
   return next;
@@ -221,7 +232,8 @@ export function clearAllSales(brandId) {
 export function saveAdvice(brandId, advice) {
   const brand = getBrand(brandId);
   if (!brand) return;
-  updateBrand(brandId, { salesTracker: { ...getTracker(brand), lastAdvice: { ...advice, at: Date.now() } } });
+  const { loading, ...tracker } = getTracker(brand);
+  updateBrand(brandId, { salesTracker: { ...tracker, lastAdvice: { ...advice, at: Date.now() } } });
 }
 
 // ---------- Derived numbers (pure) ----------
@@ -282,6 +294,9 @@ export function syncSalesCampaign(brandId) {
   const campaign = runningSalesCampaign(brandId);
   const brand = getBrand(brandId);
   if (!campaign || !brand) return false;
+  // Only from the full log (loaded per brand, js/store.js): totals from a
+  // partial one would overwrite the campaign's numbers with smaller ones.
+  if (!isBrandSalesReady(brandId)) return false;
   const tracker = getTracker(brand);
   const stats = productStats(tracker);
   const totals = trackerTotals(tracker);

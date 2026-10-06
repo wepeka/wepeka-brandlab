@@ -4,7 +4,7 @@
 // token minted by /brandlab/connect) — this file only signs people into
 // Firebase Auth users that already exist, it never creates new ones.
 import { gaEvent } from "./analytics.js";
-import { auth } from "./firebase.js";
+import { auth, flushPendingWrites, wipeLocalFirestore } from "./firebase.js";
 import {
   onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
   GoogleAuthProvider, signInWithPopup, getAdditionalUserInfo, signInWithCustomToken,
@@ -80,6 +80,10 @@ export async function loginWithGoogle() {
   gaEvent("login", { method: "google" });
 }
 export async function logout() {
+  // Queued edits get a moment to reach the server while this person is
+  // still signed in — after signOut they could only wait in the cache that
+  // is about to be wiped.
+  await flushPendingWrites();
   await signOut(auth);
   // This tab's scratch state — unsaved Copy Studio drafts, the last brand
   // opened, tour hand-offs — belonged to whoever was signed in, never to
@@ -90,6 +94,11 @@ export async function logout() {
   } catch {
     /* storage off: nothing to clear */
   }
+  // Same for the Firestore cache on disk (brands, content, chats): wiped
+  // before anyone else can sign in here. The Firestore client is unusable
+  // afterwards — every caller reloads the page (js/layout.js, settings, and
+  // main.js's boot(null) for the locked/pricing screens and other tabs).
+  await wipeLocalFirestore();
 }
 export function resetPassword(email) {
   return sendPasswordResetEmail(auth, email);

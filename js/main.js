@@ -27,15 +27,15 @@ import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
 import { noteNavigation } from "./nav-context.js";
 import { initAnalytics, setUser } from "./analytics.js";
 import { initMetaPixel } from "./meta-pixel.js";
-import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents } from "./store.js";
+import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
-import { auth } from "./firebase.js";
+import { auth, wipeLocalFirestore, claimLocalCache } from "./firebase.js";
 import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { toast, showWelcomeBumper } from "./dom.js";
-import { ensureAccountDoc, subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
+import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -225,8 +225,22 @@ function lockedScreenHTML(email) {
 }
 
 async function boot(user) {
+  // Signing into another account from an SSO link: the page reloads as soon
+  // as that sign-in lands, onto a fresh Firestore client (consumeWepekaToken).
+  if (switchingAccount) return;
   if (!user && ssoPending) {
     showLoading();
+    return;
+  }
+  if (!user && subscribedUid !== null) {
+    // Someone was signed in here a moment ago — logged out in this tab or
+    // another one, or the session ended. Their data must not stay in this
+    // tab's memory or in the Firestore cache on disk for whoever comes next:
+    // wipe the cache and start over from a clean page.
+    teardownApp();
+    showLoading();
+    await wipeLocalFirestore();
+    location.reload();
     return;
   }
   if (!user) {
@@ -259,7 +273,10 @@ async function boot(user) {
   subscribedUid = user.uid;
   if (accountUnsub) { accountUnsub(); accountUnsub = null; }
   showLoading();
-  await ensureAccountDoc(user);
+  // No separate account read first: the listener below delivers the cached
+  // copy straight away (persistent cache) and the server's right after.
+  await claimLocalCache(user.uid);
+  if (subscribedUid !== user.uid) return; // signed out / switched meanwhile
   accountUnsub = subscribeAccount(user.uid, (account) => onAccountChange(user, account));
 }
 
@@ -369,6 +386,7 @@ function onAccountChange(user, account) {
 // only the most recent renderRoute() call is allowed to touch the DOM/set
 // cleanup once its import resolves.
 let renderToken = 0;
+const BRAND_SCOPE_WAIT_MS = 10_000;
 
 // Pemula mode with exactly one brand: the "pick a brand" page is a
 // decision with only one answer, so the first route after boot skips it
@@ -395,6 +413,11 @@ const pulsedBrands = new Set();
 async function runPulseOnce(brandId) {
   if (pulsedBrands.has(brandId) || isReadOnly(getCachedAccount())) return;
   pulsedBrands.add(brandId);
+  // Signals are written into the brand's log — computed from the server's
+  // copy, never from a cache that may be a day old.
+  await whenServerSynced();
+  // Sales signals from the whole log, not the part loaded so far.
+  if (!isBrandSalesReady(brandId)) await ensureBrandSales(brandId).catch(() => {});
   const brand = getBrand(brandId);
   if (!brand) return;
   try {
@@ -476,7 +499,17 @@ async function renderRoute() {
     window.scrollTo(0, 0);
     return;
   }
-  if (route.brandId) runPulseOnce(route.brandId);
+  if (route.brandId) {
+    // A brand's chat threads (and, for a brand using the Sales Tracker, its
+    // month docs of sales — in parallel) load per brand (js/store.js
+    // watchBrandScope); the page waits for them so every view still reads
+    // them synchronously. Uploaded files don't hold the page: they fill in.
+    // Instant from the local cache; capped so a dead connection can't hold
+    // the page forever.
+    await Promise.race([watchBrandScope(route.brandId), new Promise((r) => setTimeout(r, BRAND_SCOPE_WAIT_MS))]);
+    if (token !== renderToken) return;
+    runPulseOnce(route.brandId);
+  }
 
   // Same brand + same mode + same lock state = same topbar: keep it in
   // place and only swap the page underneath (short fade-out, then the new
@@ -708,9 +741,12 @@ async function consumeWepekaToken() {
         });
         if (!ok) return;
         // Tear the current session down before switching, so its store
-        // doesn't briefly keep rendering under the new uid.
-        await logout();
+        // doesn't briefly keep rendering under the new uid — and its
+        // Firestore cache is wiped (logout) before the new account signs
+        // in. The new account then starts on a freshly loaded page.
+        switchingAccount = true;
         teardownApp();
+        await logout();
         storeReady = false;
         subscribedUid = null;
       }
@@ -718,15 +754,22 @@ async function consumeWepekaToken() {
     await loginWithWepekaToken(token);
     unlockPaywall();
     if (to === "pricing") location.hash = "#/pricing";
+    if (switchingAccount) location.reload();
   } catch (err) {
     console.warn("[sso] Wepeka token rejected", err);
     toast(t("auth.wepeka.failed"), "error");
     location.hash = "#/login";
+    // The old account is already signed out and its cache wiped: the login
+    // screen comes up on a clean page.
+    if (switchingAccount) location.reload();
   } finally {
     ssoPending = false;
-    if (!lastUser) boot(lastUser);
+    if (!lastUser && !switchingAccount) boot(lastUser);
   }
 }
+// True once an SSO switch has signed the previous account out (see above):
+// boot() stands still until the page reloads for the new account.
+let switchingAccount = false;
 
 let lastUser = null;
 showLoading();

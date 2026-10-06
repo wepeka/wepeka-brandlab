@@ -785,8 +785,8 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
       <div class="field"><label for="cp-weeks">${t("camp.cplan.weeks")}</label><input class="input" id="cp-weeks" type="number" min="1" max="${PLAN_MAX_WEEKS}" value="${st.weeks}" /></div>
       <div class="field"><label for="cp-start">${t("camp.cplan.start")}</label><input class="input" id="cp-start" type="date" value="${st.start}" /></div>
     </div>
-    <div class="field"><label>${t("camp.cplan.perWeek")}</label>
-      <div class="chip-select" id="cp-per">${PLAN_PER_WEEK.map((n) => `<button type="button" data-val="${n}" class="${n === st.perWeek ? "active" : ""}">${t("camp.cplan.perWeekN", { n })}</button>`).join("")}</div>
+    <div class="field"><label id="cp-per-label">${t("camp.cplan.perWeek")}</label>
+      <div class="chip-select" id="cp-per" role="group" aria-labelledby="cp-per-label">${PLAN_PER_WEEK.map((n) => `<button type="button" data-val="${n}" class="${n === st.perWeek ? "active" : ""}" aria-pressed="${n === st.perWeek}">${t("camp.cplan.perWeekN", { n })}</button>`).join("")}</div>
     </div>
     ${st.error ? `<p class="ev-error">${esc(st.error)}</p>` : ""}
     ${st.busy ? `${loadingHTML(t("camp.cplan.busy"))}` : ""}`;
@@ -1430,6 +1430,25 @@ function runAction(cta, { brandId, brand, campaign, stage, stages, ctx, refresh,
       return;
     default:
   }
+}
+
+// Beranda's "Catat angka" (js/views/home.js runTodayAction): the same
+// manual step this page's own button runs — the "Catat angka" sheet, a
+// checklist tick, or the community name dialog — opened over Beranda
+// instead of after a trip here. Reads the campaign's current stage the way
+// next-action.js did when it picked the action. Returns false when the
+// milestone isn't on that stage any more (Beranda then opens this page).
+export function openManualStepFromHome({ brandId, campaignId, milestoneId = null, onDone = () => {} }) {
+  const brand = getBrand(brandId);
+  const campaign = listCampaigns(brandId).find((c) => c.id === campaignId);
+  if (!brand || !campaign) return false;
+  const content = listContent(brandId);
+  const ctx = { brand, campaign, content, settings: getSettings() };
+  const stages = campaignStages(campaign);
+  const stage = stages[activeStageIndex(campaign, stages, content)];
+  if (!stage || (milestoneId && !stage.milestones?.some((m) => m.id === milestoneId))) return false;
+  runAction({ type: "manual", milestoneId }, { brandId, brand, campaign, stage, stages, ctx, refresh: onDone, ctxLabel: t("nav.home") });
+  return true;
 }
 
 // The only place numbers get typed: every manual.* milestone of this stage

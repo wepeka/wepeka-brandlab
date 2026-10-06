@@ -18,6 +18,8 @@ import chat_hub from "./i18n/chat-hub.js";
 import series from "./i18n/series.js";
 import announcements from "./i18n/announcements.js";
 import retention from "./i18n/retention.js";
+import beranda from "./i18n/beranda.js";
+import reminders from "./i18n/reminders.js";
 
 const KEY = "wepeka-lang";
 
@@ -661,7 +663,13 @@ const EXTRA = {
   "series": series,
   "announcements": announcements,
   "retention": retention,
+  "beranda": beranda,
+  "reminders": reminders,
 };
+// Production build seam: scripts/build.mjs swaps this exact line for a
+// top-level await that loads ONLY the active language (one chunk per
+// language, built from CORE + EXTRA above), so a visitor never downloads
+// both. Keep it one line, word for word — the build stops if it changes.
 const DICT = Object.assign({}, CORE, ...Object.values(EXTRA));
 
 // For the key/translation checker only.

@@ -93,7 +93,7 @@ export function openWritingRulesModal(brandId, { onSaved = () => {} } = {}) {
       <div class="field">
         <label for="wr-call">${t("wr.call.label")}</label>
         <input class="input" id="wr-call" maxlength="24" autocomplete="off" placeholder="${esc(t("wr.call.ph"))}" value="${esc(st.customerCall)}" />
-        <div class="chip-select wr-call-chips">${CALL_CHOICES.map((c) => `<button type="button" data-wr-call="${c}" class="${st.customerCall === c ? "active" : ""}">${c}</button>`).join("")}</div>
+        <div class="chip-select wr-call-chips">${CALL_CHOICES.map((c) => `<button type="button" data-wr-call="${c}" class="${st.customerCall === c ? "active" : ""}" aria-pressed="${st.customerCall === c}">${c}</button>`).join("")}</div>
       </div>
       <div class="field" style="margin-bottom:0;">
         <label for="wr-tag-input">${t("wr.tags.label")}</label>
@@ -124,7 +124,7 @@ export function openWritingRulesModal(brandId, { onSaved = () => {} } = {}) {
   qsa("[data-wr-call]", overlay).forEach((b) =>
     b.addEventListener("click", () => {
       callInput.value = b.dataset.wrCall;
-      qsa("[data-wr-call]", overlay).forEach((x) => x.classList.toggle("active", x === b));
+      qsa("[data-wr-call]", overlay).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-pressed", String(x === b)); });
     })
   );
   const tagInput = qs("#wr-tag-input", overlay);

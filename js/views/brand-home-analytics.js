@@ -174,7 +174,7 @@ function widgetShellHTML(key, labelKey, bodyHTML, headerExtraHTML = "") {
 
 function periodSelectHTML(periodOptions, selected) {
   return `
-    <select class="select" data-top-content-period style="width:auto;padding:5px 28px 5px 10px;font-size:12px;border-radius:8px;">
+    <select class="select" data-top-content-period aria-label="${escapeText(t("bha.periodAria"))}" style="width:auto;padding:5px 28px 5px 10px;font-size:12px;border-radius:8px;">
       ${periodOptions.map((o) => `<option value="${o.value}" ${o.value === selected ? "selected" : ""}>${escapeText(o.label)}</option>`).join("")}
     </select>
   `;

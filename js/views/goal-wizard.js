@@ -142,9 +142,9 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
   function durationChipsHTML(id, options, current) {
     const isCustom = !options.includes(current);
     return `
-      <div class="chip-select" id="${id}">
-        ${options.map((m) => `<button type="button" data-val="${m}" class="${!isCustom && current === m ? "active" : ""}">${t("goal.wizard.months", { n: m })}</button>`).join("")}
-        <button type="button" data-val="custom" class="${isCustom ? "active" : ""}">${t("goal.wizard.monthsCustom")}</button>
+      <div class="chip-select" id="${id}" role="group" aria-labelledby="${id}-label">
+        ${options.map((m) => `<button type="button" data-val="${m}" class="${!isCustom && current === m ? "active" : ""}" aria-pressed="${!isCustom && current === m}">${t("goal.wizard.months", { n: m })}</button>`).join("")}
+        <button type="button" data-val="custom" class="${isCustom ? "active" : ""}" aria-pressed="${isCustom}">${t("goal.wizard.monthsCustom")}</button>
       </div>
       ${isCustom ? `<div class="field" style="margin-top:8px;"><input class="input" id="${id}-custom" inputmode="numeric" autocomplete="off" aria-label="${esc(t("goal.wizard.monthsCustomAria"))}" aria-describedby="${id}-custom-hint" value="${current}" placeholder="${esc(t("goal.wizard.monthsCustomPh"))}" /><p class="hint" id="${id}-custom-hint" style="margin:0;">${t("goal.wizard.monthsCustomHint")}</p></div>` : ""}`;
   }
@@ -197,8 +197,8 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       ${progress()}
       <h3 class="copy-q">${esc(trackTitle("social"))}</h3>
       <div class="field">
-        <label>${t("goal.launch.platformQ")}</label>
-        <div class="chip-select" id="goal-platform">${SOCIAL_PLATFORMS.map((p) => `<button type="button" data-val="${p}" class="${state.platform === p ? "active" : ""} ${socialTaken.has(p) ? "is-taken" : ""}" ${socialTaken.has(p) ? "disabled" : ""}>${esc(t(`goal.launch.platform.${p}`))}${socialTaken.has(p) ? ` <small>${t("goal.launch.platformTaken")}</small>` : ""}</button>`).join("")}</div>
+        <label id="goal-platform-label">${t("goal.launch.platformQ")}</label>
+        <div class="chip-select" id="goal-platform" role="group" aria-labelledby="goal-platform-label">${SOCIAL_PLATFORMS.map((p) => `<button type="button" data-val="${p}" class="${state.platform === p ? "active" : ""} ${socialTaken.has(p) ? "is-taken" : ""}" aria-pressed="${state.platform === p}" ${socialTaken.has(p) ? "disabled" : ""}>${esc(t(`goal.launch.platform.${p}`))}${socialTaken.has(p) ? ` <small>${t("goal.launch.platformTaken")}</small>` : ""}</button>`).join("")}</div>
         <p class="ev-field-hint">${t("goal.launch.platformHint")}</p>
       </div>
       ${numberField("goal-followers", t("goal.launch.followersQ"), state.followers, { hint: insightsFollowersFor(state.platform) !== null && state.followers === insightsFollowersFor(state.platform) ? t("goal.wizard.fromInsights") : t("goal.launch.followersHint") })}
@@ -206,7 +206,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       <div class="goal-suggest"><span>${t("goal.suggest.label")}</span>${SOCIAL_CHECKPOINTS.filter((cp) => cp > (state.followers || 0)).map((cp) => `<button type="button" class="goal-suggest-chip" data-goal-use-followers="${cp}"><b>${formatNumber(cp)}</b></button>`).join("")}</div>
       <p class="ev-runway ${a.cls}" id="goal-assess">${icon(a.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${a.html}</span></p>
       <div class="field">
-        <label>${t("goal.launch.horizonQ")}</label>
+        <label id="goal-months-label">${t("goal.launch.horizonQ")}</label>
         ${durationChipsHTML("goal-months", GOAL_DURATIONS, state.months)}
       </div>
       ${numberField("goal-uploads", t("goal.launch.freqQ"), state.uploadsPerWeek, { hint: cadenceUploads ? t("goal.wizard.uploadsFromCadence") : t("goal.launch.freqHint") })}
@@ -220,10 +220,10 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       ${progress()}
       <h3 class="copy-q">${esc(trackTitle("community"))}</h3>
       <div class="field">
-        <label>${t("goal.launch.hasQ")}</label>
-        <div class="chip-select" id="goal-has">
-          <button type="button" data-val="yes" class="${state.hasExisting === true ? "active" : ""}">${t("goal.launch.hasYes")}</button>
-          <button type="button" data-val="no" class="${state.hasExisting === false ? "active" : ""}">${t("goal.launch.hasNo")}</button>
+        <label id="goal-has-label">${t("goal.launch.hasQ")}</label>
+        <div class="chip-select" id="goal-has" role="group" aria-labelledby="goal-has-label">
+          <button type="button" data-val="yes" class="${state.hasExisting === true ? "active" : ""}" aria-pressed="${state.hasExisting === true}">${t("goal.launch.hasYes")}</button>
+          <button type="button" data-val="no" class="${state.hasExisting === false ? "active" : ""}" aria-pressed="${state.hasExisting === false}">${t("goal.launch.hasNo")}</button>
         </div>
       </div>
       ${state.hasExisting ? numberField("goal-members", t("goal.launch.membersQ"), state.members) : ""}
@@ -231,9 +231,9 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       ${suggested ? `<div class="goal-suggest"><span>${t("goal.suggest.label")}</span><button type="button" class="goal-suggest-chip" data-goal-use-members="${suggested}"><b>${formatNumber(suggested)}</b></button></div><p class="ev-field-hint" style="margin-top:-6px;">${t("goal.launch.suggestTarget", { n: formatNumber(suggested) })}</p>` : ""}
       ${a ? `<p class="ev-runway ${a.cls}" id="goal-assess">${icon(a.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${a.html}</span></p>` : ""}
       <div class="field">
-        <label>${t("goal.launch.whereQ")}</label>
+        <label id="goal-where-label">${t("goal.launch.whereQ")}</label>
         <p class="ev-field-hint" style="margin-top:-2px;">${t("goal.launch.whereMultiHint")}</p>
-        <div class="chip-select" id="goal-where" style="flex-wrap:wrap;">${COMMUNITY_PLATFORMS.map((p) => `<button type="button" data-val="${p.id}" class="${state.platformWhere.has(p.id) ? "active" : ""}">${esc(p.label)}</button>`).join("")}</div>
+        <div class="chip-select" id="goal-where" role="group" aria-labelledby="goal-where-label" style="flex-wrap:wrap;">${COMMUNITY_PLATFORMS.map((p) => `<button type="button" data-val="${p.id}" class="${state.platformWhere.has(p.id) ? "active" : ""}" aria-pressed="${state.platformWhere.has(p.id)}">${esc(p.label)}</button>`).join("")}</div>
       </div>
       ${nextBtn(state.order[state.stepIdx + 1] === "preview" ? t("goal.wizard.seePlan") : undefined)}`;
   }
@@ -281,15 +281,15 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       <h3 class="copy-q">${esc(trackTitle("sales"))}</h3>
       <p class="ev-runway">${icon("info", { size: 12 })}<span>${t("goal.sales.manualNote")}</span></p>
       <div class="field">
-        <label>${t("goal.sales.modelQ")}</label>
-        <div class="chip-select" id="goal-sales-model" style="flex-wrap:wrap;">${SALES_MODELS.map((m) => `<button type="button" data-val="${m.id}" class="${state.salesModel === m.id ? "active" : ""}">${esc(t(`goal.sales.model.${m.id}`))}</button>`).join("")}</div>
+        <label id="goal-sales-model-label">${t("goal.sales.modelQ")}</label>
+        <div class="chip-select" id="goal-sales-model" role="group" aria-labelledby="goal-sales-model-label" style="flex-wrap:wrap;">${SALES_MODELS.map((m) => `<button type="button" data-val="${m.id}" class="${state.salesModel === m.id ? "active" : ""}" aria-pressed="${state.salesModel === m.id}">${esc(t(`goal.sales.model.${m.id}`))}</button>`).join("")}</div>
         <p class="ev-field-hint">${t("goal.sales.modelHint", { unit: unitLabel(salesModel(state.salesModel).unit) })}</p>
       </div>
       <label class="goal-products-label">${t("goal.sales.productsQ")}</label>
       ${state.products.map(productCardHTML).join("")}
       <button type="button" class="btn btn-secondary btn-sm" data-gp-add style="margin-bottom:14px;">${icon("plus", { size: 13 })}${t("goal.sales.addProduct")}</button>
       <div class="field">
-        <label>${t("goal.sales.horizonQ")}</label>
+        <label id="goal-sales-months-label">${t("goal.sales.horizonQ")}</label>
         ${durationChipsHTML("goal-sales-months", SALES_DURATIONS, state.salesMonths)}
       </div>
       <p class="ev-runway ${a.cls}" id="goal-assess">${icon(a.cls === "is-ok" ? "check" : "info", { size: 12 })}<span>${a.html}</span></p>
@@ -488,7 +488,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
           readInputs();
           apply(b.dataset.val);
           if (repaint) paint();
-          else qsa(`${sel} button`, root).forEach((x) => x.classList.toggle("active", x === b));
+          else qsa(`${sel} button`, root).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-pressed", String(x === b)); });
         })
       );
     chips("#goal-platform", (v) => {
@@ -510,6 +510,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         if (state.platformWhere.has(b.dataset.val)) state.platformWhere.delete(b.dataset.val);
         else state.platformWhere.add(b.dataset.val);
         b.classList.toggle("active", state.platformWhere.has(b.dataset.val));
+        b.setAttribute("aria-pressed", String(state.platformWhere.has(b.dataset.val)));
       })
     );
     ["#goal-followers", "#goal-followers-target", "#goal-members", "#goal-members-target"].forEach((sel) =>

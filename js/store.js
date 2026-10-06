@@ -8,10 +8,27 @@
 import { toast } from "./dom.js";
 import { t, getLang } from "./i18n.js";
 import CAMPAIGN_DICT from "./i18n/campaigns.js";
-import { db as fdb } from "./firebase.js";
-import {
-  collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, writeBatch,
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { db as fdb, auth, loadFirestore } from "./firebase.js";
+import { BLOB_FIELDS, isDataUrl, isAssetRef, assetIdOf, assetRefsOf, hasInlineBlobs, dehydrateBlobs, hydrateBlobs, blobValues, mapBlobSlots } from "./brand-assets.js";
+import { brandLimitOf } from "./account.js";
+
+// The Firestore SDK is loaded on first use (js/firebase.js loadFirestore),
+// not with this module: the login screen imports store.js through the app
+// shell but never touches the cloud. initStore() — and every write, via
+// persist() — waits for it; until then these stay unset. `fdb` above is a
+// live binding to the instance, set by the same load.
+let collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDocs, arrayUnion, arrayRemove, serverTimestamp, getDoc, getDocFromCache, getDocFromServer, runTransaction;
+let sdkReady = null;
+function ensureSdk() {
+  if (!sdkReady) {
+    sdkReady = loadFirestore().then((fs) => {
+      ({ collection, doc, query, where, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, getDocs, arrayUnion, arrayRemove, serverTimestamp, getDoc, getDocFromCache, getDocFromServer, runTransaction } = fs);
+      return fs;
+    });
+    sdkReady.catch(() => { sdkReady = null; });
+  }
+  return sdkReady;
+}
 
 export const METRIC_KEYS = [
   "views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained",
@@ -391,7 +408,7 @@ function dispatchDbChange() {
 function persist(sync) {
   dispatchDbChange();
   if (!sync) return;
-  Promise.resolve()
+  ensureSdk()
     .then(sync)
     .catch((e) => {
       console.error("Cloud sync failed", e);
@@ -402,15 +419,67 @@ function persist(sync) {
 // Firestore's hard cap is 500 ops/batch — chunking at 400 leaves headroom
 // (the trash cascades below sit right at that margin) without needing a
 // second, riskier constant just for those.
+// A batch request is also capped at 10 MiB — asset docs (uploaded files,
+// up to ~1 MB each) can reach that long before 400 ops, so a chunk also
+// closes at ~8 MB of data.
+const BATCH_MAX_CHARS = 8_000_000;
+// An entry may be `{ group: [op, …] }`: ops that must land in the same
+// batch (a brand and the brand-count move that goes with it).
 async function commitInChunks(ops) {
-  for (let i = 0; i < ops.length; i += 400) {
+  const chunks = [];
+  let cur = [];
+  let chars = 0;
+  ops.filter(Boolean).forEach((entry) => {
+    const group = (entry.group || [entry]).filter(Boolean);
+    let size = 0;
+    try { size = group.reduce((n, op) => n + (op.data ? JSON.stringify(op.data).length : 0), 0); } catch { /* unsized: counts as small */ }
+    if (cur.length && (cur.length + group.length > 400 || chars + size > BATCH_MAX_CHARS)) {
+      chunks.push(cur);
+      cur = [];
+      chars = 0;
+    }
+    cur.push(...group);
+    chars += size;
+  });
+  if (cur.length) chunks.push(cur);
+  for (const chunk of chunks) {
     const batch = writeBatch(fdb);
-    ops.slice(i, i + 400).forEach((op) => {
+    chunk.forEach((op) => {
       if (op.type === "delete") batch.delete(op.ref);
+      else if (op.type === "update") batch.update(op.ref, op.data);
+      else if (op.options) batch.set(op.ref, op.data, op.options);
       else batch.set(op.ref, op.data);
     });
     await batch.commit();
   }
+}
+
+// ---------- Partial writes ----------
+// An update writes only the top-level fields it changed, each replacing the
+// stored field whole (an `undefined` field is deleted) — not the whole doc.
+// A stale tab, or a device coming back online with an old copy, can then no
+// longer overwrite fields it never touched, and a small edit to a brand no
+// longer re-uploads every other field with it. Creates still write the whole
+// doc (setDoc). A field name that isn't a plain identifier can't be written
+// as a field path (a dot would read as nesting), so that rare case falls
+// back to the old whole-doc setDoc.
+const PLAIN_FIELD = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+function fieldPatch(item, fields) {
+  const out = {};
+  fields.forEach((k) => { out[k] = item[k] === undefined ? deleteField() : item[k]; });
+  return out;
+}
+function updateFields(col, id, item, fields) {
+  const keys = [...new Set(fields)].filter(Boolean);
+  if (!keys.length) return Promise.resolve();
+  if (!keys.every((k) => PLAIN_FIELD.test(k))) return setDoc(doc(fdb, col, id), item);
+  return updateDoc(doc(fdb, col, id), fieldPatch(item, keys));
+}
+// The same as one batch op, for the cascades that go through commitInChunks.
+function updateOp(col, item, fields) {
+  const keys = [...new Set(fields)].filter(Boolean);
+  if (!keys.every((k) => PLAIN_FIELD.test(k))) return { type: "set", ref: doc(fdb, col, item.id), data: item };
+  return { type: "update", ref: doc(fdb, col, item.id), data: fieldPatch(item, keys) };
 }
 
 // The signed-in account's uid — every collection below is queried filtered
@@ -429,17 +498,44 @@ let ownerUid = null;
 // this client's own writes echoing back, and every other teammate on the
 // same account's writes) re-populates `db` and fires `db:change` — this is
 // what makes the app feel live/shared.
+// With the persistent cache (js/firebase.js) the first snapshot of every
+// listener usually comes from this device's cache — the app paints from it
+// at once — and the server's copy follows a moment later. Anything that
+// WRITES on its own, without the owner asking (the 30-day Trash sweep, the
+// one-time idea fold-in, a lazy blob/sales migration, Brand Pulse), must
+// not act on a cache that may be a day old: it waits for this promise,
+// which resolves once brands/content/campaigns/series have each had a
+// server-confirmed snapshot.
+let serverSyncedResolve = null;
+let serverSyncedNow = false;
+const serverSyncedPromise = new Promise((r) => { serverSyncedResolve = r; });
+export function whenServerSynced() {
+  return serverSyncedPromise;
+}
+export function isServerSynced() {
+  return serverSyncedNow;
+}
+
 export function initStore(uid) {
   ownerUid = uid;
-  return new Promise((resolve) => {
-    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, brainstorms: false, series: false, settings: false };
+  return ensureSdk().then(() => new Promise((resolve) => {
+    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, series: false, settings: false };
     const checkReady = () => {
       if (!Object.values(ready).every(Boolean)) return;
-      // Fire-and-forget: everything this account owns has its first
-      // snapshot in now, so Trash rows older than TRASH_DAYS are safe to
-      // sweep. Never blocks the app's first render on it.
-      try { purgeOldTrash(); } catch (e) { console.error("Trash auto-purge failed", e); }
       resolve();
+    };
+    const synced = { brands: false, content: false, campaigns: false, series: false };
+    const noteServer = (key, snap) => {
+      if (serverSyncedNow || !(key in synced) || snap?.metadata?.fromCache) return;
+      synced[key] = true;
+      if (!Object.values(synced).every(Boolean)) return;
+      serverSyncedNow = true;
+      serverSyncedResolve();
+      // Fire-and-forget: everything this account owns is confirmed by the
+      // server now, so Trash rows older than TRASH_DAYS are safe to sweep
+      // (a cached row could have been restored on another device since).
+      // Never blocks the app's first render on it.
+      try { purgeOldTrash(); } catch (e) { console.error("Trash auto-purge failed", e); }
     };
     // A permission-denied (e.g. a momentarily stale auth token right after a
     // network blip) or any other listener error used to leave `ready[key]`
@@ -458,47 +554,39 @@ export function initStore(uid) {
     };
     const mine = (col) => query(collection(fdb, col), where("ownerId", "==", uid));
 
-    onSnapshot(mine("brands"), (snap) => {
-      db.brands = snap.docs.map((d) => d.data());
-      ready.brands = true;
-      checkReady();
-      dispatchDbChange();
-    }, onErr("brands", "brands"));
-
-    onSnapshot(mine("content"), (snap) => {
-      db.content = snap.docs.map((d) => d.data());
-      ready.content = true;
-      checkReady();
-      dispatchDbChange();
-    }, onErr("content", "content"));
-
-    onSnapshot(mine("campaigns"), (snap) => {
-      db.campaigns = snap.docs.map((d) => d.data());
-      ready.campaigns = true;
-      checkReady();
-      dispatchDbChange();
-    }, onErr("campaigns", "campaigns"));
-
-    onSnapshot(mine("routineTemplate"), (snap) => {
-      db.routineTemplate = snap.docs.map((d) => d.data());
-      ready.routineTemplate = true;
-      checkReady();
-      dispatchDbChange();
-    }, onErr("routineTemplate", "routine"));
-
-    onSnapshot(mine("brainstorms"), (snap) => {
-      db.brainstorms = snap.docs.map((d) => d.data());
-      ready.brainstorms = true;
-      checkReady();
-      dispatchDbChange();
-    }, onErr("brainstorms", "brainstorms"));
-
-    onSnapshot(mine("series"), (snap) => {
-      db.series = snap.docs.map((d) => d.data());
-      ready.series = true;
-      checkReady();
-      dispatchDbChange();
-    }, onErr("series", "series"));
+    // One listener per collection. includeMetadataChanges so the moment the
+    // server confirms a cached snapshot is seen (see whenServerSynced) — a
+    // metadata-only event (cache → server with nothing changed, or a local
+    // write being acknowledged) doesn't rebuild the mirror or repaint.
+    const watch = (key, label, apply = (snap) => { db[key] = snap.docs.map((d) => d.data()); }, onEvery = null) => {
+      let seen = false;
+      onSnapshot(mine(key), { includeMetadataChanges: true }, (snap) => {
+        const changed = !seen || typeof snap.docChanges !== "function" || snap.docChanges().length > 0;
+        seen = true;
+        if (changed) {
+          apply(snap);
+          dispatchDbChange();
+        }
+        if (onEvery) onEvery(snap);
+        ready[key] = true;
+        checkReady();
+        noteServer(key, snap);
+      }, onErr(key, label));
+    };
+    watch("brands", "brands", (snap) => {
+      db.brands = withPendingCreates(snap.docs.map((d) => {
+        const raw = d.data();
+        noteStoredBrand(raw);
+        return overlayHeld(hydrateBrand(raw));
+      }));
+      // A new file ref (uploaded on another device) on the brand on screen.
+      if (scope.brandId) loadBrandAssets(scope.brandId);
+    }, noteBrandConfirmations);
+    watch("content", "content");
+    watch("campaigns", "campaigns");
+    watch("routineTemplate", "routine");
+    // Chat threads: per brand, see watchBrandScope.
+    watch("series", "series");
 
     // One settings doc per account (not shared globally) — platforms,
     // formats, thresholds etc. are this account's own, never visible to
@@ -544,7 +632,594 @@ export function initStore(uid) {
       aiUsageDoc = snap.exists() ? snap.data() : null;
       dispatchDbChange();
     }, (e) => console.error("Cloud sync (AI usage) failed", e));
+
+    // This account's active-brand count (see "Brand count" below). Only a
+    // server-confirmed value counts; missing → the server recounts it once.
+    // Not part of `ready`: brand writes wait for it themselves.
+    onSnapshot(doc(fdb, "brandCounts", uid), { includeMetadataChanges: true }, (snap) => {
+      if (snap.metadata?.fromCache) return;
+      brandCountDoc = snap.exists() ? snap.data() : null;
+      if (brandCountDoc) settleBrandCount();
+      else recountOnce();
+    }, (e) => {
+      // Unreadable (rules not deployed yet, …): write as an account without
+      // a counter; a denied brand write still triggers the recount + retry.
+      console.warn("Brand count unavailable", e);
+      brandCountDoc = null;
+      settleBrandCount();
+    });
+  }));
+}
+
+// ---------- Brand count: the plan's brand limit, enforced by the server ----------
+// brandCounts/{uid} = { count, op, at, lastRecountAt? } — how many of this
+// account's brands are ACTIVE (not archived, not in Trash): the same number
+// js/account.js canCreateBrand/lockedBrandIds count. Only the server creates
+// it (POST /api/brands/recount counts the brands with the Admin SDK — also
+// the repair path). The client never creates or deletes it: every brand
+// write that turns a brand active or inactive moves it by one IN THE SAME
+// BATCH, naming the brand (`op`) and stamped with the server's time (`at`);
+// firestore.rules check the two together and refuse any inactive → active
+// move (create, unarchive, restore) past the plan's limit. An account with
+// no counter is not limited — as before this release.
+//
+// WHEN COUNTING STARTS: the app only asks the server to create counters
+// from BRAND_COUNT_START on (WIB). Before that, a tab still running the
+// previous release — which never moves a counter — would get its brand
+// create/archive/trash refused the moment the new app created one; by that
+// date those tabs are gone. Until then: no recount, no counter writes, and
+// brand writes don't wait for anything (an account that somehow already
+// has a counter still gets its moves, or the rules would refuse them).
+// To change the date, change this one line.
+const BRAND_COUNT_START = "2026-10-14";
+let brandCountStartMs = Date.parse(`${BRAND_COUNT_START}T00:00:00+07:00`);
+// For tests (and a manual early start): an ISO date, WIB midnight.
+export function setBrandCountStart(isoDate) {
+  brandCountStartMs = Date.parse(`${isoDate}T00:00:00+07:00`);
+}
+const brandCountStarted = () => Date.now() >= brandCountStartMs;
+
+let brandCountDoc; // undefined: not known yet · null: none on the server · else { count, op }
+let brandCountReady = false;
+let brandCountResolve = null;
+const brandCountPromise = new Promise((r) => { brandCountResolve = r; });
+function settleBrandCount() {
+  if (brandCountReady) return;
+  brandCountReady = true;
+  brandCountResolve();
+}
+// Brand-activity writes wait for a known counter (a server snapshot, or
+// none after the recount) — capped, so a dead connection can't hold them
+// forever (they then go out as for an account without one). Nothing waits
+// before BRAND_COUNT_START.
+const BRAND_COUNT_WAIT_MS = 10_000;
+function whenBrandCountSettled() {
+  if (brandCountKnown()) return Promise.resolve();
+  return Promise.race([brandCountPromise, new Promise((r) => setTimeout(r, BRAND_COUNT_WAIT_MS))]);
+}
+// True once brand create/archive/trash/restore can be sent with the right
+// count (the UI may show "menyiapkan…" until then; the writes wait anyway).
+export function brandCountKnown() {
+  return brandCountReady || !ownerUid || !brandCountStarted();
+}
+// Asks the server to count this account's active brands and (re)write
+// brandCounts/{uid}. Resolves to the count, or rejects (offline, no auth,
+// before BRAND_COUNT_START).
+export async function recountBrands() {
+  if (!brandCountStarted()) throw new Error("recount: brand counting hasn't started yet");
+  const token = await auth?.currentUser?.getIdToken?.();
+  if (!token || typeof fetch !== "function") throw new Error("recount: not signed in");
+  const res = await fetch("/api/brands/recount", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`recount failed (${res.status})`);
+  const { count } = await res.json();
+  // What the server just stored — the listener will say the same shortly.
+  if (Number.isInteger(count) && count >= 0) brandCountDoc = { count, op: "recount" };
+  return count;
+}
+let recountTried = false;
+function recountOnce() {
+  if (recountTried || !brandCountStarted()) {
+    settleBrandCount();
+    return;
+  }
+  recountTried = true;
+  recountBrands()
+    .catch((e) => console.warn("Brand recount unavailable", e))
+    .finally(settleBrandCount);
+}
+// The one definition of an active brand, shared with firestore.rules
+// (brandActive) and api/brands/recount.js — the rules only let deletedAt be
+// null/absent or a timestamp and archived a boolean, so the app's own
+// truthiness checks (listBrands, account.js) agree on every stored value.
+export function brandIsActive(b) {
+  return !!b && b.archived !== true && (b.deletedAt === undefined || b.deletedAt === null);
+}
+// The counter write that must go with a brand whose activeness changes, or
+// null (no change, or no counter on the server — then none is needed).
+// Merged, so the server's lastRecountAt stays.
+function countOp(brandId, wasActive, isActive) {
+  if (wasActive === isActive || !ownerUid || !brandCountDoc) return null;
+  const count = Math.max(0, (Number(brandCountDoc.count) || 0) + (isActive ? 1 : -1));
+  brandCountDoc = { ...brandCountDoc, count, op: brandId };
+  return { type: "set", ref: doc(fdb, "brandCounts", ownerUid), data: { count, op: brandId, at: serverTimestamp() }, options: { merge: true } };
+}
+const isDenied = (e) => e?.code === "permission-denied" || /permission/i.test(String(e?.message || ""));
+// The brand's activeness as the server holds it (for the retry below).
+async function storedBrandActive(brandId, fallback) {
+  try {
+    const snap = await getDocFromServer(doc(fdb, "brands", brandId));
+    return snap.exists() ? brandIsActive(snap.data()) : false;
+  } catch {
+    return fallback;
+  }
+}
+// Hands a brand write — with the count move it needs — to Firestore at
+// once (no waiting for the server: Firestore's own queue keeps the order
+// and survives a reload), and returns the server's answer. Refused — the
+// server's count moved meanwhile (another device, a recount, a counter that
+// just appeared) or was simply wrong — then: recount on the server, re-read
+// the brand's stored state, retry once. Still refused: an error with code
+// "brand-limit" (over the plan's limit, as far as the client can tell), for
+// the caller to explain. `buildOps(counterOp)` returns the commitInChunks
+// ops. The first batch is handed over synchronously, before this returns.
+function commitBrandMove(brandId, wasActive, isActive, buildOps) {
+  const first = commitInChunks(buildOps(countOp(brandId, wasActive, isActive)));
+  return first.catch(async (e) => {
+    if (!isDenied(e) || !brandCountStarted()) throw e;
+    await recountBrands().catch(() => {});
+    const was = await storedBrandActive(brandId, wasActive);
+    try {
+      return await commitInChunks(buildOps(countOp(brandId, was, isActive)));
+    } catch (e2) {
+      if (!isDenied(e2)) throw e2;
+      const err = new Error("Brand write refused by the server (brand count / plan limit)");
+      err.code = "brand-limit";
+      err.activating = isActive && !was;
+      err.cause = e2;
+      throw err;
+    }
   });
+}
+// A brand write that can't be handed over yet — a brand-activity write
+// waiting for the count, or any write behind its brand's own pending
+// create — keeps its fields here, and every snapshot that rebuilds the
+// brand meanwhile (another tab, a cached copy) puts them back on top, so
+// the screen — and the next edit built from it — never sees them revert.
+// Brands created but not handed over yet stay in the list the same way.
+const heldFields = new Map(); // brandId → Map(field → value)
+const pendingCreates = new Map(); // brandId → { brand, issued: Promise }
+function holdBrandFields(brandId, values) {
+  const held = heldFields.get(brandId) || new Map();
+  Object.entries(values).forEach(([k, v]) => held.set(k, v));
+  heldFields.set(brandId, held);
+  return () => {
+    const cur = heldFields.get(brandId);
+    if (!cur) return;
+    Object.entries(values).forEach(([k, v]) => { if (cur.get(k) === v) cur.delete(k); });
+    if (!cur.size) heldFields.delete(brandId);
+  };
+}
+// Closing or reloading the tab while a brand write still waits (≤10 s for
+// the brand count, or behind its brand's create) would lose it — ask first.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("beforeunload", (e) => {
+    if (!pendingCreates.size && !heldFields.size) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+}
+function overlayHeld(brand) {
+  heldFields.get(brand.id)?.forEach((v, k) => { brand[k] = v; });
+  return brand;
+}
+function withPendingCreates(brands) {
+  if (!pendingCreates.size) return brands;
+  const ids = new Set(brands.map((b) => b.id));
+  return [...brands, ...[...pendingCreates.values()].map((p) => p.brand).filter((b) => !ids.has(b.id))];
+}
+// A refused move is undone locally, with a message that says why.
+function brandMoveFailed(e, revert) {
+  if (e?.code !== "brand-limit") throw e;
+  try { revert?.(); } catch { /* best effort */ }
+  dispatchDbChange();
+  toast(e.activating ? t("brands.offer.lockedTitle", { limit: brandLimitOf() }) : t("store.syncSaveFailed"), "error");
+}
+
+// ---------- Brand scope: loaded only for the brand on screen ----------
+// What only a brand's own pages read is not loaded for every brand at
+// startup. main.js calls watchBrandScope(brandId) for each brand route and
+// waits for what it returns: the brand's chat threads, and — only for a
+// brand that uses the Sales Tracker — its sales log (a few month docs; both
+// queries run in parallel). Uploaded files load WITHOUT blocking (see
+// loadBrandAssets): pages render, and fill them in when they arrive.
+// Switching brands swaps the listeners.
+let scope = { brandId: null, unsubs: [], ready: null };
+export function watchBrandScope(brandId) {
+  if (!brandId || !ownerUid) return Promise.resolve();
+  if (!onSnapshot) return ensureSdk().then(() => watchBrandScope(brandId));
+  if (scope.brandId === brandId && scope.ready) return scope.ready;
+  scope.unsubs.forEach((u) => { try { u(); } catch { /* already stopped */ } });
+  const unsubs = [];
+  scope = { brandId, unsubs, ready: null };
+  salesListenFor = null;
+  detachThreads(brandId);
+  ensureAssetPlaceholderStyle();
+  // Resolves on the first snapshot (cache or server) — or on an error, so a
+  // failed listener never leaves a page waiting forever (same rule as
+  // initStore's onErr).
+  const listen = (ref, onData, opts = {}) => new Promise((resolve) => {
+    unsubs.push(onSnapshot(ref, opts, (snap) => {
+      if (scope.brandId !== brandId) return;
+      onData(snap);
+      dispatchDbChange();
+      resolve();
+    }, (e) => {
+      console.error(`Cloud sync (brand ${brandId}) failed`, e);
+      toast(t("store.syncLoadFailed", { what: t("store.sync.brands") }), "error");
+      resolve();
+    }));
+  });
+  const mineIn = (col) => query(collection(fdb, col), where("ownerId", "==", ownerUid), where("brandId", "==", brandId));
+  const waits = [
+    // includeMetadataChanges: a thread counts as confirmed (safe to rewrite
+    // its whole log) only once a server snapshot has carried it.
+    listen(mineIn("brainstorms"), (snap) => applyThreadSnapshot(brandId, snap), { includeMetadataChanges: true }),
+  ];
+  if (brandUsesSales(brandId)) waits.push(ensureBrandSales(brandId));
+  scope.ready = Promise.all(waits).then(() => {});
+  loadBrandAssets(brandId);
+  setTimeout(() => {
+    if (scope.brandId === brandId) sweepBrandAssets(brandId).catch((e) => console.warn("Brand file sweep skipped", e));
+  }, ASSET_SWEEP_DELAY_MS);
+  return scope.ready;
+}
+// The brand whose scope is loaded right now (null before any brand route).
+export function scopeBrandId() {
+  return scope.brandId;
+}
+
+// ---------- Brand assets (uploaded files, js/brand-assets.js) ----------
+// Asset docs are content-addressed and never change, so they're read once
+// — this device's cache first (free), the server only for what isn't there
+// — instead of through a live listener that re-bills them on every reopen.
+// assetData: brandId → Map(assetId → dataUrl), every file seen this session.
+// serverBlobs: brandId → { refs, inline } of the stored brand doc, and
+// confirmedBrands: ids whose last snapshot came from the server with no
+// pending write of this tab — the only state the sweep below trusts.
+const assetData = new Map();
+const serverBlobs = new Map();
+const confirmedBrands = new Set();
+// Asset ids the last SERVER-CONFIRMED brand doc references, and the ones
+// this tab handed to Firestore itself: a save re-sends neither.
+const confirmedRefs = new Map();
+// "Sent by this tab" only counts for a day: a tab left open longer may
+// hold a file another device's sweep has since deleted, so after that it
+// re-sends rather than trusting the old mark.
+const UPLOADED_MARK_MS = 24 * 60 * 60 * 1000;
+const uploadedAssets = new Map(); // brandId → Map(assetId → sentAt)
+function sentRecently(brandId) {
+  const marks = uploadedAssets.get(brandId);
+  if (!marks) return new Set();
+  const now = Date.now();
+  return new Set([...marks].filter(([, at]) => now - at < UPLOADED_MARK_MS).map(([id]) => id));
+}
+function assetOnServer(brandId, id) {
+  return !!(confirmedRefs.get(brandId)?.has(id) || sentRecently(brandId).has(id));
+}
+// Returns an undo, for a write the server then refuses.
+function noteUploaded(brandId, list) {
+  const marks = uploadedAssets.get(brandId) || new Map();
+  const now = Date.now();
+  const added = list.map((u) => u.id).filter((id) => !marks.has(id) || now - marks.get(id) >= UPLOADED_MARK_MS);
+  added.forEach((id) => marks.set(id, now));
+  uploadedAssets.set(brandId, marks);
+  return () => added.forEach((id) => marks.delete(id));
+}
+const assetLoading = new Map(); // brandId → the load in progress (loads queue per brand)
+function rememberAssets(brandId, list) {
+  const map = assetData.get(brandId) || new Map();
+  list.forEach((a) => { if (a?.id && typeof a.dataUrl === "string") map.set(a.id, a.dataUrl); });
+  assetData.set(brandId, map);
+}
+function noteStoredBrand(raw) {
+  serverBlobs.set(raw.id, { refs: assetRefsOf(raw), inline: hasInlineBlobs(raw) });
+  serverSales.set(raw.id, Array.isArray(raw.salesTracker?.entries) ? raw.salesTracker.entries : []);
+}
+function noteBrandConfirmations(snap) {
+  const fromServer = !snap.metadata?.fromCache;
+  snap.docs.forEach((d) => {
+    if (fromServer && !d.metadata?.hasPendingWrites) {
+      confirmedBrands.add(d.id);
+      confirmedRefs.set(d.id, assetRefsOf(d.data()));
+    } else confirmedBrands.delete(d.id);
+  });
+}
+function hydrateBrand(brand) {
+  const map = assetData.get(brand?.id);
+  const out = map ? hydrateBlobs(brand, (id) => map.get(id)) : brand;
+  return hydrateSales(out);
+}
+function hydrateInPlace(brandId) {
+  const b = db.brands.find((x) => x.id === brandId);
+  if (!b) return;
+  // In place: a view holding this brand object sees the files too.
+  const h = hydrateBrand(b);
+  [...BLOB_FIELDS, "salesTracker"].forEach((k) => { if (h[k] !== b[k]) b[k] = h[k]; });
+  overlayHeld(b);
+}
+// The Brand Book's own state (state.answers, a brandGuidelines-shaped copy
+// taken when the page opened) with any refs that have loaded since swapped
+// for their files — same values as stored, so saving it changes nothing.
+// The same, but INTO that object (Brand Book handlers hold it — replacing it
+// would let a pick made while files load be overwritten). True if changed.
+export function fillGuidelinesFiles(brandId, a) {
+  const map = assetData.get(brandId);
+  if (!map || !a) return false;
+  let changed = false;
+  const fill = (obj, key) => {
+    const v = obj?.[key];
+    if (isAssetRef(v) && map.has(assetIdOf(v))) {
+      obj[key] = map.get(assetIdOf(v));
+      changed = true;
+    }
+  };
+  if (a.logo) ["dataUrl", "secondaryDataUrl", "logotypeDataUrl"].forEach((k) => fill(a.logo, k));
+  ["mascots", "moodboard"].forEach((k) => (Array.isArray(a[k]) ? a[k] : []).forEach((item) => fill(item, "dataUrl")));
+  if (a.customFonts && typeof a.customFonts === "object") Object.keys(a.customFonts).forEach((k) => fill(a.customFonts, k));
+  return changed;
+}
+export function hydrateGuidelines(brandId, guidelines) {
+  const map = assetData.get(brandId);
+  return map ? hydrateBlobs({ brandGuidelines: guidelines }, (id) => map.get(id)).brandGuidelines : guidelines;
+}
+async function fetchAsset(brandId, id, strict) {
+  const ref = doc(fdb, "brands", brandId, "assets", id);
+  try {
+    const cached = await getDocFromCache(ref);
+    if (cached.exists()) return { id, dataUrl: cached.data()?.dataUrl };
+  } catch {
+    /* not on this device yet */
+  }
+  try {
+    const snap = await getDoc(ref);
+    // Read fine, but not there (a dangling ref): `missing`, not an error.
+    return snap.exists() ? { id, dataUrl: snap.data()?.dataUrl } : { id, missing: true };
+  } catch (e) {
+    if (strict) throw e;
+    console.warn("Brand file not loaded", e);
+    return null;
+  }
+}
+// Loads whatever files the brand references that aren't in memory yet,
+// fills them into the brand (in place) and repaints. Resolves when done;
+// `strict` (backup export): rejects if a file couldn't be READ (network,
+// permission) — a file that simply isn't there is no error.
+export function loadBrandAssets(brandOrId, opts = {}) {
+  const brandId = typeof brandOrId === "string" ? brandOrId : brandOrId?.id;
+  if (!brandId) return Promise.resolve();
+  // One load at a time per brand: a second call waits, then fetches only
+  // what the first didn't bring.
+  const run = (assetLoading.get(brandId) || Promise.resolve()).catch(() => {}).then(() => loadBrandAssetsNow(brandOrId, opts));
+  assetLoading.set(brandId, run);
+  run.catch(() => {}).finally(() => { if (assetLoading.get(brandId) === run) assetLoading.delete(brandId); });
+  return run;
+}
+async function loadBrandAssetsNow(brandOrId, { strict = false } = {}) {
+  const brand = typeof brandOrId === "string" ? db.brands.find((b) => b.id === brandOrId) : brandOrId;
+  if (!brand?.id) return;
+  const map = assetData.get(brand.id);
+  const ids = [...assetRefsOf(brand)].filter((id) => !map?.has(id));
+  if (!ids.length) return;
+  try {
+    await ensureSdk();
+    const found = await Promise.all(ids.map((id) => fetchAsset(brand.id, id, strict)));
+    rememberAssets(brand.id, found.filter((f) => f?.dataUrl));
+    hydrateInPlace(brand.id);
+    dispatchDbChange();
+  } catch (e) {
+    if (strict) throw e;
+    console.warn("Brand files not loaded", e);
+  }
+}
+// While a file is still loading its <img> holds an "asset:" ref: keep it
+// invisible instead of a broken-image icon (filled in on the repaint).
+let placeholderStyled = false;
+function ensureAssetPlaceholderStyle() {
+  if (placeholderStyled || typeof document === "undefined" || !document.head?.appendChild) return;
+  placeholderStyled = true;
+  const style = document.createElement("style");
+  style.textContent = 'img[src^="asset:"]{visibility:hidden}';
+  document.head.appendChild(style);
+}
+// THE one way to read a stored file value, whichever shape it has: an old
+// inline data URL (returned as is), an "asset:<id>" ref (its data URL once
+// loaded, else ""), or anything else (""). Brands in memory are already
+// hydrated through this lookup; this is for code holding a raw value.
+export function resolveAsset(brandId, value) {
+  if (isDataUrl(value)) return value;
+  if (!isAssetRef(value)) return "";
+  return assetData.get(brandId)?.get(assetIdOf(value)) || "";
+}
+// A brand with its files swapped in — for one that isn't the brand on
+// screen: the locked pricing screen's read-only Brand Book (raw docs read
+// straight from Firestore) and the PDF. Works before initStore.
+export async function withBrandAssets(brand, { strict = false } = {}) {
+  if (!brand?.id || !assetRefsOf(brand).size) return brand;
+  await loadBrandAssets(brand, { strict });
+  return hydrateBrand(brand);
+}
+
+// Files no save deletes (a tab with an unacknowledged write, or a device
+// offline with an old copy, may still point at the previous one). Instead,
+// at most once a week per brand and device, a deferred sweep works in two
+// phases against the SERVER-CONFIRMED brand doc (never while a backup
+// import/export runs):
+//   - a file neither that doc nor this tab references gets marked
+//     unusedSince (server time);
+//   - a file still marked and unreferenced 14+ days after its mark is
+//     deleted; one that's referenced again loses its mark.
+// So a file is only deleted after two weeks of nobody using it.
+const ASSET_SWEEP_DELAY_MS = 20_000;
+const ASSET_UNUSED_MS = 14 * 86400000;
+const ASSET_SWEEP_EVERY_MS = 7 * 86400000;
+let bulkBusy = 0;
+const millisOf = (v) => (typeof v?.toMillis === "function" ? v.toMillis() : Number(v) || 0);
+export async function sweepBrandAssets(brandId, { now = Date.now(), force = false } = {}) {
+  const result = { marked: 0, cleared: 0, deleted: 0 };
+  if (bulkBusy || !ownerUid || !serverSyncedNow || !confirmedBrands.has(brandId)) return result;
+  const key = `brandlab:assetSweep:${brandId}`;
+  if (!force) {
+    try {
+      if (now - Number(localStorage.getItem(key) || 0) < ASSET_SWEEP_EVERY_MS) return result;
+    } catch {
+      /* storage off: sweep anyway */
+    }
+  }
+  await ensureSdk();
+  const snap = await getDocs(query(collection(fdb, "brands", brandId, "assets"), where("ownerId", "==", ownerUid)));
+  // Re-checked after the await: the brand may have changed meanwhile.
+  if (bulkBusy || !confirmedBrands.has(brandId)) return result;
+  const local = db.brands.find((b) => b.id === brandId);
+  const keep = new Set([...(confirmedRefs.get(brandId) || []), ...(local ? assetRefsOf(dehydrateBlobs(local).stored) : []), ...sentRecently(brandId)]);
+  const writes = snap.docs.map((d) => {
+    const ref = doc(fdb, "brands", brandId, "assets", d.id);
+    const mark = d.data()?.unusedSince;
+    if (keep.has(d.id)) {
+      if (mark == null) return null;
+      result.cleared += 1;
+      return updateDoc(ref, { unusedSince: deleteField() });
+    }
+    if (mark == null) {
+      result.marked += 1;
+      return updateDoc(ref, { unusedSince: serverTimestamp() });
+    }
+    if (now - millisOf(mark) < ASSET_UNUSED_MS) return null;
+    result.deleted += 1;
+    return deleteDoc(ref);
+  });
+  await Promise.all(writes.filter(Boolean).map((p) => p.catch((e) => console.warn("Brand file sweep step skipped", e))));
+  try {
+    localStorage.setItem(key, String(now));
+  } catch {
+    /* storage off */
+  }
+  return result;
+}
+
+// ---------- Sales log (brands/{brandId}/sales/{YYYY-MM}) ----------
+// brand.salesTracker.entries used to grow inside the brand doc without
+// bound. Entries now live in one doc per month —
+//   brands/{brandId}/sales/{YYYY-MM} = { ownerId, brandId, month, entries: [...] }
+// — far below 1 MiB each, so a cold open reads one doc per month of
+// history. The brand doc keeps the rest of salesTracker (products, opening
+// numbers, last advice). In memory nothing changes: salesTracker.entries is
+// the merge of what the brand doc still holds inline (old brands) and the
+// month docs, so js/sales-tracker.js, campaign metrics, the AI's sales
+// snapshot and reports read the same array as before.
+// Writes never rewrite a month: a new entry is arrayUnion'ed into its
+// month, a removed one arrayRemove'd — safe from a stale cache or a second
+// device, and idempotent. Old inline entries move to their months when the
+// owner next saves the Sales Tracker (never from an unrelated save).
+// salesData: brandId → Map(entryId → entry) from the month docs.
+// serverSales: brandId → entries the stored brand doc still holds inline.
+const salesData = new Map();
+const serverSales = new Map();
+const salesLoads = new Map();
+export const salesMonthOf = (entry) => (/^\d{4}-\d{2}-\d{2}/.test(String(entry?.date || "")) ? String(entry.date).slice(0, 7) : "undated");
+function rememberSalesDocs(brandId, docs) {
+  const entries = new Map();
+  docs.forEach((d) => (d.data()?.entries || []).forEach((e, i) => { if (e) entries.set(e.id || `${d.id}#${i}`, e); }));
+  salesData.set(brandId, entries);
+  hydrateInPlace(brandId);
+}
+function mergedEntries(brandId, inline) {
+  const sub = salesData.get(brandId);
+  if (!sub) return inline;
+  const byId = new Map();
+  (inline || []).forEach((e, i) => { if (e) byId.set(e.id || `inline#${i}`, e); });
+  sub.forEach((e, id) => byId.set(id, e));
+  // Stable sort: the log stays in the order sales were logged.
+  return [...byId.values()].sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
+}
+function hydrateSales(brand) {
+  if (!brand?.id || !salesData.has(brand.id)) return brand;
+  const inline = serverSales.get(brand.id) || [];
+  return { ...brand, salesTracker: { ...(brand.salesTracker || {}), entries: mergedEntries(brand.id, inline) } };
+}
+// A brand whose sales log is worth loading: it has products (no sale can be
+// logged without one) or entries still inline. Others cost nothing.
+function brandUsesSales(brandId) {
+  const b = db.brands.find((x) => x.id === brandId);
+  return !!(b?.salesTracker?.products?.length || b?.salesTracker?.entries?.length || serverSales.get(brandId)?.length);
+}
+// True once this brand's sales log is in memory — js/sales-tracker.js only
+// mirrors totals into a campaign (and shows totals as final) from a full log.
+export function isBrandSalesReady(brandId) {
+  return !ownerUid || salesData.has(brandId) || !brandUsesSales(brandId);
+}
+// Loads a brand's month docs: a live listener for the brand on screen (set
+// up again whenever the brand is opened again — a copy left from an earlier
+// visit isn't trusted as final), a one-time read for any other brand or a
+// backup (`strict`: always read, and reject on failure). Resolves once
+// they're in memory.
+let salesListenFor = null;
+let salesLive = null;
+export function ensureBrandSales(brandId, { strict = false } = {}) {
+  if (!brandId || !ownerUid) return Promise.resolve();
+  const live = !strict && scope.brandId === brandId;
+  if (live && salesListenFor === brandId) return salesLive;
+  if (!live && !strict && salesData.has(brandId)) return Promise.resolve();
+  if (!live && !strict && salesLoads.has(brandId)) return salesLoads.get(brandId);
+  const run = ensureSdk().then(() => {
+    const ref = query(collection(fdb, "brands", brandId, "sales"), where("ownerId", "==", ownerUid));
+    if (!live) return getDocs(ref).then((snap) => rememberSalesDocs(brandId, snap.docs));
+    return new Promise((resolve) => {
+      if (scope.brandId !== brandId) return resolve();
+      scope.unsubs.push(onSnapshot(ref, (snap) => {
+        if (scope.brandId !== brandId) return;
+        rememberSalesDocs(brandId, snap.docs);
+        dispatchDbChange();
+        resolve();
+      }, (e) => {
+        console.error(`Cloud sync (sales ${brandId}) failed`, e);
+        toast(t("store.syncLoadFailed", { what: t("store.sync.brands") }), "error");
+        resolve();
+      }));
+    });
+  });
+  if (live) {
+    salesListenFor = brandId;
+    salesLive = run.catch(() => {});
+    return salesLive;
+  }
+  salesLoads.set(brandId, run);
+  run.catch(() => {}).finally(() => { if (salesLoads.get(brandId) === run) salesLoads.delete(brandId); });
+  return run;
+}
+// The writes that store a Sales Tracker save. `prev` = the entries before
+// the change (updateBrand captures them): added → arrayUnion into their
+// month, removed → arrayRemove from it, and every entry the stored brand
+// doc still holds inline moves to its month (lazy migration) — so the
+// brand's own salesTracker is written without entries. `fresh` (a backup
+// being restored): every entry goes to its month, nothing is removed.
+function salesWritePlan(b, prev, { fresh = false } = {}) {
+  const tracker = b.salesTracker || {};
+  const next = (Array.isArray(tracker.entries) ? tracker.entries : []).filter((e) => e && typeof e === "object");
+  const before = (fresh ? [] : Array.isArray(prev) ? prev : next).filter((e) => e && typeof e === "object");
+  const nextIds = new Set(next.map((e) => e.id));
+  const beforeIds = new Set(before.map((e) => e.id));
+  const inline = fresh ? [] : serverSales.get(b.id) || [];
+  const add = [...inline.filter((e) => e && nextIds.has(e.id)), ...next.filter((e) => fresh || !beforeIds.has(e.id))];
+  const remove = before.filter((e) => !nextIds.has(e.id));
+  const ownerId = b.ownerId || ownerUid;
+  const byMonth = (list) => list.reduce((m, e) => m.set(salesMonthOf(e), [...(m.get(salesMonthOf(e)) || []), e]), new Map());
+  const ref = (month) => doc(fdb, "brands", b.id, "sales", month);
+  const ops = [
+    ...[...byMonth(add)].map(([month, list]) => ({ type: "set", ref: ref(month), data: { ownerId, brandId: b.id, month, entries: arrayUnion(...list) }, options: { merge: true } })),
+    ...[...byMonth(remove)].map(([month, list]) => ({ type: "set", ref: ref(month), data: { ownerId, brandId: b.id, month, entries: arrayRemove(...list) }, options: { merge: true } })),
+  ];
+  const { entries, ...rest } = tracker;
+  return { ops, stored: rest };
 }
 
 // Shared AI config lives in settings/main (written only by the Wepeka team
@@ -578,11 +1253,11 @@ export function updateGlobalAiSettings(patch) {
 // see the "Hapus kunci lama" button in js/views/settings.js. Safe to call
 // more than once; deleting a field that's already gone is just a no-op.
 export function deleteLegacyGlobalAiKeys() {
-  return updateDoc(doc(fdb, "settings", "main"), {
+  return ensureSdk().then(() => updateDoc(doc(fdb, "settings", "main"), {
     "ai.anthropicApiKey": deleteField(),
     "ai.geminiApiKey": deleteField(),
     "ai.deepseekApiKey": deleteField(),
-  });
+  }));
 }
 
 // The live aiUsage/{uid} doc api/ai.js writes after every counted AI call —
@@ -675,16 +1350,108 @@ export function createBrand({ name, avatar = "", color = "", instagram, facebook
     createdAt: Date.now(), archived: false,
   };
   db.brands.push(brand);
-  persist(() => setDoc(doc(fdb, "brands", brand.id), brand));
+  // The brand (with the count move) goes first — its files can only be
+  // written under a brand that exists (firestore.rules ownsBrandAfter).
+  // Handed to Firestore as soon as the count is known; until then it stays
+  // in the list (pendingCreates) and later saves of it wait behind it.
+  let issued;
+  pendingCreates.set(brand.id, { brand, issued: new Promise((r) => { issued = r; }) });
+  persist(async () => {
+    let undoUploads = null;
+    try {
+      if (brandIsActive(brand)) await whenBrandCountSettled();
+      const { stored, uploads } = dehydrateBlobs(brand);
+      rememberAssets(brand.id, uploads);
+      undoUploads = noteUploaded(brand.id, uploads);
+      const assetOps = uploads.map((u) => ({ type: "set", ref: doc(fdb, "brands", brand.id, "assets", u.id), data: assetDoc(brand, u) }));
+      const answer = commitBrandMove(brand.id, false, brandIsActive(brand), (counter) => [{ group: [{ type: "set", ref: doc(fdb, "brands", brand.id), data: stored }, counter] }, ...assetOps]);
+      pendingCreates.delete(brand.id);
+      issued();
+      await answer;
+    } catch (e) {
+      pendingCreates.delete(brand.id);
+      issued();
+      undoUploads?.();
+      brandMoveFailed(e, () => { db.brands = db.brands.filter((x) => x.id !== brand.id); });
+    }
+  });
   return brand;
 }
 
 export function updateBrand(id, patch) {
   const b = getBrand(id);
   if (!b) return null;
+  // What a refused move must restore, and the sales log as it was (the
+  // Sales Tracker save is written as what it added/removed — salesWritePlan).
+  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, b[k]]));
+  const wasActive = brandIsActive(b);
+  const prevEntries = b.salesTracker?.entries;
   Object.assign(b, patch);
-  persist(() => setDoc(doc(fdb, "brands", b.id), b));
+  writeBrand(b, Object.keys(patch), { wasActive, prevEntries, revert: () => Object.assign(b, before) });
   return b;
+}
+// Every write of an existing brand doc goes through here: only `fields`
+// (top-level) are sent, with their values as they are NOW (a snapshot that
+// rebuilds the brand before the write goes out can't change what's sent).
+// Files in them become their own asset docs (the brand gets "asset:<id>"
+// refs, js/brand-assets.js) and a Sales Tracker save sends its entries to
+// the month docs — files/sales first, the brand last, one batch normally.
+// Old inline files/entries move out ONLY when this save writes that very
+// field (the owner saving the Brand Book, the cover, the Sales Tracker).
+// Handed to Firestore at once, with no waiting for earlier writes to be
+// acknowledged; only a brand-activity write (archived/deletedAt) waits for
+// the count to be known, and any write waits behind its brand's own
+// pending create. A refusal is handled when its answer comes back.
+function writeBrand(b, fields, { wasActive = brandIsActive(b), prevEntries, revert } = {}) {
+  const keys = new Set(fields);
+  // A field name that can't be a field path means a whole-doc write
+  // (updateFields' fallback): files and entries must then be split out too.
+  if (![...keys].every((k) => PLAIN_FIELD.test(k))) {
+    BLOB_FIELDS.forEach((k) => { if (k in b) keys.add(k); });
+    if (b.salesTracker) keys.add("salesTracker");
+  }
+  const values = Object.fromEntries([...keys].map((k) => [k, b[k]]));
+  const isActive = brandIsActive(b);
+  const activity = wasActive !== isActive || keys.has("archived") || keys.has("deletedAt");
+  const behind = pendingCreates.get(b.id)?.issued;
+  const release = (activity && !brandCountKnown()) || behind ? holdBrandFields(b.id, values) : null;
+  persist(async () => {
+    try {
+      if (behind) await behind;
+      if (activity) await whenBrandCountSettled();
+    } finally {
+      release?.();
+    }
+    const out = { ...b, ...values };
+    const subOps = [];
+    let undoUploads = null;
+    if (BLOB_FIELDS.some((k) => keys.has(k))) {
+      const { stored, uploads } = dehydrateBlobs(Object.fromEntries(BLOB_FIELDS.filter((k) => keys.has(k) && k in values).map((k) => [k, values[k]])));
+      Object.assign(out, stored);
+      // Known before the write's own snapshot arrives, so it hydrates at once.
+      rememberAssets(b.id, uploads);
+      // Only files the server doesn't have yet: the Brand Book saves on
+      // every change, and each set would resend the whole file.
+      const fresh = uploads.filter((u) => !assetOnServer(b.id, u.id));
+      undoUploads = noteUploaded(b.id, fresh);
+      subOps.push(...fresh.map((u) => ({ type: "set", ref: doc(fdb, "brands", b.id, "assets", u.id), data: assetDoc(b, u) })));
+    }
+    if (keys.has("salesTracker") && values.salesTracker) {
+      const plan = salesWritePlan({ ...b, salesTracker: values.salesTracker }, prevEntries);
+      out.salesTracker = plan.stored;
+      subOps.push(...plan.ops);
+    }
+    if (wasActive === isActive && !subOps.length) return updateFields("brands", b.id, out, [...keys]);
+    try {
+      await commitBrandMove(b.id, wasActive, isActive, (counter) => [...subOps, { group: [updateOp("brands", out, [...keys]), counter] }]);
+    } catch (e) {
+      undoUploads?.();
+      brandMoveFailed(e, revert);
+    }
+  });
+}
+function assetDoc(b, u) {
+  return { ownerId: b.ownerId || ownerUid, brandId: b.id, kind: u.kind, dataUrl: u.dataUrl, ...(u.name ? { name: String(u.name).slice(0, 200) } : {}), createdAt: Date.now() };
 }
 // ---------- Brand Insights (account-level numbers) ----------
 // The one home for profile numbers (followers, reach, profile visits) —
@@ -852,7 +1619,8 @@ export function removeBrandIdea(brandId, id) {
 // (or gets folded in below via the campaign it was scoped to) — nothing
 // unique would be gained by copying it too.
 function migrateLegacyIdeasOnce(b) {
-  if (b.ideasMigratedAt) return;
+  // Never from a cached copy that may predate a migration made elsewhere.
+  if (b.ideasMigratedAt || !serverSyncedNow) return;
   const fromCampaigns = (db.campaigns || []).filter((c) => c.brandId === b.id && c.ideas?.length);
   if (fromCampaigns.length) {
     const existingIds = new Set((b.ideas || []).map((i) => i.id));
@@ -864,7 +1632,7 @@ function migrateLegacyIdeasOnce(b) {
     if (migrated.length) b.ideas = [...(b.ideas || []), ...migrated].slice(-BRAND_IDEAS_CAP);
   }
   b.ideasMigratedAt = Date.now();
-  persist(() => setDoc(doc(fdb, "brands", b.id), b));
+  writeBrand(b, ["ideas", "ideasMigratedAt"]);
 }
 // The one read every idea-list UI (chat's saved ideas, a campaign's idea
 // widget) should call instead of touching brand.ideas or campaign.ideas
@@ -954,10 +1722,8 @@ export function deleteGoal(brandId, id, { archiveCampaigns = false } = {}) {
     c.updatedAt = Date.now();
   });
   b.goals = (b.goals || []).filter((g) => g.id !== id);
-  persist(async () => {
-    await setDoc(doc(fdb, "brands", b.id), b);
-    await Promise.all(linked.map((c) => setDoc(doc(fdb, "campaigns", c.id), c)));
-  });
+  writeBrand(b, ["goals"]);
+  persist(() => Promise.all(linked.map((c) => updateFields("campaigns", c.id, c, ["goalId", "goalLaneId", "status", "updatedAt"]))));
 }
 
 // ---------- Brainstorm threads (brainstorms/ collection) ----------
@@ -972,48 +1738,175 @@ export function deleteGoal(brandId, id, { archiveCampaigns = false } = {}) {
 // messages drop off; anything worth keeping past that has become a moment.
 export const THREAD_MESSAGE_CAP = 80;
 
+// Threads are loaded for the brand on screen only (watchBrandScope below,
+// started by main.js for every brand route) — a chat log can be long, and
+// nothing outside a brand's own pages ever reads another brand's threads.
+// So these stay synchronous for the active brand; for any other brand they
+// return what happens to be in memory (normally nothing).
+//
+// Writes must survive a brand switch and a stale cache: an AI reply that
+// finishes after the owner moved to another brand (consultant-panel keeps
+// going in the background) is still appended — on the server, by id — and
+// a whole-log rewrite (edit/remove a message, trim to the cap) only goes
+// out blind for a thread whose log a SERVER snapshot has carried
+// (confirmedThreads); otherwise it's applied to the server's own copy in a
+// transaction, keeping messages this tab never saw.
+const threadMeta = new Map(); // id → { brandId, ownerId } for every thread seen this session
+let confirmedThreads = new Set();
+function rememberThread(th) {
+  if (th?.id && th.brandId) threadMeta.set(th.id, { brandId: th.brandId, ownerId: th.ownerId || ownerUid });
+}
+function threadMetaOf(id) {
+  const th = getBrainstorm(id);
+  if (th?.brandId) return { brandId: th.brandId, ownerId: th.ownerId || ownerUid };
+  if (threadMeta.has(id)) return threadMeta.get(id);
+  // The rolling threads carry their brand in the id.
+  const m = /^(?:companion|consult)-(.+)$/.exec(String(id));
+  return m ? { brandId: m[1], ownerId: ownerUid } : null;
+}
+function applyThreadSnapshot(brandId, snap) {
+  db.brainstorms = snap.docs.map((d) => normalizeThread(d.data()));
+  db.brainstorms.forEach(rememberThread);
+  if (!snap.metadata?.fromCache) confirmedThreads = new Set(db.brainstorms.map((th) => th.id));
+}
+// Switching brands: the previous brand's threads leave memory (their ids
+// stay known in threadMeta, so a late reply still finds its thread).
+function detachThreads(brandId) {
+  db.brainstorms = (db.brainstorms || []).filter((th) => th.brandId === brandId);
+  confirmedThreads = new Set();
+}
 export function listBrainstorms(brandId) {
   return (db.brainstorms || []).filter((b) => b.brandId === brandId).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 export function getBrainstorm(id) {
   return (db.brainstorms || []).find((b) => b.id === id) || null;
 }
-export function createBrainstorm(brandId, { id = uid(), mode = "chat", title = "", campaignId = null, stageId = null, contentId = null, goalId = null, seriesId = null } = {}) {
+// A thread as the views expect it, whatever the stored doc lacks (a thread
+// created by the merge below has no messages field until its first one).
+function normalizeThread(th) {
+  return { ...th, messages: th.messages || [], ideas: th.ideas || [], proposal: th.proposal ?? null };
+}
+export function createBrainstorm(brandId, { id = null, mode = "chat", title = "", campaignId = null, stageId = null, contentId = null, goalId = null, seriesId = null } = {}) {
   const now = Date.now();
+  const fixedId = !!id;
+  id = id || uid();
   const thread = { id, ownerId: ownerUid, brandId, campaignId, stageId, contentId, goalId, seriesId, title, mode, messages: [], ideas: [], proposal: null, createdAt: now, updatedAt: now };
   db.brainstorms = [...(db.brainstorms || []).filter((b) => b.id !== id), thread];
-  persist(() => setDoc(doc(fdb, "brainstorms", id), thread));
+  rememberThread(thread);
+  if (fixedId) {
+    // A fixed id (the rolling companion/consult threads, one script thread
+    // per content) can already exist on the server while this device hasn't
+    // seen it yet — e.g. a cached snapshot from before another device made
+    // it. Merge the thread's details in without messages/ideas, so an
+    // existing log is never replaced by an empty one.
+    const { messages, ideas, proposal, ...meta } = thread;
+    persist(() => setDoc(doc(fdb, "brainstorms", id), meta, { merge: true }));
+  } else {
+    // A brand-new id: nobody else has this thread, its log is ours.
+    confirmedThreads.add(id);
+    persist(() => setDoc(doc(fdb, "brainstorms", id), thread));
+  }
   return thread;
 }
-function saveBrainstorm(next) {
+// `messages` rewritten on the server's own copy, for a thread this tab
+// can't vouch for: `edit(serverMessages)` returns the new list.
+function rewriteMessagesOnServer(id, meta, edit) {
+  return runTransaction(fdb, async (tx) => {
+    const ref = doc(fdb, "brainstorms", id);
+    const snap = await tx.get(ref);
+    const base = snap.exists() ? snap.data()?.messages || [] : [];
+    tx.set(ref, { id, ownerId: meta.ownerId, brandId: meta.brandId, messages: edit(base).slice(-THREAD_MESSAGE_CAP), updatedAt: Date.now() }, { merge: true });
+  });
+}
+// The change from `before` to `after` as an edit of any list: messages
+// removed by id dropped, edited ones replaced, new ones appended — messages
+// only the server has are kept.
+function messagesEdit(before, after) {
+  const afterById = new Map(after.map((m) => [m.id, m]));
+  const beforeIds = new Set(before.map((m) => m.id));
+  const removed = new Set(before.filter((m) => !afterById.has(m.id)).map((m) => m.id));
+  const added = after.filter((m) => !beforeIds.has(m.id));
+  return (base) => {
+    const seen = new Set();
+    const out = base.filter((m) => !removed.has(m?.id)).map((m) => {
+      seen.add(m?.id);
+      return afterById.get(m?.id) || m;
+    });
+    added.forEach((m) => { if (!seen.has(m.id)) out.push(m); });
+    return out;
+  };
+}
+// Writes a thread's new `messages` (plus `fields`): straight out for a
+// confirmed thread, through the server's copy otherwise.
+function writeThreadMessages(cur, next, fields = []) {
+  const others = fields.filter((k) => k !== "messages");
+  persist(async () => {
+    if (confirmedThreads.has(cur.id)) return updateFields("brainstorms", cur.id, next, ["messages", ...others]);
+    if (others.length) await updateFields("brainstorms", cur.id, next, others);
+    return rewriteMessagesOnServer(cur.id, threadMetaOf(cur.id) || { brandId: cur.brandId, ownerId: cur.ownerId || ownerUid }, messagesEdit(cur.messages || [], next.messages || []));
+  });
+}
+function saveBrainstorm(cur, next, fields) {
   db.brainstorms = (db.brainstorms || []).map((b) => (b.id === next.id ? next : b));
-  persist(() => setDoc(doc(fdb, "brainstorms", next.id), next));
+  if (fields.includes("messages")) writeThreadMessages(cur, next, fields);
+  else persist(() => updateFields("brainstorms", next.id, next, fields));
   return next;
 }
 export function updateBrainstorm(id, patch) {
   const cur = getBrainstorm(id);
-  if (!cur) return null;
-  return saveBrainstorm({ ...cur, ...patch, updatedAt: Date.now() });
+  if (!cur) {
+    // Not in memory (another brand's thread): its other fields can still
+    // be set by name; a messages patch can't be applied without the log.
+    const meta = threadMetaOf(id);
+    const { messages, ...rest } = patch || {};
+    if (meta && Object.keys(rest).length) persist(() => setDoc(doc(fdb, "brainstorms", id), { ...rest, id, ownerId: meta.ownerId, brandId: meta.brandId, updatedAt: Date.now() }, { merge: true }));
+    return null;
+  }
+  return saveBrainstorm(cur, { ...cur, ...patch, updatedAt: Date.now() }, [...Object.keys(patch), "updatedAt"]);
 }
 // `sessionId` ties a message to one "Obrolan" of the chat's Otomatis view
 // (brand.chatSessions) — the same conversation can write to several logs.
 export function appendBrainstormMessage(id, { role, text, at = Date.now(), blocks = null, sessionId = null }) {
   const cur = getBrainstorm(id);
-  if (!cur) return null;
+  const meta = threadMetaOf(id);
+  if (!cur && !meta) return null;
   const msg = { id: uid(), role, text, at, ...(blocks ? { blocks } : {}), ...(sessionId ? { sessionId } : {}) };
-  saveBrainstorm({ ...cur, messages: [...(cur.messages || []), msg].slice(-THREAD_MESSAGE_CAP), updatedAt: at });
+  if (cur) {
+    const all = [...(cur.messages || []), msg];
+    if (all.length > THREAD_MESSAGE_CAP && confirmedThreads.has(id)) {
+      saveBrainstorm(cur, { ...cur, messages: all.slice(-THREAD_MESSAGE_CAP), updatedAt: at }, ["messages", "updatedAt"]);
+      return msg;
+    }
+    db.brainstorms = (db.brainstorms || []).map((b) => (b.id === id ? { ...cur, messages: all, updatedAt: at } : b));
+  }
+  // Appended on the server (arrayUnion), not the whole log rewritten — two
+  // devices, a tab that painted from an older cache, or a reply landing
+  // after a brand switch all keep their messages. Merge + ownerId/brandId:
+  // also lands if the thread doc isn't there yet. (Over the cap on a thread
+  // not yet confirmed: trimmed by a later append.)
+  const owner = cur?.ownerId || meta.ownerId || ownerUid;
+  const brandId = cur?.brandId || meta.brandId;
+  persist(() => setDoc(doc(fdb, "brainstorms", id), { id, ownerId: owner, brandId, messages: arrayUnion(msg), updatedAt: at }, { merge: true }));
   return msg;
 }
 // Patches one message in place (e.g. marking a recap card as decided).
 export function updateBrainstormMessage(id, msgId, patch) {
   const cur = getBrainstorm(id);
-  if (!cur) return null;
-  return saveBrainstorm({ ...cur, messages: (cur.messages || []).map((m) => (m.id === msgId ? { ...m, ...patch } : m)), updatedAt: Date.now() });
+  if (!cur) {
+    const meta = threadMetaOf(id);
+    if (meta) persist(() => rewriteMessagesOnServer(id, meta, (base) => base.map((m) => (m?.id === msgId ? { ...m, ...patch } : m))));
+    return null;
+  }
+  return saveBrainstorm(cur, { ...cur, messages: (cur.messages || []).map((m) => (m.id === msgId ? { ...m, ...patch } : m)), updatedAt: Date.now() }, ["messages", "updatedAt"]);
 }
 export function removeBrainstormMessage(id, msgId) {
   const cur = getBrainstorm(id);
-  if (!cur) return null;
-  return saveBrainstorm({ ...cur, messages: (cur.messages || []).filter((m) => m.id !== msgId), updatedAt: Date.now() });
+  if (!cur) {
+    const meta = threadMetaOf(id);
+    if (meta && msgId) persist(() => rewriteMessagesOnServer(id, meta, (base) => base.filter((m) => m?.id !== msgId)));
+    return null;
+  }
+  return saveBrainstorm(cur, { ...cur, messages: (cur.messages || []).filter((m) => m.id !== msgId), updatedAt: Date.now() }, ["messages", "updatedAt"]);
 }
 export function deleteBrainstorm(id) {
   db.brainstorms = (db.brainstorms || []).filter((b) => b.id !== id);
@@ -1061,31 +1954,56 @@ export function deleteBrand(id) {
   const campaignItems = (db.campaigns || []).filter((c) => c.brandId === id && notDeleted(c));
   const seriesItems = (db.series || []).filter((s) => s.brandId === id && notDeleted(s));
   const removedThreadIds = (db.brainstorms || []).filter((t) => t.brandId === id).map((t) => t.id);
+  const wasActive = brandIsActive(b);
   b.deletedAt = now;
   contentItems.forEach((c) => { c.deletedAt = now; });
   campaignItems.forEach((c) => { c.deletedAt = now; });
   seriesItems.forEach((s) => { s.deletedAt = now; });
   db.brainstorms = (db.brainstorms || []).filter((t) => t.brandId !== id);
+  const behind = pendingCreates.get(id)?.issued;
+  const release = !brandCountKnown() || behind ? holdBrandFields(id, { deletedAt: now }) : null;
   persist(async () => {
-    await commitInChunks([
-      { type: "set", ref: doc(fdb, "brands", b.id), data: b },
-      ...contentItems.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
-      ...campaignItems.map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
-      ...seriesItems.map((s) => ({ type: "set", ref: doc(fdb, "series", s.id), data: s })),
-    ]);
-    await Promise.all(removedThreadIds.map((tid) => deleteDoc(doc(fdb, "brainstorms", tid))));
+    try {
+      if (behind) await behind;
+      await whenBrandCountSettled();
+    } finally {
+      release?.();
+    }
+    try {
+      await commitBrandMove(id, wasActive, false, (counter) => [
+        { group: [updateOp("brands", b, ["deletedAt"]), counter] },
+        ...contentItems.map((c) => updateOp("content", c, ["deletedAt"])),
+        ...campaignItems.map((c) => updateOp("campaigns", c, ["deletedAt"])),
+        ...seriesItems.map((s) => updateOp("series", s, ["deletedAt"])),
+      ]);
+    } catch (e) {
+      brandMoveFailed(e, () => [b, ...contentItems, ...campaignItems, ...seriesItems].forEach((x) => { x.deletedAt = null; }));
+      return;
+    }
+    // Threads load per brand (watchBrandScope), so a brand deleted from the
+    // brand list usually has none in memory: ask the server for its ids.
+    const threadIds = new Set(removedThreadIds);
+    try {
+      const snap = await getDocs(query(collection(fdb, "brainstorms"), where("ownerId", "==", ownerUid), where("brandId", "==", id)));
+      snap.docs.forEach((d) => threadIds.add(d.id));
+    } catch (e) {
+      console.warn("Could not list this brand's chat threads", e);
+    }
+    await Promise.all([...threadIds].map((tid) => deleteDoc(doc(fdb, "brainstorms", tid))));
   });
 }
 export function restoreBrand(id) {
   const b = getBrand(id);
   if (!b || !b.deletedAt) return;
+  const was = b.deletedAt;
   b.deletedAt = null;
-  persist(() => setDoc(doc(fdb, "brands", b.id), b));
+  writeBrand(b, ["deletedAt"], { wasActive: false, revert: () => { b.deletedAt = was; } });
 }
 // "Hapus permanen" in Trash — a real, unrecoverable delete. Cascades to
 // whatever the soft delete above already trashed alongside this brand, so
 // nothing is left orphaned in Trash with no brand to show it under.
 export function purgeBrand(id) {
+  const wasActive = brandIsActive(db.brands.find((b) => b.id === id));
   const contentIds = db.content.filter((c) => c.brandId === id).map((c) => c.id);
   const campaignIds = (db.campaigns || []).filter((c) => c.brandId === id).map((c) => c.id);
   const seriesIds = (db.series || []).filter((s) => s.brandId === id).map((s) => s.id);
@@ -1093,14 +2011,38 @@ export function purgeBrand(id) {
   db.content = db.content.filter((c) => c.brandId !== id);
   db.campaigns = (db.campaigns || []).filter((c) => c.brandId !== id);
   db.series = (db.series || []).filter((s) => s.brandId !== id);
-  persist(() =>
-    commitInChunks([
-      { type: "delete", ref: doc(fdb, "brands", id) },
-      ...contentIds.map((cid) => ({ type: "delete", ref: doc(fdb, "content", cid) })),
-      ...campaignIds.map((cid) => ({ type: "delete", ref: doc(fdb, "campaigns", cid) })),
-      ...seriesIds.map((sid) => ({ type: "delete", ref: doc(fdb, "series", sid) })),
-    ])
-  );
+  assetData.delete(id);
+  const behind = pendingCreates.get(id)?.issued;
+  persist(async () => {
+    if (behind) await behind;
+    if (wasActive) await whenBrandCountSettled();
+    // Its uploaded files and sales log go first — listed from the server,
+    // since they're only loaded for the brand on screen. If they can't be
+    // listed nothing is deleted, and the brand stays in Trash to try again.
+    const subRefs = await brandSubDocRefs(id);
+    try {
+      await commitBrandMove(id, wasActive, false, (counter) => [
+        ...subRefs.map((ref) => ({ type: "delete", ref })),
+        { group: [{ type: "delete", ref: doc(fdb, "brands", id) }, counter] },
+        ...contentIds.map((cid) => ({ type: "delete", ref: doc(fdb, "content", cid) })),
+        ...campaignIds.map((cid) => ({ type: "delete", ref: doc(fdb, "campaigns", cid) })),
+        ...seriesIds.map((sid) => ({ type: "delete", ref: doc(fdb, "series", sid) })),
+      ]);
+    } catch (e) {
+      brandMoveFailed(e, null);
+    }
+  });
+}
+// A brand's own subcollections: brands/{id}/assets (js/brand-assets.js) and
+// brands/{id}/sales (js/sales-tracker.js).
+const BRAND_SUBCOLLECTIONS = ["assets", "sales"];
+async function brandSubDocRefs(brandId) {
+  const refs = [];
+  for (const sub of BRAND_SUBCOLLECTIONS) {
+    const snap = await getDocs(query(collection(fdb, "brands", brandId, sub), where("ownerId", "==", ownerUid)));
+    snap.docs.forEach((d) => refs.push(doc(fdb, "brands", brandId, sub, d.id)));
+  }
+  return refs;
 }
 
 // ---------- Content ----------
@@ -1196,12 +2138,13 @@ export function createContent(brandId, data = {}) {
 export function updateContent(id, patch) {
   const item = getContent(id);
   if (!item) return null;
+  const fields = [...Object.keys(patch), "updatedAt"];
   if (patch.performance) {
     item.performance = { ...item.performance, ...patch.performance };
     delete patch.performance;
   }
   Object.assign(item, patch, { updatedAt: Date.now() });
-  persist(() => setDoc(doc(fdb, "content", item.id), item));
+  persist(() => updateFields("content", item.id, item, fields));
   return item;
 }
 export function archiveContent(id, archived = true) {
@@ -1212,13 +2155,15 @@ export function deleteContent(id) {
   const item = getContent(id);
   if (!item) return;
   item.deletedAt = Date.now();
-  persist(() => setDoc(doc(fdb, "content", item.id), item));
+  // trashedWithCampaign rides along: deleteCampaign/restoreCampaign set it
+  // on the item right before calling these.
+  persist(() => updateFields("content", item.id, item, ["deletedAt", ..."trashedWithCampaign" in item ? ["trashedWithCampaign"] : []]));
 }
 export function restoreContent(id) {
   const item = getContent(id);
   if (!item || !item.deletedAt) return;
   item.deletedAt = null;
-  persist(() => setDoc(doc(fdb, "content", item.id), item));
+  persist(() => updateFields("content", item.id, item, ["deletedAt", ..."trashedWithCampaign" in item ? ["trashedWithCampaign"] : []]));
 }
 // "Hapus permanen" — the real, unrecoverable delete Trash offers.
 export function purgeContent(id) {
@@ -1237,7 +2182,7 @@ export function trashContentBatch(ids) {
   const now = Date.now();
   const items = db.content.filter((c) => ids.includes(c.id));
   items.forEach((c) => { c.deletedAt = now; });
-  persist(() => commitInChunks(items.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c }))));
+  persist(() => commitInChunks(items.map((c) => updateOp("content", c, ["deletedAt"]))));
 }
 
 // Cross-brand scan for the notification bell — the shared source of truth
@@ -2147,7 +3092,7 @@ export function updateCampaign(id, patch) {
   const item = getCampaign(id);
   if (!item) return null;
   Object.assign(item, patch, { updatedAt: Date.now() });
-  persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
+  persist(() => updateFields("campaigns", item.id, item, [...Object.keys(patch), "updatedAt"]));
   return item;
 }
 // Numbers the app genuinely can't observe (DMs, collaborations, community
@@ -2210,7 +3155,7 @@ export function deleteCampaign(id) {
     deleteContent(cid);
   });
   c.deletedAt = Date.now();
-  persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+  persist(() => updateFields("campaigns", c.id, c, ["deletedAt"]));
   const g = goalOwningEventCampaign(c);
   if (g && g.status !== "archived") updateGoal(c.brandId, g.id, { status: "archived", archivedWithCampaign: c.id, statusBeforeArchive: g.status });
 }
@@ -2218,7 +3163,7 @@ export function restoreCampaign(id) {
   const c = getCampaign(id);
   if (!c || !c.deletedAt) return;
   c.deletedAt = null;
-  persist(() => setDoc(doc(fdb, "campaigns", c.id), c));
+  persist(() => updateFields("campaigns", c.id, c, ["deletedAt"]));
   (db.content || []).filter((x) => x.trashedWithCampaign === c.id && x.deletedAt).forEach((x) => { x.trashedWithCampaign = null; restoreContent(x.id); });
   const g = goalOwningEventCampaign(c);
   if (g && g.archivedWithCampaign === c.id) updateGoal(c.brandId, g.id, { status: g.statusBeforeArchive || "active", archivedWithCampaign: null, statusBeforeArchive: null });
@@ -2269,7 +3214,7 @@ export function purgeCampaign(id) {
   db.content.forEach((c) => { if (c.campaignId === id) { c.campaignId = ""; c.campaignPhaseId = ""; } });
   persist(async () => {
     await deleteDoc(doc(fdb, "campaigns", id));
-    await Promise.all(affectedContentIds.map((cid) => setDoc(doc(fdb, "content", cid), getContent(cid))));
+    await Promise.all(affectedContentIds.map((cid) => getContent(cid) && updateFields("content", cid, getContent(cid), ["campaignId", "campaignPhaseId"])));
   });
 }
 
@@ -2322,7 +3267,7 @@ export function updateSeries(id, patch) {
   if (!item) return null;
   if (patch.dna) { item.dna = { ...item.dna, ...patch.dna }; patch = { ...patch, dna: item.dna }; }
   Object.assign(item, patch, { updatedAt: Date.now() });
-  persist(() => setDoc(doc(fdb, "series", item.id), item));
+  persist(() => updateFields("series", item.id, item, [...Object.keys(patch), "updatedAt"]));
   return item;
 }
 // Soft delete: content stays linked (seriesId untouched) while the series
@@ -2332,13 +3277,13 @@ export function deleteSeries(id) {
   const s = getSeries(id);
   if (!s) return;
   s.deletedAt = Date.now();
-  persist(() => setDoc(doc(fdb, "series", s.id), s));
+  persist(() => updateFields("series", s.id, s, ["deletedAt"]));
 }
 export function restoreSeries(id) {
   const s = getSeries(id);
   if (!s || !s.deletedAt) return;
   s.deletedAt = null;
-  persist(() => setDoc(doc(fdb, "series", s.id), s));
+  persist(() => updateFields("series", s.id, s, ["deletedAt"]));
 }
 // "Hapus permanen". Content linked to it keeps its script/history, it just
 // stops reading that series' context on future regenerations — same
@@ -2349,7 +3294,7 @@ export function purgeSeries(id) {
   db.content.forEach((c) => { if (c.seriesId === id) c.seriesId = ""; });
   persist(async () => {
     await deleteDoc(doc(fdb, "series", id));
-    await Promise.all(affectedContentIds.map((cid) => setDoc(doc(fdb, "content", cid), getContent(cid))));
+    await Promise.all(affectedContentIds.map((cid) => getContent(cid) && updateFields("content", cid, getContent(cid), ["seriesId"])));
   });
 }
 
@@ -2397,25 +3342,34 @@ export function purgeOldTrash() {
 export function getSettings() {
   return db.settings;
 }
-function persistSettings() {
+// `fields`: the top-level settings this change touched. Only those are
+// written (setDoc + mergeFields: each replaced whole, the doc created if
+// this account never had one) — never the rest of a possibly stale copy.
+function persistSettings(fields) {
   // db.settings.ai may carry the shared settings/main keys merged in —
   // write back only this account's own ai block so the shared keys never
   // get duplicated into a per-account doc.
-  persist(() => setDoc(doc(fdb, "settings", ownerUid), { ...db.settings, ai: personalAi || db.settings.ai }));
+  const data = { ...db.settings, ai: personalAi || db.settings.ai };
+  const keys = [...new Set(fields || [])].filter(Boolean);
+  if (!keys.length || !keys.every((k) => PLAIN_FIELD.test(k))) {
+    persist(() => setDoc(doc(fdb, "settings", ownerUid), data));
+    return;
+  }
+  persist(() => setDoc(doc(fdb, "settings", ownerUid), fieldPatch(data, keys), { mergeFields: keys }));
 }
 export function updateSettings(patch) {
   db.settings = { ...db.settings, ...patch };
-  persistSettings();
+  persistSettings(Object.keys(patch));
   return db.settings;
 }
 export function updateFormulas(patch) {
   db.settings.formulas = { ...db.settings.formulas, ...patch };
-  persistSettings();
+  persistSettings(["formulas"]);
 }
 export function updateAiSettings(patch) {
   personalAi = { ...(personalAi || db.settings.ai), ...patch };
   db.settings.ai = isGlobalAiActive() ? { ...personalAi, ...globalAi } : personalAi;
-  persistSettings();
+  persistSettings(["ai"]);
 }
 // Per-platform override — starts as a copy of the current defaults for
 // that funnel so the settings form always has real numbers to show, then
@@ -2437,34 +3391,34 @@ export function updatePlatformThresholds(platform, funnel, patch) {
     };
   }
   db.settings.thresholdsByPlatform = all;
-  persistSettings();
+  persistSettings(["thresholdsByPlatform"]);
 }
 export function updateThresholds(funnel, patch) {
   db.settings.thresholds[funnel] = {
     engagementRate: { ...db.settings.thresholds[funnel].engagementRate, ...(patch.engagementRate || {}) },
     followerConversionRate: { ...db.settings.thresholds[funnel].followerConversionRate, ...(patch.followerConversionRate || {}) },
   };
-  persistSettings();
+  persistSettings(["thresholds"]);
 }
 export function addPlatform(name) {
   const p = { id: uid(), name: name.trim() };
   db.settings.platforms.push(p);
-  persistSettings();
+  persistSettings(["platforms"]);
   return p;
 }
 export function removePlatform(id) {
   db.settings.platforms = db.settings.platforms.filter((p) => p.id !== id);
-  persistSettings();
+  persistSettings(["platforms"]);
 }
 export function addFormat(name) {
   const f = { id: uid(), name: name.trim() };
   db.settings.formats.push(f);
-  persistSettings();
+  persistSettings(["formats"]);
   return f;
 }
 export function removeFormat(id) {
   db.settings.formats = db.settings.formats.filter((f) => f.id !== id);
-  persistSettings();
+  persistSettings(["formats"]);
 }
 
 // ---------- Routine Template (standing weekly schedule, home page) ----------
@@ -2538,9 +3492,40 @@ function stripBrandSecrets(b) {
   }
   return clean;
 }
+// A backup carries every brand's files inline (the pre-assets shape, so an
+// older app version can still restore it) and every brand's chat threads —
+// both are loaded per brand only, so prepareExport() fetches whatever isn't
+// in memory yet. Call it (await) right before exportJSON().
+let exportThreads = null;
+// Rejects if any of it can't be read — a backup must never silently miss
+// files, sales or chats (js/views/settings.js shows the error, no file).
+// Resolves to the files that were referenced but don't exist (a dangling
+// ref): [{ brandName, kind }] — the backup goes ahead without them, and the
+// caller says which were skipped.
+export async function prepareExport() {
+  await ensureSdk();
+  bulkBusy++;
+  try {
+    exportThreads = null;
+    for (const b of db.brands || []) await loadBrandAssets(b, { strict: true });
+    await Promise.all((db.brands || []).map((b) => ensureBrandSales(b.id, { strict: true })));
+    const snap = await getDocs(query(collection(fdb, "brainstorms"), where("ownerId", "==", ownerUid)));
+    exportThreads = snap.docs.map((d) => d.data());
+    return (db.brands || []).flatMap((b) => blobValues(hydrateBrand(b)).filter((v) => isAssetRef(v.value)).map((v) => ({ brandName: b.name || "", kind: v.kind })));
+  } finally {
+    bulkBusy--;
+  }
+}
 export function exportJSON() {
-  const { ai, aiUsage, ...settingsRest } = db.settings || {};
-  return JSON.stringify({ ...db, brands: (db.brands || []).map(stripBrandSecrets), settings: settingsRest }, null, 2);
+  // `reminders` holds this account's private calendar-feed token and push
+  // endpoints — device-bound secrets that must not travel in a backup file
+  // (imported into another account, two accounts would share one token).
+  const { ai, aiUsage, reminders, ...settingsRest } = db.settings || {};
+  const brainstorms = exportThreads || db.brainstorms;
+  exportThreads = null;
+  // A file that couldn't be found leaves its slot empty, not a dead ref.
+  const brands = (db.brands || []).map((b) => stripBrandSecrets(mapBlobSlots(hydrateBrand(b), (v) => (isAssetRef(v) ? "" : v))));
+  return JSON.stringify({ ...db, brainstorms, brands, settings: settingsRest }, null, 2);
 }
 // The one-time (or occasional) bulk migration path — e.g. moving an
 // existing local backup into this shared cloud database. Unlike every
@@ -2551,6 +3536,7 @@ export async function importJSON(json) {
   // before anything is written (js/account.js checkImport; audit S-16/S-20).
   const { checkImport } = await import("./account.js");
   const parsed = checkImport(json, db.brands);
+  await ensureSdk();
   const next = { ...defaultDB(), ...parsed };
   // Stamp ownerId on every imported doc regardless of what the backup file
   // says — otherwise an imported doc with no/stale ownerId would be
@@ -2564,11 +3550,37 @@ export async function importJSON(json) {
   next.routineTemplate = (next.routineTemplate || []).map((r) => ({ ...r, ownerId: ownerUid }));
   next.brainstorms = (next.brainstorms || []).map((b) => ({ ...b, ownerId: ownerUid }));
   {
-    const { ai, aiUsage, ...settingsRest } = next.settings || {};
+    const { ai, aiUsage, reminders, ...settingsRest } = next.settings || {};
     next.settings = settingsRest;
   }
+  // Each brand is written first — on its own, with the brand-count move it
+  // needs — and only then its files (asset docs; the brand doc gets refs)
+  // and its sales log (month docs, merged in, never replacing one): rules
+  // only accept those under a brand that already exists.
+  bulkBusy++;
+  try {
+    await whenBrandCountSettled();
+    const wasActive = new Map(db.brands.map((b) => [b.id, brandIsActive(b)]));
+    for (const b of next.brands) {
+      const { stored, uploads } = dehydrateBlobs(b);
+      rememberAssets(b.id, uploads);
+      const sales = stored.salesTracker ? salesWritePlan(stored, null, { fresh: true }) : null;
+      const brandOp = { type: "set", ref: doc(fdb, "brands", b.id), data: sales ? { ...stored, salesTracker: sales.stored } : stored };
+      try {
+        await commitBrandMove(b.id, wasActive.get(b.id) || false, brandIsActive(b), (counter) => [{ group: [brandOp, counter] }]);
+      } catch (e) {
+        if (e?.code === "brand-limit") throw new Error(t("brands.offer.lockedTitle", { limit: brandLimitOf() }));
+        throw e;
+      }
+      await commitInChunks([
+        ...uploads.map((u) => ({ type: "set", ref: doc(fdb, "brands", b.id, "assets", u.id), data: assetDoc(b, u) })),
+        ...(sales ? sales.ops : []),
+      ]);
+    }
+  } finally {
+    bulkBusy--;
+  }
   await commitInChunks([
-    ...next.brands.map((b) => ({ type: "set", ref: doc(fdb, "brands", b.id), data: b })),
     ...next.content.map((c) => ({ type: "set", ref: doc(fdb, "content", c.id), data: c })),
     ...next.campaigns.map((c) => ({ type: "set", ref: doc(fdb, "campaigns", c.id), data: c })),
     ...next.routineTemplate.map((r) => ({ type: "set", ref: doc(fdb, "routineTemplate", r.id), data: r })),
@@ -2580,17 +3592,31 @@ export async function importJSON(json) {
 }
 export function resetAll() {
   const brandIds = db.brands.map((b) => b.id);
+  const activeIds = db.brands.filter(brandIsActive).map((b) => b.id);
   const contentIds = db.content.map((c) => c.id);
   const campaignIds = (db.campaigns || []).map((c) => c.id);
   const routineIds = (db.routineTemplate || []).map((r) => r.id);
   db = defaultDB();
-  persist(() => commitInChunks([
-    ...brandIds.map((id) => ({ type: "delete", ref: doc(fdb, "brands", id) })),
+  persist(async () => {
+    await whenBrandCountSettled();
+    const subRefs = (await Promise.all(brandIds.map(brandSubDocRefs))).flat();
+    // Active brands one batch each, with the brand count going down by one
+    // (a delete of a doc already gone would fail the rules, so they're left
+    // out of the bulk below).
+    const done = new Set();
+    for (const id of activeIds) {
+      await commitBrandMove(id, true, false, (counter) => [{ group: [{ type: "delete", ref: doc(fdb, "brands", id) }, counter] }]);
+      done.add(id);
+    }
+    return commitInChunks([
+    ...subRefs.map((ref) => ({ type: "delete", ref })),
+    ...brandIds.filter((id) => !done.has(id)).map((id) => ({ type: "delete", ref: doc(fdb, "brands", id) })),
     ...contentIds.map((id) => ({ type: "delete", ref: doc(fdb, "content", id) })),
     ...campaignIds.map((id) => ({ type: "delete", ref: doc(fdb, "campaigns", id) })),
     ...routineIds.map((id) => ({ type: "delete", ref: doc(fdb, "routineTemplate", id) })),
     { type: "set", ref: doc(fdb, "settings", ownerUid), data: db.settings },
-  ]));
+    ]);
+  });
 }
 
 // ---------- AI feedback ----------
@@ -2614,6 +3640,6 @@ export function recordAiFeedback({ brandId = null, feature, prompt = "", output 
     note: String(note || "").slice(0, 1000),
     createdAt: Date.now(),
   };
-  setDoc(doc(fdb, "aiFeedback", id), item).catch((e) => console.error("AI feedback save failed", e));
+  ensureSdk().then(() => setDoc(doc(fdb, "aiFeedback", id), item)).catch((e) => console.error("AI feedback save failed", e));
   return id;
 }

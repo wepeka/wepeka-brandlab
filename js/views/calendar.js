@@ -1,4 +1,4 @@
-import { listGoals, getBrand, listSeries, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, ROUTINE_DAY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel } from "../store.js";
+import { listGoals, getBrand, listSeries, listContent, getContent, listCampaigns, updateContent, getSettings, onChange, STATUS_LABELS, ROUTINE_DAY_LABELS, localISODate, phaseNameLabel, eventPhaseDateLabel, listBrandIdeas } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
@@ -7,10 +7,11 @@ import { suggestSchedule, hasAiKey } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { goalItems } from "../goal-progress.js";
 import { t, getLang, campaignDisplayName } from "../i18n.js";
+import { draftFromIdea } from "../idea-draft.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
-import { consumeNavContext } from "../nav-context.js";
+import { consumeNavContext, go } from "../nav-context.js";
 import { isTourDemo, demoSuggestSchedule, DEMO_TOAST } from "../tour-demo.js";
 import { setPageGuide } from "../section-guide.js";
 import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calendar-guide.js";
@@ -207,9 +208,71 @@ function bankCount(brandId) {
   return overdue.length + unscheduled.length;
 }
 
+// ---------- Saved ideas in the Bank ----------
+// The ideas inbox (brand.ideas — store.js listBrandIdeas) that the chat and
+// the campaign pages keep, findable from Konten too: brand-level ideas plus
+// each running campaign's own (only that campaign's when the Bank is scoped
+// to one). An idea that already became content (status "used", its draft
+// still there) has left the inbox. Tap = talk it through in the chat; drag
+// or the calendar icon + a date = schedule it, which makes it content.
+const IDEA_PREFIX = "idea:";
+const isIdeaKey = (id) => typeof id === "string" && id.startsWith(IDEA_PREFIX);
+function ideaScopes(brandId, { running = false } = {}) {
+  const campaigns = listCampaigns(brandId).filter((c) => !running || !["archived", "completed"].includes(c.status));
+  return [null, ...campaigns.map((c) => c.id)];
+}
+function bankIdeas(brandId, campaignId = null) {
+  const scopes = campaignId ? [campaignId] : ideaScopes(brandId, { running: true });
+  return scopes
+    .flatMap((id) => listBrandIdeas(brandId, { campaignId: id }))
+    .filter((i) => !(i.status === "used" && i.contentId && getContent(i.contentId)));
+}
+function ideaById(brandId, ideaId) {
+  return ideaScopes(brandId).flatMap((id) => listBrandIdeas(brandId, { campaignId: id })).find((i) => i.id === ideaId) || null;
+}
+function ideaGroupHTML(ideas, state, campaignById) {
+  return `
+    <div class="content-bank-group is-ideas">
+      <div class="content-bank-group-head">${t("bankIdea.group")} <span>${ideas.length}</span></div>
+      ${ideas
+        .map((i) => {
+          const camp = i.campaignId ? campaignById.get(i.campaignId) : null;
+          const key = IDEA_PREFIX + i.id;
+          return `
+        <div class="bank-item is-idea ${state.placingId === key ? "is-placing" : ""}" draggable="true" data-bank-id="${escapeHtml(key)}" title="${escapeHtml(i.description || i.text)}">
+          <button type="button" class="bank-item-open" data-bank-idea-discuss="${escapeHtml(i.id)}" aria-label="${escapeHtml(t("bankIdea.discussAria", { title: i.text }))}">
+            <span class="bank-item-idea-icon" aria-hidden="true">${icon("bulb", { size: 12 })}</span>
+            <span class="bank-item-text">
+              <span class="bank-item-title">${escapeHtml(i.text)}</span>
+              <span class="bank-item-meta">${escapeHtml([t("bankIdea.discuss"), camp ? campaignDisplayName(camp.name) : ""].filter(Boolean).join(" · "))}</span>
+            </span>
+          </button>
+          <button type="button" class="icon-btn bank-item-place" data-bank-place="${escapeHtml(key)}" title="${escapeHtml(t("bankIdea.place"))}" aria-label="${escapeHtml(t("bankIdea.place"))}">${icon("calendar", { size: 13 })}</button>
+        </div>`;
+        })
+        .join("")}
+    </div>`;
+}
+// Scheduling a saved idea makes it content through the same path as the
+// chat's "Kirim ke Creator" (js/idea-draft.js) — its campaign kept, dated on
+// the day it was dropped.
+function scheduleIdea(brandId, ideaId, dateISO) {
+  if (!dateISO || dateISO < localISODate()) {
+    toast(t("calendar.pastDate"), "error");
+    return;
+  }
+  const i = ideaById(brandId, ideaId);
+  if (!i) return;
+  const c = draftFromIdea(brandId, i, { scheduleDate: dateISO, campaignId: i.campaignId || "", campaignPhaseId: "", seriesId: "" });
+  warnIfFunnelClash(brandId, c.id, dateISO);
+  toast(t("bankIdea.scheduled"));
+}
+
 function contentBankHTML(brandId, state) {
-  const campaign = state.bankCampaignId ? listCampaigns(brandId).find((c) => c.id === state.bankCampaignId) : null;
+  const campaigns = listCampaigns(brandId);
+  const campaign = state.bankCampaignId ? campaigns.find((c) => c.id === state.bankCampaignId) : null;
   const { overdue, unscheduled } = bankPool(brandId, campaign?.id);
+  const ideas = bankIdeas(brandId, campaign?.id || null);
   const groups = [
     ...(overdue.length ? [{ labelKey: "calendar.bank.overdue", items: overdue, overdue: true }] : []),
     ...BANK_GROUPS.map((g) => ({ ...g, items: unscheduled.filter((c) => g.statuses.includes(c.status)) })).filter((g) => g.items.length),
@@ -224,7 +287,7 @@ function contentBankHTML(brandId, state) {
       ${campaign ? `<div class="content-bank-scope"><span class="tag">${escapeHtml(campaignDisplayName(campaign.name))}</span><button type="button" class="icon-btn" id="bank-clear-campaign" title="${t("cal.bank.showAll")}" aria-label="${t("cal.bank.showAll")}">${icon("x", { size: 11 })}</button></div>` : ""}
       <div class="content-bank-list">
         ${
-          groups.length
+          groups.length || ideas.length
             ? groups
                 .map(
                   (g) => `
@@ -247,7 +310,7 @@ function contentBankHTML(brandId, state) {
               .join("")}
           </div>`
                 )
-                .join("")
+                .join("") + (ideas.length ? ideaGroupHTML(ideas, state, new Map(campaigns.map((c) => [c.id, c]))) : "")
             : `<div class="content-bank-empty">${t("calendar.bank.empty")}</div>`
         }
       </div>
@@ -272,6 +335,20 @@ function wireContentBank(root, brandId, state, refresh) {
   // Click the piece = open it, same as anywhere else in Konten.
   qsa("[data-bank-open]", bank).forEach((btn) => {
     btn.addEventListener("click", () => openContentEditor({ brandId, contentId: btn.dataset.bankOpen, onSaved: refresh }));
+  });
+  // Click a saved idea = talk it through: a new conversation in the one chat,
+  // in the idea's campaign, with the same opener the chat's "Bahas lagi" uses.
+  qsa("[data-bank-idea-discuss]", bank).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const i = ideaById(brandId, btn.dataset.bankIdeaDiscuss);
+      if (!i) return;
+      go(`#/brand/${brandId}/chat`, {
+        fromLabel: t("contentOs.tab.calendar"),
+        campaignId: i.campaignId || null,
+        mode: "chat",
+        seed: t("bs.concept.discussSeed", { title: i.text, angle: i.description || "-", notes: (i.notes || "-").replace(/\n+/g, "; ") }),
+      });
+    });
   });
   // The calendar icon = "put this on a day" without dragging (touch
   // screens can't drag): the next date tapped gets it.
@@ -306,8 +383,9 @@ function wireContentBank(root, brandId, state, refresh) {
 }
 
 // "Tap a date for …" — the no-drag way to schedule from the Bank.
-function placingBarHTML(state) {
-  const c = getContent(state.placingId);
+function placingBarHTML(state, brandId) {
+  const idea = isIdeaKey(state.placingId) ? ideaById(brandId, state.placingId.slice(IDEA_PREFIX.length)) : null;
+  const c = idea ? { title: idea.text } : getContent(state.placingId);
   if (!c) { state.placingId = null; return ""; }
   return `
     <div class="cal-placing-bar" role="status">
@@ -421,7 +499,7 @@ function openAutoScheduleConfirm(proposed, refresh) {
           <div class="auto-schedule-row">
             <span class="tag tag-${escapeHtml((p.content.funnel || "").toLowerCase())}">${escapeHtml(funnelShort(p.content.funnel))}</span>
             <span class="auto-schedule-title">${escapeHtml(p.content.title || t("common.untitled"))}</span>
-            <input class="input" type="date" data-schedule-index="${i}" value="${/^\d{4}-\d{2}-\d{2}$/.test(p.date || "") ? p.date : ""}" style="width:auto;" />
+            <input class="input" type="date" data-schedule-index="${i}" aria-label="${escapeHtml(`${t("contentEditor.tab.schedule")}: ${p.content.title || t("common.untitled")}`)}" value="${/^\d{4}-\d{2}-\d{2}$/.test(p.date || "") ? p.date : ""}" style="width:auto;" />
           </div>`
           )
           .join("")}
@@ -555,7 +633,7 @@ function paint(root, brandId, state, refresh) {
         ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
       </div>
     </div>
-    ${state.placingId ? placingBarHTML(state) : ""}
+    ${state.placingId ? placingBarHTML(state, brandId) : ""}
     <div class="cal-layout ${state.bankOpen ? "has-bank" : ""} ${state.placingId ? "is-placing" : ""}">
       <div id="cal-body"></div>
       ${state.bankOpen ? contentBankHTML(brandId, state) : ""}
@@ -909,6 +987,11 @@ function warnIfFunnelClash(brandId, contentId, dateISO) {
 }
 
 function assignToDate(brandId, contentId, dateISO) {
+  // A saved idea from the Bank (drag or "ketuk tanggal") becomes content.
+  if (isIdeaKey(contentId)) {
+    scheduleIdea(brandId, contentId.slice(IDEA_PREFIX.length), dateISO);
+    return;
+  }
   // A scheduled date in the past used to be accepted, then the item was
   // hidden from both the grid and the Bank — looked like it was deleted.
   if (!dateISO || dateISO < localISODate()) {

@@ -10,10 +10,9 @@
 // "Unread" = newer than the last time this account opened the page
 // (settings.announcementsSeenAt, with a browser copy for read-only
 // accounts, which can't write settings).
-import {
-  collection, doc, query, orderBy, limit, onSnapshot, setDoc, updateDoc, deleteDoc,
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
-import { db as fdb } from "./firebase.js";
+// The Firestore SDK loads on demand (js/firebase.js loadFirestore) — this
+// module is in the login screen's import graph through the app shell.
+import { db as fdb, loadFirestore } from "./firebase.js";
 import { isAdmin, currentUid, getCachedAccount, isReadOnly } from "./account.js";
 import { getSettings, updateSettings } from "./store.js";
 
@@ -36,19 +35,30 @@ export const announcementsStatus = () => status;
 export function startAnnouncements() {
   if (unsub || !currentUid()) return;
   status = "loading";
-  unsub = onSnapshot(
-    query(collection(fdb, "announcements"), orderBy("createdAt", "desc"), limit(MAX)),
-    (snap) => {
-      items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      status = "ready";
-      notify();
-    },
-    (err) => {
-      console.warn("[announcements] listen failed", err);
-      status = "error";
-      notify();
-    }
-  );
+  // `unsub` is set right away (a stop before the SDK arrives cancels it).
+  let stopped = false;
+  let inner = null;
+  unsub = () => { stopped = true; inner?.(); };
+  loadFirestore().then(({ collection, query, orderBy, limit, onSnapshot }) => {
+    if (stopped) return;
+    inner = onSnapshot(
+      query(collection(fdb, "announcements"), orderBy("createdAt", "desc"), limit(MAX)),
+      (snap) => {
+        items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        status = "ready";
+        notify();
+      },
+      (err) => {
+        console.warn("[announcements] listen failed", err);
+        status = "error";
+        notify();
+      }
+    );
+  }).catch((err) => {
+    console.warn("[announcements] Firestore unavailable", err);
+    status = "error";
+    notify();
+  });
 }
 
 export function stopAnnouncements() {
@@ -97,6 +107,7 @@ const clean = ({ title = "", body = "", kind = "info", link = "" }) => ({
 });
 
 export async function publishAnnouncement(fields) {
+  const { doc, collection, setDoc } = await loadFirestore();
   const ref = doc(collection(fdb, "announcements"));
   const now = Date.now();
   const data = { ...clean(fields), createdAt: now, updatedAt: now, authorUid: currentUid() };
@@ -113,6 +124,7 @@ export async function publishAnnouncement(fields) {
 }
 
 export async function editAnnouncement(id, fields) {
+  const { doc, updateDoc } = await loadFirestore();
   const patch = { ...clean(fields), updatedAt: Date.now() };
   const before = items;
   items = items.map((a) => (a.id === id ? { ...a, ...patch } : a));
@@ -127,6 +139,7 @@ export async function editAnnouncement(id, fields) {
 }
 
 export async function removeAnnouncement(id) {
+  const { doc, deleteDoc } = await loadFirestore();
   const before = items;
   items = items.filter((a) => a.id !== id);
   notify();

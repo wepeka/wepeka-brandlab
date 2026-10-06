@@ -150,13 +150,13 @@ export function openGoalWizard({ brandId }) {
       <div class="field"><label for="rw-name">${t("roadmap.wizard.name")}</label><input class="input" id="rw-name" maxlength="80" autocomplete="off" value="${esc(st.name)}" placeholder="${esc(t("roadmap.wizard.namePh"))}" /></div>
       <div class="field"><label for="rw-date">${t("roadmap.wizard.date")}</label><input class="input" id="rw-date" type="date" min="${minDate}" value="${esc(st.date)}" />
         <p class="ev-field-hint" id="rw-date-hint">${dateHint()}</p></div>
-      <div class="field"><label>${t("roadmap.wizard.role")}</label>
-        <div class="chip-select" id="rw-role">${EVENT_ROLES.map((r) => `<button type="button" data-val="${r.id}" class="${st.role === r.id ? "active" : ""}" title="${esc(r.description)}">${esc(r.label)}</button>`).join("")}</div></div>
+      <div class="field"><label id="rw-role-label">${t("roadmap.wizard.role")}</label>
+        <div class="chip-select" id="rw-role" role="group" aria-labelledby="rw-role-label">${EVENT_ROLES.map((r) => `<button type="button" data-val="${r.id}" class="${st.role === r.id ? "active" : ""}" aria-pressed="${st.role === r.id}" title="${esc(r.description)}">${esc(r.label)}</button>`).join("")}</div></div>
       ${st.role === "participant" ? `<div class="field"><label for="rw-ptype">${t("roadmap.wizard.ptype")}</label><select class="input" id="rw-ptype">${EVENT_PARTICIPATION_TYPES.map((p) => `<option value="${p.id}" ${st.ptype === p.id ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></div>` : ""}
       ${numField("rw-seats", t("roadmap.wizard.seats"), st.seats, { hint: `<span id="rw-scale-hint">${scaleHint(st.seats)}</span>`, ph: t("roadmap.wizard.seatsPh") })}
       <div class="field"><label for="rw-loc">${t("roadmap.wizard.location")} <span class="copy-optional">${t("goal.sales.optional")}</span></label><input class="input" id="rw-loc" maxlength="80" autocomplete="off" value="${esc(st.location)}" /></div>
-      <div class="field"><label>${t("roadmap.wizard.ticketed")}</label>
-        <div class="chip-select" id="rw-ticketed"><button type="button" data-val="yes" class="${st.ticketed === true ? "active" : ""}">${t("roadmap.wizard.ticketYes")}</button><button type="button" data-val="no" class="${st.ticketed === false ? "active" : ""}">${t("roadmap.wizard.ticketNo")}</button></div></div>
+      <div class="field"><label id="rw-ticketed-label">${t("roadmap.wizard.ticketed")}</label>
+        <div class="chip-select" id="rw-ticketed" role="group" aria-labelledby="rw-ticketed-label"><button type="button" data-val="yes" class="${st.ticketed === true ? "active" : ""}" aria-pressed="${st.ticketed === true}">${t("roadmap.wizard.ticketYes")}</button><button type="button" data-val="no" class="${st.ticketed === false ? "active" : ""}" aria-pressed="${st.ticketed === false}">${t("roadmap.wizard.ticketNo")}</button></div></div>
       ${st.ticketed ? numField("rw-price", t("roadmap.wizard.price"), st.price, { ph: "Rp" }) : ""}
       ${err()}
       <button type="button" class="btn btn-primary btn-block" id="rw-next">${t("camp.next")}${icon("arrowRight", { size: 14 })}</button>`;

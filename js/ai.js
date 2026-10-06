@@ -48,6 +48,11 @@ function proxyError(code, extra = {}) {
       return new AiApiError(t("ai.error.session"));
     case "deactivated":
       return new AiApiError(t("ai.error.deactivated"));
+    // Too many AI calls running at once for this account (api/ai.js
+    // MAX_INFLIGHT) — nothing was charged, and it isn't the quota, so no
+    // top-up notice.
+    case "busy":
+      return new AiApiError(t("ai.error.busy"));
     case "readonly":
       return new AiApiError(t("ai.error.readonly"));
     case "too-large":
@@ -87,7 +92,11 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
   if (!token) throw proxyError("auth");
 
   const ctrl = new AbortController();
-  const timeoutMs = stream ? 130000 : 65000;
+  // Longer than api/ai.js's own budget for a non-streamed call (110 s, both
+  // attempts included) plus a slow upload, so the server always answers — or
+  // reports the error and refunds the credit — before the browser stops
+  // listening.
+  const timeoutMs = stream ? 130000 : 125000;
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let res;
   try {
@@ -213,8 +222,9 @@ export function aiCanSeeImages(ai) {
 
 // Every text call funnels through here, so this is where the daily quota
 // pre-check (js/ai-usage.js) happens before even bothering the network —
-// api/ai.js is the one that actually enforces it (and counts a successful
-// call), this is just a snappier "no" than waiting for a round trip.
+// api/ai.js is the one that actually enforces it (it charges the call
+// before asking the AI and refunds it if no reply comes), this is just a
+// snappier "no" than waiting for a round trip.
 // `temperature` / `json` are optional per-call hints (see api/ai.js's
 // deepSeekBody); `onText(soFar, { whole })` streams the answer where the
 // provider can, and hands over the finished text in one piece (whole: true)
@@ -1940,6 +1950,8 @@ export { AiApiError };
 // a title, angle, key-point notes and 2-3 candidate hooks. It's a system
 // call, not something the owner typed a prompt for, so it doesn't count
 // against their quota. The owner edits the result before it is saved.
+const CONCEPT_TRANSCRIPT_MAX = 70000;
+const CONCEPT_TURN_MAX = 12000;
 export async function summarizeConcept(ai, { brand, messages = [], scopeText = "" }) {
   const system = [
     "You turn a brainstorm conversation between a brand owner and their AI partner into ONE content concept the owner can save and pick up later.",
@@ -1950,7 +1962,19 @@ export async function summarizeConcept(ai, { brand, messages = [], scopeText = "
     'Respond with ONLY a JSON object: {"title": "short concept title, max 8 words", "angle": "the angle in 1-2 sentences", "notes": "the key points to remember, 2-5 short lines separated by newlines", "hooks": ["hook 1", "hook 2", "hook 3"]}. Hooks are 1-sentence scroll-stoppers in the brand\'s voice.',
     NATURAL_WRITING_CONTEXT,
   ].filter(Boolean).join("\n\n");
-  const transcript = messages.filter((m) => m.text).slice(-24).map((m) => `${m.role === "user" ? "Owner" : "Partner"}: ${m.text}`).join("\n\n");
+  // Newest turns first until ~70K characters: with the brand context that
+  // stays inside the server's free "concept" cap (api/ai.js FREE_FEATURES),
+  // so a long session never silently costs a credit or gets refused.
+  const turns = messages.filter((m) => m.text).slice(-24).map((m) => `${m.role === "user" ? "Owner" : "Partner"}: ${m.text}`);
+  const kept = [];
+  let size = 0;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i].length > CONCEPT_TURN_MAX ? `${turns[i].slice(0, CONCEPT_TURN_MAX)}…` : turns[i];
+    if (kept.length && size + turn.length > CONCEPT_TRANSCRIPT_MAX) break;
+    kept.unshift(turn);
+    size += turn.length + 2;
+  }
+  const transcript = kept.join("\n\n");
   const raw = await callModel(ai, system, transcript, 700, { countUsage: false, json: true, feature: "concept" });
   const obj = parseJsonObject(raw);
   if (!obj || typeof obj !== "object") throw new AiApiError(t("ai.error.unreadable"));

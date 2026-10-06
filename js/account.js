@@ -3,11 +3,12 @@
 // most of its fields (plan/status/brandLimit) are intentionally NOT
 // client-writable (see firestore.rules) — only the Midtrans webhook and
 // wpk-dp's admin dashboard, both using the Admin SDK, can change them.
-import { auth, db as fdb } from "./firebase.js";
-import {
-  doc, getDoc, setDoc, onSnapshot, runTransaction,
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+// The Firestore SDK comes from loadFirestore() (js/firebase.js) inside each
+// function that needs it — this module is part of the login screen's import
+// graph, which must not download Firestore. `fdb` is set by that load.
+import { auth, db as fdb, loadFirestore } from "./firebase.js";
 import { t } from "./i18n.js";
+import { brandAsStored, hasOversizedBlob } from "./brand-assets.js";
 
 export const DEFAULT_BRAND_LIMIT = 3;
 
@@ -38,14 +39,11 @@ export function canUseInstagramApi() {
   return isAdmin(currentUid());
 }
 
-// A plain read — nothing is created here anymore (Fase 2). Kept as its own
-// function so callers don't have to know that; `boot()` in main.js awaits it
-// before subscribing purely so the very first paint after a fresh sign-in
-// already has a warm local cache instead of a beat of "loading" from
-// subscribeAccount's own first snapshot.
-export async function ensureAccountDoc(user) {
-  await getDoc(doc(fdb, "accounts", user.uid));
-}
+// Nothing is created here anymore (Fase 2: accounts/{uid} is made server-
+// side), and the extra read it used to do is gone too — subscribeAccount's
+// listener already delivers the doc, from the local cache first. Kept as a
+// no-op so nothing that still imports it breaks.
+export async function ensureAccountDoc() {}
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
@@ -61,6 +59,7 @@ export async function claimUsername(uid, rawUsername) {
   if (!USERNAME_RE.test(username)) {
     throw new Error(t("auth.username.invalid"));
   }
+  const { doc, runTransaction } = await loadFirestore();
   const newClaimRef = doc(fdb, "usernames", username);
   const accountRef = doc(fdb, "accounts", uid);
   await runTransaction(fdb, async (tx) => {
@@ -83,9 +82,22 @@ export async function claimUsername(uid, rawUsername) {
 // the Admin SDK, and this listener is what makes that unlock the app (or
 // lock it) live, no refresh needed.
 export function subscribeAccount(uid, fn) {
-  return onSnapshot(doc(fdb, "accounts", uid), (snap) => {
-    fn(snap.exists() ? snap.data() : null);
-  });
+  let unsub = null;
+  let stopped = false;
+  loadFirestore()
+    .then(({ doc, onSnapshot }) => {
+      if (stopped) return;
+      unsub = onSnapshot(doc(fdb, "accounts", uid), (snap) => {
+        fn(snap.exists() ? snap.data() : null);
+      });
+    })
+    // The SDK didn't download (offline / blocked): main.js's loader offers a
+    // reload after a while, same as a listener that never answers.
+    .catch((e) => console.error("[account] Firestore unavailable", e));
+  return () => {
+    stopped = true;
+    if (unsub) unsub();
+  };
 }
 
 export function isActive(account) {
@@ -163,6 +175,7 @@ export function hasPaidPlan(account) {
 // everything else (plan/status/brandLimit/subscriptionExpiresAt/paidAt) is
 // mirrored in firestore.rules as a deny-list against request.auth.uid writes.
 export async function updateOwnDisplayName(uid, displayName) {
+  const { doc, setDoc } = await loadFirestore();
   await setDoc(doc(fdb, "accounts", uid), { displayName }, { merge: true });
 }
 
@@ -231,7 +244,12 @@ export function checkImport(json, existingBrands = [], account = cachedAccount, 
     if (!Array.isArray(parsed[name])) throw new Error(t("pricing.import.badData"));
     for (const item of parsed[name]) {
       if (!item || typeof item !== "object" || typeof item.id !== "string" || !SAFE_ID.test(item.id)) throw new Error(t("pricing.import.badData"));
-      if (JSON.stringify(item).length > IMPORT_DOC_MAX_CHARS) throw new Error(t("pricing.import.docTooBig"));
+      // A brand is measured as it will be stored: its files go to their own
+      // asset docs (each checked against its own cap), its sales log to
+      // brands/{id}/sales — js/store.js importJSON.
+      const stored = name === "brands" ? brandAsStored(item) : item;
+      if (JSON.stringify(stored).length > IMPORT_DOC_MAX_CHARS) throw new Error(t("pricing.import.docTooBig"));
+      if (name === "brands" && hasOversizedBlob(item)) throw new Error(t("pricing.import.docTooBig"));
     }
   }
   parsed.brands = (parsed.brands || []).map((b) => {

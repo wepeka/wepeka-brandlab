@@ -316,6 +316,9 @@ function paint(root, brandId, state, refresh) {
   // Keyboard: each row is a Tab stop and Enter/Space opens it (the click
   // handler above). The markup keeps role="row" so the table stays a table.
   wireClickableCards(root, "tr[data-id]");
+  // The action cell (Quick Fill, ⋯) must not also open the row — an inline
+  // onclick would need a CSP exception, so it is a listener here.
+  qsa("td[data-row-actions]", root).forEach((td) => td.addEventListener("click", (e) => e.stopPropagation()));
 
   qsa("[data-quick-fill]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -433,7 +436,7 @@ function rowHTML({ c, perf, m }, campaignsById) {
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf.views) : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.engagement"))}">${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
-      <td onclick="event.stopPropagation()">
+      <td data-row-actions>
         <div class="flex gap-4">
           ${isPublished ? `<button type="button" class="icon-btn" data-quick-fill="${c.id}" aria-label="${t("contentList.fillEngagement")}" title="${t("contentList.fillEngagement")}" style="width:30px;height:30px;">${icon("chart", { size: 15 })}</button>` : ""}
           <button class="icon-btn" data-row-menu data-id="${c.id}" aria-label="${t("contentList.moreActions")}" style="width:30px;height:30px;">${icon("dots", { size: 15 })}</button>
@@ -698,20 +701,20 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
   panel.innerHTML = `
     <div class="filter-panel-section">
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.funnel")}</div>
-      <div class="chip-select" id="fp-funnel">
-        ${FUNNELS.map((f) => `<button type="button" data-val="${f}" class="${state.funnel === f ? "active" : ""}">${funnelShort(f)}</button>`).join("")}
+      <div class="chip-select" id="fp-funnel" role="group" aria-label="${escapeText(t("contentList.fp.funnel"))}">
+        ${FUNNELS.map((f) => `<button type="button" data-val="${f}" class="${state.funnel === f ? "active" : ""}" aria-pressed="${state.funnel === f}">${funnelShort(f)}</button>`).join("")}
       </div>
     </div>
     <div class="filter-panel-section">
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.format")}</div>
-      <select class="select" id="fp-format">
+      <select class="select" id="fp-format" aria-label="${escapeText(t("contentList.fp.format"))}">
         <option value="">${t("contentList.fp.allFormats")}</option>
         ${settings.formats.map((f) => `<option value="${escapeText(f.name)}" ${state.format === f.name ? "selected" : ""}>${escapeText(f.name)}</option>`).join("")}
       </select>
     </div>
     <div class="filter-panel-section">
       <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.platform")}</div>
-      <select class="select" id="fp-platform">
+      <select class="select" id="fp-platform" aria-label="${escapeText(t("contentList.fp.platform"))}">
         <option value="">${t("contentList.fp.allPlatforms")}</option>
         ${settings.platforms.map((p) => `<option value="${escapeText(p.name)}" ${state.platform === p.name ? "selected" : ""}>${escapeText(p.name)}</option>`).join("")}
       </select>
@@ -720,7 +723,7 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
       isPublishedView
         ? `<div class="filter-panel-section">
              <div class="page-eyebrow" style="margin-bottom:8px;">${t("contentList.fp.age")}</div>
-             <select class="select" id="fp-age">
+             <select class="select" id="fp-age" aria-label="${escapeText(t("contentList.fp.age"))}">
                <option value="">${t("contentList.fp.allAges")}</option>
                ${AGE_BUCKETS.map((b) => `<option value="${b.key}" ${state.age === b.key ? "selected" : ""}>${t(b.labelKey)}</option>`).join("")}
              </select>
@@ -733,7 +736,7 @@ function openFilterPanel(anchorBtn, { state, isPublishedView, settings, onChange
   qsa("#fp-funnel button", panel).forEach((btn) => {
     btn.addEventListener("click", () => {
       state.funnel = state.funnel === btn.dataset.val ? "" : btn.dataset.val;
-      qsa("#fp-funnel button", panel).forEach((b) => b.classList.toggle("active", b.dataset.val === state.funnel));
+      qsa("#fp-funnel button", panel).forEach((b) => { b.classList.toggle("active", b.dataset.val === state.funnel); b.setAttribute("aria-pressed", String(b.dataset.val === state.funnel)); });
       onChange();
     });
   });

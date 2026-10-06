@@ -371,7 +371,7 @@ function proBriefHTML() {
     <details class="card card-tight dna-pro-brief" style="margin-bottom:18px;">
       <summary style="cursor:pointer;font-weight:700;font-size:13.5px;">${icon("sparkle", { size: 14 })} ${t("dna.proBrief.title")}</summary>
       <p class="text-faint" style="font-size:12px;margin:8px 0;">${t("dna.proBrief.hint")}</p>
-      <textarea class="textarea" id="dna-pro-brief" rows="5" placeholder="${escapeHtml(t("dna.proBrief.ph"))}"></textarea>
+      <textarea class="textarea" id="dna-pro-brief" rows="5" aria-label="${escapeHtml(t("dna.proBrief.title"))}" placeholder="${escapeHtml(t("dna.proBrief.ph"))}"></textarea>
       <button type="button" class="btn btn-primary btn-sm" id="dna-pro-brief-go" style="margin-top:8px;">${icon("sparkle", { size: 13 })}${t("dna.proBrief.go")}${costTagHTML()}</button>
       <div id="dna-ai-fill-status"></div>
     </details>`;

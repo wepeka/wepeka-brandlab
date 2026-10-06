@@ -16,6 +16,15 @@ export default {
   "store.sync.campaigns": { en: "campaigns", id: "campaign" },
   "store.sync.routineTemplate": { en: "your routine", id: "rutinitas" },
   "store.sync.settings": { en: "settings", id: "pengaturan" },
+  // Backup export (js/store.js prepareExport): files referenced but gone.
+  "store.exportSkipped": { en: "Backup saved, but {count} file(s) couldn't be found and were left out: {list}.", id: "Backup tersimpan, tapi {count} file tidak ditemukan dan dilewati: {list}." },
+  "store.fileKind.cover": { en: "cover photo", id: "foto sampul" },
+  "store.fileKind.logo": { en: "logo", id: "logo" },
+  "store.fileKind.logo-secondary": { en: "secondary logo", id: "logo kedua" },
+  "store.fileKind.logotype": { en: "logotype", id: "logotype" },
+  "store.fileKind.mascot": { en: "mascot", id: "maskot" },
+  "store.fileKind.moodboard": { en: "moodboard photo", id: "foto moodboard" },
+  "store.fileKind.font": { en: "font file", id: "file font" },
 
   // ---------- store.js: METRIC_KEYS ----------
   "store.metric.views": { en: "Views", id: "Views" },

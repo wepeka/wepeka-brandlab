@@ -8,9 +8,13 @@
 // Usage doc: aiUsage/{uid} = { date, count, month, monthCount, totalCount,
 // extraDate, extraCount } — count/monthCount/totalCount are calls charged to
 // the PLAN's allowance; extraDate/extraCount are today's calls made on AI
-// Sepuasnya (not capped — kept so heavy use is visible to the admin).
+// Sepuasnya (not capped — kept so heavy use is visible to the admin);
+// freeDate/freeCount are today's free background calls (api/ai.js
+// FREE_FEATURES).
 // — same shape the old settings/{uid}.aiUsage carried, just owned by the
 // server now (firestore.rules: client can read its own, never write it).
+// Since 2026-10-06 a call is counted when it STARTS (reserveCall) and given
+// back if it fails (releaseCall) — see the bottom of this file.
 
 // A plan this table doesn't know gets Starter's allowance, never more
 // (audit S-25: unknown plans used to get 50/day, more than Starter).
@@ -153,6 +157,8 @@ export async function consumeFreeCall(db, uid, now = new Date(), limit = Infinit
   });
 }
 
+// (consumeFreeCall above and consumeQuota below are the old count-after-
+// the-reply path; api/ai.js now goes through reserveCall/releaseCall.)
 // Bumps aiUsage/{uid} by 1 inside a transaction (so two near-simultaneous
 // calls from the same account can never both slip through uncounted) and
 // returns the freshly-counted usage for the given period. Called only after
@@ -193,5 +199,151 @@ export async function consumeQuota(db, uid, period, now = new Date(), { limit = 
     tx.set(ref, { date: today, count, month, monthCount, totalCount }, { merge: true });
     const used = period === "total" ? totalCount : period === "month" ? monthCount : count;
     return { used, bucket: "plan" };
+  });
+}
+
+// ---------- Charge first, refund on failure (2026-10-06) ----------
+// api/ai.js used to check the allowance before the AI call and count the
+// call after the reply — so N calls started together all passed the check
+// and overspent (consumeQuota above then charged the plan "one over"). Now
+// reserveCall() takes the credit BEFORE the call, in the same transaction
+// that takes one of the account's in-flight slots, and releaseCall() hands
+// the slot back afterwards — refunding exactly what was reserved when the
+// call failed. The lease is the reservation's receipt: a refund only
+// happens while it still exists and it records which allowance paid, so a
+// refund can never run twice or land in a different bucket.
+//
+// aiInflight/{uid} = { leases: { <leaseId>: { at, kind, date, month } } } —
+// server-only (no rule in firestore.rules matches it, so the browser can
+// neither read nor write it). kind: "plan" | "daily" (AI Sepuasnya) |
+// "credits" (top-up) | "free" (one of today's free background calls).
+
+// At most this many AI calls in flight per account at once. NOT a usage
+// cap — AI Sepuasnya stays unlimited — only a guard against one account
+// firing dozens of requests in parallel.
+export const MAX_INFLIGHT = 3;
+// A lease older than this belongs to a call whose function died without
+// releasing it, and stops counting. Longer than vercel.json's maxDuration
+// for api/ai.js (180 s), so a call that is still running never loses its
+// lease (and with it its refund).
+export const LEASE_TTL_MS = 200_000;
+
+function liveLeases(leases, nowMs, ttlMs) {
+  const out = {};
+  for (const [id, l] of Object.entries(leases || {})) if (l && nowMs - Number(l.at) < ttlMs) out[id] = l;
+  return out;
+}
+
+// Reserves one call for `uid`: an in-flight slot plus the credit that pays
+// for it, in the order the old pre-check used — a free slot when `free`
+// (and today's `freeLimit` has room), else the plan's allowance (`period`,
+// `limit` from quotaFor), then AI Sepuasnya, then top-up credits.
+// Returns { ok: true, leaseId, kind, used, dailyUsed, credits } — `used` is
+// the plan's count for `period` after this call — or { ok: false, error:
+// "busy" | "quota", ... } with nothing written at all.
+export async function reserveCall(db, uid, { period, limit = Infinity, leaseId, free = false, freeLimit = Infinity, maxInflight = MAX_INFLIGHT, leaseTtlMs = LEASE_TTL_MS, now = new Date() } = {}) {
+  const usageRef = db.doc(`aiUsage/${uid}`);
+  const leaseRef = db.doc(`aiInflight/${uid}`);
+  const accountRef = db.doc(`accounts/${uid}`);
+  const today = isoDate(now);
+  const month = isoMonth(now);
+  return db.runTransaction(async (tx) => {
+    const usageSnap = await tx.get(usageRef);
+    const leaseSnap = await tx.get(leaseRef);
+    const u = usageSnap.exists ? usageSnap.data() || {} : {};
+    const leases = liveLeases(leaseSnap.exists ? leaseSnap.data()?.leases : null, now.getTime(), leaseTtlMs);
+    const inflight = Object.keys(leases).length;
+    if (inflight >= maxInflight) return { ok: false, error: "busy", inflight };
+
+    const planUsed = usedInPeriod(u, period, now);
+    let dailyUsed = usedExtraToday(u, now);
+    const freeUsed = u.freeDate === today ? Number(u.freeCount) || 0 : 0;
+    let extras = { dailyLimit: 0, credits: 0 };
+    let kind = free && freeUsed < freeLimit ? "free" : null;
+    if (!kind && !(planUsed < limit)) {
+      // Plan used up: what's left is on the account doc, read inside this
+      // transaction so two calls can never both spend the last credit.
+      const accountSnap = await tx.get(accountRef);
+      extras = extrasFor(accountSnap.exists ? accountSnap.data() : {}, uid, now);
+    }
+    if (!kind) kind = pickBucket({ planUsed, planLimit: limit, dailyUsed, dailyLimit: extras.dailyLimit, credits: extras.credits });
+    if (!kind) return { ok: false, error: "quota", planUsed, dailyUsed, dailyLimit: extras.dailyLimit, credits: extras.credits };
+
+    let used = planUsed;
+    let credits = extras.credits;
+    if (kind === "plan") {
+      const count = (u.date === today ? Number(u.count) || 0 : 0) + 1;
+      const monthCount = (u.month === month ? Number(u.monthCount) || 0 : 0) + 1;
+      const totalCount = (Number(u.totalCount) || 0) + 1;
+      tx.set(usageRef, { date: today, count, month, monthCount, totalCount }, { merge: true });
+      used = period === "total" ? totalCount : period === "month" ? monthCount : count;
+    } else if (kind === "daily") {
+      dailyUsed += 1;
+      tx.set(usageRef, { extraDate: today, extraCount: dailyUsed }, { merge: true });
+    } else if (kind === "credits") {
+      credits -= 1;
+      tx.set(accountRef, { aiCredits: credits }, { merge: true });
+    } else {
+      tx.set(usageRef, { freeDate: today, freeCount: freeUsed + 1 }, { merge: true });
+    }
+    leases[leaseId] = { at: now.getTime(), kind, date: today, month };
+    tx.set(leaseRef, { leases });
+    return { ok: true, leaseId, kind, used, dailyUsed, credits };
+  });
+}
+
+// Ends the call reserved under `leaseId`. outcome:
+//  - "ok": the owner got a reply — the charge stands.
+//  - "fail": the call failed or came back empty — exactly what was
+//    reserved goes back (a free slot included).
+//  - "handoff": the reply was only a hand-off line to another chat partner
+//    (js/ai.js HANDOFF_RULE_*) — refunded as one of today's free calls,
+//    while today's `freeLimit` has room; past it, the charge stands.
+// A lease that is already gone (released before, or expired) changes
+// nothing. A day/month window that rolled over since the reservation is
+// left alone — that count belongs to a window that's already over.
+// Returns { released, refunded, kind, used } (`used`: the plan's count for
+// `period` afterwards, or null when nothing was read).
+export async function releaseCall(db, uid, leaseId, { outcome = "ok", period = "day", freeLimit = Infinity, leaseTtlMs = LEASE_TTL_MS, now = new Date() } = {}) {
+  const usageRef = db.doc(`aiUsage/${uid}`);
+  const leaseRef = db.doc(`aiInflight/${uid}`);
+  const accountRef = db.doc(`accounts/${uid}`);
+  const today = isoDate(now);
+  return db.runTransaction(async (tx) => {
+    const leaseSnap = await tx.get(leaseRef);
+    const all = (leaseSnap.exists ? leaseSnap.data()?.leases : null) || {};
+    const lease = all[leaseId];
+    if (!lease) return { released: false, refunded: false, kind: null, used: null };
+
+    let refund = outcome === "fail" || (outcome === "handoff" && lease.kind !== "free");
+    // A call that keeps its charge only frees its slot — no need to read
+    // (and contend on) the usage doc.
+    const usageSnap = refund ? await tx.get(usageRef) : null;
+    const u = usageSnap?.exists ? usageSnap.data() || {} : {};
+    const freeUsed = u.freeDate === today ? Number(u.freeCount) || 0 : 0;
+    if (outcome === "handoff" && refund && freeUsed >= freeLimit) refund = false;
+    const accountSnap = refund && lease.kind === "credits" ? await tx.get(accountRef) : null;
+
+    const { [leaseId]: _done, ...rest } = all;
+    tx.set(leaseRef, { leases: liveLeases(rest, now.getTime(), leaseTtlMs) });
+    if (!refund) return { released: true, refunded: false, kind: lease.kind, used: usageSnap ? usedInPeriod(u, period, now) : null };
+
+    const next = {};
+    if (lease.kind === "plan") {
+      if (u.date === lease.date) next.count = Math.max(0, (Number(u.count) || 0) - 1);
+      if (u.month === lease.month) next.monthCount = Math.max(0, (Number(u.monthCount) || 0) - 1);
+      next.totalCount = Math.max(0, (Number(u.totalCount) || 0) - 1);
+    } else if (lease.kind === "daily") {
+      if (u.extraDate === lease.date) next.extraCount = Math.max(0, (Number(u.extraCount) || 0) - 1);
+    } else if (lease.kind === "free") {
+      if (u.freeDate === lease.date) next.freeCount = Math.max(0, (Number(u.freeCount) || 0) - 1);
+    } else if (lease.kind === "credits") {
+      const a = accountSnap?.exists ? accountSnap.data() || {} : {};
+      tx.set(accountRef, { aiCredits: Math.max(0, Math.floor(Number(a.aiCredits) || 0)) + 1 }, { merge: true });
+    }
+    // A hand-off refund is paid for with one of today's free calls.
+    if (outcome === "handoff") Object.assign(next, { freeDate: today, freeCount: freeUsed + 1 });
+    if (Object.keys(next).length) tx.set(usageRef, next, { merge: true });
+    return { released: true, refunded: true, kind: lease.kind, used: usedInPeriod({ ...u, ...next }, period, now) };
   });
 }

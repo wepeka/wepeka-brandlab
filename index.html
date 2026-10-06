@@ -26,6 +26,11 @@
 <meta name="theme-color" content="#0c0b0a" />
 <link rel="icon" href="assets/wepeka-favicon-32.png" sizes="32x32" type="image/png" />
 <link rel="apple-touch-icon" href="assets/wepeka-apple-icon.png" />
+<!-- Installable app ("Add to Home Screen"): name, icons, standalone display. -->
+<link rel="manifest" href="assets/manifest.webmanifest" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Brandlab" />
 <!-- Firebase's SDK modules (js/firebase.js) load from gstatic as CORS
      module requests: open that connection while the HTML is still parsing. -->
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
@@ -33,8 +38,8 @@
      headings, css/styles.css's @font-face) — preloaded so the browser
      fetches them in parallel with the stylesheet instead of discovering
      them only after css/styles.css has downloaded and parsed. -->
-<link rel="preload" as="font" type="font/woff" href="fonts/grift-black.woff" crossorigin>
-<link rel="preload" as="font" type="font/woff" href="fonts/JUST Sans Regular.woff" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="fonts/grift-black.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="fonts/JUST Sans Regular.woff2" crossorigin>
 <link rel="stylesheet" href="css/styles.css" />
 <link rel="stylesheet" href="css/auth.css" />
 <link rel="stylesheet" href="css/campaign.css" />
