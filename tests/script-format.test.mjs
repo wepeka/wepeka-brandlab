@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides } from "../js/script-format.js";
+import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, scriptLineKind } from "../js/script-format.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, recommendedHookTypes, orderedHookTypes } from "../js/knowledge/hook-types.js";
 import { t } from "../js/i18n.js";
 
@@ -52,6 +52,23 @@ describe("renderScript / parseScript", () => {
     assert.equal(parseScript("HOOK\nHalo\n\nISI PEMBAHASAN\nIsi"), null);
     assert.equal(parseScript("Slide 1\nCover\n\nSlide 2\nIsi"), null);
     assert.equal(parseScript("cuma teks biasa"), null);
+  });
+});
+
+describe("scriptLineKind (the full-screen page styles line by line)", () => {
+  test("headers and the three labels, label length includes the space after it", () => {
+    assert.deepEqual(scriptLineKind("[0-6 dtk] HOOK"), { kind: "head", labelLength: 0 });
+    assert.deepEqual(scriptLineKind("Visual: Cuplikan selebrasi"), { kind: "visual", labelLength: 8 });
+    assert.deepEqual(scriptLineKind("Teks layar: 35 tahun nunggu."), { kind: "onScreen", labelLength: 12 });
+    assert.deepEqual(scriptLineKind("Narasi: Timnas juara."), { kind: "say", labelLength: 8 });
+    assert.deepEqual(scriptLineKind("Voice: Hi"), { kind: "say", labelLength: 7 });
+    assert.deepEqual(scriptLineKind("On-screen text: Hi"), { kind: "onScreen", labelLength: 16 });
+  });
+  test("an empty field is all label; anything else is plain", () => {
+    assert.deepEqual(scriptLineKind("Narasi: "), { kind: "say", labelLength: 8 });
+    assert.equal(scriptLineKind("Timnas juara setelah 35 tahun.").kind, "");
+    assert.equal(scriptLineKind("").kind, "");
+    assert.equal(scriptLineKind("Narasinya nanti").kind, "");
   });
 });
 

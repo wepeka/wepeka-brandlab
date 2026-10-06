@@ -147,6 +147,18 @@ export function scriptBeatsHTML(text, esc) {
 
 export const isBeatScript = (text) => !!parseScript(text);
 
+// What ONE line of a script is, for an editor that styles line by line
+// (js/script-focus.js): "head" for "[0-3 dtk] HOOK", "visual" / "onScreen" /
+// "say" for a labelled line — `labelLength` is the "Narasi: " part, trailing
+// space included — and "" for anything else.
+export function scriptLineKind(line) {
+  const s = String(line || "");
+  if (HEADER_RE.test(s)) return { kind: "head", labelLength: 0 };
+  const f = s.match(FIELD_RE);
+  if (!f) return { kind: "", labelLength: 0 };
+  return { kind: FIELD_KEY(f[1]), labelLength: s.length - f[3].length };
+}
+
 // Old "HOOK / ISI PEMBAHASAN" scripts.
 const OLD_HOOK_RE = /(?:^|\n)\s*[*#_>]*\s*HOOK\s*[*_:]*\s*\n([\s\S]*?)(?:\n\s*\n|\n\s*[*#_>]*\s*ISI|$)/i;
 const SLIDE_RE = /(?:^|\n)\s*Slide\s*1\s*:?\s*\n?([^\n]+)/i;

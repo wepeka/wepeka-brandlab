@@ -531,6 +531,7 @@ export default {
   "cr.focus.teleprompter": { en: "Teleprompter", id: "Teleprompter" },
   "cr.focus.discuss": { en: "Discuss with AI", id: "Diskusi AI" },
   "cr.focus.ph": { en: "Write your script here.\n\n[0-3 s] HOOK\nVisual: what the first second shows\nOn-screen text: …\nVoice: the first line\n\nTip: press \"+ Part\" for the next section.", id: "Tulis script-mu di sini.\n\n[0-3 dtk] HOOK\nVisual: apa yang tampil di detik pertama\nTeks layar: …\nNarasi: kalimat pembuka\n\nTips: tekan \"+ Bagian\" buat bagian berikutnya." },
+  "cr.focus.sayPh": { en: "What you'll say…", id: "Yang kamu ucapkan…" },
   "cr.focus.hint": { en: "Each part: [seconds] NAME, then Visual · On-screen text · Voice. The length is worked out from what you say. Esc to close.", id: "Tiap bagian: [detik] NAMA, lalu Visual · Teks layar · Narasi. Durasi dihitung dari Narasi. Esc buat tutup." },
   // Same text in both languages on purpose: these two follow the SCRIPT's
   // language (js/script-focus.js picks …En for an English script), not the
