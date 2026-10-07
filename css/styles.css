@@ -5308,8 +5308,11 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
 .home-layout .recent-strip, .home-layout .journey-collapsed{ margin:0; }
 .home-analytics{ margin-top:32px; }
 @media (min-width:1080px){
-  /* One column like the earlier Beranda (a two-column split left a big
-     empty area under Konten terbaru); only Lainnya uses the width. */
+  /* Two columns: Hari ini, Konten terbaru and Lainnya on the left, Minggu ini
+     on the right (the owner likes it there) — Lainnya sits under the left
+     column so it doesn't leave an empty area next to a tall Minggu ini. */
+  .home-layout{ display:grid; grid-template-columns: minmax(0, 1.55fr) minmax(330px, 1fr); gap:24px; align-items:start; }
+  .home-col{ display:flex; flex-direction:column; gap:24px; min-width:0; }
   .home-more .home-more-list{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:18px; align-items:start; }
 }
 /* Accent as TEXT on Beranda's light-theme cards: the brand tint itself can

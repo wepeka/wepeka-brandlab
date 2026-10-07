@@ -554,10 +554,10 @@ function paint(root, brandId, state, refresh) {
         ${recaps[0] ? `<div class="home-b-recap">${recapCardHTML(recaps[0], { brandId })}</div>` : ""}
         ${goalHTML}
         ${recentContentHTML(brandId, content, shownAbove)}
+        ${moreSectionHTML(moreItems)}
       </div>
       <div class="home-col home-col-side">
         ${weekHTML}
-        ${moreSectionHTML(moreItems)}
       </div>
     </div>
 
