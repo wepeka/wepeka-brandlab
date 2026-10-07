@@ -138,7 +138,11 @@ const ANTHROPIC_MODEL = "claude-sonnet-5";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_MODEL = "gemini-3.6-flash";
 const DEEPSEEK_API_BASE = "https://api.deepseek.com/chat/completions";
-const DEEPSEEK_MODEL = "deepseek-chat";
+// "deepseek-chat" was retired on 24 Jul 2026 and has since been served,
+// undocumented, by deepseek-flash. deepseek-flash thinks by default (and
+// thinking tokens count against max_tokens, so a short cap can come back
+// empty), hence the explicit "disabled" in deepSeekBody.
+const DEEPSEEK_MODEL = "deepseek-flash";
 
 const NON_STREAM_TIMEOUT_MS = 60000;
 const STREAM_TIMEOUT_MS = 120000;
@@ -183,6 +187,7 @@ function dataUrlToInlinePart(dataUrl) {
 function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false, history = [] } = {}) {
   return {
     model: DEEPSEEK_MODEL,
+    thinking: { type: "disabled" },
     max_tokens: maxTokens,
     ...(temperature !== undefined ? { temperature } : {}),
     ...(json ? { response_format: { type: "json_object" } } : {}),

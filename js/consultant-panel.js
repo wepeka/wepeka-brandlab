@@ -69,7 +69,7 @@ import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
 import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply } from "./ai-directives.js";
-import { routeByRules, isWriteRequest } from "./chat-router.js";
+import { routeByRules, isWriteRequest, movesToBrainstorm } from "./chat-router.js";
 import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
 import { go } from "./nav-context.js";
@@ -85,7 +85,6 @@ const VIEWS = ["auto", ...MODES];
 const MODE_ICON = { auto: "chat", consultant: "bot", brainstorm: "bulb", companion: "heart" };
 const DEFAULT_MODE = "auto";
 const AUTO_VIEW_MAX = 60; // messages the merged Otomatis view shows
-const SHORT_FOLLOW_UP = 25; // "iya", "yang kedua": stays with the last engine
 // Pemula mode never shows the mode row: one box, Otomatis.
 const isGuided = () => getMode() !== "advanced";
 // Messages of the conversation sent with each new one (js/ai.js chatTurns
@@ -475,13 +474,21 @@ function lastEngine(history) {
   return "";
 }
 
-// Otomatis: obvious keywords first (free), a short follow-up stays with
-// whoever answered last, else one tiny uncounted model call.
+// Otomatis: one conversation, one partner. Only the first message of an
+// Obrolan is routed (obvious keywords first, free; else one tiny uncounted
+// model call); after that the owner keeps talking to whoever answered. The
+// old per-message routing passed a 4-message strategy talk through all
+// three assistants (a worry went to Teman, a "kenapa?" to the Konsultan),
+// each with its own voice and length, and owners felt they were talking to
+// a switchboard. Moving on is still possible: a request to write goes to
+// Brainstorm, a photo to the Konsultan (sendMessage), the Konsultan/Teman
+// hand a message that isn't theirs on themselves ([[handoff]]), and
+// "Bukan ini maksudmu?" stays under every reply.
 async function decideEngine(ai, text, history) {
+  const prev = lastEngine(history);
+  if (prev) return prev !== "brainstorm" && movesToBrainstorm(text) ? "brainstorm" : prev;
   const byRules = routeByRules(text);
   if (byRules) return byRules;
-  const prev = lastEngine(history);
-  if (prev && text.length < SHORT_FOLLOW_UP) return prev;
   try {
     return await classifyChatIntent(ai, { message: text, lastEngine: prev });
   } catch {

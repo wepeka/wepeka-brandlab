@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeByRules, isWriteRequest } from "../js/chat-router.js";
+import { routeByRules, isWriteRequest, movesToBrainstorm } from "../js/chat-router.js";
 import { parseDirectives, serializeDirectives, isEmptyReply } from "../js/ai-directives.js";
 
 describe("routeByRules (Tanya Brandlab, Otomatis)", () => {
@@ -129,6 +129,21 @@ describe("parseDirectives — what models actually write", () => {
     assert.equal(isEmptyReply(parseDirectives("Halo")), false);
     assert.equal(isEmptyReply(parseDirectives("[[script:TOFU|J]]\nNarasi: A")), false);
   });
+});
+
+// Mid-conversation the panel keeps the same partner; only a request to
+// write moves a Konsultan/Teman talk over to Brainstorm.
+describe("movesToBrainstorm (moves an ongoing talk to Brainstorm)", () => {
+  const cases = [
+    ["oke bikinin script yang itu", true],
+    ["kasih ide konten buat minggu depan", true],
+    ["tolong tuliskan caption promo", true],
+    ["hmm tapi aku takut kalau ikut-ikutan murah malah rugi", false],
+    ["kenapa gak dua-duanya aja?", false],
+    ["terus engagement aku kan masih kecil, mulai dari mana?", false],
+    ["reservasi buat rapat besok", false],
+  ];
+  for (const [text, want] of cases) test(`${want ? "write" : "talk"}: ${text}`, () => assert.equal(movesToBrainstorm(text), want));
 });
 
 describe("serializeDirectives (chat history sent back to the model)", () => {

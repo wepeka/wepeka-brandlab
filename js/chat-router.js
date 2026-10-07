@@ -47,6 +47,15 @@ export function isWriteRequest(text) {
   return STRONG_WRITE.test(s) && CREATIVE_NOUN.test(s) && !HOW_TO.test(s);
 }
 
+// Mid-conversation the owner keeps talking to whoever answered
+// (js/consultant-panel.js decideEngine); only asking for something written
+// moves an ongoing Konsultan/Teman talk over to Brainstorm: "bikinin script
+// yang itu", or a plain "kasih ide konten…". They would only answer
+// [[handoff:brainstorm]] and cost a second call.
+export function movesToBrainstorm(text) {
+  return isWriteRequest(text) || ASK_FOR_WORDS.test(String(text || ""));
+}
+
 export function routeByRules(text) {
   const s = String(text || "");
   if (!s.trim()) return null;

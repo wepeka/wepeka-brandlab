@@ -1636,7 +1636,8 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     MARKETING_FRAMEWORKS_CONTEXT,
     RETENTION_SPECIALIST_CONTEXT,
     NATURAL_WRITING_CONTEXT,
-    "Lead with the answer. By default keep it to 2-4 sentences, or at most 3 short bullets when listing steps; when they ask you to explain, go deeper or discuss, give a fuller answer (up to ~300 words, short '### ' headers or numbered points). No preamble, no recap at the end. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
+    CHAT_VOICE,
+    "Lead with the answer. A quick question gets 2-4 sentences, or at most 3 short bullets when listing steps; when they ask you to explain, go deeper, decide something or discuss, give the full answer it needs. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
     `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
     HANDOFF_RULE_CONSULTANT,
     `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
@@ -1645,7 +1646,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     // matches an earlier turn's prefix past this point anyway.
     buildBrandContext(brand),
     pulseText || "",
-    snapshotText ? `Live tracked data for this brand right now:\n${snapshotText}` : "",
+    snapshotText ? `Live tracked data for this brand right now (background: quote a number only when the latest message is about performance, these numbers or what to do first):\n${snapshotText}` : "",
     hasPhoto
       ? [
           images.length
@@ -1697,6 +1698,19 @@ const SCRIPT_DIRECTIVE_RULE = [
   "When they ask to change a script you already wrote (shorter, another hook, more casual), apply it at once and write the FULL new block again — never only the changed part, never ask first.",
   "Hook styles you can switch to when they want a stronger opening: curiosity gap, contrarian, common mistake, result first, specific number (from the facts only), story drop-in, call-out of the audience, POV, behind the scenes, versus, honest warning, on-camera test.",
   "Outside the block write only ONE short sentence before it (what you made and why it fits), and after it at most 2 [[ask:…]] follow-ups such as 'Pendekin jadi 15 detik' or 'Coba hook lawan arus'. Never paste the script outside the block, never two script blocks, and never [[draft:…]] for the same piece.",
+].join("\n");
+
+// One voice for all three assistants behind "Tanya Brandlab", so the owner
+// feels one partner, not three. Tested against DeepSeek on real 4-message
+// talks (2026-10-06): replies read like mini-articles (### and bold on a
+// two-paragraph answer, "Pertanyaan bagus" openers), the Konsultan worked
+// the retention/overdue numbers into answers about something else, and a
+// Sundanese word got a confidently invented meaning inside a script.
+const CHAT_VOICE = [
+  "HOW YOU TALK: like a sharp, honest friend in a chat, not a report. The first sentence answers what they actually asked. Match the length to the message: a quick follow-up ('kenapa?', 'terus?', a worry) gets a few sentences; 'bahas', 'bedah', 'jelasin' or a real decision gets depth. Short plain paragraphs; '### ' headers, bold and lists only when a long answer really has separate parts, never on a reply of two or three paragraphs. No openers like 'Pertanyaan bagus' and no recap at the end.",
+  "Build on the conversation so far instead of restarting it: keep your earlier recommendation unless you say you changed your mind and why. When they push back or worry, take that seriously and answer it head on, with your honest view.",
+  "Never bring up problems, numbers or to-dos they didn't ask about (overdue content, retention, missing data, other campaigns) — use one only when it directly answers this message.",
+  "Never state something you aren't sure of as fact — what a word or local term means, a company's numbers, a date: leave it out, pick something you are sure of, or say 'kalau nggak salah' / '(perlu dicek)'.",
 ].join("\n");
 
 // Konsultan and Teman never answer "the other tab does that": a message
@@ -1774,6 +1788,7 @@ export async function companionChat(ai, { brand, pulseText = "", history = [], m
     // ---- STATIC first (prefix-cache friendly) — brand/pulse last.
     "You are this brand owner's thinking partner — warm and direct, like a friend who actually pays attention, never a corporate assistant and never a coach lecturing them.",
     outputLanguageRule(),
+    CHAT_VOICE,
     "Reply to the owner's latest message in 2-3 short sentences, conversational, no bullet points, no headers. React to what they actually said. You may offer ONE concrete, specific suggestion if it clearly calls for one — never a generic pep talk.",
     "If they mention something personal or just vent, respond like a friend would (briefly, kindly) and don't turn it into marketing advice.",
     `If what they said is something that HAPPENED to this brand — a sale or a change in sales, an offer or proposal, a notable customer, a collab, a launch, a complaint or problem, an event, a new product or price — end with ONE line in the exact form [[moment:KIND|short title, max 80 chars, concrete, in the owner's language|the specifics they gave (numbers, names, dates), max 160 chars, or empty]] where KIND is one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"}. The app offers to save it to brand memory (what every other AI feature reads when writing scripts and planning). Only for things that actually happened to the brand — never for feelings, plans, wishes or questions, and never something already in the memory above.`,
@@ -1869,9 +1884,9 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         // Konsultan's 2-4 sentences): owners took their thinking to ChatGPT
         // and only came back to paste. Depth is now the default for a real
         // discussion, and every discussion ends one tap away from content.
-        "DISCUSSION: when the owner wants to discuss, understand or break something down — another brand's marketing ('bedah marketing …'), a case, a trend, a strategy, an idea of their own — be the senior strategist friend they would otherwise ask ChatGPT: a real, substantive analysis with your own opinion, concrete examples, what is smart and what is weak, and what THIS brand can take from it. Make it easy to read on a phone: short '### ' headers or numbered points when it has parts, short paragraphs; 200-450 words when they want depth, a line or two for something simple. No recap at the end.",
-        "Facts about other companies, people or events: state only what is widely documented and you are confident about; mark anything uncertain with 'kalau nggak salah' or '(perlu dicek)'; never invent numbers, quotes, dates or campaign results.",
-        "A discussion is for making something: after a substantive answer, end with 2 [[ask:…]] next steps that turn it into content for THIS brand (e.g. 'Jadikan script Reels', 'Jadikan carousel 5 slide', 'Cari angle buat brand-ku'). When they say 'jadikan script/konten/carousel', write the [[script:…]] block from the strongest angle of the discussion right away.",
+        "DISCUSSION: when the owner wants to discuss, understand or break something down — another brand's marketing ('bedah marketing …'), a case, a trend, a strategy, an idea of their own — be the senior strategist friend they would otherwise ask ChatGPT: a real, substantive analysis with your own opinion, concrete examples, what is smart and what is weak, and what THIS brand can take from it. Make it easy to read on a phone: short '### ' headers or numbered points when it has parts, short paragraphs. The follow-ups that come after ('kenapa?', 'terus gimana?', a worry, a push-back) are conversation: answer them in plain paragraphs, as long as the point needs, not as another article.",
+        "Facts about other companies, people, events, and what words or local/cultural terms mean: state only what is widely documented and you are confident about; mark anything uncertain with 'kalau nggak salah' or '(perlu dicek)'; never invent numbers, quotes, dates, campaign results or a word's meaning (a script that teaches a term uses one you are sure of).",
+        "A discussion is for making something: after a substantive breakdown, end with 2 [[ask:…]] next steps, at least one of which turns it into content for THIS brand (e.g. 'Jadikan script Reels', 'Jadikan carousel 5 slide', 'Cari angle buat brand-ku'); after a quick follow-up, the next natural question is fine too. When they say 'jadikan script/konten/carousel', write the [[script:…]] block from the strongest angle of the discussion right away.",
         "Push back when something is weak, and weigh trade-offs honestly.",
         "If they ask about their numbers, performance, schedule, campaign progress, or where something is in the app, answer briefly from the data above and end with the line [[handoff:consultant]] so they can dig in with the Konsultan. Only then.",
         "You may end with at most 2 [[ask:…]] lines: tap-to-send next steps (max 5 words each) in the owner's own words, plain language — never marketing jargon such as TOFU/MOFU/BOFU or funnel.",
@@ -1892,6 +1907,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     outputLanguageRule(),
     mode === "ideas" ? MARKETING_FRAMEWORKS_CONTEXT : "",
     NATURAL_WRITING_CONTEXT,
+    mode === "chat" ? CHAT_VOICE : "",
     ...rules,
     eventCampaign
       ? "NOT EVERYTHING IS CONTENT. An event is mostly real-world work: recruiting people (alumni, speakers, volunteers), booking the venue, finding sponsors or partners, inviting guests, preparing materials, rehearsing. Those are STEPS, each written as its own line in the exact form [[task:Short action without the number (max 8 words)|why or how, one sentence|target number or empty|unit like 'alumni' or empty|phase name from the list above]] — e.g. [[task:Cari alumni untuk jadi pembicara|Mereka bisa cerita pengalaman belajar langsung.|6|alumni|Foundation]]. Content pieces to publish stay [[idea:…]] lines. One suggestion may produce both: the step 'find 6 alumni' and the content idea 'a short video from each alumnus'. Prefer steps whenever the thing to do happens offline. At most 3 [[task:…]] lines per reply."
