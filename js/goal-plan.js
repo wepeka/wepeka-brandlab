@@ -35,6 +35,14 @@ import { computeContentMetrics } from "./formulas.js";
 import { t } from "./i18n.js";
 
 const uid = () => `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+// A milestone description is stored as text in the language the goal was
+// made in, plus the i18n keys it came from (`descKeys`, objects because
+// Firestore refuses nested arrays) so js/campaign-metrics.js can show it
+// in the current language. Each part is [key] or [key, params].
+const desc = (...parts) => {
+  const descKeys = parts.map(([key, params]) => (params ? { key, params } : { key }));
+  return { description: descKeys.map((p) => t(p.key, p.params)).join(" "), descKeys };
+};
 
 export const GOAL_DURATIONS = [6, 12];
 // ---------- Rules of thumb (see the header: tune against real data) ----------
@@ -211,19 +219,19 @@ export function buildSocialGrowthPlan(input) {
     const engagement = (key, label, unit, descKey) => {
       const own = baseline[key];
       const estimated = own === null || own === undefined;
-      return { track: "social", label, unit, metric: `content.metric:${key}`, sinceStart: true, target: Math.max(5, niceRound((estimated ? seed : Math.max(own, seed)) * planned * lift)), estimated, description: `${t(descKey)} ${estimated ? t("goal.ms.estimatedDesc") : t("goal.ms.fromHistoryDesc", { n: Math.round(own * 10) / 10 })}` };
+      return { track: "social", label, unit, metric: `content.metric:${key}`, sinceStart: true, target: Math.max(5, niceRound((estimated ? seed : Math.max(own, seed)) * planned * lift)), estimated, ...desc([descKey], estimated ? ["goal.ms.estimatedDesc"] : ["goal.ms.fromHistoryDesc", { n: Math.round(own * 10) / 10 }]) };
     };
     const M = {
-      followers: { track: "social", label: "Followers", unit: "followers", metric: "profile.followers", target: cp, baseline: Math.min(prevCp, cp - 1), description: t("goal.ms.followersDesc") },
-      published: { track: "social", label: "Konten terbit di level ini", unit: "konten", metric: "content.published", sinceStart: true, target: planned, description: t("goal.ms.publishedDesc", { perWeek: uploads, weeks: estWeeks }) },
-      streak: { track: "social", label: "Minggu aktif konsisten", unit: "minggu", metric: "content.streakWeeks", sinceStart: true, target: Math.max(4, Math.round(estWeeks / 2)), description: t("goal.ms.streakDesc") },
-      cadence: { track: "social", label: "Kepatuhan jadwal upload", unit: "%", metric: "content.cadenceCompliance", sinceStart: true, target: 70, description: t("goal.ms.cadenceDesc") },
+      followers: { track: "social", label: "Followers", unit: "followers", metric: "profile.followers", target: cp, baseline: Math.min(prevCp, cp - 1), ...desc(["goal.ms.followersDesc"]) },
+      published: { track: "social", label: "Konten terbit di level ini", unit: "konten", metric: "content.published", sinceStart: true, target: planned, ...desc(["goal.ms.publishedDesc", { perWeek: uploads, weeks: estWeeks }]) },
+      streak: { track: "social", label: "Minggu aktif konsisten", unit: "minggu", metric: "content.streakWeeks", sinceStart: true, target: Math.max(4, Math.round(estWeeks / 2)), ...desc(["goal.ms.streakDesc"]) },
+      cadence: { track: "social", label: "Kepatuhan jadwal upload", unit: "%", metric: "content.cadenceCompliance", sinceStart: true, target: 70, ...desc(["goal.ms.cadenceDesc"]) },
       shares: engagement("shares", "Shares di level ini", "share", "goal.ms.sharesDesc"),
       saves: engagement("saves", "Saves di level ini", "save", "goal.ms.savesDesc"),
       comments: engagement("comments", "Komentar di level ini", "komentar", "goal.ms.commentsDesc"),
-      er: { track: "social", label: "Konten dengan engagement di atas standar akunmu", unit: "konten", metric: "content.erCount", sinceStart: true, threshold: baseline.medianEr !== null ? Math.max(1, Math.round(baseline.medianEr * 10) / 10) : ER_GOOD_FALLBACK, target: Math.max(3, Math.round(planned * (0.2 + 0.05 * Math.min(abs, 4)))), description: t("goal.ms.erDesc") },
-      dm: { track: "social", label: "DM bermakna", unit: "DM", metric: "manual.number", target: DM_TARGETS[abs], description: t("goal.ms.dmDesc") },
-      collabs: { track: "social", label: "Kolaborasi bermakna", unit: "kolaborasi", metric: "manual.number", target: COLLAB_TARGETS[abs], description: t("goal.ms.collabsDesc") },
+      er: { track: "social", label: "Konten dengan engagement di atas standar akunmu", unit: "konten", metric: "content.erCount", sinceStart: true, threshold: baseline.medianEr !== null ? Math.max(1, Math.round(baseline.medianEr * 10) / 10) : ER_GOOD_FALLBACK, target: Math.max(3, Math.round(planned * (0.2 + 0.05 * Math.min(abs, 4)))), ...desc(["goal.ms.erDesc"]) },
+      dm: { track: "social", label: "DM bermakna", unit: "DM", metric: "manual.number", target: DM_TARGETS[abs], ...desc(["goal.ms.dmDesc"]) },
+      collabs: { track: "social", label: "Kolaborasi bermakna", unit: "kolaborasi", metric: "manual.number", target: COLLAB_TARGETS[abs], ...desc(["goal.ms.collabsDesc"]) },
     };
     const cad = cadenceConfigured ? ["cadence"] : [];
     const SETS = {
@@ -333,24 +341,24 @@ export function buildCommunityGrowthPlan(input) {
     const abs = startIndex + i;
     const cp = checkpoints[i];
     const prevCp = i === 0 ? current : Math.min(checkpoints[i - 1], cp - 1);
-    const check = (label, descKey) => ({ track: "community", label, unit: "", metric: "manual.check", target: null, description: t(descKey) });
+    const check = (label, descKey) => ({ track: "community", label, unit: "", metric: "manual.check", target: null, ...desc([descKey]) });
     const M = {
       concept: check("Nama komunitas & panggilan untuk member", "goal.ms.identityDesc"),
       rules: check("Tulis aturan main & pesan sambutan", "goal.ms.rulesDesc"),
       ritualPlan: check("Tentukan ritual mingguan komunitas", "goal.ms.ritualPlanDesc"),
       waGroup: check("Buat grup atau channel komunitas", "goal.ms.createGroupDesc"),
-      members: { track: "community", label: "Member komunitas", unit: "member", metric: "manual.number", valueKey: "members", target: cp, baseline: Math.min(prevCp, cp - 1), description: t(`goal.ms.membersDesc.${abs}`) },
+      members: { track: "community", label: "Member komunitas", unit: "member", metric: "manual.number", valueKey: "members", target: cp, baseline: Math.min(prevCp, cp - 1), ...desc([`goal.ms.membersDesc.${abs}`]) },
       ritual: check("Ritual mingguan komunitas berjalan", "goal.ms.ritualDesc"),
-      activeMembers: { track: "community", label: "Member komunitas yang aktif", unit: "member aktif", metric: "manual.number", target: Math.max(5, niceRound(cp * (cp < 100 ? ACTIVE_SHARE_SMALL : ACTIVE_SHARE_LARGE))), description: t("goal.ms.activeMembersDesc") },
+      activeMembers: { track: "community", label: "Member komunitas yang aktif", unit: "member aktif", metric: "manual.number", target: Math.max(5, niceRound(cp * (cp < 100 ? ACTIVE_SHARE_SMALL : ACTIVE_SHARE_LARGE))), ...desc(["goal.ms.activeMembersDesc"]) },
       activity: check("Adakan aktivitas komunitas di level ini", "goal.ms.communityActivityDesc"),
-      ugc: { track: "community", label: "UGC asli dari komunitas", unit: "UGC", metric: "manual.number", target: Math.max(4, niceRound(cp * 0.08)), description: t("goal.ms.ugcDesc") },
-      advocates: { track: "community", label: "Member yang aktif merekomendasikanmu", unit: "orang", metric: "manual.number", target: Math.max(3, niceRound(cp * 0.15)), description: t("goal.ms.advocatesDesc") },
-      testimonials: { track: "community", label: "Testimoni member dikumpulkan & diposting", unit: "testimoni", metric: "manual.number", target: Math.max(3, niceRound(cp * 0.1)), description: t("goal.ms.communityTestimonialsDesc") },
-      crossPost: { track: "community", label: "Konten dari komunitas diposting ke channel utama (IG/Threads/dst)", unit: "postingan", metric: "manual.number", target: abs <= 1 ? 2 : abs === 2 ? 4 : 6, description: t("goal.ms.crossPostDesc") },
-      memberLed: { track: "community", label: "Aktivitas yang dijalankan member sendiri", unit: "aktivitas", metric: "manual.number", target: 2, description: t("goal.ms.memberLedDesc") },
-      referred: { track: "community", label: "Member baru dari ajakan member", unit: "member", metric: "manual.number", target: Math.max(5, niceRound((cp - prevCp) * 0.3)), description: t("goal.ms.referredDesc") },
-      events: { track: "community", label: "Event komunitas (online/offline)", unit: "event", metric: "manual.number", target: 1, description: t("goal.ms.communityEventDesc") },
-      subInitiatives: { track: "community", label: "Inisiatif/sub-grup yang dijalankan mandiri oleh member", unit: "inisiatif", metric: "manual.number", target: 2, description: t("goal.ms.subInitiativesDesc") },
+      ugc: { track: "community", label: "UGC asli dari komunitas", unit: "UGC", metric: "manual.number", target: Math.max(4, niceRound(cp * 0.08)), ...desc(["goal.ms.ugcDesc"]) },
+      advocates: { track: "community", label: "Member yang aktif merekomendasikanmu", unit: "orang", metric: "manual.number", target: Math.max(3, niceRound(cp * 0.15)), ...desc(["goal.ms.advocatesDesc"]) },
+      testimonials: { track: "community", label: "Testimoni member dikumpulkan & diposting", unit: "testimoni", metric: "manual.number", target: Math.max(3, niceRound(cp * 0.1)), ...desc(["goal.ms.communityTestimonialsDesc"]) },
+      crossPost: { track: "community", label: "Konten dari komunitas diposting ke channel utama (IG/Threads/dst)", unit: "postingan", metric: "manual.number", target: abs <= 1 ? 2 : abs === 2 ? 4 : 6, ...desc(["goal.ms.crossPostDesc"]) },
+      memberLed: { track: "community", label: "Aktivitas yang dijalankan member sendiri", unit: "aktivitas", metric: "manual.number", target: 2, ...desc(["goal.ms.memberLedDesc"]) },
+      referred: { track: "community", label: "Member baru dari ajakan member", unit: "member", metric: "manual.number", target: Math.max(5, niceRound((cp - prevCp) * 0.3)), ...desc(["goal.ms.referredDesc"]) },
+      events: { track: "community", label: "Event komunitas (online/offline)", unit: "event", metric: "manual.number", target: 1, ...desc(["goal.ms.communityEventDesc"]) },
+      subInitiatives: { track: "community", label: "Inisiatif/sub-grup yang dijalankan mandiri oleh member", unit: "inisiatif", metric: "manual.number", target: 2, ...desc(["goal.ms.subInitiativesDesc"]) },
     };
     const SETS = {
       design: { required: ["concept", "rules", "ritualPlan", ...(hasExisting ? [] : ["waGroup"]), "members"], optional: [] },
@@ -523,17 +531,17 @@ export function buildSalesGrowthPlan(input) {
     const cpTotal = cps.reduce((a, b) => a + b, 0);
     const prevTotal = prevCps.reduce((a, b) => a + b, 0);
     const newSales = Math.max(1, cpTotal - prevTotal);
-    const productRow = (p, n) => ({ track: "sales", label: p.name, unit: model.unit, metric: "manual.number", valueKey: soldKey(p), target: Math.max(1, cps[n]), baseline: Math.min(prevCps[n], cps[n] - 1), description: t("goal.ms.soldDesc") });
+    const productRow = (p, n) => ({ track: "sales", label: p.name, unit: model.unit, metric: "manual.number", valueKey: soldKey(p), target: Math.max(1, cps[n]), baseline: Math.min(prevCps[n], cps[n] - 1), ...desc(["goal.ms.soldDesc"]) });
     const M = {
-      offer: { track: "sales", label: "Penawaran jelas: harga, cara order, dan bukti", unit: "", metric: "manual.check", target: null, description: t("goal.ms.offerClearDesc") },
+      offer: { track: "sales", label: "Penawaran jelas: harga, cara order, dan bukti", unit: "", metric: "manual.check", target: null, ...desc(["goal.ms.offerClearDesc"]) },
       sold: multi
-        ? { track: "sales", label: "Total terjual", unit: model.unit, metric: "sales.totalSold", target: Math.max(1, cpTotal), baseline: Math.min(prevTotal, cpTotal - 1), description: t("goal.ms.totalSoldDesc") }
+        ? { track: "sales", label: "Total terjual", unit: model.unit, metric: "sales.totalSold", target: Math.max(1, cpTotal), baseline: Math.min(prevTotal, cpTotal - 1), ...desc(["goal.ms.totalSoldDesc"]) }
         : productRow(products[0], 0),
-      testimonials: { track: "sales", label: "Testimoni dari customer terkumpul", unit: "testimoni", metric: "manual.number", valueKey: "testimonials", target: Math.min(50, Math.max(Math.min(3, cpTotal), niceRound((cpTotal - soldNow) * TESTIMONIAL_SHARE))), description: t("goal.ms.askTestimonialsDesc") },
-      inquiries: { track: "sales", label: "Inquiry / DM tanya produk", unit: "inquiry", metric: "sales.leads", target: Math.max(4, niceRound(newSales / INQUIRY_TO_SALE)), description: t("goal.ms.inquiryDesc") },
-      repeat: { track: "sales", label: "Pembeli yang beli lagi (repeat)", unit: "orang", metric: "manual.number", valueKey: "repeatBuyers", target: Math.max(Math.min(3, newSales), niceRound(newSales * REPEAT_SHARE)), description: t("goal.ms.repeatDesc") },
-      referrals: { track: "sales", label: "Pelanggan dari rekomendasi orang lain", unit: "orang", metric: "manual.number", valueKey: "referrals", target: Math.max(Math.min(2, newSales), niceRound(newSales * REFERRAL_SHARE)), description: t("goal.ms.referralsDesc") },
-      ...(revTarget ? { revenue: { track: "sales", label: "Omzet", unit: "Rp", metric: "sales.revenue", valueKey: "revenue", target: last ? revTarget : Math.min(revTarget, Math.max(revNow + 1, niceRound(curvePoint(revNow, revTarget, j / remaining)))), baseline: j <= 1 ? revNow : niceRound(curvePoint(revNow, revTarget, (j - 1) / remaining)), description: t("goal.ms.revenueDesc") } } : {}),
+      testimonials: { track: "sales", label: "Testimoni dari customer terkumpul", unit: "testimoni", metric: "manual.number", valueKey: "testimonials", target: Math.min(50, Math.max(Math.min(3, cpTotal), niceRound((cpTotal - soldNow) * TESTIMONIAL_SHARE))), ...desc(["goal.ms.askTestimonialsDesc"]) },
+      inquiries: { track: "sales", label: "Inquiry / DM tanya produk", unit: "inquiry", metric: "sales.leads", target: Math.max(4, niceRound(newSales / INQUIRY_TO_SALE)), ...desc(["goal.ms.inquiryDesc"]) },
+      repeat: { track: "sales", label: "Pembeli yang beli lagi (repeat)", unit: "orang", metric: "manual.number", valueKey: "repeatBuyers", target: Math.max(Math.min(3, newSales), niceRound(newSales * REPEAT_SHARE)), ...desc(["goal.ms.repeatDesc"]) },
+      referrals: { track: "sales", label: "Pelanggan dari rekomendasi orang lain", unit: "orang", metric: "manual.number", valueKey: "referrals", target: Math.max(Math.min(2, newSales), niceRound(newSales * REFERRAL_SHARE)), ...desc(["goal.ms.referralsDesc"]) },
+      ...(revTarget ? { revenue: { track: "sales", label: "Omzet", unit: "Rp", metric: "sales.revenue", valueKey: "revenue", target: last ? revTarget : Math.min(revTarget, Math.max(revNow + 1, niceRound(curvePoint(revNow, revTarget, j / remaining)))), baseline: j <= 1 ? revNow : niceRound(curvePoint(revNow, revTarget, (j - 1) / remaining)), ...desc(["goal.ms.revenueDesc"]) } } : {}),
     };
     if (multi) products.forEach((p, n) => (M[`product:${p.id}`] = productRow(p, n)));
     const rows = [...(multi ? products.map((p) => `product:${p.id}`) : []), ...(revTarget ? ["revenue"] : [])];

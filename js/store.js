@@ -2385,6 +2385,8 @@ const UNIT_KEYS = new Map(Object.entries({
   feedback: "feedback", impresi: "impresi", likes: "likes", reach: "reach",
   // Sales Growth counting units (js/goal-plan.js SALES_MODELS)
   unit: "unit", proyek: "proyek", subscriber: "subscriber", siswa: "siswa", pesanan: "pesanan",
+  // Community Growth units (js/goal-plan.js)
+  postingan: "postingan", aktivitas: "aktivitas", inisiatif: "inisiatif",
 }));
 export function unitLabel(unit) {
   const k = UNIT_KEYS.get(unit);

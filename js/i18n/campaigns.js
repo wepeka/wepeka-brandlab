@@ -978,6 +978,7 @@ export default {
   "store.ms.goalMemberLed": { en: "Activities run by members themselves", id: "Aktivitas yang dijalankan member sendiri" },
   "store.ms.goalReferred": { en: "New members invited by members", id: "Member baru dari ajakan member" },
   "store.ms.goalCommunityEvents": { en: "Community events (online/offline)", id: "Event komunitas (online/offline)" },
+  "store.ms.goalSubInitiatives": { en: "Initiatives/sub-groups members run on their own", id: "Inisiatif/sub-grup yang dijalankan mandiri oleh member" },
   "store.mission.com1.name": { en: "Join", id: "Bergabung" },
   "store.mission.com1.desc": { en: "Focus: getting a founding group started. Don't wait for a big following — invite your buyers and most active followers one by one.", id: "Fokus: memulai grup pendiri. Nggak perlu tunggu followers banyak — ajak pembeli dan followers paling aktif satu per satu." },
   "store.mission.com1.tagline": { en: "Every community starts as a small circle.", id: "Semua komunitas dimulai dari lingkaran kecil." },
@@ -1092,6 +1093,10 @@ export default {
   "store.unit.subscriber": { en: "subscribers", id: "subscriber" },
   "store.unit.siswa": { en: "students", id: "siswa" },
   "store.unit.pesanan": { en: "orders", id: "pesanan" },
+  // Community Growth units (js/goal-plan.js)
+  "store.unit.postingan": { en: "posts", id: "postingan" },
+  "store.unit.aktivitas": { en: "activities", id: "aktivitas" },
+  "store.unit.inisiatif": { en: "initiatives", id: "inisiatif" },
   "store.mission.sal1.name": { en: "First Sales", id: "Penjualan Pertama" },
   "store.mission.sal1.desc": { en: "Focus: people discover you, get interested, and the first ones buy. Make the offer impossible to misunderstand, then collect proof from every buyer.", id: "Fokus: orang nemu kamu, tertarik, lalu yang pertama mulai beli. Bikin penawaranmu nggak mungkin disalahpahami, lalu kumpulkan bukti dari tiap pembeli." },
   "store.mission.sal1.tagline": { en: "Proof that it sells comes before selling more.", id: "Bukti laku dulu, baru jualan lebih banyak." },

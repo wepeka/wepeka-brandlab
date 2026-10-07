@@ -68,7 +68,7 @@ const CORE = {
   "home.cover.tooBig": { en: "There's no room left for this photo next to your logo and fonts. Try a smaller photo.", id: "Foto ini nggak muat lagi di samping logo dan font brand kamu. Coba foto yang lebih kecil." },
   "home.cover.failed": { en: "Couldn't read that photo. Try another one.", id: "Foto ini nggak bisa dibaca. Coba foto lain." },
   "home.identity.title": { en: "Build your brand identity", id: "Bangun identitas brand" },
-  "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Do Brand DNA, then colors & fonts — Konten is already open, and Tujuan unlocks once both are done.", id: "Brand DNA jadi dasar semua konten dan campaign. Isi Brand DNA, lalu Warna & Font — Konten sudah terbuka dari awal, dan Tujuan kebuka begitu keduanya selesai." },
+  "home.identity.desc": { en: "Brand DNA is the base for every post and campaign. Do Brand DNA, then colors & fonts — Content is already open, and Goals unlocks once both are done.", id: "Brand DNA jadi dasar semua konten dan campaign. Isi Brand DNA, lalu Warna & Font — Konten sudah terbuka dari awal, dan Tujuan kebuka begitu keduanya selesai." },
   "home.identity.dna": { en: "Brand DNA", id: "Brand DNA" },
   "home.identity.book": { en: "Brand Book (colors, fonts, logo…)", id: "Brand Book (warna, font, logo…)" },
   "home.identity.bookBasics": { en: "Colors & fonts", id: "Warna & Font" },

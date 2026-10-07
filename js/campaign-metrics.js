@@ -382,11 +382,20 @@ function guessMetricFromLabel(label, kind) {
   return "manual.number";
 }
 
+// A goal milestone keeps the i18n keys of its description (js/goal-plan.js
+// desc) — redraw it in the current language. Older goals, or a key that no
+// longer exists, keep the stored text.
+function localDescription(ms) {
+  if (!Array.isArray(ms.descKeys) || !ms.descKeys.length) return ms.description;
+  const parts = ms.descKeys.map((p) => (p && typeof p.key === "string" ? t(p.key, p.params || {}) : null));
+  return parts.every((s, i) => s && s !== ms.descKeys[i].key) ? parts.join(" ") : ms.description;
+}
+
 // One shape for every milestone the app has ever stored. `legacy` keeps
 // the original object so manual values typed before this existed still
 // read back. Never mutates the input.
 export function normalizeMilestone(ms, { campaign, stage } = {}) {
-  if (ms.metric) return { ...ms, label: ms.custom ? ms.label : milestoneLabel(ms.label, ms.target), description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, ms.description), unit: unitLabel(ms.unit), legacy: ms.legacy || null };
+  if (ms.metric) return { ...ms, label: ms.custom ? ms.label : milestoneLabel(ms.label, ms.target), description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, localDescription(ms)), unit: unitLabel(ms.unit), legacy: ms.legacy || null };
   // Phase checklists: { id, text, done }
   if (ms.text !== undefined && ms.kind === undefined) {
     return { id: ms.id, metric: "manual.check", label: ms.text, description: "", target: null, unit: "", highlight: false, required: true, custom: true, filter: null, legacy: ms };
@@ -394,7 +403,7 @@ export function normalizeMilestone(ms, { campaign, stage } = {}) {
   const base = {
     id: ms.id,
     label: ms.custom ? ms.label : milestoneLabel(ms.label, ms.kind === "check" ? null : ms.target),
-    description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, ms.description),
+    description: ms.custom || !ms.description ? ms.description || "" : milestoneDescription(ms.label, localDescription(ms)),
     unit: unitLabel(ms.unit),
     target: ms.kind === "check" ? null : ms.target ?? null,
     threshold: ms.threshold ?? null,
