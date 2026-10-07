@@ -237,19 +237,19 @@ export function planOverdueShift(late, dates, campaigns, tomorrow = null) {
   return { moves, kept };
 }
 
-// ---- Small quiet cards ("Lainnya") ---------------------------------------------
-// Everything that isn't the one thing to do now or this week's loop: same
-// glass family as the widgets, without the breathing glow, so nothing here
-// competes with Hari ini.
+// ---- "Lainnya" cards ----------------------------------------------------------------
+// Same glowing widget card as Minggu ini (the owner likes the glow — a flat
+// "quiet" version was rejected on 2026-10-07), just without a collapse button.
 function miniCardHTML({ iconName, title, bodyHTML, extraHead = "", cls = "" }) {
   return `
-    <article class="glass-card home-mini${cls ? ` ${cls}` : ""}">
-      <div class="home-mini-head">
-        <span class="home-mini-icon">${icon(iconName, { size: 16 })}</span>
-        <h3>${title}</h3>
-        ${extraHead ? `<span class="home-mini-extra">${extraHead}</span>` : ""}
+    <article class="dash-widget-card home-mini-card${cls ? ` ${cls}` : ""}">
+      <div class="dash-widget-backdrop" aria-hidden="true"><div class="dash-widget-glow"></div></div>
+      <div class="dash-widget-card-head">
+        <div class="dash-widget-card-icon">${icon(iconName, { size: 18 })}</div>
+        <div class="dash-widget-card-title"><h2>${title}</h2></div>
+        ${extraHead ? `<div class="dash-widget-card-actions">${extraHead}</div>` : ""}
       </div>
-      ${bodyHTML}
+      <div class="dash-widget-card-body">${bodyHTML}</div>
     </article>`;
 }
 
@@ -269,7 +269,7 @@ function goalPromoMiniHTML(brandId) {
     iconName: "target",
     title: t("roadmap.home.promo.title"),
     bodyHTML: `<p class="home-mini-text">${t("roadmap.home.promo.body")}</p>
-      <div class="home-mini-actions"><a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/goals" data-rg-promo>${icon("target", { size: 13 })}${t("roadmap.home.promo.cta")}</a></div>`,
+      <div class="home-mini-actions"><a class="btn btn-primary btn-sm" href="#/brand/${brandId}/goals" data-rg-promo>${icon("target", { size: 13 })}${t("roadmap.home.promo.cta")}</a></div>`,
   });
 }
 
@@ -322,7 +322,7 @@ function insightMiniHTML(a) {
     iconName: a.icon,
     title: t("home.action.title"),
     bodyHTML: `<p class="home-mini-text">${esc(a.text)}</p>
-      <div class="home-mini-actions"><button type="button" class="btn btn-secondary btn-sm" data-insight-action="${a.id}">${icon("bulb", { size: 13 })}${esc(a.cta)}</button></div>`,
+      <div class="home-mini-actions"><button type="button" class="btn btn-primary btn-sm" data-insight-action="${a.id}">${icon("bulb", { size: 13 })}${esc(a.cta)}</button></div>`,
   });
 }
 
@@ -433,7 +433,7 @@ function companionMiniHTML(brand, { signals, content, now, guided }) {
       <p class="companion-greeting">${greetingSentence(brand, now)} <b>${esc(top ? top.title : t(isFirstDay ? "companion.observation.firstDay" : "companion.observation.quiet"))}</b></p>
       ${guided ? `<p class="home-mini-text">${t("home.companion.sub")}</p>` : ""}
       <div class="companion-actions">
-        <button type="button" class="btn btn-secondary btn-sm" data-companion-open="companion">${icon("heart", { size: 13 })}${t("home.companion.tell")}</button>
+        <button type="button" class="btn btn-primary btn-sm" data-companion-open="companion">${icon("heart", { size: 13 })}${t("home.companion.tell")}</button>
         ${companionActionsHTML(signals, content, brand.id)}
       </div>
       <details class="home-mini-details" data-keep-open="memory"${isOpen(brand.id, "memory") ? " open" : ""}>

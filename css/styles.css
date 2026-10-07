@@ -5308,8 +5308,9 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
 .home-layout .recent-strip, .home-layout .journey-collapsed{ margin:0; }
 .home-analytics{ margin-top:32px; }
 @media (min-width:1080px){
-  .home-layout{ display:grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); gap:24px; align-items:start; }
-  .home-col{ display:flex; flex-direction:column; gap:24px; min-width:0; }
+  /* One column like the earlier Beranda (a two-column split left a big
+     empty area under Konten terbaru); only Lainnya uses the width. */
+  .home-more .home-more-list{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:18px; align-items:start; }
 }
 /* Accent as TEXT on Beranda's light-theme cards: the brand tint itself can
    be pale (the default amber is ~2:1 on white), so it's deepened there. */
@@ -5381,7 +5382,7 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
 
 /* Lainnya: small, quiet cards (no breathing glow, no lift) */
 .home-section-title{ margin:0 2px 10px; font-family: var(--font-body); font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--text-muted); }
-.home-more-list{ display:flex; flex-direction:column; gap:12px; }
+.home-more-list{ display:flex; flex-direction:column; gap:18px; }
 .home-mini{ padding:16px 18px; animation:none; }
 .home-mini:hover{ transform:none; }
 .home-mini-head{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
@@ -5389,10 +5390,10 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
 .home-mini-icon{ flex:none; width:30px; height:30px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--home-accent-text, var(--accent)); }
 .home-mini-extra{ flex:none; }
 .home-mini-text{ margin:0; font-size:12.5px; line-height:1.5; color: var(--text-muted); }
-.home-mini .companion-greeting + .home-mini-text{ margin-top:6px; }
+.home-mini-card .companion-greeting + .home-mini-text{ margin-top:6px; }
 .home-mini-actions{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-.home-mini .companion-greeting{ font-size:13px; }
-.home-mini .companion-actions{ margin-top:10px; }
+.home-mini-card .companion-greeting{ font-size:13px; }
+.home-mini-card .companion-actions{ margin-top:10px; }
 .home-mini-details{ margin-top:12px; padding-top:6px; border-top:1px solid var(--border-soft); }
 .home-mini-details > summary{ list-style:none; display:flex; align-items:center; gap:8px; min-height:40px; cursor:pointer; font-size:12.5px; font-weight:700; color: var(--text-muted); }
 .home-mini-details > summary::-webkit-details-marker{ display:none; }
@@ -5402,8 +5403,6 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
 .home-mini-details[open] > summary svg:last-child{ transform: rotate(180deg); }
 .home-mini-details .companion-moments{ margin-top:2px; padding-top:0; border-top:0; }
 .home-mini-manage{ margin-top:8px; font-size:12px; }
-.home-more .journey-collapsed{ animation:none; }
-.home-more .journey-collapsed:hover{ transform:none; }
 
 /* Konten terbaru: three tiles + "Konten baru"; a 2×2 grid on phones
    instead of a sideways-scrolling strip. */

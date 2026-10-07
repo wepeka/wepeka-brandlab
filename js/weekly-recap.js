@@ -203,7 +203,7 @@ export function weekCardParts({ brandId, recap, ahead, late = [], lateTotal = 0,
     ? `<div class="wk-report" id="report-remind">
          <span class="wk-report-text">${icon("download", { size: 14 })}${t("beranda.week.report.due")}</span>
          <span class="wk-report-actions">
-           <button type="button" class="btn btn-secondary btn-sm" data-report-open="week">${t("rep.downloadPdf")}</button>
+           <button type="button" class="btn btn-primary btn-sm" data-report-open="week">${t("rep.downloadPdf")}</button>
            <button type="button" class="btn btn-ghost btn-sm" data-report-snooze>${t("rep.remind.later")}</button>
          </span>
        </div>`
@@ -219,7 +219,7 @@ export function weekCardParts({ brandId, recap, ahead, late = [], lateTotal = 0,
   // Secondary on purpose, even for an empty week: Hari ini holds the page's
   // one filled button.
   const planBtn = canPlan
-    ? `<button type="button" class="btn btn-secondary btn-sm" data-week-plan title="${esc(t("beranda.week.planTitle", { cost: t("chat.week.cost") }))}">${icon("sparkle", { size: 13 })}${t("beranda.week.plan")}</button>`
+    ? `<button type="button" class="btn btn-primary btn-sm" data-week-plan title="${esc(t("beranda.week.planTitle", { cost: t("chat.week.cost") }))}">${icon("sparkle", { size: 13 })}${t("beranda.week.plan")}</button>`
     : "";
   const reportLink = hasPublished && !reportIsDue
     ? `<button type="button" class="btn btn-ghost btn-sm" id="home-report" title="${esc(t("rep.btnTitle"))}">${icon("download", { size: 13 })}${t("rep.btn")}</button>`
@@ -263,7 +263,7 @@ export function recapCardHTML(recap, { brandId }) {
       <ul class="home-recap-stats">${lines.map((l) => `<li>${icon("check", { size: 13 })}<span>${esc(l)}</span></li>`).join("")}</ul>
       <p class="home-recap-body">${t("beranda.recap.body")}</p>
       <div class="home-recap-actions">
-        <button type="button" class="btn btn-secondary" data-recap-next="${esc(c.id)}">${icon("target", { size: 14 })}${t("beranda.recap.next")}</button>
+        <button type="button" class="btn btn-primary" data-recap-next="${esc(c.id)}">${icon("target", { size: 14 })}${t("beranda.recap.next")}</button>
         <a class="link" href="#/brand/${esc(brandId)}/campaigns/${esc(c.id)}">${t("beranda.recap.open")}</a>
       </div>
     </section>`;

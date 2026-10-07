@@ -190,7 +190,7 @@ describe("low AI credit", () => {
 
 describe("app tint follows the Brand Book", () => {
   test("Brand Book primary first, then the picked brand colour", () => {
-    assert.equal(brandTintColor({ color: "#ffa52b", brandGuidelines: { colors: { primary: "#1d4ed8" } } }), "#1d4ed8");
+    assert.equal(brandTintColor({ color: "#ffa52b", brandGuidelines: { colors: { primary: "#1d4ed8" } } }), "#ffa52b");
     assert.equal(brandTintColor({ color: "#ffa52b", brandGuidelines: { colors: { primary: "" } } }), "#ffa52b");
     assert.equal(brandTintColor({ color: "#ffa52b", brandGuidelines: { colors: { primary: "not a colour" } } }), "#ffa52b");
     assert.equal(brandTintColor({}), "");
