@@ -62,7 +62,7 @@ function openScriptPdfPreview(content, brand) {
   const overlay = openModal({
     title: t("cr.pdf.title"),
     wide: true,
-    bodyHTML: `<div class="report-preview-wrap"><div class="report-sheet script-sheet" id="script-pdf-sheet">${blocks.join("")}<div class="report-footer">Wepeka Brandlab — ${escapeHtml(brand?.name || "")}</div></div></div>`,
+    bodyHTML: `<div class="report-preview-wrap script-preview-wrap"><div class="report-sheet script-sheet" id="script-pdf-sheet">${blocks.join("")}<div class="report-footer">Wepeka Brandlab — ${escapeHtml(brand?.name || "")}</div></div></div>`,
     footHTML: `
       <button class="btn btn-secondary" id="script-pdf-print">${icon("layers", { size: 14 })}${t("cr.pdf.print")}</button>
       <button class="btn btn-primary" id="script-pdf-download">${icon("download", { size: 14 })}${t("cr.pdf.download")}</button>
@@ -127,7 +127,7 @@ function scriptSheetBlocks(c, brand) {
       <div class="sp-beat${i === 0 ? " is-hook" : ""}">
         <div class="sp-when"><b>${times[i].from}–${times[i].to}</b><span>${unit}</span><em>${escapeHtml(b.label)}</em></div>
         <div class="sp-show">${cell(t("cr.cards.visual"), b.visual)}${cell(t("cr.cards.screen"), b.onScreen, " sp-screen")}${cell(t("cr.cards.note"), b.note)}${!b.visual && !b.onScreen && !b.note ? `<p class="sp-text sp-none">—</p>` : ""}</div>
-        <div class="sp-say">${String(b.say || "").trim() ? `<p>${escapeHtml(b.say.trim()).replace(/\n/g, "<br>")}</p>` : `<p class="sp-none">—</p>`}</div>
+        <div class="sp-say"><div class="sp-k sp-say-k">${t("cr.pdf.colSay")}</div>${String(b.say || "").trim() ? `<p>${escapeHtml(b.say.trim()).replace(/\n/g, "<br>")}</p>` : `<p class="sp-none">—</p>`}</div>
       </div>`;
     const head = `<div class="sp-cols"><span>${t("cr.pdf.colTime")}</span><span>${t("cr.pdf.colShow")}</span><span>${t("cr.pdf.colSay")}</span></div>`;
     // The section title and column heads stay with the first part.
@@ -1900,7 +1900,7 @@ function draftingPanel(c, campaigns, series = []) {
       </div>
       <p class="text-faint" style="font-size:11.5px;text-align:center;margin:6px 0 16px;">${icon("arrowUp", { size: 10 })} ${t("cr.aiAllHint")}</p>
 
-      <div class="creator-field-head" style="margin-bottom:18px;">
+      <div class="creator-field-head cr-status-row" style="margin-bottom:18px;">
         ${statusSelectHTML(c)}
         <div class="flex items-center gap-8">
           <span class="save-indicator" id="save-indicator">${t("cr.saved")}</span>

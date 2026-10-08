@@ -1963,6 +1963,26 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .sp-show .sp-screen{ font-weight:700; color:#1a1816; }
 .sp-say p{ margin:0; font-size:13.5px; line-height:1.6; color:#1a1816; }
 .sp-none{ color:#b3ada5 !important; }
+.sp-say-k{ display:none; }
+/* On a phone the preview stacks each part (time + name, what to show,
+   what to say) instead of squeezing three columns; the downloaded PDF is
+   laid out off-screen at A4 width and keeps the table. */
+@media screen and (max-width: 640px){
+  .script-preview-wrap{ padding:0; background:none; }
+  .script-preview-wrap .script-sheet{ padding:18px 16px; border-radius:10px; }
+  .script-preview-wrap .report-header{ flex-wrap:wrap; gap:10px; padding-bottom:14px; }
+  .script-preview-wrap .report-header > div:nth-child(2){ flex:1; min-width:0; }
+  .script-preview-wrap .report-brand{ font-size:17px; line-height:1.25; }
+  .script-preview-wrap .report-range{ margin-left:0; width:100%; text-align:left; }
+  .script-preview-wrap .sp-cols{ display:none; }
+  .script-preview-wrap .sp-beat{ grid-template-columns:minmax(0,1fr); gap:8px; padding:14px 0; }
+  .script-preview-wrap .sp-when{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .script-preview-wrap .sp-when b, .script-preview-wrap .sp-when span{ display:inline; }
+  .script-preview-wrap .sp-when em{ margin:0 0 0 4px; }
+  .script-preview-wrap .sp-say{ padding:8px 12px; border-radius:10px; background:#f6f2ec; }
+  .script-preview-wrap .sp-say-k{ display:block; }
+  .script-preview-wrap .sp-slide{ grid-template-columns:minmax(0,1fr); gap:4px; }
+}
 .sp-slide{ display:grid; grid-template-columns:78px minmax(0,1fr); gap:14px; padding:9px 0; border-bottom:1px solid #e4e0da; }
 .sp-slide-num{ font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#8a8580; padding-top:3px; }
 
@@ -3943,6 +3963,11 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cr-ai-row{ display:flex; gap:8px; }
 .cr-ai-row > .btn:first-child{ flex:1; min-width:0; }
 .cr-ai-row > .btn:not(:first-child){ flex:none; }
+/* On a phone the long label wraps inside the button instead of running out of it. */
+/* The "Tersimpan" flash floats above the row on a phone, so it doesn't
+   push Unduh PDF out of the card. */
+@media (max-width: 640px){ .cr-status-row{ position:relative; gap:8px; } .cr-status-row .save-indicator{ position:absolute; right:0; top:-20px; } }
+@media (max-width: 640px){ .cr-ai-row > .btn:first-child{ white-space:normal; line-height:1.25; text-align:center; padding-top:9px; padding-bottom:9px; } }
 .disc-chips{ flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
 .disc-chips::-webkit-scrollbar{ display:none; }
 .disc-chips .consultant-starter{ flex:none; white-space:nowrap; }
