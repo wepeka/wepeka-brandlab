@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, scriptLineKind } from "../js/script-format.js";
+import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, scriptLineKind, scriptToBeats, beatsToScript, beatTimeline } from "../js/script-format.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, recommendedHookTypes, orderedHookTypes } from "../js/knowledge/hook-types.js";
 import { t } from "../js/i18n.js";
 
@@ -143,5 +143,54 @@ describe("hook types & structures catalog", () => {
       assert.deepEqual(orderedHookTypes(f).slice(0, 3).map((h) => h.key), rec);
       assert.equal(orderedHookTypes(f).length, HOOK_TYPES.length);
     }
+  });
+});
+
+describe("script cards (scriptToBeats / beatsToScript / beatTimeline)", () => {
+  test("a beat script comes back as its beats and round-trips", () => {
+    const text = renderScript(BEATS);
+    const { beats, fromText, lang } = scriptToBeats(text);
+    assert.equal(fromText, false);
+    assert.equal(lang, "id");
+    assert.deepEqual(beats.map((b) => b.label), ["HOOK", "BUKTI", "CTA"]);
+    assert.equal(beatsToScript(beats, { lang }), text);
+  });
+  test("free text becomes one part per paragraph, the first one the HOOK", () => {
+    const { beats, fromText } = scriptToBeats("Kalimat pertama.\n\nKalimat kedua.\nmasih kedua.\n\n\nKetiga.");
+    assert.equal(fromText, true);
+    assert.deepEqual(beats.map((b) => [b.label, b.say]), [["HOOK", "Kalimat pertama."], ["ISI", "Kalimat kedua.\nmasih kedua."], ["ISI", "Ketiga."]]);
+  });
+  test("an old HOOK / ISI PEMBAHASAN script loses only its two labels", () => {
+    const { beats } = scriptToBeats("HOOK\nBuka dengan ini.\n\nISI PEMBAHASAN\nLalu ini.");
+    assert.deepEqual(beats.map((b) => b.say), ["Buka dengan ini.", "Lalu ini."]);
+  });
+  test("an empty script starts with one empty HOOK", () => {
+    const { beats, fromText } = scriptToBeats("  ");
+    assert.equal(fromText, false);
+    assert.equal(beats.length, 1);
+    assert.equal(beats[0].label, "HOOK");
+  });
+  test("times follow the narration; the timeline matches the saved headers", () => {
+    const beats = [{ label: "HOOK", say: "satu dua tiga empat lima" }, { label: "ISI", visual: "B-roll saja" }, { label: "CTA", say: "a b c d e f g h i j k l" }];
+    const tl = beatTimeline(beats);
+    assert.deepEqual(tl, [{ from: 0, to: 2 }, { from: 2, to: 4 }, { from: 4, to: 9 }]);
+    const text = beatsToScript(beats);
+    assert.deepEqual([...text.matchAll(/\[(\d+)-(\d+) dtk\]/g)].map((m) => [Number(m[1]), Number(m[2])]), tl.map((r) => [r.from, r.to]));
+  });
+  test("a blank line typed inside a narration stays inside it", () => {
+    const text = beatsToScript([{ label: "HOOK", say: "Baris satu.\n\n\nBaris dua." }]);
+    const back = parseScript(text);
+    assert.equal(back.beats[0].say, "Baris satu.\nBaris dua.");
+    assert.equal(back.beats[0].note, "");
+  });
+  test("empty cards are left out of the saved text; a preamble is kept", () => {
+    const text = beatsToScript([{ label: "HOOK", say: "Halo." }, { label: "ISI" }], { preamble: "Catatan syuting: outdoor" });
+    assert.match(text, /^Catatan syuting: outdoor\n\n\[0-2 dtk\] HOOK\nNarasi: Halo\.$/);
+  });
+  test("an English script keeps English labels", () => {
+    const en = renderScript(BEATS, { lang: "en" });
+    const { beats, lang } = scriptToBeats(en);
+    assert.equal(lang, "en");
+    assert.match(beatsToScript(beats, { lang }), /Voice: Mampir malam ini\./);
   });
 });

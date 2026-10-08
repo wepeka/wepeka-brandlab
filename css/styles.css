@@ -1946,6 +1946,26 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .report-empty{ color:#8a8580; font-size:12.5px; }
 .report-footer{ margin-top:32px; padding-top:14px; border-top:1px solid #e4e0da; font-size:10.5px; color:#8a8580; text-align:center; }
 
+/* Script PDF (js/views/creator.js openScriptPdfPreview) — light sheet like
+   the report: one row per part, time | what to show | what to say. */
+.script-sheet .report-header{ margin-bottom:10px; }
+.sp-meta{ margin:0 0 6px; font-size:11.5px; color:#6b6560; text-transform:uppercase; letter-spacing:.05em; }
+.sp-text{ margin:0 0 4px; font-size:13px; line-height:1.6; color:#33302c; white-space:normal; }
+.sp-cols, .sp-beat{ display:grid; grid-template-columns:78px minmax(0,1fr) minmax(0,1.3fr); gap:14px; }
+.sp-cols{ padding:0 0 6px; border-bottom:2px solid #1a1816; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b6560; }
+.sp-beat{ padding:11px 0; border-bottom:1px solid #e4e0da; break-inside:avoid; page-break-inside:avoid; }
+.sp-when b{ display:block; font-family: var(--font-display); font-size:15px; font-weight:800; color:#1a1816; white-space:nowrap; }
+.sp-when span{ display:block; font-size:10px; color:#8a8580; }
+.sp-when em{ display:inline-block; margin-top:6px; padding:2px 7px; border-radius:6px; background:#f1ede6; font-style:normal; font-size:9.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#4a4540; overflow-wrap:anywhere; }
+.sp-beat.is-hook .sp-when em{ background:#fde7cf; color:#8a4300; }
+.sp-k{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8a8580; margin:0 0 1px; }
+.sp-show .sp-text{ font-size:12px; color:#4a4540; margin-bottom:6px; }
+.sp-show .sp-screen{ font-weight:700; color:#1a1816; }
+.sp-say p{ margin:0; font-size:13.5px; line-height:1.6; color:#1a1816; }
+.sp-none{ color:#b3ada5 !important; }
+.sp-slide{ display:grid; grid-template-columns:78px minmax(0,1fr); gap:14px; padding:9px 0; border-bottom:1px solid #e4e0da; }
+.sp-slide-num{ font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#8a8580; padding-top:3px; }
+
 @media print{
   /* visibility:hidden alone keeps every hidden element's layout box intact
      (invisible ≠ zero height) — #app is the entire single-page app behind
@@ -1953,6 +1973,9 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
      blank pages before the actual report ever printed. Remove it from flow
      entirely instead of just hiding it. */
   #app, #toast-root{ display:none !important; }
+  /* With "Background graphics" on, the app's dark page showed as black
+     bands above and below the sheet. */
+  html, body{ background:#fff !important; }
   body *{ visibility:hidden; }
   .report-sheet, .report-sheet *{ visibility:visible; }
   /* The modal chrome (.overlay is position:fixed, .modal-body scrolls with
@@ -5104,6 +5127,63 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .consultant-md h4.md-h{ margin:12px 0 4px; font-size:13.5px; font-weight:800; color: var(--text); }
 .consultant-md h4.md-h:first-child{ margin-top:0; }
 
+/* ---------- Script as cards — "Kartu" (js/script-cards.js) ----------
+   One card per part: seconds on the left, the part's name, the optional
+   Visual / Teks layar lines small and quiet, Narasi in a speech-bubble box.
+   A timeline on top splits the video by part. Used in Creator and, larger,
+   in Layar penuh. */
+.script-mode{ flex-wrap:nowrap; padding:2px; }
+.script-mode button{ flex:none; padding:5px 10px; font-size:11.5px; }
+.script-cards{ display:flex; flex-direction:column; gap:10px; }
+.sc-top{ display:flex; flex-direction:column; gap:6px; }
+.sc-total{ display:flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.sc-timeline{ display:flex; gap:2px; height:24px; border-radius:8px; overflow:hidden; }
+.sc-timeline[hidden]{ display:none; }
+.sc-seg{ min-width:12px; border:0; padding:0 6px; font-size:10.5px; font-weight:800; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.sc-seg:nth-child(even){ background: color-mix(in srgb, var(--text) 15%, transparent); }
+.sc-seg.is-hook{ background: color-mix(in srgb, var(--accent) 32%, transparent); color: var(--text); }
+.sc-seg:hover{ color: var(--text); }
+.sc-fromtext{ margin:0; font-size:11.5px; color: var(--text-faint); }
+.sc-card{ display:grid; grid-template-columns:48px minmax(0,1fr); gap:10px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); padding:10px 12px 12px 10px; }
+.sc-card.is-hook{ border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.sc-time{ padding-top:5px; text-align:center; font-size:10.5px; line-height:1.3; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.sc-time b{ display:block; font-size:12.5px; font-weight:800; color: var(--text); white-space:nowrap; }
+.sc-head{ display:flex; align-items:center; gap:4px; margin-bottom:4px; }
+.sc-label{ flex:1; min-width:0; border:0; background:transparent; padding:3px 0; font: inherit; font-size:12px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color: var(--accent); outline:none; }
+.sc-label::placeholder{ color: var(--text-faint); }
+.sc-label:focus, .sc-label:focus-visible{ outline:none; border-radius:0; box-shadow: inset 0 -1px 0 var(--accent); }
+.field .sc-field, .field .sc-say-wrap{ font-size:inherit; font-weight:400; color: var(--text); margin-bottom:0; }
+.sc-field{ display:grid; grid-template-columns:82px minmax(0,1fr); gap:6px; align-items:start; margin:0 0 2px; cursor:text; }
+.sc-k{ padding-top:6px; font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); }
+.sc-in, .sc-say{ display:block; width:100%; box-sizing:border-box; resize:none; overflow:hidden; font: inherit; font-weight:400; background:transparent; outline:none; }
+.sc-in{ min-height:30px; padding:5px 8px; border:1px solid transparent; border-radius:8px; font-size:13.5px; line-height:1.5; color: var(--text-muted); }
+.sc-in:hover{ border-color: var(--border); }
+.sc-in:focus{ border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); color: var(--text); }
+.sc-say-wrap{ display:block; margin-top:6px; padding:7px 12px 6px; border:1px solid var(--border); border-radius:16px; background: var(--surface); cursor:text; }
+/* Creator's glass panel is dark in both themes (its tokens are re-pointed). */
+.glass-card .sc-say-wrap{ background: rgba(0,0,0,.2); }
+.sc-say-wrap:focus-within{ border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.sc-say-wrap .sc-k{ display:block; padding:0; color: var(--accent); }
+.sc-say{ min-height:46px; padding:2px 0; border:0; font-size:15.5px; line-height:1.55; color: var(--text); }
+.sc-say:focus-visible, .sc-in:focus-visible{ outline:none; box-shadow:none; }
+.sc-say::placeholder, .sc-in::placeholder{ color: var(--text-faint); }
+.sc-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.sc-chip{ display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border:1px dashed var(--border); border-radius: var(--radius-pill); background:transparent; color: var(--text-muted); font-size:11.5px; font-weight:700; cursor:pointer; }
+.sc-chip:hover{ color: var(--text); border-color: var(--text-faint); }
+.sc-add{ align-self:flex-start; }
+.script-cards.is-large .sc-say{ font-size:18px; }
+.script-cards.is-large .sc-in{ font-size:14.5px; }
+.script-cards.is-large .sc-card{ padding:14px 16px 16px 12px; }
+@media (max-width: 640px){
+  .script-field-head{ flex-wrap:wrap; gap:6px; }
+  .script-field-head .script-focus-btn span{ display:none; }
+  .sc-card{ grid-template-columns:minmax(0,1fr); gap:2px; padding:10px 12px 12px; }
+  .sc-time{ display:flex; align-items:baseline; gap:4px; padding:0; text-align:left; }
+  .sc-field{ grid-template-columns:minmax(0,1fr); gap:0; }
+  .sc-k{ padding-top:2px; }
+  .sc-in{ padding:4px 0; border-width:0 0 1px; border-radius:0; }
+}
+
 /* ---------- Layar penuh: writing a script full screen (js/script-focus.js) ---------- */
 .script-focus-btn{ white-space:nowrap; }
 /* No overflow:hidden on body here: on a phone it let the page's own
@@ -5116,7 +5196,7 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .script-focus-actions{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .script-focus-actions .btn[aria-pressed="true"]{ background: var(--accent-soft); color: var(--text); }
 .script-focus-body{ flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; align-items:center; padding:28px 20px 16px; }
-.script-focus-text, .script-focus-preview{ width:100%; max-width:780px; }
+.script-focus-text, .script-focus-preview, .script-focus-cards{ width:100%; max-width:780px; }
 .script-focus-text{ position:relative; flex:1 0 auto; min-height:60vh; outline:none; color: var(--text); font-size:17px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; caret-color: var(--accent); }
 .script-focus-text:focus-visible{ outline:none; box-shadow:none; }
 .script-focus-text.is-empty::before{ content: attr(data-ph); position:absolute; top:0; left:0; right:0; color: var(--text-faint); pointer-events:none; }

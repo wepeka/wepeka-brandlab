@@ -1,4 +1,4 @@
-import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
+import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, updateSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa, wireClickableCards } from "../dom.js";
@@ -8,8 +8,10 @@ import { consumeNavContext, go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine, durationToSeconds } from "../ai.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, orderedHookTypes, recommendedHookTypes, recommendedStructures, hookTypeByKey } from "../knowledge/hook-types.js";
-import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText } from "../script-format.js";
+import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, parseScript, beatTimeline } from "../script-format.js";
+import { downloadPagedPdf } from "../pdf-libs.js";
 import { openScriptFocus } from "../script-focus.js";
+import { mountScriptCards } from "../script-cards.js";
 import { getLang } from "../i18n.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
@@ -49,33 +51,60 @@ function updateContent(id, patch) {
     .forEach((c) => storeUpdateContent(c.id, shared));
 }
 
-// Same window.print()-based PDF trick as the Report Card, reusing its
-// .report-sheet styling — just title/idea/script, nothing else, for handing
-// a script to someone who doesn't need the whole app (an editor, a client).
+// The script as a PDF for whoever shoots or edits it (an editor, a client)
+// — title, idea, the script, the caption, nothing else. A beat script is
+// laid out as a shooting table: time and part | what to show | what to
+// say, one row per part, so it reads like a rundown on set. "Unduh PDF"
+// makes a real .pdf (html2canvas + jsPDF, js/pdf-libs.js — like the Brand
+// Book, report and Brand DNA); "Cetak" still goes through the browser.
 function openScriptPdfPreview(content, brand) {
+  const blocks = scriptSheetBlocks(content, brand);
   const overlay = openModal({
     title: t("cr.pdf.title"),
     wide: true,
-    bodyHTML: `<div class="report-preview-wrap"><div class="report-sheet" id="script-pdf-sheet">${scriptSheetHTML(content, brand)}</div></div>`,
+    bodyHTML: `<div class="report-preview-wrap"><div class="report-sheet script-sheet" id="script-pdf-sheet">${blocks.join("")}<div class="report-footer">Wepeka Brandlab — ${escapeHtml(brand?.name || "")}</div></div></div>`,
     footHTML: `
       <button class="btn btn-secondary" id="script-pdf-print">${icon("layers", { size: 14 })}${t("cr.pdf.print")}</button>
       <button class="btn btn-primary" id="script-pdf-download">${icon("download", { size: 14 })}${t("cr.pdf.download")}</button>
     `,
   });
-  const doPrint = () => window.print();
-  overlay.querySelector("#script-pdf-print").addEventListener("click", doPrint);
-  overlay.querySelector("#script-pdf-download").addEventListener("click", () => {
-    toast(t("cr.pdf.saveHint"));
-    setTimeout(doPrint, 400);
+  overlay.querySelector("#script-pdf-print").addEventListener("click", () => window.print());
+  const dlBtn = overlay.querySelector("#script-pdf-download");
+  dlBtn.addEventListener("click", async () => {
+    if (dlBtn.disabled) return;
+    const label = dlBtn.innerHTML;
+    dlBtn.disabled = true;
+    dlBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px;"></span>${t("cr.pdf.making")}`;
+    try {
+      const slug = (content.title || brand?.name || "script").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60).toLowerCase() || "script";
+      await downloadPagedPdf({
+        blocks,
+        pageClass: "report-sheet script-sheet",
+        footer: (n, total) => `Wepeka Brandlab — ${brand?.name || ""} · ${n}/${total}`,
+        filename: `${slug}-script.pdf`,
+      });
+      toast(t("cr.pdf.saved"));
+    } catch (e) {
+      console.error("Script PDF failed", e);
+      toast(t("cr.pdf.failed"), "error");
+    } finally {
+      dlBtn.disabled = false;
+      dlBtn.innerHTML = label;
+    }
   });
 }
 
-function scriptSheetHTML(c, brand) {
-  const section = (label, text) => `
-    <div class="report-section-title">${label}</div>
-    <p style="white-space:pre-wrap;font-size:13.5px;line-height:1.65;color:#33302c;margin:0 0 4px;">${escapeHtml(text) || "—"}</p>
-  `;
-  return `
+// The sheet as separate blocks, so the PDF can break pages between them
+// (never inside a part of the script).
+function scriptSheetBlocks(c, brand) {
+  const para = (text) => `<p class="sp-text">${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
+  const title = (label) => `<div class="report-section-title">${label}</div>`;
+  const script = String(c.script || "").replace(/\r\n?/g, "\n");
+  const carousel = isCarouselContent(c);
+  const parsed = carousel ? null : parseScript(script);
+  const { words, seconds } = scriptLength(script);
+  const meta = [c.format, c.platform, !carousel && words ? t("cr.pdf.length", { s: parsed ? beatTimeline(parsed.beats).pop().to : seconds, w: words }) : ""].filter(Boolean);
+  const blocks = [`
     <div class="report-header">
       ${avatarHTML(brand || { name: "?" }, "width:44px;height:44px;border-radius:10px;font-size:16px;")}
       <div>
@@ -86,10 +115,34 @@ function scriptSheetHTML(c, brand) {
         <div class="report-generated">${t("cr.pdf.generated", { date: formatDate(new Date().toISOString()) })}</div>
       </div>
     </div>
-    ${section(t("cr.pdf.idea"), c.idea)}
-    ${section(t("cr.pdf.script"), c.script)}
-    <div class="report-footer">Wepeka Brandlab — ${escapeHtml(brand?.name || "")}</div>
-  `;
+    ${meta.length ? `<p class="sp-meta">${meta.map(escapeHtml).join(" · ")}</p>` : ""}`];
+  if (String(c.idea || "").trim()) blocks.push(`${title(t("cr.pdf.idea"))}${para(c.idea.trim())}`);
+
+  const scriptTitle = title(carousel ? t("cr.f.slides") : t("cr.pdf.script"));
+  if (parsed) {
+    const times = beatTimeline(parsed.beats);
+    const unit = escapeHtml(t("cr.pdf.unit"));
+    const cell = (label, text, cls = "") => (String(text || "").trim() ? `<div class="sp-k">${escapeHtml(label)}</div><p class="sp-text${cls}">${escapeHtml(text.trim()).replace(/\n/g, "<br>")}</p>` : "");
+    const row = (b, i) => `
+      <div class="sp-beat${i === 0 ? " is-hook" : ""}">
+        <div class="sp-when"><b>${times[i].from}–${times[i].to}</b><span>${unit}</span><em>${escapeHtml(b.label)}</em></div>
+        <div class="sp-show">${cell(t("cr.cards.visual"), b.visual)}${cell(t("cr.cards.screen"), b.onScreen, " sp-screen")}${cell(t("cr.cards.note"), b.note)}${!b.visual && !b.onScreen && !b.note ? `<p class="sp-text sp-none">—</p>` : ""}</div>
+        <div class="sp-say">${String(b.say || "").trim() ? `<p>${escapeHtml(b.say.trim()).replace(/\n/g, "<br>")}</p>` : `<p class="sp-none">—</p>`}</div>
+      </div>`;
+    const head = `<div class="sp-cols"><span>${t("cr.pdf.colTime")}</span><span>${t("cr.pdf.colShow")}</span><span>${t("cr.pdf.colSay")}</span></div>`;
+    // The section title and column heads stay with the first part.
+    blocks.push(`${scriptTitle}${parsed.preamble ? para(parsed.preamble) : ""}${head}${row(parsed.beats[0], 0)}`);
+    parsed.beats.slice(1).forEach((b, i) => blocks.push(row(b, i + 1)));
+  } else if (carousel && script.trim()) {
+    const slides = parseSlides(script);
+    slides.forEach((sl, i) => blocks.push(`${i === 0 ? scriptTitle : ""}<div class="sp-slide"><span class="sp-slide-num">${escapeHtml(t("cr.ai.slideLabel", { n: i + 1 }))}</span>${para(sl.text || "—")}</div>`));
+  } else {
+    const paras = script.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean);
+    if (!paras.length) blocks.push(`${scriptTitle}${para("—")}`);
+    paras.forEach((p, i) => blocks.push(`${i === 0 ? scriptTitle : ""}${para(p)}`));
+  }
+  if (String(c.caption || "").trim()) blocks.push(`${title(t("cr.pdf.caption"))}${para(c.caption.trim())}`);
+  return blocks;
 }
 
 // Best-effort desktop notification — always toasts too, since Notification
@@ -1050,6 +1103,32 @@ function paint(root, brandId, state, refresh) {
     note.hidden = !e.target.value.trim();
     note.querySelector("span").textContent = t("cr.ai.lengthBadge", scriptLengthVars(e.target.value));
   });
+  // "Kartu": the cards write into the hidden #f-script and it's saved once
+  // focus leaves them, like every other field here. Switching between
+  // Kartu and Ketik biasa saves first, then redraws with the other one.
+  const scriptField = qs("#f-script", root);
+  const saveScriptField = () => {
+    if (!scriptField || scriptField.value === (getContent(selected.id)?.script || "")) return;
+    updateContent(selected.id, { script: scriptField.value });
+    flashSaved();
+  };
+  const cardsHost = qs("#script-cards", root);
+  if (cardsHost && scriptField) {
+    mountScriptCards(cardsHost, { value: scriptField.value, lang: getLang(), onInput: (text) => { scriptField.value = text; } });
+    // Checked a tick later: a card redrawing itself (a line opened, a card
+    // added) drops the focused box for a moment, which isn't leaving.
+    cardsHost.addEventListener("focusout", () => setTimeout(() => {
+      if (cardsHost.isConnected && !cardsHost.contains(document.activeElement)) saveScriptField();
+    }, 0));
+  }
+  qsa("[data-script-mode]", root).forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", () => {
+      if (btn.dataset.scriptMode === scriptEditorMode()) return;
+      saveScriptField();
+      updateSettings({ scriptEditor: btn.dataset.scriptMode });
+    });
+  });
   const focusBtn = qs("#script-focus-open", root);
   focusBtn?.addEventListener("mousedown", (e) => e.preventDefault());
   focusBtn?.addEventListener("click", () => {
@@ -1065,6 +1144,7 @@ function paint(root, brandId, state, refresh) {
       title: qs("#f-title", root)?.value || selected.title || "",
       value: qs("#f-script", root)?.value ?? selected.script ?? "",
       lang: getLang(),
+      mode: scriptEditorMode(),
       onChange: save,
       onClose: (text) => save(text),
       onTeleprompter: (text) => openTeleprompter(spokenText(text), { title: selected.title || t("common.untitled") }),
@@ -1772,6 +1852,36 @@ function slidesFieldHTML(c) {
       </div>`;
 }
 
+// ---- Video script: "Kartu" or "Ketik biasa" -------------------------------
+// Two ways to write the same script, picked once and remembered on the
+// account (settings.scriptEditor): one card per part with the seconds
+// worked out (js/script-cards.js), or the plain box. #f-script stays in the
+// page either way (hidden behind the cards) — everything that reads or
+// writes the script goes through it.
+const scriptEditorMode = () => (getSettings()?.scriptEditor === "text" ? "text" : "cards");
+
+function scriptFieldHTML(c) {
+  const mode = scriptEditorMode();
+  const cards = mode === "cards";
+  const modeBtn = (key, label, title) =>
+    `<button type="button" class="${mode === key ? "active" : ""}" data-script-mode="${key}" aria-pressed="${mode === key}" title="${escapeHtml(t(title))}">${t(label)}</button>`;
+  return `<div class="field">
+        <div class="creator-field-head script-field-head">
+          <label ${cards ? "" : `for="f-script"`} style="margin-bottom:0;">${t("cr.f.script")}</label>
+          <div class="flex items-center gap-6">
+            <div class="segmented script-mode" role="group" aria-label="${escapeHtml(t("cr.cards.modeAria"))}">
+              ${modeBtn("cards", "cr.cards.modeCards", "cr.cards.modeCardsTitle")}${modeBtn("text", "cr.cards.modeText", "cr.cards.modeTextTitle")}
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm script-focus-btn" id="script-focus-open" title="${escapeHtml(t("cr.focus.openTitle"))}">${icon("expand", { size: 13 })}<span>${t("cr.focus.open")}</span></button>
+            <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
+          </div>
+        </div>
+        ${cards ? `<div id="script-cards"></div>` : ""}
+        <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}" ${cards ? "hidden" : ""}>${escapeHtml(c.script || "")}</textarea>
+        ${cards ? "" : `<p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>`}
+      </div>`;
+}
+
 function slidesReadHTML(script) {
   const slides = parseSlides(script);
   if (!slides.length) return `<div class="stage-script-display">${escapeHtml(t("cr.noScript"))}</div>`;
@@ -1809,17 +1919,7 @@ function draftingPanel(c, campaigns, series = []) {
       </div>
       ${channelFieldsHTML(c)}
       ${campaignFunnelFieldsHTML(c, campaigns, series)}
-      ${isCarouselContent(c) ? slidesFieldHTML(c) : `<div class="field">
-        <div class="creator-field-head">
-          <label for="f-script" style="margin-bottom:0;">${t("cr.f.script")}</label>
-          <div class="flex items-center gap-6">
-            <button type="button" class="btn btn-ghost btn-sm script-focus-btn" id="script-focus-open" title="${escapeHtml(t("cr.focus.openTitle"))}">${icon("expand", { size: 13 })}${t("cr.focus.open")}</button>
-            <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
-          </div>
-        </div>
-        <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}">${escapeHtml(c.script || "")}</textarea>
-        <p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>
-      </div>`}
+      ${isCarouselContent(c) ? slidesFieldHTML(c) : scriptFieldHTML(c)}
       <div class="field">
         <div class="creator-field-head">
           <label for="f-caption" style="margin-bottom:0;">${t("cr.f.caption")}</label>

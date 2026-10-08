@@ -50,10 +50,22 @@ export function estimateSeconds(words) {
 
 // How long one beat takes on screen: its narration at speaking pace, or a
 // couple of seconds for a purely visual moment.
-function beatSeconds(b) {
-  const w = countWords(b.say);
-  if (!w) return b.onScreen ? 2 : 2;
+export function beatSeconds(b) {
+  const w = countWords(b?.say);
+  if (!w) return 2;
   return Math.max(2, Math.round(w / SPOKEN_WPS));
+}
+
+// Where each beat starts and ends — the same timing renderScript writes
+// into the headers, so a screen showing it live never disagrees with the
+// saved text.
+export function beatTimeline(beats = []) {
+  let t = 0;
+  return beats.map((b) => {
+    const from = t;
+    t += beatSeconds(b);
+    return { from, to: t };
+  });
 }
 
 // beats: [{ label, visual, onScreen, say, note }] — beats[0] is the hook.
@@ -62,20 +74,22 @@ function beatSeconds(b) {
 // first edit) — screens show it live with scriptLength().
 export function renderScript(beats = [], { lang = "id" } = {}) {
   const L = labelsFor(lang);
+  // A blank line inside a field would end it when the text is read back
+  // (parseScript), so a typed paragraph break stays a single line break.
+  const oneBlock = (s) => String(s || "").trim().replace(/\n[ \t]*(\n[ \t]*)+/g, "\n");
   const clean = beats
     .map((b) => ({
       label: String(b?.label || "").trim().toUpperCase().slice(0, 40) || "ISI",
-      visual: String(b?.visual || "").trim(),
-      onScreen: unquote(b?.onScreen),
-      say: unquote(b?.say),
-      note: String(b?.note || "").trim(),
+      visual: oneBlock(b?.visual),
+      onScreen: unquote(oneBlock(b?.onScreen)),
+      say: unquote(oneBlock(b?.say)),
+      note: oneBlock(b?.note),
     }))
     .filter((b) => b.visual || b.onScreen || b.say || b.note);
   if (!clean.length) return "";
-  let t = 0;
-  const blocks = clean.map((b) => {
-    const from = t;
-    t += beatSeconds(b);
+  const times = beatTimeline(clean);
+  const blocks = clean.map((b, i) => {
+    const { from, to: t } = times[i];
     return [
       `[${from}-${t} ${L.unit}] ${b.label}`,
       b.note || "",
@@ -146,6 +160,34 @@ export function scriptBeatsHTML(text, esc) {
 }
 
 export const isBeatScript = (text) => !!parseScript(text);
+
+// Any script as the parts a card editor shows (js/script-cards.js). A beat
+// script gives its beats; free text and old HOOK/ISI scripts become one
+// part per paragraph, the first one the HOOK (`fromText` says this
+// happened); an empty script one empty HOOK to start typing in. The text
+// itself only changes once someone edits a card.
+export function scriptToBeats(text, { lang = "id" } = {}) {
+  const s = String(text || "").replace(/\r\n?/g, "\n");
+  const part = (label, say = "") => ({ label, visual: "", onScreen: "", say, note: "" });
+  const parsed = parseScript(s);
+  if (parsed) {
+    return {
+      beats: parsed.beats.map(({ label, visual, onScreen, say, note }) => ({ label, visual, onScreen, say, note })),
+      preamble: parsed.preamble,
+      lang: langOf(s, lang),
+      fromText: false,
+    };
+  }
+  const paras = spokenText(s).split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean);
+  if (!paras.length) return { beats: [part("HOOK")], preamble: "", lang, fromText: false };
+  return { beats: paras.map((p, i) => part(i ? "ISI" : "HOOK", p)), preamble: "", lang, fromText: true };
+}
+
+// A finished set of parts back into the one stored string.
+export function beatsToScript(beats, { preamble = "", lang = "id" } = {}) {
+  const body = renderScript(beats, { lang });
+  return preamble && body ? `${preamble}\n\n${body}` : body || preamble;
+}
 
 // What ONE line of a script is, for an editor that styles line by line
 // (js/script-focus.js): "head" for "[0-3 dtk] HOOK", "visual" / "onScreen" /
@@ -270,7 +312,7 @@ export function applyHook(script, hook, prevHook = "", { lang = "id" } = {}) {
 }
 
 // A rendered script keeps the label language it was written in.
-function langOf(text, fallback) {
+export function langOf(text, fallback) {
   if (/^\s*(Narasi|Teks layar)\s*:/im.test(text) || /\bdtk\]/.test(text)) return "id";
   if (/^\s*(Voice|On-screen text)\s*:/im.test(text)) return "en";
   return fallback;
