@@ -12,6 +12,7 @@ import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsH
 import { downloadPagedPdf } from "../pdf-libs.js";
 import { openScriptFocus } from "../script-focus.js";
 import { mountScriptCards } from "../script-cards.js";
+import { weekStart, addDays } from "../goal-roadmap.js";
 import { getLang } from "../i18n.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
@@ -863,6 +864,7 @@ function paint(root, brandId, state, refresh) {
     state.selectedId = items[0]?.id || null;
   }
   const selected = state.selectedId ? getContent(state.selectedId) : null;
+  const groupBy = sidebarGroupBy(series);
 
   root.innerHTML = `
     <div class="page-head">
@@ -879,10 +881,11 @@ function paint(root, brandId, state, refresh) {
 
     <div class="creator-layout">
       <div class="creator-sidebar">
+        ${items.length ? groupByToggleHTML(groupBy, series.length > 0) : ""}
         <div class="creator-sidebar-list">
           ${
             items.length
-              ? groupedSidebarHTML(items, state.selectedId, state.collapsedGroups, state.expandedGroups)
+              ? groupedSidebarHTML(items, state.selectedId, state.collapsedGroups, state.expandedGroups, { by: groupBy, series })
               : `<div class="table-empty" style="padding:32px 16px;">${t(all.length ? "cr.sidebarEmpty" : "cr.sidebarEmptyFirst")}</div>`
           }
         </div>
@@ -949,6 +952,14 @@ function paint(root, brandId, state, refresh) {
       if (state.expandedGroups.has(key)) state.expandedGroups.delete(key);
       else state.expandedGroups.add(key);
       paint(root, brandId, state, refresh);
+    });
+  });
+
+  // Minggu / Tahap / Seri — remembered on the account like Kartu / Ketik biasa.
+  qsa("[data-group-by]", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.groupBy === groupBy) return;
+      updateSettings({ creatorGroupBy: btn.dataset.groupBy });
     });
   });
 
@@ -1410,14 +1421,74 @@ const SIDEBAR_GROUPS = [
   { key: "other", label: t("cr.group.other"), statuses: ["published", "archived"] },
 ];
 
+// The list can be grouped three ways (settings.creatorGroupBy): by WEEK
+// (default — what's overdue, due this week, next week, later, not yet
+// scheduled), by STAGE (the folders above) or by SERIES. Weeks run Monday
+// to Sunday like the rest of the app (js/goal-roadmap.js weekStart).
+// Published / archived pieces (only ever the one that's open) sit in
+// "Lainnya" at the bottom whichever way it's grouped.
+const GROUP_BY = ["week", "stage", "series"];
+function sidebarGroupBy(series) {
+  const by = getSettings()?.creatorGroupBy;
+  if (by === "series" && !series.length) return "week";
+  return GROUP_BY.includes(by) ? by : "week";
+}
+
+function groupByToggleHTML(by, hasSeries) {
+  const btn = (key) => `<button type="button" class="${by === key ? "active" : ""}" data-group-by="${key}" aria-pressed="${by === key}">${t(`cr.groupBy.${key}`)}</button>`;
+  return `<div class="segmented creator-group-by" role="group" aria-label="${escapeHtml(t("cr.groupBy.aria"))}">${btn("week")}${btn("stage")}${hasSeries ? btn("series") : ""}</div>`;
+}
+
+const isDone = (c) => c.status === "published" || c.status === "archived";
+
+// "5–11 Okt", or "28 Sep – 4 Okt" across a month.
+function weekRangeLabel(from) {
+  const to = addDays(from, 6);
+  const loc = getLang() === "en" ? "en-US" : "id-ID";
+  const day = (s) => new Date(`${s}T00:00:00`).getDate();
+  const month = (s) => new Date(`${s}T00:00:00`).toLocaleDateString(loc, { month: "short" });
+  return month(from) === month(to) ? `${day(from)}–${day(to)} ${month(to)}` : `${day(from)} ${month(from)} – ${day(to)} ${month(to)}`;
+}
+
+function sidebarGroups(items, by, series) {
+  const other = { key: "other", label: t("cr.group.other"), items: items.filter(isDone) };
+  const open = items.filter((c) => !isDone(c));
+  if (by === "week") {
+    const today = localISODate();
+    const thisWeek = weekStart(today);
+    const nextWeek = addDays(thisWeek, 7);
+    const later = addDays(thisWeek, 14);
+    const when = (test) => open.filter((c) => test(c.scheduleDate));
+    return [
+      { key: "overdue", label: t("cr.wk.overdue"), items: when((d) => d && d < today) },
+      { key: "this", label: t("cr.wk.this", { range: weekRangeLabel(thisWeek) }), items: when((d) => d && d >= today && d < nextWeek) },
+      { key: "next", label: t("cr.wk.next", { range: weekRangeLabel(nextWeek) }), items: when((d) => d && d >= nextWeek && d < later) },
+      { key: "later", label: t("cr.wk.later"), items: when((d) => d && d >= later) },
+      { key: "none", label: t("cr.wk.none"), items: when((d) => !d) },
+      other,
+    ];
+  }
+  if (by === "series") {
+    const known = new Set(series.map((s) => s.id));
+    return [
+      ...series.map((s) => ({ key: `s-${s.id}`, label: escapeHtml(s.name || t("common.untitled")), items: open.filter((c) => c.seriesId === s.id) })),
+      { key: "none", label: t("cr.sr.none"), items: open.filter((c) => !known.has(c.seriesId)) },
+      other,
+    ];
+  }
+  return SIDEBAR_GROUPS.map((g) => ({ ...g, items: items.filter((c) => g.statuses.includes(c.status)) }));
+}
+
 // Each group shows its first few rows; the rest sit behind "Show N more".
 // Before, one long group (26 drafts) filled the whole scroll box and pushed
 // Editing / Ready to upload / etc. out of sight — every group header now
 // stays visible without scrolling inside the list.
 const GROUP_PREVIEW = 5;
-function groupedSidebarHTML(items, selectedId, collapsedGroups, expandedGroups = new Set()) {
-  return SIDEBAR_GROUPS.map((g) => ({ ...g, items: items.filter((c) => g.statuses.includes(c.status)) }))
+function groupedSidebarHTML(items, selectedId, collapsedGroups, expandedGroups = new Set(), { by = "stage", series = [] } = {}) {
+  const seriesName = new Map(series.map((s) => [s.id, s.name]));
+  return sidebarGroups(items, by, series)
     .filter((g) => g.items.length)
+    .map((g) => ({ ...g, key: `${by}:${g.key}` }))
     .map((g) => {
       const collapsed = collapsedGroups.has(g.key);
       const expanded = expandedGroups.has(g.key);
@@ -1440,7 +1511,7 @@ function groupedSidebarHTML(items, selectedId, collapsedGroups, expandedGroups =
       </button>
       <div class="creator-sidebar-group-body">
         <div class="creator-sidebar-group-body-inner">
-          ${shown.map((c) => sidebarRow(c, c.id === selectedId)).join("")}
+          ${shown.map((c) => sidebarRow(c, c.id === selectedId, { by, seriesName: by === "series" ? "" : seriesName.get(c.seriesId) || "" })).join("")}
           ${moreBtn}
         </div>
       </div>
@@ -1473,14 +1544,19 @@ function fillMarks(c) {
 // removing it stays a content-list-only action (js/views/content-list.js's
 // row menu, which also has Archive) rather than a one-click trash icon
 // right in Creator's own sidebar.
-function sidebarRow(c, active) {
+// Grouped by week or series, the row says its stage (the group no longer
+// does) and, by week, which series it belongs to.
+function sidebarRow(c, active, { by = "stage", seriesName = "" } = {}) {
   const deletable = c.status === "idea" || c.status === "draft";
+  const meta = by === "stage"
+    ? `${escapeHtml(c.platform || "—")} · ${formatDate(new Date(c.updatedAt))}`
+    : [statusLabel(c.status, STATUS_LABELS), c.platform, seriesName].filter(Boolean).map(escapeHtml).join(" · ");
   return `
     <div class="creator-item ${active ? "active" : ""}" data-select="${c.id}">
       <span class="status-pill status-${c.status}" style="padding:3px 8px;"><span class="status-dot"></span></span>
       <div class="ti">
         <div class="t">${escapeHtml(c.title || t("common.untitled"))}</div>
-        <div class="m">${escapeHtml(c.platform || "—")} · ${formatDate(new Date(c.updatedAt))}${fillMarks(c)}</div>
+        <div class="m">${meta}${fillMarks(c)}</div>
         ${c.scheduleDate ? `<div class="creator-item-due">${dueBadge(c)}</div>` : ""}
       </div>
       ${
@@ -1712,7 +1788,7 @@ function executionPanel(c) {
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:4px;">${escapeHtml(c.title || t("common.untitled"))}</div>
       <button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>
-      ${isCarouselContent(c) ? slidesReadHTML(c.script) : `<div class="stage-script-display">${escapeHtml(c.script || t("cr.noScript")).replace(/\n/g, "<br>")}</div>`}
+      ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-shot-big">${icon("check", { size: 20 })}${t("cr.doneShooting")}</button>
     </div>
   `;
@@ -1880,6 +1956,14 @@ function scriptFieldHTML(c) {
         <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}" ${cards ? "hidden" : ""}>${escapeHtml(c.script || "")}</textarea>
         ${cards ? "" : `<p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>`}
       </div>`;
+}
+
+// The script on the Syuting screen: a beat script as its parts (time, what
+// to show, the screen text, what to say), anything else as plain text.
+function stageScriptHTML(script) {
+  const beats = scriptBeatsHTML(script, escapeHtml);
+  if (beats) return `<div class="stage-script-display has-beats">${beats}</div>`;
+  return `<div class="stage-script-display">${escapeHtml(script || t("cr.noScript")).replace(/\n/g, "<br>")}</div>`;
 }
 
 function slidesReadHTML(script) {
