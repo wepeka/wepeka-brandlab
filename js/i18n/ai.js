@@ -39,7 +39,7 @@ export default {
   "ai.error.network": { en: "Couldn't reach {provider}. Check your internet connection and try again.", id: "Nggak bisa terhubung ke {provider}. Cek koneksi internet kamu, lalu coba lagi." },
   "ai.error.badResponse": { en: "{provider} sent back a response the app couldn't read. Try again.", id: "Balasan dari {provider} nggak bisa dibaca aplikasi. Coba lagi." },
   "ai.error.setup": { en: "The AI key isn't set on the server yet: add {key} in Vercel (project content-os → Settings → Environment Variables), then redeploy.", id: "Kunci AI belum dipasang di server: tambahkan {key} di Vercel (proyek content-os → Settings → Environment Variables), lalu redeploy." },
-  "ai.error.noServer": { en: "AI doesn't run on this local server (it has no /api). Try it on planner.wepeka.com.", id: "AI nggak jalan di server lokal ini (tidak ada /api). Coba di planner.wepeka.com." },
+  "ai.error.noServer": { en: "AI doesn't run on this local server (it has no /api). Try it on brandlab.wepeka.com.", id: "AI nggak jalan di server lokal ini (tidak ada /api). Coba di brandlab.wepeka.com." },
   "ai.error.provider.user": { en: "The AI is having trouble right now. Try again in a moment.", id: "AI-nya lagi gangguan. Coba lagi sebentar ya." },
   "ai.error.emptyResponse": { en: "The AI didn't give an answer. Try again.", id: "AI nggak ngasih jawaban. Coba lagi." },
   "ai.error.unreadable": { en: "The AI didn't return a result the app could read. Try again.", id: "AI nggak ngasih hasil yang bisa dibaca. Coba lagi." },

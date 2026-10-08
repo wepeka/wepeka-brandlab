@@ -1,4 +1,4 @@
-// Meta Pixel (browser) for the Brandlab app (planner.wepeka.com).
+// Meta Pixel (browser) for the Brandlab app (brandlab.wepeka.com).
 //
 // Paired with the Conversions API in api/_meta.js: a purchase is sent from
 // here (Snap onSuccess) AND from the Midtrans webhook with the same event id

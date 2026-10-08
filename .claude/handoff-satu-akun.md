@@ -25,7 +25,7 @@ Dua produk, dua sistem identitas, disambung cuma lewat **alamat email**:
 |---|---|---|
 | Kredensial | `members.password_hash` (scrypt, `src/lib/community/password.ts`) + cookie `wpk_member` | Firebase Auth (email/password + Google) |
 | Data akun | `members` (Supabase) | `accounts/{uid}` (Firestore) |
-| Jembatan | `/brandlab/connect` mint custom token → `planner.wepeka.com/#/sso?t=` | `js/main.js consumeWepekaToken` |
+| Jembatan | `/brandlab/connect` mint custom token → `brandlab.wepeka.com/#/sso?t=` | `js/main.js consumeWepekaToken` |
 
 1. **Dua password untuk satu orang.** Sign-up wepeka.com meng-mirror password ke Firebase (`src/lib/brandlab-account.ts:95-113`), tapi kalau email sudah ada di Firebase password lama dibiarkan. `changePasswordAction` (`src/app/(store)/community/actions.ts:327`) cuma ganti Supabase; "Lupa password" Brandlab (`js/views/login.js:107`) cuma ganti Firebase.
 2. **Member Google / lewat bridge tidak punya password di Firebase** (`firebaseUidForMember` buat user tanpa password; `src/app/api/community/firebase-session/route.ts:73` simpan hash acak) → form email+password Brandlab selalu "Email atau password salah".
@@ -61,7 +61,7 @@ wepeka.com  POST /api/community/firebase-session ──► verifyIdToken ──�
    │  cookie wpk_member (tetap)
    ▼
 /brandlab/connect ──► brandlabAccess(uid) = paid | trial | expired | none
-        paid/trial ──► custom token ──► planner.wepeka.com/#/sso?t=
+        paid/trial ──► custom token ──► brandlab.wepeka.com/#/sso?t=
         expired/none ──► /community/brandlab (klaim trial 30 hari / lihat paket)
 
 Brandlab: accounts/{uid} HANYA dibuat Admin SDK (klaim trial dari wepeka.com, webhook Midtrans, admin).

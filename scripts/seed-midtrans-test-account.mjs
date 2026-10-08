@@ -1,5 +1,5 @@
 // Membuat AKUN UJI untuk tim Midtrans (onboarding review) + satu brand dummy,
-// supaya reviewer bisa langsung login di planner.wepeka.com/#/login dan
+// supaya reviewer bisa langsung login di brandlab.wepeka.com/#/login dan
 // mencoba alur bayar dari halaman #/pricing tanpa harus daftar lewat
 // wepeka.com (jalur trial self-service masih ditutup admin).
 //

@@ -22,7 +22,7 @@ PORT = 8743
 # project, so the signed-in user's token works there). Payments are NOT on
 # this list on purpose — local testing must never create a real Midtrans
 # transaction.
-API_ORIGIN = "https://planner.wepeka.com"
+API_ORIGIN = "https://brandlab.wepeka.com"
 PROXIED_API = ("/api/ai", "/api/guide-videos")
 
 

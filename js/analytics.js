@@ -1,4 +1,4 @@
-// Google Analytics 4 for the Brandlab app (planner.wepeka.com).
+// Google Analytics 4 for the Brandlab app (brandlab.wepeka.com).
 //
 // Same measurement ID as www.wepeka.com (wpk-dp NEXT_PUBLIC_GA_ID): both
 // hosts sit under wepeka.com, so gtag's automatic cookie domain shares one

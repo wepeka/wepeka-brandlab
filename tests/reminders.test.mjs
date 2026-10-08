@@ -84,10 +84,10 @@ describe("settings/{uid}.reminders shape", () => {
     assert.equal(normalizeReminders({ calendarToken: a }).calendarToken, a);
   });
   test("calendar links: https feed, webcal for iPhone, Google's add-by-URL", () => {
-    const l = calendarLinks("https://planner.wepeka.com/", "TOKEN");
-    assert.equal(l.https, "https://planner.wepeka.com/api/calendar/TOKEN");
-    assert.equal(l.webcal, "webcal://planner.wepeka.com/api/calendar/TOKEN");
-    assert.equal(l.google, `https://calendar.google.com/calendar/r?cid=${encodeURIComponent("webcal://planner.wepeka.com/api/calendar/TOKEN")}`);
+    const l = calendarLinks("https://brandlab.wepeka.com/", "TOKEN");
+    assert.equal(l.https, "https://brandlab.wepeka.com/api/calendar/TOKEN");
+    assert.equal(l.webcal, "webcal://brandlab.wepeka.com/api/calendar/TOKEN");
+    assert.equal(l.google, `https://calendar.google.com/calendar/r?cid=${encodeURIComponent("webcal://brandlab.wepeka.com/api/calendar/TOKEN")}`);
   });
   test("client and server carry the same VAPID public key (65-byte P-256 point)", () => {
     assert.equal(CLIENT_VAPID, SERVER_VAPID);
@@ -232,7 +232,7 @@ describe("iCalendar feed", () => {
       c("pub", { status: "published" }), c("trash", { deletedAt: 1 }), c("oldbrand", { brandId: "bx" }),
       c("past", { scheduleDate: "2026-06-01" }), c("bad", { scheduleDate: "besok" }),
     ];
-    const ics = buildCalendar({ items, brandsById, now: TUE_0700_WIB, appUrl: "https://planner.wepeka.com" });
+    const ics = buildCalendar({ items, brandsById, now: TUE_0700_WIB, appUrl: "https://brandlab.wepeka.com" });
     assert.ok(ics.endsWith("\r\n"));
     assert.ok(!/[^\r]\n/.test(ics), "every line ends in CRLF");
     const unfolded = ics.replace(/\r\n /g, "");
@@ -240,9 +240,9 @@ describe("iCalendar feed", () => {
     assert.match(unfolded, /\r\nDTSTART;VALUE=DATE:20261031\r\n/);
     assert.match(unfolded, /\r\nDTEND;VALUE=DATE:20261101\r\n/);
     assert.match(unfolded, /\r\nSUMMARY:Upload: Promo\\, diskon\\; 50% · Kopi Senja\r\n/);
-    assert.match(unfolded, /\r\nURL:https:\/\/planner\.wepeka\.com\/#\/brand\/b1\/content\/creator\/a\r\n/);
-    assert.match(unfolded, /\r\nDESCRIPTION:Instagram · Reels\\nBuka di Brandlab: https:\/\/planner/);
-    assert.match(unfolded, /\r\nUID:content-a@planner\.wepeka\.com\r\n/);
+    assert.match(unfolded, /\r\nURL:https:\/\/brandlab\.wepeka\.com\/#\/brand\/b1\/content\/creator\/a\r\n/);
+    assert.match(unfolded, /\r\nDESCRIPTION:Instagram · Reels\\nBuka di Brandlab: https:\/\/brandlab/);
+    assert.match(unfolded, /\r\nUID:content-a@brandlab\.wepeka\.com\r\n/);
     assert.match(unfolded, /\r\nLAST-MODIFIED:20261001T030405Z\r\n/);
     assert.match(unfolded, /BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:[^\r]+\r\nTRIGGER:PT8H\r\nEND:VALARM/);
     assert.match(unfolded, /^BEGIN:VCALENDAR\r\nVERSION:2\.0\r\n/);

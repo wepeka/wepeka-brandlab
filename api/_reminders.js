@@ -23,7 +23,7 @@
 // in Vercel's VAPID_PRIVATE_KEY.
 export const VAPID_PUBLIC_KEY = "BBjaFC6ToYYCBjtjQ6STH9VyUmqMGR1BRR8A1QaLWtZWzZiY_nuKfgarsHaJYTfd6uLPh1QE_GcetWUjfcs0AZI";
 export const DEFAULT_VAPID_SUBJECT = "mailto:wepekapparel@gmail.com";
-export const APP_URL = String(process.env.APP_URL || "https://planner.wepeka.com").replace(/\/+$/, "");
+export const APP_URL = String(process.env.APP_URL || "https://brandlab.wepeka.com").replace(/\/+$/, "");
 export const MAX_PUSH_DEVICES = 5;
 // 32+ url-safe chars (js/reminders.js makes 43 from 32 random bytes) — a
 // shorter or odd-looking token is refused before any database read.
@@ -459,7 +459,7 @@ const icsStamp = (ms) => new Date(ms).toISOString().replace(/[-:]/g, "").replace
 // feeds and uses that calendar's own notification setting instead.
 export function buildCalendar({ items, brandsById, now = Date.now(), appUrl = APP_URL, lang = "id" }) {
   const from = addDays(wibToday(now), -CALENDAR_PAST_DAYS);
-  const host = (() => { try { return new URL(appUrl).hostname; } catch { return "planner.wepeka.com"; } })();
+  const host = (() => { try { return new URL(appUrl).hostname; } catch { return "brandlab.wepeka.com"; } })();
   const stamp = icsStamp(now);
   const events = items
     .filter((c) => isPendingUpload(c, brandsById) && c.scheduleDate >= from)
