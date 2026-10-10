@@ -1006,6 +1006,13 @@ const AUTO_STARTERS = [
   { key: "chat.starter.today", engine: "companion" },
 ];
 
+// The same, for a conversation about one goal.
+const GOAL_STARTERS = [
+  { key: "chat.starter.goalIdeas", engine: "brainstorm" },
+  { key: "chat.starter.goalWeek", engine: "consultant" },
+  { key: "chat.starter.goalStuck", engine: "consultant" },
+];
+
 function emptyStateHTML(brandId, info, full) {
   const mode = modeOf(brandId);
   const name = esc(getBrand(brandId)?.name || t("cons.thisBrand"));
@@ -1014,6 +1021,15 @@ function emptyStateHTML(brandId, info, full) {
       <div class="consultant-starters">${SCRIPT_CHIPS.map((k) => starterChip(t(`cr.disc.chip.${k}`), "brainstorm")).join("")}</div>`;
   }
   if (mode === "auto") {
+    // A conversation opened about one goal (its page's Brainstorm button)
+    // says so and starts from that goal — it used to greet with the general
+    // "tanya apa saja" and "Gimana performa brandku?", as if the owner had
+    // arrived from nowhere.
+    const goalName = info?.campaign ? campaignDisplayName(info.campaign.name) : "";
+    if (goalName) {
+      return `<div class="consultant-msg consultant-msg-assistant">${t("chat.greeting.autoGoal", { goal: esc(goalName) })}</div>
+        <div class="consultant-starters">${GOAL_STARTERS.map((s) => starterChip(t(s.key), s.engine)).join("")}</div>`;
+    }
     return `<div class="consultant-msg consultant-msg-assistant">${t("chat.greeting.auto", { brand: name })}</div>
       <div class="consultant-starters">${AUTO_STARTERS.map((s) => starterChip(t(s.key), s.engine)).join("")}</div>`;
   }
@@ -3028,7 +3044,7 @@ export function openWeekPlanMenu(anchorEl, brandId) {
   if (!menu) return;
   menu.innerHTML = `
     <button type="button" data-week-menu="">${icon("bulb", { size: 15 })}${t("chat.week.menuGeneral")}</button>
-    ${campaigns.map((c) => `<button type="button" data-week-menu="${esc(c.id)}">${icon("target", { size: 15 })}${esc(c.name)}</button>`).join("")}
+    ${campaigns.map((c) => `<button type="button" data-week-menu="${esc(c.id)}">${icon("target", { size: 15 })}${esc(campaignDisplayName(c.name))}</button>`).join("")}
   `;
   menu.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-week-menu]");
@@ -3066,7 +3082,7 @@ export function mountChatPage(el, { brandId, threadId = null, ctx = null }) {
   }
   expanding = false;
   renderPanel(brandId, { focus: !isTouch() ? true : false });
-  if (page?.autoPlot) { const text = page.autoPlot; page.autoPlot = null; sendMessage(brandId, text, { engine: "brainstorm", bsMode: "plot" }); }
+  sendArrivalSeed(brandId);
 
   // Keep the list, the ideas, the threads and brand memory in step with the
   // store (another tab or device, a Firestore sync that lands late).
@@ -3120,13 +3136,24 @@ export function applyChatContext(brandId, ctx, { render = true, threadId = null 
   }
   if (ctx.intent === "plot" && ctx.seed) {
     if (page) page.autoPlot = ctx.seed;
+  } else if (ctx.intent === "ideas" && ctx.seed) {
+    // A button that asked for ideas (Beranda's "Brainstorm konten untuk
+    // tujuan ini"): the request goes out on arrival, like "Isi jadwal minggu
+    // ini" — not an empty chat the owner has to work out how to start.
+    if (page) page.autoIdeas = ctx.seed;
   } else if (ctx.seed) {
     carryDraft = ctx.seed;
   }
   if (render && page?.brandId === brandId) {
     renderPanel(brandId, { focus: true });
-    if (page.autoPlot) { const text = page.autoPlot; page.autoPlot = null; sendMessage(brandId, text, { engine: "brainstorm", bsMode: "plot" }); }
+    sendArrivalSeed(brandId);
   }
+}
+
+// Sends what a context asked to be sent the moment the page is up.
+function sendArrivalSeed(brandId) {
+  if (page?.autoPlot) { const text = page.autoPlot; page.autoPlot = null; sendMessage(brandId, text, { engine: "brainstorm", bsMode: "plot" }); }
+  if (page?.autoIdeas) { const text = page.autoIdeas; page.autoIdeas = null; sendMessage(brandId, text, { engine: "brainstorm", bsMode: "ideas" }); }
 }
 
 // ---- Mount / unmount (small panel) --------------------------------------------

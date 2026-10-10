@@ -18,7 +18,7 @@ import { ensurePdfLibs } from "../pdf-libs.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml as esc, avatarHTML } from "../dom.js";
-import { t, getLang } from "../i18n.js";
+import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
 
 const DAY = 86400000;
@@ -338,7 +338,7 @@ function reportBlocks(brand, start, end) {
         ${secHead(++n, t("rep.sec.campaigns"))}
         <div class="rp2-camps">${d.campaignRows.map((c) => `
           <div class="rp2-camp">
-            <div class="rp2-camp-head"><b>${esc(c.name)}</b><span>${c.total ? `${c.met}/${c.total}` : ""}</span></div>
+            <div class="rp2-camp-head"><b>${esc(campaignDisplayName(c.name))}</b><span>${c.total ? `${c.met}/${c.total}` : ""}</span></div>
             <div class="rp2-camp-stage">${t("rep.camp.stage")}: ${esc(c.stage)}</div>
             ${c.total ? bar(c.met, c.total, accent) : ""}
             ${c.head ? `<div class="rp2-camp-head-num">${esc(c.head)}</div>` : ""}

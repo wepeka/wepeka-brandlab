@@ -4,7 +4,7 @@ import { openDrawer, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, escapeHtml, qs, qsa, formatNumber, loadingHTML } from "../dom.js";
 import { contentSalesStats } from "../sales-tracker.js";
 import { classifyFunnel, suggestCampaignFit, hasAiKey } from "../ai.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { funnelFieldHTML, wireFunnelField, setFunnelFieldValue, statusLabel } from "../funnel-field.js";
 
@@ -136,8 +136,8 @@ function bodyTemplate(draft, settings, campaigns, series = []) {
           <button type="button" class="chip-icon-btn" id="ai-suggest-campaign" aria-label="${t("contentEditor.campaign.aiSuggest")}" title="${campaigns.length ? t("contentEditor.campaign.aiSuggest") : t("contentEditor.campaign.aiSuggestDisabled")}" ${campaigns.length ? "" : "disabled"}>${icon("bot", { size: 14 })}</button>
         </div>
         <select class="select" id="f-campaign">
-          <option value="">${t("contentEditor.campaign.none")}</option>
-          ${campaigns.map((c) => `<option value="${c.id}" ${draft.campaignId === c.id ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
+          <option value="">${getMode() === "guided" ? t("cr.campaign.noneGuided") : t("contentEditor.campaign.none")}</option>
+          ${campaigns.map((c) => `<option value="${c.id}" ${draft.campaignId === c.id ? "selected" : ""}>${escapeHtml(campaignDisplayName(c.name))}</option>`).join("")}
         </select>
         <div id="phase-select-wrap">${phaseSelectHTML(campaigns, draft)}</div>
         ${!campaigns.length ? `<div class="text-faint" style="font-size:11px;margin-top:6px;">${t("contentEditor.campaign.noneYet")}</div>` : ""}

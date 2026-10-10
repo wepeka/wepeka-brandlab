@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
-import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles } from "../store.js";
-import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML } from "../dom.js";
+import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles, onChange } from "../store.js";
+import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML, revealStepTop } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
 import {
@@ -18,8 +18,8 @@ import { t } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
-import { runSpotlightTour } from "../tour.js";
-import { VALUE_PROP_DNA_FIELDS, guidelineSectionDone, BOOK_PROGRESS_SECTIONS, brandBookProgress, visualBasicsDone } from "../brand-progress.js";
+import { runSpotlightTour, isTourActive } from "../tour.js";
+import { VALUE_PROP_DNA_FIELDS, guidelineSectionDone, BOOK_PROGRESS_SECTIONS, brandBookProgress, visualBasicsDone, identityDone } from "../brand-progress.js";
 import { getMode } from "../mode.js";
 import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
@@ -213,6 +213,8 @@ export function render(root, { brandId, section }) {
       return { formal: tv.formal ?? 50, language: tv.language ?? 50, character: tv.character ?? 50, emotion: tv.emotion ?? 50, avoidWords: [...(tv.avoidWords || [])], source: tv.source || "" };
     })(),
     toneSample: "",
+    // Was Tujuan already open when this visit began? (announceTujuanOpen)
+    identityAtOpen: identityDone(brand),
   };
   // Re-read the brand on every repaint: sections saved on this page (tone,
   // logo, copy…) land in the store, and a snapshot taken at open made the
@@ -222,6 +224,9 @@ export function render(root, { brandId, section }) {
     paint(root, brandId, state.brand, state, refresh);
   };
   refresh();
+  // Every save on this page lands in the store first; the moment one of
+  // them completes the identity, say so (Pemula's Tujuan just opened).
+  const offGate = onChange(() => { if (root.isConnected) announceTujuanOpen(brandId, state); });
   // Uploaded files load without blocking the page (js/store.js
   // loadBrandAssets): once they're in, fill them into this page's own
   // answers IN PLACE — the step handlers hold that object, so a photo or
@@ -231,7 +236,29 @@ export function render(root, { brandId, section }) {
     if (root.isConnected && fillGuidelinesFiles(brandId, state.answers)) refresh();
   });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
-  return () => {};
+  return () => offGate();
+}
+
+// The moment colours + fonts complete the identity (Brand DNA already
+// saved), Pemula's Tujuan tab opens. This page used to say nothing: the bar
+// moved to "2/6", the main button stayed "Lanjut" into four more sections,
+// and "2/6" read as "all six first". One dialog, once per visit, with the
+// next step as its main button; the rest of the book stays one tap away.
+// Pro never had the lock, so there is nothing to announce there. Held back
+// while a guide tour is on screen (it would cover the tour's own tooltip).
+function announceTujuanOpen(brandId, state) {
+  if (state.identityAtOpen || getMode() !== "guided") return;
+  const brand = getBrand(brandId);
+  if (!brand || !identityDone(brand) || isTourActive()) return;
+  state.identityAtOpen = true;
+  confirmDialog({
+    title: t("guidelines.unlock.title"),
+    message: t("guidelines.unlock.body"),
+    confirmLabel: `${t("guidelines.unlock.go")}${icon("arrowRight", { size: 14 })}`,
+    cancelLabel: t("guidelines.unlock.stay"),
+  }).then((go) => {
+    if (go) location.hash = `#/brand/${brandId}/campaigns`;
+  });
 }
 
 // Every section is independently reachable now (no lock, matching the
@@ -302,10 +329,16 @@ function guidelinesProgressHTML(state) {
   const basics = getMode() === "guided" && basicsDone && missing.length
     ? `<span class="bb-progress-basics">${icon("check", { size: 11 })}${t("guidelines.progressBasics")}</span> · `
     : "";
+  // Pemula, colours or fonts still open: which two of the eight tabs the
+  // Tujuan lock actually waits for. "0/6" on its own read as "all six".
+  const need = getMode() === "guided" && !basicsDone
+    ? `<span class="bb-progress-need">${t("guidelines.progressNeed", { color: escapeHtml(progressSectionLabel("color")), type: escapeHtml(progressSectionLabel("typography")) })}</span>`
+    : "";
   return `
     <div class="bb-progress" title="${escapeHtml(title)}">
       <div class="bb-progress-bar"><span style="width:${pct}%;"></span></div>
       <span class="bb-progress-label">${basics}${t("guidelines.progress", { done, total: keys.length })}</span>
+      ${need}
     </div>
   `;
 }
@@ -349,6 +382,11 @@ function paint(root, brandId, brand, state, refresh) {
   wireTabs(root, state, refresh);
   if (!isReview) wireStep(root, brandId, brand, state, refresh);
   else wireReview(root, brandId, brand, state, refresh);
+
+  // Another section (Lanjut, Kembali, a tab) starts at its top, with the
+  // tab row in sight — same reason as Brand DNA's steps (js/dom.js).
+  if (state.paintedStep !== undefined && state.paintedStep !== state.stepIndex) revealStepTop(qs(".bb-tab-row", root));
+  state.paintedStep = state.stepIndex;
 }
 
 function wireTabs(root, state, refresh) {

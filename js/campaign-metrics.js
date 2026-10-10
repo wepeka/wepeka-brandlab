@@ -88,6 +88,15 @@ function unconfirmedPublished(pool) {
   return pool.filter((c) => performanceCheckDue(c, now));
 }
 
+// What "automatic" means for a row that reads itself. It used to say just
+// "otomatis" — true for the app, but an owner reads it as "nothing to do",
+// then posts on Instagram and wonders why the bar never moves: content only
+// counts once it is marked Terbit here, and shares/saves/comments come from
+// the numbers typed on each piece. Other homes keep the short word.
+export function autoSourceNote(home) {
+  return home === "content" || home === "calendar" ? t("camp.m.autoContent") : home === "performance" ? t("camp.m.autoPerformance") : t("camp.m.auto");
+}
+
 const HOME_LABEL = Object.fromEntries(
   ["insights", "content", "performance", "calendar", "manual", "sales", "guidelines", "salesSum"].map((k) => [k, t(`camp.m.home.${k}`)])
 );
@@ -595,7 +604,7 @@ export function readMilestone(ms, ctx, stage = null) {
     isCheck,
     sourceLabel: HOME_LABEL[r.home] || r.home || "",
     action,
-    ageLabel: r.updatedAt ? ageLabel(r.updatedAt) : r.auto ? t("camp.m.auto") : t("camp.m.notLogged"),
+    ageLabel: r.updatedAt ? ageLabel(r.updatedAt) : r.auto ? autoSourceNote(r.home) : t("camp.m.notLogged"),
   };
 }
 function emptyReading(ms) {

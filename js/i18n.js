@@ -433,7 +433,7 @@ const CORE = {
   "contentEditor.created": { en: "Content created", id: "Konten dibuat" },
 
   // Creator — guided-mode funnel picker (js/views/creator.js)
-  "creator.funnel.guidedLabel": { en: "What's this content for?", id: "Tujuan konten ini apa?" },
+  "creator.funnel.guidedLabel": { en: "What's this content for?", id: "Konten ini buat apa?" },
   "funnel.short.TOFU": { en: "Get known", id: "Kenalan" },
   "funnel.short.MOFU": { en: "Build trust", id: "Yakinkan" },
   "funnel.short.BOFU": { en: "Sell", id: "Jualan" },

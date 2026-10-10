@@ -37,6 +37,7 @@ import { openModal, closeOverlay } from "../modals.js";
 import { toast, formatNumber, qs, qsa, escapeHtml as esc } from "../dom.js";
 import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
+import { canUseInstagramApi } from "../account.js";
 import { openWeekPlan } from "../consultant-panel.js";
 
 const SOCIAL_PLATFORMS = ["instagram", "tiktok", "facebook", "other"];
@@ -199,7 +200,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
       <div class="field">
         <label id="goal-platform-label">${t("goal.launch.platformQ")}</label>
         <div class="chip-select" id="goal-platform" role="group" aria-labelledby="goal-platform-label">${SOCIAL_PLATFORMS.map((p) => `<button type="button" data-val="${p}" class="${state.platform === p ? "active" : ""} ${socialTaken.has(p) ? "is-taken" : ""}" aria-pressed="${state.platform === p}" ${socialTaken.has(p) ? "disabled" : ""}>${esc(t(`goal.launch.platform.${p}`))}${socialTaken.has(p) ? ` <small>${t("goal.launch.platformTaken")}</small>` : ""}</button>`).join("")}</div>
-        <p class="ev-field-hint">${t("goal.launch.platformHint")}</p>
+        <p class="ev-field-hint">${t(canUseInstagramApi() ? "goal.launch.platformHintSync" : "goal.launch.platformHint")}</p>
       </div>
       ${numberField("goal-followers", t("goal.launch.followersQ"), state.followers, { hint: insightsFollowersFor(state.platform) !== null && state.followers === insightsFollowersFor(state.platform) ? t("goal.wizard.fromInsights") : t("goal.launch.followersHint") })}
       ${numberField("goal-followers-target", t("goal.launch.followersTargetQ"), state.followersTarget, { hint: t("goal.launch.checkpointHint") })}

@@ -186,6 +186,24 @@ export function emptyInlineHTML(text, { ctaLabel = "", ctaHref = "", ctaAttrs = 
   return `<div class="empty-inline${compact ? " is-compact" : ""}"><p>${text}</p>${cta}</div>`;
 }
 
+// A wizard's next step is painted where the previous one was left — down at
+// its "Lanjut" button. On a phone that meant the new step opened on a
+// disabled button and "Isi dulu jawabannya", with the question itself off
+// screen above. Brings `el` (the step's own heading row) to just under the
+// sticky topbar, only when it isn't already comfortably in view; no
+// animation, so it reads as "the next page", not as the page sliding.
+export function revealStepTop(el, margin = 12) {
+  if (!el) return;
+  const bar = document.querySelector(".topbar");
+  const barRect = bar?.getBoundingClientRect();
+  // The topbar only covers the page while it is stuck to the top (on phones
+  // it sits in the normal flow at the very top of the document too).
+  const offset = (barRect && barRect.top <= 0 && barRect.bottom > 0 ? barRect.bottom : 0) + margin;
+  const top = el.getBoundingClientRect().top;
+  if (top >= offset && top <= window.innerHeight * 0.5) return;
+  window.scrollTo(0, Math.max(0, window.scrollY + top - offset));
+}
+
 export function toast(message, type = "success") {
   const root = document.getElementById("toast-root");
   const el = document.createElement("div");

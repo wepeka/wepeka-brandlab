@@ -23,7 +23,7 @@ import { mountAiFeedback } from "../ai-feedback.js";
 import { wireMic } from "../voice-input.js";
 import { isTourDemo, demoGenerateCopy, demoRewriteCopy, DEMO_TOAST } from "../tour-demo.js";
 import { COPY_FORMATS, COPY_GOALS, COPY_LENGTHS, COPY_REWRITES, goalByKey, missingRequired, formatLimit, formatByKey, knownCustomFormat } from "../knowledge/copy-formats.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 
 const THREADS_LIMIT = formatByKey("threads").limit;
 const FEED_PREVIEW_CHARS = formatByKey("feed").previewChars; // Instagram's "… lainnya" fold
@@ -409,7 +409,7 @@ function optionsHTML(state, campaigns) {
              <label for="copy-campaign">${t("copy.campaignLabel")} <span class="copy-optional">${t("copy.optional")}</span></label>
              <select class="select" id="copy-campaign">
                <option value="">${t("copy.campaignNone")}</option>
-               ${campaigns.map((c) => `<option value="${escapeHtml(c.id)}" ${state.campaignId === c.id ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
+               ${campaigns.map((c) => `<option value="${escapeHtml(c.id)}" ${state.campaignId === c.id ? "selected" : ""}>${escapeHtml(campaignDisplayName(c.name))}</option>`).join("")}
              </select>
            </div>`
         : ""

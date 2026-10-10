@@ -44,6 +44,9 @@ export default {
   "dna.done.title": { en: "Your Brand DNA is ready 🎉", id: "Brand DNA kamu jadi 🎉" },
   "dna.done.sub": { en: "Every AI feature in Brandlab now writes from this. Next, give it colors and fonts — about 5 minutes.", id: "Semua fitur AI di Brandlab sekarang menulis berdasarkan ini. Berikutnya, kasih warna & font — sekitar 5 menit." },
   "dna.done.next": { en: "Set colors & fonts", id: "Lanjut warna & font" },
+  // Colours + fonts were already done: the identity is complete with this save.
+  "dna.done.subReady": { en: "Every AI feature in Brandlab now writes from this. Your colors and fonts are already in, so Goals is open now.", id: "Semua fitur AI di Brandlab sekarang menulis berdasarkan ini. Warna & font kamu juga sudah ada, jadi Tujuan sekarang kebuka." },
+  "dna.done.nextGoal": { en: "Set a goal", id: "Pasang tujuan" },
   "dna.done.later": { en: "Later", id: "Nanti dulu" },
   // Pemula, Tujuan still locked: what "Nanti dulu" leaves open.
   "dna.done.laterToast": { en: "Okay! Goals opens once colors & fonts are done — pick it up anytime from Home.", id: "Oke! Tujuan kebuka setelah Warna & Font selesai — lanjut kapan aja dari Beranda." },
@@ -163,6 +166,8 @@ export default {
   "next.brainstorm.labelFirstGuided": { en: "Make the first content for this campaign", id: "Bikin konten pertama untuk campaign ini" },
   "next.brainstorm.whyEmpty": { en: "No content has been planned for this campaign yet.", id: "Belum ada konten yang direncanakan untuk campaign ini." },
   "next.brainstorm.cta": { en: "Brainstorm content for this campaign", id: "Brainstorm konten untuk campaign ini" },
+  // What that button sends to the chat on arrival (the owner sees it as their own message).
+  "next.brainstorm.seed": { en: "Give me content ideas for this goal: {name}", id: "Kasih ide konten buat tujuan ini: {name}" },
   "next.performance.labelMany": { en: "Enter performance for {count} pieces of content", id: "Isi performa {count} konten" },
   "next.performance.labelOne": { en: "Enter performance for your published content", id: "Isi performa konten yang sudah terbit" },
   "next.performance.why": { en: "{milestone} is calculated from each piece of content's performance numbers.", id: "{milestone} dihitung dari angka performa tiap konten." },

@@ -897,7 +897,14 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
   wireClickableCards(body, ".agenda-row[data-id]");
   wireSeriesGhosts(body);
   qs("#agenda-empty-new", body)?.addEventListener("click", () => {
-    openContentEditor({ brandId, stay: true, defaults: { scheduleDate: iso(rangeStart), status: "idea" }, onSaved: refresh });
+    // The first day of this range that isn't over yet — the range's own
+    // first day is usually already past (a week starts on Sunday), and a
+    // piece born with a past date never shows in this list: it went straight
+    // to "Lewat jadwal" in the Bank while this empty state stayed put. A
+    // range that is wholly in the past presets no date at all.
+    const today = localISODate();
+    const first = iso(rangeStart) >= today ? iso(rangeStart) : today <= iso(rangeEnd) ? today : "";
+    openContentEditor({ brandId, stay: true, defaults: { scheduleDate: first, status: "idea" }, onSaved: refresh });
   });
 }
 

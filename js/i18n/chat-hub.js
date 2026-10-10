@@ -45,6 +45,14 @@ export default {
     en: "Hi! Ask me anything about {brand}: how it's doing, what to post next, or just tell me what happened today. I'll work out what you need.",
     id: "Hai! Tanya apa saja soal {brand}: performanya, mau posting apa, atau sekadar cerita kejadian hari ini. Aku yang nentuin kamu butuh apa.",
   },
+  // A conversation opened about one goal (Otomatis).
+  "chat.greeting.autoGoal": {
+    en: "We're talking about your goal <b>{goal}</b>. Want content ideas for it, or to work out what to do first?",
+    id: "Kita lagi ngobrolin tujuan <b>{goal}</b>. Mau ide konten buat tujuan ini, atau bingung mulai dari mana?",
+  },
+  "chat.starter.goalIdeas": { en: "Give me 3 content ideas for this goal", id: "Kasih 3 ide konten buat tujuan ini" },
+  "chat.starter.goalWeek": { en: "What should I do this week for this goal?", id: "Minggu ini aku sebaiknya ngapain buat tujuan ini?" },
+  "chat.starter.goalStuck": { en: "My numbers aren't moving — what should I change?", id: "Angkaku nggak naik-naik, apa yang perlu diubah?" },
   "chat.mode.back": { en: "Ask anything", id: "Tanya apa saja" },
   "chat.retry.label": { en: "Not what you meant?", id: "Bukan ini maksudmu?" },
   "chat.retry.toggle": { en: "Not what I meant", id: "Bukan ini maksudku" },

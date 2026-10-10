@@ -12,7 +12,7 @@ import {
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote, TRASH_DAYS,
   listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea, campaignContentPlatform,
 } from "../store.js";
-import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform } from "../campaign-metrics.js";
+import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform, autoSourceNote } from "../campaign-metrics.js";
 import { getTracker, productStats, trackerTotals, eventSalesStats, campaignSalesStats, contentSalesStats } from "../sales-tracker.js";
 import { computeContentMetrics } from "../formulas.js";
 import { openCampaignReport } from "./campaign-share.js";
@@ -340,7 +340,7 @@ function headlineHTML({ milestone, reading }, stageRead, stage) {
   const barPct = hasTarget ? pct : stageRead.total ? Math.round((stageRead.met / stageRead.total) * 100) : 0;
   const footPct = hasTarget ? `${barPct}% · ` : "";
   const source = reading.auto
-    ? `${esc(reading.sourceLabel)}${reading.updatedAt ? ` · <span class="${reading.stale ? "cd-stale" : ""}">${esc(t("camp.detail.updatedAgo", { age: ageLabel(reading.updatedAt) }))}</span>` : reading.home === "insights" ? ` · <span class="cd-stale">${t("camp.detail.neverLogged")}</span>` : ` · ${t("camp.m.auto")}`}`
+    ? `${esc(reading.sourceLabel)}${reading.updatedAt ? ` · <span class="${reading.stale ? "cd-stale" : ""}">${esc(t("camp.detail.updatedAgo", { age: ageLabel(reading.updatedAt) }))}</span>` : reading.home === "insights" ? ` · <span class="cd-stale">${t("camp.detail.neverLogged")}</span>` : ` · ${autoSourceNote(reading.home)}`}`
     : `${t("camp.m.home.manual")}${reading.updatedAt ? ` · ${esc(ageLabel(reading.updatedAt))}` : ""}`;
   const remaining = hasTarget && reading.current < reading.target ? esc(t("camp.detail.remaining", { count: formatNumber(reading.target - reading.current), unit: reading.unit })) : hasTarget ? t("camp.detail.targetReached") : "";
   return `
@@ -1014,7 +1014,7 @@ function milestoneRowHTML(r, i, stage, guided) {
   const locked = stage.kind === "level" && stage.state === "locked";
   const value = r.isCheck ? (r.met ? t("camp.detail.done") : t("camp.detail.notYet")) : `${formatNumber(r.current)}${r.target ? ` / ${formatNumber(r.target)}` : ""}${r.unit && r.unit !== "Rp" ? ` ${esc(r.unit)}` : ""}`;
   const source = r.auto
-    ? `${esc(r.sourceLabel)} · ${r.updatedAt ? `<span class="${r.stale ? "cd-stale" : ""}">${esc(ageLabel(r.updatedAt))}</span>` : r.home === "insights" ? `<span class="cd-stale">${t("camp.m.notLogged")}</span>` : r.staleCount ? `<span class="cd-stale">${t("camp.detail.missingData", { count: r.staleCount })}</span>` : t("camp.m.auto")}`
+    ? `${esc(r.sourceLabel)} · ${r.updatedAt ? `<span class="${r.stale ? "cd-stale" : ""}">${esc(ageLabel(r.updatedAt))}</span>` : r.home === "insights" ? `<span class="cd-stale">${t("camp.m.notLogged")}</span>` : r.staleCount ? `<span class="cd-stale">${t("camp.detail.missingData", { count: r.staleCount })}</span>` : autoSourceNote(r.home)}`
     : `${t("camp.m.home.manual")}${r.updatedAt ? ` · ${esc(ageLabel(r.updatedAt))}` : ""}`;
   const posts = !locked && PER_POST_METRICS.includes(m.metric) ? `<button type="button" class="btn btn-ghost btn-sm cd-ms-btn" data-cd-ms-posts="${i}">${t("camp.posts.button")}</button>` : "";
   // The community's identity (name + member nickname) is real text, not a

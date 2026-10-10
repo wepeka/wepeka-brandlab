@@ -511,6 +511,9 @@ export default {
   "camp.m.change": { en: "Change", id: "Ubah" },
   "camp.m.markDone": { en: "Mark as done", id: "Tandai selesai" },
   "camp.m.auto": { en: "automatic", id: "otomatis" },
+  // How a self-reading row actually gets its number (js/campaign-metrics.js autoSourceNote).
+  "camp.m.autoContent": { en: "counted once you mark it Published", id: "terhitung saat kamu tandai Terbit" },
+  "camp.m.autoPerformance": { en: "from the numbers you fill in on each post", id: "dari angka yang kamu isi di tiap konten" },
   "camp.m.notLogged": { en: "not logged yet", id: "belum dicatat" },
   "camp.m.today": { en: "today", id: "hari ini" },
   "camp.m.yesterday": { en: "yesterday", id: "kemarin" },
@@ -660,7 +663,7 @@ export default {
   "camp.tabs.plan": { en: "Plan", id: "Rencana" },
   "camp.tabs.activity": { en: "Activity", id: "Aktivitas" },
   "camp.guided.intro1Title": { en: "Follow the targets one by one", id: "Ikuti target satu per satu" },
-  "camp.guided.intro1Body": { en: "Work through the targets below one by one. The numbers fill in by themselves from your content and Insights.", id: "Kerjakan target di bawah satu per satu. Angkanya terisi sendiri dari konten dan Insights kamu." },
+  "camp.guided.intro1Body": { en: "Work through the targets below one by one. Content counts by itself once you mark it Published here; followers and each post's numbers (likes, shares) are yours to fill in — the button is on each row.", id: "Kerjakan target di bawah satu per satu. Konten terhitung sendiri begitu kamu tandai Terbit di sini; followers dan angka tiap konten (like, share) kamu yang isi — tombolnya ada di tiap baris." },
   "camp.guided.intro2Title": { en: "Brainstorm ideas", id: "Brainstorm ide" },
   "camp.guided.intro2Body": { en: "Stuck? Chat with AI about this campaign. Every idea you save shows up in the list at the bottom of this page.", id: "Bingung? Ngobrol sama AI soal campaign ini. Setiap ide yang kamu simpan muncul di daftar paling bawah halaman ini." },
   "camp.guided.msTitle": { en: "This campaign's targets", id: "Target campaign ini" },
@@ -1009,7 +1012,9 @@ export default {
   "goal.launch.platform.tiktok": { en: "TikTok", id: "TikTok" },
   "goal.launch.platform.facebook": { en: "Facebook", id: "Facebook" },
   "goal.launch.platform.other": { en: "Other", id: "Lainnya" },
-  "goal.launch.platformHint": { en: "Only Instagram syncs numbers automatically right now — other platforms just label the plan; you'll enter their numbers by hand.", id: "Sementara ini cuma Instagram yang sinkron angka otomatis — platform lain cuma buat label rencana; angkanya kamu isi sendiri." },
+  "goal.launch.platformHint": { en: "Brandlab doesn't read your account by itself yet: you update the follower count yourself (a tap on \"Update Insights\"), on any platform.", id: "Brandlab belum membaca akunmu sendiri: jumlah followers kamu yang perbarui (lewat tombol \"Perbarui Insights\"), di platform mana pun." },
+  // Wepeka's own account, where the Instagram connection is on (js/account.js canUseInstagramApi).
+  "goal.launch.platformHintSync": { en: "Only Instagram syncs numbers automatically right now — other platforms just label the plan; you'll enter their numbers by hand.", id: "Sementara ini cuma Instagram yang sinkron angka otomatis — platform lain cuma buat label rencana; angkanya kamu isi sendiri." },
   // #1: Social Media Growth can now run once per platform at the same time
   // (Instagram + TikTok side by side) instead of only one social campaign total.
   "goal.launch.platformTaken": { en: "already running", id: "sudah jalan" },

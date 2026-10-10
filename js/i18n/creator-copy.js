@@ -140,7 +140,7 @@ export default {
   "cr.series.label": { en: "Content Series (optional)", id: "Seri Konten (opsional)" },
   "cr.series.none": { en: "Not part of a series", id: "Bukan bagian dari seri" },
   "cr.delete.title": { en: "Delete \"{title}\"?", id: "Hapus \"{title}\"?" },
-  "cr.funnel.goalSummary": { en: "Goal: {label}", id: "Tujuan: {label}" },
+  "cr.funnel.goalSummary": { en: "For: {label}", id: "Buat: {label}" },
   "cr.funnel.change": { en: "change", id: "ubah" },
 
   "cr.noScript": { en: "No script yet — go back a stage to write one first.", id: "Belum ada naskah — balik ke tahap sebelumnya buat nulis dulu." },

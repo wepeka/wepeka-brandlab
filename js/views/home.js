@@ -987,8 +987,11 @@ async function runTodayAction(top, { brandId, brand, content, refresh }) {
   } else if (cta.type === "brainstorm" && campaign) {
     // The same chat the campaign page's Brainstorm opens, on this campaign
     // and stage — ideas come back as cards the owner picks, nothing is made.
+    // The button asks for ideas, so the request is sent on arrival (intent
+    // "ideas", js/consultant-panel.js applyChatContext) — it used to open an
+    // empty chat with the general starters and leave the owner to guess.
     const stage = campaignStages(campaign)[cta.stageIndex ?? 0] || null;
-    go(`#/brand/${brandId}/chat`, { fromLabel: t("nav.home"), campaignId: campaign.id, stageId: stage?.id || null, mode: "chat" });
+    go(`#/brand/${brandId}/chat`, { fromLabel: t("nav.home"), campaignId: campaign.id, stageId: stage?.id || null, mode: "chat", intent: "ideas", seed: t("next.brainstorm.seed", { name: campaignDisplayName(campaign.name) || "" }).trim() });
   }
 }
 

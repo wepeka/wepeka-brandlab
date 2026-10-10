@@ -1,6 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality } from "../store.js";
-import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu, loadingHTML } from "../dom.js";
+import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu, loadingHTML, revealStepTop } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { COLOR_FEELINGS, feelingLabel, personalityProfile } from "../brandbook-data.js";
@@ -352,6 +352,12 @@ function paint(root, brandId, brand, state, refresh) {
   wireFieldExtras(root);
   if (!isReview) wireStep(root, brandId, brand, state, refresh);
   else wireReview(root, brandId, brand, state, refresh);
+
+  // Moving to another step (Lanjut, Kembali, the AI draft landing on Review)
+  // starts it at its top. Not on the first paint — the route already opens
+  // at the top — and not on a repaint of the same step (typing, AI options).
+  if (state.paintedStep !== undefined && state.paintedStep !== state.stepIndex) revealStepTop(qs(".dna-progress-label", root));
+  state.paintedStep = state.stepIndex;
 }
 
 // ---------- "AI isi semua" ----------
@@ -644,10 +650,14 @@ function firstCompletion(brandId, state) {
 }
 
 function showDnaDoneModal(state, brand, next) {
+  // Colours + fonts already in (filled first, or an older brand): this save
+  // completes the identity, so the next step is a goal — not "kasih warna &
+  // font" for something that is already there.
+  const visualDone = visualBasicsDone(getBrand(brand.id) || brand);
   const overlay = openModal({
     title: t("dna.done.title"),
-    bodyHTML: `<p class="text-muted" style="margin:0 0 14px;font-size:14px;">${t("dna.done.sub")}</p><div class="dna-live-card dna-live-card-big">${liveCardInnerHTML(liveValues(null, state, brand), state, brand)}</div>`,
-    footHTML: `<button class="btn btn-secondary" data-later>${t("dna.done.later")}</button><button class="btn btn-primary" data-next>${t("dna.done.next")}${icon("arrowRight", { size: 14 })}</button>`,
+    bodyHTML: `<p class="text-muted" style="margin:0 0 14px;font-size:14px;">${t(visualDone ? "dna.done.subReady" : "dna.done.sub")}</p><div class="dna-live-card dna-live-card-big">${liveCardInnerHTML(liveValues(null, state, brand), state, brand)}</div>`,
+    footHTML: `<button class="btn btn-secondary" data-later>${t("dna.done.later")}</button><button class="btn btn-primary" data-next>${t(visualDone ? "dna.done.nextGoal" : "dna.done.next")}${icon("arrowRight", { size: 14 })}</button>`,
   });
   // Pemula: Tujuan is still locked until Warna & Font — say so on the way
   // out, so "Brand DNA jadi" isn't read as "everything's open now".
@@ -656,7 +666,7 @@ function showDnaDoneModal(state, brand, next) {
     next();
   };
   overlay.querySelector("[data-later]").addEventListener("click", () => { closeOverlay(overlay); later(); });
-  overlay.querySelector("[data-next]").addEventListener("click", () => { closeOverlay(overlay); location.hash = `#/brand/${brand.id}/guidelines/color`; });
+  overlay.querySelector("[data-next]").addEventListener("click", () => { closeOverlay(overlay); location.hash = visualDone ? `#/brand/${brand.id}/campaigns` : `#/brand/${brand.id}/guidelines/color`; });
   overlay.querySelector("[data-close]")?.addEventListener("click", () => later());
 }
 

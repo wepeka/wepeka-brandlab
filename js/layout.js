@@ -111,6 +111,39 @@ function watchBrandTint(brandId) {
   });
 }
 
+// Pemula's lock on Tujuan opens the moment the identity is done — not at the
+// next page change. The Brand Book moves between its sections without a
+// route change (replaceState), so the tab used to keep its padlock after
+// colours & fonts were saved, and a tap on it did nothing at all: the gate
+// had nothing left to explain. One subscription per session, like the tint
+// above; it follows whichever brand the shell was last wired for.
+let gateBrandId = null;
+let gateWatching = false;
+function unlockTabsIfDone(brandId) {
+  const locked = qsa("[data-locked-tab]");
+  if (!locked.length) return false;
+  const brand = brandId ? getBrand(brandId) : null;
+  if (!brand || !identityDone(brand)) return false;
+  locked.forEach((a) => {
+    const tab = TABS.find((x) => x.key === a.dataset.tabKey);
+    if (!tab) return;
+    const label = t(tab.labelKey);
+    a.classList.remove("is-locked");
+    a.classList.add("is-just-unlocked");
+    a.removeAttribute("data-locked-tab");
+    a.setAttribute("href", tab.path(brand.id));
+    a.setAttribute("title", label);
+    a.innerHTML = `${icon(tab.icon, { size: 16 })}${label}`;
+  });
+  return true;
+}
+function watchIdentityGate(brandId) {
+  gateBrandId = brandId || null;
+  if (gateWatching) return;
+  gateWatching = true;
+  onChange(() => unlockTabsIfDone(gateBrandId));
+}
+
 // The only place the shell reads the experience mode. Everything else in
 // this file is identical for Pemula and Pro.
 const MODE_CONFIG = {
@@ -449,9 +482,15 @@ export function wireShell({ brandId }) {
   applyBrandTint(brandId ? getBrand(brandId) : null);
   watchBrandTint(brandId);
 
+  watchIdentityGate(brandId);
   qsa("[data-locked-tab]").forEach((a) =>
     a.addEventListener("click", (e) => {
+      // Unlocked in place since this shell was built: an ordinary link now.
+      if (!a.hasAttribute("data-locked-tab")) return;
       e.preventDefault();
+      // Done, but no store change has reached the tab yet: open it rather
+      // than explain a gate that has nothing left on it.
+      if (unlockTabsIfDone(brandId)) { location.hash = a.getAttribute("href"); return; }
       explainIdentityGate(brandId);
     })
   );

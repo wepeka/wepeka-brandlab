@@ -22,7 +22,7 @@ import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { getMode } from "../mode.js";
-import { t } from "../i18n.js";
+import { t, campaignDisplayName } from "../i18n.js";
 import { funnelFieldHTML, wireFunnelField, statusLabel, funnelShort } from "../funnel-field.js";
 import { setPageGuide } from "../section-guide.js";
 import { openWeekPlanMenu, openScriptChat } from "../consultant-panel.js";
@@ -1628,7 +1628,7 @@ function campaignFieldHTML(c, campaigns) {
       <label for="f-campaign">${guided ? t("cr.campaign.guidedLabel") : t("cr.campaign.label")}</label>
       <select class="select" id="f-campaign">
         <option value="">${guided ? t("cr.campaign.noneGuided") : t("cr.campaign.none")}</option>
-        ${campaigns.map((camp) => `<option value="${camp.id}" ${c.campaignId === camp.id ? "selected" : ""}>${escapeHtml(camp.name)}</option>`).join("")}
+        ${campaigns.map((camp) => `<option value="${camp.id}" ${c.campaignId === camp.id ? "selected" : ""}>${escapeHtml(campaignDisplayName(camp.name))}</option>`).join("")}
       </select>
       ${
         showPhase

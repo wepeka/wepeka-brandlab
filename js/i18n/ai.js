@@ -41,6 +41,12 @@ export default {
   "ai.error.setup": { en: "The AI key isn't set on the server yet: add {key} in Vercel (project content-os → Settings → Environment Variables), then redeploy.", id: "Kunci AI belum dipasang di server: tambahkan {key} di Vercel (proyek content-os → Settings → Environment Variables), lalu redeploy." },
   "ai.error.noServer": { en: "AI doesn't run on this local server (it has no /api). Try it on brandlab.wepeka.com.", id: "AI nggak jalan di server lokal ini (tidak ada /api). Coba di brandlab.wepeka.com." },
   "ai.error.provider.user": { en: "The AI is having trouble right now. Try again in a moment.", id: "AI-nya lagi gangguan. Coba lagi sebentar ya." },
+  // What a customer reads for the other setup/provider failures (js/ai.js
+  // aiSetupError asks for `${key}.user`): no provider name, no Vercel talk.
+  "ai.error.network.user": { en: "Couldn't reach the AI. Check your internet connection and try again.", id: "Nggak bisa nyambung ke AI. Cek koneksi internet kamu, lalu coba lagi." },
+  "ai.error.badResponse.user": { en: "The AI's answer didn't come through properly. Try again.", id: "Jawaban AI-nya nggak sampai dengan benar. Coba lagi ya." },
+  "ai.error.noVision.user": { en: "The AI can't read images yet. Type the numbers or the text in instead.", id: "AI belum bisa membaca gambar. Ketik angka atau teksnya langsung, ya." },
+  "ai.error.setup.user": { en: "AI isn't available right now. Try again later, or let Wepeka know if it keeps happening.", id: "AI lagi belum bisa dipakai. Coba lagi nanti, atau kabari Wepeka kalau terus begini." },
   "ai.error.emptyResponse": { en: "The AI didn't give an answer. Try again.", id: "AI nggak ngasih jawaban. Coba lagi." },
   "ai.error.unreadable": { en: "The AI didn't return a result the app could read. Try again.", id: "AI nggak ngasih hasil yang bisa dibaca. Coba lagi." },
   "ai.error.readEdit": { en: "Couldn't read the edited text from the AI. Try again.", id: "Gagal membaca hasil edit dari AI. Coba lagi." },
