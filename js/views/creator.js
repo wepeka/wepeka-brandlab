@@ -121,16 +121,14 @@ function scriptSheetBlocks(c, brand) {
 
   const scriptTitle = title(carousel ? t("cr.f.slides") : t("cr.pdf.script"));
   if (parsed) {
-    const times = beatTimeline(parsed.beats);
-    const unit = escapeHtml(t("cr.pdf.unit"));
     const cell = (label, text, cls = "") => (String(text || "").trim() ? `<div class="sp-k">${escapeHtml(label)}</div><p class="sp-text${cls}">${escapeHtml(text.trim()).replace(/\n/g, "<br>")}</p>` : "");
     const row = (b, i) => `
       <div class="sp-beat${i === 0 ? " is-hook" : ""}">
-        <div class="sp-when"><b>${times[i].from}–${times[i].to}</b><span>${unit}</span><em>${escapeHtml(b.label)}</em></div>
+        <div class="sp-part"><em>${escapeHtml(b.label)}</em></div>
         <div class="sp-show">${cell(t("cr.cards.visual"), b.visual)}${cell(t("cr.cards.screen"), b.onScreen, " sp-screen")}${cell(t("cr.cards.note"), b.note)}${!b.visual && !b.onScreen && !b.note ? `<p class="sp-text sp-none">—</p>` : ""}</div>
         <div class="sp-say"><div class="sp-k sp-say-k">${t("cr.pdf.colSay")}</div>${String(b.say || "").trim() ? `<p>${escapeHtml(b.say.trim()).replace(/\n/g, "<br>")}</p>` : `<p class="sp-none">—</p>`}</div>
       </div>`;
-    const head = `<div class="sp-cols"><span>${t("cr.pdf.colTime")}</span><span>${t("cr.pdf.colShow")}</span><span>${t("cr.pdf.colSay")}</span></div>`;
+    const head = `<div class="sp-cols"><span>${t("cr.pdf.colPart")}</span><span>${t("cr.pdf.colShow")}</span><span>${t("cr.pdf.colSay")}</span></div>`;
     // The section title and column heads stay with the first part.
     blocks.push(`${scriptTitle}${parsed.preamble ? para(parsed.preamble) : ""}${head}${row(parsed.beats[0], 0)}`);
     parsed.beats.slice(1).forEach((b, i) => blocks.push(row(b, i + 1)));
@@ -1930,8 +1928,8 @@ function slidesFieldHTML(c) {
 
 // ---- Video script: "Kartu" or "Ketik biasa" -------------------------------
 // Two ways to write the same script, picked once and remembered on the
-// account (settings.scriptEditor): one card per part with the seconds
-// worked out (js/script-cards.js), or the plain box. #f-script stays in the
+// account (settings.scriptEditor): one card per part
+// (js/script-cards.js), or the plain box. #f-script stays in the
 // page either way (hidden behind the cards) — everything that reads or
 // writes the script goes through it.
 const scriptEditorMode = () => (getSettings()?.scriptEditor === "text" ? "text" : "cards");

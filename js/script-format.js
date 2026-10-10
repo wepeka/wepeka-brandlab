@@ -155,7 +155,7 @@ export function scriptBeatsHTML(text, esc) {
   const { words, seconds } = scriptLength(text);
   const head = [words ? L.length(seconds, words) : "", parsed.preamble].filter(Boolean).map((x) => `<p class="beats-meta">${esc(x)}</p>`).join("");
   return `<div class="beats">${head}${parsed.beats
-    .map((b) => `<div class="beat${/hook/i.test(b.label) ? " is-hook" : ""}"><div class="beat-head">${b.time ? `<span class="beat-time">${esc(b.time)} ${esc(L.unit)}</span>` : ""}<span class="beat-label">${esc(b.label)}</span></div>${b.note ? `<p class="beat-note">${esc(b.note)}</p>` : ""}${row("visual", L.visual, b.visual)}${row("screen", L.onScreen, b.onScreen)}${row("say", L.say, b.say)}</div>`)
+    .map((b) => `<div class="beat${/hook/i.test(b.label) ? " is-hook" : ""}"><div class="beat-head"><span class="beat-label">${esc(b.label)}</span></div>${b.note ? `<p class="beat-note">${esc(b.note)}</p>` : ""}${row("visual", L.visual, b.visual)}${row("screen", L.onScreen, b.onScreen)}${row("say", L.say, b.say)}</div>`)
     .join("")}</div>`;
 }
 

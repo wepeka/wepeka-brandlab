@@ -2,8 +2,9 @@
 // way to write besides "Ketik biasa" (the plain box). Each card is a part
 // of the video: its name (HOOK, ISI, CTA…), what to say (Narasi, the big
 // box) and, only when wanted, what to show (Visual) and the text on screen
-// (Teks layar). The seconds are worked out from the narration as it is
-// typed, and a timeline on top shows how the video is split.
+// (Teks layar). Parts carry no seconds of their own — only the length of
+// the whole video is shown on top, worked out from the narration as it is
+// typed.
 //
 // Underneath it is still the one plain string in content.script, in the
 // same beat format the AI writes (js/script-format.js) — the PDF, the
@@ -12,7 +13,7 @@
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { t } from "./i18n.js";
-import { scriptToBeats, beatsToScript, beatTimeline } from "./script-format.js";
+import { scriptToBeats, beatsToScript, beatSeconds } from "./script-format.js";
 
 // The optional lines of a card, in the order the stored text has them.
 const EXTRA = [
@@ -47,40 +48,18 @@ export function mountScriptCards(host, { value = "", lang = "id", onInput = () =
       src = { ...src, fromText: false };
       host.querySelector("[data-sc-fromtext]")?.remove();
     }
-    paintTimes();
+    paintTotal();
     onInput(text);
   };
 
-  // Empty cards aren't in the saved text yet, so they get no seconds and no
-  // place on the timeline — what's shown always matches what's saved.
-  const timesOf = () => {
-    const filled = beats.map((b, i) => ({ b, i })).filter((x) => !isEmptyBeat(x.b));
-    const tl = beatTimeline(filled.map((x) => x.b));
-    const byIndex = new Map(filled.map((x, k) => [x.i, tl[k]]));
-    return { byIndex, total: tl.length ? tl[tl.length - 1].to : 0, filled };
-  };
-
-  const paintTimes = () => {
-    const { byIndex, total, filled } = timesOf();
+  // Empty cards aren't in the saved text yet, so they don't count — the
+  // length shown always matches what's saved.
+  const paintTotal = () => {
+    const filled = beats.filter((b) => !isEmptyBeat(b));
+    const total = filled.reduce((n, b) => n + beatSeconds(b), 0);
     const words = beats.reduce((n, b) => n + countWords(b.say), 0);
     const totalEl = host.querySelector("[data-sc-total]");
     if (totalEl) totalEl.textContent = total ? t("cr.ai.lengthBadge", { s: total, w: words }) : t("cr.cards.totalEmpty");
-    const line = host.querySelector("[data-sc-timeline]");
-    if (line) {
-      line.hidden = !filled.length;
-      line.innerHTML = filled
-        .map(({ b, i }) => {
-          const sec = byIndex.get(i).to - byIndex.get(i).from;
-          const name = String(b.label || "").trim() || t("cr.cards.newLabel");
-          return `<button type="button" class="sc-seg${i === 0 ? " is-hook" : ""}" style="flex:${sec} 1 0" data-sc-jump="${i}" title="${escapeHtml(t("cr.cards.jump", { label: name, s: sec }))}">${escapeHtml(name)} · ${sec} ${escapeHtml(t("cr.cards.unit"))}</button>`;
-        })
-        .join("");
-    }
-    host.querySelectorAll("[data-sc-card]").forEach((card) => {
-      const r = byIndex.get(Number(card.dataset.scCard));
-      const b = card.querySelector("[data-sc-time]");
-      if (b) b.textContent = r ? `${r.from}–${r.to}` : "…";
-    });
   };
 
   const extraHTML = (b, i) =>
@@ -103,7 +82,6 @@ export function mountScriptCards(host, { value = "", lang = "id", onInput = () =
 
   const cardHTML = (b, i) => `
     <div class="sc-card${i === 0 ? " is-hook" : ""}" data-sc-card="${i}">
-      <div class="sc-time"><b data-sc-time>…</b><span>${escapeHtml(t("cr.cards.unit"))}</span></div>
       <div class="sc-main">
         <div class="sc-head">
           <input class="sc-label" data-sc-f="label" maxlength="40" value="${escapeHtml(b.label || "")}" placeholder="${escapeHtml(t("cr.cards.newLabel"))}" aria-label="${escapeHtml(t("cr.cards.labelAria"))}" />
@@ -124,15 +102,12 @@ export function mountScriptCards(host, { value = "", lang = "id", onInput = () =
   // a line opened). Typing never redraws, so the caret stays put.
   const render = (focus = null) => {
     host.innerHTML = `
-      <div class="sc-top">
-        <div class="sc-total">${icon("clock", { size: 12 })}<span data-sc-total></span></div>
-        <div class="sc-timeline" data-sc-timeline></div>
-      </div>
+      <div class="sc-total">${icon("clock", { size: 12 })}<span data-sc-total></span></div>
       ${src.fromText ? `<p class="sc-fromtext" data-sc-fromtext>${t("cr.cards.fromText")}</p>` : ""}
       ${beats.map(cardHTML).join("")}
       <button type="button" class="btn btn-secondary btn-sm sc-add" data-sc-add>${icon("plus", { size: 13 })}${t("cr.cards.add")}</button>`;
     host.querySelectorAll("textarea").forEach(autosize);
-    paintTimes();
+    paintTotal();
     if (focus) {
       const card = host.querySelector(`[data-sc-card="${focus.i}"]`);
       const el = card?.querySelector(`[data-sc-f="${focus.key || "say"}"]`);
@@ -170,14 +145,6 @@ export function mountScriptCards(host, { value = "", lang = "id", onInput = () =
     }
   }, on);
   host.addEventListener("click", (e) => {
-    const jump = e.target.closest("[data-sc-jump]");
-    if (jump) {
-      const i = Number(jump.dataset.scJump);
-      const say = host.querySelector(`[data-sc-card="${i}"] [data-sc-f="say"]`);
-      say?.closest("[data-sc-card]")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      say?.focus({ preventScroll: true });
-      return;
-    }
     if (e.target.closest("[data-sc-add]")) {
       beats.push({ label: t("cr.cards.newLabel"), visual: "", onScreen: "", say: "", note: "" });
       opened.clear();

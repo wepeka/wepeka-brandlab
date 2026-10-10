@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, scriptLineKind, scriptToBeats, beatsToScript, beatTimeline } from "../js/script-format.js";
+import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, scriptLineKind, scriptToBeats, beatsToScript, beatTimeline, scriptBeatsHTML } from "../js/script-format.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, recommendedHookTypes, orderedHookTypes } from "../js/knowledge/hook-types.js";
 import { t } from "../js/i18n.js";
 
@@ -176,6 +176,12 @@ describe("script cards (scriptToBeats / beatsToScript / beatTimeline)", () => {
     assert.deepEqual(tl, [{ from: 0, to: 2 }, { from: 2, to: 4 }, { from: 4, to: 9 }]);
     const text = beatsToScript(beats);
     assert.deepEqual([...text.matchAll(/\[(\d+)-(\d+) dtk\]/g)].map((m) => [Number(m[1]), Number(m[2])]), tl.map((r) => [r.from, r.to]));
+  });
+  test("the read view names each part and shows no seconds per part", () => {
+    const html = scriptBeatsHTML(renderScript(BEATS), (x) => x);
+    assert.match(html, /beat-label">HOOK</);
+    assert.match(html, /beat-label">CTA</);
+    assert.doesNotMatch(html, /\d+\s*[-–]\s*\d+ dtk/);
   });
   test("a blank line typed inside a narration stays inside it", () => {
     const text = beatsToScript([{ label: "HOOK", say: "Baris satu.\n\n\nBaris dua." }]);

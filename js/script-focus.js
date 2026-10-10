@@ -156,7 +156,7 @@ export function openScriptFocus({ title = "", value = "", lang = "id", mode = "t
   const lenEl = el.querySelector("[data-focus-len]");
   let current = String(value || "").replace(/\r\n?/g, "\n");
 
-  // The cards show their own length above the timeline.
+  // The cards show their own length on top.
   const paintLength = () => {
     if (cards) return;
     const { words, seconds } = scriptLength(current);
