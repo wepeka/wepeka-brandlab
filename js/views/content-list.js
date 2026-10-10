@@ -132,8 +132,9 @@ function paint(root, brandId, state, refresh) {
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("contentList.eyebrow")}${helpButtonHTML("content-list")}${guideVideoButtonHTML("content-list")}</div>
-        <h1>${t("nav.content")}</h1>
+        <h1>${t("contentOs.tab.list")}</h1>
         <p class="page-head-brand">${escapeText(brand.name)}</p>
+        ${getMode() === "guided" ? `<p class="page-what">${t("contentList.whatGuided")}</p>` : ""}
       </div>
       <div class="flex gap-8">
         <button class="icon-btn" id="more-actions" aria-label="${t("contentList.moreActions")}" title="${t("contentList.moreActions")}">${icon("dots", { size: 16 })}${staleQueue.length ? `<span class="notif-badge">${staleQueue.length}</span>` : ""}</button>

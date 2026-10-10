@@ -665,16 +665,15 @@ export function startOnboardingTour({ firstRun = false } = {}) {
     const newest = [...listBrands()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
     if (newest) location.hash = `#/brand/${newest.id}`;
   };
-  // Back on the brand's home, with the "langkah berikutnya" list open: once
-  // every step is done it folds into a closed <details>, and a spotlight on
-  // a folded row lands on nothing.
+  // Back on the brand's home, where the basic steps sit in the map under the
+  // header (js/views/home.js basicsPathHTML). Once all three are done that
+  // map shows the weekly round instead, so the three tab stops below fall
+  // back to the tab itself rather than wait for a row that is gone.
   const goBrandHome = () => {
     enterBrand();
     const base = brandBase();
     if (base && location.hash !== base) location.hash = base;
-    return new Promise((r) => setTimeout(r, 60)).then(() => {
-      document.querySelector("#beginner-journey.journey-collapsed:not([open])")?.setAttribute("open", "");
-    });
+    return new Promise((r) => setTimeout(r, 60));
   };
   const visible = (sel) => [...document.querySelectorAll(sel)].some((el) => el.getClientRects().length > 0);
 
@@ -716,7 +715,7 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       body: t("tour.onb.home.body"),
     },
     {
-      selector: '[data-app="builder"]',
+      selector: ['[data-app="builder"]', '[data-tour="tab-builder"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       waitTimeout: 6000,
@@ -725,14 +724,14 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       body: t("tour.onb.builder.body"),
     },
     {
-      selector: '[data-app="campaigns"]',
+      selector: ['[data-app="campaigns"]', '[data-tour="tab-campaigns"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       title: t("tour.onb.campaigns.title"),
       body: t("tour.onb.campaigns.body"),
     },
     {
-      selector: '[data-app="content-os"]',
+      selector: ['[data-app="content-os"]', '[data-tour="tab-content-os"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       title: t("cnt.os.tour.title"),

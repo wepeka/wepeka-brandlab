@@ -538,10 +538,14 @@ export default {
   "camp.list.eyebrow": { en: "Goals", id: "Tujuan" },
   "camp.list.salesTracker": { en: "Sales Tracker", id: "Pelacak Penjualan" },
   "camp.list.salesTrackerSub": { en: "Log every sale here — Sales Growth, the totals and the AI's advice all count from it.", id: "Catat tiap penjualan di sini — Sales Growth, total, dan saran AI semuanya ngitung dari situ." },
-  "camp.list.subGuided": { en: "Everything this brand is working toward: Grow Brand (followers, community and sales, level by level) and Events (getting ready for a date). Each one has its own targets, a Brainstorm and the ideas you keep for it.", id: "Semua yang lagi dikejar brand ini: Grow Brand (followers, komunitas, penjualan — naik level demi level) dan Event (persiapan menuju satu tanggal). Tiap tujuan punya target, Brainstorm, dan ide simpanannya sendiri." },
+  // Pemula calls that goal "Naikkan Penjualan" (goal.launch.salesTitlePlain).
+  "camp.list.salesTrackerSubGuided": { en: "Log every sale here. The \"Raise sales\" goal, the totals and the AI's advice all count from this log.", id: "Catat tiap penjualan di sini. Tujuan \"Naikkan Penjualan\", total, dan saran AI semuanya ngitung dari catatan ini." },
+  "camp.list.subGuided": { en: "A goal is a number you want to reach — 1,000 followers, 50 sales. Brandlab breaks it into targets you work on week by week. Two kinds: Grow Brand (followers, community or sales, level by level) and Event (getting ready for one date).", id: "Tujuan = angka yang mau kamu kejar, misalnya 1.000 followers atau 50 penjualan. Brandlab memecahnya jadi target yang dikerjakan minggu demi minggu. Ada dua jenis: Grow Brand (naikin followers, komunitas, atau penjualan, level demi level) dan Event (persiapan menuju satu tanggal)." },
   "camp.list.subPro": { en: "What this brand is working toward right now — each piece of content is linked to a campaign (and a stage of its journey) so you can see which goal it serves.", id: "Yang lagi dikejar brand ini sekarang — tiap konten dikaitkan ke sebuah campaign (dan tahap perjalanannya) supaya kelihatan tujuan mana yang sedang dilayani." },
   "camp.list.emptyTitle": { en: "No campaigns yet", id: "Belum ada campaign" },
-  "camp.list.emptyGuided": { en: "Tap <b>New goal</b>, pick Grow Brand or Event, then answer a few short questions. Its first step is ready to work on right away.", id: "Klik <b>Tujuan baru</b>, pilih Grow Brand atau Event, lalu jawab beberapa pertanyaan singkat. Langkah pertamanya langsung siap dikerjakan." },
+  "camp.list.emptyGuided": { en: "Tap <b>New goal</b> and answer a few short questions. No dated event coming up? Start with <b>Grow Brand</b>. Its first step is ready to work on right away.", id: "Klik <b>Tujuan baru</b>, lalu jawab beberapa pertanyaan singkat. Belum ada acara bertanggal? Mulai dari <b>Grow Brand</b>. Langkah pertamanya langsung siap dikerjakan." },
+  // What a goal looks like, before the first one exists (Pemula's empty state).
+  "camp.list.emptyExample": { en: "Example: \"From 350 to 1,000 Instagram followers in 6 months, 3 posts a week.\"", id: "Contoh tujuan: \"Dari 350 ke 1.000 followers Instagram dalam 6 bulan, 3 konten per minggu.\"" },
   "camp.list.emptyPro": { en: "Create one to give a set of content one goal, one message, and one journey — if you're not sure, start with Grow Brand.", id: "Bikin satu buat ngasih sekumpulan konten satu tujuan, satu pesan, dan satu perjalanan — kalau bingung, mulai dari Grow Brand." },
   "camp.list.deleteTitle": { en: "Move this campaign to Trash?", id: "Pindahkan campaign ini ke Sampah?" },
   "camp.list.deletePlanIdeas": { en: "{count} content idea(s) this event's plan put on your calendar go to Trash with it (anything you wrote or edited stays).", id: "{count} ide konten dari rencana event ini ikut dipindah ke Sampah (yang sudah kamu tulis atau edit tetap ada)." },
@@ -553,6 +557,9 @@ export default {
   "camp.new.termsNote": { en: "Each template comes with its own ground rules — they show up inside the campaign once it starts.", id: "Tiap template punya aturan mainnya sendiri — muncul di dalam campaign begitu dimulai." },
   "camp.new.tpl.event": { en: "Event", id: "Event" },
   "camp.new.eventDesc": { en: "Build momentum and turnout for one event.", id: "Bangun momentum dan kehadiran buat satu acara." },
+  "camp.new.introGuided": { en: "Pick the kind of goal. No dated event coming up? Choose Grow Brand.", id: "Pilih jenis tujuannya. Belum ada acara bertanggal? Pilih Grow Brand." },
+  "camp.new.eventDescGuided": { en: "For one dated event — a bazaar, a launch, a class, a big promo. The plan counts back from the day itself.", id: "Buat satu acara bertanggal — bazar, launching, kelas, promo besar. Rencananya dihitung mundur dari hari-H." },
+  "camp.new.goalRecoGuided": { en: "A good place to start", id: "Cocok buat mulai" },
   "camp.new.intro": { en: "Two ways to start. Grow Brand plots milestones from your own numbers and goals; Event builds a dated plan around your event day.", id: "Ada dua cara mulai. Grow Brand memplot milestone dari angka dan tujuan brand-mu sendiri; Event menyusun rencana bertanggal di sekitar hari-H acaramu." },
 
   // ---------- campaigns.js: event setup wizard ----------
@@ -636,7 +643,7 @@ export default {
   "camp.detail.msOptions": { en: "Milestone options", id: "Opsi milestone" },
   "camp.detail.treeAria": { en: "Progress tree for level {name}", id: "Pohon progres level {name}" },
   "camp.detail.treeSvgAria": { en: "Progress tree: {met} of {total} branches done", id: "Pohon progres: {met} dari {total} cabang selesai" },
-  "camp.detail.treeLegend": { en: "Each branch = one mission in this level. A full green branch = achieved. The number on each branch matches the number in the list below.", id: "Tiap cabang = satu misi di level ini. Cabang penuh dan hijau = tercapai. Angka di cabang sama dengan nomor di daftar bawah." },
+  "camp.detail.treeLegend": { en: "Each branch = one target in this level, in the same order as the list below. A full green branch = achieved.", id: "Tiap cabang = satu target di level ini, urutannya sama dengan daftar di bawah. Cabang penuh dan hijau = tercapai." },
   "camp.detail.ruleAutoLink": { en: "Everything you publish for this brand counts here automatically — no need to link it manually.", id: "Semua konten yang kamu terbitkan buat brand ini otomatis dihitung di sini, nggak perlu di-link manual." },
   "camp.detail.rules": { en: "Ground rules", id: "Aturan main" },
   "camp.detail.activity": { en: "Activity", id: "Aktivitas" },
@@ -664,6 +671,8 @@ export default {
   "camp.tabs.activity": { en: "Activity", id: "Aktivitas" },
   "camp.guided.intro1Title": { en: "Follow the targets one by one", id: "Ikuti target satu per satu" },
   "camp.guided.intro1Body": { en: "Work through the targets below one by one. Content counts by itself once you mark it Published here; followers and each post's numbers (likes, shares) are yours to fill in — the button is on each row.", id: "Kerjakan target di bawah satu per satu. Konten terhitung sendiri begitu kamu tandai Terbit di sini; followers dan angka tiap konten (like, share) kamu yang isi — tombolnya ada di tiap baris." },
+  // Pemula, under the level's name: what a "level" is and how it ends.
+  "camp.guided.levelHint": { en: "A level is one stage of this goal. Finish its required targets and the next level opens.", id: "Level = satu tahap tujuan ini. Selesaikan target wajibnya, level berikutnya terbuka." },
   "camp.guided.intro2Title": { en: "Brainstorm ideas", id: "Brainstorm ide" },
   "camp.guided.intro2Body": { en: "Stuck? Chat with AI about this campaign. Every idea you save shows up in the list at the bottom of this page.", id: "Bingung? Ngobrol sama AI soal campaign ini. Setiap ide yang kamu simpan muncul di daftar paling bawah halaman ini." },
   "camp.guided.msTitle": { en: "This campaign's targets", id: "Target campaign ini" },
@@ -831,7 +840,7 @@ export default {
   // ---------- Grow Brand (js/goal-plan.js, js/views/goal-wizard.js) ----------
   "camp.new.tpl.goal": { en: "Grow Brand", id: "Grow Brand" },
   "camp.new.goalDesc": { en: "Deploys up to three campaigns at once — Social Media Growth, Community Growth and Sales Growth, each tracked on its own. Answer a few questions and the system plots the levels and targets from your own numbers.", id: "Menjalankan sampai tiga campaign sekaligus — Social Media Growth, Community Growth, dan Sales Growth, masing-masing dilacak sendiri-sendiri. Jawab beberapa pertanyaan, sistem yang plot level dan target dari angka brand-mu sendiri." },
-  "camp.new.goalDescGuided": { en: "Run up to three goals at once — growing on social media, building a community and raising sales, each tracked on its own. Answer a few questions and the system plots the levels and targets from your own numbers.", id: "Jalankan sampai tiga tujuan sekaligus — tumbuh di sosmed, bangun komunitas, dan naikkan penjualan, masing-masing dilacak sendiri-sendiri. Jawab beberapa pertanyaan, sistem yang plot level dan target dari angka brand-mu sendiri." },
+  "camp.new.goalDescGuided": { en: "For growing followers, a community or sales, step by step, level by level. Answer a few questions; the targets are worked out from your own numbers. One goal is enough to start.", id: "Buat naikin followers, komunitas, atau penjualan pelan-pelan, level demi level. Jawab beberapa pertanyaan; targetnya dihitung dari angka kamu sendiri. Satu tujuan dulu sudah cukup." },
   "camp.new.goalReco": { en: "Targets calculated from your own numbers", id: "Target dihitung dari angka brand-mu sendiri" },
   "store.mission.gb1.name": { en: "Get Known", id: "Dikenal" },
   "store.mission.gb1.desc": { en: "Focus: audience. Lock in your upload rhythm and find the content formats that reach new people.", id: "Fokus: audiens. Kunci ritme upload dan cari format konten yang menjangkau orang baru." },

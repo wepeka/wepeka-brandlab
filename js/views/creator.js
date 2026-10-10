@@ -870,6 +870,7 @@ function paint(root, brandId, state, refresh) {
         <div class="page-eyebrow flex items-center gap-6">${t("cr.eyebrowGuided")}${helpButtonHTML("creator")}${guideVideoButtonHTML("creator")}</div>
         <h1>${t("contentOs.tab.creator")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
+        ${getMode() === "guided" ? `<p class="page-what">${t("cr.whatGuided")}</p>` : ""}
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap;">
         <button class="btn btn-secondary" id="cr-week-plan">${icon("sparkle", { size: 15 })}${t("chat.week.button")}<span class="btn-cost">${t("chat.week.cost")}</span></button>

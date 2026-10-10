@@ -174,7 +174,7 @@ function paintList(root, brandId, brand, refresh) {
          labelled link that says what it is for. -->
     <a class="camp-sales-link" href="#/brand/${brandId}/sales" id="open-sales">
       <span class="camp-sales-link-icon">${icon("money", { size: 16 })}</span>
-      <span class="camp-sales-link-text"><b>${t("camp.list.salesTracker")}</b><small>${t("camp.list.salesTrackerSub")}</small></span>
+      <span class="camp-sales-link-text"><b>${t("camp.list.salesTracker")}</b><small>${t(getMode() === "guided" ? "camp.list.salesTrackerSubGuided" : "camp.list.salesTrackerSub")}</small></span>
       ${icon("arrowRight", { size: 14 })}
     </a>
     ${growBrand.length ? growBrandSectionHTML(growBrand, insights) : ""}
@@ -191,6 +191,7 @@ function paintList(root, brandId, brand, refresh) {
                  ? t("camp.list.emptyGuided")
                  : t("camp.list.emptyPro")
              }</p>
+             ${getMode() === "guided" ? `<p class="empty-state-example">${t("camp.list.emptyExample")}</p>` : ""}
              <button type="button" class="btn btn-primary" id="empty-new-campaign">${icon("plus", { size: 15 })}${t("camp.newCampaign")}</button>
            </div>`
         : ""
@@ -411,8 +412,10 @@ const campaignQuickTemplates = () => [
   // the brand's own figures. The old fixed ladders (grow-social /
   // grow-personal ladders, removed from js/store.js) are no longer offered for new
   // campaigns; existing ones keep working unchanged.
-  { id: "goal", label: t("camp.new.tpl.goal"), objective: "awareness", icon: "sparkle", description: t(getMode() === "guided" ? "camp.new.goalDescGuided" : "camp.new.goalDesc"), recommended: t("camp.new.goalReco") },
-  { id: "event", label: t("camp.new.tpl.event"), objective: "event", icon: "calendar", description: t("camp.new.eventDesc") },
+  // Pemula reads what each one is FOR ("no dated event? start here"), not
+  // how its targets are computed.
+  { id: "goal", label: t("camp.new.tpl.goal"), objective: "awareness", icon: "sparkle", description: t(getMode() === "guided" ? "camp.new.goalDescGuided" : "camp.new.goalDesc"), recommended: t(getMode() === "guided" ? "camp.new.goalRecoGuided" : "camp.new.goalReco") },
+  { id: "event", label: t("camp.new.tpl.event"), objective: "event", icon: "calendar", description: t(getMode() === "guided" ? "camp.new.eventDescGuided" : "camp.new.eventDesc") },
 ];
 
 function openNewCampaignFlow({ brandId, onSaved }) {
@@ -423,7 +426,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
   const overlay = openModal({
     title: t("camp.newCampaign"),
     bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t("camp.new.intro")}</p>
+      <p class="text-muted" style="font-size:13px;margin:0 0 16px;">${t(getMode() === "guided" ? "camp.new.introGuided" : "camp.new.intro")}</p>
       <div class="content-view-grid">
         ${templates.map((tpl) => `
           <button type="button" class="content-view-card${tpl.recommended ? " is-recommended" : ""}" data-quick-template="${tpl.id}">
@@ -434,7 +437,7 @@ function openNewCampaignFlow({ brandId, onSaved }) {
           </button>
         `).join("")}
       </div>
-      <p class="text-faint" style="font-size:11.5px;margin:12px 0 0;">${t("camp.new.termsNote")}</p>
+      ${getMode() === "guided" ? "" : `<p class="text-faint" style="font-size:11.5px;margin:12px 0 0;">${t("camp.new.termsNote")}</p>`}
     `,
   });
 

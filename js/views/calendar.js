@@ -7,6 +7,7 @@ import { suggestSchedule, hasAiKey } from "../ai.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { goalItems } from "../goal-progress.js";
 import { t, getLang, campaignDisplayName } from "../i18n.js";
+import { getMode } from "../mode.js";
 import { draftFromIdea } from "../idea-draft.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -614,6 +615,7 @@ function paint(root, brandId, state, refresh) {
         <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}${guideVideoButtonHTML("calendar")}</div>
         <h1>${t("contentOs.tab.calendar")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
+        ${getMode() === "guided" ? `<p class="page-what">${t("calendar.whatGuided")}</p>` : ""}
       </div>
       <div class="flex gap-8 cal-head-actions">
         <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>

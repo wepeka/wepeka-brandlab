@@ -17,7 +17,8 @@ globalThis.fetch = async () => {
 const { consecutiveActiveWeeks, localISODate } = await import("../js/store.js");
 const { nextActions, brandTopAction } = await import("../js/next-action.js");
 const { buildSocialGrowthPlan } = await import("../js/goal-plan.js");
-const { planOverdueShift, trialReminderTier } = await import("../js/views/home.js");
+const homeView = await import("../js/views/home.js");
+const { planOverdueShift, trialReminderTier } = homeView;
 const { closedNoteKey } = await import("../js/views/pricing.js");
 const { t } = await import("../js/i18n.js");
 
@@ -139,5 +140,49 @@ describe("checkout-closed note", () => {
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(root.innerHTML.includes(t("pricing.closed.noteLocked")));
     assert.ok(!root.innerHTML.includes(t("pricing.closed.note")));
+  });
+});
+
+// The map under Beranda's header, after the three basic steps: the weekly
+// round Rencanakan → Bikin → Terbit → Isi angka. "Here" follows the action
+// Hari ini shows, so the strip and the hero can't disagree.
+describe("Beranda's weekly round: which stop the brand is at", () => {
+  const { weekStageFor, weekStageCounts } = homeView;
+  const none = { plan: 0, make: 0, publish: 0, numbers: 0 };
+
+  test("follows Hari ini's action", () => {
+    assert.equal(weekStageFor("overdue", none), "publish"); // ready but late: "Sudah upload? Tandai terbit"
+    assert.equal(weekStageFor("upload-abc", none), "publish");
+    assert.equal(weekStageFor("overdue-unmade", none), "make"); // late and not made yet
+    assert.equal(weekStageFor("wip-abc", none), "make");
+    assert.equal(weekStageFor("perf-check-abc", none), "numbers");
+    assert.equal(weekStageFor("insights", none), "numbers");
+    assert.equal(weekStageFor("schedule-abc", none), "plan");
+    assert.equal(weekStageFor("brainstorm", none), "plan");
+  });
+
+  test("no dated action: the furthest-along waiting work decides", () => {
+    assert.equal(weekStageFor("", { plan: 2, make: 3, publish: 1, numbers: 4 }), "numbers");
+    assert.equal(weekStageFor("advance", { plan: 2, make: 3, publish: 1, numbers: 0 }), "publish");
+    assert.equal(weekStageFor(undefined, { plan: 2, make: 3, publish: 0, numbers: 0 }), "make");
+    assert.equal(weekStageFor("", none), "plan");
+  });
+
+  test("counts what waits at each stop", () => {
+    const now = new Date("2026-10-10T10:00:00+07:00").getTime();
+    const content = [
+      { id: "a", status: "idea", scheduleDate: "" },
+      { id: "b", status: "draft", scheduleDate: "2026-10-12" },
+      { id: "c", status: "scheduled", scheduleDate: "2026-10-11" },
+      { id: "d", status: "scheduled", scheduleDate: "2026-10-30" }, // beyond the next 7 days
+      { id: "e", status: "archived", scheduleDate: "2026-10-12" },
+      { id: "f", status: "published", publishedDate: "2026-10-07", performance: {} }, // 3 days up, numbers not filled
+      { id: "g", status: "published", publishedDate: "2026-10-09", performance: {} }, // only 1 day up: not asked yet
+    ];
+    const counts = weekStageCounts(content, now);
+    assert.equal(counts.plan, 2, "dated within the next 7 days and not yet published");
+    assert.equal(counts.make, 2, "idea + draft");
+    assert.equal(counts.publish, 2, "both pieces that are ready to upload");
+    assert.equal(counts.numbers, 1, "only the post whose numbers are due");
   });
 });

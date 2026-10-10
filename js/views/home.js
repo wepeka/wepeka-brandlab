@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue } from "../store.js";
 import { icon } from "../icons.js";
 import { initials, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -32,6 +32,9 @@ import { brandDocFits } from "../brand-doc-size.js";
 // five seconds on a phone, so the page has one fixed shape (2026-10-06):
 //
 //   brand header   — cover photo, logo, tagline, palette, Panduan
+//   peta           — the map, always in sight: the three basic steps, then
+//                    the weekly round (Rencanakan → Bikin → Terbit → Isi
+//                    angka) with "here" on the stage Hari ini is about
 //   notices        — trial countdown, low AI credit (only when true)
 //   Hari ini       — ONE thing to do now, plus at most one quiet link:
 //                    identity not done → Brand DNA / Warna & Font progress;
@@ -43,8 +46,8 @@ import { brandDocFits } from "../brand-doc-size.js";
 //                    next 7 days, the report PDF, "Isi jadwal minggu ini"
 //   Tujuan         — a running roadmap's own card, when there is one
 //   Konten terbaru — the brand's actual work at a glance
-//   Lainnya        — small quiet cards: Langkah dasar, Teman Brand, the
-//                    roadmap invite, and (Pro) the one-tap action
+//   Lainnya        — small quiet cards: Teman Brand, the roadmap invite,
+//                    and (Pro) the one-tap action
 //   Analitik       — Pro only, folded, below everything
 //
 // Phones read it top to bottom in that order. From 1080px the page splits
@@ -64,6 +67,7 @@ const TOUR_STEPS = [
   { selector: "#journey-hero", title: t("beginner.tour.hero.title"), body: t("beginner.tour.hero.body") },
   { selector: "#home-week", showIf: shown("#home-week"), title: t("beranda.tour.week.title"), body: t("beranda.tour.week.body") },
   { selector: "#beginner-journey", showIf: shown("#beginner-journey"), title: t("beginner.tour.journey.title"), body: t("beginner.tour.journey.body") },
+  { selector: "#home-path-week", showIf: shown("#home-path-week"), title: t("home.path.weekTitle"), body: t("home.path.weekTour") },
   { selector: "#consultant-fab", title: t("beginner.tour.ai.title"), body: t("beginner.tour.ai.body") },
 ];
 
@@ -126,14 +130,6 @@ function buildSteps(brandId, brand, campaigns, content) {
 
 // ---- Progress feel: step dots, one-time celebration, posting streak ------
 // (Tugas C — "rasa kemajuan + perayaan kecil".) All deterministic, no AI.
-
-// Small "N of 3" dots next to the journey summary — the always-visible
-// line (a <summary>, not hidden behind expanding the details), so the
-// progress reads at a glance without opening anything.
-function stepDotsHTML(doneCount, total) {
-  const dots = Array.from({ length: total }, (_, i) => `<span class="step-dot${i < doneCount ? " is-done" : ""}"></span>`).join("");
-  return `<span class="step-dots" aria-hidden="true">${dots}</span>`;
-}
 
 // Compares this paint's done step keys against the last-seen set for this
 // brand (localStorage, try/catch'd — a private window or blocked storage
@@ -533,8 +529,12 @@ function paint(root, brandId, state, refresh) {
           : widgetCardHTML(goal.key, goal.iconName, goal.title, goal.bodyHTML, { extraHead: goal.extraHead })
       }</div>`
     : "";
+  // The map: the basic steps while one is open (or was just finished, so the
+  // tick is seen once), the weekly round after that.
+  const pathStripHTML = showSteps
+    ? basicsPathHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps)
+    : weekPathHTML(brandId, content, top, now.getTime());
   const moreItems = [
-    showSteps ? stepsHTML(journey, cfg.lockNext, identityJustDone, newlyDoneSteps, isOpen(brandId, "steps")) : "",
     companionMiniHTML(brand, { signals, content, now, guided }),
     goalIsInvite ? goalPromoMiniHTML(brandId) : "",
     ...insightActions.map(insightMiniHTML),
@@ -547,6 +547,8 @@ function paint(root, brandId, state, refresh) {
     })}
 
     ${notices.length ? `<div class="home-notices">${notices.join("")}</div>` : ""}
+
+    ${pathStripHTML}
 
     <div class="home-layout">
       <div class="home-col home-col-main">
@@ -997,45 +999,107 @@ async function runTodayAction(top, { brandId, brand, content, refresh }) {
 
 // ---- Steps ---------------------------------------------------------------------
 
-// Folded under everything else: the one action up top is what to do now;
-// this is only the map, opened when someone wants it.
-function stepsHTML(journey, lockNext, celebrateIdentity, celebrateKeys = [], open = false) {
-  const total = journey.steps.length;
-  const rows = journey.steps.map((s, i) => stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys)).join("");
-  return `
-      <details class="card glass-card card-tight journey journey-collapsed" id="beginner-journey" data-keep-open="steps"${open ? " open" : ""}>
-        <summary>
-          <span class="journey-summary-check">${icon(journey.currentIndex === -1 ? "check" : "layers", { size: 14 })}</span>
-          <span class="t">${t("beginner.journey.collapsed", { done: journey.doneCount, total })}</span>
-          ${stepDotsHTML(journey.doneCount, total)}
-          <span class="m">${t("beginner.journey.viewEdit")}</span>
-        </summary>
-        <div class="journey-list">${rows}</div>
-      </details>
-  `;
+// ---- Peta: where the owner is on the way --------------------------------------
+// One strip under the brand header, always in sight. It used to be a folded
+// "Langkah dasar: 1 dari 3" row at the bottom of Lainnya that disappeared
+// after 3/3 — so nothing on screen ever showed the whole way, and that job
+// fell to the tour and the overview video. Two states of the same strip:
+//   • the three basic steps (identity → a goal → first content), then
+//   • once those are done, the round every brand repeats each week:
+//     Rencanakan → Bikin → Terbit → Isi angka.
+// Every stop is a link. "Here" in the weekly round follows the action Hari
+// ini shows (js/next-action.js), so the strip and the hero never disagree.
+function pathStepHTML({ state, label, note, mark, href = "", attrs = "", celebrate = false }) {
+  const inner = `
+    <span class="home-path-mark">${mark}</span>
+    <span class="home-path-text"><b>${esc(label)}</b><small>${esc(note)}</small></span>`;
+  const cls = `home-path-step is-${state}${celebrate ? " is-celebrate" : ""}`;
+  return `<li class="home-path-item">${
+    href
+      ? `<a class="${cls}" href="${href}"${state === "current" ? ` aria-current="step"` : ""}${attrs}>${inner}</a>`
+      : `<div class="${cls}"${attrs}>${inner}</div>`
+  }</li>`;
 }
 
-function stepRowHTML(s, i, journey, lockNext, celebrateIdentity, celebrateKeys = []) {
-  // Pemula: the Campaign step stays locked until the identity is done;
-  // Konten is open from day one (try first, sharpen with Brand DNA later).
-  // Pro: every step is open — "current" is just the first unfinished one.
-  const locked = lockNext && s.key === "campaign" && !journey.identityDone;
-  const state = s.done ? "done" : locked ? "upcoming" : i === journey.currentIndex ? "current" : "open";
-  const celebrate = (celebrateIdentity && s.key === "identity") || celebrateKeys.includes(s.key) ? " journey-step-celebrate" : "";
-  const marker = s.done ? icon("check", { size: 13 }) : `<span>${i + 1}</span>`;
-  const inner = `
-    <span class="journey-marker">${marker}</span>
-    <span class="journey-text">
-      <span class="t">${esc(s.title)}</span>
-      <span class="m">${s.done ? esc(s.doneNote || t("beginner.journey.done")) : locked ? t("beginner.journey.locked") : esc(s.desc)}</span>
-    </span>
-    ${s.done ? `<span class="journey-edit">${t("beginner.journey.edit")}${icon("arrowRight", { size: 12 })}</span>` : ""}
-    ${!s.done && !locked ? `<span class="journey-edit journey-go">${esc(s.cta)}${icon("arrowRight", { size: 12 })}</span>` : ""}
-    ${locked ? `<span class="journey-lock">${icon("lock", { size: 13 })}</span>` : ""}
-  `;
-  const href = s.done ? s.editHref : locked ? "" : s.href;
-  const appAttr = s.app ? ` data-app="${s.app}"` : "";
-  return href
-    ? `<a class="journey-step journey-step-${state === "open" ? "current" : state}${celebrate}" href="${href}"${appAttr}>${inner}</a>`
-    : `<div class="journey-step journey-step-upcoming" data-locked-step${appAttr}>${inner}</div>`;
+function basicsPathHTML(journey, lockNext, celebrateIdentity, celebrateKeys = []) {
+  const total = journey.steps.length;
+  const items = journey.steps.map((s, i) => {
+    // Pemula: the goal step stays locked until the identity is done; Konten
+    // is open from day one. Pro: every step is open — "current" is just the
+    // first unfinished one.
+    const locked = lockNext && s.key === "campaign" && !journey.identityDone;
+    const state = s.done ? "done" : locked ? "locked" : i === journey.currentIndex ? "current" : "next";
+    return pathStepHTML({
+      state,
+      label: t(`home.path.step.${s.key}`),
+      note: s.done ? t("beginner.journey.done") : locked ? t("home.path.locked") : state === "current" ? t("home.path.here") : t("home.path.next"),
+      mark: s.done ? icon("check", { size: 13 }) : locked ? icon("lock", { size: 12 }) : `<span>${i + 1}</span>`,
+      href: s.done ? s.editHref : locked ? "" : s.href,
+      attrs: `${s.app ? ` data-app="${s.app}"` : ""}${locked ? " data-locked-step" : ""} title="${esc(s.done ? `${s.title} — ${t("beginner.journey.edit")}` : s.title)}"`,
+      celebrate: (celebrateIdentity && s.key === "identity") || celebrateKeys.includes(s.key),
+    });
+  }).join("");
+  return `
+    <nav class="card glass-card card-tight home-path" id="beginner-journey" aria-label="${esc(t("home.path.basics"))}">
+      <div class="home-path-head">
+        <span class="home-path-title">${t("home.path.basics")}</span>
+        <span class="home-path-now">${t("home.path.basicsCount", { done: journey.doneCount, total })}</span>
+      </div>
+      <ol class="home-path-steps" style="--n:${total}">${items}</ol>
+    </nav>`;
+}
+
+const WEEK_STAGES = [
+  { key: "plan", icon: "calendar", href: (id) => `#/brand/${id}/content/calendar` },
+  { key: "make", icon: "edit", href: (id) => `#/brand/${id}/content/creator` },
+  { key: "publish", icon: "upload", href: (id) => `#/brand/${id}/content/creator` },
+  { key: "numbers", icon: "chart", href: (id) => `#/brand/${id}/content/list` },
+];
+// Which stop the brand is at: the stage Hari ini's action belongs to, else
+// the furthest-along work that is waiting.
+export function weekStageFor(actionId, counts) {
+  const id = actionId || "";
+  if (/^(overdue-unmade$|wip-)/.test(id)) return "make";
+  if (/^(overdue$|upload-)/.test(id)) return "publish";
+  if (/^(perf-check-|performance$|insights$|manual$)/.test(id)) return "numbers";
+  if (/^(schedule-|brainstorm$)/.test(id)) return "plan";
+  if (counts.numbers) return "numbers";
+  if (counts.publish) return "publish";
+  if (counts.make) return "make";
+  return "plan";
+}
+// What is waiting at each stop, from the content itself.
+export function weekStageCounts(content, now = Date.now()) {
+  const today = localISODate(new Date(now));
+  const weekEnd = localISODate(new Date(now + 7 * 86400000));
+  const live = content.filter((c) => c.status !== "archived");
+  return {
+    plan: live.filter((c) => c.status !== "published" && c.scheduleDate && c.scheduleDate >= today && c.scheduleDate <= weekEnd).length,
+    make: live.filter((c) => ["idea", "draft", "production", "editing"].includes(c.status)).length,
+    publish: live.filter((c) => c.status === "scheduled").length,
+    numbers: live.filter((c) => c.status === "published" && performanceCheckDue(c, now)).length,
+  };
+}
+function weekPathHTML(brandId, content, top, now) {
+  const counts = weekStageCounts(content, now);
+  const here = weekStageFor(top?.action?.id, counts);
+  const ready = content.find((c) => c.status === "scheduled");
+  const items = WEEK_STAGES.map((st) =>
+    pathStepHTML({
+      state: st.key === here ? "current" : "next",
+      label: t(`home.path.week.${st.key}`),
+      note: counts[st.key] ? t(`home.path.week.${st.key}.n`, { n: counts[st.key] }) : t(`home.path.week.${st.key}.none`),
+      mark: icon(st.icon, { size: 13 }),
+      href: st.key === "publish" && ready ? `#/brand/${brandId}/content/creator/${ready.id}` : st.href(brandId),
+      attrs: ` title="${esc(t(`home.path.week.${st.key}.tip`))}"`,
+    })
+  ).join("");
+  return `
+    <nav class="card glass-card card-tight home-path home-path-week" id="home-path-week" aria-label="${esc(t("home.path.weekTitle"))}">
+      <div class="home-path-head">
+        <span class="home-path-title">${t("home.path.weekTitle")}</span>
+        <span class="home-path-now">${t("home.path.weekNow", { stage: t(`home.path.week.${here}`) })}</span>
+      </div>
+      <ol class="home-path-steps" style="--n:${WEEK_STAGES.length}">${items}</ol>
+    </nav>`;
 }

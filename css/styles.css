@@ -542,6 +542,12 @@ main.view.wide{ max-width: 1440px; }
 .page-head h1{ font-size: 30px; }
 .page-eyebrow{ font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--text-muted); margin-bottom:8px; }
 .page-sub{ color: var(--text-muted); font-size:14px; margin-top:6px; max-width: 60ch; }
+/* What "1 AI credit" means + the balance, under a wizard step's buttons. */
+.ai-credit-note{ margin:14px 0 0; font-size:11.5px; line-height:1.5; color: var(--text-faint); text-align:right; }
+/* One line under a page title saying what the page is for (Pemula). */
+.page-what{ margin:6px 0 0; max-width:54ch; font-size:12.5px; line-height:1.5; color: var(--text-muted); }
+/* A worked example inside an empty state ("Contoh tujuan: …"). */
+.empty-state-example{ margin:-4px 0 14px; font-size:12.5px; font-style:italic; color: var(--text-faint); }
 
 .stat-grid{ display:grid; grid-template-columns: repeat(4,1fr); gap:14px; margin-bottom: 28px; }
 @media (max-width: 980px){ .stat-grid{ grid-template-columns: repeat(2,1fr); } }
@@ -2283,6 +2289,11 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .bb-progress-basics{ display:inline-flex; align-items:center; gap:3px; color:var(--health-good); }
 /* Pemula, before colours + fonts: the two sections Tujuan waits for. */
 .bb-progress-need{ max-width:260px; text-align:right; font-size:11.5px; line-height:1.4; color:var(--text-muted); }
+@media (max-width: 720px){
+  /* Phones: the head stacks, so the bar, its label and the note read from the left. */
+  .bb-progress{ align-items:flex-start; }
+  .bb-progress-need{ max-width:none; text-align:left; }
+}
 
 /* Progressive preview (right pane, edit view) — a blank sheet that only
    gains content as each section is actually filled in. Plain white/dark
@@ -5419,6 +5430,45 @@ body.script-focus-open .consultant-fab{ visibility:hidden; }
    ============================================================ */
 .home-notices{ display:flex; flex-direction:column; gap:10px; margin:0 0 18px; }
 .home-notices .trial-remind{ margin:0; }
+/* === Beranda: the map (js/views/home.js basicsPathHTML / weekPathHTML) ===
+   One strip under the brand header: the three basic steps, then the weekly
+   round. The stop the owner is at glows in the brand tint, like the rest of
+   Beranda's cards; done stops carry a green tick; every stop is a link. */
+.home-path{ display:flex; align-items:center; gap:18px; padding:12px 16px; margin:0 0 18px; }
+.home-path-head{ flex:none; display:flex; flex-direction:column; gap:2px; min-width:118px; }
+.home-path-title{ font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); }
+.home-path-now{ font-size:13px; font-weight:700; color: var(--text); }
+.home-path-steps{ flex:1; min-width:0; list-style:none; margin:0; padding:0; display:grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap:10px; }
+.home-path-item{ position:relative; min-width:0; }
+/* A short line joins one stop to the next, so the row reads as a path. */
+.home-path-item + .home-path-item::before{ content:""; position:absolute; left:-10px; top:50%; width:10px; height:2px; background: var(--border); }
+.home-path-step{ display:flex; align-items:center; gap:10px; min-width:0; height:100%; padding:9px 12px; border-radius: var(--radius-md); border:1px solid var(--border); background: var(--surface); color: var(--text-muted); text-decoration:none; transition: border-color .15s, background .15s, box-shadow .2s; }
+a.home-path-step:hover{ border-color: var(--brand-tint); }
+div.home-path-step{ cursor:pointer; }
+.home-path-mark{ flex:none; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:800; background: var(--surface-2); color: var(--text-muted); }
+.home-path-text{ min-width:0; display:flex; flex-direction:column; gap:1px; }
+.home-path-text b{ font-size:13px; font-weight:700; color: var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.home-path-text small{ font-size:11px; color: var(--text-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.home-path-step.is-done .home-path-mark{ background: var(--health-good-soft); color: var(--health-good); }
+.home-path-step.is-done .home-path-text b{ color: var(--text-muted); }
+.home-path-step.is-current{ border-color: var(--brand-tint); background: color-mix(in srgb, var(--brand-tint) 14%, var(--surface)); box-shadow: 0 0 18px color-mix(in srgb, var(--brand-tint) 30%, transparent); }
+.home-path-step.is-current .home-path-mark{ background: var(--brand-tint); color: var(--brand-tint-text); }
+.home-path-step.is-current .home-path-text small{ color: var(--text); font-weight:700; }
+.home-path-step.is-locked{ opacity:.6; }
+.home-path-step.is-celebrate{ animation: beginner-done-row-in 1.1s ease-out; }
+@media (max-width: 720px){
+  /* Phones: the title sits above; each stop stacks its mark over its label so
+     three or four fit across 375px without clipping a word. */
+  .home-path{ flex-direction:column; align-items:stretch; gap:10px; padding:12px; }
+  .home-path-head{ flex-direction:row; align-items:baseline; justify-content:space-between; gap:10px; min-width:0; }
+  .home-path-steps{ gap:6px; }
+  .home-path-item + .home-path-item::before{ left:-6px; width:6px; top:21px; }
+  .home-path-step{ flex-direction:column; align-items:center; gap:6px; padding:9px 4px; text-align:center; }
+  .home-path-text{ align-items:center; width:100%; }
+  .home-path-text b{ font-size:11.5px; white-space:normal; line-height:1.25; }
+  .home-path-text small{ font-size:10px; white-space:normal; line-height:1.25; }
+}
+@media (prefers-reduced-motion: reduce){ .home-path-step, .home-path-step.is-celebrate{ transition:none; animation:none; } }
 .home-layout{ display:flex; flex-direction:column; gap:18px; min-width:0; }
 .home-col{ display:contents; }
 .home-b-today{ order:1; }

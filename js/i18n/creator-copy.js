@@ -73,6 +73,10 @@ export default {
 
 
   "cr.eyebrowGuided": { en: "Write content", id: "Tulis konten" },
+  // One line under each Konten page's title saying what the page is for (Pemula).
+  "cr.whatGuided": { en: "Where one piece of content gets made, from idea to published: write the script, shoot, edit, then mark it published.", id: "Tempat mengerjakan satu konten dari ide sampai terbit: tulis naskah, syuting, edit, lalu tandai terbit." },
+  "calendar.whatGuided": { en: "See and set your upload dates. Content that has no date yet waits in the Content Bank.", id: "Lihat dan atur tanggal upload. Konten yang belum punya tanggal menunggu di Bank Konten." },
+  "contentList.whatGuided": { en: "All your content in one list, with its status and performance numbers.", id: "Semua kontenmu dalam satu daftar, lengkap dengan status dan angka performanya." },
   "cr.newContent": { en: "New content", id: "Konten baru" },
   // Two different empty sidebars: a brand new brand with zero content ever
   // (an invitation to make the first one) vs. an active brand that's

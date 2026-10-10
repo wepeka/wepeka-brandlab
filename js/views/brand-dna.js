@@ -15,6 +15,7 @@ import { brandDnaCompleteness, brandDnaDone, missingDnaFields, visualBasicsDone 
 import { markDnaJustCompleted } from "./brand-builder.js";
 import { t } from "../i18n.js";
 import { dnaExamples, businessKind } from "../dna-examples.js";
+import { aiUsageRemaining } from "../ai-usage.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
 
 const TOUR_STEPS = [
@@ -49,6 +50,13 @@ const stripEnd = (s) => (s || "").trim().replace(/[.!?]+$/, "");
 // "1 AI credit" on every button here that spends one — same pill as
 // "Rencanakan minggu ini" (.btn-cost); a tooltip never shows on touch.
 const costTagHTML = () => `<span class="btn-cost">${t("ai.creditTag")}</span>`;
+// What that tag means and how many are left — said once, under the step's
+// buttons, in the place a newcomer first meets it (up to three AI buttons a
+// step, and the balance otherwise lives only in the ⋯ menu).
+function creditNoteHTML() {
+  const left = aiUsageRemaining();
+  return `<p class="ai-credit-note">${left === Infinity ? t("ai.creditNote.unlimited") : t("ai.creditNote", { left })}</p>`;
+}
 
 const AGE_RANGES = [t("dna.age.0to2"), t("dna.age.3to5"), t("dna.age.6to12"), t("dna.age.13to17"), "18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
 
@@ -851,6 +859,7 @@ function navHTML(state, nextDisabled, hint = "") {
         </div>
       </div>
     </div>
+    ${creditNoteHTML()}
   `;
 }
 

@@ -149,6 +149,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
           <div class="page-eyebrow">${stageEyebrow(stage, stages.length)}</div>
           <h3 style="margin:2px 0 4px;">${esc(stage?.name || "")}</h3>
           ${stage?.description ? `<p class="text-muted" style="font-size:13px;margin:0;">${esc(stage.description)}</p>` : ""}
+          ${guided && isLadder ? `<p class="text-faint" style="font-size:12px;margin:6px 0 0;">${t("camp.guided.levelHint")}</p>` : ""}
           ${stage?.mergedFrom?.length ? `<p class="text-faint" style="font-size:12px;margin:4px 0 0;">${esc(t("camp.detail.mergedHere", { names: stage.mergedFrom.join(" + ") }))}</p>` : ""}
         </div>
         <div class="cd-stage-progress-col">
