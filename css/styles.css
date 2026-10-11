@@ -4695,6 +4695,19 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .ann-email-off{ margin:2px 0 12px; }
 .ann-emailed{ display:flex; align-items:center; gap:6px; margin:10px 0 0; font-size:12px; }
 .ann-email-btn{ margin-top:8px; }
+/* "Laporkan masalah" form (js/report-problem.js). */
+.lapor-shot{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.lapor-shot-pick{ cursor:pointer; }
+.lapor-shot-thumb{ width:112px; height:72px; object-fit:cover; border-radius:10px; border:1px solid var(--border); background: var(--surface-2); }
+.lapor-auto{ display:flex; align-items:flex-start; gap:7px; margin:0; font-size:12px; line-height:1.5; color: var(--text-faint); }
+.lapor-auto svg{ flex:none; margin-top:2px; }
+.lapor-error{ margin:12px 0 0; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:600; color: var(--health-bad, #e5484d); background: color-mix(in srgb, var(--health-bad, #e5484d) 12%, transparent); }
+.lapor-error a{ color: inherit; text-decoration: underline; }
+.lapor-done{ text-align:center; padding:8px 4px 4px; }
+.lapor-done-icon{ display:inline-flex; align-items:center; justify-content:center; width:48px; height:48px; border-radius:50%; background: color-mix(in srgb, var(--health-good) 18%, transparent); color: var(--health-good); margin-bottom:10px; }
+.lapor-done h3{ margin:0 0 8px; font-size:17px; }
+.lapor-done p{ margin:0 0 8px; font-size:14px; line-height:1.6; color: var(--text-muted); }
+.lapor-done a{ color: var(--accent); font-weight:700; }
 /* Community sheet (js/community.js): join the WhatsApp group, follow on
    Instagram. Brand colours of the two apps, so each button says where it
    goes before it's read. */

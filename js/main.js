@@ -42,6 +42,7 @@ import { clearPageGuide } from "./section-guide.js";
 import { getMode, hasChosenMode } from "./mode.js";
 import { setPlainLanguageResolver } from "./i18n.js";
 import { renderModePicker } from "./mode-picker.js";
+import { noteError } from "./error-log.js";
 
 // Pemula reads plain words everywhere (js/i18n.js plainWords).
 setPlainLanguageResolver(() => getMode() === "guided");
@@ -580,6 +581,7 @@ async function renderRoute() {
     )();
   } catch (err) {
     console.error("[route] failed to load", route.view, err);
+    noteError(`route-load ${route.view}`, err);
     if (token === renderToken) paintRouteError(viewRoot);
     return;
   }
@@ -622,6 +624,7 @@ async function renderRoute() {
     }
   } catch (err) {
     console.error("[route] failed to render", route.view, err);
+    noteError(`route-render ${route.view}`, err);
     cleanup = null;
     if (token === renderToken) paintRouteError(viewRoot);
   }
@@ -634,9 +637,14 @@ function paintRouteError(root) {
       <h2 style="margin:0 0 8px;font-size:16px;">${escapeHtml(tx.routeTitle)}</h2>
       <p class="text-muted" style="margin:0 0 18px;font-size:13.5px;">${escapeHtml(tx.routeBody)}</p>
       <button type="button" class="btn btn-primary" id="route-error-reload">${escapeHtml(tx.reload)}</button>
+      <button type="button" class="btn btn-ghost" id="route-error-report" style="margin-top:8px;">${escapeHtml(t("lapor.fromError"))}</button>
     </div>
   `;
   root.querySelector("#route-error-reload")?.addEventListener("click", () => location.reload());
+  // Reloading didn't help? One tap tells the team, with the error attached.
+  root.querySelector("#route-error-report")?.addEventListener("click", () => {
+    import("./report-problem.js").then((m) => m.openReportProblem({ kind: "bug" })).catch((e) => console.warn("report form unavailable", e));
+  });
 }
 
 // Last-resort net for anything that escapes every other try/catch in the
@@ -648,6 +656,8 @@ function paintRouteError(root) {
 let globalErrorToastAt = 0;
 function notifyUnexpectedError(kind, err) {
   console.error(`[${kind}]`, err);
+  // Remembered (in memory) so a problem report can say what went wrong.
+  noteError(kind, err);
   const now = Date.now();
   if (now - globalErrorToastAt < 15000) return;
   globalErrorToastAt = now;

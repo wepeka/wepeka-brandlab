@@ -56,6 +56,7 @@ const PATHS = {
   refresh: `<path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3"/><path d="M18 4v4h-4M6 20v-4h4"/>`,
   bot: `<rect x="4" y="8" width="16" height="12" rx="4"/><circle cx="9" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 8V4.5"/><circle cx="12" cy="3" r="1.1" fill="currentColor" stroke="none"/><path d="M4 13H2M22 13h-2"/>`,
   mic: `<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0014 0v-1"/><path d="M12 18v4M9 22h6"/>`,
+  flag: `<path d="M5 21V4"/><path d="M5 4h12l-2.5 4 2.5 4H5"/>`,
   megaphone: `<path d="M3 11v2a1 1 0 001 1h2l5 4V6L6 10H4a1 1 0 00-1 1z"/><path d="M15 9a4 4 0 010 6"/><path d="M18 6.5a8 8 0 010 11"/>`,
   money: `<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>`,
   bell: `<path d="M6 8a6 6 0 0112 0c0 4.5 1.5 6 2.5 7H3.5c1-1 2.5-2.5 2.5-7z"/><path d="M9.5 19a2.5 2.5 0 005 0"/>`,
