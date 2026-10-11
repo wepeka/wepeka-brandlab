@@ -78,6 +78,8 @@ export default {
   "guide.video.prev": { en: "Previous", id: "Sebelumnya" },
   "guide.video.next": { en: "Next", id: "Berikutnya" },
   "guide.video.fullscreen": { en: "Full screen", id: "Layar penuh" },
+  "guide.video.skipIntro": { en: "Skip intro", id: "Lewati intro" },
+  "guide.video.skipOutro": { en: "Skip", id: "Lewati" },
   "guide.video.choices.head": { en: "What would you like to do next?", id: "Mau lanjut gimana?" },
   "guide.video.choices.replay": { en: "Replay video", id: "Ulangi video" },
   "guide.video.choices.tour": { en: "Website tour", id: "Tur website" },

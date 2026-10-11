@@ -36,6 +36,12 @@
 // ends) and lets you jump or press Berikutnya. Every frame carries the
 // Wepeka Brandlab mark top-right (on a white chip) and the part's title
 // top-left — an overlay, so it applies to any video put in the admin.
+//
+// Bumper: the same short Wepeka Brandlab ident opens and closes every guide
+// video — once before the first part that plays, once after the last. It
+// belongs to the player (assets/video/brandlab-bumper-*.mp4), not to the
+// uploads, so every video in the admin gets it without being re-uploaded,
+// and it carries a "Lewati intro" button.
 import { icon } from "./icons.js";
 import { escapeHtml, toast, showCalloutBubble, openMenu, closeMenu } from "./dom.js";
 import { helpEntry } from "./help.js";
@@ -309,6 +315,19 @@ function watermarkHTML(subtitle) {
     </div>`;
 }
 
+// The ident that opens ("in") and closes ("out") every guide video, in the
+// same frame the video plays in. No watermark and no controls — it is the
+// brand moment itself — just the Lewati button, bottom-right over the
+// picture. The closing one ends on the logo, which stays on screen behind
+// the three answers.
+const BUMPER_SRC = { in: "assets/video/brandlab-bumper-in.mp4", out: "assets/video/brandlab-bumper-out.mp4" };
+export function bumperHTML(kind) {
+  const src = BUMPER_SRC[kind];
+  if (!src) return "";
+  const label = t(kind === "in" ? "guide.video.skipIntro" : "guide.video.skipOutro");
+  return `<div class="guide-video-frame is-bumper"><video src="${src}" playsinline preload="auto" disablepictureinpicture></video><button type="button" class="gv-skip" data-vc="skip-bumper">${label}${icon("chevronRight", { size: 13 })}</button></div>`;
+}
+
 // `autoplay`: the modal plays the video as soon as it opens — someone who
 // pressed Video (or a new account's intro) came to watch, not to press play
 // a second time. Browsers allow it after a click on the page; where one
@@ -394,7 +413,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     wide: true,
     bodyHTML: `
       <div class="gv-stage-wrap" data-video-frame-host>
-        <div data-video-stage>${guideVideoWidgetHTML(videoKey, { start, autoplay: true, part: current })}</div>
+        <div data-video-stage>${real ? "" : guideVideoWidgetHTML(videoKey, { start, autoplay: true, part: current })}</div>
       </div>
       <div class="gv-bar">
         ${multi ? `<button type="button" class="btn btn-ghost btn-sm" data-vc="prev">${icon("chevronLeft", { size: 13 })}${t("guide.video.prev")}</button>` : ""}
@@ -443,11 +462,46 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     choicesHead.hidden = false;
   };
   // A part ending: the next one starts by itself; after the last, the
-  // three answers.
+  // closing bumper and then the three answers.
   const partEnded = () => {
     if (current < parts.length - 1) playPart(current + 1);
-    else showChoices();
+    else playBumper("out", showChoices);
   };
+  // The Wepeka Brandlab bumper, in the frame the video plays in. It always
+  // hands over to `then`: when it ends, on Lewati, on an error, or when the
+  // file is slow to start (nobody waits on a bumper) — but never once
+  // something else started playing in its place, or the modal has closed.
+  let endBumper = null;
+  function playBumper(kind, then) {
+    if (!overlay.isConnected) return;
+    if (ending) { clearTimeout(ending); ending = null; }
+    const id = ++playId;
+    choicesHead.hidden = true;
+    stage.innerHTML = bumperHTML(kind);
+    const el = stage.querySelector("video");
+    const skipBtn = stage.querySelector(".gv-skip");
+    let started = false;
+    let guard = setTimeout(() => { if (!started) finish(); }, 2500);
+    const finish = () => {
+      clearTimeout(guard);
+      if (id !== playId || !endBumper || !overlay.isConnected) return;
+      endBumper = null;
+      skipBtn.remove();
+      then();
+    };
+    // Lewati: the closing bumper still lands on its last frame, the logo.
+    endBumper = () => {
+      el.pause?.();
+      if (kind === "out" && el.duration) el.currentTime = el.duration;
+      finish();
+    };
+    el.addEventListener("playing", () => { started = true; clearTimeout(guard); guard = setTimeout(finish, 6000); }, { once: true });
+    el.addEventListener("ended", finish, { once: true });
+    el.addEventListener("error", finish, { once: true });
+    // With its sound where the browser allows it (the player opens on a
+    // click), silent where it doesn't.
+    el.play?.()?.catch?.(() => { el.muted = true; el.play().catch(finish); });
+  }
   // A real video announces its own end, and so does YouTube through its
   // IFrame API. Vimeo — or YouTube before its API answers, or if it never
   // loads — falls back to the declared length. The placeholder has nothing
@@ -477,6 +531,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     }
   };
   function playPart(i, { from = 0 } = {}) {
+    endBumper = null;
     current = Math.min(Math.max(0, i), parts.length - 1);
     start = from;
     stage.innerHTML = guideVideoWidgetHTML(videoKey, { autoplay: true, part: current, start });
@@ -491,6 +546,7 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     const btn = e.target instanceof Element ? e.target.closest("[data-vc]") : null;
     if (!btn) return;
     const what = btn.dataset.vc;
+    if (what === "skip-bumper") return endBumper?.();
     if (what === "prev") return playPart(current - 1);
     if (what === "next") return playPart(current + 1);
     if (what === "fullscreen") {
@@ -521,7 +577,9 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
     obs.observe(document.body, { childList: true });
   }
   paintBar();
-  watchForEnd();
+  // A real video opens on the bumper, then plays from this page's chapter.
+  if (real) playBumper("in", () => playPart(current, { from: start }));
+  else watchForEnd();
   return overlay;
 }
 
