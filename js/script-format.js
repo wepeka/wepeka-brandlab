@@ -189,20 +189,9 @@ export function beatsToScript(beats, { preamble = "", lang = "id" } = {}) {
   return preamble && body ? `${preamble}\n\n${body}` : body || preamble;
 }
 
-// What ONE line of a script is, for an editor that styles line by line
-// (js/script-focus.js): "head" for "[0-3 dtk] HOOK", "visual" / "onScreen" /
-// "say" for a labelled line — `labelLength` is the "Narasi: " part, trailing
-// space included — and "" for anything else.
-export function scriptLineKind(line) {
-  const s = String(line || "");
-  if (HEADER_RE.test(s)) return { kind: "head", labelLength: 0 };
-  const f = s.match(FIELD_RE);
-  if (!f) return { kind: "", labelLength: 0 };
-  return { kind: FIELD_KEY(f[1]), labelLength: s.length - f[3].length };
-}
-
 // Old "HOOK / ISI PEMBAHASAN" scripts.
 const OLD_HOOK_RE = /(?:^|\n)\s*[*#_>]*\s*HOOK\s*[*_:]*\s*\n([\s\S]*?)(?:\n\s*\n|\n\s*[*#_>]*\s*ISI|$)/i;
+const OLD_LABEL_LINE = "^[ \\t]*[*#_>]*[ \\t]*(HOOK|ISI PEMBAHASAN|MAIN CONTENT)[ \\t]*[*_:]*[ \\t]*$";
 const SLIDE_RE = /(?:^|\n)\s*Slide\s*1\s*:?\s*\n?([^\n]+)/i;
 
 // What gets read aloud: the narration only, one beat per paragraph. Old
@@ -215,7 +204,105 @@ export function spokenText(text) {
     const said = parsed.beats.map((b) => b.say.replace(/^\([^)]*\)\s*/, "")).filter(Boolean);
     if (said.length) return said.join("\n\n");
   }
-  return s.replace(/^[ \t]*[*#_>]*[ \t]*(HOOK|ISI PEMBAHASAN|MAIN CONTENT)[ \t]*[*_:]*[ \t]*$/gim, "").replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n");
+  return s.replace(new RegExp(OLD_LABEL_LINE, "gim"), "").replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n");
+}
+
+// ---- "Biasa": the script as plain writing ------------------------------------
+// The plain box shows a script as someone would type it in a notes app: only
+// the words, one paragraph per part — no part names, no seconds, no Visual /
+// Teks layar lines. Those stay in the stored text (the "Pro" cards, the PDF
+// and the Syuting screen still show them); `directed` says the script has
+// such lines the box isn't showing.
+
+// The words of one part: what's said, or the loose text under its header.
+const partWords = (b) => (String(b.say || "").trim() ? b.say : b.note || "").trim();
+const splitParagraphs = (s) => s.split(/\n[ \t]*(?:\n[ \t]*)+/).map((p) => p.trim()).filter(Boolean);
+
+export function plainScript(text) {
+  const s = String(text || "").replace(/\r\n?/g, "\n");
+  const parsed = parseScript(s);
+  if (!parsed) return { text: new RegExp(OLD_LABEL_LINE, "im").test(s) ? spokenText(s) : s, directed: false };
+  return {
+    text: parsed.beats.map(partWords).filter(Boolean).join("\n\n"),
+    directed: parsed.beats.some((b) => b.visual || b.onScreen || (b.note && String(b.say || "").trim())),
+  };
+}
+
+const wordSet = (s) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+// How alike two paragraphs are, 0–1 (shared words).
+function alike(a, b) {
+  const x = wordSet(a);
+  const y = wordSet(b);
+  if (!x.size || !y.size) return 0;
+  let both = 0;
+  x.forEach((w) => { if (y.has(w)) both++; });
+  return (2 * both) / (x.size + y.size);
+}
+
+// Which old paragraph each new one continues, both kept in order: an
+// untouched paragraph always finds itself, an edited one its closest match,
+// and what's left over was added or removed. Returns steps in reading
+// order: { o, n } a pair, { o } removed, { n } added.
+function pairParagraphs(olds, news) {
+  const score = (i, j) => (olds[i] === news[j] ? 2 : 1 + 0.9 * alike(olds[i], news[j]));
+  const best = Array.from({ length: olds.length + 1 }, () => new Array(news.length + 1).fill(0));
+  for (let i = olds.length - 1; i >= 0; i--) {
+    for (let j = news.length - 1; j >= 0; j--) {
+      best[i][j] = Math.max(score(i, j) + best[i + 1][j + 1], best[i + 1][j], best[i][j + 1]);
+    }
+  }
+  const steps = [];
+  let i = 0;
+  let j = 0;
+  while (i < olds.length && j < news.length) {
+    if (best[i][j] === score(i, j) + best[i + 1][j + 1]) steps.push({ o: i++, n: j++ });
+    else if (best[i][j] === best[i + 1][j]) steps.push({ o: i++ });
+    else steps.push({ n: j++ });
+  }
+  while (i < olds.length) steps.push({ o: i++ });
+  while (j < news.length) steps.push({ n: j++ });
+  return steps;
+}
+
+// What was typed in the plain box (`plain`), written back into `script`.
+// Free text is stored as typed. A script with parts keeps them: each
+// paragraph goes back into the part it came from — so that part's name,
+// Visual and Teks layar stay with it — a new paragraph becomes a new part,
+// and a removed one takes its part along.
+export function applyPlainScript(script, plain, { lang = "id" } = {}) {
+  const stored = String(script || "").replace(/\r\n?/g, "\n");
+  const typed = String(plain ?? "").replace(/\r\n?/g, "\n");
+  if (typed === plainScript(stored).text) return stored;
+  const parsed = parseScript(stored);
+  // A whole script with parts pasted in is taken as it is.
+  if (!parsed || parseScript(typed)) return typed;
+  const { beats } = parsed;
+  const paras = splitParagraphs(typed);
+  const worded = beats.map((b, at) => ({ at, words: partWords(b) })).filter((x) => x.words);
+  // An emptied box is an emptied script — unless it never showed anything
+  // (a script of shots and screen text only).
+  if (!paras.length) return worded.length ? "" : stored;
+  const out = [];
+  let next = 0;
+  // Parts without words aren't in the box; they keep their place.
+  const keepSilentUntil = (end) => {
+    for (; next < end; next++) if (!partWords(beats[next])) out.push(beats[next]);
+  };
+  pairParagraphs(worded.map((x) => x.words), paras).forEach(({ o, n }) => {
+    if (o === undefined) {
+      out.push({ label: langOf(stored, lang) === "en" ? "BODY" : "ISI", visual: "", onScreen: "", say: paras[n], note: "" });
+      return;
+    }
+    const { at, words } = worded[o];
+    keepSilentUntil(at);
+    next = at + 1;
+    if (n === undefined) return;
+    const b = beats[at];
+    if (paras[n] === words) out.push(b);
+    else out.push(String(b.say || "").trim() ? { ...b, say: paras[n] } : { ...b, say: paras[n], note: "" });
+  });
+  keepSilentUntil(beats.length);
+  return beatsToScript(out, { preamble: parsed.preamble, lang: langOf(stored, lang) });
 }
 
 // Narration words / estimated seconds of a script (any shape).

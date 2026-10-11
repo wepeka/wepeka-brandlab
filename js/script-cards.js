@@ -1,5 +1,5 @@
-// "Kartu" — a video script written one card per part (bagian), the other
-// way to write besides "Ketik biasa" (the plain box). Each card is a part
+// "Pro" — a video script written one card per part (bagian), the other
+// way to write besides "Biasa" (the plain box). Each card is a part
 // of the video: its name (HOOK, ISI, CTA…), what to say (Narasi, the big
 // box) and, only when wanted, what to show (Visual) and the text on screen
 // (Teks layar). Parts carry no seconds of their own — only the length of
@@ -8,7 +8,7 @@
 //
 // Underneath it is still the one plain string in content.script, in the
 // same beat format the AI writes (js/script-format.js) — the PDF, the
-// teleprompter, the chat and "Ketik biasa" all keep reading that string.
+// teleprompter, the chat and "Biasa" all keep reading that string.
 // Used at two sizes: inside Creator, and full screen (js/script-focus.js).
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";

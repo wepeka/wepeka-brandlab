@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, scriptLineKind, scriptToBeats, beatsToScript, beatTimeline, scriptBeatsHTML } from "../js/script-format.js";
+import { renderScript, parseScript, spokenText, hookOf, applyHook, scriptLength, hookText, parseSlides, plainScript, applyPlainScript, scriptToBeats, beatsToScript, beatTimeline, scriptBeatsHTML } from "../js/script-format.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, recommendedHookTypes, orderedHookTypes } from "../js/knowledge/hook-types.js";
 import { t } from "../js/i18n.js";
 
@@ -55,20 +55,94 @@ describe("renderScript / parseScript", () => {
   });
 });
 
-describe("scriptLineKind (the full-screen page styles line by line)", () => {
-  test("headers and the three labels, label length includes the space after it", () => {
-    assert.deepEqual(scriptLineKind("[0-6 dtk] HOOK"), { kind: "head", labelLength: 0 });
-    assert.deepEqual(scriptLineKind("Visual: Cuplikan selebrasi"), { kind: "visual", labelLength: 8 });
-    assert.deepEqual(scriptLineKind("Teks layar: 35 tahun nunggu."), { kind: "onScreen", labelLength: 12 });
-    assert.deepEqual(scriptLineKind("Narasi: Timnas juara."), { kind: "say", labelLength: 8 });
-    assert.deepEqual(scriptLineKind("Voice: Hi"), { kind: "say", labelLength: 7 });
-    assert.deepEqual(scriptLineKind("On-screen text: Hi"), { kind: "onScreen", labelLength: 16 });
+describe("Biasa: the script as plain writing (plainScript / applyPlainScript)", () => {
+  const stored = renderScript(BEATS);
+  const [HOOK, BUKTI, CTA] = BEATS.map((b) => b.say);
+
+  test("shows only the words, one paragraph per part", () => {
+    const { text, directed } = plainScript(stored);
+    assert.equal(text, [HOOK, BUKTI, CTA].join("\n\n"));
+    assert.ok(!/HOOK|dtk|Visual|Teks layar|Narasi/.test(text));
+    assert.equal(directed, true);
   });
-  test("an empty field is all label; anything else is plain", () => {
-    assert.deepEqual(scriptLineKind("Narasi: "), { kind: "say", labelLength: 8 });
-    assert.equal(scriptLineKind("Timnas juara setelah 35 tahun.").kind, "");
-    assert.equal(scriptLineKind("").kind, "");
-    assert.equal(scriptLineKind("Narasinya nanti").kind, "");
+  test("free text is shown and stored exactly as typed", () => {
+    const typed = "Halo semua.\n\n\nIni kopi kami.";
+    assert.deepEqual(plainScript(typed), { text: typed, directed: false });
+    assert.equal(applyPlainScript("", typed), typed);
+    assert.equal(applyPlainScript("Halo", "Halo semua"), "Halo semua");
+  });
+  test("an old HOOK / ISI PEMBAHASAN script loses just its two labels", () => {
+    const old = "HOOK\nHalo semua\n\nISI PEMBAHASAN\nIni isinya";
+    assert.equal(plainScript(old).text, "Halo semua\n\nIni isinya");
+    assert.equal(applyPlainScript(old, "Halo semua\n\nIni isinya"), old);
+  });
+  test("nothing typed, nothing changed", () => {
+    assert.equal(applyPlainScript(stored, plainScript(stored).text), stored);
+  });
+  test("an edited paragraph goes back into its own part — name, Visual and Teks layar stay", () => {
+    const next = applyPlainScript(stored, [HOOK, "Yang kanan gula aren asli dari Blitar.", CTA].join("\n\n"));
+    const { beats } = parseScript(next);
+    assert.deepEqual(beats.map((b) => b.label), ["HOOK", "BUKTI", "CTA"]);
+    assert.equal(beats[1].say, "Yang kanan gula aren asli dari Blitar.");
+    assert.equal(beats[1].visual, BEATS[1].visual);
+    assert.equal(beats[0].onScreen, BEATS[0].onScreen);
+    assert.equal(beats[2].visual, BEATS[2].visual);
+  });
+  test("a fully rewritten paragraph still keeps its place", () => {
+    const { beats } = parseScript(applyPlainScript(stored, ["Pernah ketipu sirup?", BUKTI, CTA].join("\n\n")));
+    assert.equal(beats[0].label, "HOOK");
+    assert.equal(beats[0].say, "Pernah ketipu sirup?");
+    assert.equal(beats[0].visual, BEATS[0].visual);
+  });
+  test("a new paragraph becomes a new part, where it was typed", () => {
+    const { beats } = parseScript(applyPlainScript(stored, [HOOK, "Harganya sama aja.", BUKTI, CTA].join("\n\n")));
+    assert.deepEqual(beats.map((b) => b.label), ["HOOK", "ISI", "BUKTI", "CTA"]);
+    assert.equal(beats[1].say, "Harganya sama aja.");
+    assert.equal(beats[1].visual, "");
+    assert.equal(beats[2].visual, BEATS[1].visual);
+  });
+  test("a removed paragraph takes its part along; the others keep theirs", () => {
+    const { beats } = parseScript(applyPlainScript(stored, [HOOK, CTA].join("\n\n")));
+    assert.deepEqual(beats.map((b) => b.label), ["HOOK", "CTA"]);
+    assert.equal(beats[1].visual, BEATS[2].visual);
+  });
+  test("a paragraph moved while another is edited is still found", () => {
+    const { beats } = parseScript(applyPlainScript(stored, ["Baru nih.", "Yang kiri sirup, yang kanan gula aren Blitar. Lihat deh bedanya.", HOOK].join("\n\n")));
+    assert.equal(beats.find((b) => /Yang kiri sirup/.test(b.say)).visual, BEATS[1].visual);
+  });
+  test("line breaks inside a paragraph stay in that part", () => {
+    const next = applyPlainScript(stored, [`${HOOK}\nSerius.`, BUKTI, CTA].join("\n\n"));
+    assert.equal(parseScript(next).beats.length, 3);
+    assert.equal(plainScript(next).text, [`${HOOK}\nSerius.`, BUKTI, CTA].join("\n\n"));
+  });
+  test("an emptied box is an emptied script", () => {
+    assert.equal(applyPlainScript(stored, "  \n"), "");
+  });
+  test("parts with no words (a shot, a title card) aren't shown and aren't lost", () => {
+    const silent = renderScript([{ label: "BUKA", visual: "Logo." }, ...BEATS, { label: "TUTUP", onScreen: "Sampai besok" }]);
+    assert.equal(plainScript(silent).text, [HOOK, BUKTI, CTA].join("\n\n"));
+    const { beats } = parseScript(applyPlainScript(silent, [HOOK, "Lihat bedanya.", CTA].join("\n\n")));
+    assert.deepEqual(beats.map((b) => b.label), ["BUKA", "HOOK", "BUKTI", "CTA", "TUTUP"]);
+    const shotsOnly = renderScript([{ label: "BUKA", visual: "Logo." }]);
+    assert.deepEqual(plainScript(shotsOnly), { text: "", directed: true });
+    assert.equal(applyPlainScript(shotsOnly, " "), shotsOnly);
+    assert.deepEqual(parseScript(applyPlainScript(shotsOnly, "Halo.")).beats.map((b) => b.label), ["ISI", "BUKA"]);
+  });
+  test("loose text under a header counts as that part's words", () => {
+    const loose = "[0-3 dtk] HOOK\nKamu tau gak?\n\n[3-8 dtk] ISI\nVisual: Meja.\nNarasi: Ini dia.";
+    assert.equal(plainScript(loose).text, "Kamu tau gak?\n\nIni dia.");
+    const { beats } = parseScript(applyPlainScript(loose, "Kamu tau gak sih?\n\nIni dia."));
+    assert.equal(beats[0].say, "Kamu tau gak sih?");
+    assert.equal(beats[0].note, "");
+    assert.equal(beats[1].visual, "Meja.");
+  });
+  test("a whole script with parts pasted in is taken as it is; English scripts stay English", () => {
+    const other = renderScript([{ label: "HOOK", say: "Baru." }]);
+    assert.equal(applyPlainScript(stored, other), other);
+    const en = renderScript(BEATS, { lang: "en" });
+    const next = applyPlainScript(en, [HOOK, "One more thing.", BUKTI, CTA].join("\n\n"));
+    assert.match(next, /Voice: One more thing\./);
+    assert.match(next, /s\] BODY\n/);
   });
 });
 

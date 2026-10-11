@@ -132,7 +132,8 @@ function aiSteps() {
 function scriptingSteps() {
   return [
     {
-      selector: "#f-script",
+      // The script box: "Biasa" (plain) or "Pro" (cards), whichever is on.
+      selector: ["#f-script-plain", "#script-cards"],
       title: t("guide.creator.scriptEdit.title"),
       body: t("guide.creator.scriptEdit.body"),
     },

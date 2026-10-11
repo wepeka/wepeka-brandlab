@@ -215,7 +215,7 @@ export default {
   "cr.f.slideUp": { en: "Move up", id: "Naikkan" },
   "cr.f.addSlide": { en: "Add slide", id: "Tambah slide" },
   "cr.f.quickCarouselTitle": { en: "Quick generate — drafts all the slides from what's already here", id: "Tulis cepat — menyusun semua slide dari yang sudah ada di sini" },
-  "cr.f.scriptPh": { en: "[0-3 s] HOOK\nVisual: what the first second shows\nOn-screen text: …\nVoice: the first line\n\n[3-10 s] …", id: "[0-3 dtk] HOOK\nVisual: apa yang tampil di detik pertama\nTeks layar: …\nNarasi: kalimat pembuka\n\n[3-10 dtk] …" },
+  "cr.f.scriptPh": { en: "Write what you'll say in the video — just type, like in a notes app.", id: "Tulis yang mau kamu ucapkan di video — ketik biasa aja, seperti di catatan." },
   "cr.f.quickScriptAria": { en: "Quick AI generate from this script/idea", id: "Tulis cepat pakai AI dari script/ide ini" },
   "cr.f.quickScriptTitle": { en: "Quick generate — just fills in Script from what's already here", id: "Tulis cepat — cuma isi Script dari yang sudah ada" },
   "cr.f.caption": { en: "Caption", id: "Caption" },
@@ -545,28 +545,22 @@ export default {
   "cr.focus.openTitle": { en: "Write the script on a big, full-screen page — with the AI chat beside it", id: "Tulis script di layar penuh yang lega — bisa sambil diskusi sama AI di sampingnya" },
   "cr.focus.aria": { en: "Script, full screen", id: "Script, layar penuh" },
   "cr.focus.done": { en: "Done", id: "Selesai" },
-  "cr.focus.addBeat": { en: "Part", id: "Bagian" },
-  "cr.focus.addBeatTitle": { en: "Add the next part: timing, what to show, screen text and what to say", id: "Tambah bagian berikutnya: detik, yang direkam, teks layar, yang diucapkan" },
-  "cr.focus.preview": { en: "Preview", id: "Pratinjau" },
-  "cr.focus.edit": { en: "Edit", id: "Edit" },
   "cr.focus.teleprompter": { en: "Teleprompter", id: "Teleprompter" },
   "cr.focus.discuss": { en: "Discuss with AI", id: "Diskusi AI" },
-  "cr.focus.ph": { en: "Write your script here.\n\n[0-3 s] HOOK\nVisual: what the first second shows\nOn-screen text: …\nVoice: the first line\n\nTip: press \"+ Part\" for the next section.", id: "Tulis script-mu di sini.\n\n[0-3 dtk] HOOK\nVisual: apa yang tampil di detik pertama\nTeks layar: …\nNarasi: kalimat pembuka\n\nTips: tekan \"+ Bagian\" buat bagian berikutnya." },
   "cr.focus.sayPh": { en: "What you'll say…", id: "Yang kamu ucapkan…" },
-  "cr.focus.hint": { en: "Each part: [seconds] NAME, then Visual · On-screen text · Voice. The length is worked out from what you say. Esc to close.", id: "Tiap bagian: [detik] NAMA, lalu Visual · Teks layar · Narasi. Durasi dihitung dari Narasi. Esc buat tutup." },
-  // Same text in both languages on purpose: these two follow the SCRIPT's
-  // language (js/script-focus.js picks …En for an English script), not the
-  // UI's — English labels in an Indonesian script would break parseScript.
-  "cr.focus.beatTemplate": { en: "[{from}-{to} dtk] BAGIAN BARU\nVisual: \nTeks layar: \nNarasi: ", id: "[{from}-{to} dtk] BAGIAN BARU\nVisual: \nTeks layar: \nNarasi: " },
-  "cr.focus.beatTemplateEn": { en: "[{from}-{to} s] NEW PART\nVisual: \nOn-screen text: \nVoice: ", id: "[{from}-{to} s] NEW PART\nVisual: \nOn-screen text: \nVoice: " },
+  "cr.focus.hint": { en: "The length is worked out from what you write. Esc to close.", id: "Durasi dihitung dari tulisanmu. Esc buat tutup." },
   "cr.focus.cardsHint": { en: "One card per part. The seconds come from what you say. Esc to close.", id: "Satu kartu per bagian. Detik dihitung dari Narasi. Esc buat tutup." },
 
-  // ---------- Script as cards (js/script-cards.js) ----------
+  // ---------- Script: "Biasa" / "Pro" (js/views/creator.js, js/script-cards.js) ----------
   "cr.cards.modeAria": { en: "How to write the script", id: "Cara menulis script" },
-  "cr.cards.modeCards": { en: "Cards", id: "Kartu" },
-  "cr.cards.modeText": { en: "Plain text", id: "Ketik biasa" },
-  "cr.cards.modeCardsTitle": { en: "One card per part — add a part whenever you need one", id: "Satu kartu per bagian — tambah bagian kapan pun perlu" },
-  "cr.cards.modeTextTitle": { en: "Type freely in one box", id: "Ketik bebas di satu kotak" },
+  "cr.cards.modePlain": { en: "Simple", id: "Biasa" },
+  "cr.cards.modePro": { en: "Pro", id: "Pro" },
+  "cr.cards.modePlainTitle": { en: "Just type, in one box — no parts, no labels", id: "Ketik biasa di satu kotak — tanpa bagian, tanpa label" },
+  "cr.cards.modeProTitle": { en: "Part by part (Hook, Body, CTA), with what to show and the on-screen text", id: "Per bagian (Hook, Isi, CTA), lengkap dengan arahan visual dan teks layar" },
+  // "Biasa" shows only the words; these point at what it leaves out.
+  "cr.plain.more": { en: "This script also has shot and on-screen text notes — they show in Pro.", id: "Script ini juga punya arahan visual dan teks layar — kelihatan di mode Pro." },
+  "cr.plain.moreShort": { en: "This script also has shot and on-screen text notes.", id: "Script ini juga punya arahan visual dan teks layar." },
+  "cr.plain.moreOpen": { en: "See them in Pro", id: "Lihat di Pro" },
   "cr.cards.totalEmpty": { en: "Write what you'll say — the video's length shows here", id: "Tulis yang mau diucapkan — perkiraan durasi videonya muncul di sini" },
   "cr.cards.newLabel": { en: "BODY", id: "ISI" },
   "cr.cards.labelAria": { en: "Part name", id: "Nama bagian" },

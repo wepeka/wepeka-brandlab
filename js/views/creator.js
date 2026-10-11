@@ -8,7 +8,7 @@ import { consumeNavContext, go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine, durationToSeconds } from "../ai.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, orderedHookTypes, recommendedHookTypes, recommendedStructures, hookTypeByKey } from "../knowledge/hook-types.js";
-import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, parseScript, beatTimeline } from "../script-format.js";
+import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, parseScript, beatTimeline, plainScript, applyPlainScript } from "../script-format.js";
 import { downloadPagedPdf } from "../pdf-libs.js";
 import { openScriptFocus } from "../script-focus.js";
 import { mountScriptCards } from "../script-cards.js";
@@ -954,7 +954,7 @@ function paint(root, brandId, state, refresh) {
     });
   });
 
-  // Minggu / Tahap / Seri — remembered on the account like Kartu / Ketik biasa.
+  // Minggu / Tahap / Seri — remembered on the account like Biasa / Pro.
   qsa("[data-group-by]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.dataset.groupBy === groupBy) return;
@@ -986,7 +986,8 @@ function paint(root, brandId, state, refresh) {
     });
   }
 
-  const fieldMap = { title: "f-title", idea: "f-idea", caption: "f-caption", script: "f-script", cta: "f-cta", reference: "f-reference", notes: "f-notes" };
+  // The script isn't here: its box (Biasa or Pro) saves through #f-script below.
+  const fieldMap = { title: "f-title", idea: "f-idea", caption: "f-caption", cta: "f-cta", reference: "f-reference", notes: "f-notes" };
   const indicator = qs("#save-indicator", root);
   let flashTimer = null;
   const flashSaved = () => {
@@ -1103,25 +1104,32 @@ function paint(root, brandId, state, refresh) {
     wireFunnelField(root, "f-funnel-picker", pickFunnel);
   });
 
-  // "Layar penuh": the script on one big page (js/script-focus.js), with the
-  // script chat docked beside it. mousedown keeps the textarea's focus, so
-  // its blur-save (and the repaint it triggers) can't swallow the click.
-  // The length under the Script box follows the text as it is typed.
-  qs("#f-script", root)?.addEventListener("input", (e) => {
-    const note = qs("#script-len-note", root);
-    if (!note) return;
-    note.hidden = !e.target.value.trim();
-    note.querySelector("span").textContent = t("cr.ai.lengthBadge", scriptLengthVars(e.target.value));
-  });
-  // "Kartu": the cards write into the hidden #f-script and it's saved once
-  // focus leaves them, like every other field here. Switching between
-  // Kartu and Ketik biasa saves first, then redraws with the other one.
+  // Both ways of writing the script (scriptFieldHTML) write into the hidden
+  // #f-script, and it's saved once focus leaves them, like every other
+  // field here. Switching between Biasa and Pro saves first, then redraws
+  // with the other one.
   const scriptField = qs("#f-script", root);
   const saveScriptField = () => {
     if (!scriptField || scriptField.value === (getContent(selected.id)?.script || "")) return;
     updateContent(selected.id, { script: scriptField.value });
     flashSaved();
   };
+  // "Biasa": the box holds only the words; what's typed goes back into the
+  // script it was filled from, so its parts keep their Visual / Teks layar.
+  // The length under the box follows the text as it is typed.
+  const plainBox = qs("#f-script-plain", root);
+  if (plainBox && scriptField) {
+    const filledFrom = scriptField.value;
+    plainBox.addEventListener("input", () => {
+      scriptField.value = applyPlainScript(filledFrom, plainBox.value, { lang: getLang() });
+      const note = qs("#script-len-note", root);
+      if (!note) return;
+      note.hidden = !scriptField.value.trim();
+      note.querySelector("span").textContent = t("cr.ai.lengthBadge", scriptLengthVars(scriptField.value));
+    });
+    plainBox.addEventListener("blur", saveScriptField);
+  }
+  // "Pro": one card per part.
   const cardsHost = qs("#script-cards", root);
   if (cardsHost && scriptField) {
     mountScriptCards(cardsHost, { value: scriptField.value, lang: getLang(), onInput: (text) => { scriptField.value = text; } });
@@ -1139,6 +1147,9 @@ function paint(root, brandId, state, refresh) {
       updateSettings({ scriptEditor: btn.dataset.scriptMode });
     });
   });
+  // "Layar penuh": the script on one big page (js/script-focus.js), with the
+  // script chat docked beside it. mousedown keeps the box's focus, so its
+  // blur-save (and the repaint it triggers) can't swallow the click.
   const focusBtn = qs("#script-focus-open", root);
   focusBtn?.addEventListener("mousedown", (e) => e.preventDefault());
   focusBtn?.addEventListener("click", () => {
@@ -1927,33 +1938,44 @@ function slidesFieldHTML(c) {
       </div>`;
 }
 
-// ---- Video script: "Kartu" or "Ketik biasa" -------------------------------
-// Two ways to write the same script, picked once and remembered on the
-// account (settings.scriptEditor): one card per part
-// (js/script-cards.js), or the plain box. #f-script stays in the
-// page either way (hidden behind the cards) — everything that reads or
-// writes the script goes through it.
-const scriptEditorMode = () => (getSettings()?.scriptEditor === "text" ? "text" : "cards");
+// ---- Video script: "Biasa" or "Pro" ---------------------------------------
+// Two ways to write the same script, remembered on the account
+// (settings.scriptEditor): "Biasa" is one plain box that shows only the
+// words — no part names, no Visual / Teks layar lines (plainScript); "Pro"
+// is one card per part (js/script-cards.js). Until someone picks, it
+// follows the app's own Pemula / Pro. #f-script stays in the page, hidden,
+// with the stored text — everything that reads or writes the script goes
+// through it.
+const scriptEditorMode = () => {
+  const picked = getSettings()?.scriptEditor;
+  if (picked === "cards") return "cards";
+  // "text" is what "Ketik biasa" used to save.
+  if (picked === "plain" || picked === "text") return "plain";
+  return getMode() === "advanced" ? "cards" : "plain";
+};
 
 function scriptFieldHTML(c) {
   const mode = scriptEditorMode();
   const cards = mode === "cards";
+  const shown = plainScript(c.script || "");
   const modeBtn = (key, label, title) =>
     `<button type="button" class="${mode === key ? "active" : ""}" data-script-mode="${key}" aria-pressed="${mode === key}" title="${escapeHtml(t(title))}">${t(label)}</button>`;
-  return `<div class="field">
+  // A textarea drops one leading line break of its content — hence the "\n".
+  return `<div class="field" id="script-field">
         <div class="creator-field-head script-field-head">
-          <label ${cards ? "" : `for="f-script"`} style="margin-bottom:0;">${t("cr.f.script")}</label>
+          <label ${cards ? "" : `for="f-script-plain"`} style="margin-bottom:0;">${t("cr.f.script")}</label>
           <div class="flex items-center gap-6">
             <div class="segmented script-mode" role="group" aria-label="${escapeHtml(t("cr.cards.modeAria"))}">
-              ${modeBtn("cards", "cr.cards.modeCards", "cr.cards.modeCardsTitle")}${modeBtn("text", "cr.cards.modeText", "cr.cards.modeTextTitle")}
+              ${modeBtn("plain", "cr.cards.modePlain", "cr.cards.modePlainTitle")}${modeBtn("cards", "cr.cards.modePro", "cr.cards.modeProTitle")}
             </div>
             <button type="button" class="btn btn-ghost btn-sm script-focus-btn" id="script-focus-open" title="${escapeHtml(t("cr.focus.openTitle"))}">${icon("expand", { size: 13 })}<span>${t("cr.focus.open")}</span></button>
             <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
           </div>
         </div>
-        ${cards ? `<div id="script-cards"></div>` : ""}
-        <textarea class="textarea" id="f-script" style="min-height:220px;" placeholder="${t("cr.f.scriptPh")}" ${cards ? "hidden" : ""}>${escapeHtml(c.script || "")}</textarea>
-        ${cards ? "" : `<p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>`}
+        ${cards ? `<div id="script-cards"></div>` : `<textarea class="textarea" id="f-script-plain" style="min-height:220px;" placeholder="${escapeHtml(t("cr.f.scriptPh"))}">\n${escapeHtml(shown.text)}</textarea>`}
+        <textarea id="f-script" hidden>\n${escapeHtml(c.script || "")}</textarea>
+        ${cards ? "" : `<p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>
+        ${shown.directed ? `<p class="text-faint script-plain-more">${t("cr.plain.moreShort")} <button type="button" data-script-mode="cards">${t("cr.plain.moreOpen")}</button></p>` : ""}`}
       </div>`;
 }
 
