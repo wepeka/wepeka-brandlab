@@ -11,30 +11,30 @@
 //                                itself on hover, followed by the "?"
 import { icon } from "./icons.js";
 import { qsa, escapeHtml, openMenu, closeMenu } from "./dom.js";
-import { getLang } from "./i18n.js";
+import { getLang, plainText } from "./i18n.js";
 
 // key -> { id: {title, body}, en: {title, body} }. Body is 1-3 short
 // sentences: what it is, then how to use it.
 const HELP_CONTENT = {
   "brand-builder-hub": {
-    id: { title: "Brand Builder", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalah, positioning, nama, tagline) dan Brand Book (identitas visual — logo, warna, tipografi, tone of voice). Isi Brand DNA dulu kalau brand ini masih baru, baru lanjut ke Guidelines." },
-    en: { title: "Brand Builder", body: "Two doors: Brand DNA (the foundation — customers, problem, positioning, name, tagline) and the Brand Book (visual identity — logo, colors, typography, tone of voice). Start with Brand DNA if the brand is new, then move on to Guidelines." },
+    id: { title: "Brand", body: "Dua pintu: Brand DNA (fondasi — siapa pelanggan, masalahnya, kenapa harus pilih kamu, sampai tagline) dan Brand Book (identitas visual — logo, warna, font, arah visual, tone of voice). Brand masih baru? Isi Brand DNA dulu, baru lanjut ke Brand Book." },
+    en: { title: "Brand", body: "Two doors: Brand DNA (the foundation — customers, their problem, why they should pick you, down to the tagline) and the Brand Book (visual identity — logo, colors, fonts, visual direction, tone of voice). New brand? Start with Brand DNA, then move on to the Brand Book." },
   },
   "calendar": {
-    id: { title: "Kalender", body: "Jadwal semua konten brand ini dalam satu tampilan bulanan. Klik tanggal buat lihat apa yang udah dijadwalin, atau tambah konten baru langsung dari sini biar nggak ada hari yang bolong. Tanggal yang sudah lewat nggak bisa dipakai buat jadwal baru." },
-    en: { title: "Calendar", body: "Every piece of this brand's content in one monthly view. Click a date to see what's scheduled or add new content right there so no day is left empty. Dates that have already passed can't be used for new schedules." },
+    id: { title: "Kalender", body: "Jadwal semua konten brand ini, per bulan atau per minggu. Ketuk tanggal kosong buat pasang konten yang belum punya tanggal, atau seret kartu ke hari lain. Tombol Atur jadwal mengumpulkan semua cara mengisi kalender: Rencanakan minggu ini, Jadwal Otomatis AI, dan Jadwal Kerja. Tanggal yang sudah lewat nggak bisa dipakai buat jadwal baru." },
+    en: { title: "Calendar", body: "Every piece of this brand's content, by month or by week. Tap an empty date to place a piece that has no date yet, or drag a card to another day. The Schedule button gathers every way to fill the calendar: Plan this week, AI Auto-Schedule and your Work Schedule. Dates that have already passed can't be used for new schedules." },
   },
   "creator": {
-    id: { title: "Creator", body: "Tempat nulis satu konten sampai selesai — hook, script, caption — dibantu AI, mengikuti Brand DNA dan tone of voice brand ini biar hasilnya konsisten. Klik Konten Baru, pilih platform, lalu AI langsung bantu bikin draft-nya." },
-    en: { title: "Creator", body: "Where one piece of content gets written start to finish — hook, script, caption — with AI help that follows this brand's DNA and tone of voice. Click New Content, pick a platform, and the AI helps you draft it right away." },
+    id: { title: "Creator", body: "Tempat satu konten dikerjain dari ide sampai terbit: Ide → Nulis naskah → Syuting → Editing → Siap upload → Terbit. Mulai dari Konten baru, isi judulnya, lalu tulis script dan caption sendiri atau minta bahan awal lewat tombol Hook, script & caption bareng AI — AI mengikuti Brand DNA dan tone of voice brand ini; kamu yang pilih dan edit." },
+    en: { title: "Creator", body: "Where one piece of content goes from idea to published: Idea → Script → Shooting → Editing → Ready to upload → Published. Start with New content, give it a title, then write the script and caption yourself or ask for a first draft with Hook, script & caption with AI — the AI follows this brand's DNA and tone of voice; you pick and edit." },
   },
   "campaigns": {
-    id: { title: "Tujuan", body: "Tujuan yang lagi dikejar brand ini sekarang. Tiap milestone tahu sumber angkanya (tab Konten, Instagram Insights, performa konten, atau catatanmu) dan kasih satu tombol buat memperbaruinya." },
-    en: { title: "Goals", body: "The goal this brand is working toward right now. Every milestone knows where its number comes from (the Content tab, Instagram Insights, content performance, or your own notes) and gives you one button to update it." },
+    id: { title: "Tujuan", body: "Campaign yang lagi dikejar brand ini. Tiap campaign dipecah jadi level, dan tiap level punya milestone. Tiap milestone tahu sumber angkanya (tab Konten, Instagram Insights, performa konten, atau catatanmu) dan punya satu tombol buat memperbaruinya. Mulai dari Campaign baru: Grow Brand buat tumbuh pelan-pelan, Event buat acara bertanggal." },
+    en: { title: "Goals", body: "The campaigns this brand is working toward. Each campaign is split into levels, and each level has milestones. Every milestone knows where its number comes from (the Content tab, Instagram Insights, content performance, or your own notes) and has one button to update it. Start from New campaign: Grow Brand to grow step by step, Event for something with a date." },
   },
   "campaign-detail": {
-    id: { title: "Detail Campaign", body: "Dibaca dari atas ke bawah: posisi kamu sekarang (angka utama), apa yang perlu dikerjain (Langkah berikutnya), lalu milestone dan kontennya. Angka nggak pernah diketik manual di sini — semua ada sumbernya, kecuali yang memang cuma kamu yang tahu (dicatat lewat lembar Catat angka)." },
-    en: { title: "Campaign Detail", body: "Read top to bottom: where you stand now (the headline number), what to do next (Next step), then milestones and their content. Numbers are never typed here by hand — each has a source, except the ones only you know (logged through the manual-entry sheet)." },
+    id: { title: "Halaman campaign", body: "Dibaca dari atas ke bawah: posisi kamu sekarang (angka utama), level-levelnya, lalu milestone di level ini dan kontennya. Tiap milestone punya tombol sendiri buat diperbarui — sebagian terhitung otomatis dari konten yang terbit, sisanya kamu isi lewat tombol di barisnya. Bingung mau bikin konten apa? Buka Brainstorm dari halaman ini." },
+    en: { title: "Campaign page", body: "Read top to bottom: where you stand now (the headline number), the levels, then this level's milestones and their content. Each milestone has its own button to update it — some count automatically from published content, the rest you fill in from the button on its row. Not sure what to make? Open Brainstorm from this page." },
   },
   "content-list": {
     id: { title: "Daftar Konten", body: "Tempat cek konten yang udah ada — pilih mau lihat semua, yang udah terjadwal, atau yang udah terbit. Buat nulis konten baru dari nol, pakai Creator, bukan di sini." },
@@ -45,8 +45,8 @@ const HELP_CONTENT = {
     en: { title: "Content", body: "Five tabs for one flow: Creator (write content), Calendar (schedule it), Content List (check what's there), Quick Copy (short ready-to-use copy), and Series (plan multi-part content). Always the same order, in both modes." },
   },
   "brand-dna": {
-    id: { title: "Brand DNA", body: "Wizard satu pertanyaan per langkah biar nggak kayak ngisi form kosong. Lima langkah pertama itu inti — audiens, masalah, kenapa harus percaya, rencana, dan ajakan bertindak. Jawaban tersimpan tiap kali klik Lanjut, jadi aman ditinggal kapan aja." },
-    en: { title: "Brand DNA", body: "A wizard with one question per step, so it never feels like a blank form. The first five steps are the core — audience, problem, why trust you, plan, and call to action. Answers are saved every time you click Next, so it's safe to leave anytime." },
+    id: { title: "Brand DNA", body: "Satu pertanyaan per langkah, jadi nggak kayak ngisi form kosong: siapa pelangganmu, masalahnya, kenapa harus percaya kamu, rencananya, ajakan bertindak, sampai karakter brand. Jawaban tersimpan tiap kamu tekan Lanjut atau Simpan progress, jadi aman ditinggal kapan aja." },
+    en: { title: "Brand DNA", body: "One question per step, so it never feels like a blank form: who your customers are, their problem, why they should trust you, the plan, the call to action, down to the brand's character. Answers are saved each time you press Next or Save progress, so it's safe to leave anytime." },
   },
   "brand-guidelines": {
     id: { title: "Brand Book itu apa?", body: "Buku aturan tampilan brand kamu — ibarat dress code. Isinya logo dan cara pakainya, warna, font, arah visual, dan tone of voice, biar semua konten dan desain (siapa pun yang bikin) kelihatan dari brand yang sama. Bagiannya bebas urutan; hasil akhirnya bisa diunduh jadi Brand Book (PDF)." },
@@ -57,16 +57,16 @@ const HELP_CONTENT = {
     en: { title: "Settings", body: "Applies to all your brands, not just one: your brand list, language, account & plan, Trash (deleted items, restorable for 30 days) and data backup. Pro also adds the platform and content format lists." },
   },
   "sales": {
-    id: { title: "Pelacak Penjualan", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, campaign Sales Growth, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. Brandlab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },
-    en: { title: "Sales Tracker", body: "Where sales get logged. You only type one thing: whenever someone buys, pick the product and how many. Totals, the weekly trend, your Sales Growth campaign, AI advice and the Excel/PDF export all follow from that log. Brandlab can't read sales data automatically, so every number here comes from you." },
+    id: { title: "Pelacak Penjualan", body: "Tempat mencatat penjualan. Yang kamu isi cuma satu: tiap ada yang beli, pilih produk dan jumlahnya. Total, tren mingguan, angka penjualan di tab Tujuan, saran AI, dan export Excel/PDF semuanya ngikut dari catatan itu. Brandlab belum bisa baca data penjualan otomatis, jadi semua angka di sini dari kamu." },
+    en: { title: "Sales Tracker", body: "Where sales get logged. You only type one thing: whenever someone buys, pick the product and how many. Totals, the weekly trend, the sales numbers under Goals, AI advice and the Excel/PDF export all follow from that log. Brandlab can't read sales data automatically, so every number here comes from you." },
   },
   "copy-studio": {
-    id: { title: "Tulisan Cepat", body: "Tulisan pendek siap pakai: Threads, caption Story, broadcast WhatsApp, caption feed. Pilih format dan tujuan, ceritain mau nyampein apa, AI tulisin 3 pilihan pakai gaya bahasa brand ini. Hasilnya nggak disimpan, jadi salin dulu sebelum pindah halaman." },
-    en: { title: "Quick Copy", body: "Short ready-to-use copy: Threads posts, Story captions, WhatsApp broadcasts, feed captions. Pick a format and goal, say what you want to get across, and AI writes 3 options in this brand's voice. Results aren't saved, so copy them before leaving the page." },
+    id: { title: "Tulisan Cepat", body: "Tulisan pendek siap pakai: Threads, caption Story, broadcast WhatsApp, caption feed. Pilih format dan tujuan, ceritain mau nyampein apa, lalu AI kasih 3 pilihan pakai gaya bahasa brand ini — kamu yang pilih dan edit. Salin buat langsung dipakai, atau tekan Simpan ke konten supaya jadi draf di Creator." },
+    en: { title: "Quick Copy", body: "Short ready-to-use copy: Threads posts, Story captions, WhatsApp broadcasts, feed captions. Pick a format and goal, say what you want to get across, and the AI gives 3 options in this brand's voice — you pick and edit. Copy it to use right away, or press Save to content to keep it as a draft in Creator." },
   },
   "home": {
-    id: { title: "Beranda", body: "\"Hari ini\" selalu bilang satu hal yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau langkah paling penting begitu identitasnya rampung. \"Minggu ini\" merangkum 7 hari terakhir (yang terbit, penjualan, report PDF) dan jadwal 7 hari ke depan. Di \"Lainnya\": langkah dasar, Teman Brand (ceritain kejadian di brand-mu; tekan Rangkum supaya jadi momen yang kamu pilih untuk diingat semua fitur AI), dan ajakan menyusun roadmap. Mode Pro juga punya analitik di paling bawah." },
-    en: { title: "Home", body: "\"Today\" always tells you the one thing to do now — your unfinished brand identity, or the most important step once that's done. \"This week\" sums up the last 7 days (what went out, sales, the PDF report) and the next 7 days' schedule. Under \"More\": the basic steps, the Companion (tell it what happened in your brand; hit Recap to turn it into moments you pick for every AI feature to remember), and the roadmap invite. Pro mode also has analytics at the bottom." },
+    id: { title: "Beranda", body: "Kartu paling atas selalu berisi satu langkah yang perlu kamu kerjain sekarang — identitas brand yang belum selesai, atau langkah paling penting begitu identitasnya rampung. \"Minggu ini\" merangkum 7 hari terakhir (yang terbit, report PDF) dan jadwal 7 hari ke depan. Di bawahnya ada Konten terbaru, dan di \"Lainnya\" ada Teman Brand: ceritain kejadian di brand-mu, yang penting masuk Memori Brand dan dibaca semua fitur AI. Mode Pro juga punya analitik di paling bawah." },
+    en: { title: "Home", body: "The top card always holds the one step to work on now — your unfinished brand identity, or the most important step once that's done. \"This week\" sums up the last 7 days (what went out, the PDF report) and the next 7 days' schedule. Below it are your latest content and, under \"More\", the Brand Companion: tell it what happened in your brand, and what matters goes into Brand Memory, read by every AI feature. Pro mode also has analytics at the bottom." },
   },
 
   "brainstorm": {
@@ -74,6 +74,10 @@ const HELP_CONTENT = {
     en: { title: "Ask Brandlab", body: "One place to talk to the AI. Ask about your brand, ask for content ideas, or tell it what happened today — it works out whether you need advice, ideas, or someone to tell. When something is worth keeping, the AI offers it: ideas you like go to Saved (a draft whenever you're ready), things that happened go to brand memory (read by every AI feature when it writes). Every conversation is on the left, ready to carry on." },
   },
 
+  "event": {
+    id: { title: "Event", body: "Rencana menuju satu tanggal — bazar, launching, kelas, promo besar. Sebut acaranya dan tanggalnya; Brandlab membaca kondisi brand-mu lalu menyusun tahap, konten mingguan, dan tenggat menuju hari-H. Rencananya muncul dulu sebagai draf: belum ada yang masuk kalender sampai kamu tekan Pasang ke kalender." },
+    en: { title: "Event", body: "A plan toward one date — a bazaar, a launch, a class, a big promo. Name the event and its date; Brandlab reads your brand, then lays out the phases, weekly content and deadlines leading to the day. The plan shows up as a draft first: nothing goes on your calendar until you press Install to calendar." },
+  },
   // Key terms — shown next to the words themselves.
   "term-brand-dna": {
     id: { title: "Brand DNA itu apa?", body: "Fondasi brand kamu dalam kata-kata: siapa pelanggannya, masalah apa yang kamu selesaikan, kenapa mereka harus percaya dan pilih kamu, sampai tagline. Semua fitur AI dan campaign membaca dari sini." },
@@ -113,9 +117,12 @@ const HELP_CONTENT = {
   },
 };
 
+// Pemula reads the same plain words as the rest of the app (js/i18n.js
+// plainWords): "campaign" → "tujuan", "milestone" → "target", and so on.
 export function helpEntry(key) {
   const e = HELP_CONTENT[key];
-  return e ? e[getLang()] || e.id : null;
+  const entry = e ? e[getLang()] || e.id : null;
+  return entry ? { title: plainText(entry.title), body: plainText(entry.body) } : null;
 }
 
 export function helpButtonHTML(key) {

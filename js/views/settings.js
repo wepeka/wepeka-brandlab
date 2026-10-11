@@ -21,6 +21,7 @@ import { aiDailyLimit, aiQuotaPeriod, aiUsageToday } from "../ai-usage.js";
 import { canTopUp } from "../ai-topup.js";
 import { t, getLang, setLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 import { renderRemindersPanel } from "../reminders.js";
 
 // One list for both modes. `pro` panels only show in Pro; the AI panel
@@ -61,7 +62,7 @@ function paint(root, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow flex items-center gap-6">${backToLastBrandHTML(getBrand)}${helpButtonHTML("settings")}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backToLastBrandHTML(getBrand)}${helpButtonHTML("settings")}${guideVideoButtonHTML("settings")}</div>
         <h1>${t("settings.title")}</h1>
         <p class="page-sub">${t("settings.sub")}</p>
       </div>

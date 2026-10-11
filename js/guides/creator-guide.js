@@ -77,6 +77,9 @@ function aiSteps() {
     },
     {
       selector: "#ai-funnel",
+      // Only where the generator shows the choice — a step whose target
+      // isn't there is skipped at once instead of waiting four seconds.
+      showIf: () => !!qs("#ai-funnel"),
       title: t("guide.creator.funnel.title"),
       body: t("guide.creator.funnel.body"),
     },
@@ -138,23 +141,6 @@ function scriptingSteps() {
       body: t("guide.creator.scriptEdit.body"),
     },
     {
-      selector: "#open-teleprompter",
-      title: t("guide.creator.tp.title"),
-      body: t("guide.creator.tp.body"),
-      interactive: { type: "click" },
-    },
-    {
-      selector: "#tp-play",
-      title: t("guide.creator.tpPlay.title"),
-      body: t("guide.creator.tpPlay.body"),
-    },
-    {
-      selector: "#tp-close",
-      title: t("guide.creator.tpClose.title"),
-      body: t("guide.creator.tpClose.body"),
-      interactive: { type: "click" },
-    },
-    {
       selector: "#f-cta",
       title: t("guide.creator.cta.title"),
       body: t("guide.creator.cta.body"),
@@ -188,6 +174,15 @@ function executionSteps() {
       body: t("guide.creator.shootMode.body"),
       waitTimeout: 6000,
       skipIfMissing: false,
+    },
+    {
+      // The teleprompter lives on the Syuting screen (it used to sit next
+      // to the script while writing). Pointed at, not opened: the tour's
+      // own layer would sit on top of a full-screen teleprompter.
+      selector: "#open-teleprompter",
+      showIf: () => !!qs("#open-teleprompter"),
+      title: t("guide.creator.tp.title"),
+      body: t("guide.creator.tp.body"),
     },
   ];
 }

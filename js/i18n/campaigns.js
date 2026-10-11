@@ -1158,7 +1158,7 @@ export default {
   "goal.sales.revenueNowHint": { en: "Price × sold comes to about Rp {n} — use your real figure if you know it.", id: "Harga × terjual kira-kira Rp {n} — pakai angka aslimu kalau tahu." },
   "goal.sales.revenueTargetQ": { en: "Revenue target (Rp)", id: "Target omzet (Rp)" },
   "goal.sales.revenueTargetHint": { en: "Fill this in to get a separate Revenue row. It's tracked on its own, never mixed with the sold count.", id: "Isi ini kalau mau ada baris Omzet tersendiri. Dilacak terpisah, nggak dicampur dengan jumlah terjual." },
-  "goal.sales.skip": { en: "I don't sell anything yet — skip Sales Growth", id: "Belum jualan apa-apa — lewati Sales Growth" },
+  "goal.sales.skip": { en: "I don't sell anything yet — skip this step", id: "Belum jualan apa-apa — lewati langkah ini" },
   "goal.sales.assess.empty": { en: "Fill in a product and its target to see the pace it needs.", id: "Isi produk dan targetnya buat lihat ritme yang dibutuhkan." },
   "goal.sales.assess.unknown": { en: "That's about {perMonth} {unit} a month for {months} months. Add your current monthly sales under the optional details if you want it judged for realism.", id: "Itu sekitar {perMonth} {unit} per bulan selama {months} bulan. Isi penjualan sebulan sekarang di detail opsional kalau mau dinilai realistis atau nggak." },
   "goal.sales.assess.realistic": { en: "Reasonable — about {perMonth} {unit} a month, against {pace} now. Still an estimate, not a guarantee.", id: "Masuk akal — sekitar {perMonth} {unit} per bulan, sekarang {pace}. Tetap perkiraan, bukan jaminan." },

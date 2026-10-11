@@ -5,7 +5,9 @@
 //
 // Step shape (every field except selector/title optional):
 //   selector       string, or an array tried in order (first that resolves wins)
-//   title, body    body supports **tebal** → <b>tebal</b> (escaped otherwise)
+//   title, body    body supports **tebal** → <b>tebal</b> (escaped otherwise);
+//                  either may be a function, read when the step is shown
+//                  (for text that depends on the page it lands on)
 //   beforeStep     async fn run before the target is looked up
 //   interactive    { type: "click" | "clickAny" | "input" | "change" | "until",
 //                    extraSelectors, minLength, predicate }
@@ -29,6 +31,7 @@ import { getCachedAccount, isReadOnly } from "./account.js";
 import { readFlag, writeFlag } from "./seen-flags.js";
 import { qsa, escapeHtml } from "./dom.js";
 import { t } from "./i18n.js";
+import { getMode } from "./mode.js";
 
 const TOUR_COMPLETE_KEY = "contentos:tour-completed:";
 // Same account-first / browser-mirror shape as every other "seen once" mark
@@ -141,6 +144,10 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
   let alive = true;
   let onHashChange = null;
   const shown = []; // indices actually displayed, in order — what Back walks
+  // Steps passed over (showIf false, target never appeared). They leave the
+  // count too, so the line reads "6 dari 14" → "7 dari 14" instead of
+  // jumping from 12 to 14 around a step this page or mode doesn't have.
+  const skipped = new Set();
 
   const overlay = document.createElement("div");
   overlay.className = "tour-overlay";
@@ -440,7 +447,7 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
 
   function progressText(i) {
     const step = steps[i];
-    if (!step.chapter) return t("tour.progress", { n: i + 1, total: steps.length });
+    if (!step.chapter) return t("tour.progress", { n: shown.length, total: Math.max(shown.length, steps.length - skipped.size) });
     const same = steps.map((s, idx) => ({ s, idx })).filter(({ s }) => s.chapter === step.chapter);
     const pos = same.findIndex(({ idx }) => idx === i) + 1;
     return `${step.chapter} · ${pos}/${same.length}`;
@@ -464,7 +471,10 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
     let then = null;
     // Skipping a step keeps the direction of travel: forward moves on, Back
     // keeps walking back through what was actually shown before.
-    const skip = () => (back && shown.length ? () => showStep(shown.pop(), { back: true }) : () => showStep(i + 1));
+    const skip = () => {
+      skipped.add(i);
+      return back && shown.length ? () => showStep(shown.pop(), { back: true }) : () => showStep(i + 1);
+    };
     try {
       const step = steps[i];
       if (!step) {
@@ -507,12 +517,14 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
         return;
       }
       index = i;
+      skipped.delete(i);
       shown.push(i);
       overlay.classList.toggle("tour-no-dim", step.dim === false);
       overlay.classList.toggle("tour-quiet", !!step.quiet);
       tooltip.querySelector(".tour-progress").textContent = progressText(i);
-      tooltip.querySelector("h3").textContent = step.title || "";
-      tooltip.querySelector(".tour-body").innerHTML = tourRichText(step.body);
+      const textOf = (v) => (typeof v === "function" ? v() : v) || "";
+      tooltip.querySelector("h3").textContent = textOf(step.title);
+      tooltip.querySelector(".tour-body").innerHTML = tourRichText(textOf(step.body));
       backBtn.style.visibility = shown.length > 1 ? "visible" : "hidden";
       nextBtn.textContent = step.nextLabel || (i === steps.length - 1 ? t("tour.done") : t("tour.next"));
       wireInteractive(step);
@@ -728,7 +740,9 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       title: t("tour.onb.campaigns.title"),
-      body: t("tour.onb.campaigns.body"),
+      // Pemula keeps this tab locked until the identity is done — say so
+      // while the lock is on screen, rather than leave it unexplained.
+      body: () => t("tour.onb.campaigns.body") + (visible("[data-locked-tab], [data-locked-step]") ? ` ${t("tour.onb.campaigns.locked")}` : ""),
     },
     {
       selector: ['[data-app="content-os"]', '[data-tour="tab-content-os"]'],
@@ -756,7 +770,7 @@ export function startOnboardingTour({ firstRun = false } = {}) {
     {
       // Pro only — Pemula has no bell. Skipped at once instead of waiting.
       selector: '[data-tour="notif-bell"]',
-      showIf: () => { document.body.classList.remove("tour-show-chat"); return visible('[data-tour="notif-bell"]'); },
+      showIf: () => visible('[data-tour="notif-bell"]'),
       title: t("tour.onb.notif.title"),
       body: t("tour.onb.notif.body"),
     },
@@ -769,8 +783,21 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       selector: '[data-tour="settings"]',
       title: t("tour.onb.settings.title"),
       body: t("tour.onb.settings.body"),
+    },
+    {
+      // The tour ends on something to do, not on a menu: the card that
+      // always holds this brand's next step.
+      selector: "#journey-hero",
+      showIf: () => !!brandBase(),
+      beforeStep: goBrandHome,
+      waitTimeout: 6000,
+      title: t("tour.onb.finish.title"),
+      body: t("tour.onb.finish.body"),
     }
   );
+  // Pemula has no bell at all: leave its step out of the count from the start.
+  const bellAt = getMode() === "guided" ? steps.findIndex((st) => st.selector === '[data-tour="notif-bell"]') : -1;
+  if (bellAt >= 0) steps.splice(bellAt, 1);
 
   runSpotlightTour(steps, {
     keepOnNavigate: true,

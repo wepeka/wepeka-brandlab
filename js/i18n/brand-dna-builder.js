@@ -214,7 +214,7 @@ export default {
   "beginner.todo.summary": { en: "{count} item(s) to check", id: "{count} yang perlu dicek" },
   "beginner.callout.builderDone": { en: "Your brand is ready! Now set its goal 🎯", id: "Brand kamu sudah siap! Sekarang tentukan tujuannya 🎯" },
   "beginner.hero.step": { en: "Step {n} of {total}", id: "Langkah {n} dari {total}" },
-  "beginner.hero.note": { en: "Your answers save automatically. Feel free to stop halfway and pick it up anytime.", id: "Jawaban tersimpan otomatis. Boleh berhenti di tengah, lanjut lagi kapan aja." },
+  "beginner.hero.note": { en: "Answers are saved each time you press Next or Save progress. Feel free to stop halfway and pick it up anytime.", id: "Jawaban tersimpan tiap kamu tekan Lanjut atau Simpan progress. Boleh berhenti di tengah, lanjut lagi kapan aja." },
   // ---- gate. (Pemula's locked Tujuan: js/brand-progress.js identityGateCopy,
   // the dialog in js/layout.js explainIdentityGate) ----
   "gate.title": { en: "Goals isn't open yet", id: "Tujuan belum kebuka" },

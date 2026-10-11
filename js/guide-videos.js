@@ -1,5 +1,5 @@
-// Short explainer videos, one per app (Brand Builder, Campaign, Content OS,
-// Copy Studio, Sales Tracker) plus the "kenalan" intro. Every one of them
+// Short explainer videos, one per app (Beranda, Brand, Tujuan, Konten,
+// Tulisan Cepat, Pelacak Penjualan) plus the "kenalan" intro. Every one of them
 // works the same way, on purpose:
 //   - Click the "Video" pill next to a page's "?" to open it, any time.
 //   - It can be skipped at any moment ("Lewati video").
@@ -72,6 +72,8 @@ export const GUIDE_VIDEOS = {
   // picker (js/main.js → playVideoGate).
   "akun-baru": { title: t("guide.video.akunBaru"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
   kenalan: { title: t("guide.video.kenalan"), duration: t("guide.video.sec", { n: 90 }), seconds: 90, src: PLACEHOLDER_SRC },
+  // Beranda, plus the small things around it (mode, the ⋯ menu, Settings).
+  beranda: { title: t("guide.video.beranda"), duration: t("guide.video.min", { n: 2 }), seconds: 120, src: PLACEHOLDER_SRC },
   // Plays once, the first time the round AI button (Tanya Brandlab) is
   // pressed, before the chat opens (js/consultant-panel.js).
   "tanya-brandlab": { title: t("guide.video.tanya"), duration: t("guide.video.sec", { n: 60 }), seconds: 60, src: PLACEHOLDER_SRC },
@@ -150,7 +152,10 @@ const whenReady = (ms = 2500) => Promise.race([guideVideosReady, new Promise((r)
 // Brand Book page opens on "Video 2 - Brand Book"); no match = part 1.
 const GUIDE_TO_VIDEO = {
   onboarding: "kenalan",
-  home: "kenalan",
+  // Beranda has its own video; until it is published the page keeps
+  // offering the intro (`fallback`), so its Video row never goes missing.
+  home: { video: "beranda", part: /beranda|home/i, fallback: "kenalan" },
+  settings: { video: "beranda", part: /mode|menu|pengaturan|setting/i },
   tools: "kenalan",
   "brand-builder": "brand-builder",
   "brand-builder-hub": "brand-builder",
@@ -159,10 +164,12 @@ const GUIDE_TO_VIDEO = {
   campaigns: "campaign",
   "campaign-list": "campaign",
   "campaign-detail": { video: "campaign", start: 30, part: /detail|level|misi|mission/i },
+  event: { video: "campaign", part: /event|acara|tanggal/i },
   brainstorm: { video: "campaign", start: 95, part: /brainstorm|chat|ide/i },
   creator: { video: "content-os", part: /creator|tulis|bikin|buat/i },
   calendar: { video: "content-os", start: 80, part: /kalender|calendar|jadwal/i },
-  "konten-dashboard": { video: "content-os", start: 135, part: /dashboard|hasil|insight|result/i },
+  "konten-dashboard": { video: "content-os", start: 135, part: /daftar|dashboard|hasil|insight|result/i },
+  series: { video: "content-os", part: /\bseri|series/i },
   "copy-studio": "copy",
   sales: "sales",
   chat: "tanya-brandlab",
@@ -173,11 +180,12 @@ export function videoRefForGuide(guideKey) {
   let key = guideKey;
   if (guideKey === "content-os" || guideKey === "content-list") {
     const hash = typeof location !== "undefined" ? location.hash : "";
-    key = /\/content\/creator/.test(hash) ? "creator" : /\/content\/calendar/.test(hash) ? "calendar" : "konten-dashboard";
+    key = /\/content\/creator/.test(hash) ? "creator" : /\/content\/calendar/.test(hash) ? "calendar" : /\/content\/series/.test(hash) ? "series" : "konten-dashboard";
   }
   const ref = GUIDE_TO_VIDEO[key];
   if (!ref) return null;
   const out = typeof ref === "string" ? { video: ref, start: 0, part: null } : { video: ref.video, start: Number(ref.start) || 0, part: ref.part || null };
+  if (ref.fallback && !canShowVideo(out.video) && canShowVideo(ref.fallback)) return { video: ref.fallback, start: 0, part: null };
   return GUIDE_VIDEOS[out.video] ? out : null;
 }
 
@@ -527,7 +535,7 @@ const startWebsiteTour = () => import("./tour.js").then((m) => m.startOnboarding
 // Every guide video in one list, for the topbar ⋯ menu ("Video panduan"):
 // the welcome videos first, then the chat, then one per app. Only the
 // published ones; the admin also sees the rest, marked "belum diupload".
-const LIBRARY_ORDER = ["akun-baru", "kenalan", "tanya-brandlab", "brand-builder", "campaign", "content-os", "copy", "sales"];
+const LIBRARY_ORDER = ["akun-baru", "kenalan", "beranda", "tanya-brandlab", "brand-builder", "campaign", "content-os", "copy", "sales"];
 export const libraryVideoKeys = () => LIBRARY_ORDER.filter((key) => canShowVideo(key));
 
 // The list as a modal; picking one closes it and plays that video with the

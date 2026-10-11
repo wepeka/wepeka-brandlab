@@ -264,7 +264,7 @@ const CORE = {
   "evtabs.plan": { en: "Plan", id: "Rencana" },
   "evtabs.targets": { en: "Targets & checklist", id: "Target & checklist" },
   "evtabs.targetsLater": { en: "Appears once the plan is on your calendar", id: "Muncul setelah rencana dipasang ke kalender" },
-  "contentOs.cadence.sub": { en: "This sets up AI Auto-Schedule in the Calendar for {brand} and fills in the Shoot/Edit/Upload rows in My Routine automatically — set it once here instead of in both places.", id: "Ini sekaligus ngatur Jadwal Otomatis AI di Kalender buat {brand} dan ngisi baris Syuting/Edit/Upload di My Routine otomatis — cukup atur sekali di sini, nggak perlu di dua tempat." },
+  "contentOs.cadence.sub": { en: "Plan this week and AI Auto-Schedule in the Calendar both follow this schedule for {brand} — set it once here.", id: "Rencanakan minggu ini dan Jadwal Otomatis AI di Kalender mengikuti jadwal ini buat {brand} — cukup atur sekali di sini." },
   "contentOs.cadence.shootLabel": { en: "Which days do you shoot?", id: "Hari apa aja syuting?" },
   "contentOs.cadence.editLabel": { en: "Which days do you edit?", id: "Hari apa aja edit konten?" },
   "contentOs.cadence.uploadLabel": { en: "Which days do you upload?", id: "Hari apa aja upload?" },
@@ -687,6 +687,8 @@ export function setPlainLanguageResolver(fn) {
 }
 const FUNNEL_PLAIN = { id: { TOFU: "Kenalan", MOFU: "Yakinkan", BOFU: "Jualan" }, en: { TOFU: "Get known", MOFU: "Build trust", BOFU: "Sell" } };
 const JARGON = /milestone|engagement|campaign|\bTOFU\b|\bMOFU\b|\bBOFU\b/i;
+// Text that doesn't come through t() (js/help.js): plain words in Pemula.
+export const plainText = (str) => (plainLanguage() ? plainWords(str) : str);
 export function plainWords(str, lang = getLang()) {
   if (!str || !JARGON.test(str)) return str;
   const en = lang === "en";

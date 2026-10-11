@@ -33,7 +33,7 @@ export default {
   "ret.qf.dropSub": { en: "Numbers or the retention graph — Instagram, TikTok. Several at once is fine.", id: "Angka atau grafik retensi — Instagram, TikTok. Boleh beberapa sekaligus." },
   "ret.qf.reading": { en: "Reading screenshot {n} of {total}…", id: "Lagi baca screenshot {n} dari {total}…" },
   "ret.qf.readAi": { en: "AI read it", id: "Dibaca AI" },
-  "ret.qf.readOcr": { en: "Read by text scan (set up AI in Settings for the graph too)", id: "Dibaca lewat scan teks (aktifkan AI di Pengaturan supaya grafiknya ikut terbaca)" },
+  "ret.qf.readOcr": { en: "Read by text scan", id: "Dibaca lewat scan teks" },
   "ret.qf.found": { en: "{metrics} numbers · retention {ret}", id: "{metrics} angka · retensi {ret}" },
   "ret.qf.foundRet": { en: "found", id: "terbaca" },
   "ret.qf.noRet": { en: "not found", id: "tidak ada" },

@@ -422,7 +422,12 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
         const card = qs(`[data-product="${p.id}"]`, root);
         if (!card) return;
         p.name = qs('[data-gp="name"]', card).value.trim();
-        ["price", "cost", "sold", "target"].forEach((k) => (p[k] = toNum(qs(`[data-gp="${k}"]`, card).value)));
+        // Pemula has no cost field (see productCardHTML): a field that isn't
+        // on screen keeps its value instead of crashing the whole step.
+        ["price", "cost", "sold", "target"].forEach((k) => {
+          const input = qs(`[data-gp="${k}"]`, card);
+          if (input) p[k] = toNum(input.value);
+        });
       });
       state.monthlySales = toNum(qs("#goal-monthly-sales", root)?.value);
       state.revenueNow = toNum(qs("#goal-revenue-now", root)?.value);

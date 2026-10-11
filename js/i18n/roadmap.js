@@ -7,7 +7,7 @@ export default {
   "roadmap.sub": { en: "Name the event and its date. Brandlab reads your brand, then plots the campaigns, weekly posts and deadlines that get you there.", id: "Sebut acaranya dan tanggalnya. Brandlab membaca kondisi brand-mu, lalu memetakan campaign, konten mingguan, dan deadline menuju ke sana." },
   "roadmap.new": { en: "New dated plan", id: "Rencana baru" },
   "roadmap.defaultName": { en: "My event", id: "Event-ku" },
-  "roadmap.guidedOne": { en: "One goal at a time in Beginner mode. Finish or archive the current one first.", id: "Mode Pemula: satu tujuan dulu. Selesaikan atau arsipkan yang sekarang sebelum bikin baru." },
+  "roadmap.guidedOne": { en: "Beginner mode: one event plan at a time. Finish or archive the current one before starting another.", id: "Mode Pemula: satu rencana event dulu. Selesaikan atau arsipkan yang sekarang sebelum bikin yang baru." },
   "roadmap.empty.title": { en: "What are you working toward?", id: "Kamu lagi menuju apa?" },
   "roadmap.empty.body": { en: "An onsite event, a launch day, a big date. Give it a date and this page becomes the plan.", id: "Event onsite, hari launching, tanggal besar. Kasih tanggalnya, halaman ini jadi rencananya." },
   "roadmap.empty.step1": { en: "Say what and when", id: "Bilang apa dan kapan" },

@@ -259,7 +259,9 @@ export function brandToneText(brand) {
     if (!Number.isFinite(v)) return "";
     return v <= 35 ? left : v >= 65 ? right : `between ${left} and ${right}`;
   };
-  const bits = [lean("formal", "casual", "formal"), lean("language", "plain", "technical"), lean("character", "serious", "playful"), lean("emotion", "reserved", "expressive")].filter(Boolean);
+  // Same ends as the sliders (js/brandbook-data.js TONE_AXES): low = Formal,
+  // Sederhana, Serius, Reserved.
+  const bits = [lean("formal", "formal", "casual"), lean("language", "plain", "technical"), lean("character", "serious", "playful"), lean("emotion", "reserved", "expressive")].filter(Boolean);
   if (!bits.length) return "";
   return `Tone of voice: ${bits.join(", ")}.${tone.avoidWords?.length ? ` Avoid: ${tone.avoidWords.join(", ")}.` : ""}`;
 }

@@ -6,7 +6,8 @@
 // creator.js's seriesFieldHTML) or picked/auto-detected in Brainstorm
 // (js/consultant-panel.js) — see js/store.js's Series CRUD and js/ai.js's
 // buildSeriesContext for how the saved DNA turns into AI context.
-import { getBrand, listContent, listSeries, getSeries, createSeries, updateSeries, deleteSeries, onChange, brandToneText, TRASH_DAYS } from "../store.js";
+import { getBrand, listContent, listSeries, getSeries, createSeries, updateSeries, deleteSeries, onChange, TRASH_DAYS } from "../store.js";
+import { TONE_AXES, toneAxisDisplayLabel } from "../brandbook-data.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { toast, qs, qsa, escapeHtml as escapeText, escapeHtml as escapeAttr, wireClickableCards } from "../dom.js";
@@ -112,6 +113,17 @@ function seriesCardHTML(s, content, days) {
 
 // ---------- Create/edit modal ----------
 
+// The brand's tone sliders as a short line in the screen's language
+// ("Santai, Sederhana, Serius/Playful seimbang, Ekspresif") — where a new
+// series' tone starts from. Empty until the brand has set its tone.
+function brandToneStart(brand) {
+  const tone = brand?.brandBuilder?.toneOfVoice;
+  if (!tone?.source) return "";
+  return TONE_AXES.filter((axis) => Number.isFinite(Number(tone[axis.key])))
+    .map((axis) => toneAxisDisplayLabel(axis, Number(tone[axis.key])))
+    .join(", ");
+}
+
 export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
   const dna = series?.dna || {};
   const draft = {
@@ -126,7 +138,7 @@ export function openSeriesModal({ brandId, series = null, onSaved } = {}) {
     // less thing to redecide per series) — editing/saving it here never
     // reads back into brandBuilder.toneOfVoice, so it's just a starting
     // point, not a sync.
-    tone: dna.tone || (series ? "" : brandToneText(getBrand(brandId))),
+    tone: dna.tone || (series ? "" : brandToneStart(getBrand(brandId))),
     writingStyle: dna.writingStyle || "",
     typicalHook: dna.typicalHook || "",
     storytellingStyle: dna.storytellingStyle || "",

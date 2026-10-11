@@ -303,7 +303,7 @@ export default {
   "copy.loading.title": { en: "AI is writing…", id: "AI lagi nulis…" },
   "copy.loading.body": { en: "Usually takes 10–30 seconds.", id: "Biasanya 10–30 detik." },
   "copy.empty.title": { en: "Your results show up here", id: "Hasilnya muncul di sini" },
-  "copy.empty.body": { en: "3 copy options, each with a preview that looks like the real thing. Pick one, edit if needed, then copy.", id: "3 pilihan tulisan, lengkap dengan preview mirip aslinya. Tinggal pilih, edit kalau perlu, lalu salin." },
+  "copy.empty.body": { en: "3 copy options, each with a preview that looks like the real thing. You pick one, edit if needed, then copy.", id: "3 pilihan tulisan, lengkap dengan preview mirip aslinya. Kamu yang pilih, edit kalau perlu, lalu salin." },
   "copy.results.count": { en: "{n} options", id: "{n} pilihan" },
   "copy.results.sample": { en: "Sample", id: "Contoh" },
   "copy.results.sub": { en: "Tap \"Save to content\" on the one you like to keep it as a draft. Unsaved options stay here until you tap \"Start over\".", id: "Tekan \"Simpan ke konten\" di yang kamu suka biar jadi draf. Pilihan yang belum disimpan tetap di sini sampai kamu tekan \"Bikin baru\"." },
@@ -351,8 +351,8 @@ export default {
   "copy.tour.preview.body": { en: "Each option is shown the way it'll actually look (a Threads card, a WhatsApp chat, or a Story) so you can picture the result.", id: "Tiap pilihan ditampilkan kayak aslinya (kartu Threads, chat WhatsApp, atau Story) biar kebayang hasil jadinya." },
   "copy.tour.rewrite.title": { en: "Not quite right?", id: "Kurang pas?" },
   "copy.tour.rewrite.body": { en: "Click **Shorter**, **More casual**, or **More salesy** to rework one option. Want to change it yourself? Click **Edit**.", id: "Klik **Pendekin**, **Lebih santai**, atau **Lebih jualan** buat ngedit satu pilihan. Mau ubah sendiri? Klik **Edit**." },
-  "copy.tour.copy.title": { en: "Just copy it", id: "Tinggal salin" },
-  "copy.tour.copy.body": { en: "Click **Copy**, then paste it into the app. Broadcasts get an **Open in WhatsApp** button. Results aren't saved, so copy before you leave the page.", id: "Klik **Salin**, lalu tempel di aplikasinya. Buat broadcast ada tombol **Buka di WhatsApp**. Hasilnya nggak disimpan, jadi salin dulu sebelum pindah halaman." },
+  "copy.tour.copy.title": { en: "Copy it or save it", id: "Salin atau simpan" },
+  "copy.tour.copy.body": { en: "Click **Copy**, then paste it into the app. Broadcasts get an **Open in WhatsApp** button. Want it for later? **Save to content** turns it into a draft you can open in Creator.", id: "Klik **Salin**, lalu tempel di aplikasinya. Buat broadcast ada tombol **Buka di WhatsApp**. Mau dipakai nanti? **Simpan ke konten** menjadikannya draf yang bisa dibuka di Creator." },
 
   // Copy formats (display only — js/knowledge/copy-formats.js keeps the prompt rules)
   "copy.format.threads.label": { en: "Threads", id: "Threads" },

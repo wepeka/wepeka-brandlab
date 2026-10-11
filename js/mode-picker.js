@@ -37,7 +37,7 @@ export function renderModePicker(root) {
             <button type="button" class="mode-pick-card" data-mode="advanced">
               <div class="mode-pick-icon">${icon("sparkle", { size: 26 })}</div>
               <h2>${t("modes.pick.advanced.title")}</h2>
-              <p>${t("modes.pick.advanced.body")}</p>
+              <p>${t("modes.pick.advanced.body", { campaign: "campaign", engagement: "engagement" })}</p>
               <span class="mode-pick-cta">${t("modes.pick.cta", { mode: MODE_LABELS.advanced.label })}${icon("arrowRight", { size: 14 })}</span>
             </button>
           </div>

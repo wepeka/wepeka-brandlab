@@ -2,7 +2,7 @@
 // link the admin pasted (js/guide-videos.js parseVideoSrc, embedUrl).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseVideoSrc, embedUrl } from "../js/guide-videos.js";
+import { parseVideoSrc, embedUrl, GUIDE_VIDEOS, PLACEHOLDER_SRC, videoRefForGuide, libraryVideoKeys } from "../js/guide-videos.js";
 
 const ID = "dQw4w9WgXcQ";
 
@@ -49,4 +49,68 @@ test("YouTube embed enables the IFrame API and carries start/autoplay", () => {
   assert.match(url, /[?&]start=75(?!\d)/);
   assert.doesNotMatch(embedUrl(`https://youtu.be/${ID}`), /autoplay|start=/);
   assert.equal(embedUrl("https://cdn.example.com/a.mp4"), null);
+});
+
+// Which video (and which part of it) each page's Panduan → "Tonton video
+// penjelasan" opens. Part titles are the ones set in the admin (Kenalan
+// Fitur series), matched by GUIDE_TO_VIDEO's `part` patterns.
+const PART_TITLES = {
+  beranda: ["Beranda", "Mode, menu & pengaturan"],
+  "brand-builder": ["Brand DNA", "Brand Book"],
+  campaign: ["Tujuan: Grow Brand", "Halaman tujuan: level, target & brainstorm", "Event: persiapan menuju tanggal"],
+  "content-os": ["Creator: nulis script", "Creator: syuting sampai terbit", "Kalender & jadwal", "Daftar Konten & hasil", "Seri konten"],
+};
+const partFor = (guideKey) => {
+  const ref = videoRefForGuide(guideKey);
+  const titles = PART_TITLES[ref.video] || [];
+  const i = ref.part ? titles.findIndex((title) => ref.part.test(title)) : -1;
+  return `${ref.video} › ${titles[Math.max(0, i)] || "(satu video)"}`;
+};
+const publish = (key, fn) => {
+  const before = GUIDE_VIDEOS[key].src;
+  GUIDE_VIDEOS[key].src = "https://youtu.be/dQw4w9WgXcQ";
+  try { return fn(); } finally { GUIDE_VIDEOS[key].src = before; }
+};
+
+test("every one of the 19 Kenalan Fitur videos has a slot", () => {
+  for (const key of ["akun-baru", "kenalan", "beranda", "brand-builder", "campaign", "sales", "content-os", "copy", "tanya-brandlab"]) {
+    assert.ok(GUIDE_VIDEOS[key], key);
+    assert.equal(GUIDE_VIDEOS[key].src, PLACEHOLDER_SRC, `${key} ships as a placeholder until the admin uploads it`);
+    assert.ok(GUIDE_VIDEOS[key].title, key);
+  }
+});
+
+test("each page opens the part made for it", () => {
+  const at = (hash, fn) => { const prev = globalThis.location; globalThis.location = { hash, origin: "https://brandlab.wepeka.com" }; try { return fn(); } finally { globalThis.location = prev; } };
+  publish("beranda", () => {
+    assert.equal(partFor("home"), "beranda › Beranda");
+    assert.equal(partFor("settings"), "beranda › Mode, menu & pengaturan");
+  });
+  assert.equal(partFor("brand-dna"), "brand-builder › Brand DNA");
+  assert.equal(partFor("brand-guidelines"), "brand-builder › Brand Book");
+  assert.equal(partFor("campaigns"), "campaign › Tujuan: Grow Brand");
+  assert.equal(partFor("campaign-detail"), "campaign › Halaman tujuan: level, target & brainstorm");
+  assert.equal(partFor("event"), "campaign › Event: persiapan menuju tanggal");
+  assert.equal(partFor("creator"), "content-os › Creator: nulis script");
+  assert.equal(partFor("calendar"), "content-os › Kalender & jadwal");
+  assert.equal(at("#/brand/b1/content/list", () => partFor("content-list")), "content-os › Daftar Konten & hasil");
+  assert.equal(at("#/brand/b1/content/series", () => partFor("content-os")), "content-os › Seri konten");
+  assert.equal(at("#/brand/b1/content/calendar", () => partFor("content-os")), "content-os › Kalender & jadwal");
+  assert.equal(videoRefForGuide("copy-studio").video, "copy");
+  assert.equal(videoRefForGuide("sales").video, "sales");
+  assert.equal(videoRefForGuide("chat").video, "tanya-brandlab");
+  assert.equal(videoRefForGuide("nope"), null);
+});
+
+test("Beranda keeps offering the intro until its own video is published", () => {
+  // Not published, not admin: Beranda's own video can't be shown yet.
+  publish("kenalan", () => assert.equal(videoRefForGuide("home").video, "kenalan"));
+  publish("kenalan", () => publish("beranda", () => assert.equal(videoRefForGuide("home").video, "beranda")));
+  // Neither is up: the ref still names Beranda's slot (its button stays hidden).
+  assert.equal(videoRefForGuide("home").video, "beranda");
+});
+
+test("the video library lists only what is published, Beranda right after the intro", () => {
+  assert.deepEqual(libraryVideoKeys(), []);
+  publish("sales", () => publish("beranda", () => publish("kenalan", () => assert.deepEqual(libraryVideoKeys(), ["kenalan", "beranda", "sales"]))));
 });

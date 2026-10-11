@@ -93,7 +93,7 @@ describe("brandVoiceText / brandToneText", () => {
     };
     const voice = brandVoiceText(brand);
     assert.match(voice, /Personality: Bold, Warm\./);
-    assert.match(voice, /formal/);
+    assert.match(voice, /casual/);
     assert.match(voice, /Avoid: cheap\./);
     assert.doesNotMatch(voice, /legacy free-text guide/);
   });
@@ -108,9 +108,11 @@ describe("brandVoiceText / brandToneText", () => {
   });
 
   test("brandToneText describes a lean towards one side of each axis", () => {
+    // Low = the left end of each slider (TONE_AXES): Formal, Sederhana…
     const brand = { brandBuilder: { toneOfVoice: { source: "user", formal: 10, language: 90, character: 50, emotion: 50 } } };
     const text = brandToneText(brand);
-    assert.match(text, /casual/);
+    assert.match(text, /Tone of voice: formal,/);
+    assert.doesNotMatch(text, /casual/);
     assert.match(text, /technical/);
     assert.match(text, /between serious and playful/);
   });

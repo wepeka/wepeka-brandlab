@@ -20,6 +20,7 @@ import { qs, qsa, escapeHtml as esc, toast, openMenu, closeMenu, formatNumber } 
 import { t, getLang } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
 import { eventTabsHTML } from "../event-tabs.js";
+import { guideVideoButtonHTML } from "../guide-videos.js";
 
 const LANE_COLOR = { event: "var(--accent)", audience: "var(--track-social)", community: "var(--track-community)", rhythm: "var(--text-faint)" };
 const laneColor = (id) => LANE_COLOR[id] || "var(--text-faint)";
@@ -83,7 +84,7 @@ function paintList(root, brandId, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}${guideVideoButtonHTML("event")}</div>
         <h1>${t("roadmap.title")}</h1>
         <p class="page-sub">${t("roadmap.sub")}</p>
       </div>
@@ -311,7 +312,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
   root.innerHTML = `
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}</div>
+        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}${guideVideoButtonHTML("event")}</div>
         <h1>${esc(goal.name || t("roadmap.defaultName"))}</h1>
         <p class="page-sub">${esc(withYear(goal.targetDate))} · ${days > 0 ? t("roadmap.days.left", { n: days }) : days === 0 ? t("roadmap.days.today") : t("roadmap.days.passed")} ${statusPill(goal.status)} <span class="rg-pill" title="${esc(t(`roadmap.scale.${plan.scale?.level ?? 0}.sub`))}">${esc(t(`roadmap.scale.${plan.scale?.level ?? 0}`))}</span></p>
       </div>
