@@ -12,7 +12,16 @@ export const WEPEKA_CONNECT_URL = `${WEPEKA_SITE_URL}/brandlab/connect`;
 
 // Wepeka's Instagram handle (no @) — printed on the shareable campaign
 // story card and put in the caption that gets copied alongside it.
-export const WEPEKA_IG_HANDLE = "wepeka";
+export const WEPEKA_IG_HANDLE = "wepeka.id";
+
+// Community (js/community.js): the WhatsApp group where Brandlab news is
+// announced, and the accounts a new buyer is asked to follow — the
+// founder's first, then Wepeka's. Same values as wepeka.com/gabung (wpk-dp
+// src/lib/site.ts) and as the email after payment (api/_community.js,
+// kept equal by tests/community.test.mjs).
+export const BRANDLAB_WA_GROUP_URL = "https://chat.whatsapp.com/CCk7zkSbXhrBxKyjG92Yt1";
+export const FOLLOW_INSTAGRAM = ["winkhsin", WEPEKA_IG_HANDLE];
+export const instagramUrl = (handle) => `https://www.instagram.com/${String(handle).replace(/^@/, "")}`;
 
 // Wepeka support WhatsApp — payments, top-ups, extra brands (same number as
 // wpk-dp src/lib/support.ts).

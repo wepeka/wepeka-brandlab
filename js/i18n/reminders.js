@@ -88,4 +88,9 @@ export default {
   "reminders.email.to": { en: "Sent to {email}.", id: "Dikirim ke {email}." },
   "reminders.email.onToast": { en: "Email reminders are on.", id: "Pengingat email nyala." },
   "reminders.email.offToast": { en: "Email reminders turned off.", id: "Pengingat email dimatikan." },
+
+  "reminders.updates.title": { en: "Announcement emails", id: "Email pengumuman" },
+  "reminders.updates.sub": { en: "Now and then, when the Wepeka team announces a new feature or important news about Brandlab.", id: "Sesekali, saat tim Wepeka mengumumkan fitur baru atau kabar penting soal Brandlab." },
+  "reminders.updates.onToast": { en: "Announcement emails are on.", id: "Email pengumuman nyala." },
+  "reminders.updates.offToast": { en: "Announcement emails turned off.", id: "Email pengumuman dimatikan." },
 };

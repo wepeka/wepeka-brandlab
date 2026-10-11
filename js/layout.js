@@ -381,6 +381,7 @@ function appMenuHTML(brandId, hasVideos) {
     ${brandId ? `<button type="button" data-act="consultant">${icon("chat", { size: 15 })}${t("help.askAi")}</button>` : ""}
     ${hasVideos ? `<button type="button" data-act="videos">${icon("play", { size: 15 })}${t("guide.library.menu")}</button>` : ""}
     <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
+    <button type="button" data-act="community">${icon("users", { size: 15 })}${t("community.menu")}</button>
     <div class="menu-divider"></div>
     <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
     <button type="button" data-act="theme">${icon(getTheme() === "light" ? "moon" : "sun", { size: 15 })}${t("topbar.toggleTheme")}</button>
@@ -530,6 +531,7 @@ export function wireShell({ brandId }) {
       else if (act === "consultant") openConsultantPanel();
       else if (act === "videos") openVideoLibrary();
       else if (act === "tour") startOnboardingTour();
+      else if (act === "community") import("./community.js").then((m) => m.openCommunityModal()).catch((e) => console.warn("[community] unavailable", e));
       else if (act === "theme") toggleTheme();
       else if (act === "ai") {
         const pop = menuBelow(menuBtn, { className: "help-popover", width: 280 });

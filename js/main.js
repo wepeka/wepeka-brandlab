@@ -74,6 +74,13 @@ function tourAfterPicker(delay = 600) {
   setTimeout(() => import("./guide-videos.js").then((m) => m.startTour()), delay);
   return true;
 }
+// "Makasih sudah gabung" + the WhatsApp group and Instagram buttons, once
+// per account, the first time it is open on a paid plan (js/community.js).
+// Resolves when the sheet closes (at once when it isn't due), so whatever
+// comes next — welcome video, mode picker — waits its turn. Needs the store.
+function paidWelcome() {
+  return import("./community.js").then((m) => m.maybeShowPaidWelcome()).catch((e) => { console.warn("community sheet unavailable", e); return false; });
+}
 let cleanup = null;
 
 function parseRoute(hash) {
@@ -331,6 +338,8 @@ function onAccountChange(user, account) {
       if (firstEverOpen) {
         modePickerShown = true;
         app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
+        // Someone who just paid is thanked first, before the welcome video.
+        await paidWelcome();
         await playWelcomeVideo();
         await renderModePicker(document.getElementById("mode-root"));
       }
@@ -355,6 +364,11 @@ function onAccountChange(user, account) {
         bumper
           .then(() => (tourAfterPicker(0) ? null : import("./guide-videos.js").then((m) => m.playFirstRunIntro())))
           .catch((e) => console.warn("first-run video unavailable", e));
+      } else {
+        // An account that already knows the app and is now on a paid plan
+        // (paid while away, or before this sheet existed): once, after the
+        // greeting.
+        bumper.then(() => paidWelcome());
       }
       // Weekly Instagram insights refresh for published content. Loaded
       // lazily (same reason every view is) and a few seconds after first
@@ -378,6 +392,8 @@ function onAccountChange(user, account) {
     });
   } else {
     renderRoute();
+    // The plan changed while the app is open — a payment just landed.
+    paidWelcome();
   }
 }
 
@@ -464,6 +480,8 @@ async function renderRoute() {
   if (!hasChosenMode() && !modePickerShown) {
     modePickerShown = true;
     app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
+    await paidWelcome();
+    if (token !== renderToken) return;
     await playWelcomeVideo();
     if (token !== renderToken) return;
     await renderModePicker(document.getElementById("mode-root"));

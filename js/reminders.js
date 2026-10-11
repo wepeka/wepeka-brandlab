@@ -282,6 +282,19 @@ function emailCardHTML(rem, writable) {
   return `<div class="card rem-card" style="margin-bottom:20px;">${headHTML("send", "reminders.email.title", "reminders.email.sub", on)}${body}</div>`;
 }
 
+// Announcement emails (api/announcements/notify.js) — on for every account
+// until it says otherwise here (settings.updatesEmailOff).
+function updatesCardHTML(writable) {
+  const on = getSettings()?.updatesEmailOff !== true;
+  const body = `
+    <div class="rem-actions">
+      ${on
+        ? `<button class="btn btn-secondary btn-sm" data-rem="updates-off" ${writable ? "" : "disabled"}>${t("reminders.turnOff")}</button>`
+        : `<button class="btn btn-primary btn-sm" data-rem="updates-on" ${writable ? "" : "disabled"}>${icon("megaphone", { size: 14 })}${t("reminders.turnOn")}</button>`}
+    </div>`;
+  return `<div class="card rem-card" style="margin-bottom:20px;">${headHTML("megaphone", "reminders.updates.title", "reminders.updates.sub", on)}${body}</div>`;
+}
+
 function panelHTML() {
   const rem = currentReminders();
   const writable = canWrite();
@@ -293,7 +306,8 @@ function panelHTML() {
     </div>
     ${serverConfig?.push ? pushCardHTML(rem, writable) : ""}
     ${calendarCardHTML(rem, writable)}
-    ${serverConfig?.email ? emailCardHTML(rem, writable) : ""}`;
+    ${serverConfig?.email ? emailCardHTML(rem, writable) : ""}
+    ${serverConfig?.email ? updatesCardHTML(writable) : ""}`;
 }
 
 // Runs one button's action with the button disabled; errors become a toast.
@@ -344,6 +358,14 @@ function wire(content) {
   on("email-on", () => {
     saveReminders({ ...currentReminders(), email: { enabled: true, address: getUserEmail() } });
     toast(t("reminders.email.onToast"));
+  });
+  on("updates-off", () => {
+    updateSettings({ updatesEmailOff: true });
+    toast(t("reminders.updates.offToast"));
+  });
+  on("updates-on", () => {
+    updateSettings({ updatesEmailOff: false });
+    toast(t("reminders.updates.onToast"));
   });
   on("email-off", () => {
     saveReminders({ ...currentReminders(), email: { enabled: false, address: currentReminders().email.address } });

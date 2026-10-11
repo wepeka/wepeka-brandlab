@@ -37,3 +37,38 @@ export async function sendEmail({ to, subject, html, text, idempotencyKey }, { e
     return { ok: false, error: err?.message || "network" };
   }
 }
+
+// Many emails in as few requests as possible — Resend's batch endpoint takes
+// up to 100 per call. `messages`: [{ to, subject, html, text }]. Sends chunk
+// after chunk and stops at the first chunk Resend refuses (a daily limit
+// reached stays reached), so the caller can say how far it got.
+// → { ok, sent, failed, error? }. Never throws.
+const RESEND_BATCH_URL = "https://api.resend.com/emails/batch";
+export const EMAIL_BATCH_SIZE = 100;
+export async function sendEmailBatch(messages, { env = process.env, fetchImpl = globalThis.fetch, idempotencyKey = "" } = {}) {
+  const list = (messages || []).filter((m) => looksLikeEmail(m?.to));
+  if (!emailConfigured(env)) return { ok: false, skipped: true, sent: 0, failed: list.length };
+  const from = String(env.RESEND_FROM).trim();
+  let sent = 0;
+  for (let i = 0; i < list.length; i += EMAIL_BATCH_SIZE) {
+    const chunk = list.slice(i, i + EMAIL_BATCH_SIZE);
+    try {
+      const res = await fetchImpl(RESEND_BATCH_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${String(env.RESEND_API_KEY).trim()}`,
+          "Content-Type": "application/json",
+          ...(idempotencyKey ? { "Idempotency-Key": `${String(idempotencyKey).slice(0, 240)}-${i / EMAIL_BATCH_SIZE}` } : {}),
+        },
+        body: JSON.stringify(chunk.map((m) => ({ from, to: [m.to], subject: String(m.subject || "").slice(0, 200), html: m.html, text: m.text }))),
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) return { ok: false, sent, failed: list.length - sent, status: res.status, error: data?.message || data?.name || `HTTP ${res.status}` };
+      sent += chunk.length;
+    } catch (err) {
+      return { ok: false, sent, failed: list.length - sent, error: err?.message || "network" };
+    }
+  }
+  return { ok: true, sent, failed: 0 };
+}

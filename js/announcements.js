@@ -121,6 +121,35 @@ export async function publishAnnouncement(fields) {
     notify();
     throw e;
   }
+  return ref.id;
+}
+
+// "Kirim juga lewat email" (admin): whether this deployment can send email
+// at all (api/reminders/config), asked once per page load.
+let emailReady = null;
+export function announcementEmailReady() {
+  if (!emailReady) {
+    emailReady = fetch("/api/reminders/config", { headers: { Accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((c) => c?.email === true)
+      .catch(() => { emailReady = null; return false; });
+  }
+  return emailReady;
+}
+
+// Mails one posted announcement to every active account
+// (api/announcements/notify.js — admin only, once per announcement).
+// → { ok, sent, total, partial } | { ok: false, error }.
+export async function emailAnnouncement(id) {
+  const { auth } = await import("./firebase.js");
+  const token = await auth.currentUser?.getIdToken();
+  const res = await fetch("/api/announcements/notify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ id }),
+  });
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? { ok: true, ...data } : { ok: false, ...data, error: data?.error || `http-${res.status}` };
 }
 
 export async function editAnnouncement(id, fields) {

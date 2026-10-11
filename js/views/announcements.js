@@ -3,7 +3,7 @@
 // edit, delete); everyone else just reads. Data and rules: js/announcements.js.
 import {
   KINDS, listAnnouncements, announcementsStatus, onAnnouncements, startAnnouncements, announcementsSeenAt, markAnnouncementsSeen,
-  isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement,
+  isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement, announcementEmailReady, emailAnnouncement,
 } from "../announcements.js";
 import { renderLightMarkdown } from "../ai-directives.js";
 import { backToLastBrandHTML } from "../back-link.js";
@@ -20,6 +20,10 @@ function dateLabel(ms) {
   return new Date(ms).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { day: "numeric", month: "long", year: "numeric" });
 }
 
+// Whether email can be sent at all — known a moment after the page opens
+// (announcementEmailReady); the composer and the rows repaint when it is.
+let emailOn = false;
+
 function composerHTML(editing) {
   const a = editing || {};
   return `
@@ -34,6 +38,9 @@ function composerHTML(editing) {
       <div class="field"><label for="ann-title">${t("ann.field.title")}</label><input class="input" id="ann-title" maxlength="140" placeholder="${esc(t("ann.field.titlePh"))}" value="${esc(a.title || "")}" /></div>
       <div class="field"><label for="ann-body">${t("ann.field.body")}</label><textarea class="textarea" id="ann-body" rows="5" placeholder="${esc(t("ann.field.bodyPh"))}">${esc(a.body || "")}</textarea><p class="field-hint">${t("ann.field.bodyHint")}</p></div>
       <div class="field"><label for="ann-link">${t("ann.field.link")}</label><input class="input" id="ann-link" placeholder="https://" value="${esc(a.link || "")}" /></div>
+      ${editing ? "" : emailOn
+        ? `<label class="ann-email-opt"><input type="checkbox" id="ann-email" /><span>${t("ann.email.also")}</span></label>`
+        : `<p class="field-hint ann-email-off">${t("ann.email.off")}</p>`}
       <div class="ann-composer-actions">
         ${editing ? `<button type="button" class="btn btn-secondary" id="ann-cancel">${t("common.cancel")}</button>` : ""}
         <button type="button" class="btn btn-primary" id="ann-send">${icon(editing ? "check" : "send", { size: 14 })}${editing ? t("ann.save") : t("ann.send")}</button>
@@ -57,6 +64,8 @@ function itemHTML(a, { seenAt, admin }) {
       <h2 class="ann-title">${esc(a.title || "")}</h2>
       ${a.body ? `<div class="ann-body consultant-md">${renderLightMarkdown(a.body)}</div>` : ""}
       ${a.link ? `<a class="btn btn-secondary btn-sm ann-link" href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${t("ann.open")}${icon("arrowRight", { size: 12 })}</a>` : ""}
+      ${admin && a.emailedAt ? `<p class="ann-emailed text-faint">${icon("send", { size: 12 })}${esc(t("ann.email.done", { n: a.emailed?.sent ?? 0 }))}</p>` : ""}
+      ${admin && !a.emailedAt && emailOn ? `<button type="button" class="btn btn-ghost btn-sm ann-email-btn" data-ann-email="${esc(a.id)}">${icon("send", { size: 12 })}${t("ann.email.send")}</button>` : ""}
     </article>`;
 }
 
@@ -78,7 +87,7 @@ export function render(root) {
     const status = announcementsStatus();
     const editing = editingId ? items.find((a) => a.id === editingId) : null;
     // Keep what the admin is typing across a live repaint.
-    const draft = qs("#ann-composer") ? { title: qs("#ann-title")?.value, body: qs("#ann-body")?.value, link: qs("#ann-link")?.value, kind: qs('input[name="ann-kind"]:checked')?.value } : null;
+    const draft = qs("#ann-composer") ? { title: qs("#ann-title")?.value, body: qs("#ann-body")?.value, link: qs("#ann-link")?.value, kind: qs('input[name="ann-kind"]:checked')?.value, email: !!qs("#ann-email")?.checked } : null;
     const hadFocus = document.activeElement?.id;
     root.innerHTML = `
       <div class="page-head">
@@ -107,11 +116,21 @@ export function render(root) {
       if (draft.body != null) qs("#ann-body").value = draft.body;
       if (draft.link != null) qs("#ann-link").value = draft.link;
       if (draft.kind) { const r = qs(`input[name="ann-kind"][value="${draft.kind}"]`); if (r) r.checked = true; }
+      if (draft.email && qs("#ann-email")) qs("#ann-email").checked = true;
     }
     if (hadFocus && qs(`#${hadFocus}`)) qs(`#${hadFocus}`).focus();
     wire();
     // Opened = read. Once the list is in, so "Baru" counts are right.
     if (!marked && status === "ready") { marked = true; markAnnouncementsSeen(); }
+  };
+
+  // Mails a posted announcement and says how it went. Never throws.
+  const sendByEmail = async (id) => {
+    toast(t("ann.email.sending"));
+    const r = await emailAnnouncement(id).catch(() => ({ ok: false, error: "network" }));
+    if (r.ok) toast(t(r.partial ? "ann.email.partial" : "ann.email.sent", { n: r.sent ?? 0, total: r.total ?? 0 }));
+    else if (r.error === "already") toast(t("ann.email.already"));
+    else toast(t(r.error === "email-off" ? "ann.email.off" : "ann.email.failed"), "error");
   };
 
   const wire = () => {
@@ -133,11 +152,15 @@ export function render(root) {
           await editAnnouncement(id, fields);
           toast(t("ann.saved"));
         } else {
+          const alsoEmail = !!qs("#ann-email")?.checked;
           const p = publishAnnouncement(fields);
           // The new post is already in the list; clear the form for the next.
           ["#ann-title", "#ann-body", "#ann-link"].forEach((s) => { const el = qs(s); if (el) el.value = ""; });
-          await p;
+          // Never carried over to the next post: emailing is a choice per post.
+          if (qs("#ann-email")) qs("#ann-email").checked = false;
+          const id = await p;
           toast(t("ann.sent"));
+          if (alsoEmail && id) await sendByEmail(id);
         }
       } catch (err) {
         console.warn("[announcements] write failed", err);
@@ -147,6 +170,15 @@ export function render(root) {
       }
     });
     qs("#ann-cancel", root)?.addEventListener("click", () => { editingId = null; paint(); });
+    root.querySelectorAll("[data-ann-email]").forEach((b) => b.addEventListener("click", async () => {
+      const a = listAnnouncements().find((x) => x.id === b.dataset.annEmail);
+      if (!a) return;
+      const ok = await confirmDialog({ title: t("ann.email.confirmTitle"), message: t("ann.email.confirmBody", { title: esc(a.title) }), confirmLabel: t("ann.email.send") });
+      if (!ok) return;
+      b.disabled = true;
+      await sendByEmail(a.id);
+      paint();
+    }));
     root.querySelectorAll("[data-ann-edit]").forEach((b) => b.addEventListener("click", () => {
       editingId = b.dataset.annEdit;
       paint();
@@ -164,6 +196,8 @@ export function render(root) {
 
   paint();
   const off = onAnnouncements(paint);
+  // Admin: once we know email can be sent, the composer gets its checkbox.
+  if (isAnnouncementAdmin()) announcementEmailReady().then((on) => { if (on && !emailOn && root.isConnected) { emailOn = true; paint(); } });
   root.addEventListener("click", (e) => { if (e.target.closest("[data-ann-retry]")) location.reload(); });
   return () => { clearTimeout(slowTimer); off(); };
 }

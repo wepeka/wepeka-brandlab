@@ -4,12 +4,16 @@
 // pricing.js's onSuccess, which just shows a toast and waits for this).
 import crypto from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
+import { getApps } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
 import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
 import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isSettled, notificationAction } from "../_payments.js";
+import { sendEmail, emailConfigured } from "../_email.js";
+import { composePaidEmail } from "../_community.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -225,7 +229,8 @@ export default async function handler(req, res) {
     // Meta Purchase, once per order (retries have firstTime false). Same
     // event id as the browser pixel in js/views/pricing.js payPlan. Awaited
     // (Vercel may freeze the function after the response) but never throws.
-    const email = (await accountRef.get().catch(() => null))?.data()?.email;
+    const buyer = (await accountRef.get().catch(() => null))?.data() || {};
+    const email = buyer.email;
     await sendMetaEvent({
       name: "Purchase",
       eventId: order_id,
@@ -234,8 +239,25 @@ export default async function handler(req, res) {
       externalId: uid,
       customData: { currency: "IDR", value: Number(gross_amount), content_ids: [planKey], content_name: plan.label || planKey, content_type: "product", order_id },
     });
+    // "Pembayaran diterima" + the WhatsApp group and Instagram links, once
+    // per order that was actually applied. Off while Resend isn't set up
+    // (api/_email.js); never fails the notification.
+    if (firstTime === true) {
+      await sendPaidEmail({ uid, buyer, plan, planKey, orderId: order_id, amount: Number(gross_amount) }).catch((err) => console.error("Midtrans webhook: paid email failed", order_id, err?.message));
+    }
   }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
+}
+
+async function sendPaidEmail({ uid, buyer, plan, planKey, orderId, amount }) {
+  if (!emailConfigured()) return;
+  // accounts/{uid}.email is the server's own copy; Firebase Auth is the fallback.
+  const user = buyer.email && buyer.displayName ? null : await getAuth(getApps()[0]).getUser(uid).catch(() => null);
+  const to = String(buyer.email || user?.email || "").trim();
+  if (!to) return;
+  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", label: plan.label || planKey, amount, orderId, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]) });
+  const r = await sendEmail({ to, ...mail, idempotencyKey: `brandlab-paid-${orderId}` });
+  if (!r.ok && !r.skipped) console.error("Midtrans webhook: paid email not sent", orderId, r.error || r.status);
 }
 
 // After a paid order: a plan purchase stops the old plan's auto-renew (plans

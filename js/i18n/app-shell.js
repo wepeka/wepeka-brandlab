@@ -6,6 +6,16 @@ export default {
   // Under the boot loader's logo after ~12s (js/main.js showLoading).
   "app.loading.slow": { en: "Still getting Brandlab ready… If it takes too long, check your connection and reload.", id: "Masih menyiapkan Brandlab… Kalau kelamaan, cek koneksi internetmu lalu muat ulang." },
   "app.done": { en: "Done", id: "Selesai" },
+  "community.menu": { en: "Community", id: "Komunitas" },
+  "community.title": { en: "Brandlab community", id: "Komunitas Brandlab" },
+  "community.body": { en: "Join the WhatsApp group: this is where the Wepeka team announces new features and fixes, shares tips, and answers questions.", id: "Gabung grup WhatsApp-nya: di sini tim Wepeka mengumumkan fitur baru dan perbaikan, berbagi tips, dan menjawab pertanyaan." },
+  "community.paid.title": { en: "Thanks for joining Brandlab", id: "Makasih sudah gabung di Brandlab" },
+  "community.paid.body": { en: "Your plan is active. One more thing before you start: join the WhatsApp group so you don't miss announcements — new features, fixes and tips all land there first.", id: "Paket kamu sudah aktif. Satu hal lagi sebelum mulai: gabung grup WhatsApp supaya nggak ketinggalan pengumuman — fitur baru, perbaikan, dan tips semuanya diumumkan di sana dulu." },
+  "community.paid.cta": { en: "Continue to Brandlab", id: "Lanjut ke Brandlab" },
+  "community.join": { en: "Join the WhatsApp group", id: "Gabung grup WhatsApp" },
+  "community.joinNote": { en: "Opens WhatsApp. You can leave the group anytime.", id: "Membuka WhatsApp. Bisa keluar dari grup kapan aja." },
+  "community.followHead": { en: "Follow us on Instagram too", id: "Follow juga di Instagram" },
+  "community.follow": { en: "Follow {handle}", id: "Follow {handle}" },
   // {name} arrives pre-wrapped in <b>...</b> (see showWelcomeBumper) — the
   // logo mark under this line already says "Wepeka Brandlab", so this is
   // just the greeting, "welcome to" with nothing after it.
