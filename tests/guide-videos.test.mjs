@@ -60,9 +60,16 @@ const PART_TITLES = {
   campaign: ["Tujuan: Grow Brand", "Halaman tujuan: level, target & brainstorm", "Event: persiapan menuju tanggal"],
   "content-os": ["Creator: nulis script", "Creator: syuting sampai terbit", "Kalender & jadwal", "Daftar Konten & hasil", "Seri konten"],
 };
-const partFor = (guideKey) => {
+// The titles as they were actually typed into the admin on 12 Oct 2026 —
+// shorter than the scripts'. Pages must land on the right part with these too.
+const ADMIN_TITLES = {
+  "brand-builder": ["Brand DNA"],
+  campaign: ["Grow Brand", "Tujuan", "Event"],
+  "content-os": ["Creator", "Flow Creator", "Kalender", "Draft Konten", "Series"],
+};
+const partFor = (guideKey, set = PART_TITLES) => {
   const ref = videoRefForGuide(guideKey);
-  const titles = PART_TITLES[ref.video] || [];
+  const titles = set[ref.video] || [];
   const i = ref.part ? titles.findIndex((title) => ref.part.test(title)) : -1;
   return `${ref.video} › ${titles[Math.max(0, i)] || "(satu video)"}`;
 };
@@ -100,6 +107,24 @@ test("each page opens the part made for it", () => {
   assert.equal(videoRefForGuide("sales").video, "sales");
   assert.equal(videoRefForGuide("chat").video, "tanya-brandlab");
   assert.equal(videoRefForGuide("nope"), null);
+});
+
+test("the shorter titles used in the admin open the right part too", () => {
+  const at = (hash, fn) => { const prev = globalThis.location; globalThis.location = { hash, origin: "https://brandlab.wepeka.com" }; try { return fn(); } finally { globalThis.location = prev; } };
+  const p = (key) => partFor(key, ADMIN_TITLES);
+  assert.equal(p("campaigns"), "campaign › Grow Brand");
+  assert.equal(p("campaign-detail"), "campaign › Tujuan");
+  assert.equal(p("brainstorm"), "campaign › Tujuan");
+  assert.equal(p("event"), "campaign › Event");
+  assert.equal(p("creator"), "content-os › Creator");
+  assert.equal(p("calendar"), "content-os › Kalender");
+  assert.equal(at("#/brand/b1/content/list", () => p("content-list")), "content-os › Draft Konten");
+  assert.equal(at("#/brand/b1/content/series", () => p("content-os")), "content-os › Series");
+  assert.equal(p("brand-dna"), "brand-builder › Brand DNA");
+  // Only one part up so far: Brand Book opens it rather than nothing.
+  assert.equal(p("brand-guidelines"), "brand-builder › Brand DNA");
+  // The scripts' long titles still resolve the same way.
+  assert.equal(partFor("brainstorm"), "campaign › Halaman tujuan: level, target & brainstorm");
 });
 
 test("Beranda keeps offering the intro until its own video is published", () => {

@@ -163,12 +163,15 @@ const GUIDE_TO_VIDEO = {
   "brand-guidelines": { video: "brand-builder", start: 80, part: /brand ?book|guideline|logo|warna|font/i },
   campaigns: "campaign",
   "campaign-list": "campaign",
-  "campaign-detail": { video: "campaign", start: 30, part: /detail|level|misi|mission/i },
+  // The goal page's part is titled "Halaman tujuan: …" in the scripts and
+  // plain "Tujuan" in the admin — both open it; "Tujuan: Grow Brand" (the
+  // list's part) does not.
+  "campaign-detail": { video: "campaign", start: 30, part: /detail|level|misi|mission|halaman tujuan|^tujuan$/i },
   event: { video: "campaign", part: /event|acara|tanggal/i },
-  brainstorm: { video: "campaign", start: 95, part: /brainstorm|chat|ide/i },
+  brainstorm: { video: "campaign", start: 95, part: /brainstorm|chat|ide|halaman tujuan|^tujuan$/i },
   creator: { video: "content-os", part: /creator|tulis|bikin|buat/i },
   calendar: { video: "content-os", start: 80, part: /kalender|calendar|jadwal/i },
-  "konten-dashboard": { video: "content-os", start: 135, part: /daftar|dashboard|hasil|insight|result/i },
+  "konten-dashboard": { video: "content-os", start: 135, part: /daftar|draft|dashboard|hasil|insight|result/i },
   series: { video: "content-os", part: /\bseri|series/i },
   "copy-studio": "copy",
   sales: "sales",
