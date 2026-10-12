@@ -10,7 +10,7 @@
 //
 // Empty = off (every export is a no-op), and only ever on *.wepeka.com so
 // dev on localhost never pollutes ad data.
-const META_PIXEL_ID = "";
+const META_PIXEL_ID = "1728923398221206";
 
 const isOn = () => !!META_PIXEL_ID && /(^|\.)wepeka\.com$/.test(location.hostname);
 // The Wepeka hand-off carries a sign-in token in the fragment (#/sso?t=…)
@@ -29,8 +29,10 @@ function load() {
 
 export function metaTrack(name, params = {}, eventId) {
   if (!isOn() || tokenInUrl()) return;
-  load();
   try {
+    // Loading sits inside the try as well: a page where the pixel script
+    // can't be inserted must not stop a checkout or the boot.
+    load();
     if (eventId) window.fbq("track", name, params, { eventID: eventId });
     else window.fbq("track", name, params);
   } catch { /* tracking must never break the app */ }
