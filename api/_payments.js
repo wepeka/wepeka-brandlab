@@ -80,3 +80,28 @@ export function notificationAction(payment, transactionStatus, fraudStatus) {
   // Closed unpaid as expired/cancelled/denied, yet Midtrans says it settled.
   return settled ? "flag" : "ignore";
 }
+
+// ---- "Is my order paid yet?" (api/midtrans/order-status.js) ---------------
+// For the browser's analytics only (js/pending-orders.js): a transfer paid
+// after Snap closed never reaches Snap's onSuccess, and payments/{order_id}
+// is closed to clients, so the buyer's own browser asks here. One word per
+// order, nothing else from the record.
+export const ORDER_STATUS_MAX = 10;
+
+// The order ids in `ids` that create-transaction.js could have made for
+// this account ("bl-<uid>-<base36 time>"), without duplicates, capped.
+export function ownOrderIds(ids, uid) {
+  if (!uid || !Array.isArray(ids)) return [];
+  const prefix = `bl-${uid}-`;
+  const mine = ids.filter((id) => typeof id === "string" && !id.includes("/") && id.startsWith(prefix) && /^[a-z0-9]{1,16}$/.test(id.slice(prefix.length)));
+  return [...new Set(mine)].slice(0, ORDER_STATUS_MAX);
+}
+
+// "paid", "pending", "closed" (expired, cancelled, denied, voided — or paid
+// and then refunded / charged back) or "unknown" (no such order, or it
+// belongs to someone else).
+export function orderStatusFor(payment, uid) {
+  if (!payment || !uid || payment.uid !== uid) return "unknown";
+  if (payment.status === "paid") return "paid";
+  return payment.status === "pending" ? "pending" : "closed";
+}

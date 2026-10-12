@@ -1,7 +1,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isPaymentTester, isSettled, notificationAction } from "../api/_payments.js";
+import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isPaymentTester, isSettled, notificationAction, ownOrderIds, orderStatusFor, ORDER_STATUS_MAX } from "../api/_payments.js";
+import orderStatusHandler from "../api/midtrans/order-status.js";
 import { ADMIN_UIDS, isReadOnlyAccount, consumeFreeCall } from "../api/_aiQuota.js";
 
 // The test run has no MIDTRANS_IS_PRODUCTION, i.e. the sandbox situation the
@@ -145,5 +146,52 @@ describe("notificationAction (what a signed notification does to an order)", () 
   test("sandbox: only testers' payments are granted", () => {
     assert.equal(paymentsOpenFor("someone", { email: "owner@kopi.id" }), false);
     assert.equal(paymentsOpenFor("r", { email: "wepeka.cobabrandlab@gmail.com" }), true);
+  });
+});
+
+describe("order status for the buyer's own browser (analytics only)", () => {
+  const uid = "uidPembeli01";
+  const mine = (n) => `bl-${uid}-k${n}`;
+  test("only order ids made for this account are looked up", () => {
+    assert.deepEqual(ownOrderIds([mine(1), "bl-uidOrangLain-k1", mine(2)], uid), [mine(1), mine(2)]);
+    assert.deepEqual(ownOrderIds([`bl-${uid}x-k1`, `${mine(1)}/../../accounts/x`, `bl-${uid}-`, `bl-${uid}-K1`, 5, null, { a: 1 }], uid), []);
+    // An auto-renew charge (Midtrans's own order id) is never the browser's to ask about.
+    assert.deepEqual(ownOrderIds(["bls-abc-k1x-00000000000000000000000000000001"], uid), []);
+  });
+  test("no duplicates, a capped list, and nothing without a uid or a list", () => {
+    assert.deepEqual(ownOrderIds([mine(1), mine(1)], uid), [mine(1)]);
+    assert.equal(ownOrderIds(Array.from({ length: 40 }, (_, i) => mine(i)), uid).length, ORDER_STATUS_MAX);
+    assert.deepEqual(ownOrderIds([mine(1)], ""), []);
+    assert.deepEqual(ownOrderIds("bl-x", uid), []);
+    assert.deepEqual(ownOrderIds(undefined, uid), []);
+  });
+  test("paid and pending are said as they are", () => {
+    assert.equal(orderStatusFor({ uid, status: "paid", paidAt: 1 }, uid), "paid");
+    assert.equal(orderStatusFor({ uid, status: "paid", paidAt: 1, needsReview: "over-cap" }, uid), "paid");
+    assert.equal(orderStatusFor({ uid, status: "pending" }, uid), "pending");
+  });
+  test("an order that will never be paid, a voided one and a reversed one are closed", () => {
+    for (const s of ["expire", "cancel", "deny", "failure", "void-sandbox", "refund", "partial_refund", "chargeback"]) {
+      assert.equal(orderStatusFor({ uid, status: s, paidAt: 1 }, uid), "closed", s);
+    }
+  });
+  test("someone else's order, or none at all, is unknown", () => {
+    assert.equal(orderStatusFor({ uid: "uidOrangLain", status: "paid" }, uid), "unknown");
+    assert.equal(orderStatusFor({ status: "paid" }, uid), "unknown");
+    assert.equal(orderStatusFor(null, uid), "unknown");
+    assert.equal(orderStatusFor({ uid, status: "paid" }, undefined), "unknown");
+  });
+
+  // The endpoint itself, up to where it would need Firebase: who may ask.
+  function call(req) {
+    const res = { statusCode: 0, body: undefined, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+    return orderStatusHandler({ headers: {}, body: {}, ...req }, res).then(() => res);
+  }
+  test("the endpoint takes POST only and nothing without a sign-in token", async () => {
+    assert.equal((await call({ method: "GET" })).statusCode, 405);
+    const anon = await call({ method: "POST", body: { orderIds: [mine(1)] } });
+    assert.equal(anon.statusCode, 401);
+    assert.equal(anon.body.orders, undefined);
+    assert.equal((await call({ method: "POST", headers: { authorization: "Basic abc" }, body: { orderIds: [mine(1)] } })).statusCode, 401);
   });
 });

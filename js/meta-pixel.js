@@ -1,7 +1,8 @@
 // Meta Pixel (browser) for the Brandlab app (brandlab.wepeka.com).
 //
 // Paired with the Conversions API in api/_meta.js: a purchase is sent from
-// here (Snap onSuccess) AND from the Midtrans webhook with the same event id
+// here (Snap onSuccess, or js/pending-orders.js when the payment lands after
+// Snap closed) AND from the Midtrans webhook with the same event id
 // (the order id), so Meta counts it once and still gets it when the browser
 // one is blocked. Use the SAME pixel as www.wepeka.com (wpk-dp
 // NEXT_PUBLIC_META_PIXEL_ID) and as META_PIXEL_ID in Vercel env for /api —

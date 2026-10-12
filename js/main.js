@@ -28,6 +28,7 @@ import { noteNavigation } from "./nav-context.js";
 import { initAnalytics, setUser } from "./analytics.js";
 import { initMetaPixel } from "./meta-pixel.js";
 import { trackTrialStart } from "./trial-start.js";
+import { checkPendingOrders } from "./pending-orders.js";
 import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
@@ -297,6 +298,10 @@ function onAccountChange(user, account) {
   // Views that show account-bound numbers (AI meter, brand slots) repaint
   // on this instead of waiting for the next navigation.
   window.dispatchEvent(new CustomEvent("account:change"));
+  // A checkout paid after Snap closed (bank transfer, VA) shows up here as
+  // the webhook's write: GA4 gets its "purchase" then, or on the next boot
+  // (js/pending-orders.js). Nothing happens unless an order is remembered.
+  checkPendingOrders(user.uid);
 
   if (isDeactivated(account)) {
     teardownApp();
