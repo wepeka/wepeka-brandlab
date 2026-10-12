@@ -12,20 +12,17 @@ import { getCachedAccount, isAdmin, isReadOnly, currentUid } from "./account.js"
 // they were sold; the old "lifetime" plan is in the table below.
 export const DEFAULT_AI_DAILY_LIMIT = 50;
 
-// Credits per plan. Every paid plan resets daily; since 2026-10-12 (owner's
-// decision) that includes the Lifetime plans, which used to be a monthly cap
-// (300 / 500) and now get 100 a day like Pro. The trial is different: it's
-// a single pool for the whole 30-day window (not reset each day), so someone
-// who tries the product hard on day 1 still has real room left later, and
-// the number is big enough to actually experience the product rather than
-// feel like a demo. The "month" period is still understood everywhere (the
-// meter, the messages) but no plan uses it now.
+// Credits per plan. Everything resets daily since 2026-10-12 (owner's
+// decisions): the Lifetime plans, a monthly cap (300 / 500) until then, get
+// 100 a day like Pro, and the trial, one pool of 60 for its whole 30 days
+// until then, gets 40 a day. The "month" and "total" periods are still
+// understood everywhere (the meter, the messages) but no plan uses them now.
 // Shown on the pricing page (js/views/pricing.js) — keep the two in sync.
 // Also mirrored server-side in api/_aiQuota.js (the copy that actually
 // enforces the cap) — keep both in sync.
 const PLAN_QUOTA = {
   lifetime: { period: "day", limit: 100 },
-  trial: { period: "total", limit: 60 },
+  trial: { period: "day", limit: 40 },
   starter: { period: "day", limit: 20 },
   pro: { period: "day", limit: 100 },
   studio: { period: "day", limit: 200 },

@@ -2,7 +2,8 @@
 // out and how to get more. Paid accounts get the offer card: AI Sepuasnya
 // (no credit limit for 30 days) and one-off top-ups that never expire,
 // both paid on the spot through Midtrans (js/purchase.js). A trial or a
-// read-only account gets the plans instead, since extras are only sold on
+// read-only account gets the upgrade cards instead (Pro, recommended, and
+// Founder Lifetime — js/upgrade-doors.js), since extras are only sold on
 // top of a plan (same rule as the pricing page's add-ons, and enforced in
 // api/midtrans/create-transaction.js).
 //
@@ -20,6 +21,7 @@ import { aiLimitReached, aiDailyLimit, aiQuotaPeriod, aiQuotaWindow, aiExtras, a
 import { getCachedAccount, accessState, isReadOnly } from "./account.js";
 import { AI_TOPUPS, AI_UNLIMITED } from "./site-links.js";
 import { rp, buyAddon, offerOptionHTML } from "./purchase.js";
+import { upgradeDoorsHTML, wireUpgradeDoors, PRO_PLAN, LIFETIME_CREDITS } from "./upgrade-doors.js";
 
 const num = (n) => Number(n).toLocaleString(getLang() === "en" ? "en-US" : "id-ID");
 const dateLabel = (ts) => new Date(ts).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long" });
@@ -29,10 +31,22 @@ export function canTopUp(account = getCachedAccount()) {
   return accessState(account) === "paid" && !isReadOnly(account);
 }
 
-function bodyKey(readOnly, period) {
+// `topUp`: the account may buy extras. One that may not (a trial) is never
+// told to top up — its daily line points at the plans.
+function bodyKey(readOnly, period, topUp) {
   if (readOnly) return "ai.topup.bodyReadonly";
   if (period === "total") return "ai.topup.bodyTotal";
-  return period === "month" ? "ai.topup.bodyMonth" : "ai.topup.bodyDay";
+  if (period === "month") return "ai.topup.bodyMonth";
+  return topUp ? "ai.topup.bodyDay" : "ai.topup.bodyTrialDay";
+}
+
+// What a trial (or any account that can't top up) is offered instead of
+// extras: Pro and Founder Lifetime, each with the credits it gives a day.
+function upgradeHTML() {
+  return `
+    <div class="offer-card"><div class="offer-group">
+      ${upgradeDoorsHTML({ proSub: t("ai.upgrade.proSub", { n: PRO_PLAN.credits }), lifeSub: t("ai.upgrade.lifeSub", { n: LIFETIME_CREDITS }) })}
+    </div></div>`;
 }
 
 // What's left on top of the plan, one line — so a buyer sees the credits land.
@@ -83,7 +97,7 @@ export function openTopUpDialog() {
   const out = aiLimitReached();
   const topUp = canTopUp(account);
   const body = out
-    ? t(bodyKey(readOnly, period), { limit })
+    ? t(bodyKey(readOnly, period, topUp), { limit })
     : aiPlanUsedUp() && topUp
       ? t("ai.offer.bodyOnExtras")
       : t(topUp ? "ai.topup.bodyAnytime" : "ai.topup.bodyTrialAnytime");
@@ -93,14 +107,15 @@ export function openTopUpDialog() {
     bodyHTML: `
       <div class="ai-topup-modal">
         <p class="text-muted" style="margin:0 0 14px;font-size:13.5px;">${body}</p>
-        ${topUp ? `<div class="offer-card" data-offer-body>${offerHTML()}</div>` : ""}
+        ${topUp ? `<div class="offer-card" data-offer-body>${offerHTML()}</div>` : upgradeHTML()}
       </div>`,
     footHTML: topUp
       ? `<a class="btn btn-ghost" href="#/pricing" data-topup-plans>${t("ai.topup.seePlans")}</a><button type="button" class="btn btn-secondary" data-close-topup>${t("common.close")}</button>`
-      : `<button type="button" class="btn btn-ghost" data-close-topup>${t("ai.topup.later")}</button><a class="btn btn-primary" href="#/pricing" data-topup-plans>${icon("arrowUp", { size: 14 })}${t("ai.topup.seePlans")}</a>`,
+      : `<button type="button" class="btn btn-ghost" data-close-topup>${t("ai.topup.later")}</button><a class="btn btn-secondary" href="#/pricing" data-topup-plans>${t("brands.offer.allPlans")}</a>`,
   });
   overlay.querySelector("[data-close-topup]")?.addEventListener("click", () => closeOverlay(overlay));
   overlay.querySelector("[data-topup-plans]")?.addEventListener("click", () => closeOverlay(overlay));
+  wireUpgradeDoors(overlay, () => closeOverlay(overlay));
   overlay.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-offer-pay]");
     if (!btn) return;

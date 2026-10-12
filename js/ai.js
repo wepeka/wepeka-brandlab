@@ -8,7 +8,7 @@ import { COPY_LENGTHS, COPY_REWRITES, copyFormatRules, formatByKey, goalByKey } 
 import { aiLimitReached, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
-import { isAdmin, currentUid } from "./account.js";
+import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
 import { brandVoiceText, listBrandIdeas } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
 import { renderScript } from "./script-format.js";
@@ -36,12 +36,20 @@ function aiSetupError(key, vars = {}) {
 // provider/network/badResponse/noVision keys (aiSetupError already branches
 // admin vs. plain-language) — "session"/"deactivated" are the two genuinely
 // new cases a client-side key setup could never hit before.
+// Which sentence says "you're out": a trial can't top up, so its daily line
+// points at the plans instead of at a top-up.
+function quotaOutKey(limit, period) {
+  if (limit === 0) return "ai.error.readonly";
+  if (period === "month") return "ai.error.quotaMonth";
+  if (period === "total") return "ai.error.quotaTotal";
+  return isTrial(getCachedAccount()) ? "ai.error.quotaTrialDay" : "ai.error.quota";
+}
+
 function proxyError(code, extra = {}) {
   switch (code) {
     case "quota": {
       const { limit, period } = extra;
-      const key = limit === 0 ? "ai.error.readonly" : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
-      return quotaOutError(key, { limit, period });
+      return quotaOutError(quotaOutKey(limit, period), { limit, period });
     }
     case "auth":
     case "account":
@@ -235,10 +243,7 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
   if (countUsage && aiLimitReached()) {
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
-    const key = limit === 0
-      ? "ai.error.readonly"
-      : period === "month" ? "ai.error.quotaMonth" : period === "total" ? "ai.error.quotaTotal" : "ai.error.quota";
-    throw quotaOutError(key, { limit, period });
+    throw quotaOutError(quotaOutKey(limit, period), { limit, period });
   }
   return callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature, history }, onText);
 }

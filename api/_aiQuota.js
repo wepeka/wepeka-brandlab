@@ -26,14 +26,15 @@ export const DEFAULT_AI_DAILY_LIMIT = 20;
 // the fallback for anything unknown went down.
 // 2026-10-12, owner's decision: Pro and every Lifetime plan (Founder, Agency
 // and the old "lifetime") get 100 credits a day. The Lifetime plans used to
-// be a monthly cap (300 / 500); the "month" period stays supported below,
-// but no plan uses it now.
+// be a monthly cap (300 / 500). The trial, one pool of 60 for the whole
+// trial until then, is 40 a day since the same date. The "month" and
+// "total" periods stay supported below, but no plan uses them now.
 export const PLAN_QUOTA = {
   lifetime: { period: "day", limit: 100 },
   builder: { period: "day", limit: 50 },
   "content-os": { period: "day", limit: 50 },
   monthly: { period: "day", limit: 50 },
-  trial: { period: "total", limit: 60 },
+  trial: { period: "day", limit: 40 },
   starter: { period: "day", limit: 20 },
   pro: { period: "day", limit: 100 },
   studio: { period: "day", limit: 200 },

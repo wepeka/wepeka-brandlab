@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { quotaFor, usedInPeriod, consumeQuota, isAdminUid, ADMIN_UIDS, DEFAULT_AI_DAILY_LIMIT, pickBucket, extrasFor, availability } from "../api/_aiQuota.js";
 
 describe("quotaFor", () => {
-  test("trial plan is a total-lifetime cap", () => {
-    assert.deepEqual(quotaFor({ plan: "trial" }, "some-uid"), { period: "total", limit: 60 });
+  test("trial plan is 40 a day", () => {
+    assert.deepEqual(quotaFor({ plan: "trial", trialEndsAt: Date.now() + 86400000 }, "some-uid"), { period: "day", limit: 40 });
   });
 
   test("starter plan is a daily cap", () => {
@@ -39,7 +39,7 @@ describe("quotaFor", () => {
   test("aiDailyLimit overrides the limit but not the plan's period", () => {
     const q = quotaFor({ plan: "trial", trialEndsAt: Date.now() + 86400000, aiDailyLimit: 5 }, "some-uid");
     assert.equal(q.limit, 5);
-    assert.equal(q.period, "total");
+    assert.equal(q.period, "day");
   });
 
   test("an unknown/missing plan falls back to the default daily limit", () => {
