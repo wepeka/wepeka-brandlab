@@ -37,6 +37,7 @@ import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_U
 // the logged-out landing, and it paints before the SDK is even fetched.
 import { db as fdb, auth, loadFirestore } from "../firebase.js";
 import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } from "../account.js";
+import { takePricingBrands } from "../pricing-pick.js";
 
 // Rupiah amounts with the thousands separator of the current language
 // (Rp 300.000 in ID, Rp 300,000 in EN).
@@ -646,7 +647,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
   // null until the server answers; { open:false } swaps the "pay securely
   // via Midtrans" line for the "coming soon" note (api/_payments.js).
   let payState = null;
-  const sel = { brands: 1, yearly: false };
+  const sel = { brands: takePricingBrands(), yearly: false };
 
   const paint = () => {
   const open = openTier(slots ? seatsTakenOf(slots, FOUNDER.slotField, Date.now(), myHold) : null);

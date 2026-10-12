@@ -2,7 +2,9 @@
 // account holds as many brands as its plan allows. Pay-once plans buy
 // permanent slots (or rent one); subscribers rent one for 30 days, move up
 // a plan, or move to Lifetime — they can't buy permanent slots (owner's
-// decision, 2026-09-29). A trial picks a plan. Paid on the spot
+// decision, 2026-09-29). A trial is told it needs a plan and gets two doors
+// to the pricing page: Pro (3 brands, opened on that size) and Founder
+// Lifetime. Paid on the spot
 // (js/purchase.js); once the webhook adds the slot, the new-brand form
 // opens by itself (`onUnlocked`). openBrandRenew is the same card for a
 // brand gone preview-only after its monthly slot lapsed.
@@ -13,6 +15,7 @@ import { openModal, closeOverlay } from "./modals.js";
 import { getCachedAccount, accessState, isReadOnly, brandLimitOf, LIFETIME_PLANS } from "./account.js";
 import { BRAND_ADDONS, SUPPORT_WA_NUMBER } from "./site-links.js";
 import { rp, buyAddon, offerOptionHTML } from "./purchase.js";
+import { askPricingBrands } from "./pricing-pick.js";
 
 const SUBSCRIPTION_PLANS = ["starter", "pro", "studio"];
 // Moving up instead of renting: the next plan's brand count.
@@ -33,8 +36,9 @@ const monthlyHTML = (featured) => {
     ${offerOptionHTML({ payKey: a.payKey, title: t("brands.offer.subTitle"), sub: t("brands.offer.subSub", { days: a.days }), price: rp(a.price), per: t("ai.offer.perDays", { days: a.days }), featured })}
     <p class="offer-note">${icon("clock", { size: 12 })}${t("brands.offer.subNote", { days: a.days })}</p>`;
 };
-const planLinkHTML = (title, sub, price, per) =>
-  `<a class="offer-opt offer-opt-link" href="#/pricing" data-offer-plans><span class="offer-opt-main"><b>${title}</b><small>${sub}</small></span><span class="offer-opt-price"><strong>${price}</strong>${per ? `<small>${per}</small>` : ""}</span></a>`;
+// `pick`: the subscription size the pricing page should open on (js/pricing-pick.js).
+const planLinkHTML = (title, sub, price, per, { featured = false, badge = "", pick = 0 } = {}) =>
+  `<a class="offer-opt offer-opt-link ${featured ? "is-featured" : ""}" href="#/pricing" data-offer-plans${pick ? ` data-offer-pick="${pick}"` : ""}>${badge ? `<span class="offer-badge">${badge}</span>` : ""}<span class="offer-opt-main"><b>${title}</b><small>${sub}</small></span><span class="offer-opt-price"><strong>${price}</strong>${per ? `<small>${per}</small>` : ""}</span></a>`;
 
 function optionsHTML(kind, account) {
   if (kind === "lifetime") {
@@ -54,6 +58,13 @@ function optionsHTML(kind, account) {
       ${next ? planLinkHTML(t("brands.offer.upgradeTitle", { n: next.brands }), t("brands.offer.upgradeSub"), rp(next.price), t("brands.offer.perMonth")) : ""}
       ${planLinkHTML(t("brands.offer.lifetimeTitle"), t("brands.offer.lifetimeSub"), t("brands.offer.lifetimeFrom", { price: rp(LIFETIME_FROM) }), t("brands.offer.payOnce"))}`;
   }
+  if (kind === "trial") {
+    const pro = NEXT_PLAN.starter;
+    return `
+      ${planLinkHTML(t("brands.offer.trialProTitle", { n: pro.brands }), t("brands.offer.trialProSub"), rp(pro.price), t("brands.offer.perMonth"), { featured: true, badge: t("brands.offer.trialProBadge"), pick: pro.brands })}
+      ${planLinkHTML(t("brands.offer.trialLifeTitle", { n: pro.brands }), t("brands.offer.trialLifeSub"), t("brands.offer.lifetimeFrom", { price: rp(LIFETIME_FROM) }), t("brands.offer.payOnce"))}
+      <p class="offer-note">${icon("info", { size: 12 })}${t("brands.offer.trialNote")}</p>`;
+  }
   return "";
 }
 
@@ -62,21 +73,24 @@ export function openBrandOffer({ onUnlocked } = {}) {
   const kind = kindOf(account);
   const limit = brandLimitOf(account);
   const footHTML = kind === "trial"
-    ? `<button type="button" class="btn btn-ghost" data-offer-close>${t("ai.topup.later")}</button><a class="btn btn-primary" href="#/pricing" data-offer-plans>${icon("arrowUp", { size: 14 })}${t("ai.topup.seePlans")}</a>`
+    ? `<button type="button" class="btn btn-ghost" data-offer-close>${t("ai.topup.later")}</button><a class="btn btn-secondary" href="#/pricing" data-offer-plans>${t("brands.offer.allPlans")}</a>`
     : kind === "other"
       ? `<a class="btn btn-primary" href="https://wa.me/${SUPPORT_WA_NUMBER}" target="_blank" rel="noopener noreferrer">${t("brands.limit.wa")}</a>`
       : `<button type="button" class="btn btn-secondary" data-offer-close>${t("common.close")}</button>`;
   const overlay = openModal({
-    title: t("brands.offer.title"),
+    title: t(kind === "trial" ? "brands.offer.titleTrial" : "brands.offer.title"),
     width: "min(480px,94vw)",
     bodyHTML: `
       <div class="brand-offer-modal">
-        <p class="text-muted" style="margin:0 0 14px;font-size:13.5px;">${t(kind === "trial" ? "brands.offer.bodyTrial" : "brands.offer.body", { limit })}</p>
-        ${kind === "lifetime" || kind === "sub" ? `<div class="offer-card"><div class="offer-group">${optionsHTML(kind, account)}</div></div>` : ""}
+        <p class="text-muted" style="margin:0 0 14px;font-size:13.5px;">${t(kind === "trial" ? "brands.offer.warnTrial" : "brands.offer.body", { limit })}</p>
+        ${kind === "other" ? "" : `<div class="offer-card"><div class="offer-group">${optionsHTML(kind, account)}</div></div>`}
       </div>`,
     footHTML,
   });
-  overlay.querySelectorAll("[data-offer-close], [data-offer-plans]").forEach((el) => el.addEventListener("click", () => closeOverlay(overlay)));
+  overlay.querySelectorAll("[data-offer-close], [data-offer-plans]").forEach((el) => el.addEventListener("click", () => {
+    if (el.dataset.offerPick) askPricingBrands(el.dataset.offerPick);
+    closeOverlay(overlay);
+  }));
   overlay.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-offer-pay]");
     if (!btn) return;
