@@ -284,14 +284,14 @@ function enterAppWhenPaid() {
 // tier names Starter/Pro never appear on screen.
 const SUBSCRIPTIONS = {
   1: { key: "starter", monthly: 49000, yearly: 399000, brands: 1, credits: 20 },
-  3: { key: "pro", monthly: 99000, yearly: 799000, brands: 3, credits: 60 },
+  3: { key: "pro", monthly: 99000, yearly: 799000, brands: 3, credits: 100 },
 };
 const STUDIO = { key: "studio", monthly: 249000, yearly: 1990000, brands: 10, credits: 200 };
 
 // Two waves inside the same 50 slots (api/_plans.js FOUNDER_TIERS — keep in
 // sync). The page never shows how many are sold, only which wave is open.
-const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 15, people: 15, price: 499000 }, { upTo: 50, people: 35, price: 699000 }], brands: 3, credits: 300, features: ["proForever", "contentMonth", "upcoming", "bookStyles", "circle", "review", "badge"] };
-const AGENCY = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 1490000, brands: 15, credits: 500 };
+const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 15, people: 15, price: 499000 }, { upTo: 50, people: 35, price: 699000 }], brands: 3, credits: 100, features: ["proForever", "contentDayForever", "upcoming", "bookStyles", "circle", "review", "badge"] };
+const AGENCY = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 1490000, brands: 15, credits: 100 };
 // Hard caps, mirrored from api/_plans.js SLOT_CAPS.
 const FOUNDER_SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };
 // What the three premium Brand Book styles cost bought one by one
@@ -514,7 +514,7 @@ function agencyHTML(uid, agencySoldOut, owned) {
         <div class="pricing-other-info">
           <strong>${t("pricing.founder-ultimate.name")}</strong>
           <span>${t("pricing.ultimate.sub", { n: AGENCY.brands })}</span>
-          <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentMonth", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
+          <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentDay", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
         </div>
         <div class="pricing-other-actions">
           ${agencyCtaHTML(uid, agencySoldOut, owned)}

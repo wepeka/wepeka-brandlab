@@ -8,26 +8,29 @@
 import { getAiUsageDoc } from "./store.js";
 import { getCachedAccount, isAdmin, isReadOnly, currentUid } from "./account.js";
 
-// Accounts from before per-plan quotas (lifetime/builder/content/monthly)
-// keep what they were sold.
+// Accounts from before per-plan quotas (builder/content/monthly) keep what
+// they were sold; the old "lifetime" plan is in the table below.
 export const DEFAULT_AI_DAILY_LIMIT = 50;
 
-// Credits per plan. Subscriptions reset daily; the Founder lifetime plans
-// are a monthly cap instead — a one-time payment can't fund an open-ended
-// daily allowance forever. The trial is neither: it's a single pool for the
-// whole 30-day window (not reset each day), so someone who tries the product
-// hard on day 1 still has real room left later, and the number is big
-// enough to actually experience the product rather than feel like a demo.
+// Credits per plan. Every paid plan resets daily; since 2026-10-12 (owner's
+// decision) that includes the Lifetime plans, which used to be a monthly cap
+// (300 / 500) and now get 100 a day like Pro. The trial is different: it's
+// a single pool for the whole 30-day window (not reset each day), so someone
+// who tries the product hard on day 1 still has real room left later, and
+// the number is big enough to actually experience the product rather than
+// feel like a demo. The "month" period is still understood everywhere (the
+// meter, the messages) but no plan uses it now.
 // Shown on the pricing page (js/views/pricing.js) — keep the two in sync.
 // Also mirrored server-side in api/_aiQuota.js (the copy that actually
 // enforces the cap) — keep both in sync.
 const PLAN_QUOTA = {
+  lifetime: { period: "day", limit: 100 },
   trial: { period: "total", limit: 60 },
   starter: { period: "day", limit: 20 },
-  pro: { period: "day", limit: 60 },
+  pro: { period: "day", limit: 100 },
   studio: { period: "day", limit: 200 },
-  founder: { period: "month", limit: 300 },
-  "founder-ultimate": { period: "month", limit: 500 },
+  founder: { period: "day", limit: 100 },
+  "founder-ultimate": { period: "day", limit: 100 },
 };
 
 function planQuota() {

@@ -24,17 +24,21 @@ export const DEFAULT_AI_DAILY_LIMIT = 20;
 // The pre-subscription plans are listed by name so they keep the 50/day
 // they were sold with ("keep what they were sold", js/ai-usage.js) — only
 // the fallback for anything unknown went down.
+// 2026-10-12, owner's decision: Pro and every Lifetime plan (Founder, Agency
+// and the old "lifetime") get 100 credits a day. The Lifetime plans used to
+// be a monthly cap (300 / 500); the "month" period stays supported below,
+// but no plan uses it now.
 export const PLAN_QUOTA = {
-  lifetime: { period: "day", limit: 50 },
+  lifetime: { period: "day", limit: 100 },
   builder: { period: "day", limit: 50 },
   "content-os": { period: "day", limit: 50 },
   monthly: { period: "day", limit: 50 },
   trial: { period: "total", limit: 60 },
   starter: { period: "day", limit: 20 },
-  pro: { period: "day", limit: 60 },
+  pro: { period: "day", limit: 100 },
   studio: { period: "day", limit: 200 },
-  founder: { period: "month", limit: 300 },
-  "founder-ultimate": { period: "month", limit: 500 },
+  founder: { period: "day", limit: 100 },
+  "founder-ultimate": { period: "day", limit: 100 },
 };
 
 // Wepeka's own internal team account — mirrors js/account.js's ADMIN_UIDS

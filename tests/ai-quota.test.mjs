@@ -12,8 +12,10 @@ describe("quotaFor", () => {
     assert.deepEqual(quotaFor({ plan: "starter" }, "some-uid"), { period: "day", limit: 20 });
   });
 
-  test("founder plan is a monthly cap", () => {
-    assert.deepEqual(quotaFor({ plan: "founder" }, "some-uid"), { period: "month", limit: 300 });
+  test("Pro and every Lifetime plan get 100 a day", () => {
+    for (const plan of ["pro", "founder", "founder-ultimate", "lifetime"]) {
+      assert.deepEqual(quotaFor({ plan }, "some-uid"), { period: "day", limit: 100 }, plan);
+    }
   });
 
   test("admin uid is unmetered regardless of plan", () => {
@@ -35,9 +37,9 @@ describe("quotaFor", () => {
   });
 
   test("aiDailyLimit overrides the limit but not the plan's period", () => {
-    const q = quotaFor({ plan: "founder", aiDailyLimit: 5 }, "some-uid");
+    const q = quotaFor({ plan: "trial", trialEndsAt: Date.now() + 86400000, aiDailyLimit: 5 }, "some-uid");
     assert.equal(q.limit, 5);
-    assert.equal(q.period, "month");
+    assert.equal(q.period, "total");
   });
 
   test("an unknown/missing plan falls back to the default daily limit", () => {
@@ -190,8 +192,9 @@ describe("plans the quota table doesn't know (S-25)", () => {
     assert.deepEqual(quotaFor({ plan: "mystery", status: "active" }, "u"), { period: "day", limit: 20 });
     assert.ok(quotaFor({ plan: "mystery" }, "u").limit <= quotaFor({ plan: "starter" }, "u").limit);
   });
-  test("the old pay-once plans keep the 50/day they were sold with", () => {
-    for (const plan of ["lifetime", "builder", "content-os"]) assert.equal(quotaFor({ plan, status: "active" }, "u").limit, 50, plan);
+  test("the old pay-once plans keep the 50/day they were sold with; old lifetime follows Lifetime (100/day)", () => {
+    for (const plan of ["builder", "content-os", "monthly"]) assert.equal(quotaFor({ plan, status: "active" }, "u").limit, 50, plan);
+    assert.equal(quotaFor({ plan: "lifetime", status: "active" }, "u").limit, 100);
   });
   test("a never-paid 'free' account has no AI", () => {
     assert.equal(quotaFor({ plan: "free", status: "active" }, "u").limit, 0);
