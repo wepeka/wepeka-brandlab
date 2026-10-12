@@ -20,8 +20,11 @@ import { askPricingBrands } from "./pricing-pick.js";
 const SUBSCRIPTION_PLANS = ["starter", "pro", "studio"];
 // Moving up instead of renting: the next plan's brand count.
 const NEXT_PLAN = { starter: { brands: 3, price: 99000 }, pro: { brands: 10, price: 249000 } };
-// Founder Lifetime's opening price (js/views/pricing.js FOUNDER.tiers).
+// Founder Lifetime's opening price (js/views/pricing.js FOUNDER.tiers) and
+// Lifetime's normal price, shown struck through beside it (same file,
+// LIFETIME_NORMAL_PRICE — keep in step).
 const LIFETIME_FROM = 499000;
+const LIFETIME_NORMAL = 3000000;
 
 function kindOf(account) {
   if (accessState(account) !== "paid" || isReadOnly(account)) return "trial";
@@ -37,8 +40,9 @@ const monthlyHTML = (featured) => {
     <p class="offer-note">${icon("clock", { size: 12 })}${t("brands.offer.subNote", { days: a.days })}</p>`;
 };
 // `pick`: the subscription size the pricing page should open on (js/pricing-pick.js).
-const planLinkHTML = (title, sub, price, per, { featured = false, badge = "", pick = 0 } = {}) =>
-  `<a class="offer-opt offer-opt-link ${featured ? "is-featured" : ""}" href="#/pricing" data-offer-plans${pick ? ` data-offer-pick="${pick}"` : ""}>${badge ? `<span class="offer-badge">${badge}</span>` : ""}<span class="offer-opt-main"><b>${title}</b><small>${sub}</small></span><span class="offer-opt-price"><strong>${price}</strong>${per ? `<small>${per}</small>` : ""}</span></a>`;
+// `was`: the normal price, struck through above the price.
+const planLinkHTML = (title, sub, price, per, { featured = false, badge = "", pick = 0, was = "" } = {}) =>
+  `<a class="offer-opt offer-opt-link ${featured ? "is-featured" : ""}" href="#/pricing" data-offer-plans${pick ? ` data-offer-pick="${pick}"` : ""}>${badge ? `<span class="offer-badge">${badge}</span>` : ""}<span class="offer-opt-main"><b>${title}</b><small>${sub}</small></span><span class="offer-opt-price">${was ? `<s class="offer-opt-was">${was}</s>` : ""}<strong>${price}</strong>${per ? `<small>${per}</small>` : ""}</span></a>`;
 
 function optionsHTML(kind, account) {
   if (kind === "lifetime") {
@@ -56,13 +60,13 @@ function optionsHTML(kind, account) {
     return `
       ${monthlyHTML(true)}
       ${next ? planLinkHTML(t("brands.offer.upgradeTitle", { n: next.brands }), t("brands.offer.upgradeSub"), rp(next.price), t("brands.offer.perMonth")) : ""}
-      ${planLinkHTML(t("brands.offer.lifetimeTitle"), t("brands.offer.lifetimeSub"), t("brands.offer.lifetimeFrom", { price: rp(LIFETIME_FROM) }), t("brands.offer.payOnce"))}`;
+      ${planLinkHTML(t("brands.offer.lifetimeTitle"), t("brands.offer.lifetimeSub"), t("brands.offer.lifetimeFrom", { price: rp(LIFETIME_FROM) }), t("brands.offer.payOnce"), { was: rp(LIFETIME_NORMAL) })}`;
   }
   if (kind === "trial") {
     const pro = NEXT_PLAN.starter;
     return `
       ${planLinkHTML(t("brands.offer.trialProTitle", { n: pro.brands }), t("brands.offer.trialProSub"), rp(pro.price), t("brands.offer.perMonth"), { featured: true, badge: t("brands.offer.trialProBadge"), pick: pro.brands })}
-      ${planLinkHTML(t("brands.offer.trialLifeTitle", { n: pro.brands }), t("brands.offer.trialLifeSub"), t("brands.offer.lifetimeFrom", { price: rp(LIFETIME_FROM) }), t("brands.offer.payOnce"))}
+      ${planLinkHTML(t("brands.offer.trialLifeTitle", { n: pro.brands }), t("brands.offer.trialLifeSub"), t("brands.offer.lifetimeFrom", { price: rp(LIFETIME_FROM) }), t("brands.offer.payOnce"), { was: rp(LIFETIME_NORMAL) })}
       <p class="offer-note">${icon("info", { size: 12 })}${t("brands.offer.trialNote")}</p>`;
   }
   return "";

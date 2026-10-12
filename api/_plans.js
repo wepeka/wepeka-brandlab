@@ -24,15 +24,17 @@ export const PLANS = {
   // `amount` is only the opening price — what is actually charged comes from
   // FOUNDER_TIERS, by how many slots are already sold (see founderAmount).
   founder: { amount: 499000, tiered: true, label: "Brandlab Founder Lifetime", plan: "founder", billing: "lifetime", durationMs: null, brandLimit: 3, slot: "founderSlotsSold" },
-  "founder-ultimate": { amount: 1490000, label: "Brandlab Agency Lifetime", plan: "founder-ultimate", billing: "lifetime", durationMs: null, brandLimit: 15, slot: "founderUltimateSlotsSold" },
+  "founder-ultimate": { amount: 799000, label: "Brandlab Agency Lifetime", plan: "founder-ultimate", billing: "lifetime", durationMs: null, brandLimit: 15, slot: "founderUltimateSlotsSold" },
 };
 
 // One-time add-ons: permanent brand slots (accounts/{uid}.extraBrands — its
 // own field, so a plan purchase resetting brandLimit to the plan's number
 // never wipes them). Pay-once plans only — a subscriber moves to Lifetime
-// first (owner's decision, 2026-09-29). Priced so that stacking
-// them on Founder never undercuts Agency Lifetime: Founder + 12 brands
-// (4 × the 3-pack) is ~Rp 1,5jt against Agency's Rp 1,49jt for the same 15.
+// first (owner's decision, 2026-09-29). They used to be priced so that
+// stacking them on Founder never undercut Agency Lifetime (then Rp 1,49jt).
+// Since 2026-10-12 Agency Lifetime is Rp 799rb (owner's decision), so a
+// Founder who wants many brands is better off upgrading (pays the
+// difference); the packs remain for a Founder who needs one or two more.
 export const ADDONS = {
   "addon-brand-1": { amount: 99000, label: "Brandlab — Tambah 1 brand (selamanya)", addBrands: 1 },
   "addon-brand-3": { amount: 249000, label: "Brandlab — Tambah 3 brand (selamanya)", addBrands: 3 },

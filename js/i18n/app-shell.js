@@ -466,7 +466,7 @@ export default {
   "pricing.tier.is-next": { en: "After that", id: "Setelah itu" },
   "pricing.tier.is-gone": { en: "Gone", id: "Sudah habis" },
   "pricing.ultimate.slots": { en: "{cap} people only", id: "cuma buat {cap} orang" },
-  "pricing.ultimate.tag": { en: "For social media managers & small agencies", id: "Buat social media manager & agensi kecil" },
+  "pricing.ultimate.tag": { en: "For social media specialists & small agencies", id: "Buat social media specialist & agensi kecil" },
   "pricing.stack.title": { en: "What more could you ask for?", id: "Kurang apa lagi?" },
   "pricing.stack.agency.name": { en: "A social media agency", id: "Pakai jasa agency / social media manager" },
   "pricing.stack.agency.desc": { en: "Strategy, content ideas, scheduling and monthly evaluation — billed every single month.", id: "Strategi, ide konten, jadwal, dan evaluasi bulanan — ditagih terus tiap bulan." },

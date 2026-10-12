@@ -292,7 +292,7 @@ const STUDIO = { key: "studio", monthly: 249000, yearly: 1990000, brands: 10, cr
 // Two waves inside the same 50 slots (api/_plans.js FOUNDER_TIERS — keep in
 // sync). The page never shows how many are sold, only which wave is open.
 const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 15, people: 15, price: 499000 }, { upTo: 50, people: 35, price: 699000 }], brands: 3, credits: 100, features: ["proForever", "contentDayForever", "upcoming", "bookStyles", "circle", "review", "badge"] };
-const AGENCY = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 1490000, brands: 15, credits: 100 };
+const AGENCY = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 799000, brands: 15, credits: 100 };
 // Hard caps, mirrored from api/_plans.js SLOT_CAPS.
 const FOUNDER_SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };
 // What the three premium Brand Book styles cost bought one by one
@@ -304,7 +304,11 @@ const BOOK_STYLES_VALUE = 3 * 20000;
 // Founder price as the page's anchor, and stated as a fact in the Founder
 // note and the "slots" FAQ, so it must stay TRUE: if the post-Founder price
 // ever changes, change it here. Keep wpk-dp src/lib/brandlab-plans.ts in step.
-const LIFETIME_NORMAL_PRICE = 3500000;
+// 2026-10-12 (owner's decision): Rp 3.000.000 for the 3-brand Lifetime, and
+// Rp 6.000.000 for the 15-brand one (Agency Lifetime) — wherever a Lifetime
+// price shows, its normal price shows struck through next to it.
+const LIFETIME_NORMAL_PRICE = 3000000;
+const AGENCY_NORMAL_PRICE = 6000000;
 
 // Every add-on is bought on the spot (`payKey` = api/_plans.js ADDONS, which
 // sets the real price and re-checks who may buy it) by the accounts
@@ -516,6 +520,7 @@ function agencyHTML(uid, agencySoldOut, owned) {
           <strong>${t("pricing.founder-ultimate.name")}</strong>
           <span>${t("pricing.ultimate.sub", { n: AGENCY.brands })}</span>
           <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentDay", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
+          ${agencySoldOut ? "" : `<span class="pricing-anchor"><s>${t("pricing.lifetime.normal", { price: rp(AGENCY_NORMAL_PRICE) })}</s><span class="pricing-save">${t("pricing.lifetime.save", { pct: Math.round((1 - AGENCY.price / AGENCY_NORMAL_PRICE) * 100) })}</span></span>`}
         </div>
         <div class="pricing-other-actions">
           ${agencyCtaHTML(uid, agencySoldOut, owned)}
