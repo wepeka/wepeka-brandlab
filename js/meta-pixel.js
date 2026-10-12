@@ -35,6 +35,18 @@ export function metaTrack(name, params = {}, eventId) {
   } catch { /* tracking must never break the app */ }
 }
 
+// Meta matches a browser event to the server's copy with the same event id
+// only when the two arrive within 48 hours of each other. A browser twin
+// sent later than that would count as a second conversion, so callers that
+// may report late (js/trial-start.js, js/pending-orders.js) ask here first
+// and leave a late one to the server's event alone. `serverEventAt`: when
+// the server sent its copy, or any earlier moment (then this errs towards
+// not sending); unknown counts as "just now".
+export const META_DEDUP_MS = 48 * 60 * 60 * 1000;
+export function withinMetaDedup(serverEventAt, now = Date.now()) {
+  return !(Number.isFinite(serverEventAt) && Math.abs(now - serverEventAt) > META_DEDUP_MS);
+}
+
 let lastHash = null;
 function pageView() {
   if (!isOn() || tokenInUrl() || location.hash === lastHash) return;

@@ -27,6 +27,7 @@ import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
 import { noteNavigation } from "./nav-context.js";
 import { initAnalytics, setUser } from "./analytics.js";
 import { initMetaPixel } from "./meta-pixel.js";
+import { trackTrialStart } from "./trial-start.js";
 import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
@@ -322,6 +323,9 @@ function onAccountChange(user, account) {
   if (!storeReady) {
     showLoading();
     initStore(user.uid).then(async () => {
+      // GA4 "start_trial", once per account, the first time a brand-new
+      // trial opens the app (js/trial-start.js). Never waited for.
+      trackTrialStart();
       // Very first open of this account: one decision ("who are you?")
       // before anything else — no welcome modal, no tour banner stacked on
       // top of it. Those come back on the next boot as usual; the picker
