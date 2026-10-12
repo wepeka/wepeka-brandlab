@@ -4152,6 +4152,8 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
 .offer-opt:not(.is-featured) .offer-badge{ background: color-mix(in srgb, var(--accent) 22%, var(--bg-raised)); color: var(--accent); }
 .offer-note{ display:flex; align-items:flex-start; gap:6px; margin:2px 2px 0; font-size:12px; line-height:1.45; color: var(--text-muted); }
 .offer-note svg{ flex:none; margin-top:2px; }
+.offer-ask a{ color: var(--accent); font-weight:700; text-decoration:none; white-space:nowrap; }
+.offer-ask a:hover{ text-decoration:underline; }
 .offer-divider{ display:flex; align-items:center; gap:10px; font-size:11.5px; color: var(--text-faint); text-transform:uppercase; letter-spacing:.06em; }
 .offer-divider::before, .offer-divider::after{ content:""; flex:1; border-top:1px dashed var(--border); }
 .offer-balance{ display:flex; align-items:center; gap:6px; margin:0; padding:8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size:12.5px; color: var(--text-muted); }

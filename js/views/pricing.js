@@ -38,6 +38,7 @@ import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_U
 import { db as fdb, auth, loadFirestore } from "../firebase.js";
 import { isTrial, trialDaysLeft, TRIAL_DAYS, accessState, getCachedAccount } from "../account.js";
 import { takePricingBrands } from "../pricing-pick.js";
+import { localNumber } from "../upgrade-doors.js";
 
 // Rupiah amounts with the thousands separator of the current language
 // (Rp 300.000 in ID, Rp 300,000 in EN).
@@ -724,7 +725,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
       </section>
 
       <p class="hint pricing-foot">
-        <a href="${waLink("Brandlab", "")}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">${t("pricing.askWa")}</a>
+        <a href="${waLink("Brandlab", "")}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">${t("pricing.askWa", { number: localNumber(SUPPORT_WA_NUMBER) })}</a>
         ${user ? "" : `
           <span class="pricing-foot-sep">·</span>
           ${t("pricing.alreadyHave")} <a href="#/login" style="color:var(--accent);margin-left:4px;">${t("auth.loginHere")}</a>
