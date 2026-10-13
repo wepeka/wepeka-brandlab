@@ -76,6 +76,7 @@ import { go } from "./nav-context.js";
 import { icon } from "./icons.js";
 import { qs, escapeHtml, formatPercent, formatDate, toast, openMenu, closeMenu, resizeImageFile, thumbnailFromDataUrl, emptyInlineHTML } from "./dom.js";
 import { mountAiFeedback } from "./ai-feedback.js";
+import { openAiReport, answerTextFrom } from "./ai-report.js";
 import { readFlag, writeFlag } from "./seen-flags.js";
 import { wireMic } from "./voice-input.js";
 import { funnelShort } from "./funnel-field.js";
@@ -966,7 +967,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   }
   const body = h.text ? `<div class="consultant-md">${renderLightMarkdown(h.text)}</div>` : "";
   const toolsHTML = h.engine && !h.ephemeral
-    ? `<div class="cp-msg-tools"><button type="button" class="cp-copy" data-chat-copy="${index}" title="${t("chat.copy")}">${icon("copy", { size: 12 })}<span>${t("chat.copy")}</span></button>${retryToggle}</div>`
+    ? `<div class="cp-msg-tools"><button type="button" class="cp-copy" data-chat-copy="${index}" title="${t("chat.copy")}">${icon("copy", { size: 12 })}<span>${t("chat.copy")}</span></button><button type="button" class="cp-copy cp-report" data-chat-report="${index}" title="${esc(t("lapor.ai.btnTitle"))}">${icon("flag", { size: 12 })}<span>${t("lapor.ai.btn")}</span></button>${retryToggle}</div>`
     : "";
   // A cut-off reply keeps what did arrive — the unfinished script shown as
   // reading only (no "Setujui & simpan": it isn't whole) — says so, and,
@@ -1602,6 +1603,16 @@ function wire(host, brandId, input, history) {
   on("[data-chat-go-ideas]", () => sendMessage(brandId, t("bs.ideasNow.message"), { engine: "brainstorm", bsMode: "ideas" }));
   on("[data-chat-make-script]", () => sendMessage(brandId, t("chat.make.scriptMsg"), { engine: "brainstorm" }));
 
+  // "Laporkan": this answer as the person sees it (cards and scripts
+  // included) plus the question it answered, to the Wepeka team.
+  on("[data-chat-report]", (btn) => {
+    const i = Number(btn.dataset.chatReport);
+    const h = history[i];
+    if (!h) return;
+    const asked = h.question || history.slice(0, i).reverse().find((x) => x.role === "user")?.text || "";
+    openAiReport(`chat-${h.engine}`, { output: answerTextFrom(btn.closest("[data-consultant-msg]"), ".cp-engine, .cp-guide, .cp-switch, .cp-cut") || h.text || "", prompt: asked });
+  });
+
   // "Salin": the answer's text, without the buttons under it.
   on("[data-chat-copy]", async (btn) => {
     const h = history[Number(btn.dataset.chatCopy)];
@@ -1960,6 +1971,7 @@ function wire(host, brandId, input, history) {
     mountAiFeedback(lastEl?.querySelector(".cp-msg-tools") || lastEl, {
       brandId,
       feature: last.engine,
+      report: false,
       prompt: { question: last.question, history: history.filter((x) => x.role === "user" || x.role === "assistant").slice(0, -2).map((x) => ({ role: x.role, text: x.text })) },
       output: last.text,
       onRated: (rating) => {

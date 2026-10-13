@@ -17,6 +17,7 @@ import { t } from "../i18n.js";
 import { dnaExamples, businessKind } from "../dna-examples.js";
 import { aiUsageRemaining } from "../ai-usage.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 const TOUR_STEPS = [
   { selector: ".dna-progress-label", title: t("dna.tour.title"), body: t("dna.tour.body") },
@@ -1440,7 +1441,7 @@ function reviewHTML(state) {
   return `
     <h2 style="margin-bottom:6px;">${t("dna.review.title")}</h2>
     <p class="text-muted" style="font-size:13px;margin:${state.autoDrafted ? "0 0 6px" : "0 0 20px"};">${state.autoDrafted ? t("dna.review.subAuto") : t("dna.review.sub")}</p>
-    ${state.autoDrafted ? `<a href="#" id="dna-answer-manually" class="hint" style="display:inline-block;font-size:12.5px;margin:0 0 14px;">${t("dna.review.answerManually")}</a>` : ""}
+    ${state.autoDrafted ? `<a href="#" id="dna-answer-manually" class="hint" style="display:inline-block;font-size:12.5px;margin:0 0 14px;">${t("dna.review.answerManually")}</a>${aiReportButtonHTML("dna-draft", { recent: "dna" })}` : ""}
     ${oneLinerCardHTML(state)}
     <div class="card dark-surface card-tight review-card" style="margin-bottom:20px;">
       ${reviewSection(t("dna.review.customer"), a.targetAudience, "targetAudience", { hint: t("dna.review.customerHint") })}
@@ -1589,7 +1590,7 @@ function wireReview(root, brandId, brand, state, refresh) {
         state.answers.oneLiner = line;
         qs("#ans-oneLiner", root).value = line;
         oneLinerBtn.innerHTML = `${icon("bot", { size: 14 })}${t("dna.oneLiner.retry")}${costTagHTML()}`;
-        statusEl.innerHTML = "";
+        statusEl.innerHTML = aiReportButtonHTML("dna-oneliner", { recent: "dna" });
       } catch (e) {
         statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${e instanceof AiApiError ? escapeHtml(e.message) : t("dna.ai.errorShort")}</span></div>`;
       } finally {

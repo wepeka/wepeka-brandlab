@@ -25,6 +25,7 @@ import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../accoun
 import { payPlan } from "./pricing.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
 import { brandDocFits, guardBrandDocSize } from "../brand-doc-size.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 const TOUR_STEPS = [
   { selector: ".bb-tab-row", title: t("bg.tour.title"), body: t("bg.tour.body") },
@@ -1883,7 +1884,7 @@ function toneStepHTML(state) {
         <button type="button" class="chip-icon-btn" id="tov-mic" aria-label="${t("brandForm.mic")}" title="${t("brandForm.mic")}">${icon("mic", { size: 15 })}</button>
       </div>
       <button type="button" class="btn btn-secondary btn-sm" id="tov-detect" style="margin-top:8px;">${icon("bot", { size: 13 })}${t("guidelines.tone.detectBtn")}<span class="btn-cost">${t("ai.creditTag")}</span></button>
-      <div id="tov-detect-status" class="text-faint" style="font-size:11.5px;margin-top:6px;"></div>
+      <div id="tov-detect-status" class="text-faint" style="font-size:11.5px;margin-top:6px;">${aiReportButtonHTML("tone-detect", { recent: "dna" })}</div>
     </details>
     <div style="margin-top:14px;">${toneRecoHTML(state)}</div>
     <div class="card dark-surface" style="margin:14px 0;">
@@ -3142,7 +3143,7 @@ function valuePropEditorHTML(brand, a) {
         ${pillars.length < MAX_PILLARS ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-add-pillar">${icon("plus", { size: 12 })}${t("bg.copy.vp.add")}</button>` : ""}
         ${!fromDna && dnaValuePillars(brand).length ? `<button type="button" class="btn btn-ghost btn-sm" id="vp-use-dna">${icon("refresh", { size: 12 })}${t("bg.copy.vp.useDna")}</button>` : ""}
       </div>
-      <div id="vp-ai-status"></div>
+      <div id="vp-ai-status">${aiReportButtonHTML("brandbook-copy", { recent: "guidelines" })}</div>
     </div>
   `;
 }
@@ -3175,7 +3176,7 @@ function colorEssenceEditorHTML(a) {
           ? `<div class="bbk-essence-edit-list">${roles.map((k) => essenceEditRowHTML(k, a)).join("")}</div>`
           : `<div class="bbk-empty" style="padding:18px;">${t("bg.copy.ce.noColors")}</div>`
       }
-      <div id="ce-ai-status"></div>
+      <div id="ce-ai-status">${aiReportButtonHTML("brandbook-copy", { recent: "guidelines" })}</div>
     </div>
   `;
 }

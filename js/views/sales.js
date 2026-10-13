@@ -30,6 +30,7 @@ import { guideVideoButtonHTML } from "../guide-videos.js";
 import { toast, formatNumber, formatDate, qs, qsa, escapeHtml as esc, avatarHTML, loadingHTML } from "../dom.js";
 import { readFlag, writeFlag, clearFlag } from "../seen-flags.js";
 import { t, campaignDisplayName } from "../i18n.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 // Products & Sales log can both grow long — collapsed once, they stay
 // collapsed (remembered locally per brand) instead of resetting every visit.
@@ -268,9 +269,9 @@ function adviceHTML(tracker, state, collapsed) {
       ${state.adviceBusy
         ? `${loadingHTML(state.autoReason ? esc(t("ai.auto.busy", { reason: state.autoReason })) : t("sales.advice.busy"), { style: "margin:0;" })}`
         : a
-        ? `${a.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: a.autoReason }))}</p>` : ""}<p class="text-faint" style="font-size:11.5px;margin:0 0 6px;">${t("sales.advice.from", { date: formatDate(localISODate(new Date(a.at))) })}</p>
+        ? `<div data-ai-answer>${a.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: a.autoReason }))}</p>` : ""}<p class="text-faint" style="font-size:11.5px;margin:0 0 6px;">${t("sales.advice.from", { date: formatDate(localISODate(new Date(a.at))) })}</p>
            ${a.summary ? `<p style="margin:0 0 12px;font-size:13.5px;">${esc(a.summary)}</p>` : ""}
-           ${(a.actions || []).map((x, i) => `<div class="st-advice-item"><span class="st-advice-n">${i + 1}</span><div><b>${esc(x.title)}</b>${x.why ? `<span class="st-advice-why">${esc(x.why)}</span>` : ""}${x.how ? `<p>${esc(x.how)}</p>` : ""}</div></div>`).join("")}`
+           ${(a.actions || []).map((x, i) => `<div class="st-advice-item"><span class="st-advice-n">${i + 1}</span><div><b>${esc(x.title)}</b>${x.why ? `<span class="st-advice-why">${esc(x.why)}</span>` : ""}${x.how ? `<p>${esc(x.how)}</p>` : ""}</div></div>`).join("")}<div class="ai-report-row">${aiReportButtonHTML("sales-advice")}</div></div>`
         : `<p class="text-muted" style="font-size:13px;margin:0 0 4px;">${t("sales.advice.intro")}</p>`}
       ${state.adviceError ? `<p class="ev-error">${esc(state.adviceError)}</p>` : ""}
       ${state.adviceBusy ? "" : lifetime

@@ -19,6 +19,7 @@ import { startCalendarGuide, startCalendarGuideOnMount } from "../guides/calenda
 import { funnelShort } from "../funnel-field.js";
 import { openWeekPlanMenu, openSeriesEpisodeChat } from "../consultant-panel.js";
 import { seriesDays, missingEpisodes } from "../week-plan.js";
+import { mountAiReport } from "../ai-report.js";
 
 // Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
 // episode, date -> series. Only the rest of the visible range from today.
@@ -478,7 +479,7 @@ async function runAutoSchedule(brandId, refresh) {
       toast(t("calendar.autoschedule.noResult"), "error");
       return;
     }
-    openAutoScheduleConfirm(proposed, refresh);
+    openAutoScheduleConfirm(proposed, refresh, { fromAi: !demo });
   } catch (e) {
     toast(e.message || t("calendar.autoschedule.failed"), "error");
   }
@@ -487,7 +488,9 @@ async function runAutoSchedule(brandId, refresh) {
 // Nothing gets written to the calendar until this is explicitly confirmed —
 // the AI's dates are a proposal to review (and adjust per-row) first, not
 // an instant write.
-function openAutoScheduleConfirm(proposed, refresh) {
+function openAutoScheduleConfirm(proposed, refresh, { fromAi = false } = {}) {
+  // What the AI proposed, before the owner moves any date.
+  const proposal = proposed.map((p) => `${p.date} · ${p.content.title || t("common.untitled")}`).join("\n");
   const overlay = openModal({
     title: t("calendar.autoschedule.reviewTitle"),
     wide: true,
@@ -512,6 +515,12 @@ function openAutoScheduleConfirm(proposed, refresh) {
     `,
   });
   overlay.querySelector("#auto-schedule-cancel").addEventListener("click", () => closeOverlay(overlay));
+  if (fromAi) {
+    const row = document.createElement("div");
+    row.className = "ai-report-row";
+    overlay.querySelector(".auto-schedule-list").after(row);
+    mountAiReport(row, { feature: "auto-schedule", output: proposal });
+  }
   qsa("[data-schedule-index]", overlay).forEach((input) => {
     input.addEventListener("change", () => {
       proposed[Number(input.dataset.scheduleIndex)].date = input.value;

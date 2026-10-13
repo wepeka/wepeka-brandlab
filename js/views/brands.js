@@ -18,6 +18,7 @@ import { hasAiKey, draftBusinessDescription } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
 import { mountBrandsBg } from "../brands-bg.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 export function render(root) {
   const refresh = () => paint(root, refresh);
@@ -470,7 +471,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     try {
       descEl.value = await draftBusinessDescription(ai, { name: overlay.querySelector("#brand-name").value.trim(), notes });
       descEl.dispatchEvent(new Event("input", { bubbles: true }));
-      statusEl.textContent = t("brandForm.aiDone");
+      statusEl.innerHTML = `${escapeText(t("brandForm.aiDone"))} ${aiReportButtonHTML("business-description", { recent: "dna" })}`;
     } catch (err) {
       statusEl.textContent = "";
       toast(err.message || t("brands.form.aiError"), "error");

@@ -2,8 +2,11 @@
 // problem report may contain, before it is stored in Firestore
 // `problemReports/{id}` and read in the Wepeka admin (wpk-dp, Brandlab →
 // Laporan Masalah). Pure — no Firestore, no fetch — so it is tested directly.
-export const REPORT_KINDS = ["bug", "confused", "payment", "idea"];
+export const REPORT_KINDS = ["bug", "confused", "payment", "idea", "ai"];
 export const REPORT_STATES = ["new", "progress", "done"];
+// Where the form was opened from: the ⋯ menu, a page's flag next to
+// "Panduan", the flag under an AI answer, or the "halaman gagal dimuat" card.
+export const REPORT_SOURCES = ["menu", "page", "ai", "error"];
 export const REPORT_LIMITS = {
   messageMin: 5,
   message: 2000,
@@ -13,6 +16,10 @@ export const REPORT_LIMITS = {
   app: 80,
   errors: 5,
   errorChars: 400,
+  feature: 60,
+  // The AI answer being reported and what was asked (js/ai-report.js).
+  aiOutput: 4000,
+  aiPrompt: 1500,
   // A compressed screenshot as a data URL (the app sends ~100–300 KB). The
   // whole report must stay well under Firestore's 1 MB per document.
   screenshotChars: 700_000,
@@ -55,6 +62,12 @@ export function normalizeReport(body) {
       viewport: /^\d{2,5}x\d{2,5}$/.test(viewport) ? viewport : "",
       app: str(b.app, REPORT_LIMITS.app),
       errors,
+      source: REPORT_SOURCES.includes(b.source) ? b.source : "menu",
+      // Which page or AI feature the flag belonged to ("calendar",
+      // "chat-brainstorm", "creator-script"): a short key, never free text.
+      feature: str(b.feature, REPORT_LIMITS.feature).replace(/[^\w:.-]/g, ""),
+      aiOutput: str(b.aiOutput, REPORT_LIMITS.aiOutput),
+      aiPrompt: str(b.aiPrompt, REPORT_LIMITS.aiPrompt),
       screenshot,
     },
   };
@@ -66,7 +79,7 @@ export function tooManyReports(createdAts, now = Date.now(), perDay = REPORT_LIM
   return (createdAts || []).filter((t) => Number(t) > since).length >= perDay;
 }
 
-const KIND_LABEL = { bug: "Error / tidak jalan", confused: "Bingung", payment: "Pembayaran", idea: "Saran" };
+const KIND_LABEL = { bug: "Error / tidak jalan", confused: "Bingung", payment: "Pembayaran", idea: "Saran", ai: "Jawaban AI" };
 // The push the Wepeka team's own devices get when a report comes in.
 export function composeReportPush({ kind, message, email }, appUrl) {
   const who = String(email || "").trim() || "Pengguna";

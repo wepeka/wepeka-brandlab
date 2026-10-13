@@ -53,6 +53,20 @@ export default {
   "lapor.done.body": { en: "Thank you — the Wepeka team will look into it. If we need to know more, we'll reach you by email or the WhatsApp number you left.", id: "Makasih — tim Wepeka akan mengeceknya. Kalau perlu tahu lebih banyak, kami hubungi lewat email atau nomor WhatsApp yang kamu tulis." },
   "lapor.done.urgent": { en: "Need it sooner?", id: "Butuh cepat?" },
   "lapor.fromError": { en: "Report this problem", id: "Laporkan masalah ini" },
+  "lapor.kind.ai": { en: "AI answer", id: "Jawaban AI" },
+  // The small flag next to a page's "Panduan" (js/guide-videos.js).
+  "lapor.page.btn": { en: "Report a problem on this page", id: "Laporkan masalah di halaman ini" },
+  // The flag under an AI answer (js/ai-report.js).
+  "lapor.ai.btn": { en: "Report", id: "Laporkan" },
+  "lapor.ai.btnTitle": { en: "Report this AI answer", id: "Laporkan jawaban AI ini" },
+  "lapor.ai.title": { en: "Report this AI answer", id: "Laporkan jawaban AI" },
+  "lapor.ai.lead": { en: "Is the answer wrong, odd, or not like your brand? Tell us what's off. Your report goes straight to the Wepeka team.", id: "Jawabannya salah, aneh, atau nggak nyambung sama brand-mu? Ceritakan apa yang kurang pas. Laporanmu langsung ke tim Wepeka." },
+  "lapor.ai.quote": { en: "The AI answer you're reporting", id: "Jawaban AI yang kamu laporkan" },
+  "lapor.ai.quoteRecent": { en: "The last AI answer on this page is sent along", id: "Jawaban AI terakhir di halaman ini ikut terkirim" },
+  "lapor.ai.message": { en: "What's off?", id: "Apa yang kurang pas?" },
+  "lapor.ai.messagePh": { en: "e.g. the facts are wrong / it doesn't fit my brand / the wording is stiff", id: "misal: faktanya salah / nggak sesuai brand-ku / bahasanya kaku" },
+  "lapor.ai.auto": { en: "Sent along automatically: the AI answer above and what you asked, the page you're on, the brand's name, and your device type.", id: "Ikut terkirim otomatis: jawaban AI di atas dan pertanyaanmu, halaman yang lagi dibuka, nama brand, dan jenis perangkat." },
+  "lapor.ai.needMessage": { en: "Tell us what's off first. A sentence is enough.", id: "Ceritakan dulu apa yang kurang pas. Satu kalimat sudah cukup." },
   // {name} arrives pre-wrapped in <b>...</b> (see showWelcomeBumper) — the
   // logo mark under this line already says "Wepeka Brandlab", so this is
   // just the greeting, "welcome to" with nothing after it.

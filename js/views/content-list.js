@@ -17,6 +17,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { consumeNavContext } from "../nav-context.js";
 import { funnelShort } from "../funnel-field.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -658,7 +659,7 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     const summary = isPro ? t("ret.qf.found", { metrics: metricsFound, ret: retFound ? t("ret.qf.foundRet") : t("ret.qf.noRet") }) : metricsFound ? t("contentList.qf.foundMetrics", { count: metricsFound, metricWord: t(metricsFound === 1 ? "cnt.metric.one" : "cnt.metric.many") }) : t("contentList.qf.noMetricsFound");
     statusEl.innerHTML = lastError && !metricsFound && !retFound
       ? `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeText(lastError)}</span></div>`
-      : `<div class="ocr-status">${icon(metricsFound || retFound ? "check" : "info", { size: 14 })}<span>${escapeText(summary)} · ${escapeText(how)}</span></div>`;
+      : `<div class="ocr-status">${icon(metricsFound || retFound ? "check" : "info", { size: 14 })}<span>${escapeText(summary)} · ${escapeText(how)}</span>${useAi ? aiReportButtonHTML("insights-read", { recent: "insights" }) : ""}</div>`;
   }
 
   qs("#qe-back", overlay)?.addEventListener("click", () => {

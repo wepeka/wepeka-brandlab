@@ -7,6 +7,7 @@ import { classifyFunnel, suggestCampaignFit, hasAiKey } from "../ai.js";
 import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { funnelFieldHTML, wireFunnelField, setFunnelFieldValue, statusLabel } from "../funnel-field.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 // The "Konten baru" drawer: what a new piece IS (title, idea, platform,
 // campaign, goal) and WHEN it goes out. Only the title is required.
@@ -273,11 +274,12 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
         const suggestedCampaign = campaigns.find((c) => c.id === suggestion.campaignId);
         const suggestedPhase = suggestedCampaign?.phases.find((p) => p.id === suggestion.phaseId);
         statusEl.innerHTML = suggestion.campaignId
-          ? `<div class="ocr-status" style="flex-direction:column;align-items:flex-start;gap:4px;">
+          ? `<div class="ocr-status" data-ai-answer style="flex-direction:column;align-items:flex-start;gap:4px;">
                ${icon("check", { size: 14 })}<strong style="font-size:12.5px;">${t("contentEditor.ai.suggested", { campaign: escapeHtml(suggestedCampaign?.name || "") + (suggestedPhase ? ` — ${escapeHtml(suggestedPhase.name)}` : "") })}</strong>
                ${suggestion.angle ? `<span style="font-size:12px;">${t("contentEditor.ai.angle", { angle: escapeHtml(suggestion.angle) })}</span>` : ""}
                ${suggestion.rationale ? `<span class="text-faint" style="font-size:11.5px;">${escapeHtml(suggestion.rationale)}</span>` : ""}
                <button type="button" class="btn btn-secondary btn-sm" id="apply-campaign-suggestion" style="margin-top:4px;">${t("contentEditor.ai.useThisCampaign")}</button>
+               ${aiReportButtonHTML("campaign-fit")}
              </div>`
           : `<div class="ocr-status">${icon("info", { size: 14 })}<span>${suggestion.rationale ? escapeHtml(suggestion.rationale) : t("contentEditor.ai.noCampaignFit")}</span></div>`;
         qs("#apply-campaign-suggestion", el)?.addEventListener("click", () => {
@@ -321,7 +323,7 @@ function wire(el, draft, settings, brandId, contentId, onSaved, brand, campaigns
         draft.funnel = funnel;
         setFunnelFieldValue(el, "f-funnel", funnel);
         updateStatusRow();
-        statusEl.innerHTML = `<div class="ocr-status">${icon("check", { size: 14 })}<span>${t("contentEditor.ai.detected", { funnel })}</span></div>`;
+        statusEl.innerHTML = `<div class="ocr-status">${icon("check", { size: 14 })}<span>${t("contentEditor.ai.detected", { funnel })}</span>${aiReportButtonHTML("funnel-detect")}</div>`;
       } catch (e) {
         statusEl.innerHTML = `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeHtml(e.message)}</span></div>`;
       } finally {

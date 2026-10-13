@@ -39,6 +39,7 @@ import { t, campaignDisplayName } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
+import { aiReportButtonHTML } from "../ai-report.js";
 
 const CAMPAIGN_STATUS_PILL_CLASS = { planning: "status-draft", active: "status-scheduled", completed: "status-published", archived: "status-archived" };
 
@@ -511,7 +512,7 @@ function ideasWidgetHTML(campaign, state, brandId) {
         <button type="button" class="btn btn-ghost btn-sm" id="cd-idea-discuss" title="${esc(t("camp.ideas.discussTitle"))}">${icon("chat", { size: 13 })}${t("camp.ideas.discuss")}</button>
       </div>
       <div id="cd-idea-status"></div>
-      ${suggestions.length ? `<div class="cd-idea-bubbles cd-idea-suggestions" id="cd-idea-suggestions">${suggestions.map((idea, i) => suggestionBubble(idea, i)).join("")}</div>` : `<div id="cd-idea-suggestions"></div>`}
+      ${suggestions.length ? `<div class="cd-idea-bubbles cd-idea-suggestions" id="cd-idea-suggestions">${suggestions.map((idea, i) => suggestionBubble(idea, i)).join("")}</div><div class="ai-report-row">${aiReportButtonHTML("campaign-ideas", { from: "#cd-idea-suggestions" })}</div>` : `<div id="cd-idea-suggestions"></div>`}
       ${
         history.length
           ? `<details class="ai-history">
@@ -652,7 +653,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
         </div>
       </li>`;
   };
-  return `<div class="cd-tab-widget">` + widgetCardHTML("plan", "layers", t("camp.plan.title"), `
+  return `<div class="cd-tab-widget" data-ai-answer>` + widgetCardHTML("plan", "layers", t("camp.plan.title"), `
       ${plan?.concept?.title ? `
         <div class="cd-plan-concept">
           <div class="page-eyebrow" style="margin-bottom:4px;">${t(`camp.plan.concept.${track}`)}</div>
@@ -667,6 +668,7 @@ function planRoadmapHTML(campaign, stages, ctx) {
       </div>
       <div id="cd-plan-status">${campaign.aiPlan?.autoReason ? `<p class="ai-auto-note">${icon("refresh", { size: 12 })}${esc(t("ai.auto.reason", { reason: campaign.aiPlan.autoReason }))}</p>` : ""}</div>
       <ol class="cd-plan-levels">${stages.map(levelHTML).join("")}</ol>
+      ${plan ? `<div class="ai-report-row">${aiReportButtonHTML("campaign-playbook")}</div>` : ""}
     `, { sub: t(`camp.plan.sub.${track}`) }) + `</div>`;
 }
 
@@ -808,7 +810,7 @@ function openContentPlanModal({ brand, campaign, stages, refresh }) {
         </span>
       </label>`;
     }).join("");
-    return `<p class="text-muted" style="font-size:12.5px;margin:0 0 10px;">${t("camp.cplan.review", { n: st.items.length })}</p><div class="cp-plan-list">${rows}</div>`;
+    return `<p class="text-muted" style="font-size:12.5px;margin:0 0 10px;">${t("camp.cplan.review", { n: st.items.length })}</p><div class="cp-plan-list" id="cp-plan-list">${rows}</div><div class="ai-report-row">${aiReportButtonHTML("campaign-content-plan", { from: "#cp-plan-list" })}</div>`;
   };
 
   const picked = () => st.items ? st.items.filter((it, i) => it.picked !== false && !existing().has(normTitle(it.title))) : [];

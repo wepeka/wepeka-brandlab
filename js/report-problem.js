@@ -1,7 +1,9 @@
 // "Laporkan masalah" — how a user tells the Wepeka team something is broken,
-// confusing or missing, from wherever they are: the ⋯ menu, or the "halaman
-// gagal dimuat" card. One short form; what the team needs to reproduce it
-// (the page, the device, the last errors) is attached by itself.
+// confusing or missing, from wherever they are: the ⋯ menu, the small flag
+// next to a page's "Panduan", the flag under an AI answer (js/ai-report.js),
+// or the "halaman gagal dimuat" card. One short form; what the team needs to
+// reproduce it (the page, the device, the last errors, the AI answer being
+// reported) is attached by itself.
 // Sent to api/report.js, read in the Wepeka admin (Brandlab → Laporan Masalah).
 import { icon } from "./icons.js";
 import { escapeHtml, toast, resizeImageFile } from "./dom.js";
@@ -11,11 +13,16 @@ import { getMode } from "./mode.js";
 import { recentErrors } from "./error-log.js";
 import { SUPPORT_WA_NUMBER } from "./site-links.js";
 import { t, getLang } from "./i18n.js";
+import { lastAiAnswer, pageOf, readableAnswer } from "./ai-last.js";
 
-export const REPORT_KINDS = ["bug", "confused", "payment", "idea"];
-const KIND_ICON = { bug: "info", confused: "help", payment: "money", idea: "bulb" };
+export const REPORT_KINDS = ["bug", "confused", "payment", "idea", "ai"];
+const KIND_ICON = { bug: "info", confused: "help", payment: "money", idea: "bulb", ai: "sparkle" };
 const MESSAGE_MIN = 5;
 const MESSAGE_MAX = 2000;
+// Same ceilings as api/_report.js (aiOutput, aiPrompt).
+const AI_OUTPUT_MAX = 4000;
+const AI_PROMPT_MAX = 1500;
+const QUOTE_CHARS = 260;
 // Same ceiling as api/_report.js (screenshotChars); a phone screenshot at
 // 1280 px / JPEG 0.7 lands around 100–300 KB.
 const SCREENSHOT_MAX_CHARS = 700_000;
@@ -24,7 +31,7 @@ const SCREENSHOT_MAX_CHARS = 700_000;
 // for the test.
 export function reportContext({ hash = location.hash, brandName = "" } = {}) {
   // Never an SSO token or a query string — the route only.
-  const page = /^#\/sso/.test(hash) ? "#/" : String(hash || "#/").replace(/[?].*$/, "").slice(0, 200);
+  const page = /^#\/sso/.test(hash) ? "#/" : pageOf(hash);
   const main = typeof document !== "undefined" ? document.querySelector('script[type="module"][src*="main"]')?.getAttribute("src") || "" : "";
   return {
     page,
@@ -62,24 +69,44 @@ async function send(payload) {
 
 const waHelpHTML = () => `<a href="https://wa.me/${SUPPORT_WA_NUMBER}" target="_blank" rel="noopener noreferrer">${t("lapor.waTeam")}</a>`;
 
+// The AI answer a report carries, cut to what the server keeps.
+export function aiAttachment(ai) {
+  const output = String(ai?.output || "").trim().slice(0, AI_OUTPUT_MAX);
+  return output ? { output, prompt: String(ai?.prompt || "").trim().slice(0, AI_PROMPT_MAX), feature: String(ai?.feature || "") } : null;
+}
+
+const quoteHTML = (labelKey, output) => `<span class="lapor-quote-label">${icon("sparkle", { size: 12 })}${t(labelKey)}</span><p>${escapeHtml(output.length > QUOTE_CHARS ? `${output.slice(0, QUOTE_CHARS).trimEnd()}…` : output)}</p>`;
+
 // `kind` / `message`: start the form on a kind or with text already in it
 // (the "halaman gagal dimuat" card opens it on "bug").
-export function openReportProblem({ kind = "bug", message = "" } = {}) {
+// `source` / `feature`: where the form was opened from (a page's flag sends
+// "page" + that page's guide key).
+// `ai`: { output, prompt } — the flag under an AI answer. The form is then
+// about that answer only: no kind to pick, the answer quoted on top. Without
+// it, choosing "Jawaban AI" attaches the last answer this page got, if any.
+export function openReportProblem({ kind = "bug", message = "", source = "menu", feature = "", ai = null } = {}) {
   let screenshot = "";
+  const given = aiAttachment(ai);
+  const recentAnswer = given ? null : lastAiAnswer({ page: pageOf(location.hash) });
+  const recent = recentAnswer ? aiAttachment({ ...recentAnswer, output: readableAnswer(recentAnswer.output) }) : null;
+  const startKind = given ? "ai" : REPORT_KINDS.includes(kind) ? kind : "bug";
   const overlay = openModal({
-    title: t("lapor.title"),
+    title: t(given ? "lapor.ai.title" : "lapor.title"),
     bodyHTML: `
       <form id="lapor-form" novalidate>
-        <p class="community-lead">${t("lapor.lead")}</p>
-        <div class="field">
+        <p class="community-lead">${t(given ? "lapor.ai.lead" : "lapor.lead")}</p>
+        ${given
+          ? `<div class="lapor-quote">${quoteHTML("lapor.ai.quote", given.output)}</div>`
+          : `<div class="field">
           <label id="lapor-kind-label">${t("lapor.kind")}</label>
           <div class="ann-kinds" role="radiogroup" aria-labelledby="lapor-kind-label">
-            ${REPORT_KINDS.map((k) => `<label class="ann-kind"><input type="radio" name="lapor-kind" value="${k}" ${k === (REPORT_KINDS.includes(kind) ? kind : "bug") ? "checked" : ""}/><span>${icon(KIND_ICON[k], { size: 13 })}${t(`lapor.kind.${k}`)}</span></label>`).join("")}
+            ${REPORT_KINDS.map((k) => `<label class="ann-kind"><input type="radio" name="lapor-kind" value="${k}" ${k === startKind ? "checked" : ""}/><span>${icon(KIND_ICON[k], { size: 13 })}${t(`lapor.kind.${k}`)}</span></label>`).join("")}
           </div>
         </div>
+        ${recent ? `<div class="lapor-quote" data-lapor-recent ${startKind === "ai" ? "" : "hidden"}>${quoteHTML("lapor.ai.quoteRecent", recent.output)}</div>` : ""}`}
         <div class="field">
-          <label for="lapor-message">${t("lapor.message")}</label>
-          <textarea class="textarea" id="lapor-message" rows="5" maxlength="${MESSAGE_MAX}" placeholder="${escapeHtml(t("lapor.messagePh"))}">${escapeHtml(message)}</textarea>
+          <label for="lapor-message">${t(given ? "lapor.ai.message" : "lapor.message")}</label>
+          <textarea class="textarea" id="lapor-message" rows="${given ? 4 : 5}" maxlength="${MESSAGE_MAX}" placeholder="${escapeHtml(t(given ? "lapor.ai.messagePh" : "lapor.messagePh"))}">${escapeHtml(message)}</textarea>
         </div>
         <div class="field">
           <label for="lapor-shot">${t("lapor.shot")} <span class="copy-optional">${t("lapor.optional")}</span></label>
@@ -91,7 +118,7 @@ export function openReportProblem({ kind = "bug", message = "" } = {}) {
           <label for="lapor-contact">${t("lapor.contact")} <span class="copy-optional">${t("lapor.optional")}</span></label>
           <input class="input" id="lapor-contact" inputmode="tel" autocomplete="tel" maxlength="40" placeholder="08…" />
         </div>
-        <p class="lapor-auto">${icon("info", { size: 13 })}<span>${t("lapor.auto")}</span></p>
+        <p class="lapor-auto">${icon("info", { size: 13 })}<span>${t(given ? "lapor.ai.auto" : "lapor.auto")}</span></p>
         <p class="lapor-error" data-lapor-error hidden></p>
       </form>
     `,
@@ -106,6 +133,10 @@ export function openReportProblem({ kind = "bug", message = "" } = {}) {
   const showError = (html) => { errorEl.innerHTML = html; errorEl.hidden = !html; };
 
   q("[data-lapor-cancel]").addEventListener("click", () => closeOverlay(overlay));
+  const kindNow = () => (given ? "ai" : q('input[name="lapor-kind"]:checked')?.value || "bug");
+  // "Jawaban AI" picked by hand: the last answer this page got rides along.
+  const recentEl = q("[data-lapor-recent]");
+  if (recentEl) overlay.querySelectorAll('input[name="lapor-kind"]').forEach((r) => r.addEventListener("change", () => { recentEl.hidden = kindNow() !== "ai"; }));
 
   // Screenshot: shrunk in the browser before it goes anywhere.
   const shotHost = q("[data-lapor-shot]");
@@ -141,7 +172,7 @@ export function openReportProblem({ kind = "bug", message = "" } = {}) {
     if (sending) return;
     const text = q("#lapor-message").value.trim();
     if (text.length < MESSAGE_MIN) {
-      showError(escapeHtml(t("lapor.needMessage")));
+      showError(escapeHtml(t(given ? "lapor.ai.needMessage" : "lapor.needMessage")));
       q("#lapor-message").focus();
       return;
     }
@@ -149,11 +180,16 @@ export function openReportProblem({ kind = "bug", message = "" } = {}) {
     sending = true;
     btn.disabled = true;
     showError("");
+    const attached = given || (kindNow() === "ai" ? recent : null);
     const payload = {
-      kind: q('input[name="lapor-kind"]:checked')?.value || "bug",
+      kind: kindNow(),
       message: text,
       contact: q("#lapor-contact").value.trim(),
       screenshot,
+      source,
+      feature: feature || attached?.feature || "",
+      aiOutput: attached?.output || "",
+      aiPrompt: attached?.prompt || "",
       ...reportContext({ brandName: brandNameFromHash() }),
     };
     const r = await send(payload).catch(() => ({ ok: false, error: "network" }));

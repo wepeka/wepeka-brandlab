@@ -765,8 +765,15 @@ export function startTour() {
 // in the topbar. Now one "Panduan" pill opens a small menu with everything
 // this page has: what the page is for, the spotlight tour, the video, and
 // "ask the AI". The eyebrow's own "?" hides itself next to it (CSS :has).
+// Right after it sits a small flag: "Laporkan masalah" about this very page
+// (js/report-problem.js), so a bug is reported where it is seen instead of
+// from the ⋯ menu.
 export function guideVideoButtonHTML(guideKey) {
-  return `<button type="button" class="icon-btn help-btn section-video-btn page-help-btn" data-page-help="${escapeHtml(guideKey)}" title="${t("guide.btn")}" aria-label="${t("guide.btn")}" aria-haspopup="menu">${icon("help", { size: 14 })}<span>${t("guide.btn")}</span></button>`;
+  return `<button type="button" class="icon-btn help-btn section-video-btn page-help-btn" data-page-help="${escapeHtml(guideKey)}" title="${t("guide.btn")}" aria-label="${t("guide.btn")}" aria-haspopup="menu">${icon("help", { size: 14 })}<span>${t("guide.btn")}</span></button>${pageReportButtonHTML(guideKey)}`;
+}
+
+export function pageReportButtonHTML(guideKey) {
+  return `<button type="button" class="icon-btn help-btn page-report-btn" data-page-report="${escapeHtml(guideKey)}" title="${t("lapor.page.btn")}" aria-label="${t("lapor.page.btn")}">${icon("flag", { size: 13 })}</button>`;
 }
 
 function pageHelpMenu(btn) {
@@ -806,6 +813,12 @@ if (typeof window !== "undefined" && !window.__guideVideoClickWired) {
   document.addEventListener("click", (e) => {
     const helpBtn = e.target instanceof Element ? e.target.closest("[data-page-help]") : null;
     if (helpBtn) { e.preventDefault(); e.stopPropagation(); pageHelpMenu(helpBtn); return; }
+    const reportBtn = e.target instanceof Element ? e.target.closest("[data-page-report]") : null;
+    if (reportBtn) {
+      e.preventDefault();
+      import("./report-problem.js").then((m) => m.openReportProblem({ source: "page", feature: reportBtn.dataset.pageReport })).catch((err) => console.warn("[report] unavailable", err));
+      return;
+    }
     const guideBtn = e.target instanceof Element ? e.target.closest("[data-page-guide-btn]") : null;
     if (guideBtn) { startPageTour(); return; }
     const btn = e.target instanceof Element ? e.target.closest("[data-guide-video-btn]") : null;

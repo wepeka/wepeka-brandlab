@@ -14,6 +14,7 @@ import { escapeHtml as esc, qs, qsa, toast, loadingHTML } from "./dom.js";
 import { suggestHashtags, hasAiKey, AiApiError } from "./ai.js";
 import { pulseTextFor } from "./brand-pulse.js";
 import { t } from "./i18n.js";
+import { aiReportButtonHTML } from "./ai-report.js";
 
 const CALL_CHOICES = ["Kak", "Kakak", "Sis", "Gan", "Bestie", "Bunda", "Kamu", "Anda"];
 const MAX_HASHTAGS = 15;
@@ -83,7 +84,7 @@ export function openWritingRulesModal(brandId, { onSaved = () => {} } = {}) {
       : st.suggestions.length
       ? `<p class="text-faint" style="font-size:11.5px;margin:10px 0 6px;">${t("wr.suggest.pick")}</p><div class="wr-suggest">${st.suggestions
           .map((h) => `<button type="button" class="consultant-starter ${st.hashtags.some((x) => x.toLowerCase() === h.toLowerCase()) ? "is-added" : ""}" data-wr-add="${esc(h)}">${icon("plus", { size: 11 })}${esc(h)}</button>`)
-          .join("")}</div>`
+          .join("")}</div><div class="ai-report-row">${aiReportButtonHTML("hashtags", { recent: "hashtags" })}</div>`
       : "";
 
   const overlay = openModal({

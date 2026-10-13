@@ -12,6 +12,7 @@ import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
 import { brandVoiceText, listBrandIdeas } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
 import { renderScript } from "./script-format.js";
+import { noteAiAnswer } from "./ai-last.js";
 
 class AiApiError extends Error {}
 
@@ -245,7 +246,10 @@ async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage 
     const period = aiQuotaPeriod();
     throw quotaOutError(quotaOutKey(limit, period), { limit, period });
   }
-  return callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature, history }, onText);
+  const text = await callProxy(system, userPrompt, maxTokens, { temperature, json, images, stream: !!onText, countUsage, feature, history }, onText);
+  // Kept in memory for "Laporkan jawaban AI" (js/ai-last.js).
+  noteAiAnswer({ feature, output: text, prompt: userPrompt });
+  return text;
 }
 
 export async function testAiConnection(ai) {

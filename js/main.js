@@ -693,7 +693,7 @@ function paintRouteError(root) {
   root.querySelector("#route-error-reload")?.addEventListener("click", () => location.reload());
   // Reloading didn't help? One tap tells the team, with the error attached.
   root.querySelector("#route-error-report")?.addEventListener("click", () => {
-    import("./report-problem.js").then((m) => m.openReportProblem({ kind: "bug" })).catch((e) => console.warn("report form unavailable", e));
+    import("./report-problem.js").then((m) => m.openReportProblem({ kind: "bug", source: "error" })).catch((e) => console.warn("report form unavailable", e));
   });
 }
 
