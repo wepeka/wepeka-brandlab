@@ -386,7 +386,7 @@ export const SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };
 // js/views/pricing.js (FOUNDER.tiers); keep the two in sync.
 export const FOUNDER_TIERS = [
   { upTo: 15, amount: 499000 },
-  { upTo: 50, amount: 699000 },
+  { upTo: 50, amount: 599000 },
 ];
 export function founderAmount(sold) {
   return (FOUNDER_TIERS.find((tier) => sold < tier.upTo) || FOUNDER_TIERS[FOUNDER_TIERS.length - 1]).amount;

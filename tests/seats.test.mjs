@@ -22,7 +22,7 @@ describe("seat holds: the math", () => {
     const first = reserveSeat(doc, F, "a", founder, now);
     assert.equal(first.price, 499000);
     const second = reserveSeat({ ...doc, holds: { [F]: first.holds } }, F, "b", founder, now);
-    assert.equal(second.price, 699000);
+    assert.equal(second.price, 599000);
   });
   test("concurrent buyers at the last seat: the second is refused", () => {
     const doc = { [F]: 49 };

@@ -197,7 +197,7 @@ describe("a Lifetime account is never overwritten (S-15)", () => {
   });
   test("Founder → Agency pays the difference", () => {
     assert.deepEqual(switchQuote(founder, "founder-ultimate", 1490000, t0), { mode: "now", amount: 991000, credit: 499000, lifetimeUpgrade: true });
-    assert.equal(switchQuote({ ...founder, lifetimePaid: 699000 }, "founder-ultimate", 1490000, t0).amount, 791000);
+    assert.equal(switchQuote({ ...founder, lifetimePaid: 599000 }, "founder-ultimate", 1490000, t0).amount, 891000);
   });
   test("without a recorded Founder price the team works the difference out", () => {
     const { lifetimePaid, ...handActivated } = founder;

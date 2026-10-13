@@ -83,8 +83,8 @@ describe("front page", () => {
 
   test("the Founder wave follows the seats taken", () => {
     assert.deepEqual([founderNow(0).wave.price, founderNow(0).left], [499000, 15]);
-    assert.deepEqual([founderNow(14).left, founderNow(14).takenInWave, founderNow(14).nextWave.price], [1, 14, 699000]);
-    assert.deepEqual([founderNow(15).wave.price, founderNow(15).left, founderNow(15).nextWave], [699000, 35, null]);
+    assert.deepEqual([founderNow(14).left, founderNow(14).takenInWave, founderNow(14).nextWave.price], [1, 14, 599000]);
+    assert.deepEqual([founderNow(15).wave.price, founderNow(15).left, founderNow(15).nextWave], [599000, 35, null]);
     assert.equal(founderNow(50).soldOut, true);
   });
 });
