@@ -7,7 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, isLifetimePlan, newAccountFields, ACCOUNT_COUNTER_DOC, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, SLOT_CAPS, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, isLifetimePlan, newAccountFields, ACCOUNT_COUNTER_DOC, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
 import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
@@ -15,6 +15,9 @@ import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isSettled, notificationAction 
 import { sendEmail, emailConfigured } from "../_email.js";
 import { composePaidEmail } from "../_community.js";
 import { invoiceNumber, paymentMethodLabel } from "../_invoice.js";
+import { ownerEmails, composeSaleNote } from "../_ownerNotify.js";
+import { ADMIN_UIDS } from "../_aiQuota.js";
+import { normalizeReminders, deliverPush, deadEntries, webPushSender } from "../_reminders.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -255,12 +258,21 @@ export default async function handler(req, res) {
     // The invoice (+ the WhatsApp group and Instagram links), once per
     // order that was actually applied. The email is off while Resend isn't
     // set up (api/_email.js); never fails the notification.
-    if (firstTime === true) {
-      await sendInvoice({
+    const invoice = firstTime === true
+      ? sendInvoice({
         paymentRef, uid, buyer, label: plan.label || planKey, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]), lifetime: isLifetimePlan(plan.plan),
         orderId: order_id, amount: Number(gross_amount), price: pending.price, credit: pending.credit, paidAt: now, notification: body,
-      }).catch((err) => console.error("Midtrans webhook: invoice failed", order_id, err?.message));
-    }
+      }).catch((err) => console.error("Midtrans webhook: invoice failed", order_id, err?.message))
+      : null;
+    // Wepeka's own note that money came in — also for a paid order that
+    // needs review (nothing applied), which is when the team most needs it.
+    // Sent alongside the invoice so the answer to Midtrans isn't held up.
+    const note = notifyOwner(db, {
+      uid, buyer, label: plan.label || planKey, slot: firstTime === true ? plan.slot : null, newAccount: Boolean(pending.newAccount),
+      review: buyer.paymentIssue?.orderId === order_id ? buyer.paymentIssue.status : "",
+      orderId: order_id, amount: Number(gross_amount), paidAt: now, notification: body,
+    }).catch((err) => console.error("Midtrans webhook: owner note failed", order_id, err?.message));
+    await Promise.all([invoice, note]);
   }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
 }
@@ -280,6 +292,44 @@ async function sendInvoice({ paymentRef, uid, buyer, label, isPlan, renewal = fa
   const r = await sendEmail({ to, ...mail, idempotencyKey: `brandlab-paid-${orderId}` });
   if (r.ok) await paymentRef.set({ invoiceEmailedAt: Date.now() }, { merge: true });
   else if (!r.skipped) console.error("Midtrans webhook: invoice email not sent", orderId, r.error || r.status);
+}
+
+// The team's note about a payment (api/_ownerNotify.js): an email to the
+// owner's address(es) and a push to the team account's own devices, the
+// ones that turned Notifikasi on in Settings → Pengingat. Each channel is
+// simply skipped while it isn't set up.
+async function notifyOwner(db, { uid, buyer, label, slot = null, renewal = false, newAccount = false, review = "", orderId, amount, paidAt, notification }) {
+  const to = emailConfigured() ? ownerEmails() : [];
+  const push = await webPushSender().catch(() => null);
+  if (!to.length && !push) return;
+  const user = buyer.email && buyer.displayName ? null : await getAuth(getApps()[0]).getUser(uid).catch(() => null);
+  // A capped plan: how many of its seats are sold now, this one included.
+  const sold = slot ? Number((await db.doc(SLOTS_DOC).get().catch(() => null))?.data()?.[slot]) || 0 : 0;
+  const { push: pushPayload, ...mail } = composeSaleNote({
+    label, amount, uid, orderId, paidAt, renewal, newAccount, review,
+    buyerName: buyer.displayName || user?.displayName || "", buyerEmail: buyer.email || user?.email || "",
+    invoiceNo: invoiceNumber(orderId, paidAt), method: paymentMethodLabel(notification),
+    seat: slot ? { sold, cap: SLOT_CAPS[slot] } : null, sandbox: !MIDTRANS_IS_PRODUCTION,
+  });
+  await Promise.all([
+    ...to.map(async (address, i) => {
+      const r = await sendEmail({ to: address, ...mail, idempotencyKey: `brandlab-sale-${orderId}-${i}` });
+      if (!r.ok && !r.skipped) console.error("Midtrans webhook: owner email not sent", orderId, r.error || r.status);
+    }),
+    push ? pushTeam(db, pushPayload, push).catch((err) => console.error("Midtrans webhook: owner push failed", orderId, err?.message)) : null,
+  ]);
+}
+async function pushTeam(db, payload, send) {
+  await Promise.all(ADMIN_UIDS.map(async (adminUid) => {
+    const ref = db.doc(`settings/${adminUid}`);
+    const raw = (await ref.get()).data()?.reminders;
+    const subs = normalizeReminders(raw).push;
+    if (!subs.length) return;
+    const result = await deliverPush(subs, payload, (sub, body) => send(sub, body, { ttl: 24 * 60 * 60 }));
+    // Devices the push service no longer knows are removed, as everywhere else.
+    const dead = deadEntries(raw?.push, result.dead);
+    if (dead.length) await ref.update({ "reminders.push": FieldValue.arrayRemove(...dead) }).catch(() => {});
+  }));
 }
 
 // After a paid order: a plan purchase stops the old plan's auto-renew (plans
@@ -358,10 +408,16 @@ async function applyRenewalCharge(db, { orderId, name, grossAmount, paid, notifi
   if (applied) {
     const buyer = (await accountRef.get().catch(() => null))?.data() || {};
     const item = PLANS[sub.planKey] || ADDONS[sub.planKey];
-    await sendInvoice({
-      paymentRef, uid: sub.uid, buyer, label: item?.label || sub.planKey, isPlan: Boolean(PLANS[sub.planKey]), renewal: true,
-      orderId, amount: grossAmount, paidAt: now, notification,
-    }).catch((err) => console.error("Midtrans webhook: renewal invoice failed", orderId, err?.message));
+    await Promise.all([
+      sendInvoice({
+        paymentRef, uid: sub.uid, buyer, label: item?.label || sub.planKey, isPlan: Boolean(PLANS[sub.planKey]), renewal: true,
+        orderId, amount: grossAmount, paidAt: now, notification,
+      }).catch((err) => console.error("Midtrans webhook: renewal invoice failed", orderId, err?.message)),
+      notifyOwner(db, {
+        uid: sub.uid, buyer, label: item?.label || sub.planKey, renewal: true,
+        orderId, amount: grossAmount, paidAt: now, notification,
+      }).catch((err) => console.error("Midtrans webhook: owner note failed", orderId, err?.message)),
+    ]);
   }
   return { ok: true, renewal: true, duplicate: !applied };
 }
