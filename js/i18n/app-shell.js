@@ -343,6 +343,8 @@ export default {
   "pricing.pay.leaving": { en: "Taking you to payment…", id: "Menuju pembayaran…" },
   "pricing.pay.leavingNote": { en: "Sign in or register first. The payment opens right after.", id: "Masuk atau daftar dulu sebentar. Habis itu pembayaran langsung terbuka." },
   "pricing.pay.error": { en: "Payment failed — try again or contact support.", id: "Pembayaran gagal — coba lagi atau hubungi support." },
+  "pay.return.signedOut.title": { en: "Paid already? Sign in first", id: "Sudah bayar? Masuk dulu" },
+  "pay.return.signedOut.body": { en: "If your payment went through, the plan is active on the Wepeka account you paid with. This browser isn't signed in to that account yet. Sign in, and Brandlab opens right away.", id: "Kalau pembayaranmu berhasil, paketnya sudah aktif di akun Wepeka yang kamu pakai membayar. Browser ini belum masuk ke akun itu. Masuk dulu, lalu Brandlab langsung terbuka." },
   "pricing.wa.message": { en: "Hi, I'd like to ask about Wepeka Brandlab — {plan} {price}", id: "Halo, saya mau tanya soal Wepeka Brandlab — {plan} {price}" },
   "pricing.askWa": { en: "Questions first? WhatsApp Wepeka {number}", id: "Mau tanya-tanya dulu? WhatsApp Wepeka {number}" },
   "pricing.back": { en: "Back to Brandlab", id: "Kembali ke Brandlab" },

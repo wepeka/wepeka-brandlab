@@ -37,6 +37,8 @@ import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { rememberBuyIntent } from "./buy-intent.js";
+import { consumePayReturn } from "./pay-return.js";
+import { WEPEKA_CONNECT_URL } from "./site-links.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
 import { icon } from "./icons.js";
@@ -94,6 +96,27 @@ function paidWelcome() {
       return shown;
     })
     .catch((e) => { console.warn("community sheet unavailable", e); return false; });
+}
+// Back from a payment made in another app (js/pay-return.js): what Midtrans
+// said happened, read once and already gone from the address bar. Used up by
+// whichever comes first — the account's first snapshot, or the front page
+// when this browser isn't signed in.
+let payReturn = consumePayReturn();
+// The Gojek app opens the way back in the phone's default browser. A buyer
+// who checked out somewhere else (Instagram's built-in browser, another
+// browser) arrives here signed out, on the front page: say that the plan is
+// on their account and that signing in opens it.
+async function tellPaidSignedOut() {
+  try {
+    const { openModal } = await import("./modals.js");
+    openModal({
+      title: t("pay.return.signedOut.title"),
+      bodyHTML: `<p style="margin:0;line-height:1.6;">${t("pay.return.signedOut.body")}</p>`,
+      footHTML: `<a class="btn btn-primary" href="${WEPEKA_CONNECT_URL}">${t("auth.wepeka.login")}</a>`,
+    });
+  } catch (e) {
+    console.warn("pay-return notice unavailable", e);
+  }
 }
 let cleanup = null;
 
@@ -279,6 +302,8 @@ async function boot(user) {
     if (accountUnsub) { accountUnsub(); accountUnsub = null; }
     subscribedUid = null;
     setCachedAccount(null);
+    if (payReturn === "success") tellPaidSignedOut();
+    payReturn = null;
     // startsWith, not ===, so a query string on the hash (there is none
     // today, but there was historically) still lands on the login screen
     // instead of falling through to the front page.
@@ -356,6 +381,12 @@ function onAccountChange(user, account) {
   }
 
   const state = accessState(account);
+  // Just back from a payment made in another app: a failure is said, and a
+  // success that the webhook hasn't written yet (a new buyer still sees the
+  // plans for a second or two) is said to be on its way.
+  if (payReturn === "failure") toast(t("pricing.pay.error"), "error");
+  else if (payReturn === "success" && state !== "paid") toast(t("pricing.pay.activating"));
+  payReturn = null;
   // "none" (never claimed a trial / never paid — no accounts/{uid} doc at
   // all) and "expired" (a lapsed sub or ended trial) both get the same
   // locked pricing screen now — no more in-app read-only browsing for a

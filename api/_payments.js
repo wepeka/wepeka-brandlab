@@ -35,6 +35,49 @@ const TESTER_EMAILS = new Set([
     .filter(Boolean),
 ]);
 
+// Where the buyer goes after paying somewhere other than the checkout
+// window. GoPay on a phone hands them to the Gojek/GoPay app, and Midtrans
+// leaves them there unless the request says where to return ("By default,
+// the customer will remain on Gojek app" — Snap docs, Redirect Customer From
+// Gojek App); a method that finishes on a partner's page uses
+// `callbacks.finish`, which otherwise falls back to the dashboard's
+// Redirection URL (Midtrans's placeholder, http://example.com, until someone
+// changes it). Both point at the app's own address, with no fragment:
+// Midtrans appends ?order_id=…&result=… to it, which js/pay-return.js reads
+// and removes. Anything but an https address (local development) asks for
+// nothing.
+export function snapReturnParams(appUrl) {
+  const home = `${String(appUrl || "").replace(/\/+$/, "")}/`;
+  if (!/^https:\/\/[^/?#]+\/$/.test(home)) return {};
+  return { callbacks: { finish: home }, gopay: { enable_callback: true, callback_url: home } };
+}
+
+// Opens one Snap transaction. `returnTo` (snapReturnParams) rides along; the
+// way back is a convenience, a checkout that opens is not — should Midtrans
+// refuse the request as invalid with it, it is asked once more without
+// (nothing was created by the refused request, so the order id is still
+// free). Any other answer, good or bad, is returned as it came.
+export async function requestSnapToken({ url, serverKey, body, returnTo = {}, fetchImpl = fetch }) {
+  const ask = (payload) => fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: "Basic " + Buffer.from(`${serverKey}:`).toString("base64"),
+    },
+    body: JSON.stringify(payload),
+  });
+  const withReturn = Object.keys(returnTo).length > 0;
+  let res = await ask(withReturn ? { ...body, ...returnTo } : body);
+  let data = await res.json();
+  if (withReturn && res.status === 400) {
+    console.error("Midtrans refused the checkout with return addresses, retrying without", data);
+    res = await ask(body);
+    data = await res.json();
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
 export function isPaymentTester(uid, account) {
   return isAdminUid(uid) || TESTER_EMAILS.has(String(account?.email || "").trim().toLowerCase());
 }

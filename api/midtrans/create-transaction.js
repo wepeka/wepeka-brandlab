@@ -7,7 +7,8 @@ import { PLANS, ADDONS, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DO
 import { holdSeat, releaseHold } from "../_seats.js";
 import { RECURRING_ON } from "../_midtrans.js";
 import { metaContext } from "../_meta.js";
-import { MIDTRANS_IS_PRODUCTION, MIDTRANS_CLIENT_KEY, paymentsOpenFor } from "../_payments.js";
+import { MIDTRANS_IS_PRODUCTION, MIDTRANS_CLIENT_KEY, paymentsOpenFor, snapReturnParams, requestSnapToken } from "../_payments.js";
+import { APP_URL } from "../_reminders.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 const SNAP_API_URL = MIDTRANS_IS_PRODUCTION
@@ -185,14 +186,10 @@ export default async function handler(req, res) {
   // form was 51 and Midtrans refused every transaction.)
   const orderId = `bl-${uid}-${Date.now().toString(36)}`;
   try {
-    const midtransRes = await fetch(SNAP_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: "Basic " + Buffer.from(`${MIDTRANS_SERVER_KEY}:`).toString("base64"),
-      },
-      body: JSON.stringify({
+    const midtransRes = await requestSnapToken({
+      url: SNAP_API_URL,
+      serverKey: MIDTRANS_SERVER_KEY,
+      body: {
         transaction_details: { order_id: orderId, gross_amount: amount },
         customer_details: account.email ? { email: account.email } : undefined,
         item_details: [{ id: planKey, price: amount, quantity: 1, name: plan.label }],
@@ -207,9 +204,12 @@ export default async function handler(req, res) {
         // parsing uid/planKey back out of order_id's own text.
         custom_field1: uid,
         custom_field2: planKey,
-      }),
+      },
+      // Back to the app after a payment made in another app (GoPay) or on a
+      // partner's page.
+      returnTo: snapReturnParams(APP_URL),
     });
-    const data = await midtransRes.json();
+    const data = midtransRes.data;
     if (!midtransRes.ok) {
       console.error("Midtrans create-transaction failed", midtransRes.status, data);
       // Surface Midtrans's own reason (never a key) so a misconfigured

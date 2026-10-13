@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isPaymentTester, isSettled, notificationAction, ownOrderIds, orderStatusFor, ORDER_STATUS_MAX } from "../api/_payments.js";
+import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isPaymentTester, isSettled, notificationAction, ownOrderIds, orderStatusFor, ORDER_STATUS_MAX, snapReturnParams, requestSnapToken } from "../api/_payments.js";
 import orderStatusHandler from "../api/midtrans/order-status.js";
 import { ADMIN_UIDS, isReadOnlyAccount, consumeFreeCall } from "../api/_aiQuota.js";
 
@@ -193,5 +193,72 @@ describe("order status for the buyer's own browser (analytics only)", () => {
     assert.equal(anon.statusCode, 401);
     assert.equal(anon.body.orders, undefined);
     assert.equal((await call({ method: "POST", headers: { authorization: "Basic abc" }, body: { orderIds: [mine(1)] } })).statusCode, 401);
+  });
+});
+
+// GoPay on a phone is paid in the Gojek/GoPay app; Midtrans only brings the
+// buyer back when the checkout says where to (owner's report, 2026-10-13:
+// paid, then had to find Brandlab again by hand).
+describe("the way back after paying in another app", () => {
+  test("both return addresses are the app's own, with no fragment", () => {
+    const home = "https://brandlab.wepeka.com/";
+    assert.deepEqual(snapReturnParams("https://brandlab.wepeka.com"), { callbacks: { finish: home }, gopay: { enable_callback: true, callback_url: home } });
+    assert.deepEqual(snapReturnParams("https://brandlab.wepeka.com///"), snapReturnParams("https://brandlab.wepeka.com"));
+  });
+  test("anything but a plain https address asks for nothing", () => {
+    for (const url of ["", undefined, "http://localhost:8743", "https://brandlab.wepeka.com/#/pricing", "https://brandlab.wepeka.com/app", "javascript:alert(1)"]) {
+      assert.deepEqual(snapReturnParams(url), {}, String(url));
+    }
+  });
+
+  const BODY = { transaction_details: { order_id: "bl-u1-abc", gross_amount: 499000 }, custom_field1: "u1" };
+  const RETURN = snapReturnParams("https://brandlab.wepeka.com");
+  function fakeMidtrans(answers) {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, auth: init.headers.Authorization, body: JSON.parse(init.body) });
+      const a = answers[Math.min(calls.length - 1, answers.length - 1)];
+      return { ok: a.status >= 200 && a.status < 300, status: a.status, json: async () => a.data };
+    };
+    return { calls, fetchImpl };
+  }
+  const ask = (m, returnTo = RETURN) => requestSnapToken({ url: "https://snap.test/v1", serverKey: "sk", body: BODY, returnTo, fetchImpl: m.fetchImpl });
+
+  test("the checkout is asked for once, with the way back on it", async () => {
+    const m = fakeMidtrans([{ status: 201, data: { token: "tok" } }]);
+    const res = await ask(m);
+    assert.deepEqual(res, { ok: true, status: 201, data: { token: "tok" } });
+    assert.equal(m.calls.length, 1);
+    assert.deepEqual(m.calls[0].body, { ...BODY, ...RETURN });
+    assert.equal(m.calls[0].auth, "Basic " + Buffer.from("sk:").toString("base64"));
+  });
+  test("refused as invalid: asked once more without the way back, and that answer stands", async () => {
+    const m = fakeMidtrans([{ status: 400, data: { error_messages: ["gopay is not allowed"] } }, { status: 201, data: { token: "tok2" } }]);
+    const res = await ask(m);
+    assert.deepEqual(res, { ok: true, status: 201, data: { token: "tok2" } });
+    assert.equal(m.calls.length, 2);
+    assert.deepEqual(m.calls[1].body, BODY);
+    assert.equal(m.calls[1].body.transaction_details.order_id, m.calls[0].body.transaction_details.order_id);
+  });
+  test("a refusal for any other reason is still a refusal", async () => {
+    const m = fakeMidtrans([{ status: 400, data: { error_messages: ["order_id too long"] } }]);
+    const res = await ask(m);
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 400);
+    assert.equal(m.calls.length, 2);
+  });
+  test("a wrong key or a Midtrans outage is not retried", async () => {
+    for (const status of [401, 500, 503]) {
+      const m = fakeMidtrans([{ status, data: { status_message: "no" } }]);
+      const res = await ask(m);
+      assert.equal(res.status, status);
+      assert.equal(m.calls.length, 1, String(status));
+    }
+  });
+  test("with nothing to add (local development) there is one plain request", async () => {
+    const m = fakeMidtrans([{ status: 400, data: {} }]);
+    await ask(m, {});
+    assert.equal(m.calls.length, 1);
+    assert.deepEqual(m.calls[0].body, BODY);
   });
 });
