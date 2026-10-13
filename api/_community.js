@@ -29,6 +29,12 @@ export function lifetimeGroupFor(uid, account) {
 }
 export const FOLLOW_INSTAGRAM = ["winkhsin", "wepeka.id"];
 export const SUPPORT_WA_NUMBER = "6285196627609";
+// The terms (their #refund section is the refund policy) and the privacy
+// policy on wepeka.com — same values as js/site-links.js, kept equal by
+// tests/community.test.mjs.
+export const TERMS_URL = "https://www.wepeka.com/syarat-ketentuan";
+export const PRIVACY_URL = "https://www.wepeka.com/kebijakan-privasi";
+export const REFUND_URL = `${TERMS_URL}#refund`;
 export const instagramUrl = (handle) => `https://www.instagram.com/${String(handle).replace(/^@/, "")}`;
 
 const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -131,7 +137,7 @@ ${lines.map(([k, v]) => `<tr><td style="padding:3px 0;font-size:14px;">${esc(k)}
 </table>
 <p style="margin:0;"><a href="${esc(appUrl)}" style="${BUTTON}background:#111;color:#fff;">Buka Brandlab</a></p>
 ${communityHTML({ lifetime: isPlan && lifetime })}
-<p style="margin:18px 0 0;color:#888;font-size:12px;word-break:break-word;">${esc(issuer)}${ref ? `<br>${esc(ref)}` : ""}<br>Invoice ini dibuat otomatis, jadi tidak perlu tanda tangan. Ada kendala? <a href="https://wa.me/${SUPPORT_WA_NUMBER}" style="color:#888;">WhatsApp tim Wepeka</a>.</p>`, aside);
+<p style="margin:18px 0 0;color:#888;font-size:12px;word-break:break-word;">${esc(issuer)}${ref ? `<br>${esc(ref)}` : ""}<br>Invoice ini dibuat otomatis, jadi tidak perlu tanda tangan. Ada kendala? <a href="https://wa.me/${SUPPORT_WA_NUMBER}" style="color:#888;">WhatsApp tim Wepeka</a>.<br><a href="${TERMS_URL}" style="color:#888;">Syarat &amp; Ketentuan</a> · <a href="${REFUND_URL}" style="color:#888;">Kebijakan refund</a> · <a href="${PRIVACY_URL}" style="color:#888;">Kebijakan Privasi</a></p>`, aside);
   const text = [
     hi, "", lead, keep, "",
     "INVOICE — LUNAS",
@@ -139,7 +145,8 @@ ${communityHTML({ lifetime: isPlan && lifetime })}
     ...lines.map(([k, v]) => `${k}: ${v}`),
     `Total dibayar: ${rupiah(paid)}`, "",
     issuer, ...(ref ? [ref] : []), "",
-    `Buka Brandlab: ${appUrl}`, "", communityText({ lifetime: isPlan && lifetime }), "", help,
+    `Buka Brandlab: ${appUrl}`, "", communityText({ lifetime: isPlan && lifetime }), "", help, "",
+    `Syarat & Ketentuan: ${TERMS_URL}`, `Kebijakan refund: ${REFUND_URL}`, `Kebijakan Privasi: ${PRIVACY_URL}`,
   ].join("\n");
   return { subject, html, text };
 }

@@ -4,6 +4,7 @@ import { qs, toast, passwordFieldHTML, wirePasswordToggles } from "../dom.js";
 import { unlockPaywall } from "../paywall.js";
 import { t } from "../i18n.js";
 import { WEPEKA_CONNECT_URL } from "../site-links.js";
+import { agreeLine } from "../legal-links.js";
 
 const friendlyAuthError = (err) => authErrorMessage(err, "auth.err.generic");
 
@@ -49,10 +50,11 @@ export function renderAuthScreen(root) {
               ${icon("arrowRight", { size: 15 })}${t("auth.login.cta")}
             </button>
           </form>
-          <p class="hint" style="margin-top:18px;text-align:center;">
+          <p class="hint" style="display:block;margin-top:18px;text-align:center;">
             ${t("auth.noAccount")} <a href="${WEPEKA_CONNECT_URL}" style="color:var(--accent);">${t("auth.wepeka.registerCta")}</a>
             · <a href="#" id="forgot-link" style="color:var(--accent);">${t("auth.forgot")}</a>
           </p>
+          <p class="auth-legal">${agreeLine("legal.agreeLogin")}</p>
         </div>
       </div>
     `;

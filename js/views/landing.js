@@ -28,6 +28,7 @@ import { rp } from "../purchase.js";
 import { TRIAL_DAYS } from "../account.js";
 import { TRIAL_AI_PER_DAY } from "../ai-usage.js";
 import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, buyUrl } from "../site-links.js";
+import { termsLink, privacyLink } from "../legal-links.js";
 import { showPayLoading, hidePayLoading } from "../pay-loading.js";
 import { localNumber } from "../upgrade-doors.js";
 import { render as renderPlans, SUBSCRIPTIONS, STUDIO, FOUNDER, AGENCY, FOUNDER_SLOT_CAPS, BOOK_STYLES_VALUE, LIFETIME_NORMAL_PRICE, AGENCY_NORMAL_PRICE } from "./pricing.js";
@@ -455,6 +456,7 @@ function finalHTML(facts, returning) {
 const footHTML = () => `
   <footer class="lp-foot">
     <div class="brand-mark"><span class="brand-logo" role="img" aria-label="Wepeka"></span><span class="brand-mark-divider"></span>Brandlab</div>
+    <p class="lp-foot-legal">${termsLink()}<span aria-hidden="true">·</span>${privacyLink()}</p>
     <p>${t("landing.foot")} <a href="${WEPEKA_SITE_URL}" target="_blank" rel="noopener noreferrer">wepeka.com</a></p>
   </footer>`;
 

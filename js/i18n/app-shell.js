@@ -555,6 +555,12 @@ export default {
   "auth.wepeka.login": { en: "Continue with your Wepeka account", id: "Lanjut pakai akun Wepeka" },
   "auth.wepeka.registerCta": { en: "Register on wepeka.com", id: "Daftar di wepeka.com" },
   "auth.wepeka.note": { en: "One account for wepeka.com Community and Brandlab — no second password.", id: "Satu akun buat Community wepeka.com dan Brandlab — nggak perlu password kedua." },
+  // js/legal-links.js: the pages are on wepeka.com.
+  "legal.terms": { en: "Terms & Conditions", id: "Syarat & Ketentuan" },
+  "legal.privacy": { en: "Privacy Policy", id: "Kebijakan Privasi" },
+  "legal.refund": { en: "refund policy", id: "kebijakan refund" },
+  "legal.agreeLogin": { en: "By logging in, you agree to Wepeka's {terms} and {privacy}.", id: "Dengan masuk, kamu menyetujui {terms} dan {privacy} Wepeka." },
+  "legal.agreePay": { en: "By paying, you agree to Wepeka's {terms}, including the {refund}. Your data is handled under the {privacy}.", id: "Dengan membayar, kamu menyetujui {terms} Wepeka, termasuk {refund}. Datamu dikelola sesuai {privacy}." },
   // js/layout.js showModeSwitched: what changed right after the Pemula/Pro switch.
   "mode.switched.title.guided": { en: "You're on Beginner now", id: "Sekarang mode Pemula" },
   "mode.switched.title.advanced": { en: "You're on Pro now", id: "Sekarang mode Pro" },

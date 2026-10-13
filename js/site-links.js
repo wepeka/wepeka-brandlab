@@ -14,6 +14,14 @@ export const WEPEKA_CONNECT_URL = `${WEPEKA_SITE_URL}/brandlab/connect`;
 // opening straight away (js/buy-intent.js). `planKey` as in api/_plans.js.
 export const buyUrl = (planKey) => `${WEPEKA_CONNECT_URL}?to=pricing&plan=${encodeURIComponent(planKey)}`;
 
+// The terms and the privacy policy live on the site, one copy for Community
+// and Brandlab; the refund policy is a section of the terms. Linked where
+// someone signs in or pays (js/legal-links.js) and in the invoice email
+// (api/_community.js — kept equal by tests/community.test.mjs).
+export const TERMS_URL = `${WEPEKA_SITE_URL}/syarat-ketentuan`;
+export const PRIVACY_URL = `${WEPEKA_SITE_URL}/kebijakan-privasi`;
+export const REFUND_URL = `${TERMS_URL}#refund`;
+
 // Wepeka's Instagram handle (no @) — printed on the shareable campaign
 // story card and put in the caption that gets copied alongside it.
 export const WEPEKA_IG_HANDLE = "wepeka.id";

@@ -149,3 +149,8 @@
 .auth-wepeka-btn{ gap:8px; margin-bottom:8px; }
 .auth-wepeka-btn .brand-logo{ --logo-h:15px; }
 .auth-wepeka-note{ font-size:11.5px; color: var(--text-faint); text-align:center; margin:0 0 14px; line-height:1.5; }
+
+/* "By logging in, you agree to …" — links to the terms and privacy pages */
+.auth-legal{ font-size:11.5px; color: var(--text-faint); text-align:center; margin:14px 0 0; line-height:1.55; }
+.auth-legal a{ color: var(--text-muted); text-decoration:underline; text-underline-offset:2px; }
+.auth-legal a:hover{ color: var(--accent); }

@@ -38,6 +38,7 @@ import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
 import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS, buyUrl } from "../site-links.js";
 import { takeBuyIntent } from "../buy-intent.js";
+import { agreeLine } from "../legal-links.js";
 import { showPayLoading, hidePayLoading, hidePayLoadingWhenSnapShows } from "../pay-loading.js";
 // Firestore loads on demand (js/firebase.js loadFirestore): this page is
 // the logged-out landing, and it paints before the SDK is even fetched.
@@ -799,6 +800,7 @@ export function render(root, { user, account, backHref, locked, embed = false, o
           <span class="pricing-foot-sep">·</span>
           <a href="${WEPEKA_CONNECT_URL}" style="color:var(--accent);">${t("auth.wepeka.login")}</a>`}
       </p>
+      <p class="pricing-legal">${agreeLine("legal.agreePay")}</p>
     </div>
     </div>
   `;

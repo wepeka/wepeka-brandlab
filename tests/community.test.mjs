@@ -23,6 +23,11 @@ describe("community links", () => {
     assert.equal(client.BRANDLAB_WA_GROUP_URL, server.BRANDLAB_WA_GROUP_URL);
     assert.deepEqual(client.FOLLOW_INSTAGRAM, server.FOLLOW_INSTAGRAM);
     assert.equal(client.SUPPORT_WA_NUMBER, server.SUPPORT_WA_NUMBER);
+    assert.equal(client.TERMS_URL, server.TERMS_URL);
+    assert.equal(client.PRIVACY_URL, server.PRIVACY_URL);
+    assert.equal(client.REFUND_URL, server.REFUND_URL);
+    assert.equal(client.TERMS_URL, "https://www.wepeka.com/syarat-ketentuan");
+    assert.equal(client.PRIVACY_URL, "https://www.wepeka.com/kebijakan-privasi");
     assert.match(client.BRANDLAB_WA_GROUP_URL, /^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]+$/);
     assert.deepEqual(client.FOLLOW_INSTAGRAM, ["winkhsin", "wepeka.id"]);
     assert.equal(client.instagramUrl("@winkhsin"), "https://www.instagram.com/winkhsin");
@@ -163,6 +168,7 @@ describe("invoice email after a payment", () => {
       assert.ok(part.includes("https://www.instagram.com/winkhsin"));
       assert.ok(part.includes("https://www.instagram.com/wepeka.id"));
       assert.ok(part.includes("https://brandlab.wepeka.com"));
+      for (const url of [server.TERMS_URL, server.REFUND_URL, server.PRIVACY_URL]) assert.ok(part.includes(url), url);
     }
   });
   test("an upgrade shows the plan's price, what was left of the old plan, and what was paid", () => {
