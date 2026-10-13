@@ -2,7 +2,7 @@
 // server-side, from `planKey` alone — the amount is never accepted from the
 // client, same principle wpk-dp's own storefront already uses ("server-
 // authoritative pricing"). See js/views/pricing.js for the caller.
-import { adminDb, requireAuth } from "../_firebaseAdmin.js";
+import { adminDb, requireAuth, authUser } from "../_firebaseAdmin.js";
 import { PLANS, ADDONS, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, SEAT_CHECKOUT_MINUTES, switchQuote, recurringFor, holdKeyFor, seatsTaken, seatPrice } from "../_plans.js";
 import { holdSeat, releaseHold } from "../_seats.js";
 import { RECURRING_ON } from "../_midtrans.js";
@@ -35,8 +35,10 @@ export default async function handler(req, res) {
   }
 
   let uid;
+  let signedIn;
   try {
-    ({ uid } = await requireAuth(req));
+    signedIn = await requireAuth(req);
+    uid = signedIn.uid;
   } catch (err) {
     return res.status(err.status || 401).json({ error: "Sesi tidak valid — coba login ulang." });
   }
@@ -53,7 +55,16 @@ export default async function handler(req, res) {
 
   const accountRef = adminDb().doc(`accounts/${uid}`);
   const accountSnap = await accountRef.get();
-  const account = accountSnap.exists ? accountSnap.data() : null;
+  // No account yet — a member who signed in without ever claiming the
+  // trial, sent here by a "buy" button: a plan can still be bought, and the
+  // webhook creates the account when the payment settles (the same promise
+  // firestore.rules makes: "a first-time purchase with no prior trial is
+  // created by this repo's own Midtrans webhook"). Until then nothing is
+  // written to accounts/, so an abandoned checkout leaves the trial
+  // claimable. Add-ons stay for accounts that exist.
+  const firstPurchase = !accountSnap.exists && !!PLANS[planKey];
+  const buyer = { email: typeof signedIn.email === "string" ? signedIn.email.trim().toLowerCase() : "", displayName: typeof signedIn.name === "string" ? signedIn.name.trim() : "" };
+  const account = accountSnap.exists ? accountSnap.data() : firstPurchase ? { email: buyer.email } : null;
   const open = !!MIDTRANS_SERVER_KEY && !!MIDTRANS_CLIENT_KEY && paymentsOpenFor(uid, account) && account?.status !== "deactivated";
 
   if (statusOnly) {
@@ -116,6 +127,16 @@ export default async function handler(req, res) {
   // so two buyers at the last seat (or the last Rp 499rb seat) can't both
   // get it; the webhook turns the hold into a sale. A quote only looks.
   const db = adminDb();
+  // Who the new account will belong to. A session handed over from
+  // wepeka.com may not carry the email or the name in its token; Firebase
+  // Auth has them.
+  if (firstPurchase && !quoteOnly && !(buyer.email && buyer.displayName)) {
+    const user = await authUser(uid).catch(() => null);
+    buyer.email = buyer.email || String(user?.email || "").trim().toLowerCase();
+    buyer.displayName = buyer.displayName || String(user?.displayName || "").trim();
+    if (!buyer.email) return res.status(400).json({ error: "Akun ini belum punya email — masuk ulang lewat wepeka.com dulu." });
+    account.email = buyer.email;
+  }
   let amount = plan.amount;
   let hold = null;
   let previousHold = null;
@@ -208,6 +229,9 @@ export default async function handler(req, res) {
       // The seat this checkout holds (api/_seats.js): the webhook converts
       // it, an expired/cancelled order gives it back.
       ...(hold ? { hold } : {}),
+      // No account yet: who the webhook creates it for (api/_plans.js
+      // newAccountFields), read off the verified sign-in above.
+      ...(firstPurchase ? { newAccount: buyer } : {}),
       // Buyer's browser context for the webhook's Meta Purchase event (api/_meta.js).
       meta: metaContext(req),
     });

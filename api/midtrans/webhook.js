@@ -7,7 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, newAccountFields, ACCOUNT_COUNTER_DOC, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
 import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
@@ -145,8 +145,11 @@ export default async function handler(req, res) {
   // subscription a second time, take a second Founder slot, or double-count
   // revenue in the admin dashboard's per-account total.
   const slotsRef = plan.slot ? db.doc(SLOTS_DOC) : null;
+  // Only a first purchase without an account (create-transaction's
+  // `newAccount`) needs the next account number.
+  const counterRef = pending.newAccount ? db.doc(ACCOUNT_COUNTER_DOC) : null;
   const firstTime = await db.runTransaction(async (tx) => {
-    const [freshPaymentSnap, accountSnap, slotsSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef), slotsRef ? tx.get(slotsRef) : null]);
+    const [freshPaymentSnap, accountSnap, slotsSnap, counterSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef), slotsRef ? tx.get(slotsRef) : null, counterRef ? tx.get(counterRef) : null]);
     if (!freshPaymentSnap.exists || freshPaymentSnap.data().status !== "pending") return false;
 
     // A Brand Book art style only joins the account's owned list.
@@ -213,6 +216,15 @@ export default async function handler(req, res) {
     // Applied, but worth a look (a Founder who paid Agency's full price, a
     // seat past the cap).
     if (review) patch.paymentIssue = { orderId: order_id, status: review, planKey, at: now };
+    // A member who bought without ever claiming the trial: this payment is
+    // what creates their account, numbered like every other one. (If the
+    // trial was claimed while the checkout was open, the account is there
+    // and only the plan is applied.)
+    if (counterRef && !accountSnap.exists) {
+      const accountNumber = Number(counterSnap?.data()?.next) || 1;
+      Object.assign(patch, newAccountFields(uid, pending.newAccount, accountNumber, now));
+      tx.set(counterRef, { next: accountNumber + 1 }, { merge: true });
+    }
     tx.set(accountRef, patch, { merge: true });
     tx.set(paymentRef, { status: "paid", plan: plan.plan, amount: Number(gross_amount), paidAt: now, ...(decision.scheduled ? { scheduled: true } : {}), ...(review ? { needsReview: review } : {}) }, { merge: true });
     if (seat) writeSeats(tx, slotsRef, slotsSnap, seatFields(plan.slot, { sold: seat.sold, holds: seat.holds }));

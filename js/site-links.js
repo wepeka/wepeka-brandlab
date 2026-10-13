@@ -9,6 +9,10 @@ export const WEPEKA_SITE_URL = "https://www.wepeka.com";
 // here already signed in; logged-out visitors get the sign-up/login screen
 // there first.
 export const WEPEKA_CONNECT_URL = `${WEPEKA_SITE_URL}/brandlab/connect`;
+// The same door for a signed-out visitor who pressed a plan's buy button:
+// sign in (or register) there, then come back with that plan's checkout
+// opening straight away (js/buy-intent.js). `planKey` as in api/_plans.js.
+export const buyUrl = (planKey) => `${WEPEKA_CONNECT_URL}?to=pricing&plan=${encodeURIComponent(planKey)}`;
 
 // Wepeka's Instagram handle (no @) — printed on the shareable campaign
 // story card and put in the caption that gets copied alongside it.

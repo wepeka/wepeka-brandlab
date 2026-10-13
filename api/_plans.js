@@ -353,6 +353,24 @@ export function subscriptionNameFromOrder(orderId) {
   return m ? m[1] : null;
 }
 
+// The account a first purchase creates, for a signed-in member who never
+// claimed the trial (api/midtrans/webhook.js): the same base fields as
+// wpk-dp's createTrialAccount() (src/lib/brandlab-db.ts — keep the two in
+// step), numbered from the same counter. The plan itself comes from
+// settlePlanPurchase's patch. `buyer` is what create-transaction read off
+// the verified sign-in when the checkout was opened.
+export const ACCOUNT_COUNTER_DOC = "meta/accountCounter";
+export function newAccountFields(uid, buyer, accountNumber, now = Date.now()) {
+  return {
+    uid,
+    email: String(buyer?.email || "").trim().toLowerCase(),
+    displayName: String(buyer?.displayName || "").trim().slice(0, 60),
+    accountNumber,
+    username: null,
+    createdAt: now,
+  };
+}
+
 // Mirrors js/account.js accessState() === "paid".
 export function isPaidAccount(account, now = Date.now()) {
   return !!account && account.status === "active" && account.plan !== "free" && account.plan !== "trial"

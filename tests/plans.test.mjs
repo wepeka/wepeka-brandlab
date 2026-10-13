@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { switchQuote, subscriptionName, subscriptionNameFromOrder, recurringFor, MIN_CHARGE } from "../api/_plans.js";
+import { switchQuote, subscriptionName, subscriptionNameFromOrder, recurringFor, MIN_CHARGE, settlePlanPurchase, newAccountFields } from "../api/_plans.js";
 
 const DAY = 86400000;
 const now = Date.UTC(2026, 8, 29);
@@ -58,5 +58,39 @@ describe("auto-renew naming", () => {
     assert.match(recurringFor("addon-brand-sub").slot, /^brand_/);
     assert.equal(recurringFor("founder"), null);
     assert.equal(recurringFor("ai-300"), null);
+  });
+});
+
+// A "buy" button pressed by someone who never claimed the trial: they sign
+// in, pay, and the payment itself creates the account (create-transaction's
+// `newAccount`, webhook.js).
+describe("first purchase without an account", () => {
+  test("no account doc: quoted the full price, as a new plan", () => {
+    assert.deepEqual(switchQuote({ email: "new@kopi.id" }, "founder", 499000, now), { mode: "new", amount: 499000, credit: 0 });
+    assert.deepEqual(switchQuote({}, "starter-monthly", 49000, now), { mode: "new", amount: 49000, credit: 0 });
+  });
+
+  test("settling it on an empty account gives an active Founder plan and takes a seat", () => {
+    const d = settlePlanPurchase({}, "founder", { amount: 499000, price: 499000 }, now);
+    assert.equal(d.issue, undefined);
+    assert.equal(d.takesSeat, true);
+    assert.deepEqual(
+      { plan: d.patch.plan, status: d.patch.status, paidAt: d.patch.paidAt, trialEndsAt: d.patch.trialEndsAt, subscriptionExpiresAt: d.patch.subscriptionExpiresAt, lifetimePaid: d.patch.lifetimePaid },
+      { plan: "founder", status: "active", paidAt: now, trialEndsAt: null, subscriptionExpiresAt: null, lifetimePaid: 499000 }
+    );
+  });
+
+  test("a subscription bought first runs one period from the payment", () => {
+    const d = settlePlanPurchase({}, "starter-monthly", { amount: 49000, price: 49000 }, now);
+    assert.equal(d.patch.plan, "starter");
+    assert.equal(d.patch.status, "active");
+    assert.ok(d.patch.subscriptionExpiresAt > now);
+  });
+
+  test("the account it creates carries the same base fields as a claimed trial", () => {
+    assert.deepEqual(newAccountFields("u9", { email: " Owner@Kopi.ID ", displayName: " Rina " }, 42, now), {
+      uid: "u9", email: "owner@kopi.id", displayName: "Rina", accountNumber: 42, username: null, createdAt: now,
+    });
+    assert.deepEqual(newAccountFields("u9", undefined, 1, now), { uid: "u9", email: "", displayName: "", accountNumber: 1, username: null, createdAt: now });
   });
 });

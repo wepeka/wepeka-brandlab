@@ -458,7 +458,7 @@ export default {
         },
         {
           "q": "Gimana cara ambil kursi Founder?",
-          "a": "Daftar akun Wepeka (gratis), klaim trial {days} hari, lalu di dalam Brandlab buka halaman paket dan pilih Founder Lifetime. Bayar lewat Midtrans (transfer bank, e-wallet, QRIS). Begitu pembayaran masuk, akun kamu langsung jadi Founder — trial-nya nggak perlu dihabiskan dulu.",
+          "a": "Klik Ambil kursi Founder, masuk atau daftar akun Wepeka (gratis), lalu pembayarannya langsung terbuka lewat Midtrans (transfer bank, e-wallet, QRIS). Begitu pembayaran masuk, akun kamu langsung jadi Founder. Nggak perlu klaim trial dulu, dan kalau lagi trial, nggak perlu dihabiskan.",
           "aClosed": "Segera hadir. Pembayaran online sedang disiapkan dan nanti dibuka langsung di website ini — kursi Founder dibeli di halaman paket Brandlab, tanpa perlu chat. Belum punya akun? Daftar dulu (gratis) — trial-nya bisa jalan sambil menunggu."
         }
       ]

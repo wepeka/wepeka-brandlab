@@ -4,6 +4,9 @@
 //    sends them to wepeka.com (WEPEKA_CONNECT_URL) instead of paying
 //    directly — account creation and the 30-day trial claim both happen
 //    there now (Fase 2 of .claude/handoff-satu-akun.md), never on Brandlab.
+//    A plan's buy button carries its plan along (site-links.js buyUrl), so
+//    the checkout opens by itself once they are back here signed in
+//    (js/buy-intent.js) — no trial to claim first, no second click.
 //  - Logged-in accounts with no running access (`opts.locked`, from
 //    main.js's onAccountChange: state "none" or "expired") — an ended
 //    trial, a lapsed subscription, or a Firebase user who's never claimed a
@@ -33,7 +36,9 @@ import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
-import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS } from "../site-links.js";
+import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS, buyUrl } from "../site-links.js";
+import { takeBuyIntent } from "../buy-intent.js";
+import { showPayLoading, hidePayLoading, hidePayLoadingWhenSnapShows } from "../pay-loading.js";
 // Firestore loads on demand (js/firebase.js loadFirestore): this page is
 // the logged-out landing, and it paints before the SDK is even fetched.
 import { db as fdb, auth, loadFirestore } from "../firebase.js";
@@ -116,12 +121,22 @@ async function showPaymentsClosed() {
 // `onSuccess` lets a caller outside this page (the Brand Book style picker)
 // react once Snap reports success; the unlock itself still only ever comes
 // from the webhook.
+let payStarting = false;
 export async function payPlan(planKey, uid, { onSuccess } = {}) {
   if (!uid) {
     toast(t("pricing.err.needLogin"), "error");
     location.hash = "#/login";
     return;
   }
+  // One checkout at a time: a double click must not open two (and hold two
+  // Founder seats).
+  if (payStarting) return;
+  payStarting = true;
+  // Up from the click until Midtrans's own window is there, so the wait
+  // reads as "working on it" (js/pay-loading.js). Every way out below takes
+  // it down.
+  showPayLoading();
+  let snapOpening = false;
   try {
     // The server derives uid from this token (Authorization header), never
     // from the request body — see api/midtrans/create-transaction.js.
@@ -136,10 +151,12 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     // plan, a second queued downgrade) is said before "coming soon" or any
     // payment is offered.
     if (status.refused) {
+      hidePayLoading();
       await showRefused(status.refused, planKey);
       return;
     }
     if (!status.open) {
+      hidePayLoading();
       await showPaymentsClosed();
       return;
     }
@@ -148,6 +165,7 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     // one (credit now, or queued until it ends) before any payment opens.
     const confirmed = await confirmPlanSwitch(planKey, idToken);
     if (!confirmed) return;
+    showPayLoading(); // back up if that question took it down
     const res = await fetch("/api/midtrans/create-transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
@@ -173,8 +191,13 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
       onPending: () => { toast(t("pricing.pay.pending")); showPendingHelp("snap"); },
       onError: () => toast(t("pricing.pay.error"), "error"),
     });
+    snapOpening = true;
+    hidePayLoadingWhenSnapShows();
   } catch (err) {
     toast(err.message || t("pricing.err.start"), "error");
+  } finally {
+    payStarting = false;
+    if (!snapOpening) hidePayLoading();
   }
 }
 
@@ -222,6 +245,7 @@ async function confirmPlanSwitch(planKey, idToken) {
   const q = await res.json().catch(() => null);
   if (!res.ok) {
     if (q?.code) {
+      hidePayLoading();
       await showRefused(q, planKey);
       return null;
     }
@@ -254,6 +278,7 @@ async function confirmPlanSwitch(planKey, idToken) {
   }
   if (q.forfeit) message += `<br><br><b>${t("pricing.switch.forfeitNote", vars)}</b>`;
   const { confirmDialog } = await import("../modals.js");
+  hidePayLoading();
   const ok = await confirmDialog({ title, message, confirmLabel: t(q.forfeit ? "pricing.switch.payForfeit" : "pricing.switch.pay", vars), danger: !!q.forfeit });
   return ok ? { acceptForfeit: !!q.forfeit } : null;
 }
@@ -361,13 +386,13 @@ const featureVars = (plan, f) => (f === "bookStyles" ? { price: rp(BOOK_STYLES_V
 const featuresHTML = (plan) => plan.features.map((f) => `<li>${check()}<span>${t(`pricing.f.${f}`, featureVars(plan, f))}</span></li>`).join("");
 
 // Logged in → pay for real. Logged out → wepeka.com (register or log in
-// there, then SSO back here already signed in), which starts the trial;
-// the plan is picked again from inside once they've seen the product.
+// there, then SSO back here already signed in) with the plan riding along,
+// so its checkout opens the moment they are back (js/buy-intent.js).
 function ctaHTML(planKey, label, uid, cls = "btn-secondary") {
   const classes = `btn ${cls} btn-block pricing-cta`;
   return uid
     ? `<button type="button" class="${classes}" data-pay="${planKey}">${label}</button>`
-    : `<a class="${classes}" data-plan="${planKey}" href="${WEPEKA_CONNECT_URL}">${label}</a>`;
+    : `<a class="${classes}" data-plan="${planKey}" href="${buyUrl(planKey)}">${label}</a>`;
 }
 const soldOutHTML = (cls = "btn-primary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${t("pricing.soldOut")}</button>`;
 const disabledCtaHTML = (label, cls = "btn-secondary") => `<button type="button" class="btn ${cls} btn-block pricing-cta" disabled>${label}</button>`;
@@ -573,7 +598,7 @@ function lockedBannerHTML(account) {
     return `<section class="pricing-locked-banner">
       <h2>${t("pricing.locked.noneTitle")}</h2>
       <p>${t("pricing.locked.noneBody")}</p>
-      <a class="btn btn-primary pricing-cta" href="${WEPEKA_SITE_URL}/community/brandlab">${t("pricing.locked.claimCta")}</a>
+      <a class="btn btn-secondary pricing-cta" href="${WEPEKA_SITE_URL}/community/brandlab">${t("pricing.locked.claimCta")}</a>
     </section>`;
   }
   return `<section class="pricing-locked-banner">
@@ -775,6 +800,13 @@ export function render(root, { user, account, backHref, locked, embed = false, o
   };
 
   paint();
+
+  // A buy button pressed before signing in (js/buy-intent.js): its checkout
+  // opens now, without asking for the same click again.
+  if (uid && !embed) {
+    const wanted = takeBuyIntent();
+    if (wanted) payPlan(wanted, uid, { onSuccess: enterAppWhenPaid });
+  }
 
   paymentStatus().then((status) => {
     if (!root.isConnected) return;

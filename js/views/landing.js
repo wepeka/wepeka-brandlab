@@ -15,6 +15,11 @@
 //
 // In-page links are buttons that scroll (data-lp-goto), never "#anchor"
 // hrefs: while signed out, every hashchange repaints this page (js/main.js).
+//
+// Every price button (the hero's Lifetime, a plan card's, the closing
+// band's Founder) is a buy link: sign in or register on wepeka.com, then the
+// checkout of that plan opens by itself back here (site-links.js buyUrl,
+// js/buy-intent.js). No stop at a second plans page in between.
 import { icon } from "../icons.js";
 import { qs, qsa, escapeHtml } from "../dom.js";
 import { t, getLang } from "../i18n.js";
@@ -22,7 +27,8 @@ import { gaEvent } from "../analytics.js";
 import { rp } from "../purchase.js";
 import { TRIAL_DAYS } from "../account.js";
 import { TRIAL_AI_PER_DAY } from "../ai-usage.js";
-import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER } from "../site-links.js";
+import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, buyUrl } from "../site-links.js";
+import { showPayLoading, hidePayLoading } from "../pay-loading.js";
 import { localNumber } from "../upgrade-doors.js";
 import { render as renderPlans, SUBSCRIPTIONS, STUDIO, FOUNDER, AGENCY, FOUNDER_SLOT_CAPS, BOOK_STYLES_VALUE, LIFETIME_NORMAL_PRICE, AGENCY_NORMAL_PRICE } from "./pricing.js";
 
@@ -158,10 +164,10 @@ const LIVE = {
   heroCta(facts, returning) {
     const now = founderNow(facts.founderTaken);
     const buy = now.soldOut ? "" : `
-      <button type="button" class="btn btn-secondary lp-btn lp-buy" data-lp-goto="harga">
+      <a class="btn btn-secondary lp-btn lp-buy" href="${buyUrl(FOUNDER.key)}" data-lp-buy="hero">
         <span class="lp-buy-tag">${x(COPY.ctaBuyTag)}</span>
         ${x(COPY.ctaBuy, { price: "" }).trim()} <s>${rp(LIFETIME_NORMAL_PRICE)}</s> ${rp(now.wave.price)}${arrow()}
-      </button>`;
+      </a>`;
     if (returning) {
       return `
         <div class="lp-hero-btns">
@@ -195,7 +201,7 @@ const LIVE = {
       <div class="lp-hero-btns">
         ${returning ? enterLink("final") : ""}
         ${trialLink("final", x(c.trialCta), returning ? "btn-secondary" : "lp-btn--pink")}
-        ${now.soldOut ? "" : `<button type="button" class="btn btn-secondary lp-btn" data-lp-goto="harga">${x(c.founderCta)}${arrow()}</button>`}
+        ${now.soldOut ? "" : `<a class="btn btn-secondary lp-btn" href="${buyUrl(FOUNDER.key)}" data-lp-buy="final">${x(c.founderCta)}${arrow()}</a>`}
       </div>
       ${counter || (now.soldOut ? "" : `<p class="lp-final-note">${x(F.slotsChipUnknown)}</p>`)}
       ${returning ? "" : `<p class="lp-hero-alt">${t("pricing.alreadyHave")} <a href="#/login" data-lp-enter="final">${t("landing.enter")}${icon("arrowRight", { size: 13 })}</a></p>`}`;
@@ -811,9 +817,16 @@ export function render(root, { returning = false, goto = null } = {}) {
 
   // ----- clicks -----
   page.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-lp-goto],[data-lp-play],[data-lp-watch],[data-lp-topic],[data-lp-more],[data-lp-zoom],[data-lp-cta],[data-lp-enter]");
+    const el = e.target.closest("[data-lp-goto],[data-lp-play],[data-lp-watch],[data-lp-topic],[data-lp-more],[data-lp-zoom],[data-lp-cta],[data-lp-enter],[data-lp-buy],a[data-plan]");
     if (!el) return;
     const d = el.dataset;
+    // A buy link (here or on a plan card): it leaves for wepeka.com to sign
+    // in, which takes a moment — say where it is going meanwhile.
+    if (d.lpBuy || d.plan) {
+      showPayLoading("pricing.pay.leaving", "pricing.pay.leavingNote");
+      gaEvent("brandlab_cta", { location: d.lpBuy || "plans", intent: "buy", plan: d.plan || FOUNDER.key });
+      return;
+    }
     const video = items.find((item) => item.id === (d.lpPlay || d.lpWatch));
     if (d.lpGoto) scrollTo(d.lpGoto);
     else if (d.lpPlay) video && play(video, d.lpPlace || "stage");
@@ -855,6 +868,13 @@ export function render(root, { returning = false, goto = null } = {}) {
   window.addEventListener("scroll", onScroll, { passive: true });
   window.scrollTo(0, 0);
   onScroll();
+  // Back from the sign-in page with the browser's Back button: the page
+  // comes out of the back/forward cache as it was left, sheet included.
+  const onShow = (e) => {
+    if (!root.isConnected) window.removeEventListener("pageshow", onShow);
+    else if (e.persisted) hidePayLoading();
+  };
+  window.addEventListener("pageshow", onShow);
 
   if (goto && goto !== "video") scrollTo(goto, false);
 }

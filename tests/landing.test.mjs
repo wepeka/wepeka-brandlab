@@ -13,7 +13,15 @@ globalThis.fetch = async () => {
 const { landingHTML, founderNow, buildLibrary } = await import("../js/views/landing.js");
 const { render: renderPlans } = await import("../js/views/pricing.js");
 const { t } = await import("../js/i18n.js");
-const { WEPEKA_CONNECT_URL } = await import("../js/site-links.js");
+const { WEPEKA_CONNECT_URL, buyUrl } = await import("../js/site-links.js");
+const { rememberBuyIntent, takeBuyIntent } = await import("../js/buy-intent.js");
+
+const mem = new Map();
+globalThis.sessionStorage = {
+  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+  setItem: (k, v) => void mem.set(k, String(v)),
+  removeItem: (k) => void mem.delete(k),
+};
 
 const live = (founderTaken) => ({ live: true, founderTaken, agencyTaken: 0, payOpen: true });
 const heroOf = (html) => html.slice(html.indexOf('class="lp-hero"'), html.indexOf('id="lp-harga"'));
@@ -65,6 +73,12 @@ describe("front page", () => {
     const gone = landingHTML({ facts: live(50) });
     assert.ok(!gone.includes("lp-seats-n"));
     assert.ok(!gone.includes("lp-buy"), "no Lifetime button either");
+  });
+
+  test("the price buttons are buy links for Founder, not a scroll to the plans", () => {
+    const html = landingHTML({ facts: live(2) });
+    const buys = [...html.matchAll(/<a [^>]*href="([^"]+)"[^>]*data-lp-buy="(\w+)"/g)].map((m) => `${m[2]} ${m[1]}`);
+    assert.deepEqual(buys, [`hero ${buyUrl("founder")}`, `final ${buyUrl("founder")}`]);
   });
 
   test("the Founder wave follows the seats taken", () => {
@@ -123,6 +137,31 @@ describe("pricing page, embedded in the front page", () => {
     assert.ok(!html.includes("pricing-hero") && !html.includes("pricing-faq") && !html.includes("pricing-shell"));
     assert.match(html, /<details class="pricing-other" id="ultimate" open>/);
     assert.ok(!html.includes("data-pay="), "a signed-out visitor never pays here");
+  });
+
+  test("each plan's button carries its own plan to the sign-in door", () => {
+    const html = paint({ embed: true });
+    const links = [...html.matchAll(/data-plan="([^"]+)" href="([^"]+)"/g)];
+    assert.deepEqual(links.map((m) => m[1]).sort(), ["founder", "founder-ultimate", "starter-monthly", "studio-monthly", "studio-yearly"]);
+    for (const [, planKey, href] of links) assert.equal(href, buyUrl(planKey));
+  });
+
+  test("a remembered plan is opened by the signed-in plans page only, and only once", async () => {
+    rememberBuyIntent("founder");
+    paint({ embed: true });
+    paint({});
+    assert.equal(mem.size, 1, "a signed-out page leaves it alone");
+    // The checkout it opens stops at "no session" here (no browser, no
+    // Firebase user) and says so in a toast, which needs somewhere to go.
+    const getElementById = document.getElementById;
+    document.getElementById = () => ({ appendChild() {}, querySelector: () => null });
+    try {
+      paint({ user: { uid: "u1", email: "owner@kopi.id" }, account: null, locked: true });
+      assert.equal(takeBuyIntent(), null, "taken by the checkout it opened");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    } finally {
+      document.getElementById = getElementById;
+    }
   });
 
   test("it says nothing about seats or checkout until the server has answered", () => {

@@ -36,6 +36,7 @@ import { auth, wipeLocalFirestore, claimLocalCache } from "./firebase.js";
 import { renderAuthScreen } from "./views/login.js";
 import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
+import { rememberBuyIntent } from "./buy-intent.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
 import { icon } from "./icons.js";
@@ -774,10 +775,14 @@ async function wepekaTokenIdentity(token) {
 }
 
 async function consumeWepekaToken() {
-  const m = location.hash.match(/^#\/sso\?t=([^&]+)(?:&to=([a-z]+))?/);
+  const m = location.hash.match(/^#\/sso\?t=([^&]+)(?:&to=([a-z]+))?(?:&plan=([a-z-]+))?/);
   if (!m) return;
   ssoPending = true;
   const token = decodeURIComponent(m[1]);
+  // A "buy" button's plan (wepeka.com passes it through sign-in): kept for
+  // the plans page, which opens its checkout as soon as it is on screen.
+  // Ignored unless it names a plan; it carries no authority of its own.
+  if (m[3]) rememberBuyIntent(m[3]);
   // Only "pricing" today — an expired/lapsed account sent back in from
   // /brandlab/connect?to=pricing (wpk-dp) so it lands straight on the
   // pricing screen instead of the locked app shell. No authority on its

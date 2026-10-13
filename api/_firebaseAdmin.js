@@ -23,6 +23,12 @@ export function adminDb() {
   return getFirestore(adminApp());
 }
 
+// The Firebase Auth record behind a uid (email, display name), for when a
+// sign-in token doesn't carry them itself.
+export function authUser(uid) {
+  return getAuth(adminApp()).getUser(uid);
+}
+
 // Verifies the caller's Firebase ID token from the Authorization header and
 // returns its decoded claims (including `uid`). Endpoints that must act on
 // behalf of a specific account (payments, above all) call this instead of
