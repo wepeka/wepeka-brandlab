@@ -1,5 +1,6 @@
 // Pricing page. Three audiences land here:
-//  - Logged-out visitors (no `opts.user`) — the marketing page; every CTA
+//  - Logged-out visitors (no `opts.user`) — the plans inside the front page
+//    (js/views/landing.js renders this module with `opts.embed`); every CTA
 //    sends them to wepeka.com (WEPEKA_CONNECT_URL) instead of paying
 //    directly — account creation and the 30-day trial claim both happen
 //    there now (Fase 2 of .claude/handoff-satu-akun.md), never on Brandlab.
@@ -510,10 +511,10 @@ function agencyCtaHTML(uid, agencySoldOut, owned) {
 // Studio + Agency Lifetime, collapsed: a different buyer (people who run
 // client brands), so their prices stay out of an owner's line of sight —
 // open from the start for a Founder, whose one upgrade lives here.
-function agencyHTML(uid, agencySoldOut, owned) {
+function agencyHTML(uid, agencySoldOut, owned, open = false) {
   const perBrand = rp(Math.round(AGENCY.price / AGENCY.brands / 1000) * 1000);
   return `
-    <details class="pricing-other" id="ultimate" ${owned === "founder" ? "open" : ""}>
+    <details class="pricing-other" id="ultimate" ${owned === "founder" || open ? "open" : ""}>
       <summary>${t("pricing.agency.title")}${icon("chevronDown", { size: 16 })}</summary>
       ${otherPlanHTML(STUDIO, uid, owned)}
       <div class="pricing-other-row">
@@ -643,7 +644,11 @@ function addonsHTML(account) {
     </section>`;
 }
 
-export function render(root, { user, account, backHref, locked } = {}) {
+// `embed`: only the plans themselves (cards, trust lines, agency plans, the
+// Founder note), for the front page, which brings its own header, hero and
+// FAQ. `onFacts` hears what the server said about seats and checkout, so
+// that page's seat counters show the same numbers as the cards.
+export function render(root, { user, account, backHref, locked, embed = false, onFacts = null } = {}) {
   const uid = user?.uid || null;
   const owned = uid ? ownedLifetime(account) : null;
   // Add-ons are a second decision: only accounts that already pay see them.
@@ -654,6 +659,12 @@ export function render(root, { user, account, backHref, locked } = {}) {
   // via Midtrans" line for the "coming soon" note (api/_payments.js).
   let payState = null;
   const sel = { brands: takePricingBrands(), yearly: false };
+  const tellFacts = () => onFacts?.({
+    live: !!slots,
+    founderTaken: seatsTakenOf(slots, FOUNDER.slotField, Date.now(), myHold),
+    agencyTaken: seatsTakenOf(slots, AGENCY.slotField, Date.now(), myHold),
+    payOpen: payState ? !!payState.open : null,
+  });
 
   const paint = () => {
   const open = openTier(slots ? seatsTakenOf(slots, FOUNDER.slotField, Date.now(), myHold) : null);
@@ -670,11 +681,30 @@ export function render(root, { user, account, backHref, locked } = {}) {
     normal: rp(LIFETIME_NORMAL_PRICE),
   };
 
+  const waysHTML = `
+      <section class="pricing-ways-section">
+        ${owned ? ownedNoteHTML(owned) : ""}
+        ${payState && !payState.open ? `
+          <div class="pricing-pending-help pricing-closed-note" role="status">
+            <b>${t("pricing.closed.title")}</b>
+            <p>${t(closedNoteKey(uid, account))}</p>
+          </div>` : ""}
+        <div class="pricing-ways">
+          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}
+          ${subscriptionCardHTML(sel, uid, owned)}
+        </div>
+        ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>`}
+        ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
+        ${agencyHTML(uid, agencySoldOut, owned, embed)}
+      </section>
+
+      <p class="pricing-founder-note">${t("pricing.renewNote")} ${t("pricing.founder.note")}</p>`;
+
   // Laid out like wepeka.com/brandlab's offer section (same purple mesh,
   // pink Founder card, rounded cards), but trimmed to what it takes to
   // decide: a short hero, the two cards straight away (Founder first),
   // one trust line, then everything secondary folded away.
-  root.innerHTML = `
+  root.innerHTML = embed ? `<div class="pricing-embed">${waysHTML}</div>` : `
     <div class="pricing-page">
     <div class="pricing-shell">
       <div class="pricing-header">
@@ -695,23 +725,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
         <p class="pricing-sub">${t("pricing.hero.subShort")}</p>
       </section>
 
-      <section class="pricing-ways-section">
-        ${owned ? ownedNoteHTML(owned) : ""}
-        ${payState && !payState.open ? `
-          <div class="pricing-pending-help pricing-closed-note" role="status">
-            <b>${t("pricing.closed.title")}</b>
-            <p>${t(closedNoteKey(uid, account))}</p>
-          </div>` : ""}
-        <div class="pricing-ways">
-          ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}
-          ${subscriptionCardHTML(sel, uid, owned)}
-        </div>
-        ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>`}
-        ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
-        ${agencyHTML(uid, agencySoldOut, owned)}
-      </section>
-
-      <p class="pricing-founder-note">${t("pricing.renewNote")} ${t("pricing.founder.note")}</p>
+      ${waysHTML}
 
       ${showAddons ? addonsHTML(account) : ""}
 
@@ -765,6 +779,7 @@ export function render(root, { user, account, backHref, locked } = {}) {
   paymentStatus().then((status) => {
     if (!root.isConnected) return;
     payState = status;
+    tellFacts();
     if (!status.open) repaintInPlace();
   });
 
@@ -777,9 +792,13 @@ export function render(root, { user, account, backHref, locked } = {}) {
       const before = openTier(null);
       slots = snap.exists() ? snap.data() : {};
       myHold = key;
+      tellFacts();
       const agencyGone = seatsTakenOf(slots, AGENCY.slotField, Date.now(), myHold) >= FOUNDER_SLOT_CAPS[AGENCY.slotField];
       if (openTier(seatsTakenOf(slots, FOUNDER.slotField, Date.now(), myHold)) === before && !agencyGone) return;
       repaintInPlace();
     })
     .catch((err) => console.warn("Founder slot count unavailable", err));
 }
+
+// The plan table, for the front page's copy (its {tokens}).
+export { SUBSCRIPTIONS, STUDIO, FOUNDER, AGENCY, FOUNDER_SLOT_CAPS, BOOK_STYLES_VALUE, LIFETIME_NORMAL_PRICE, AGENCY_NORMAL_PRICE };

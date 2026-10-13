@@ -234,10 +234,17 @@ function lockedScreenHTML(email) {
   `;
 }
 
+// Bumped on every boot(): a front page whose module is still downloading
+// paints only if nothing else (the login screen, the app) has taken the
+// screen since.
+let landingToken = 0;
+let landingView = null; // js/views/landing.js, once downloaded
+
 async function boot(user) {
   // Signing into another account from an SSO link: the page reloads as soon
   // as that sign-in lands, onto a fresh Firestore client (consumeWepekaToken).
   if (switchingAccount) return;
+  const token = ++landingToken;
   if (!user && ssoPending) {
     showLoading();
     return;
@@ -260,15 +267,39 @@ async function boot(user) {
     setCachedAccount(null);
     // startsWith, not ===, so a query string on the hash (there is none
     // today, but there was historically) still lands on the login screen
-    // instead of falling through to the pricing screen.
-    const showLogin = isPaywallUnlocked() || location.hash.startsWith("#/login");
-    if (!showLogin) {
+    // instead of falling through to the front page.
+    if (location.hash.startsWith("#/login")) {
+      app.innerHTML = `<main class="view" id="auth-root" style="padding:0;max-width:none;"></main>`;
+      renderAuthScreen(document.getElementById("auth-root"));
+      return;
+    }
+    // Everyone else who is not signed in gets the front page: what Brandlab
+    // is, the plans, the guide videos (js/views/landing.js). A browser that
+    // has signed in before sees "Masuk ke Lab-mu" as its main button instead
+    // of being dropped on the login screen. Loaded on demand — signed-in
+    // sessions never download it — with the loader up until it arrives;
+    // coming back from the login screen it is already here, so no loader.
+    if (!landingView) {
+      showLoading();
+      try {
+        landingView = await import("./views/landing.js");
+      } catch (err) {
+        // The page's own module didn't arrive (a dropped connection): the
+        // plans alone, which are already in the main bundle.
+        console.warn("[landing] unavailable, showing the plans only", err);
+      }
+      if (token !== landingToken || lastUser) return; // signed in, or the login screen, meanwhile
+    }
+    if (!landingView) {
       app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
       renderPricingScreen(document.getElementById("pricing-root"));
       return;
     }
-    app.innerHTML = `<main class="view" id="auth-root" style="padding:0;max-width:none;"></main>`;
-    renderAuthScreen(document.getElementById("auth-root"));
+    app.innerHTML = `<main class="view" id="landing-root" style="padding:0;max-width:none;"></main>`;
+    landingView.render(document.getElementById("landing-root"), {
+      returning: isPaywallUnlocked(),
+      goto: location.hash.startsWith("#/pricing") ? "harga" : null,
+    });
     return;
   }
 

@@ -286,7 +286,7 @@ export default {
   "auth.err.popupClosed": { en: "The Google sign-in window was closed before finishing.", id: "Jendela login Google ditutup sebelum selesai." },
   "auth.err.popupBlocked": { en: "Your browser blocked the Google sign-in pop-up — allow pop-ups and try again.", id: "Browser memblokir pop-up login Google — izinkan pop-up, lalu coba lagi." },
   "auth.err.generic": { en: "Couldn't log in.", id: "Gagal masuk." },
-  "auth.closeTitle": { en: "Back to wepeka.com", id: "Kembali ke wepeka.com" },
+  "auth.closeTitle": { en: "Back to the front page", id: "Kembali ke halaman depan" },
   "auth.login.title": { en: "Welcome back", id: "Selamat datang kembali" },
   "auth.login.sub": { en: "Log in to continue to your brands.", id: "Masuk untuk lanjut ke brand kamu." },
   "auth.login.cta": { en: "Log in", id: "Masuk" },
@@ -487,6 +487,16 @@ export default {
   "pricing.stack.totalDesc": { en: "Once. No monthly bill.", id: "Sekali. Tanpa tagihan bulanan." },
   "pricing.stack.fine": { en: "Agency rates are a typical range for small-business accounts. Brandlab doesn't design or post for you — it gives you the strategy, ideas, schedule and evaluation to run it yourself.", id: "Harga agency adalah kisaran umum untuk akun UMKM. Brandlab nggak bikinin desain atau postingin kontenmu — Brandlab kasih strategi, ide, jadwal, dan evaluasinya supaya kamu bisa jalanin sendiri." },
   "pricing.alreadyHave": { en: "Already have an account?", id: "Sudah punya akun?" },
+  // Front page for signed-out visitors (js/views/landing.js); the page's own
+  // copy lives in js/landing-copy.<lang>.js.
+  "landing.enter": { en: "Enter your Lab", id: "Masuk ke Lab-mu" },
+  "landing.tryShort": { en: "Try free", id: "Coba gratis" },
+  "landing.nav.label": { en: "On this page", id: "Di halaman ini" },
+  "landing.nav.plans": { en: "Pricing", id: "Harga" },
+  "landing.nav.videos": { en: "Videos", id: "Video" },
+  "landing.nav.features": { en: "Features", id: "Fitur" },
+  "landing.nav.faq": { en: "FAQ", id: "FAQ" },
+  "landing.foot": { en: "Wepeka Brandlab is part of", id: "Wepeka Brandlab bagian dari" },
   "pricing.loginCta": { en: "Log in", id: "Masuk" },
   // "Impor JSON" refused before anything is written (js/account.js checkImport).
   "pricing.import.tooBig": { en: "This backup file is too big (over {mb} MB).", id: "File backup ini terlalu besar (lebih dari {mb} MB)." },

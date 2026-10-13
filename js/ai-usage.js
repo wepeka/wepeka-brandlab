@@ -30,6 +30,9 @@ const PLAN_QUOTA = {
   "founder-ultimate": { period: "day", limit: 100 },
 };
 
+// What a trial gets per day, for the front page's copy (js/views/landing.js).
+export const TRIAL_AI_PER_DAY = PLAN_QUOTA.trial.limit;
+
 function planQuota() {
   return PLAN_QUOTA[getCachedAccount()?.plan] || { period: "day", limit: DEFAULT_AI_DAILY_LIMIT };
 }
