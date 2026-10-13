@@ -30,6 +30,20 @@ describe("pricing page", () => {
     assert.match(html, /href="#\/login" id="pricing-login"/);
   });
 
+  test("under the plans: BCA is still in process, and the admin's WhatsApp is the way to pay with it", () => {
+    const bankHref = (html) => html.match(/pricing-bank-note[\s\S]*?href="([^"]+)"/)?.[1] || "";
+    const html = paint({ user, account: { plan: "trial", status: "active", trialEndsAt: Date.now() + 86400000 } });
+    assert.ok(html.includes(t("pricing.bank.note")));
+    assert.ok(html.includes(t("pricing.bank.cta")));
+    assert.ok(html.indexOf("pricing-bank-note") > html.indexOf(t("pricing.trust")), "right under the payment line");
+    assert.match(bankHref(html), /^https:\/\/wa\.me\/6285196627609\?text=/);
+    assert.match(decodeURIComponent(bankHref(html)), /BCA.*owner@kopi\.id/);
+    // Signed out: the same note, without an account email in the message.
+    const guest = decodeURIComponent(bankHref(paint({})));
+    assert.match(guest, /BCA/);
+    assert.doesNotMatch(guest, /Email akun|undefined/);
+  });
+
   test("a trial account can buy every plan", () => {
     const html = paint({ user, account: { plan: "trial", status: "active", trialEndsAt: Date.now() + 86400000 } });
     assert.deepEqual(payButtons(html).sort(), ["founder", "founder-ultimate", "starter-monthly", "studio-monthly", "studio-yearly"].sort());

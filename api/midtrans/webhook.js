@@ -14,6 +14,7 @@ import { sendMetaEvent } from "../_meta.js";
 import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isSettled, notificationAction } from "../_payments.js";
 import { sendEmail, emailConfigured } from "../_email.js";
 import { composePaidEmail } from "../_community.js";
+import { invoiceNumber, paymentMethodLabel } from "../_invoice.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -63,7 +64,7 @@ export default async function handler(req, res) {
   // subscription it is. Same signed notification as any payment.
   const subName = !paymentSnap.exists ? subscriptionNameFromOrder(order_id) : null;
   if (subName) {
-    return res.status(200).json(await applyRenewalCharge(db, { orderId: order_id, name: subName, grossAmount: Number(gross_amount), paid: isSettled(transaction_status, fraud_status) }));
+    return res.status(200).json(await applyRenewalCharge(db, { orderId: order_id, name: subName, grossAmount: Number(gross_amount), paid: isSettled(transaction_status, fraud_status), notification: body }));
   }
   if (!paymentSnap.exists) {
     // Unknown order: nothing to unlock. Answer 200 anyway — the dashboard's
@@ -251,25 +252,34 @@ export default async function handler(req, res) {
       externalId: uid,
       customData: { currency: "IDR", value: Number(gross_amount), content_ids: [planKey], content_name: plan.label || planKey, content_type: "product", order_id },
     });
-    // "Pembayaran diterima" + the WhatsApp group and Instagram links, once
-    // per order that was actually applied. Off while Resend isn't set up
-    // (api/_email.js); never fails the notification.
+    // The invoice (+ the WhatsApp group and Instagram links), once per
+    // order that was actually applied. The email is off while Resend isn't
+    // set up (api/_email.js); never fails the notification.
     if (firstTime === true) {
-      await sendPaidEmail({ uid, buyer, plan, planKey, orderId: order_id, amount: Number(gross_amount) }).catch((err) => console.error("Midtrans webhook: paid email failed", order_id, err?.message));
+      await sendInvoice({
+        paymentRef, uid, buyer, label: plan.label || planKey, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]), lifetime: isLifetimePlan(plan.plan),
+        orderId: order_id, amount: Number(gross_amount), price: pending.price, credit: pending.credit, paidAt: now, notification: body,
+      }).catch((err) => console.error("Midtrans webhook: invoice failed", order_id, err?.message));
     }
   }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
 }
 
-async function sendPaidEmail({ uid, buyer, plan, planKey, orderId, amount }) {
+// The invoice number and how it was paid go on the payment record either
+// way (the admin can quote them); the email itself needs Resend.
+async function sendInvoice({ paymentRef, uid, buyer, label, isPlan, renewal = false, lifetime = false, orderId, amount, price, credit, paidAt, notification }) {
+  const invoiceNo = invoiceNumber(orderId, paidAt);
+  const method = paymentMethodLabel(notification);
+  await paymentRef.set({ invoiceNo, ...(method ? { paymentMethod: method } : {}) }, { merge: true });
   if (!emailConfigured()) return;
   // accounts/{uid}.email is the server's own copy; Firebase Auth is the fallback.
   const user = buyer.email && buyer.displayName ? null : await getAuth(getApps()[0]).getUser(uid).catch(() => null);
   const to = String(buyer.email || user?.email || "").trim();
   if (!to) return;
-  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", label: plan.label || planKey, amount, orderId, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]), lifetime: isLifetimePlan(plan.plan) });
+  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", email: to, label, amount, price, credit, orderId, invoiceNo, paidAt, method, isPlan, renewal, lifetime });
   const r = await sendEmail({ to, ...mail, idempotencyKey: `brandlab-paid-${orderId}` });
-  if (!r.ok && !r.skipped) console.error("Midtrans webhook: paid email not sent", orderId, r.error || r.status);
+  if (r.ok) await paymentRef.set({ invoiceEmailedAt: Date.now() }, { merge: true });
+  else if (!r.skipped) console.error("Midtrans webhook: invoice email not sent", orderId, r.error || r.status);
 }
 
 // After a paid order: a plan purchase stops the old plan's auto-renew (plans
@@ -309,7 +319,7 @@ async function syncAutoRenew(db, { uid, planKey, pending, orderId }) {
 
 // One auto-renew charge: add one more period to whatever it renews.
 // payments/<order_id> makes a retried notification a no-op.
-async function applyRenewalCharge(db, { orderId, name, grossAmount, paid }) {
+async function applyRenewalCharge(db, { orderId, name, grossAmount, paid, notification }) {
   if (!paid) return { ok: true, ignored: "not-paid" };
   const subSnap = await db.doc(`midtransSubs/${name}`).get();
   if (!subSnap.exists) {
@@ -344,5 +354,14 @@ async function applyRenewalCharge(db, { orderId, name, grossAmount, paid }) {
     tx.set(paymentRef, { uid: sub.uid, planKey: sub.planKey, plan: plan?.plan || sub.planKey, amount: grossAmount, status: "paid", paidAt: now, createdAt: now, recurring: true, subscriptionName: name });
     return true;
   });
+  // Every charge gets its invoice, the automatic ones too.
+  if (applied) {
+    const buyer = (await accountRef.get().catch(() => null))?.data() || {};
+    const item = PLANS[sub.planKey] || ADDONS[sub.planKey];
+    await sendInvoice({
+      paymentRef, uid: sub.uid, buyer, label: item?.label || sub.planKey, isPlan: Boolean(PLANS[sub.planKey]), renewal: true,
+      orderId, amount: grossAmount, paidAt: now, notification,
+    }).catch((err) => console.error("Midtrans webhook: renewal invoice failed", orderId, err?.message));
+  }
   return { ok: true, renewal: true, duplicate: !applied };
 }

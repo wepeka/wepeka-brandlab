@@ -180,16 +180,21 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     rememberOrder(uid, order);
     gaEvent("begin_checkout", { currency: "IDR", value: amount, items: [item] });
     metaTrack("InitiateCheckout", metaParams, `ic-${orderId}`);
+    let answered = false;
     window.snap.pay(token, {
       onSuccess: () => {
+        answered = true;
         // GA4 purchase + Meta Purchase, with the same event id as the
         // webhook's Conversions API Purchase (api/midtrans/webhook.js).
         reportPurchase(uid, order);
         toast(t("pricing.pay.success"));
         onSuccess?.();
       },
-      onPending: () => { toast(t("pricing.pay.pending")); showPendingHelp("snap"); },
+      onPending: () => { answered = true; toast(t("pricing.pay.pending")); showPendingHelp("snap"); },
       onError: () => toast(t("pricing.pay.error"), "error"),
+      // Closed without paying, often because the buyer's bank isn't in the
+      // list: say which way is left.
+      onClose: () => { if (!answered) showBankHelp(label); },
     });
     snapOpening = true;
     hidePayLoadingWhenSnapShows();
@@ -374,6 +379,29 @@ function showPendingHelp(kind) {
       <a class="btn btn-secondary btn-sm" href="${wa}" target="_blank" rel="noopener">${icon("chat", { size: 13 })}${t("pricing.pending.wa")}</a>
     </div>`);
   host.querySelector(".pricing-pending-help").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// BCA isn't among the banks Midtrans offers this account yet (owner's note,
+// 2026-10-13): said under the plans and again when the payment window is
+// closed without paying, with the admin's WhatsApp as the way to pay by BCA
+// or anything else the window doesn't list.
+function bankWaLink(email, item) {
+  const text = t(email ? "pricing.bank.waMessage" : "pricing.bank.waMessageGuest", { item: item || "Wepeka Brandlab", email });
+  return `https://wa.me/${PAYMENT_WA_NUMBER}?text=${encodeURIComponent(text)}`;
+}
+const bankNoteHTML = (email) => `<p class="pricing-trust pricing-bank-note">${icon("info", { size: 13 })}<span>${t("pricing.bank.note")} <a href="${bankWaLink(email)}" target="_blank" rel="noopener noreferrer">${t("pricing.bank.cta")}</a></span></p>`;
+function showBankHelp(item) {
+  const host = document.querySelector(".pricing-shell");
+  // Not over a "waiting for your payment" card: that transfer has started.
+  if (!host || host.querySelector(".pricing-pending-help:not(.pricing-bank-help):not(.pricing-closed-note)")) return;
+  host.querySelector(".pricing-bank-help")?.remove();
+  host.insertAdjacentHTML("afterbegin", `
+    <div class="pricing-pending-help pricing-bank-help" role="status">
+      <b>${t("pricing.bank.closedTitle")}</b>
+      <p>${t("pricing.bank.note")}</p>
+      <a class="btn btn-secondary btn-sm" href="${bankWaLink(auth.currentUser?.email, item)}" target="_blank" rel="noopener noreferrer">${icon("chat", { size: 13 })}${t("pricing.bank.cta")}</a>
+    </div>`);
+  host.querySelector(".pricing-bank-help").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function waLink(planName, price) {
@@ -718,7 +746,7 @@ export function render(root, { user, account, backHref, locked, embed = false, o
           ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}
           ${subscriptionCardHTML(sel, uid, owned)}
         </div>
-        ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>`}
+        ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>${bankNoteHTML(user?.email)}`}
         ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
         ${agencyHTML(uid, agencySoldOut, owned, embed)}
       </section>

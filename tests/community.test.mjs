@@ -137,32 +137,67 @@ describe("the thank-you sheet after payment", () => {
   });
 });
 
-describe("email after a payment", () => {
-  test("a plan: welcome wording, amount, order number, group and Instagram links", () => {
-    const m = composePaidEmail({ name: "Rani Contoh", label: "Brandlab Starter — Bulanan", amount: 49000, orderId: "bl-abc-123", isPlan: true, appUrl: "https://brandlab.wepeka.com" });
-    assert.equal(m.subject, "Pembayaran diterima — selamat datang di Brandlab");
+describe("invoice email after a payment", () => {
+  const paidAt = Date.parse("2026-10-13T04:37:00Z"); // 11.37 WIB
+  test("a plan: welcome wording, the invoice's facts, group and Instagram links", () => {
+    const m = composePaidEmail({
+      name: "Rani Contoh", email: "rani@kopi.id", label: "Brandlab Starter — Bulanan", amount: 49000, price: 49000, orderId: "bl-abc-123",
+      invoiceNo: "INV-20261013-BLABC123", paidAt, method: "Transfer bank BNI (virtual account)", isPlan: true, appUrl: "https://brandlab.wepeka.com",
+    });
+    assert.equal(m.subject, "Invoice INV-20261013-BLABC123 — selamat datang di Brandlab");
     for (const part of [m.html, m.text]) {
       assert.match(part, /Hai Rani,/);
+      assert.match(part, /INVOICE/);
+      assert.match(part, /LUNAS/);
+      assert.match(part, /INV-20261013-BLABC123/);
+      assert.match(part, /13 Oktober 2026, 11\.37 WIB/);
+      assert.match(part, /Rani Contoh \(rani@kopi\.id\)/);
+      assert.match(part, /Transfer bank BNI \(virtual account\)/);
       assert.match(part, /Brandlab Starter — Bulanan/);
       assert.match(part, /Rp 49\.000/);
+      assert.match(part, /Total dibayar/);
       assert.match(part, /bl-abc-123/);
+      assert.match(part, /Diterbitkan oleh Wepeka/);
+      assert.doesNotMatch(part, /Sisa nilai paket/);
       assert.ok(part.includes(server.BRANDLAB_WA_GROUP_URL));
       assert.ok(part.includes("https://www.instagram.com/winkhsin"));
       assert.ok(part.includes("https://www.instagram.com/wepeka.id"));
       assert.ok(part.includes("https://brandlab.wepeka.com"));
     }
   });
-  test("an add-on reads as a receipt, and a missing name still greets", () => {
-    const m = composePaidEmail({ label: "Brandlab — 300 kredit AI", amount: 15000, orderId: "bl-x", isPlan: false });
-    assert.equal(m.subject, "Pembayaran diterima — Brandlab — 300 kredit AI");
+  test("an upgrade shows the plan's price, what was left of the old plan, and what was paid", () => {
+    const m = composePaidEmail({ name: "Dimas", email: "d@x.id", label: "Brandlab Studio — Bulanan", amount: 99000, price: 149000, credit: 50000, orderId: "bl-x", invoiceNo: "INV-1", paidAt });
+    for (const part of [m.html, m.text]) {
+      assert.match(part, /Rp 149\.000/);
+      assert.match(part, /Sisa nilai paket sebelumnya/);
+      assert.match(part, /− Rp 50\.000/);
+      assert.match(part, /Total dibayar[\s\S]*Rp 99\.000/);
+    }
+    // Numbers that don't add up: only what was really paid is shown.
+    const odd = composePaidEmail({ label: "X", amount: 99000, price: 149000, credit: 10000, orderId: "o", paidAt });
+    assert.doesNotMatch(odd.text, /Sisa nilai paket|149\.000/);
+    assert.match(odd.text, /X: Rp 99\.000/);
+  });
+  test("an add-on reads as a receipt; a missing name, email or method leaves no empty row", () => {
+    const m = composePaidEmail({ label: "Brandlab — 300 kredit AI", amount: 15000, orderId: "bl-x", invoiceNo: "INV-20261013-BLX", paidAt, isPlan: false });
+    assert.equal(m.subject, "Invoice INV-20261013-BLX — Brandlab — 300 kredit AI");
     assert.match(m.text, /^Hai,/);
     assert.doesNotMatch(m.text, /selamat datang|Makasih sudah gabung/);
+    assert.doesNotMatch(m.text, /Ditagihkan ke|Metode bayar/);
+    assert.doesNotMatch(m.html, /Ditagihkan ke|Metode bayar|undefined|null/);
     assert.ok(m.text.includes(server.BRANDLAB_WA_GROUP_URL));
   });
-  test("whatever is in the name or label is escaped in the HTML", () => {
-    const m = composePaidEmail({ name: "<img src=x onerror=1>", label: "A & <b>B</b>", amount: 1, orderId: "o" });
+  test("an auto-renew charge says so", () => {
+    const m = composePaidEmail({ name: "Rani", label: "Brandlab Starter — Bulanan", amount: 49000, orderId: "o", invoiceNo: "INV-2", paidAt, isPlan: true, renewal: true });
+    assert.equal(m.subject, "Invoice INV-2 — perpanjangan Brandlab Starter — Bulanan");
+    assert.match(m.text, /Perpanjangan otomatis Brandlab Starter — Bulanan sudah kami terima/);
+    assert.doesNotMatch(m.text, /selamat datang|Makasih sudah gabung/);
+  });
+  test("whatever is in the name, email, label or method is escaped in the HTML", () => {
+    const m = composePaidEmail({ name: "<img src=x onerror=1>", email: "a@b.c<script>", label: "A & <b>B</b>", method: "<i>x</i>", amount: 1, orderId: "<o>", invoiceNo: "<n>" });
     assert.doesNotMatch(m.html, /<img src=x/);
     assert.doesNotMatch(m.html, /<b>B<\/b>/);
+    assert.doesNotMatch(m.html, /<script>|<i>x<\/i>|<o>|<n>/);
     assert.match(m.html, /A &amp; &lt;b&gt;B&lt;\/b&gt;/);
   });
 });

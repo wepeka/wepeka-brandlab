@@ -1,5 +1,5 @@
-// The emails Brandlab sends about itself — the "pembayaran diterima" note
-// after a payment (api/midtrans/webhook.js) and an announcement mailed to
+// The emails Brandlab sends about itself — the invoice after a payment
+// (api/midtrans/webhook.js) and an announcement mailed to
 // every active account (api/announcements/notify.js). Both carry the same
 // community links as the app (js/community.js): the WhatsApp group and the
 // two Instagram accounts. Everything here is pure (no Firestore, no fetch),
@@ -7,6 +7,7 @@
 import { APP_URL } from "./_reminders.js";
 import { isLifetimePlan } from "./_plans.js";
 import { isAdminUid } from "./_aiQuota.js";
+import { paidAtLabel } from "./_invoice.js";
 
 // Brandlab's own WhatsApp groups (owner, 2026-10-13 — until then this
 // pointed at Wepeka Community's group, wepeka.com/gabung, by mistake):
@@ -35,9 +36,14 @@ const rupiah = (n) => `Rp ${Math.round(Number(n) || 0).toLocaleString("id-ID")}`
 const firstName = (name) => String(name || "").trim().split(/\s+/)[0] || "";
 
 const BUTTON = "display:inline-block;text-decoration:none;padding:11px 20px;border-radius:999px;font-weight:700;font-size:15px;";
-const shell = (inner) => `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f5f3;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111;font-size:15px;line-height:1.6;">
+const MARK = `Wepeka <span style="color:#bbb;font-weight:400;">|</span> Brandlab`;
+// `aside`: what sits right of the mark (the word INVOICE). Tables, not
+// flex — mail clients.
+const shell = (inner, aside = "") => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:24px;background:#f6f5f3;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111;font-size:15px;line-height:1.6;">
 <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:14px;padding:26px;">
-<p style="margin:0 0 18px;font-weight:800;font-size:17px;">Wepeka <span style="color:#bbb;font-weight:400;">|</span> Brandlab</p>
+${aside
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px;"><tr><td style="font-weight:800;font-size:17px;vertical-align:middle;white-space:nowrap;">${MARK}</td><td align="right" style="vertical-align:middle;white-space:nowrap;">${aside}</td></tr></table>`
+    : `<p style="margin:0 0 18px;font-weight:800;font-size:17px;">${MARK}</p>`}
 ${inner}
 </div></body></html>`;
 
@@ -68,26 +74,73 @@ function communityText({ lifetime = false } = {}) {
   ].join("\n");
 }
 
-// After a payment. `isPlan`: a plan (welcome wording) or an add-on (AI
-// credits, a brand slot — a plain receipt). `lifetime`: the plan bought is
-// a Lifetime one, so the Lifetime group's link is included.
-// → { subject, html, text }.
-export function composePaidEmail({ name = "", label = "", amount = 0, orderId = "", isPlan = true, lifetime = false, appUrl = APP_URL } = {}) {
+// After a payment: the invoice. `isPlan`: a plan (welcome wording) or an
+// add-on (AI credits, a brand slot); `renewal`: an auto-renew charge.
+// `price`/`credit`: the plan's own price and what was left of the old plan
+// (an upgrade, api/_plans.js creditQuote) — `amount` is what was paid.
+// `invoiceNo`, `paidAt`, `method` come from api/_invoice.js; a missing
+// method just leaves its row out. `lifetime`: the plan bought is a Lifetime
+// one, so the Lifetime group's link is included. → { subject, html, text }.
+const SELLER = "Wepeka";
+const localNumber = (intl) => String(intl).replace(/^62/, "0").replace(/^(\d{4})(\d{4})(\d+)$/, "$1-$2-$3");
+export function composePaidEmail({ name = "", email = "", label = "", amount = 0, price = 0, credit = 0, orderId = "", invoiceNo = "", paidAt = Date.now(), method = "", isPlan = true, renewal = false, lifetime = false, appUrl = APP_URL } = {}) {
   const hi = firstName(name) ? `Hai ${firstName(name)},` : "Hai,";
   const what = label || "Brandlab";
-  const subject = isPlan ? "Pembayaran diterima — selamat datang di Brandlab" : `Pembayaran diterima — ${what}`;
-  const lead = isPlan
-    ? `Pembayaran kamu untuk ${what} sudah kami terima dan paketnya sudah aktif. Makasih sudah gabung di Brandlab.`
+  const no = invoiceNo ? ` ${invoiceNo}` : "";
+  const subject = renewal ? `Invoice${no} — perpanjangan ${what}`
+    : isPlan ? `Invoice${no} — selamat datang di Brandlab`
+    : `Invoice${no} — ${what}`;
+  const lead = renewal ? `Perpanjangan otomatis ${what} sudah kami terima, dan masa aktifnya sudah bertambah.`
+    : isPlan ? `Pembayaran kamu untuk ${what} sudah kami terima dan paketnya sudah aktif. Makasih sudah gabung di Brandlab.`
     : `Pembayaran kamu untuk ${what} sudah kami terima dan sudah masuk ke akunmu.`;
-  const detail = `${what} · ${rupiah(amount)}${orderId ? ` · No. pesanan ${orderId}` : ""}`;
+  const keep = "Invoice-nya ada di bawah. Simpan email ini sebagai bukti pembayaran.";
+  const billedTo = [String(name || "").trim(), String(email || "").trim()].filter(Boolean);
+  // Label → value, in reading order; an empty value is left out.
+  const facts = [
+    ["No. invoice", invoiceNo],
+    ["Tanggal bayar", paidAtLabel(paidAt)],
+    ["Ditagihkan ke", billedTo.length === 2 ? `${billedTo[0]} (${billedTo[1]})` : billedTo[0] || ""],
+    ["Metode bayar", method],
+  ].filter(([, v]) => v);
+  // The order's own id (long) sits in the small print: what the team looks
+  // a payment up by.
+  const ref = orderId ? `No. pesanan ${orderId}` : "";
+  // The credit line only when the numbers add up to what was charged.
+  const paid = Math.round(Number(amount) || 0);
+  const off = Math.round(Number(credit) || 0);
+  const showCredit = off > 0 && Math.round(Number(price) || 0) - off === paid;
+  const lines = showCredit ? [[what, rupiah(price)], ["Sisa nilai paket sebelumnya", `− ${rupiah(off)}`]] : [[what, rupiah(paid)]];
+  const site = String(appUrl).replace(/^https?:\/\//, "");
+  const issuer = `Diterbitkan oleh ${SELLER} · ${site} · WhatsApp ${localNumber(SUPPORT_WA_NUMBER)}`;
   const help = `Ada kendala? WhatsApp tim Wepeka: https://wa.me/${SUPPORT_WA_NUMBER}`;
+
+  const row = "padding:3px 0;vertical-align:top;font-size:13.5px;";
+  const aside = `<span style="font-weight:800;font-size:12px;letter-spacing:.16em;color:#c96a00;">INVOICE</span>`;
   const html = shell(`<p style="margin:0 0 12px;">${esc(hi)}</p>
-<p style="margin:0 0 12px;">${esc(lead)}</p>
-<p style="margin:0 0 18px;color:#666;font-size:13px;">${esc(detail)}</p>
+<p style="margin:0 0 6px;">${esc(lead)}</p>
+<p style="margin:0 0 18px;color:#666;font-size:13.5px;">${esc(keep)}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border:1px solid #e9e7e3;border-radius:12px;margin:0 0 18px;">
+<tr><td style="padding:16px 18px 4px;"><span style="display:inline-block;padding:3px 11px;border-radius:999px;background:#e6f7ed;color:#0a7a3d;font-weight:800;font-size:11.5px;letter-spacing:.1em;">LUNAS</span></td></tr>
+<tr><td style="padding:8px 18px 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+${facts.map(([k, v]) => `<tr><td width="108" style="${row}color:#888;">${esc(k)}</td><td style="${row}color:#111;word-break:break-word;">${esc(v)}</td></tr>`).join("\n")}
+</table></td></tr>
+<tr><td style="padding:14px 18px 16px;border-top:1px solid #e9e7e3;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+${lines.map(([k, v]) => `<tr><td style="padding:3px 0;font-size:14px;">${esc(k)}</td><td align="right" style="padding:3px 0;font-size:14px;white-space:nowrap;">${esc(v)}</td></tr>`).join("\n")}
+<tr><td style="padding:10px 0 0;font-weight:800;font-size:15px;border-top:1px solid #e9e7e3;">Total dibayar</td><td align="right" style="padding:10px 0 0;font-weight:800;font-size:17px;white-space:nowrap;border-top:1px solid #e9e7e3;">${esc(rupiah(paid))}</td></tr>
+</table></td></tr>
+</table>
 <p style="margin:0;"><a href="${esc(appUrl)}" style="${BUTTON}background:#111;color:#fff;">Buka Brandlab</a></p>
 ${communityHTML({ lifetime: isPlan && lifetime })}
-<p style="margin:18px 0 0;color:#888;font-size:12px;">Ada kendala? <a href="https://wa.me/${SUPPORT_WA_NUMBER}" style="color:#888;">WhatsApp tim Wepeka</a>.</p>`);
-  const text = [hi, "", lead, detail, "", `Buka Brandlab: ${appUrl}`, "", communityText({ lifetime: isPlan && lifetime }), "", help].join("\n");
+<p style="margin:18px 0 0;color:#888;font-size:12px;word-break:break-word;">${esc(issuer)}${ref ? `<br>${esc(ref)}` : ""}<br>Invoice ini dibuat otomatis, jadi tidak perlu tanda tangan. Ada kendala? <a href="https://wa.me/${SUPPORT_WA_NUMBER}" style="color:#888;">WhatsApp tim Wepeka</a>.</p>`, aside);
+  const text = [
+    hi, "", lead, keep, "",
+    "INVOICE — LUNAS",
+    ...facts.map(([k, v]) => `${k}: ${v}`), "",
+    ...lines.map(([k, v]) => `${k}: ${v}`),
+    `Total dibayar: ${rupiah(paid)}`, "",
+    issuer, ...(ref ? [ref] : []), "",
+    `Buka Brandlab: ${appUrl}`, "", communityText({ lifetime: isPlan && lifetime }), "", help,
+  ].join("\n");
   return { subject, html, text };
 }
 
