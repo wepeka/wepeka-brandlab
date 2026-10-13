@@ -6,12 +6,17 @@
 //   - When it ends (or is skipped) the same modal asks what's next, in three
 //     answers: play it again, take the live tour of this page instead, or
 //     "sudah paham".
-// Nothing here plays itself just from navigating to a page. The one
-// exception is the "kenalan" video on a brand-new account's very first open
-// (js/main.js playFirstRunIntro, once ever, right after the welcome bumper):
-// it autoplays, can be skipped, and ends on the same three answers —
-// "Sudah paham", "Putar ulang video", "Tur website". From then on every page
-// carries a Video button and a Panduan button (guideVideoButtonHTML) instead.
+// What plays by itself, each once per account:
+//   - the "kenalan" video on a brand-new account's very first open
+//     (js/main.js playFirstRunIntro, right after the welcome bumper);
+//   - the videos that stand in front of something (playVideoGate: the
+//     welcome video before the mode picker, the chat's before its first open);
+//   - for a new account, each page's own video the first time that page is
+//     opened, in Pemula and Pro alike (offerPageVideo, called by js/main.js
+//     once a page has painted).
+// All of them can be skipped and end on the same three answers — "Sudah
+// paham", "Putar ulang video", "Tur website". After that the page's Panduan
+// button (guideVideoButtonHTML) is the way back to its video.
 //
 // One video per app, many pages per app: a page inside an app (say the
 // Kalender tab of Content OS) opens the app's video *at that page's chapter*
@@ -206,7 +211,21 @@ function openingPoint(ref) {
     const i = ref.part ? parts.findIndex((p) => ref.part.test(p.title)) : -1;
     return { part: Math.max(0, i), start: 0 };
   }
-  return { part: 0, start: ref.start };
+  // A single part made for another page (only "Brand DNA" is up, opened
+  // from Brand Book) plays from its top: the chapter second is not its own.
+  return { part: 0, start: ownPoint(ref)?.start || 0 };
+}
+
+// The same, but only where the video is really about this page — what a page
+// may play by itself (pageVideoDue): the part its pattern names, or its
+// chapter in the one recording made for the whole app (an entry with no
+// parts named in the admin). null while this page's own part is not up.
+function ownPoint(ref) {
+  const parts = videoParts(ref.video);
+  const wholeApp = parts.length === 1 && parts[0].title === GUIDE_VIDEOS[ref.video].title;
+  if (wholeApp || !ref.part) return { part: 0, start: parts.length > 1 ? 0 : ref.start };
+  const i = parts.findIndex((p) => ref.part.test(p.title));
+  return i >= 0 ? { part: i, start: 0 } : null;
 }
 
 // Just the video key (kept for callers that only care which video).
@@ -465,6 +484,8 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
   // A part ending: the next one starts by itself; after the last, the
   // closing bumper and then the three answers.
   const partEnded = () => {
+    // Watched to the end, however it was opened: never played by itself again.
+    markPartSeen(videoKey, current);
     if (current < parts.length - 1) playPart(current + 1);
     else playBumper("out", showChoices);
   };
@@ -662,7 +683,7 @@ export function markVideoSeen(videoKey) {
 // console:
 //   (await import("./js/guide-videos.js")).resetVideoSeen()
 export function resetVideoSeen() {
-  const keys = Object.keys(GUIDE_VIDEOS);
+  const keys = Object.keys(GUIDE_VIDEOS).flatMap((k) => videoParts(k).map((_, i) => partSeenKey(k, i)));
   keys.forEach((k) => clearFlag(VIDEO_SEEN_PREFIX, k));
   const seen = { ...(getSettings()?.guideSeen || {}) };
   keys.forEach((k) => delete seen[seenKey(k)]);
@@ -670,17 +691,24 @@ export function resetVideoSeen() {
   return keys.length;
 }
 
+// One part of a video. Part 1 is the video's own mark, so a page that opens
+// on part 1 and a gate on the same video (the chat's, the intro) never both
+// play it; later parts carry their number.
+const partSeenKey = (videoKey, part) => (part > 0 ? `${videoKey}#${part + 1}` : videoKey);
+export const partSeen = (videoKey, part = 0) => videoSeen(partSeenKey(videoKey, part));
+export const markPartSeen = (videoKey, part = 0) => markVideoSeen(partSeenKey(videoKey, part));
+
 // ---------- "You can play it again here" ----------
 // Said once, right after the video closes, pointing at the Video button next
 // to Panduan — the button is small and lives in the page eyebrow, so being
 // told where it is beats being expected to spot it. Used by the first-run
-// "kenalan" video (js/main.js playFirstRunIntro) and available to any other
-// caller that opens a video with `hint: true`.
+// "kenalan" video (js/main.js playFirstRunIntro), by each page's video on a
+// new account's first visit (offerPageVideo), and by any other caller that
+// opens a video with `hint: true`.
 function replayHint() {
   const btn = document.querySelector("[data-page-help]");
-  const text = t("guide.video.offer.replay");
-  if (btn) showCalloutBubble(btn, text);
-  else toast(text);
+  if (btn) showCalloutBubble(btn, t("guide.video.offer.replay"));
+  else toast(t("guide.video.offer.replayMenu"));
 }
 
 // Same sentence, but held back until the tour the person chose instead has
@@ -698,7 +726,7 @@ function hintAfterTour() {
   waitFor(running, () => waitFor(() => !running(), replayHint, 600), 10);
 }
 
-// The one autoplay left in the app: a brand-new account's very first boot
+// The intro, by itself, on a brand-new account's very first boot
 // (js/main.js, right after that boot's first renderRoute()). Guarded by the
 // same videoSeen flag as every replay, so it only ever runs once per
 // account, ever — a second onAccountChange firing mid-signup, a re-login,
@@ -707,8 +735,10 @@ function hintAfterTour() {
 // "Sudah paham" (or the X) also leaves the floating "Mau tur website?" pill
 // (js/tour-offer.js): armed as the video opens, so a reload mid-video still
 // gets it on the next boot, and shown once the video closes without the tour.
+// Resolves once the video (or the tour) is up, so main.js knows when the
+// screen is no longer being held for it.
 export function playFirstRunIntro() {
-  if (videoSeen("kenalan")) return;
+  if (videoSeen("kenalan")) return Promise.resolve();
   markVideoSeen("kenalan");
   const startTour = (opts) => import("./tour.js").then((m) => m.startOnboardingTour(opts));
   const offer = () => import("./tour-offer.js").catch((e) => (console.warn("tour offer unavailable", e), null));
@@ -716,7 +746,7 @@ export function playFirstRunIntro() {
   // version that ends on "Mulai Brand DNA" (the full one stays in the ⋯
   // menu → Tur website). Pressing "Tur website" on the video is an explicit ask,
   // so that still gets the full tour.
-  whenReady().then(() => {
+  return whenReady().then(() => {
     if (!isLive("kenalan")) return startTour({ firstRun: true });
     offer().then((m) => m?.armTourOffer());
     return openGuideVideo("kenalan", { onTour: () => startTour(), tourLabel: t("guide.video.choices.tour"), hint: true, onDone: () => offer().then((m) => m?.showTourOffer()) });
@@ -752,6 +782,71 @@ export function startTour() {
   return startWebsiteTour();
 }
 
+// ---------- A page's video, by itself, the first time ----------
+// A new account gets each page's video the first time it opens that page:
+// Brand DNA's on the first open of Brand DNA, the Kalender part on the first
+// open of Kalender, and so on — whichever mode it picked. "New" is an account
+// made since the videos went up (12 Oct 2026, release day); accounts older
+// than that already know the app and keep finding the videos under Panduan.
+export const PAGE_VIDEO_SINCE = Date.UTC(2026, 9, 11, 17); // 12 Oct 2026, 00:00 WIB
+export const isNewAccount = (account) => Number(account?.createdAt) >= PAGE_VIDEO_SINCE;
+
+// → { video, part, start } to play by itself on this page now, or null:
+// only a published video, only the part made for this page (Brand Book
+// stays quiet while only "Brand DNA" is up), and only one this account has
+// not seen. Pages that share a part (the Brand hub and Brand DNA) play it
+// once between them.
+export function pageVideoDue(guideKey, { account = getCachedAccount(), seen = partSeen } = {}) {
+  if (!isNewAccount(account)) return null;
+  const ref = videoRefForGuide(guideKey);
+  if (!ref || !isLive(ref.video)) return null;
+  const at = ownPoint(ref);
+  return !at || seen(ref.video, at.part) ? null : { video: ref.video, ...at };
+}
+
+// The page on screen says which one it is through its Panduan button.
+const pageGuideKey = () => document.querySelector("#view-root [data-page-help]")?.dataset.pageHelp || null;
+// Something else has the screen: a modal or sheet, the greeting, the
+// congratulations page after a payment.
+const screenTaken = () => !!document.querySelector(".overlay, .brandlab-bumper, #mode-root, .pay-thanks");
+const tourRunning = () => document.body.classList.contains("tour-active");
+
+// Called by js/main.js each time a page has painted. Waits for a free
+// screen (the greeting, a sheet that opened first — `busy` is main.js's own
+// "boot is still putting things up"), then plays what is due. `stillHere`
+// turns false once the person has moved on. A tour on the page (the website
+// tour passing through, the page's own guide) ends the wait: its last step
+// hands the person something to press, and a video must not land on that.
+// A video that did not get its turn stays unseen and plays on the next visit.
+const PAGE_VIDEO_TICK_MS = 300;
+export function offerPageVideo({ stillHere = () => true, busy = () => false } = {}) {
+  if (typeof document === "undefined" || !isNewAccount(getCachedAccount())) return Promise.resolve(null);
+  return whenReady().then(
+    () =>
+      new Promise((resolve) => {
+        let ticks = 0;
+        let free = 0;
+        const tick = () => {
+          if (!stillHere() || tourRunning()) return resolve(null);
+          const key = pageGuideKey();
+          // No button yet: the page may still be painting its head.
+          if (!key) return ++ticks > 6 ? resolve(null) : setTimeout(tick, PAGE_VIDEO_TICK_MS);
+          const due = pageVideoDue(key);
+          if (!due) return resolve(null);
+          free = busy() || screenTaken() ? 0 : free + 1;
+          // Free on two looks in a row, so it never lands between a greeting
+          // closing and the sheet that follows it.
+          if (free < 2) return ++ticks > 40 ? resolve(null) : setTimeout(tick, PAGE_VIDEO_TICK_MS);
+          // Closing it leaves the bubble on Panduan: the video is in there.
+          const overlay = openGuideVideo(due.video, { part: due.part, start: due.start, hint: true });
+          if (overlay) markPartSeen(due.video, due.part);
+          resolve(overlay ? due : null);
+        };
+        setTimeout(tick, PAGE_VIDEO_TICK_MS);
+      })
+  );
+}
+
 // The two pills next to a page's "?" (js/help.js helpButtonHTML), same
 // icon-button language so the three read as one group:
 //   Video   — that page's video (at its chapter). Hidden until the video is
@@ -759,7 +854,8 @@ export function startTour() {
 //   Panduan — that page's spotlight guide, or the website tour where a page
 //             has none. Shown once the page has registered its guide
 //             (js/section-guide.js keeps these in step).
-// Neither opens on its own; only a click (delegated listener below) does.
+// A click (delegated listener below) opens them; the video also plays by
+// itself on a new account's first visit (offerPageVideo above).
 // The page's ONE help door. It used to be three things side by side — a
 // "?" explainer, a "Panduan" tour pill and a "Video" pill — plus another "?"
 // in the topbar. Now one "Panduan" pill opens a small menu with everything

@@ -88,7 +88,9 @@ export default {
   "guide.video.choices.replay": { en: "Replay video", id: "Ulangi video" },
   "guide.video.choices.tour": { en: "Website tour", id: "Tur website" },
   "guide.video.choices.done": { en: "Got it", id: "Sudah paham" },
-  "guide.video.offer.replay": { en: "You can replay the explainer here anytime.", id: "Kamu bisa putar ulang video penjelasannya di sini kapan aja." },
+  "guide.video.offer.replay": { en: "You can find this video here again: Guide → Watch the explainer video.", id: "Video ini bisa kamu temukan lagi di sini: Panduan → Tonton video penjelasan." },
+  // Same, on a page without a Panduan button (the brand list): the ⋯ menu.
+  "guide.video.offer.replayMenu": { en: "You can find this video again in the ⋯ menu → Guide videos.", id: "Video ini bisa kamu temukan lagi di menu ⋯ → Video panduan." },
   // Every guide video in one list (topbar ⋯ → "Video panduan")
   "guide.library.menu": { en: "Guide videos", id: "Video panduan" },
   "guide.library.title": { en: "Guide videos", id: "Video panduan" },

@@ -2,7 +2,7 @@
 // link the admin pasted (js/guide-videos.js parseVideoSrc, embedUrl).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseVideoSrc, embedUrl, GUIDE_VIDEOS, PLACEHOLDER_SRC, videoRefForGuide, libraryVideoKeys } from "../js/guide-videos.js";
+import { parseVideoSrc, embedUrl, GUIDE_VIDEOS, PLACEHOLDER_SRC, videoRefForGuide, libraryVideoKeys, pageVideoDue, isNewAccount, PAGE_VIDEO_SINCE } from "../js/guide-videos.js";
 
 const ID = "dQw4w9WgXcQ";
 
@@ -138,4 +138,84 @@ test("Beranda keeps offering the intro until its own video is published", () => 
 test("the video library lists only what is published, Beranda right after the intro", () => {
   assert.deepEqual(libraryVideoKeys(), []);
   publish("sales", () => publish("beranda", () => publish("kenalan", () => assert.deepEqual(libraryVideoKeys(), ["kenalan", "beranda", "sales"]))));
+});
+
+// A new account's first open of a page plays that page's video by itself
+// (js/guide-videos.js pageVideoDue / offerPageVideo).
+const NEW = { createdAt: PAGE_VIDEO_SINCE + 60_000 };
+const OLD = { createdAt: PAGE_VIDEO_SINCE - 60_000 };
+const withParts = (key, titles, fn) => {
+  const v = GUIDE_VIDEOS[key];
+  const before = v.parts;
+  v.parts = titles.map((title) => ({ title, src: "https://youtu.be/dQw4w9WgXcQ", seconds: 60 }));
+  try { return publish(key, fn); } finally { v.parts = before; }
+};
+const nothingSeen = () => false;
+
+test("only an account made since the videos went up counts as new", () => {
+  assert.equal(isNewAccount(NEW), true);
+  assert.equal(isNewAccount({ createdAt: PAGE_VIDEO_SINCE }), true);
+  assert.equal(isNewAccount(OLD), false);
+  assert.equal(isNewAccount({}), false);
+  assert.equal(isNewAccount(null), false);
+});
+
+test("a new account's first open of a page plays that page's video", () => {
+  publish("sales", () => {
+    assert.deepEqual(pageVideoDue("sales", { account: NEW, seen: nothingSeen }), { video: "sales", part: 0, start: 0 });
+    // An older account keeps finding it under Panduan instead.
+    assert.equal(pageVideoDue("sales", { account: OLD, seen: nothingSeen }), null);
+    // Already played once: never by itself again.
+    assert.equal(pageVideoDue("sales", { account: NEW, seen: () => true }), null);
+  });
+  // Not uploaded yet: nothing opens (no "video lagi disiapkan" panel).
+  assert.equal(pageVideoDue("sales", { account: NEW, seen: nothingSeen }), null);
+  // A page without a video.
+  assert.equal(pageVideoDue("nope", { account: NEW, seen: nothingSeen }), null);
+});
+
+test("each page plays its own part, and a part two pages share plays once", () => {
+  withParts("campaign", ADMIN_TITLES.campaign, () => {
+    assert.deepEqual(pageVideoDue("campaigns", { account: NEW, seen: nothingSeen }), { video: "campaign", part: 0, start: 0 });
+    assert.deepEqual(pageVideoDue("campaign-detail", { account: NEW, seen: nothingSeen }), { video: "campaign", part: 1, start: 0 });
+    assert.deepEqual(pageVideoDue("event", { account: NEW, seen: nothingSeen }), { video: "campaign", part: 2, start: 0 });
+    // The list's part was watched; the goal page's part is still due.
+    const seen = (video, part) => video === "campaign" && part === 0;
+    assert.equal(pageVideoDue("campaigns", { account: NEW, seen }), null);
+    assert.equal(pageVideoDue("campaign-detail", { account: NEW, seen })?.part, 1);
+  });
+  // The Brand hub and Brand DNA both open "Brand DNA": seen on one means
+  // seen on the other.
+  withParts("brand-builder", ADMIN_TITLES["brand-builder"], () => {
+    const seen = (video, part) => video === "brand-builder" && part === 0;
+    for (const key of ["brand-builder-hub", "brand-dna"]) {
+      assert.deepEqual(pageVideoDue(key, { account: NEW, seen: nothingSeen }), { video: "brand-builder", part: 0, start: 0 }, key);
+      assert.equal(pageVideoDue(key, { account: NEW, seen }), null, key);
+    }
+    // Brand Book's own part is not up: it does not play "Brand DNA" at people.
+    assert.equal(pageVideoDue("brand-guidelines", { account: NEW, seen: nothingSeen }), null);
+  });
+  withParts("brand-builder", PART_TITLES["brand-builder"], () => {
+    assert.deepEqual(pageVideoDue("brand-guidelines", { account: NEW, seen: (video, part) => part === 0 }), { video: "brand-builder", part: 1, start: 0 });
+  });
+});
+
+test("one recording for a whole app plays at the page's chapter", () => {
+  // No parts named in the admin: the entry itself is the video.
+  publish("brand-builder", () => {
+    assert.deepEqual(pageVideoDue("brand-dna", { account: NEW, seen: nothingSeen }), { video: "brand-builder", part: 0, start: 0 });
+    assert.deepEqual(pageVideoDue("brand-guidelines", { account: NEW, seen: nothingSeen }), { video: "brand-builder", part: 0, start: 80 });
+  });
+});
+
+test("Beranda does not repeat the intro a new account already watched", () => {
+  // Beranda's own video is not up, so the page falls back to the intro —
+  // which the first boot already played.
+  publish("kenalan", () => {
+    assert.equal(pageVideoDue("home", { account: NEW, seen: (video) => video === "kenalan" }), null);
+    assert.equal(pageVideoDue("home", { account: NEW, seen: nothingSeen })?.video, "kenalan");
+  });
+  publish("kenalan", () => publish("beranda", () => {
+    assert.equal(pageVideoDue("home", { account: NEW, seen: (video) => video === "kenalan" })?.video, "beranda");
+  }));
 });

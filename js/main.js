@@ -79,8 +79,21 @@ function playWelcomeVideo() {
 function tourAfterPicker(delay = 600) {
   if (!welcomeTourPending) return false;
   welcomeTourPending = false;
+  screenHeldUntil = Date.now() + delay + 1500;
   setTimeout(() => import("./guide-videos.js").then((m) => m.startTour()), delay);
   return true;
+}
+// A new account's first open of a page plays that page's video by itself
+// (js/guide-videos.js offerPageVideo) — but never on top of what a boot puts
+// up one after another (greeting, first-run video, the congratulations page)
+// or just ahead of a tour that is about to start. Those hold the screen here.
+let bootHoldsScreen = false;
+let screenHeldUntil = 0;
+function offerPageVideo(token) {
+  const hash = location.hash;
+  import("./guide-videos.js")
+    .then((m) => m.offerPageVideo({ stillHere: () => token === renderToken && location.hash === hash, busy: () => bootHoldsScreen || Date.now() < screenHeldUntil }))
+    .catch((e) => console.warn("page video unavailable", e));
 }
 // The congratulations page after a payment (js/pay-thanks.js): "Selamat,
 // kamu sudah Lifetime", the WhatsApp group and Instagram doors, one button
@@ -510,6 +523,8 @@ function onAccountChange(user, account) {
       // route always paints first (the home hero says what to do next);
       // only a brand-new account then gets the video on top of it, and only
       // the one time (js/guide-videos.js playFirstRunIntro, videoSeen-gated).
+      bootHoldsScreen = true;
+      const releaseScreen = () => { bootHoldsScreen = false; };
       renderRoute();
       // An account that already knows the app and is now on a paid plan
       // (paid while away, or in another app): the congratulations page goes
@@ -528,8 +543,12 @@ function onAccountChange(user, account) {
         // website" on the welcome video gets the tour there instead.
         bumper
           .then(() => (tourAfterPicker(0) ? null : import("./guide-videos.js").then((m) => m.playFirstRunIntro())))
-          .catch((e) => console.warn("first-run video unavailable", e));
+          .catch((e) => console.warn("first-run video unavailable", e))
+          .finally(releaseScreen);
       } else {
+        // The greeting (or the congratulations page in its place) has the
+        // screen until it is gone.
+        Promise.all([bumper, thanksDue ? paidWelcome() : null]).finally(releaseScreen);
         // A new account that answered "Sudah paham" keeps its floating
         // "Mau tur website?" pill until the tour is taken or it is closed.
         bumper
@@ -795,7 +814,9 @@ async function renderRoute() {
     noteError(`route-render ${route.view}`, err);
     cleanup = null;
     if (token === renderToken) paintRouteError(viewRoot);
+    return;
   }
+  offerPageVideo(token);
 }
 
 function paintRouteError(root) {
