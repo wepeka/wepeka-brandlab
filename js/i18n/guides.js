@@ -5,6 +5,10 @@ export default {
   "tour.close": { en: "Close tour", id: "Tutup tur" },
   "tour.next": { en: "Next", id: "Lanjut" },
   "tour.done": { en: "Done", id: "Selesai" },
+  // The floating pill a new account keeps after "Sudah paham" (js/tour-offer.js)
+  "tour.offer.title": { en: "Still not sure?", id: "Masih belum paham?" },
+  "tour.offer.sub": { en: "Take the website tour", id: "Mau tur website?" },
+  "tour.offer.where": { en: "The website tour stays here: ⋯ menu → Website tour.", id: "Tur website selalu ada di sini: menu ⋯ → Tur website." },
   "tour.progress": { en: "Step {n} of {total}", id: "Langkah {n} dari {total}" },
   "tour.hint.clickAny": { en: "👆 Click one of the highlighted items to continue", id: "👆 Klik salah satu yang di-highlight buat lanjut" },
   "tour.hint.click": { en: "👆 Click the highlighted item to continue", id: "👆 Klik yang di-highlight buat lanjut" },

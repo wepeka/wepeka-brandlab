@@ -1995,6 +1995,39 @@ input[type=checkbox]{ accent-color: var(--accent); width:16px; height:16px; curs
 .gv-library .gv-part-time{ flex:none; }
 
 body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
+
+/* "Masih belum paham? Mau tur website?" — the floating pill a new account
+   keeps after answering "Sudah paham" on its first video (js/tour-offer.js).
+   Bottom-left: the chat button, notes and the chat's own hint own the right.
+   Below the modals (70) on purpose, so an open dialog simply covers it. */
+.tour-pill{ position:fixed; left:24px; bottom:24px; z-index:64; display:flex; align-items:center; gap:6px; max-width:calc(100vw - 48px); animation: tour-pill-in .5s cubic-bezier(.2,.9,.3,1.25) both .35s; }
+.tour-pill-main{ display:flex; align-items:center; gap:10px; min-width:0; padding:7px 16px 7px 7px; border-radius:999px; border:1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--bg-raised); color: var(--text); font: inherit; text-align:left; cursor:pointer; box-shadow: 0 14px 34px -14px color-mix(in srgb, var(--accent) 70%, transparent), var(--shadow-lg); transition: transform .15s ease, border-color .15s; }
+.tour-pill-main:hover{ transform: translateY(-2px); border-color: var(--accent); }
+.tour-pill-main:active{ transform: scale(.97); }
+.tour-pill-ico{ position:relative; flex:none; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--accent); color: var(--accent-text); }
+.tour-pill-ico::after{ content:""; position:absolute; inset:0; border-radius:50%; border:2px solid var(--accent); animation: tour-pill-ring 1.8s ease-out 1s 4 both; }
+.tour-pill-text{ display:flex; flex-direction:column; min-width:0; line-height:1.3; }
+.tour-pill-text b{ font-size:13px; font-weight:800; }
+.tour-pill-text span{ font-size:12px; font-weight:600; color: var(--accent); }
+.tour-pill-x{ flex:none; width:26px; height:26px; border-radius:50%; border:1px solid var(--border); background: var(--bg-raised); color: var(--text-muted); display:flex; align-items:center; justify-content:center; padding:0; cursor:pointer; box-shadow: var(--shadow-lg); }
+.tour-pill-x:hover{ color: var(--text); border-color: var(--text-faint); }
+/* Out of the way of a running tour, the full-page chat and the script editor;
+   and only ever on top of the app itself (the topbar is its mark). */
+body.tour-active .tour-pill, body.chat-page-open .tour-pill, body.script-focus-open .tour-pill, body:not(:has(.topbar)) .tour-pill{ display:none; }
+@keyframes tour-pill-in{ from{ opacity:0; transform: translateY(18px) scale(.9); } to{ opacity:1; transform:none; } }
+@keyframes tour-pill-ring{ from{ opacity:.8; transform: scale(1); } to{ opacity:0; transform: scale(1.75); } }
+@media (prefers-reduced-motion: reduce){ .tour-pill, .tour-pill-ico::after{ animation:none; } .tour-pill-ico::after{ display:none; } }
+@media (max-width: 720px){
+  .tour-pill{ left:14px; bottom:16px; max-width:calc(100vw - 28px); }
+  .tour-pill-main{ padding:6px 14px 6px 6px; gap:8px; }
+  .tour-pill-ico{ width:32px; height:32px; }
+  .tour-pill-text b{ font-size:12.5px; }
+  .tour-pill-text span{ font-size:11.5px; }
+  /* Inside a brand: above the bottom tab bar, beside the chat and notes
+     buttons; one row higher while the chat's "tanya AI" bubble is up. */
+  body:has(.bottom-nav) .tour-pill{ bottom: calc(80px + env(safe-area-inset-bottom)); max-width:calc(100vw - 136px); }
+  body:has(.bottom-nav):has(.consultant-fab-hint) .tour-pill{ bottom: calc(132px + env(safe-area-inset-bottom)); max-width:calc(100vw - 28px); }
+}
 @media (max-width: 720px){
   .tour-tooltip{ padding:16px; }
   .tour-tooltip p{ margin-bottom:14px; }
@@ -2777,6 +2810,8 @@ body.tour-active:not(.tour-show-chat) .consultant-fab{ display:none; }
 .app-callout-arrow{ position:absolute; top:100%; left: var(--arrow-left, 50%); width:14px; height:14px; margin-left:-7px; background: var(--accent); transform: rotate(45deg); border-radius:0 0 3px; }
 @keyframes app-callout-in{ from{ opacity:0; transform: translateY(6px); } to{ opacity:1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce){ .app-callout-bubble{ animation:none; } }
+/* Under a target that has no room above it (a topbar button, js/dom.js). */
+.app-callout-bubble.is-below .app-callout-arrow{ top:auto; bottom:100%; border-radius:3px 0 0; }
 
 .brand-analytics-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:16px; }
 .brand-analytics-card{ transition: opacity .15s, transform .15s; }

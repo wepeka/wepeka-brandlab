@@ -41,6 +41,7 @@ const PATHS = {
   book: `<path d="M4 19.5V5.5A2.5 2.5 0 016.5 3H20v15.5H6.5A2.5 2.5 0 004 21z"/><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>`,
   folder: `<path d="M3 7a1.5 1.5 0 011.5-1.5H9l2 2.2h8.5A1.5 1.5 0 0121 9.2v9.3A1.5 1.5 0 0119.5 20h-15A1.5 1.5 0 013 18.5z"/>`,
   target: `<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.9" fill="currentColor"/>`,
+  compass: `<circle cx="12" cy="12" r="9"/><path d="M15.8 8.2l-2.1 5.5-5.5 2.1 2.1-5.5z"/>`,
   layers: `<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17l9 5 9-5"/>`,
   download: `<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>`,
   info: `<circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/>`,

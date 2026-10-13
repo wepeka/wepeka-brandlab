@@ -393,7 +393,8 @@ function partListHTML(parts, current) {
 // `onClose(choice)`: the video stands in front of something (the mode
 // picker, the chat); it's told how the modal closed ("tour" or "done" — the
 // X counts as done) and takes over from there instead of the usual hint.
-export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = null, hint = true, start = 0, part = 0, onClose = null } = {}) {
+// `onDone`: runs, after the usual hint, when it closed without the tour.
+export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = null, hint = true, start = 0, part = 0, onClose = null, onDone = null } = {}) {
   const v = GUIDE_VIDEOS[videoKey];
   if (!v) return null;
   const real = !!v.src && !isPlaceholder(v.src);
@@ -565,14 +566,15 @@ export function openGuideVideo(videoKey, { onTour = startPageTour, tourLabel = n
   // However it closes — a choice, the X, Escape, a click outside — the same
   // sentence is what's left on screen. After the tour it waits for the tour
   // to finish, so the bubble never fights the spotlight for attention.
-  if (hint || onClose) {
+  if (hint || onClose || onDone) {
     const obs = new MutationObserver(() => {
       if (overlay.isConnected) return;
       obs.disconnect();
       if (ending) clearTimeout(ending);
       if (onClose) return onClose(choice);
-      if (tourTaken) hintAfterTour();
-      else replayHint();
+      if (tourTaken) return hint ? hintAfterTour() : undefined;
+      if (hint) replayHint();
+      onDone?.();
     });
     obs.observe(document.body, { childList: true });
   }
@@ -702,15 +704,23 @@ function hintAfterTour() {
 // account, ever — a second onAccountChange firing mid-signup, a re-login,
 // none of it shows it again. `hint: true` is what leaves the "you can
 // replay it from the Video button" bubble behind once it closes.
+// "Sudah paham" (or the X) also leaves the floating "Mau tur website?" pill
+// (js/tour-offer.js): armed as the video opens, so a reload mid-video still
+// gets it on the next boot, and shown once the video closes without the tour.
 export function playFirstRunIntro() {
   if (videoSeen("kenalan")) return;
   markVideoSeen("kenalan");
   const startTour = (opts) => import("./tour.js").then((m) => m.startOnboardingTour(opts));
+  const offer = () => import("./tour-offer.js").catch((e) => (console.warn("tour offer unavailable", e), null));
   // No published intro yet: start the tour on its own — the short first-run
   // version that ends on "Mulai Brand DNA" (the full one stays in the ⋯
   // menu → Tur website). Pressing "Tur website" on the video is an explicit ask,
   // so that still gets the full tour.
-  whenReady().then(() => (isLive("kenalan") ? openGuideVideo("kenalan", { onTour: () => startTour(), tourLabel: t("guide.video.choices.tour"), hint: true }) : startTour({ firstRun: true })));
+  whenReady().then(() => {
+    if (!isLive("kenalan")) return startTour({ firstRun: true });
+    offer().then((m) => m?.armTourOffer());
+    return openGuideVideo("kenalan", { onTour: () => startTour(), tourLabel: t("guide.video.choices.tour"), hint: true, onDone: () => offer().then((m) => m?.showTourOffer()) });
+  });
 }
 
 // A video that stands in front of something, once per account. Resolves

@@ -217,6 +217,9 @@ function teardownApp() {
   delete app.dataset.shellKey;
   clearPageGuide();
   if (cleanup) { cleanup(); cleanup = null; }
+  // The "Mau tur website?" pill (js/tour-offer.js) belongs to the app, not
+  // to the pricing / locked / landing screens that replace it.
+  document.getElementById("tour-pill")?.remove();
   import("./announcements.js").then((m) => m.stopAnnouncements()).catch(() => {});
 }
 
@@ -411,6 +414,12 @@ function onAccountChange(user, account) {
         // (paid while away, or before this sheet existed): once, after the
         // greeting.
         bumper.then(() => paidWelcome());
+        // A new account that answered "Sudah paham" keeps its floating
+        // "Mau tur website?" pill until the tour is taken or it is closed.
+        bumper
+          .then(() => import("./tour-offer.js"))
+          .then((m) => m.showTourOffer())
+          .catch((e) => console.warn("tour offer unavailable", e));
       }
       // Weekly Instagram insights refresh for published content. Loaded
       // lazily (same reason every view is) and a few seconds after first

@@ -266,6 +266,7 @@ export function showWelcomeBumper(name) {
 // A small speech bubble pinned above one element, with an arrow pointing at
 // it — for "the thing you just unlocked is over here" moments, where a toast
 // would say it without showing where. Self-closing after 9s, or on the ✕.
+// A target with no room above it (a topbar button) gets the bubble below.
 export function showCalloutBubble(targetEl, text) {
   if (!targetEl?.getBoundingClientRect) return null;
   const bubble = document.createElement("div");
@@ -276,7 +277,10 @@ export function showCalloutBubble(targetEl, text) {
   const targetRect = targetEl.getBoundingClientRect();
   const bubbleRect = bubble.getBoundingClientRect();
   const left = Math.max(12, Math.min(targetRect.left + targetRect.width / 2 - bubbleRect.width / 2, window.innerWidth - bubbleRect.width - 12));
-  bubble.style.top = `${Math.max(8, targetRect.top - bubbleRect.height - 14)}px`;
+  const above = targetRect.top - bubbleRect.height - 14;
+  const below = above < 8;
+  bubble.classList.toggle("is-below", below);
+  bubble.style.top = `${below ? targetRect.bottom + 14 : above}px`;
   bubble.style.left = `${left}px`;
   bubble.style.setProperty("--arrow-left", `${targetRect.left + targetRect.width / 2 - left}px`);
 

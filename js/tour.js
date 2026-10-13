@@ -32,6 +32,7 @@ import { readFlag, writeFlag } from "./seen-flags.js";
 import { qsa, escapeHtml } from "./dom.js";
 import { t } from "./i18n.js";
 import { getMode } from "./mode.js";
+import { retireTourOffer } from "./tour-offer.js";
 
 const TOUR_COMPLETE_KEY = "contentos:tour-completed:";
 // Same account-first / browser-mirror shape as every other "seen once" mark
@@ -597,6 +598,8 @@ export function runSpotlightTour(steps, { onFinish, keepOnNavigate = false } = {
 // ten more stops about tabs, chat and settings before a single DNA question.
 // Those stay in the full tour (⋯ menu → Tur website).
 export function startOnboardingTour({ firstRun = false } = {}) {
+  // The tour was found: the "Mau tur website?" pill has done its job.
+  retireTourOffer();
   const brands = listBrands();
   const hasBrands = brands.length > 0;
 
