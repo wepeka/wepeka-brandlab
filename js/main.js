@@ -38,6 +38,8 @@ import { render as renderPricingScreen } from "./views/pricing.js";
 import { isPaywallUnlocked, unlockPaywall } from "./paywall.js";
 import { rememberBuyIntent } from "./buy-intent.js";
 import { consumePayReturn } from "./pay-return.js";
+import { isPaidWelcomeDue } from "./paid-welcome.js";
+import { showPayLoading, hidePayLoading } from "./pay-loading.js";
 import { WEPEKA_CONNECT_URL } from "./site-links.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
@@ -80,28 +82,80 @@ function tourAfterPicker(delay = 600) {
   setTimeout(() => import("./guide-videos.js").then((m) => m.startTour()), delay);
   return true;
 }
-// "Makasih sudah gabung" + the WhatsApp group and Instagram buttons, once
-// per account, the first time it is open on a paid plan (js/community.js).
-// Resolves when the sheet closes (at once when it isn't due), so whatever
-// comes next — welcome video, mode picker — waits its turn. Needs the store.
-// Thanked while the plans page is up = back from a payment made outside the
-// tab (GoPay, a banking app), landing where the checkout started: its
-// "Lanjut ke Brandlab" then goes into the app, like enterAppWhenPaid does
-// after a payment finished inside Snap.
+// The congratulations page after a payment (js/pay-thanks.js): "Selamat,
+// kamu sudah Lifetime", the WhatsApp group and Instagram doors, one button
+// into the app — once per account, the first time it is open on a paid plan
+// (and once more when it becomes Lifetime; js/paid-welcome.js). It covers
+// the whole screen from the moment it is due: its empty shell goes up here,
+// in the same breath as whatever is painted underneath, and the page itself
+// (downloaded on demand) fills it. Midtrans's own window, if it is still
+// open over a payment that has landed, is put away so the page is what the
+// buyer comes back to (snap.hide() only closes it: no onClose, and the next
+// checkout opens as usual). Resolves when the button is pressed (at once when the
+// page isn't due), so whatever comes next — welcome video, mode picker —
+// waits its turn. Needs the store.
+const THANKS_LOAD_MS = 10_000;
+let thanksPage = null;
+let thanksUp = null;
 function paidWelcome() {
-  return import("./community.js")
-    .then((m) => m.maybeShowPaidWelcome())
-    .then((shown) => {
-      if (shown && storeReady && location.hash.startsWith("#/pricing")) location.hash = "#/";
-      return shown;
-    })
-    .catch((e) => { console.warn("community sheet unavailable", e); return false; });
+  if (thanksUp) return thanksUp;
+  if (!isPaidWelcomeDue()) return Promise.resolve(false);
+  const page = document.createElement("div");
+  page.className = "pay-thanks pricing-page";
+  document.body.appendChild(page);
+  thanksPage = page;
+  app.inert = true;
+  try { window.snap?.hide?.(); } catch { /* not open, or already closing */ }
+  // The page's code is a download: failed, or still not here after a while
+  // (a stalled connection), the shell comes down and the app is not kept
+  // waiting — the account is still owed the page, on its next open.
+  const stalled = new Promise((resolve) => setTimeout(() => { if (!page.firstChild) resolve(false); }, THANKS_LOAD_MS));
+  const answered = import("./pay-thanks.js")
+    .then((m) => m.showPayThanks(page))
+    .then(() => true);
+  const mine = Promise.race([answered, stalled])
+    .catch((e) => { console.warn("congratulations page unavailable", e); return false; })
+    .then((pressed) => {
+      if (thanksUp !== mine) return false; // taken down meanwhile (teardownApp)
+      closeThanks();
+      // Whatever was under it, it is never the plans.
+      if (pressed && storeReady && location.hash.startsWith("#/pricing")) location.hash = "#/";
+      return pressed;
+    });
+  thanksUp = mine;
+  return mine;
+}
+function closeThanks() {
+  thanksPage?.remove();
+  thanksPage = null;
+  thanksUp = null;
+  app.inert = false;
+}
+// A payment that has just landed is never answered with the plans page it
+// was made on (owner, 2026-10-13: back from GoPay, the buyer was looking at
+// the prices again). Called before a route is painted for an account that
+// is owed the congratulations page: the app's home goes underneath instead.
+function leavePlansIfThanksDue() {
+  if (!location.hash.startsWith("#/pricing") || !isPaidWelcomeDue()) return;
+  history.replaceState(null, "", `${location.pathname}${location.search}#/`);
 }
 // Back from a payment made in another app (js/pay-return.js): what Midtrans
 // said happened, read once and already gone from the address bar. Used up by
 // whichever comes first — the account's first snapshot, or the front page
 // when this browser isn't signed in.
 let payReturn = consumePayReturn();
+// Back from the payment app a moment before the webhook has written the
+// account: a full-screen "setting up" (js/pay-loading.js) instead of the
+// plans page this account would otherwise still get, until the payment is
+// on the account — or, after a while, whatever the account really says.
+const PAID_WAIT_MS = 30_000;
+let paidWait = null;
+function endPaidWait() {
+  if (!paidWait) return;
+  clearTimeout(paidWait);
+  paidWait = null;
+  hidePayLoading();
+}
 // The Gojek app opens the way back in the phone's default browser. A buyer
 // who checked out somewhere else (Instagram's built-in browser, another
 // browser) arrives here signed out, on the front page: say that the plan is
@@ -253,6 +307,9 @@ function teardownApp() {
   // The "Mau tur website?" pill (js/tour-offer.js) belongs to the app, not
   // to the pricing / locked / landing screens that replace it.
   document.getElementById("tour-pill")?.remove();
+  // Likewise a congratulations page nobody answered: it is offered again
+  // the next time this account is open on its paid plan.
+  closeThanks();
   import("./announcements.js").then((m) => m.stopAnnouncements()).catch(() => {});
 }
 
@@ -302,6 +359,7 @@ async function boot(user) {
     if (accountUnsub) { accountUnsub(); accountUnsub = null; }
     subscribedUid = null;
     setCachedAccount(null);
+    endPaidWait();
     if (payReturn === "success") tellPaidSignedOut();
     payReturn = null;
     // startsWith, not ===, so a query string on the hash (there is none
@@ -374,6 +432,7 @@ function onAccountChange(user, account) {
   checkPendingOrders(user.uid);
 
   if (isDeactivated(account)) {
+    endPaidWait();
     teardownApp();
     app.innerHTML = lockedScreenHTML(user.email || "");
     document.getElementById("locked-logout")?.addEventListener("click", () => logout());
@@ -381,12 +440,24 @@ function onAccountChange(user, account) {
   }
 
   const state = accessState(account);
-  // Just back from a payment made in another app: a failure is said, and a
-  // success that the webhook hasn't written yet (a new buyer still sees the
-  // plans for a second or two) is said to be on its way.
+  // Just back from a payment made in another app: a failure is said; a
+  // success that the webhook hasn't written yet waits under "setting up"
+  // rather than on the plans page (a new buyer has no account for a second
+  // or two), and the next snapshot — the webhook's — carries on from here.
   if (payReturn === "failure") toast(t("pricing.pay.error"), "error");
-  else if (payReturn === "success" && state !== "paid") toast(t("pricing.pay.activating"));
+  if (state === "paid") endPaidWait();
+  else if (payReturn === "success" && !paidWait) {
+    app.innerHTML = ""; // the boot loader would sit over the sheet
+    showPayLoading("pricing.pay.settingUp", "pricing.pay.settingUpNote");
+    paidWait = setTimeout(() => {
+      paidWait = null;
+      hidePayLoading();
+      toast(t("pricing.pay.pending"));
+      if (lastUser?.uid === user.uid) onAccountChange(user, getCachedAccount());
+    }, PAID_WAIT_MS);
+  }
   payReturn = null;
+  if (paidWait) return;
   // "none" (never claimed a trial / never paid — no accounts/{uid} doc at
   // all) and "expired" (a lapsed sub or ended trial) both get the same
   // locked pricing screen now — no more in-app read-only browsing for a
@@ -419,12 +490,15 @@ function onAccountChange(user, account) {
       // Arriving straight at pricing (wepeka.com's /brandlab/connect?to=
       // pricing — a "buy" CTA, or Midtrans's own reviewers) must land on
       // pricing, not on the picker: renderRoute() shows the picker instead
-      // the moment they step from pricing into the app itself.
+      // the moment they step from pricing into the app itself. Someone who
+      // has just paid there doesn't stay on it: congratulations, then the
+      // app, as if they had arrived at its front door.
+      leavePlansIfThanksDue();
       const firstEverOpen = !hasChosenMode() && !modePickerShown && !location.hash.startsWith("#/pricing");
       if (firstEverOpen) {
         modePickerShown = true;
         app.innerHTML = `<main class="view" id="mode-root" style="padding:0;max-width:none;"></main>`;
-        // Someone who just paid is thanked first, before the welcome video.
+        // Someone who just paid is congratulated first, before the welcome video.
         await paidWelcome();
         await playWelcomeVideo();
         await renderModePicker(document.getElementById("mode-root"));
@@ -437,11 +511,16 @@ function onAccountChange(user, account) {
       // only a brand-new account then gets the video on top of it, and only
       // the one time (js/guide-videos.js playFirstRunIntro, videoSeen-gated).
       renderRoute();
+      // An account that already knows the app and is now on a paid plan
+      // (paid while away, or in another app): the congratulations page goes
+      // up with the route, and is that boot's greeting.
+      const thanksDue = !firstEverOpen && isPaidWelcomeDue();
+      if (thanksDue) paidWelcome();
       let bumper = Promise.resolve();
       if (!welcomeShown) {
         welcomeShown = true;
         const name = (user.displayName || user.email?.split("@")[0] || "").trim().split(/\s+/)[0];
-        if (name) bumper = showWelcomeBumper(name);
+        if (name && !thanksDue) bumper = showWelcomeBumper(name);
       }
       if (firstEverOpen) {
         // "Hi {nama}, welcome to Brandlab" first, then the kenalan video —
@@ -451,10 +530,6 @@ function onAccountChange(user, account) {
           .then(() => (tourAfterPicker(0) ? null : import("./guide-videos.js").then((m) => m.playFirstRunIntro())))
           .catch((e) => console.warn("first-run video unavailable", e));
       } else {
-        // An account that already knows the app and is now on a paid plan
-        // (paid while away, or before this sheet existed): once, after the
-        // greeting.
-        bumper.then(() => paidWelcome());
         // A new account that answered "Sudah paham" keeps its floating
         // "Mau tur website?" pill until the tour is taken or it is closed.
         bumper
@@ -483,8 +558,10 @@ function onAccountChange(user, account) {
       }, 8000);
     });
   } else {
+    // The plan changed while the app is open — a payment just landed: the
+    // congratulations page, over the app rather than over the plans.
+    leavePlansIfThanksDue();
     renderRoute();
-    // The plan changed while the app is open — a payment just landed.
     paidWelcome();
   }
 }

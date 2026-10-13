@@ -121,9 +121,10 @@ async function showPaymentsClosed() {
 // looked up server-side from planKey, never trusted from this call.
 // `onSuccess` lets a caller outside this page (the Brand Book style picker)
 // react once Snap reports success; the unlock itself still only ever comes
-// from the webhook.
+// from the webhook. `successToast: false` for a caller that says it its own
+// way (this page's full-screen "setting up", enterAppWhenPaid).
 let payStarting = false;
-export async function payPlan(planKey, uid, { onSuccess } = {}) {
+export async function payPlan(planKey, uid, { onSuccess, successToast = true } = {}) {
   if (!uid) {
     toast(t("pricing.err.needLogin"), "error");
     location.hash = "#/login";
@@ -188,7 +189,7 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
         // GA4 purchase + Meta Purchase, with the same event id as the
         // webhook's Conversions API Purchase (api/midtrans/webhook.js).
         reportPurchase(uid, order);
-        toast(t("pricing.pay.success"));
+        if (successToast) toast(t("pricing.pay.success"));
         onSuccess?.();
       },
       onPending: () => { answered = true; toast(t("pricing.pay.pending")); showPendingHelp("snap"); },
@@ -199,6 +200,9 @@ export async function payPlan(planKey, uid, { onSuccess } = {}) {
     });
     snapOpening = true;
     hidePayLoadingWhenSnapShows();
+    // A checkout is open: have the congratulations page (js/pay-thanks.js)
+    // downloaded by the time the payment lands.
+    if (isPlanKey(planKey)) import("../pay-thanks.js").catch(() => {});
   } catch (err) {
     toast(err.message || t("pricing.err.start"), "error");
   } finally {
@@ -292,17 +296,22 @@ async function confirmPlanSwitch(planKey, idToken) {
 // After Snap reports success on the pricing page itself: wait for the
 // webhook to flip accounts/{uid} to a paid state (main.js's onAccountChange
 // re-boots and refreshes the cache), then step into the app — a brand-new
-// buyer lands on the mode picker + first-run flow exactly like a fresh
-// account (renderRoute shows the picker when no mode is chosen yet).
+// buyer lands on the congratulations page, then the mode picker + first-run
+// flow exactly like a fresh account. The wait is the full-screen "setting
+// up" sheet (js/pay-loading.js), not this page with a toast on it: someone
+// who has just paid shouldn't be looking at prices (owner, 2026-10-13).
 function enterAppWhenPaid() {
-  toast(t("pricing.pay.activating"));
+  showPayLoading("pricing.pay.settingUp", "pricing.pay.settingUpNote");
   const startedAt = Date.now();
   const tick = () => {
     if (accessState(getCachedAccount()) === "paid") {
-      location.hash = "#/";
+      hidePayLoading();
+      // main.js has usually left the plans already (leavePlansIfThanksDue).
+      if (location.hash.startsWith("#/pricing")) location.hash = "#/";
       return;
     }
     if (Date.now() - startedAt > 90_000) {
+      hidePayLoading();
       toast(t("pricing.pay.pending"));
       showPendingHelp("slow");
       return;
@@ -816,7 +825,7 @@ export function render(root, { user, account, backHref, locked, embed = false, o
     import("../community.js").then((m) => m.openCommunityModal()).catch((e) => console.warn("community sheet unavailable", e));
   });
   qsa("[data-pay]", root).forEach((btn) => {
-    btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid, { onSuccess: enterAppWhenPaid }));
+    btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid, { onSuccess: enterAppWhenPaid, successToast: false }));
   });
   // An add-on doesn't change the plan, so there's nothing to "enter" after.
   qsa("[data-pay-addon]", root).forEach((btn) => {
@@ -843,7 +852,7 @@ export function render(root, { user, account, backHref, locked, embed = false, o
   // opens now, without asking for the same click again.
   if (uid && !embed) {
     const wanted = takeBuyIntent();
-    if (wanted) payPlan(wanted, uid, { onSuccess: enterAppWhenPaid });
+    if (wanted) payPlan(wanted, uid, { onSuccess: enterAppWhenPaid, successToast: false });
   }
 
   paymentStatus().then((status) => {

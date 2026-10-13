@@ -12,7 +12,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { sendEmailBatch, EMAIL_BATCH_SIZE } from "../api/_email.js";
-import { paidWelcomeDue, welcomeMarks, communityLinksHTML, progressText } from "../js/community.js";
+import { communityLinksHTML, progressText } from "../js/community.js";
+import { paidWelcomeDue, welcomeMarks } from "../js/paid-welcome.js";
+import { payThanksHTML, planLabel } from "../js/pay-thanks.js";
 import { t } from "../js/i18n.js";
 
 const DAY = 86400000;
@@ -126,7 +128,7 @@ describe("the community sheet's doors", () => {
   });
 });
 
-describe("the thank-you sheet after payment", () => {
+describe("the congratulations page after payment", () => {
   const paid = { status: "active", plan: "starter", subscriptionExpiresAt: Date.now() + 30 * DAY };
   test("shown once to an account on a paid plan", () => {
     assert.equal(paidWelcomeDue(paid), true);
@@ -154,6 +156,57 @@ describe("the thank-you sheet after payment", () => {
     const founder = { status: "active", plan: "founder", subscriptionExpiresAt: null };
     assert.equal(paidWelcomeDue(founder, { seen: !!seen[life.check] }), true);
     assert.equal(paidWelcomeDue(paid, { seen: !!seen[sub.check] }), false);
+  });
+});
+
+// What a buyer comes back to after paying (owner, 2026-10-13: "congrats kamu
+// sudah lifetime doang tanpa harga2 itu, lanjut ke brandlab").
+describe("what the congratulations page says", () => {
+  const founder = { status: "active", plan: "founder", subscriptionExpiresAt: null };
+  const starter = { status: "active", plan: "starter", billing: "monthly", subscriptionExpiresAt: Date.now() + 30 * DAY };
+  const text = (html) => html.replace(/<style[\s\S]*?<\/style>|<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  test("a Lifetime buyer: congratulated as Lifetime, with the plan's name and the Lifetime group's place", () => {
+    const html = payThanksHTML(founder);
+    assert.ok(html.includes(t("pay.thanks.title.lifetime")));
+    assert.ok(html.includes(t("pay.thanks.sub.lifetime")));
+    assert.match(html, /pay-thanks-pill[^>]*>Founder Lifetime</);
+    assert.ok(html.indexOf("data-community-lifetime") < html.indexOf('data-done-id="wa"'));
+    assert.ok(html.includes('data-done-id="ig:winkhsin"') && html.includes('data-done-id="ig:wepeka.id"'));
+  });
+
+  test("a subscriber: congratulated on the plan, general doors only", () => {
+    const html = payThanksHTML(starter);
+    assert.ok(html.includes(t("pay.thanks.title.plan")));
+    assert.ok(html.includes(t("pay.thanks.sub.plan")));
+    assert.ok(html.includes(`>${t("pricing.planName.starter")}<`));
+    assert.ok(!html.includes("data-community-lifetime"));
+    assert.ok(!html.includes(t("pay.thanks.title.lifetime")));
+  });
+
+  test("no price, no plan to buy, and exactly one button: into the app", () => {
+    for (const account of [founder, starter, { status: "active", plan: "founder-ultimate", subscriptionExpiresAt: null }]) {
+      const html = payThanksHTML(account);
+      assert.doesNotMatch(text(html), /Rp\s?\d|\d{3}\.000|IDR/);
+      assert.doesNotMatch(html, /data-pay=|data-pay-addon|pricing-way|pricing-price|#\/pricing/);
+      const buttons = [...html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)];
+      assert.equal(buttons.length, 1);
+      assert.ok(buttons[0][0].includes("data-pay-thanks-go"));
+      assert.ok(buttons[0][1].includes(t("community.paid.cta")));
+    }
+  });
+
+  test("the plan's name is the plans page's; the old Lifetime plan has a plain one, an unknown plan none", () => {
+    assert.equal(planLabel({ plan: "founder-ultimate" }), t("pricing.planName.founder-ultimate"));
+    assert.equal(planLabel({ plan: "pro" }), t("pricing.planName.pro"));
+    assert.equal(planLabel({ plan: "lifetime" }), "Lifetime");
+    assert.equal(planLabel({ plan: "sesuatu" }), "");
+    assert.equal(planLabel(null), "");
+    assert.ok(!payThanksHTML({ status: "active", plan: "sesuatu", subscriptionExpiresAt: null }).includes("pay-thanks-pill"));
+  });
+
+  test("whatever the plan field holds never reaches the page as markup", () => {
+    assert.doesNotMatch(payThanksHTML({ status: "active", plan: "<img src=x onerror=1>", subscriptionExpiresAt: null }), /<img/);
   });
 });
 

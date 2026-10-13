@@ -1550,6 +1550,65 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 @keyframes pay-loading-in{ from{ opacity:0; } }
 @media (prefers-reduced-motion: reduce){ .pay-loading{ animation:none; } .pay-loading-ring{ animation-duration:1.6s; } }
 
+/* The congratulations page after a payment (js/pay-thanks.js; its empty
+   shell is put up by js/main.js). It covers the whole screen, opaque from
+   its first frame, so the plans page never shows through: as high as the
+   boot loader (99) and later in the document, so it sits above it; toasts
+   (100) stay readable; Midtrans's own window is far above. Colours and the
+   mesh come from .pricing-page. */
+.pay-thanks{ --pt-floor:#0e0d13; position:fixed; inset:0; z-index:99; min-height:0; overflow-y:auto; overscroll-behavior:contain; color: var(--text); }
+.pay-thanks:focus, .pay-thanks:focus-visible{ outline:none; box-shadow:none; }
+/* The shell before its page has arrived: the same ring as the payment wait,
+   never a blank screen. */
+.pay-thanks:empty{ display:grid; place-items:center; }
+.pay-thanks:empty::before{ content:""; width:44px; height:44px; border-radius:50%; border:4px solid rgba(236,72,153,.2); border-top-color:#ec4899; animation: spin .8s linear infinite; }
+/* The app's own floating buttons live beside #app (which main.js makes
+   inert): under the page they are out of sight, and out of the Tab key's
+   reach too. */
+body:has(> .pay-thanks) > :is(.notes-fab, .notes-float, .consultant-fab, .consultant-fab-hint, .consultant-panel, .tour-pill){ visibility:hidden; }
+:root[data-theme="light"] .pay-thanks{ --pt-floor:#fbfaff; }
+.pay-thanks-inner{ display:flex; flex-direction:column; align-items:center; gap:20px; width:min(520px, 100%); min-height:100%; margin:0 auto; padding: clamp(20px, 4vh, 44px) 20px 0; }
+.pay-thanks-mark{ justify-content:center; font-size:19px; }
+.pay-thanks-mark .brand-logo, :root[data-theme="light"] .pay-thanks-mark .brand-logo{ --logo-h:24px; --logo-we: var(--accent); }
+.pay-thanks-hero{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-top: clamp(0px, 2vh, 24px); text-align:center; }
+.pay-thanks-badge{ position:relative; display:grid; place-items:center; width:76px; height:76px; margin-bottom:8px; border-radius:50%; color:#fff; background: linear-gradient(135deg, #ec4899, #8b5cf6); box-shadow: 0 0 0 8px rgba(236,72,153,.14), 0 18px 44px -12px rgba(236,72,153,.7); }
+.pay-thanks-badge svg{ position:relative; width:36px; height:36px; stroke-width:2.6; }
+.pay-thanks-title{ margin:2px 0 0; font-family: var(--font-display); font-size: clamp(28px, 6.6vw, 44px); font-weight:900; line-height:1.08; letter-spacing:.01em; text-wrap:balance; }
+.pay-thanks-sub{ margin:0; max-width:420px; font-size: clamp(14px, 1.7vw, 16px); line-height:1.55; color: var(--text-muted); text-wrap:balance; }
+.pay-thanks-card{ width:100%; padding:20px 18px 18px; border-radius:24px; border:1px solid var(--border); background: var(--surface); box-shadow: var(--pl-shadow-card); }
+.pay-thanks-card h2{ margin:0 0 6px; font-size:17px; font-weight:800; line-height:1.3; }
+.pay-thanks-card .community-lead{ margin-bottom:12px; }
+/* The way on stays in reach however long the page is. */
+.pay-thanks-foot{ position:sticky; bottom:0; z-index:2; width:100%; margin-top:auto; padding:18px 0 calc(18px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--pt-floor) 68%, transparent); }
+.pay-thanks-go{ width:100%; justify-content:center; padding-block:15px; border-radius:16px; font-size:16px; }
+/* Wide screens: the congratulations and the way on at the left, the doors
+   beside them — everything in one look, nothing to scroll. */
+@media (min-width: 900px){
+  .pay-thanks-inner{ display:grid; grid-template-columns: minmax(0, 1fr) minmax(0, 440px); grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "mark mark" "hero card" "foot card"; column-gap: clamp(40px, 6vw, 88px); row-gap:26px; align-items:center; width:min(1040px, 100%); padding: clamp(24px, 5vh, 48px) 32px 40px; }
+  .pay-thanks-mark{ grid-area:mark; justify-content:flex-start; }
+  .pay-thanks-hero{ grid-area:hero; align-self:end; align-items:flex-start; margin-top:0; text-align:left; }
+  .pay-thanks-title{ font-size: clamp(40px, 4.4vw, 60px); }
+  .pay-thanks-sub{ font-size:17px; }
+  .pay-thanks-card{ grid-area:card; padding:24px 22px 22px; }
+  .pay-thanks-foot{ grid-area:foot; align-self:start; position:static; margin-top:0; padding:0; background:none; }
+  .pay-thanks-go{ width:auto; min-width:280px; padding-inline:30px; }
+}
+.pay-thanks-confetti{ position:absolute; inset:0; pointer-events:none; }
+.pay-thanks-confetti i{ position:absolute; left:50%; top:50%; width:8px; height:12px; margin:-6px 0 0 -4px; border-radius:2px; background: var(--c); opacity:0; }
+.pay-thanks-confetti i:nth-child(3n){ width:9px; height:9px; margin:-4.5px 0 0 -4.5px; border-radius:50%; }
+@media (prefers-reduced-motion: no-preference){
+  .pay-thanks-inner{ animation: pay-thanks-rise .45s cubic-bezier(.2,.8,.3,1) both; }
+  .pay-thanks-badge{ animation: pay-thanks-pop .55s cubic-bezier(.2,1.5,.4,1) .12s both; }
+  .pay-thanks-confetti i{ animation: pay-thanks-burst 1.15s cubic-bezier(.15,.7,.3,1) calc(.3s + var(--t)) both; }
+  @keyframes pay-thanks-rise{ from{ opacity:0; transform: translateY(14px); } }
+  @keyframes pay-thanks-pop{ from{ opacity:0; transform: scale(.4); } }
+  @keyframes pay-thanks-burst{
+    0%{ opacity:0; transform: rotate(var(--a)) translateY(0) rotate(0deg); }
+    12%, 68%{ opacity:1; }
+    100%{ opacity:0; transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) rotate(220deg); }
+  }
+}
+
 /* Topbar plan badge (js/layout.js planBadgeHTML) → pricing */
 .plan-badge{ display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 6px 0 11px; border-radius: var(--radius-pill); border:1px solid var(--border); background: var(--surface); color: var(--text-muted); font-size:12px; font-weight:700; text-decoration:none; white-space:nowrap; flex:none; transition:border-color .15s; }
 .plan-badge:hover{ border-color: var(--accent); }
