@@ -314,7 +314,7 @@ export default {
   "pricing.pay.activating": { en: "Payment received — setting up your Brandlab…", id: "Pembayaran diterima — menyiapkan Brandlab kamu…" },
   "pricing.pay.pending": { en: "Payment is being processed — access unlocks automatically once it's verified.", id: "Pembayaran sedang diproses — akses terbuka otomatis begitu terverifikasi." },
   "pricing.pay.preparing": { en: "Preparing your payment…", id: "Menyiapkan pembayaran…" },
-  "pricing.pay.preparingNote": { en: "One moment, the Midtrans payment window is opening.", id: "Sebentar ya, jendela pembayaran Midtrans lagi dibuka." },
+  "pricing.pay.preparingNote": { en: "One moment, the payment window is opening.", id: "Sebentar ya, jendela pembayarannya lagi dibuka." },
   "pricing.pay.leaving": { en: "Taking you to payment…", id: "Menuju pembayaran…" },
   "pricing.pay.leavingNote": { en: "Sign in or register first. The payment opens right after.", id: "Masuk atau daftar dulu sebentar. Habis itu pembayaran langsung terbuka." },
   "pricing.pay.error": { en: "Payment failed — try again or contact support.", id: "Pembayaran gagal — coba lagi atau hubungi support." },

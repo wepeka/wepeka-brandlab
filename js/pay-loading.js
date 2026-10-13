@@ -3,7 +3,9 @@
 // three, and without this the page just sat there as if nothing had been
 // pressed. One full-screen sheet, also used while a signed-out visitor's
 // "buy" click travels to wepeka.com to sign in. It blocks a second click
-// (a second checkout) until it is taken down.
+// (a second checkout) until it is taken down. It carries Wepeka's own mark
+// and never names the payment provider: this is still our screen (owner's
+// call, 2026-10-13).
 import { t } from "./i18n.js";
 
 let sheet = null;
@@ -19,6 +21,11 @@ export function showPayLoading(titleKey = "pricing.pay.preparing", noteKey = "pr
   }
   sheet.innerHTML = `
     <div class="pay-loading-card">
+      <div class="brand-mark pay-loading-mark">
+        <span class="brand-logo" role="img" aria-label="Wepeka"></span>
+        <span class="brand-mark-divider"></span>
+        Brandlab
+      </div>
       <span class="pay-loading-ring" aria-hidden="true"></span>
       <strong>${t(titleKey)}</strong>
       <span>${t(noteKey)}</span>
