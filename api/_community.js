@@ -5,9 +5,27 @@
 // two Instagram accounts. Everything here is pure (no Firestore, no fetch),
 // so it is tested directly; api/_email.js does the sending.
 import { APP_URL } from "./_reminders.js";
+import { isLifetimePlan } from "./_plans.js";
+import { isAdminUid } from "./_aiQuota.js";
 
-// Same values as js/site-links.js — kept equal by tests/community.test.mjs.
-export const BRANDLAB_WA_GROUP_URL = "https://chat.whatsapp.com/CCk7zkSbXhrBxKyjG92Yt1";
+// Brandlab's own WhatsApp groups (owner, 2026-10-13 — until then this
+// pointed at Wepeka Community's group, wepeka.com/gabung, by mistake):
+//   general   everyone with a Brandlab account: news, fixes, tips, questions.
+//             Same value as js/site-links.js — kept equal by
+//             tests/community.test.mjs.
+//   Lifetime  the Founder Circle: Founder, Agency Lifetime and the old
+//             Lifetime plan only. It exists on the server alone, never in
+//             the browser bundle: api/community.js hands it to a Lifetime
+//             account, and the email after a Lifetime payment carries it.
+export const BRANDLAB_WA_GROUP_URL = "https://chat.whatsapp.com/G3QM3TVztrH5jkFcoULjdu";
+export const LIFETIME_WA_GROUP_URL = "https://chat.whatsapp.com/JsLekzEXFU616x24nItGX4";
+
+// The Lifetime group's link for this account, or null: a Lifetime plan
+// (whatever its status but an admin's "deactivated"), or Wepeka's team.
+export function lifetimeGroupFor(uid, account) {
+  if (isAdminUid(uid)) return LIFETIME_WA_GROUP_URL;
+  return account && account.status !== "deactivated" && isLifetimePlan(account.plan) ? LIFETIME_WA_GROUP_URL : null;
+}
 export const FOLLOW_INSTAGRAM = ["winkhsin", "wepeka.id"];
 export const SUPPORT_WA_NUMBER = "6285196627609";
 export const instagramUrl = (handle) => `https://www.instagram.com/${String(handle).replace(/^@/, "")}`;
@@ -24,17 +42,25 @@ ${inner}
 </div></body></html>`;
 
 // The block every email ends on: join the group, follow the accounts.
-function communityHTML() {
+// `lifetime`: the buyer just got a Lifetime plan, so their own group comes
+// first (never in an announcement, which goes to everyone).
+function communityHTML({ lifetime = false } = {}) {
   const follow = FOLLOW_INSTAGRAM.map((h) => `<a href="${esc(instagramUrl(h))}" style="color:#c2185b;font-weight:700;text-decoration:none;">@${esc(h)}</a>`).join(" &nbsp;·&nbsp; ");
-  return `<div style="margin:22px 0 0;padding:16px 18px;background:#f1fbf4;border:1px solid #cdeed8;border-radius:12px;">
+  const circle = lifetime ? `<div style="margin:22px 0 0;padding:16px 18px;background:#fff4f9;border:1px solid #f6c7dd;border-radius:12px;">
+<p style="margin:0 0 6px;font-weight:700;">Grup WhatsApp Lifetime (Founder Circle)</p>
+<p style="margin:0 0 12px;color:#444;font-size:14px;">Khusus akun Lifetime: bareng tim Wepeka dan Founder lain. Link ini khusus buat kamu, jangan dibagikan ya.</p>
+<p style="margin:0;"><a href="${esc(LIFETIME_WA_GROUP_URL)}" style="${BUTTON}background:#25D366;color:#062b14;">Gabung grup Lifetime</a></p>
+</div>` : "";
+  return `${circle}<div style="margin:${lifetime ? "12px" : "22px"} 0 0;padding:16px 18px;background:#f1fbf4;border:1px solid #cdeed8;border-radius:12px;">
 <p style="margin:0 0 6px;font-weight:700;">Gabung grup WhatsApp Brandlab</p>
 <p style="margin:0 0 12px;color:#444;font-size:14px;">Fitur baru, perbaikan, dan tips diumumkan di sana dulu — sekaligus tempat tanya langsung ke tim Wepeka.</p>
 <p style="margin:0 0 12px;"><a href="${esc(BRANDLAB_WA_GROUP_URL)}" style="${BUTTON}background:#25D366;color:#062b14;">Gabung grup WhatsApp</a></p>
 <p style="margin:0;color:#444;font-size:14px;">Follow juga di Instagram: ${follow}</p>
 </div>`;
 }
-function communityText() {
+function communityText({ lifetime = false } = {}) {
   return [
+    ...(lifetime ? ["Grup WhatsApp Lifetime (Founder Circle), khusus akun Lifetime. Link ini jangan dibagikan ya:", LIFETIME_WA_GROUP_URL, ""] : []),
     "Gabung grup WhatsApp Brandlab (fitur baru, perbaikan, dan tips diumumkan di sana dulu):",
     BRANDLAB_WA_GROUP_URL,
     "",
@@ -43,8 +69,10 @@ function communityText() {
 }
 
 // After a payment. `isPlan`: a plan (welcome wording) or an add-on (AI
-// credits, a brand slot — a plain receipt). → { subject, html, text }.
-export function composePaidEmail({ name = "", label = "", amount = 0, orderId = "", isPlan = true, appUrl = APP_URL } = {}) {
+// credits, a brand slot — a plain receipt). `lifetime`: the plan bought is
+// a Lifetime one, so the Lifetime group's link is included.
+// → { subject, html, text }.
+export function composePaidEmail({ name = "", label = "", amount = 0, orderId = "", isPlan = true, lifetime = false, appUrl = APP_URL } = {}) {
   const hi = firstName(name) ? `Hai ${firstName(name)},` : "Hai,";
   const what = label || "Brandlab";
   const subject = isPlan ? "Pembayaran diterima — selamat datang di Brandlab" : `Pembayaran diterima — ${what}`;
@@ -57,9 +85,9 @@ export function composePaidEmail({ name = "", label = "", amount = 0, orderId = 
 <p style="margin:0 0 12px;">${esc(lead)}</p>
 <p style="margin:0 0 18px;color:#666;font-size:13px;">${esc(detail)}</p>
 <p style="margin:0;"><a href="${esc(appUrl)}" style="${BUTTON}background:#111;color:#fff;">Buka Brandlab</a></p>
-${communityHTML()}
+${communityHTML({ lifetime: isPlan && lifetime })}
 <p style="margin:18px 0 0;color:#888;font-size:12px;">Ada kendala? <a href="https://wa.me/${SUPPORT_WA_NUMBER}" style="color:#888;">WhatsApp tim Wepeka</a>.</p>`);
-  const text = [hi, "", lead, detail, "", `Buka Brandlab: ${appUrl}`, "", communityText(), "", help].join("\n");
+  const text = [hi, "", lead, detail, "", `Buka Brandlab: ${appUrl}`, "", communityText({ lifetime: isPlan && lifetime }), "", help].join("\n");
   return { subject, html, text };
 }
 

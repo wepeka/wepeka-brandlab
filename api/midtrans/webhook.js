@@ -7,7 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, newAccountFields, ACCOUNT_COUNTER_DOC, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
+import { PLANS, ADDONS, LEGACY_PLANS, LIFETIME_BOOK_STYLES, SLOTS_DOC, nextBrandSlots, recurringFor, subscriptionName, subscriptionNameFromOrder, settlePlanPurchase, isLifetimePlan, newAccountFields, ACCOUNT_COUNTER_DOC, renewalChargePatch, convertSeat, releaseSeat, seatFields } from "../_plans.js";
 import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
@@ -267,7 +267,7 @@ async function sendPaidEmail({ uid, buyer, plan, planKey, orderId, amount }) {
   const user = buyer.email && buyer.displayName ? null : await getAuth(getApps()[0]).getUser(uid).catch(() => null);
   const to = String(buyer.email || user?.email || "").trim();
   if (!to) return;
-  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", label: plan.label || planKey, amount, orderId, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]) });
+  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", label: plan.label || planKey, amount, orderId, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]), lifetime: isLifetimePlan(plan.plan) });
   const r = await sendEmail({ to, ...mail, idempotencyKey: `brandlab-paid-${orderId}` });
   if (!r.ok && !r.skipped) console.error("Midtrans webhook: paid email not sent", orderId, r.error || r.status);
 }

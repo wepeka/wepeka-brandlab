@@ -18,12 +18,15 @@ export const buyUrl = (planKey) => `${WEPEKA_CONNECT_URL}?to=pricing&plan=${enco
 // story card and put in the caption that gets copied alongside it.
 export const WEPEKA_IG_HANDLE = "wepeka.id";
 
-// Community (js/community.js): the WhatsApp group where Brandlab news is
-// announced, and the accounts a new buyer is asked to follow — the
-// founder's first, then Wepeka's. Same values as wepeka.com/gabung (wpk-dp
-// src/lib/site.ts) and as the email after payment (api/_community.js,
-// kept equal by tests/community.test.mjs).
-export const BRANDLAB_WA_GROUP_URL = "https://chat.whatsapp.com/CCk7zkSbXhrBxKyjG92Yt1";
+// Community (js/community.js): Brandlab's own WhatsApp group — news, fixes
+// and tips for everyone with an account — and the accounts a new buyer is
+// asked to follow, the founder's first, then Wepeka's. Same values as the
+// email after payment (api/_community.js, kept equal by
+// tests/community.test.mjs). Not Wepeka Community's group (wepeka.com/gabung),
+// which this pointed at by mistake until 2026-10-13. The second group, for
+// Lifetime accounts, is deliberately NOT here: its link never ships in the
+// bundle — the server hands it to a Lifetime account (api/community.js).
+export const BRANDLAB_WA_GROUP_URL = "https://chat.whatsapp.com/G3QM3TVztrH5jkFcoULjdu";
 export const FOLLOW_INSTAGRAM = ["winkhsin", WEPEKA_IG_HANDLE];
 export const instagramUrl = (handle) => `https://www.instagram.com/${String(handle).replace(/^@/, "")}`;
 

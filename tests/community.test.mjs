@@ -6,7 +6,11 @@ import assert from "node:assert/strict";
 
 import * as client from "../js/site-links.js";
 import * as server from "../api/_community.js";
-import { composePaidEmail, composeAnnouncementEmail, announcementRecipients } from "../api/_community.js";
+import { composePaidEmail, composeAnnouncementEmail, announcementRecipients, lifetimeGroupFor, LIFETIME_WA_GROUP_URL } from "../api/_community.js";
+import { ADMIN_UIDS } from "../api/_aiQuota.js";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { sendEmailBatch, EMAIL_BATCH_SIZE } from "../api/_email.js";
 import { paidWelcomeDue } from "../js/community.js";
 
@@ -22,6 +26,68 @@ describe("community links", () => {
     assert.deepEqual(client.FOLLOW_INSTAGRAM, ["winkhsin", "wepeka.id"]);
     assert.equal(client.instagramUrl("@winkhsin"), "https://www.instagram.com/winkhsin");
     assert.equal(server.instagramUrl("wepeka.id"), "https://www.instagram.com/wepeka.id");
+  });
+});
+
+// Two Brandlab groups (owner, 2026-10-13): one for everyone, one for
+// Lifetime accounts. The second one's link is handed out by the server only.
+describe("the Lifetime group", () => {
+  const INVITE = LIFETIME_WA_GROUP_URL.split("/").pop();
+  test("it is its own group, a plain invite link", () => {
+    assert.match(LIFETIME_WA_GROUP_URL, /^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]+$/);
+    assert.notEqual(LIFETIME_WA_GROUP_URL, server.BRANDLAB_WA_GROUP_URL);
+  });
+
+  test("Founder, Agency Lifetime, the old Lifetime plan and the Wepeka team get the link", () => {
+    for (const plan of ["founder", "founder-ultimate", "lifetime"]) {
+      assert.equal(lifetimeGroupFor("u1", { plan, status: "active", subscriptionExpiresAt: null }), LIFETIME_WA_GROUP_URL, plan);
+    }
+    assert.equal(lifetimeGroupFor(ADMIN_UIDS[0], null), LIFETIME_WA_GROUP_URL);
+  });
+
+  test("nobody else does: trial, subscriptions, no account, a deactivated Lifetime", () => {
+    for (const account of [
+      null,
+      { plan: "trial", status: "active", trialEndsAt: Date.now() + 86400000 },
+      { plan: "starter", status: "active", subscriptionExpiresAt: Date.now() + 86400000 },
+      { plan: "pro", status: "active", subscriptionExpiresAt: Date.now() + 86400000 },
+      { plan: "studio", status: "active", subscriptionExpiresAt: Date.now() + 86400000 },
+      { plan: "free", status: "active" },
+      { plan: "founder", status: "deactivated" },
+    ]) {
+      assert.equal(lifetimeGroupFor("u1", account), null, JSON.stringify(account));
+    }
+  });
+
+  test("its link is nowhere in what the browser downloads", () => {
+    const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+    const files = [path.join(root, "index.html")];
+    const walk = (dir) => {
+      for (const name of readdirSync(dir)) {
+        const p = path.join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (/\.(js|css|html|json|webmanifest)$/.test(name)) files.push(p);
+      }
+    };
+    for (const dir of ["js", "css", "assets"]) walk(path.join(root, dir));
+    assert.ok(files.length > 100);
+    assert.deepEqual(files.filter((f) => readFileSync(f, "utf8").includes(INVITE)), []);
+    assert.equal(Object.values(client).some((v) => typeof v === "string" && v.includes(INVITE)), false);
+  });
+
+  test("the email after a Lifetime payment carries it; any other email never does", () => {
+    const founder = composePaidEmail({ name: "Rani", label: "Brandlab Founder Lifetime", amount: 499000, orderId: "bl-1", isPlan: true, lifetime: true });
+    for (const part of [founder.html, founder.text]) {
+      assert.ok(part.includes(LIFETIME_WA_GROUP_URL));
+      assert.ok(part.includes(server.BRANDLAB_WA_GROUP_URL), "and the general group too");
+      assert.ok(part.indexOf(LIFETIME_WA_GROUP_URL) < part.indexOf(server.BRANDLAB_WA_GROUP_URL), "their own group first");
+    }
+    const starter = composePaidEmail({ name: "Rani", label: "Brandlab Starter — Bulanan", amount: 49000, orderId: "bl-2", isPlan: true });
+    const addon = composePaidEmail({ label: "Brandlab — 300 kredit AI", amount: 15000, orderId: "bl-3", isPlan: false, lifetime: true });
+    const news = composeAnnouncementEmail({ title: "Fitur baru", body: "Isi", appUrl: "https://brandlab.wepeka.com" });
+    for (const mail of [starter, addon, news]) {
+      assert.ok(!mail.html.includes(INVITE) && !mail.text.includes(INVITE));
+    }
   });
 });
 
