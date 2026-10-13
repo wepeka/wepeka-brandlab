@@ -12,7 +12,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { sendEmailBatch, EMAIL_BATCH_SIZE } from "../api/_email.js";
-import { paidWelcomeDue } from "../js/community.js";
+import { paidWelcomeDue, communityLinksHTML, progressText } from "../js/community.js";
+import { t } from "../js/i18n.js";
 
 const DAY = 86400000;
 const NOW = Date.parse("2026-10-13T03:00:00Z");
@@ -88,6 +89,35 @@ describe("the Lifetime group", () => {
     for (const mail of [starter, addon, news]) {
       assert.ok(!mail.html.includes(INVITE) && !mail.text.includes(INVITE));
     }
+  });
+});
+
+// Every door carries its check, its "done" wording and a bubble saying what
+// would be missed (owner, 2026-10-13).
+describe("the community sheet's doors", () => {
+  test("group and follow buttons each have a to-do label, a done label and their bubble", () => {
+    const html = communityLinksHTML();
+    const doors = [...html.matchAll(/<a class="community-btn[^"]*"[^>]*data-done-id="([^"]+)"[\s\S]*?<\/a>/g)];
+    assert.deepEqual(doors.map((m) => m[1]), ["wa", "ig:winkhsin", "ig:wepeka.id"]);
+    const [group, ...follows] = doors.map((m) => m[0]);
+    assert.ok(group.includes(t("community.join")) && group.includes(t("community.joined")));
+    assert.ok(group.includes(`>${t("community.bubble.group")}<`));
+    for (const f of follows) assert.ok(f.includes(`>${t("community.bubble.follow")}<`) && f.includes("community-tick"));
+    assert.ok(follows[0].includes(t("community.followed", { handle: "@winkhsin" })));
+    assert.ok(!html.includes("is-done"), "nothing is checked before it is tapped");
+  });
+
+  test("a Lifetime account gets a place for its own group above the general one, filled by the server", () => {
+    const html = communityLinksHTML({ lifetime: true });
+    assert.ok(html.indexOf("data-community-lifetime") < html.indexOf('data-done-id="wa"'));
+    assert.ok(!communityLinksHTML().includes("data-community-lifetime"));
+  });
+
+  test("the line above them counts what is left", () => {
+    assert.equal(progressText(0, 3), t("community.progress.none", { total: 3 }));
+    assert.equal(progressText(2, 4), t("community.progress.some", { done: 2, total: 4 }));
+    assert.equal(progressText(4, 4), t("community.progress.all"));
+    assert.equal(progressText(0, 0), "");
   });
 });
 

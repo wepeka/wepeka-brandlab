@@ -5101,13 +5101,34 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    goes before it's read. */
 .community-lead{ margin:0 0 16px; font-size:14px; line-height:1.6; color: var(--text-muted); }
 .community-links{ display:flex; flex-direction:column; gap:10px; }
-.community-btn{ display:flex; align-items:center; gap:10px; min-height:48px; padding:0 16px; border-radius:14px; font-weight:700; font-size:14.5px; text-decoration:none; transition: transform .12s ease, filter .12s ease; }
-.community-btn > span{ flex:1; min-width:0; }
-.community-btn > svg:last-child{ opacity:0; flex:none; }
-.community-btn.is-done > svg:last-child{ opacity:1; }
+.community-progress{ margin:0 2px 4px; font-size:13px; font-weight:700; color: var(--text); }
+.community-progress:empty{ display:none; }
+.community-progress.is-complete{ color: var(--health-good); }
+/* A door: what to do, its check, and a floating bubble saying why. The
+   bubble hangs over the top edge, so each door keeps room above it. */
+.community-btn{ position:relative; display:flex; align-items:center; gap:10px; min-height:48px; margin-top:8px; padding:0 12px 0 16px; border-radius:14px; font-weight:700; font-size:14.5px; text-decoration:none; transition: transform .12s ease, filter .12s ease; }
+.community-label{ flex:1; min-width:0; }
+.community-did, .community-btn.is-done .community-todo{ display:none; }
+.community-btn.is-done .community-did{ display:inline; }
+.community-tick{ flex:none; display:grid; place-items:center; width:24px; height:24px; border-radius:50%; border:2px solid currentColor; opacity:.5; }
+.community-tick svg{ opacity:0; }
+.community-btn.is-done .community-tick{ opacity:1; border-color:#fff; background:#fff; color:#0a6b2e; }
+.community-ig.is-done .community-tick{ color:#c2185b; }
+.community-btn.is-done .community-tick svg{ opacity:1; }
+.community-bubble{ position:absolute; z-index:1; top:-11px; right:46px; padding:3px 10px; border-radius:999px; background:#fff; color:#141210; font-size:11px; font-weight:800; line-height:1.4; white-space:nowrap; box-shadow: 0 6px 14px -6px rgba(0,0,0,.55); pointer-events:none; }
+.community-bubble::after{ content:""; position:absolute; right:18px; bottom:-3px; width:8px; height:8px; border-radius:2px; background:#fff; transform: rotate(45deg); }
+.community-btn.is-done .community-bubble{ display:none; }
+/* Done steps back so what's left stands out. */
+.community-btn.is-done{ filter: saturate(.6) brightness(.88); }
 .community-btn:hover{ filter: brightness(1.07); }
+.community-btn.is-done:hover{ filter: saturate(.75) brightness(.96); }
 .community-btn:active{ transform: scale(.985); }
 .community-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+@media (prefers-reduced-motion: no-preference){
+  .community-bubble{ animation: community-float 2.4s ease-in-out infinite; }
+  .community-ig .community-bubble{ animation-delay:.6s; }
+  @keyframes community-float{ 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-3px); } }
+}
 .community-wa{ background:#25D366; color:#062b14; }
 /* A Lifetime account's own group (Founder Circle): the same green button,
    ringed in Brandlab's pink so it reads as the special one. */
