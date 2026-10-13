@@ -436,11 +436,16 @@ function ownedLifetime(account) {
   if (!LIFETIME_PLAN_KEYS.includes(plan)) return null;
   return plan === "founder" ? "founder" : plan === "founder-ultimate" ? "agency" : "legacy";
 }
+// The note also opens the Komunitas sheet (js/community.js): the Lifetime
+// group, the general group and the two accounts to follow. Someone who paid
+// from another app (GoPay) comes back to this page, and "you're Lifetime"
+// without the way into the group read as a dead end (owner, 2026-10-13).
 function ownedNoteHTML(owned) {
   return `
     <div class="pricing-pending-help pricing-closed-note" role="status">
       <b>${t("pricing.owned.title")}</b>
       <p>${t(`pricing.owned.${owned}`)}</p>
+      <button type="button" class="btn btn-secondary btn-sm" data-open-community>${icon("users", { size: 13 })}${t("pricing.owned.community")}</button>
     </div>`;
 }
 
@@ -807,6 +812,9 @@ export function render(root, { user, account, backHref, locked, embed = false, o
 
   qs("#pricing-logout", root)?.addEventListener("click", () => logout());
   qs("#locked-book", root)?.addEventListener("click", (e) => openLockedBrandBook(uid, e.currentTarget));
+  qs("[data-open-community]", root)?.addEventListener("click", () => {
+    import("../community.js").then((m) => m.openCommunityModal()).catch((e) => console.warn("community sheet unavailable", e));
+  });
   qsa("[data-pay]", root).forEach((btn) => {
     btn.addEventListener("click", () => payPlan(btn.dataset.pay, uid, { onSuccess: enterAppWhenPaid }));
   });

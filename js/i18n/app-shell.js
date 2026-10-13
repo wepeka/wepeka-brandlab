@@ -539,6 +539,7 @@ export default {
   "pricing.import.overLimit": { en: "This backup would leave {n} active brands, and your plan holds {limit}. Archive brands first, or add a brand slot.", id: "Backup ini bikin brand aktif jadi {n}, padahal paketmu cuma muat {limit}. Arsipkan brand dulu, atau tambah slot brand." },
   // A Lifetime account's pricing page (js/views/pricing.js ownedLifetime).
   "pricing.owned.title": { en: "You're on Lifetime", id: "Kamu sudah Lifetime" },
+  "pricing.owned.community": { en: "Join the Lifetime WhatsApp group & follow us", id: "Gabung grup WhatsApp Lifetime & follow" },
   "pricing.owned.founder": { en: "Founder Lifetime is yours — no subscription needed. What's left: upgrade to Agency Lifetime by paying just the difference, and the add-ons below.", id: "Founder Lifetime sudah jadi milikmu — nggak perlu langganan. Yang masih bisa: upgrade ke Agency Lifetime cukup bayar selisihnya, dan add-on di bawah." },
   "pricing.owned.agency": { en: "You're on Agency Lifetime, the top plan. More brands or AI credits come as add-ons below.", id: "Kamu sudah di Agency Lifetime, paket tertinggi. Tambah brand atau kredit AI lewat add-on di bawah." },
   "pricing.owned.legacy": { en: "Your account is already Lifetime. Want to move to a different plan? Message us on WhatsApp.", id: "Akun kamu sudah Lifetime. Mau pindah paket? Chat kami lewat WhatsApp." },

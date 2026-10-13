@@ -82,8 +82,18 @@ function tourAfterPicker(delay = 600) {
 // per account, the first time it is open on a paid plan (js/community.js).
 // Resolves when the sheet closes (at once when it isn't due), so whatever
 // comes next — welcome video, mode picker — waits its turn. Needs the store.
+// Thanked while the plans page is up = back from a payment made outside the
+// tab (GoPay, a banking app), landing where the checkout started: its
+// "Lanjut ke Brandlab" then goes into the app, like enterAppWhenPaid does
+// after a payment finished inside Snap.
 function paidWelcome() {
-  return import("./community.js").then((m) => m.maybeShowPaidWelcome()).catch((e) => { console.warn("community sheet unavailable", e); return false; });
+  return import("./community.js")
+    .then((m) => m.maybeShowPaidWelcome())
+    .then((shown) => {
+      if (shown && storeReady && location.hash.startsWith("#/pricing")) location.hash = "#/";
+      return shown;
+    })
+    .catch((e) => { console.warn("community sheet unavailable", e); return false; });
 }
 let cleanup = null;
 

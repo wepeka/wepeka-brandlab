@@ -4,9 +4,11 @@
 // never from this bundle), and the two Instagram accounts to follow. Each
 // door keeps its check once tapped, and says what would be missed until
 // then (owner, 2026-10-13). Shown
-//   - once, right after an account becomes paid ("Makasih sudah gabung"),
-//     before anything else of that boot (welcome video, mode picker), and
-//   - any time from the ⋯ menu → Komunitas, for every account.
+//   - right after an account becomes paid ("Makasih sudah gabung"), before
+//     anything else of that boot (welcome video, mode picker) — once, and
+//     once more when the account becomes Lifetime (its own group is new),
+//   - any time from the ⋯ menu → Komunitas, for every account, and
+//   - from the plans page's "Kamu sudah Lifetime" note.
 // The links themselves live in js/site-links.js (and api/_community.js for
 // the email sent after payment — same values, checked by a test).
 import { icon } from "./icons.js";
@@ -152,31 +154,53 @@ export function openCommunityModal({ paid = false } = {}) {
   });
 }
 
-const welcomeSeen = () => !!getSettings()?.guideSeen?.[SEEN_KEY] || readFlag(SEEN_PREFIX);
-function markWelcomeSeen() {
+// Which marks say "this account has been thanked". A Lifetime account
+// answers to its own: someone thanked as a subscriber who then buys Founder
+// is thanked again, because the Lifetime group is a door they have never
+// been shown. Closing a Lifetime thank-you covers both. Exported for the test.
+const LIFETIME_MARK = "lifetime";
+export function welcomeMarks(lifetime) {
+  const own = lifetime ? `${SEEN_KEY}:${LIFETIME_MARK}` : SEEN_KEY;
+  return { check: own, write: lifetime ? [SEEN_KEY, own] : [SEEN_KEY] };
+}
+const welcomeSeen = (lifetime) => !!getSettings()?.guideSeen?.[welcomeMarks(lifetime).check] || readFlag(SEEN_PREFIX, lifetime ? LIFETIME_MARK : "");
+function markWelcomeSeen(lifetime) {
   writeFlag(SEEN_PREFIX);
+  if (lifetime) writeFlag(SEEN_PREFIX, LIFETIME_MARK);
   const seen = getSettings()?.guideSeen || {};
-  if (seen[SEEN_KEY] || isReadOnly(getCachedAccount())) return;
-  updateSettings({ guideSeen: { ...seen, [SEEN_KEY]: Date.now() } });
+  const missing = welcomeMarks(lifetime).write.filter((key) => !seen[key]);
+  if (!missing.length || isReadOnly(getCachedAccount())) return;
+  const at = Date.now();
+  updateSettings({ guideSeen: { ...seen, ...Object.fromEntries(missing.map((key) => [key, at])) } });
 }
 
 // Who gets the thank-you: an account on a paid plan (not a trial, not the
-// Wepeka team), once. Exported for the test.
+// Wepeka team) that hasn't been thanked yet. Exported for the test.
 export function paidWelcomeDue(account, { seen = false, admin = false } = {}) {
   return !seen && !admin && accessState(account) === "paid" && hasPaidPlan(account);
 }
 
-// Once per account, the first time it is open on a paid plan. Resolves when
-// the sheet closes — or right away when it isn't due — so a caller can hold
-// the next thing (welcome video, mode picker) until then. Call only once the
-// store is loaded: "seen" lives in settings.
+// The first time the account is open on a paid plan (and again the first
+// time on a Lifetime one). Resolves when the sheet closes — or right away
+// when it isn't due — so a caller can hold the next thing (welcome video,
+// mode picker) until then. Call only once the store is loaded: "seen" lives
+// in settings.
+//
+// It counts as shown only once the buyer has closed it. It used to count the
+// moment it opened, and a payment made outside the tab broke that: with
+// GoPay the buyer is in the GoPay app while this tab, in the background and
+// under Midtrans's window, opens the sheet for nobody — then comes back on
+// a fresh page load that believed the thank-you was done (owner's report,
+// 2026-10-13). A sheet nobody closed is offered again on the next boot.
 let showing = null;
 export function maybeShowPaidWelcome() {
   if (showing) return showing;
-  if (!paidWelcomeDue(getCachedAccount(), { seen: welcomeSeen(), admin: isAdmin(currentUid()) })) return Promise.resolve(false);
-  markWelcomeSeen();
+  const uid = currentUid();
+  const lifetime = isLifetime(getCachedAccount());
+  if (!paidWelcomeDue(getCachedAccount(), { seen: welcomeSeen(lifetime), admin: isAdmin(uid) })) return Promise.resolve(false);
   showing = openCommunityModal({ paid: true }).then(() => {
     showing = null;
+    if (currentUid() === uid) markWelcomeSeen(lifetime);
     return true;
   });
   return showing;

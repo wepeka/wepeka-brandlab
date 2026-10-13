@@ -54,12 +54,16 @@ describe("pricing page", () => {
     assert.deepEqual(payButtons(html), ["founder-ultimate"]);
     assert.ok(html.includes(t("pricing.owned.founder")));
     assert.ok(html.includes(t("pricing.owned.upgrade")));
+    // "You're Lifetime" comes with the way into the groups.
+    assert.ok(html.includes("data-open-community"));
+    assert.ok(html.includes(t("pricing.owned.community")));
   });
 
   test("an Agency account has nothing to buy but add-ons (S-15)", () => {
     const html = paint({ user, account: { plan: "founder-ultimate", status: "active", subscriptionExpiresAt: null } });
     assert.deepEqual(payButtons(html), []);
     assert.ok(html.includes(t("pricing.owned.agency")));
+    assert.ok(html.includes("data-open-community"));
   });
 
   test("the old all-in-one Lifetime is not offered plans either", () => {

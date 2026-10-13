@@ -12,7 +12,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { sendEmailBatch, EMAIL_BATCH_SIZE } from "../api/_email.js";
-import { paidWelcomeDue, communityLinksHTML, progressText } from "../js/community.js";
+import { paidWelcomeDue, welcomeMarks, communityLinksHTML, progressText } from "../js/community.js";
 import { t } from "../js/i18n.js";
 
 const DAY = 86400000;
@@ -139,6 +139,21 @@ describe("the thank-you sheet after payment", () => {
     assert.equal(paidWelcomeDue({ status: "readonly", plan: "starter", subscriptionExpiresAt: Date.now() + DAY }), false);
     assert.equal(paidWelcomeDue(null), false);
     assert.equal(paidWelcomeDue(paid, { admin: true }), false);
+  });
+  // A subscriber who was thanked and then buys Founder has never been shown
+  // the Lifetime group: that account answers to its own mark.
+  test("a Lifetime account is thanked on its own mark; closing it covers both", () => {
+    const sub = welcomeMarks(false);
+    const life = welcomeMarks(true);
+    assert.equal(sub.check, "community:welcome");
+    assert.deepEqual(sub.write, ["community:welcome"]);
+    assert.notEqual(life.check, sub.check);
+    assert.ok(life.write.includes(sub.check) && life.write.includes(life.check));
+    // Thanked as a subscriber only: still due once the plan is Lifetime.
+    const seen = { [sub.check]: 1 };
+    const founder = { status: "active", plan: "founder", subscriptionExpiresAt: null };
+    assert.equal(paidWelcomeDue(founder, { seen: !!seen[life.check] }), true);
+    assert.equal(paidWelcomeDue(paid, { seen: !!seen[sub.check] }), false);
   });
 });
 
