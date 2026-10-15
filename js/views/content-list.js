@@ -9,7 +9,7 @@ import { openReportModal } from "./report.js";
 import { syncInstagramPerformance } from "../instagram-sync.js";
 import { canUseInstagramApi } from "../account.js";
 import { analyzeScreenshot } from "../ocr.js";
-import { extractInsightsFromImage, aiCanSeeImages, AiApiError } from "../ai.js";
+import { extractInsightsFromImage, hasAiKey, AiApiError } from "../ai.js";
 import { analyzeRetention, retentionVerdict, hasRetentionData, normalizeRetention, ratingLabel } from "../retention.js";
 import { getMode } from "../mode.js";
 import { t, campaignDisplayName } from "../i18n.js";
@@ -31,6 +31,10 @@ const VIEWS = [
   // never be reached. They live here, with the same row menu to restore.
   { key: "archived", labelKey: "contentList.views.archived", archived: true, test: () => true },
 ];
+
+// Set once the server says it has no AI that can read a picture (api/ai.js
+// "vision"): screenshots go straight to OCR for the rest of this visit.
+let screenshotAiOff = false;
 
 export function render(root, { brandId }) {
   const state = { view: "all", search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", seriesId: "", sort: "updated", dir: "desc" };
@@ -619,16 +623,21 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     return performance;
   }
 
-  // Each screenshot is read by the AI when the picked provider can see
-  // images (numbers AND the retention graph), otherwise by OCR (numbers
-  // and the labelled retention figures only). Every number found lands
-  // in its box; nothing typed is overwritten with a blank.
+  // Each screenshot is read by the AI (numbers AND the retention graph):
+  // the server sends it to a model that can see pictures even when the
+  // text AI is DeepSeek (api/ai.js pickProvider), free like the OCR it
+  // replaces. When the server has no such model ("vision"), or the AI call
+  // fails, that file and the rest are read by OCR instead (numbers and the
+  // labelled retention figures only). Every number found lands in its box
+  // for the owner to check before saving; nothing typed is overwritten
+  // with a blank.
   async function handleFiles(fileList) {
     const files = Array.from(fileList || []).filter((f) => f && f.type.startsWith("image/")).slice(0, 6);
     if (!files.length) return;
     const statusEl = qs("#qe-ocr-status", overlay);
     const ai = getSettings().ai || {};
-    const useAi = aiCanSeeImages(ai);
+    let useAi = hasAiKey(ai) && !screenshotAiOff;
+    let aiReads = 0;
     let metricsFound = 0;
     let retFound = false;
     let lastError = "";
@@ -636,9 +645,17 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
       statusEl.innerHTML = `${loadingHTML(files.length > 1 ? t("ret.qf.reading", { n: i + 1, total: files.length }) : t("contentList.qf.analyzing"))}`;
       try {
         const dataUrl = await resizeImageFile(files[i], { maxDimension: 1400, format: "image/jpeg", quality: 0.88 });
-        const result = useAi
-          ? await extractInsightsFromImage(ai, dataUrl)
-          : await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = `${loadingHTML(t("contentList.qf.analyzingPct", { pct }))}`; });
+        let result = null;
+        if (useAi) {
+          try {
+            result = await extractInsightsFromImage(ai, dataUrl);
+            aiReads++;
+          } catch (err) {
+            if (err?.code === "vision") screenshotAiOff = true;
+            useAi = false;
+          }
+        }
+        if (!result) result = await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = `${loadingHTML(t("contentList.qf.analyzingPct", { pct }))}`; });
         Object.entries(result.metrics || {}).forEach(([key, val]) => {
           const input = qs(`#qe-metric-${key}`, overlay);
           if (input && val !== null && val !== undefined) { input.value = val; metricsFound++; }
@@ -647,7 +664,7 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
           const r = normalizeRetention(result.retention);
           RET_INPUTS.forEach((k) => { if (r[k] !== null && retInput(k)) retInput(k).value = k.endsWith("Pct") ? Math.round(r[k]) : Math.round(r[k] * 10) / 10; });
           if (r.curve.length) readCurve = r.curve;
-          readSource = result.source || (useAi ? "ai" : "ocr");
+          readSource = result.source || "ocr";
           retFound = true;
         }
       } catch (err) {
@@ -655,11 +672,11 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
       }
     }
     renderVerdict();
-    const how = useAi ? t("ret.qf.readAi") : t("ret.qf.readOcr");
+    const how = aiReads ? t("ret.qf.readAi") : t("ret.qf.readOcr");
     const summary = isPro ? t("ret.qf.found", { metrics: metricsFound, ret: retFound ? t("ret.qf.foundRet") : t("ret.qf.noRet") }) : metricsFound ? t("contentList.qf.foundMetrics", { count: metricsFound, metricWord: t(metricsFound === 1 ? "cnt.metric.one" : "cnt.metric.many") }) : t("contentList.qf.noMetricsFound");
     statusEl.innerHTML = lastError && !metricsFound && !retFound
       ? `<div class="ocr-status">${icon("info", { size: 14 })}<span>${escapeText(lastError)}</span></div>`
-      : `<div class="ocr-status">${icon(metricsFound || retFound ? "check" : "info", { size: 14 })}<span>${escapeText(summary)} · ${escapeText(how)}</span>${useAi ? aiReportButtonHTML("insights-read", { recent: "insights" }) : ""}</div>`;
+      : `<div class="ocr-status">${icon(metricsFound || retFound ? "check" : "info", { size: 14 })}<span>${escapeText(summary)} · ${escapeText(how)}</span>${aiReads ? aiReportButtonHTML("insights-read", { recent: "insights" }) : ""}</div>`;
   }
 
   qs("#qe-back", overlay)?.addEventListener("click", () => {

@@ -382,6 +382,7 @@ function appMenuHTML(brandId, hasVideos) {
     ${hasVideos ? `<button type="button" data-act="videos">${icon("play", { size: 15 })}${t("guide.library.menu")}</button>` : ""}
     <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
     <button type="button" data-act="community">${icon("users", { size: 15 })}${t("community.menu")}</button>
+    <button type="button" data-act="founder-circle">${icon("sparkle", { size: 15 })}${t("circle.menu")}</button>
     <button type="button" data-act="report">${icon("flag", { size: 15 })}${t("lapor.menu")}</button>
     <div class="menu-divider"></div>
     <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
@@ -533,6 +534,7 @@ export function wireShell({ brandId }) {
       else if (act === "videos") openVideoLibrary();
       else if (act === "tour") startOnboardingTour();
       else if (act === "community") import("./community.js").then((m) => m.openCommunityModal()).catch((e) => console.warn("[community] unavailable", e));
+      else if (act === "founder-circle") import("./founder-circle.js").then((m) => m.openFounderCircle()).catch((e) => console.warn("[founder-circle] unavailable", e));
       else if (act === "report") import("./report-problem.js").then((m) => m.openReportProblem()).catch((e) => console.warn("[report] unavailable", e));
       else if (act === "theme") toggleTheme();
       else if (act === "ai") {

@@ -23,6 +23,11 @@ export const FALLBACK = {
   agency: { price: 799000, brands: 15, cap: 15 },
 };
 
+// What Founders say about Brandlab, word for word and with their OK — the
+// owner collects them ({ quote, name, business }). While the list is empty
+// the block stays hidden: never a made-up quote.
+export const TESTIMONIALS = [];
+
 // A non-breaking space keeps "Rp" and its number on one line.
 export const rp = (n) => `Rp\u00a0${Math.round(Number(n) || 0).toLocaleString("id-ID")}`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -211,6 +216,12 @@ function start() {
     history.replaceState(null, "", location.pathname + (qs ? `?${qs}` : "") + location.hash);
   }
 
+  const quotes = document.querySelector("[data-quotes]");
+  if (quotes && TESTIMONIALS.length) {
+    quotes.innerHTML = TESTIMONIALS.map((q) => `<figure class="fd-quote"><blockquote>“${esc(q.quote)}”</blockquote><figcaption><b>${esc(q.name)}</b>${q.business ? ` · ${esc(q.business)}` : ""}</figcaption></figure>`).join("");
+    quotes.hidden = false;
+  }
+
   gaEvent("page_view", { page_location: location.href.split("#")[0], page_path: "/founder", page_title: document.title });
   metaTrack("PageView");
   paint();
@@ -249,6 +260,9 @@ function start() {
   if (linkCode) confirmCode(linkCode, true);
   else if (promo) confirmCode(promo.code, false);
 
+  const openGuarantee = () => { const d = document.getElementById("garansi"); if (d) d.open = true; };
+  if (location.hash === "#garansi") openGuarantee();
+
   // ---- buttons ----
   const go = (href) => setTimeout(() => { location.href = href; }, 160);
   document.addEventListener("click", (e) => {
@@ -274,7 +288,13 @@ function start() {
     const site = e.target.closest("[data-site]");
     if (site) gaEvent("website_click", { cta_location: site.dataset.site });
     const wa = e.target.closest("[data-wa]");
-    if (wa) gaEvent("whatsapp_click", { cta_location: wa.dataset.waText ? "bca" : "final" });
+    if (wa) gaEvent("whatsapp_click", { cta_location: wa.dataset.waLoc || (wa.dataset.waText ? "bca" : "final") });
+    // "Garansi 14 hari" links jump to its FAQ answer — opened, not just scrolled to.
+    const garansi = e.target.closest('a[href="#garansi"]');
+    if (garansi) {
+      openGuarantee();
+      gaEvent("guarantee_click", { cta_location: garansi.dataset.garansi || "" });
+    }
     if (e.target.closest("[data-code-remove]")) {
       promo = null;
       forgetPromo();

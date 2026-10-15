@@ -8,7 +8,7 @@ import { reserveCall, releaseCall, MAX_INFLIGHT, LEASE_TTL_MS, ADMIN_UIDS } from
 // below for every handler test).
 process.env.DEEPSEEK_API_KEY = "test-key";
 delete process.env.AI_PROVIDER;
-const { handleAiRequest, freeSpecFor, isHandoffOnly, fitHistory, cleanHistory, runAttempt, withOneRetry } = await import("../api/ai.js");
+const { handleAiRequest, freeSpecFor, isHandoffOnly, fitHistory, cleanHistory, runAttempt, withOneRetry, pickProvider } = await import("../api/ai.js");
 
 // ---------------------------------------------------------------------------
 // A fake Firestore with the concurrency behaviour that matters here: every
@@ -613,3 +613,38 @@ describe("api/ai.js handler: charge, call, refund", () => {
 function TODAY_JKT() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
 }
+
+// ---------------------------------------------------------------------------
+// Pictures (Insights screenshots): DeepSeek can't see them, so the server
+// picks a provider that can — or refuses with "vision" before charging, and
+// the browser reads the screenshot with OCR instead.
+describe("api/ai.js pictures", () => {
+  const IMG = ["data:image/jpeg;base64,AAAA"];
+  test("text calls keep the main provider", () => {
+    assert.equal(pickProvider([], "deepseek", { deepseek: "k" }), "deepseek");
+  });
+  test("a picture goes to Gemini, then Claude, when DeepSeek is the main provider", () => {
+    assert.equal(pickProvider(IMG, "deepseek", { deepseek: "k", gemini: "g", anthropic: "a" }), "gemini");
+    assert.equal(pickProvider(IMG, "deepseek", { deepseek: "k", anthropic: "a" }), "anthropic");
+    assert.equal(pickProvider(IMG, "deepseek", { deepseek: "k" }), null);
+  });
+  test("a main provider that sees pictures keeps them", () => {
+    assert.equal(pickProvider(IMG, "anthropic", { anthropic: "a", gemini: "g" }), "anthropic");
+  });
+  test("one Insights screenshot can be free; two, or a picture on another feature, can't", () => {
+    const sys = "x".repeat(1900);
+    assert.ok(freeSpecFor("insights", { system: sys, user: "Read this screenshot.", images: IMG, json: true }));
+    assert.equal(freeSpecFor("insights", { system: sys, user: "u", images: [...IMG, ...IMG], json: true }), null);
+    assert.equal(freeSpecFor("insights", { system: "x".repeat(5000), user: "u", images: IMG, json: true }), null);
+    assert.equal(freeSpecFor("lessons", { system: "s", user: "u", images: IMG, json: true }), null);
+  });
+  test("with no picture-reading provider the call is refused as vision, nothing charged", async () => {
+    const db = fakeFirestore(starter());
+    provider = jsonReply("{}");
+    const res = await call(db, { system: "s", user: "Read this screenshot.", images: IMG, json: true, feature: "insights", countUsage: false });
+    assert.equal(res.statusCode, 422);
+    assert.equal(res.body.error, "vision");
+    assert.equal(providerCalls.length, 0);
+    assert.equal(db.read("aiUsage/u"), undefined);
+  });
+});

@@ -1020,6 +1020,10 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .pricing-price{ font-family: var(--font-display); font-size:30px; font-weight:900; line-height:1; }
 .pricing-per{ font-size:13px; color: var(--text-muted); }
 .pricing-price-note{ font-size:12.5px; color: var(--text-faint); margin:0; }
+.pricing-guarantee{ display:flex; align-items:center; justify-content:center; gap:6px; margin:0; font-size:12.5px; color: var(--text-muted); }
+.pricing-guarantee svg{ flex:none; color: var(--health-good); }
+.pricing-guarantee a{ color:inherit; font-weight:700; }
+.pricing-other > .pricing-guarantee{ padding:0 18px 14px; justify-content:flex-start; }
 .pricing-features{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
 .pricing-features li{ display:flex; align-items:flex-start; gap:9px; font-size:13px; line-height:1.45; }
 .pricing-features li svg{ flex:none; margin-top:2px; color: var(--accent); }
@@ -5379,6 +5383,45 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .community-note{ margin:-4px 2px 0; font-size:12px; color: var(--text-faint); }
 .community-sep{ display:flex; align-items:center; gap:10px; margin:8px 0 0; font-size:11.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); }
 .community-sep::before, .community-sep::after{ content:""; flex:1; height:1px; background: var(--border); }
+
+/* Founder Circle sheet (js/founder-circle.js) */
+.circle-sec{ padding:14px 0; border-top:1px solid var(--border); }
+.circle-sec:first-of-type{ border-top:0; padding-top:2px; }
+.circle-sec h3{ display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:14.5px; }
+.circle-sec h3 svg{ color: var(--accent); flex:none; }
+.circle-muted{ margin:0 0 10px; font-size:12.5px; line-height:1.55; color: var(--text-muted); }
+.circle-empty{ margin:0; font-size:13px; line-height:1.55; color: var(--text-faint); }
+.circle-session{ display:flex; flex-direction:column; gap:4px; padding:12px 14px; border-radius: var(--radius-md); border:1px solid var(--border); background: var(--surface-2); }
+.circle-session.is-live{ border-color: color-mix(in srgb, var(--health-good) 50%, var(--border)); }
+.circle-live{ align-self:flex-start; padding:2px 8px; border-radius: var(--radius-pill); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color: var(--health-good); background: var(--health-good-soft); }
+.circle-when{ font-size:14.5px; }
+.circle-topic{ margin:0; font-size:13.5px; }
+.circle-session .circle-muted{ margin:0; }
+.circle-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
+.circle-recs{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.circle-recs a{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius: var(--radius-sm); border:1px solid var(--border); color: var(--text); text-decoration:none; font-size:13.5px; }
+.circle-recs a:hover{ background: var(--surface-2); }
+.circle-recs a svg{ flex:none; color: var(--accent); }
+.circle-recs a span{ flex:1; min-width:0; }
+.circle-recs small{ flex:none; color: var(--text-faint); font-size:12px; }
+.circle-form .field{ margin-bottom:10px; }
+.circle-status{ display:flex; align-items:flex-start; gap:8px; margin:0 0 8px; padding:10px 12px; border-radius: var(--radius-sm); font-size:13px; line-height:1.5; background: var(--accent-soft); }
+.circle-status svg{ flex:none; margin-top:2px; color: var(--accent); }
+.circle-status.is-done, .circle-status.is-scheduled{ background: var(--health-good-soft); }
+.circle-status.is-done svg, .circle-status.is-scheduled svg{ color: var(--health-good); }
+.circle-inline{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.circle-inline .select{ flex:1 1 180px; min-width:0; }
+.circle-teaser{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.circle-teaser li{ display:flex; gap:10px; font-size:13.5px; line-height:1.5; color: var(--text-muted); }
+.circle-teaser li svg{ flex:none; margin-top:2px; color: var(--accent); }
+.circle-teaser b{ color: var(--text); }
+.trial-remind.is-circle .trial-remind-icon{ background: var(--health-good-soft); color: var(--health-good); }
+/* Brand Book review screen: ask the Wepeka team (js/views/brand-guidelines.js teamReviewHTML) */
+.bb-team-review{ display:flex; align-items:center; gap:12px; margin:16px 0 0; padding:12px 14px; border-radius: var(--radius-md); border:1px dashed var(--border); background: var(--surface); }
+.bb-team-review p{ flex:1; min-width:0; margin:0; font-size:13px; line-height:1.5; color: var(--text-muted); }
+.bb-team-review p b{ color: var(--text); }
+.bb-team-review-icon{ flex:none; display:grid; place-items:center; width:30px; height:30px; border-radius:10px; background: var(--accent-soft); color: var(--accent); }
+@media (max-width:560px){ .bb-team-review{ flex-wrap:wrap; } .bb-team-review .btn{ margin-left:42px; } }
 .page-help-actions{ display:flex; flex-direction:column; gap:2px; margin-top:6px; }
 .page-help-actions:empty{ display:none; }
 .page-help-actions button{ display:flex; align-items:center; gap:9px; width:100%; text-align:left; background:none; border:0; color: var(--text); font: inherit; font-size:13.5px; font-weight:600; padding:10px 8px; border-radius: 10px; cursor:pointer; }

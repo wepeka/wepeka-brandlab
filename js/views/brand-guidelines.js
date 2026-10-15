@@ -22,7 +22,7 @@ import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour, isTourActive } from "../tour.js";
 import { VALUE_PROP_DNA_FIELDS, guidelineSectionDone, BOOK_PROGRESS_SECTIONS, brandBookProgress, visualBasicsDone, identityDone } from "../brand-progress.js";
 import { getMode } from "../mode.js";
-import { getCachedAccount, currentUid, isAdmin, LIFETIME_PLANS } from "../account.js";
+import { getCachedAccount, currentUid, isAdmin, isLifetime, LIFETIME_PLANS } from "../account.js";
 import { payPlan } from "./pricing.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
 import { brandDocFits, guardBrandDocSize } from "../brand-doc-size.js";
@@ -3284,11 +3284,28 @@ function reviewHTML(brand, state) {
     </div>
     ${!ownsBookStyle(bookStyleOf(a)) ? `<p class="text-faint" style="font-size:12px;margin:10px 0 0;text-align:right;">${t("bg.style.lockedHint")}</p>` : ""}
     ${state.pdfDone ? afterPdfHTML(brand.id) : ""}
+    ${teamReviewHTML()}
   `;
+}
+
+// The human part of Lifetime, where it fits: a finished Brand Book can be
+// checked by the Wepeka team (1× per Lifetime account, js/founder-circle.js).
+// Other accounts see that it comes with Lifetime.
+function teamReviewHTML() {
+  const member = isLifetime(getCachedAccount());
+  return `
+    <div class="bb-team-review">
+      <span class="bb-team-review-icon">${icon("users", { size: 16 })}</span>
+      <p><b>${t(member ? "bg.teamReview.title" : "bg.teamReview.titleOther")}</b> ${t(member ? "bg.teamReview.body" : "bg.teamReview.bodyOther")}</p>
+      <button type="button" class="btn btn-secondary btn-sm" data-team-review>${t(member ? "bg.teamReview.cta" : "bg.teamReview.ctaOther")}</button>
+    </div>`;
 }
 
 function wireReview(root, brandId, brand, state, refresh) {
   fitBrandBook(qs(".brandbook-sheet", root));
+  qs("[data-team-review]", root)?.addEventListener("click", () => {
+    import("../founder-circle.js").then((m) => m.openFounderCircle({ focus: "review" })).catch((e) => console.warn("[founder-circle] unavailable", e));
+  });
   qs("#wiz-home", root)?.addEventListener("click", () => goHomeFromGuidelines(brandId, state));
   qs("#wiz-back", root).addEventListener("click", () => {
     state.stepIndex = STEPS.length - 1;

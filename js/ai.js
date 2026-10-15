@@ -69,8 +69,14 @@ function proxyError(code, extra = {}) {
       return new AiApiError(t("ai.error.tooLarge"));
     case "images":
       return new AiApiError(t("ai.error.tooManyImages"));
-    case "noVision":
-      return aiSetupError("ai.error.noVision", { provider: "AI" });
+    // "vision": the server has no provider that can look at a picture
+    // (api/ai.js pickProvider) — callers fall back to OCR on this code.
+    case "vision":
+    case "noVision": {
+      const err = aiSetupError("ai.error.noVision", { provider: "AI" });
+      err.code = "vision";
+      return err;
+    }
     case "badResponse":
       return aiSetupError("ai.error.badResponse", { provider: "AI" });
     case "network":
@@ -225,7 +231,10 @@ export function hasAiKey(ai) {
 }
 
 // Claude and Gemini read screenshots; DeepSeek's chat model is text-only,
-// so surfaces that take a photo fall back to OCR (js/ocr.js) there.
+// so surfaces that take a photo fall back to OCR (js/ocr.js) there. The
+// Insights screenshot reader asks the server anyway (it routes a picture to
+// a vision provider that has a key — api/ai.js pickProvider) and only falls
+// back to OCR when the answer is "vision" (js/views/content-list.js).
 export function aiCanSeeImages(ai) {
   return hasAiKey(ai) && ai.provider !== "deepseek";
 }
@@ -1705,7 +1714,8 @@ export async function extractInsightsFromImage(ai, dataUrl) {
     'Retention graph: x-axis is time in the video, y-axis is the % of viewers still watching. Sample it as curve: [{"sec":0,"pct":100},...] with 6 to 12 evenly spaced points including the last one at the video\'s end. hookPct = the curve\'s value at second 3 (if the graph starts below 100 at 0s, use what it shows). completionPct = the value at the last second. videoLengthSec = where the x-axis ends. If a metric is not in the picture, leave it null, never guess.',
     "If the picture is not an insights screenshot at all, return every metric null and say why in notes.",
   ].join("\n");
-  const raw = await callModel(ai, system, "Read this screenshot.", 900, { images: [dataUrl], json: true, feature: "insights" });
+  // Free like the OCR it replaces (api/ai.js FREE_FEATURES.insights).
+  const raw = await callModel(ai, system, "Read this screenshot.", 900, { images: [dataUrl], json: true, feature: "insights", countUsage: false });
   const json = parseJsonObject(raw);
   if (!json || typeof json !== "object") throw new AiApiError(t("ai.error.badExtract"));
   const n = (v) => (v === null || v === undefined || v === "" || !isFinite(Number(v)) ? null : Number(v));

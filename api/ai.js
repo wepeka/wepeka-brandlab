@@ -30,6 +30,9 @@ import { quotaFor, reserveCall, releaseCall, MAX_INFLIGHT, isAdminUid, isReadOnl
 //   concept  summarizeConcept              brand + last 24 chat messages (long chat ≈ 96K)
 //   campaign generateCampaignPlaybook free brand + pulse + levels ≈ 28K
 //   sales    suggestSalesActions free      full context + sales snapshot ≈ 35K
+//   insights extractInsightsFromImage      ~1.9K + one Insights screenshot
+//            (it was free OCR in the browser before the AI could read it;
+//            the only free shape that may carry a picture, and just one)
 const FREE_FEATURES = {
   test: { out: 16, input: 500, json: false },
   route: { out: 16, input: 10_000, json: false },
@@ -37,12 +40,13 @@ const FREE_FEATURES = {
   concept: { out: 800, input: 100_000, json: true },
   campaign: { out: 2600, input: 40_000, json: true },
   sales: { out: 1400, input: 48_000, json: true },
+  insights: { out: 900, input: 3_000, json: true, images: 1 },
 };
 const FREE_CALLS_PER_DAY = 150;
 // The free shape (above) for this call, or null when it has to be charged.
 export function freeSpecFor(feature, { system = "", user = "", history = [], images = [], json = false, stream = false } = {}) {
   const spec = typeof feature === "string" && Object.hasOwn(FREE_FEATURES, feature) ? FREE_FEATURES[feature] : null;
-  if (!spec || stream || history.length || images.length || !!json !== spec.json) return null;
+  if (!spec || stream || history.length || images.length > (spec.images || 0) || !!json !== spec.json) return null;
   return system.length + user.length <= spec.input ? spec : null;
 }
 // Everything sent to the model — system + user + chat history — in chars.
@@ -136,13 +140,26 @@ const KEYS = {
 const ANTHROPIC_API_BASE = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = "claude-sonnet-5";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_MODEL = "gemini-3.6-flash";
+// GEMINI_MODEL in Vercel can swap the model without a deploy (e.g. a
+// cheaper Flash-Lite for screenshots).
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const DEEPSEEK_API_BASE = "https://api.deepseek.com/chat/completions";
 // "deepseek-chat" was retired on 24 Jul 2026 and has since been served,
 // undocumented, by deepseek-flash. deepseek-flash thinks by default (and
 // thinking tokens count against max_tokens, so a short cap can come back
 // empty), hence the explicit "disabled" in deepSeekBody.
 const DEEPSEEK_MODEL = "deepseek-flash";
+
+// DeepSeek's chat model can't look at a picture. A call that carries one
+// goes to a provider that can and has a key in Vercel (Gemini first: the
+// cheapest per screenshot), whatever AI_PROVIDER says for text; with none,
+// the call is refused as "vision" before anything is charged, and the
+// browser reads the picture with OCR instead (js/views/content-list.js).
+const SEES_IMAGES = new Set(["anthropic", "gemini"]);
+export function pickProvider(images = [], main = AI_PROVIDER, keys = KEYS) {
+  if (!images.length || SEES_IMAGES.has(main)) return main;
+  return ["gemini", "anthropic"].find((p) => keys[p]) || null;
+}
 
 const NON_STREAM_TIMEOUT_MS = 60000;
 const STREAM_TIMEOUT_MS = 120000;
@@ -251,14 +268,17 @@ async function callNonStream({ provider, apiKey, system, user, history = [], max
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: geminiContents(history, user, images),
-          ...(temperature !== undefined ? { generationConfig: { temperature } } : {}),
+          ...(temperature !== undefined || json ? { generationConfig: { ...(temperature !== undefined ? { temperature } : {}), ...(json ? { responseMimeType: "application/json" } : {}) } } : {}),
         }),
       },
       NON_STREAM_TIMEOUT_MS
     );
     const body = await readJsonSafe(res);
     if (!res.ok) throw providerError(res.status, body);
-    return { text: body?.candidates?.[0]?.content?.parts?.[0]?.text || "", usage: body?.usageMetadata || null };
+    // A reply can come in several text parts; thought parts (if a model
+    // ever sends them) are not the answer.
+    const parts = body?.candidates?.[0]?.content?.parts || [];
+    return { text: parts.filter((x) => !x?.thought).map((x) => x?.text || "").join(""), usage: body?.usageMetadata || null };
   }
   if (provider === "deepseek") {
     if (images.length) throw new AiProxyError("noVision", "DeepSeek can't read images.", 400, false);
@@ -484,7 +504,8 @@ export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now(
   // reserveCall below; otherwise it's a normal call.
   const freeSpec = countUsage === false ? freeSpecFor(feature, { system, user, history, images, json: wantJson, stream: wantStream }) : null;
 
-  const provider = AI_PROVIDER;
+  const provider = pickProvider(images);
+  if (!provider) return res.status(422).json({ error: "vision" });
   const apiKey = KEYS[provider];
   if (!apiKey) {
     console.error(`api/ai: no API key set for provider "${provider}" (feature=${feature || "?"})`);

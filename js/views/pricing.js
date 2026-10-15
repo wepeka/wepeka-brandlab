@@ -39,7 +39,7 @@ import { t, getLang } from "../i18n.js";
 import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, COMMUNITY_WA_GROUP_URL, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS, buyUrl } from "../site-links.js";
 import { takeBuyIntent } from "../buy-intent.js";
 import { readPromo, readPromoInfo, rememberPromo, forgetPromo, checkPromo } from "../promo-code.js";
-import { agreeLine } from "../legal-links.js";
+import { agreeLine, guaranteeLink } from "../legal-links.js";
 import { showPayLoading, hidePayLoading, hidePayLoadingWhenSnapShows } from "../pay-loading.js";
 // Firestore loads on demand (js/firebase.js loadFirestore): this page is
 // the logged-out landing, and it paints before the SDK is even fetched.
@@ -551,8 +551,12 @@ function founderCardHTML({ open, tier, soldOut }, uid, owned) {
       ${tiersHTML(open)}
       <ul class="pricing-features pricing-features--2col">${featuresHTML(FOUNDER)}</ul>
       ${owned ? disabledCtaHTML(t(owned === "founder" ? "pricing.owned.current" : "pricing.owned.included"), "btn-primary") : soldOut ? soldOutHTML() : ctaHTML(FOUNDER.key, `${t("pricing.founder.cta")}${icon("arrowRight", { size: 16 })}`, uid, "btn-primary pricing-cta--pink")}
+      ${owned || soldOut ? "" : guaranteeHTML()}
     </div>`;
 }
+
+// The 14-day money-back guarantee on Lifetime plans (wepeka.com terms #garansi).
+const guaranteeHTML = () => `<p class="pricing-guarantee">${icon("shield", { size: 14 })}<span>${t("pricing.lifetime.guarantee", { terms: guaranteeLink() })}</span></p>`;
 
 // The Wepeka Community code (api/_promo.js): a line saying it is on, or a
 // folded field to type one in, with where to get it (the community's
@@ -651,6 +655,7 @@ function agencyHTML(uid, agencySoldOut, owned, open = false) {
         </div>
       </div>
       <p class="pricing-renew-note">${t("pricing.agency.note")}</p>
+      ${agencySoldOut || owned ? "" : guaranteeHTML()}
     </details>`;
 }
 
