@@ -7,9 +7,10 @@ import { t, getLang } from "../i18n.js";
 // the very top — right under the lens, so the eyes stay near the camera
 // while reading — with a big record button, a 3-2-1 countdown, and the text
 // starting to roll the moment recording starts. MediaRecorder records the
-// raw camera stream, never the screen: the text, the buttons and the
-// mirrored preview never end up in the video. Phone first; a laptop webcam
-// works the same way.
+// camera, never the screen: the text and the buttons never end up in the
+// video. "Video cermin" (on by default, owner's ask 2026-10-15) saves the
+// file mirrored like the preview, by drawing each camera frame flipped onto
+// a canvas and recording that. Phone and laptop webcam work the same way.
 
 const PREFS_KEY = "contentos:tp-rec";
 // Long takes live in memory until they're saved; a phone browser tab that
@@ -94,7 +95,7 @@ function formatSize(bytes) {
 }
 
 function loadPrefs(phone) {
-  const fallback = { speed: 4, size: phone ? 26 : 30, sliders: true };
+  const fallback = { speed: 4, size: phone ? 26 : 30, sliders: true, mirror: true };
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || "null");
     return saved && typeof saved === "object" ? { ...fallback, ...saved } : fallback;
@@ -144,11 +145,16 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       <div class="tpr-sliders" id="tpr-sliders" ${prefs.sliders ? "" : "hidden"}>
         <label class="tpr-slider"><span>${t("tp.speed")}</span><input type="range" id="tpr-speed" min="1" max="10" step="0.5" value="${prefs.speed}" /></label>
         <label class="tpr-slider"><span>${t("tp.size")}</span><input type="range" id="tpr-size" min="18" max="48" value="${prefs.size}" /></label>
+        <div class="tpr-slider tpr-switch-row">
+          <span id="tpr-mirror-label">${t("tp.rec.mirror")}</span>
+          <small class="tpr-switch-state" id="tpr-mirror-state">${t(prefs.mirror ? "tp.rec.on" : "tp.rec.off")}</small>
+          <button type="button" class="tpr-switch" id="tpr-mirror" role="switch" aria-checked="${prefs.mirror}" aria-labelledby="tpr-mirror-label"><i></i></button>
+        </div>
       </div>
       <div class="tpr-bar">
         <button type="button" class="tpr-round" id="tpr-exit" aria-label="${t("tp.rec.exit")}" title="${t("tp.rec.exit")}">${icon("x", { size: 20 })}</button>
         <button type="button" class="tpr-rec" id="tpr-rec" aria-label="${t("tp.rec.start")}" disabled><span></span></button>
-        <button type="button" class="tpr-round tpr-aa" id="tpr-aa" aria-label="${t("tp.rec.textSettings")}" title="${t("tp.rec.textSettings")}" aria-expanded="${prefs.sliders}">Aa</button>
+        <button type="button" class="tpr-round tpr-aa" id="tpr-aa" aria-label="${t("tp.rec.settings")}" title="${t("tp.rec.settings")}" aria-expanded="${prefs.sliders}">${icon("gear", { size: 20 })}</button>
       </div>
     </div>
     <div class="tpr-msg" id="tpr-msg" hidden>
@@ -169,7 +175,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
           <button type="button" class="icon-btn" id="tpr-review-close" aria-label="${t("tp.rec.exit")}">${icon("x", { size: 18 })}</button>
         </div>
         <video class="tpr-playback" id="tpr-playback" controls playsinline></video>
-        <p class="tpr-note">${t("tp.rec.reviewNote")}</p>
+        <p class="tpr-note" id="tpr-note"></p>
         <div class="tpr-confirm" id="tpr-confirm" hidden>
           <span>${t("tp.rec.discardAsk")}</span>
           <div class="tpr-confirm-actions">
@@ -207,6 +213,9 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   const exitBtn = $("#tpr-exit");
   const recBtn = $("#tpr-rec");
   const aaBtn = $("#tpr-aa");
+  const mirrorBtn = $("#tpr-mirror");
+  const mirrorState = $("#tpr-mirror-state");
+  const noteEl = $("#tpr-note");
   const msgEl = $("#tpr-msg");
   const msgTitle = $("#tpr-msg-title");
   const msgBody = $("#tpr-msg-body");
@@ -237,6 +246,8 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   let hitMax = false;
   let pendingDiscard = null;
   let enteredFullscreen = false;
+  let takeMirrored = false;
+  let stopMirror = null;
 
   // ---- Rolling text ----
   // Our own float position, written to scrollTop each frame: scrollTop
@@ -321,6 +332,12 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     jumpTo(Math.min(maxScroll(), ratio * textEl.offsetHeight));
     savePrefs(prefs);
   });
+  mirrorBtn.addEventListener("click", () => {
+    prefs.mirror = !prefs.mirror;
+    mirrorBtn.setAttribute("aria-checked", String(prefs.mirror));
+    mirrorState.textContent = t(prefs.mirror ? "tp.rec.on" : "tp.rec.off");
+    savePrefs(prefs);
+  });
   aaBtn.addEventListener("click", () => {
     slidersEl.hidden = !slidersEl.hidden;
     prefs.sliders = !slidersEl.hidden;
@@ -334,6 +351,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   }
   function idleHint() {
     const lines = [t(phone ? "tp.rec.hint.phone" : "tp.rec.hint.desktop")];
+    if (!phone) lines.push(t("tp.rec.hint.space"));
     if (noMic) lines.push(t("tp.rec.noMic"));
     if (hitMax) lines.push(t("tp.rec.maxReached"));
     return lines.join(" ");
@@ -349,6 +367,8 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     recBtn.title = label;
     recBtn.disabled = !["live", "countdown", "recording"].includes(next);
     exitBtn.hidden = next === "recording" || next === "finishing" || next === "countdown";
+    // The file is mirrored or not from its first frame: no switching mid-take.
+    mirrorBtn.disabled = next === "recording" || next === "finishing" || next === "countdown";
     timerEl.hidden = !(next === "recording" || next === "finishing");
     bottomEl.hidden = next === "review";
     reviewEl.hidden = next !== "review";
@@ -458,6 +478,45 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     countdownTimer = null;
     setState("live");
   }
+  // Mirrored file: each new camera frame is drawn flipped onto a canvas and
+  // the canvas is recorded together with the microphone. Falls back to the
+  // plain camera (and says so on the review) where a canvas can't be
+  // recorded or the frame size isn't known yet.
+  function recordingStream() {
+    takeMirrored = false;
+    if (!prefs.mirror || typeof HTMLCanvasElement === "undefined" || !HTMLCanvasElement.prototype.captureStream) return stream;
+    const w = cam.videoWidth;
+    const h = cam.videoHeight;
+    const canvas = document.createElement("canvas");
+    const ctx = w && h ? canvas.getContext("2d") : null;
+    if (!ctx) return stream;
+    canvas.width = w;
+    canvas.height = h;
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    let drawing = true;
+    const nextFrame = () => (cam.requestVideoFrameCallback ? cam.requestVideoFrameCallback(draw) : requestAnimationFrame(draw));
+    function draw() {
+      if (!drawing) return;
+      ctx.drawImage(cam, 0, 0, w, h);
+      nextFrame();
+    }
+    draw();
+    const out = canvas.captureStream(30);
+    stream.getAudioTracks().forEach((tr) => out.addTrack(tr));
+    stopMirror = () => {
+      drawing = false;
+      // Only the canvas track: the microphone belongs to the camera stream
+      // and is needed again for a retake.
+      out.getVideoTracks().forEach((tr) => tr.stop());
+    };
+    takeMirrored = true;
+    return out;
+  }
+  function endMirror() {
+    stopMirror?.();
+    stopMirror = null;
+  }
   function makeRecorder(s) {
     const options = { videoBitsPerSecond: 6_000_000 };
     if (preferredType) options.mimeType = preferredType;
@@ -471,7 +530,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     if (!stream) return showError("generic");
     chunks = [];
     try {
-      recorder = makeRecorder(stream);
+      recorder = makeRecorder(recordingStream());
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size) chunks.push(e.data);
       };
@@ -482,6 +541,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       recorder.start(1000);
     } catch {
       recorder = null;
+      endMirror();
       setState("live");
       showHint(t("tp.rec.err.recordFailed"));
       return;
@@ -516,6 +576,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     }
   }
   function finishRecording() {
+    endMirror();
     if (closed) return;
     const type = String(recorder?.mimeType || preferredType || "video/webm").split(";")[0] || "video/webm";
     const take = new Blob(chunks, { type });
@@ -533,6 +594,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     playback.src = blobUrl;
     metaEl.textContent = `${formatDuration(elapsed)} · ${formatSize(take.size)}`;
     savedEl.textContent = "";
+    noteEl.textContent = t(takeMirrored ? "tp.rec.reviewNoteMirror" : prefs.mirror ? "tp.rec.mirrorUnsupported" : "tp.rec.reviewNote");
     confirmEl.hidden = true;
     shareBtn.hidden = platform !== "android" || !canShareFile(takeFile());
     setState("review");
@@ -656,10 +718,20 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     }
   };
   const onResize = () => measure();
+  // Laptop: Space starts and stops a take wherever the focus is (the record
+  // button handles its own Space; text fields keep theirs).
+  const onKey = (e) => {
+    if (e.key !== " " || e.repeat || e.target === recBtn) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "") && e.target.type !== "range") return;
+    if (!["live", "countdown", "recording"].includes(state)) return;
+    e.preventDefault();
+    onRecPress();
+  };
   // Moving to another page must never leave the camera on.
   const onLeave = () => exit();
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("resize", onResize);
+  document.addEventListener("keydown", onKey);
   window.addEventListener("hashchange", onLeave);
   window.addEventListener("pagehide", onLeave);
 
@@ -679,11 +751,13 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     }
     recorder = null;
     chunks = [];
+    endMirror();
     stopStream();
     dropTake();
     keepAwake(false);
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("resize", onResize);
+    document.removeEventListener("keydown", onKey);
     window.removeEventListener("hashchange", onLeave);
     window.removeEventListener("pagehide", onLeave);
     if (enteredFullscreen && document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {});
