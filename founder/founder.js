@@ -123,7 +123,7 @@ export function offerView(offer, promo = null) {
       mathNote: `Lebih murah dari ${months} bulan langganan Pro, dan setelah itu nggak ada tagihan lagi.`,
       faqTiers: `${tiersSentence(tiers)}, lalu Lifetime kembali ${rp(normal)}.`,
       tiersNote: `${tiersSentence(tiers)}. Setelah ${cap} kursi, Lifetime kembali ${rp(normal)}.`,
-      finalLead: `Setelah ${cap} Founder, Lifetime kembali ke ${rp(normal)}. Kalau kamu serius bangun brand, ini saatnya.`,
+      finalLead: `Brandlab terus berkembang, dan semua yang rilis nanti ikut kamu dapat. Kursi Founder cuma ${cap}; habis itu Lifetime kembali ${rp(normal)}. Kalau kamu serius bangun brand, ini saatnya.`,
       chipLabel: promoOff > 0 ? `Kode ${promo.code} aktif · hemat ${rp(promoOff)}` : `Hemat ${rp(communityOff)} lagi pakai kode Wepeka Community`,
       codeTitle: `Hemat ${rp(communityOff)} lagi lewat Wepeka Community`,
       promoCode: promo?.code || "",
