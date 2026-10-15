@@ -56,26 +56,30 @@ describe("identityGate: what still locks Tujuan, piece by piece", () => {
 });
 
 describe("identityGateCopy: the lock says exactly what's left (Indonesian)", () => {
-  test("DNA done → 'Tinggal Warna & Font', button goes there", () => {
+  // Owner, 2026-10-15: the step is called "Brand Book" everywhere, never "Warna & Font".
+  test("DNA done → 'Tinggal Brand Book', button goes there", () => {
     const copy = identityGateCopy(identityGate(brandWith({ dna: DNA_DONE })), t);
-    assert.match(copy.message, /^Tinggal Warna & Font/);
+    assert.match(copy.message, /^Tinggal Brand Book/);
     assert.match(copy.message, /Tujuan/);
-    assert.equal(copy.action, "Ke Warna & Font");
+    assert.equal(copy.action, "Ke Brand Book");
   });
-  test("only fonts left names only Font", () => {
+  test("only fonts left names the fonts in the Brand Book", () => {
     const copy = identityGateCopy(identityGate(brandWith({ dna: DNA_DONE, colors: { primary: "#112233" } })), t);
-    assert.match(copy.message, /^Tinggal Font/);
-    assert.equal(copy.action, "Ke Font");
+    assert.match(copy.message, /^Tinggal Font di Brand Book/);
+    assert.equal(copy.action, "Ke Brand Book");
   });
-  test("nothing done names both halves and starts at Brand DNA", () => {
+  test("nothing done names both steps and starts at Brand DNA", () => {
     const copy = identityGateCopy(identityGate(brandWith()), t);
-    assert.match(copy.message, /Brand DNA dan Warna & Font/);
+    assert.match(copy.message, /Brand DNA dan Brand Book/);
     assert.equal(copy.action, "Ke Brand DNA");
   });
-  test("the old vague line is gone", () => {
+  test("the old vague line is gone, and so is 'Warna & Font'", () => {
     assert.doesNotMatch(t("nav.locked"), /identitas brand/);
     assert.doesNotMatch(t("home.next.lockedToast"), /identitas brand/);
-    assert.match(t("beginner.tour.journey.body"), /Warna & Font/);
+    assert.match(t("beginner.tour.journey.body"), /Brand DNA dan Brand Book/);
+    for (const key of ["nav.locked", "home.next.lockedToast", "home.identity.desc", "home.identity.bookBasics", "home.identity.ctaBook", "beginner.tour.journey.body", "beginner.step.identity.ctaGuidelines", "dna.done.next", "dna.done.path.visual", "gate.visual.both", "guidelines.progressBasics"]) {
+      assert.doesNotMatch(t(key), /warna\s*(&|dan)\s*font/i, key);
+    }
   });
 });
 

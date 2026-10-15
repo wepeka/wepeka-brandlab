@@ -88,8 +88,8 @@ const HELP_CONTENT = {
     en: { title: "What is the Brand Book?", body: "The rules for how your brand looks — logo, colors, fonts, visual direction and tone of voice — so all content looks like it comes from the same brand. Download it as a PDF to hand to a designer or your team." },
   },
   "term-logo": {
-    id: { title: "Perlu logo, nggak?", body: "Logo nggak wajib buat langkah Warna & Font — boleh dilewati dulu. Tapi Brand Book pakai logo ini buat halaman aturan pemakaian (jarak aman, background, larangan), jadi upload begitu ada. Belum punya? Generate dulu pakai ChatGPT, lalu upload di sini." },
-    en: { title: "Do I need a logo?", body: "A logo isn't required for the Colors & Fonts step — you can skip it for now. But the Brand Book uses it for the usage-rules pages (clear space, backgrounds, don'ts), so upload one once you have it. Don't have one? Generate it with ChatGPT first, then upload it here." },
+    id: { title: "Perlu logo, nggak?", body: "Logo nggak wajib buat buka Tujuan — boleh dilewati dulu. Tapi Brand Book pakai logo ini buat halaman aturan pemakaian (jarak aman, background, larangan), jadi upload begitu ada. Belum punya? Generate dulu pakai ChatGPT, lalu upload di sini." },
+    en: { title: "Do I need a logo?", body: "A logo isn't required to open Goals — you can skip it for now. But the Brand Book uses it for the usage-rules pages (clear space, backgrounds, don'ts), so upload one once you have it. Don't have one? Generate it with ChatGPT first, then upload it here." },
   },
   "term-color": {
     id: { title: "Sistem warna itu apa?", body: "3 warna utama (Primary, Secondary, Accent) plus warna background dan teks. Dipakai konsisten di semua konten biar orang langsung ngenalin brand kamu dari warnanya." },

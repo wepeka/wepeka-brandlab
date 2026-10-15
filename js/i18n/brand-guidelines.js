@@ -542,12 +542,12 @@ export default {
   // Brand Book header progress (guidelinesProgressHTML): what x/6 counts.
   "guidelines.progressMissing": { en: "Still empty: {list}", id: "Belum terisi: {list}" },
   "guidelines.progressAll": { en: "Every Brand Book section is filled", id: "Semua bagian Brand Book sudah terisi" },
-  "guidelines.progressBasics": { en: "Colors & fonts", id: "Warna & Font" },
+  "guidelines.progressBasics": { en: "Brand Book basics", id: "Dasar Brand Book" },
   // Pemula, before colours + fonts: which two tabs the Tujuan lock waits for.
   "guidelines.progressNeed": { en: "To open Goals, the Brand Book only needs 2 sections: {color} and {type}. The rest can wait.", id: "Buat buka Tujuan, dari Brand Book cukup 2 bagian: {color} dan {type}. Sisanya boleh nanti." },
   // The moment those two complete the identity (js/views/brand-guidelines.js announceTujuanOpen).
   "guidelines.unlock.title": { en: "Goals is open now 🎉", id: "Tujuan sudah kebuka 🎉" },
-  "guidelines.unlock.body": { en: "Brand DNA, colors and fonts are done — that's all it takes to start. Next step: set one goal, for example growing your followers.<br><br>The other Brand Book sections (logo, visual direction, tone of voice) can be filled in whenever you like.", id: "Brand DNA, warna, dan font kamu sudah beres — itu yang dibutuhkan buat mulai. Langkah berikutnya: pasang satu tujuan, misalnya naikin followers.<br><br>Bagian Brand Book lainnya (logo, arah visual, cara nulis) boleh dilengkapi kapan aja." },
+  "guidelines.unlock.body": { en: "Brand DNA and your Brand Book basics are done — that's all it takes to start. Next step: set one goal, for example growing your followers.<br><br>The other Brand Book sections (logo, visual direction, tone of voice) can be filled in whenever you like.", id: "Brand DNA dan dasar Brand Book kamu sudah beres — itu yang dibutuhkan buat mulai. Langkah berikutnya: pasang satu tujuan, misalnya naikin followers.<br><br>Bagian Brand Book lainnya (logo, arah visual, cara nulis) boleh dilengkapi kapan aja." },
   "guidelines.unlock.go": { en: "Set a goal", id: "Pasang tujuan" },
   "guidelines.unlock.stay": { en: "Keep filling in the Brand Book", id: "Lanjut lengkapi Brand Book" },
   // Any upload that would push the brand doc past Firestore's 1 MiB

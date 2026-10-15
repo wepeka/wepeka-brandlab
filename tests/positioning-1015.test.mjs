@@ -28,7 +28,7 @@ const socialCampaign = (over = {}) => ({
 });
 
 describe("Brand DNA finished: the path from here", () => {
-  test("nothing done yet: Warna & font is next, the rest waits", () => {
+  test("nothing done yet: the Brand Book is next, the rest waits", () => {
     const { steps } = dnaNextSteps({ id: "b1", brandDNA: {} });
     assert.deepEqual(steps.map((s) => s.key), ["visual", "goal", "week"]);
     assert.deepEqual(steps.map((s) => !!s.done), [false, false, false]);
