@@ -11,6 +11,9 @@
 // parts, Visual and Teks layar of the stored text), "Pro" the cards
 // (js/script-cards.js).
 //
+// "Template hook" (`onHookTemplate`) opens the same picker as in Creator;
+// the caller puts the line in through setValue().
+//
 // It only edits text; the caller (js/views/creator.js) owns saving:
 // `onChange(text)` fires (debounced) while typing and once more on close.
 import { icon } from "./icons.js";
@@ -21,7 +24,7 @@ import { mountScriptCards } from "./script-cards.js";
 
 const SAVE_DELAY = 500;
 
-export function openScriptFocus({ title = "", value = "", lang = "id", mode = "plain", onChange = () => {}, onClose = () => {}, onDiscuss = null, onTeleprompter = null } = {}) {
+export function openScriptFocus({ title = "", value = "", lang = "id", mode = "plain", onChange = () => {}, onClose = () => {}, onDiscuss = null, onTeleprompter = null, onHookTemplate = null } = {}) {
   const cards = mode === "cards";
   const el = document.createElement("div");
   el.className = "script-focus";
@@ -36,6 +39,7 @@ export function openScriptFocus({ title = "", value = "", lang = "id", mode = "p
         <span class="script-focus-len" data-focus-len></span>
       </div>
       <div class="script-focus-actions">
+        ${onHookTemplate ? `<button type="button" class="btn btn-ghost btn-sm" data-focus-tpl title="${escapeHtml(t("hooktpl.openTitle"))}">${icon("layers", { size: 14 })}<span>${t("hooktpl.open")}</span></button>` : ""}
         ${onTeleprompter ? `<button type="button" class="btn btn-ghost btn-sm" data-focus-tp>${icon("teleprompter", { size: 14 })}<span>${t("cr.focus.teleprompter")}</span></button>` : ""}
         ${onDiscuss ? `<button type="button" class="btn btn-secondary btn-sm" data-focus-discuss>${icon("chat", { size: 14 })}<span>${t("cr.focus.discuss")}</span></button>` : ""}
       </div>
@@ -111,6 +115,7 @@ export function openScriptFocus({ title = "", value = "", lang = "id", mode = "p
   paintLength();
 
   el.querySelector("[data-focus-tp]")?.addEventListener("click", () => { flush(); onTeleprompter(current); });
+  el.querySelector("[data-focus-tpl]")?.addEventListener("click", () => onHookTemplate());
   el.querySelector("[data-focus-discuss]")?.addEventListener("click", () => { flush(); onDiscuss(); });
 
   let closed = false;

@@ -11,6 +11,7 @@ import { t, getLang } from "./i18n.js";
 import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
 import { brandVoiceText, listBrandIdeas } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
+import { templateParts, isFactBlank } from "./knowledge/hook-templates.js";
 import { renderScript } from "./script-format.js";
 import { noteAiAnswer } from "./ai-last.js";
 
@@ -533,6 +534,108 @@ function parseJsonObject(raw) {
       return null;
     }
   }
+}
+
+// Creator's "Template hook" (js/hook-template-picker.js): the owner picked
+// one of the hook templates in js/knowledge/hook-templates.js and asks for
+// ideas for its blanks. Returns { options: [{ BLANK: "value", … }], note } —
+// `count` sets of values, each finishing the same template differently.
+// The picker puts a set into the boxes, where the owner changes it before
+// using it. A blank that needs a real fact (isFactBlank: a price, a number,
+// a duration, a deadline, an offer, an experience) the brand context
+// doesn't hold comes back "" so the box stays empty for the owner's own
+// data. `filled`: the blanks the owner already typed, kept as given.
+//
+// The model writes each finished line too ("line") — writing the whole
+// sentence is what keeps its values grammatical where they sit — but only
+// the values are used, so what lands in the boxes always rebuilds the
+// template exactly. A value that repeats the word right next to its blank
+// ("bisa" + "bisa bikin") loses the repeat. `lang`: the template's language
+// (the brand's audience language, else the app's) — the values follow it.
+const HOOK_FILL_FUNNEL = { TOFU: "reach new people who don't know the brand yet", MOFU: "build trust with people who already know it", BOFU: "get people who are ready to buy to act" };
+export async function fillHookTemplate(ai, { template, blanks = [], filled = {}, lang = "id", title = "", idea = "", funnel = "", platform = "", brandContext = "", count = 3 }) {
+  const given = Object.entries(filled).filter(([b, v]) => blanks.includes(b) && String(v || "").trim());
+  const facts = blanks.filter((b) => isFactBlank(b) && !given.some(([g]) => g === b));
+  const system = [
+    "You help a small business owner finish the opening line (hook) of a short vertical video for Instagram Reels / TikTok. They picked a hook TEMPLATE with blanks in [SQUARE BRACKETS]. You suggest what goes in each blank.",
+    `Write ${count} sets of values. Each set finishes the SAME template for THIS brand and THIS video — a different angle each time, not three wordings of one idea.`,
+    "The finished line is the template with every blank replaced by your value, word for word. So each value must continue the words right before its blank and lead into the words right after it: never repeat a word that is already next to the blank, no brackets, no quotes, no full stop or question mark at the end (the template has its punctuation), lowercase unless it starts the sentence or is a name. Keep each value short — a few words — unless the blank is a whole statement. Write the finished line in \"line\" and read it back: if a word is doubled or the grammar breaks at a blank, change the value.",
+    "The finished line must sound like a real person talking to camera: specific, plain words, something the viewer can picture. Make it stop the scroll through curiosity, a real feeling or a concrete detail — never clickbait the video can't pay off.",
+    "NEVER INVENT FACTS: no statistics, numbers, counts, prices, sums of prices, discounts, durations, dates, deadlines, promos, offers, results, customer stories, testimonials, awards or personal experiences that the brand context or the owner's input doesn't state. Prices and numbers are written exactly as the context gives them (\"Rp18.000\", never \"delapan belas ribu\" or a total you worked out).",
+    facts.length
+      ? `REAL-DATA BLANKS: ${facts.map((b) => `[${b}]`).join(", ")}. Fill these ONLY with a value the brand context or the owner's input states outright; otherwise return "" for that blank in every set — the owner fills in their real data. Never a vague stand-in either ("beberapa bulan", "akhir bulan ini", "harga spesial").`
+      : "",
+    "Every other blank (a habit, a mistake, a feeling, a topic, a situation) is filled from the brand context and the video's topic.",
+    "A [BRAND] / [BRAND/PERSON] blank means the brand this video is about: the owner's own brand, unless the video's topic is clearly about another brand.",
+    `OUTPUT LANGUAGE: every value and the note are in ${lang === "en" ? "natural, friendly US English" : "Indonesian (Bahasa Indonesia), casual-friendly and natural"} — the template's own language — even when the brand info or the topic is written in another language.`,
+    NATURAL_WRITING_CONTEXT,
+    brandContext,
+    `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"note": "", "options": [{"line": "the finished sentence", "values": {${blanks.map((b) => `"${b}": ""`).join(", ")}}}]} — exactly ${count} items in "options", each "values" with every blank as a key, exactly as written above. "note" is normally ""; fill it with ONE short friendly sentence only when the video's topic is too thin to fill the blanks well, or a real-data blank is left empty, saying what to add; name a box in lowercase without brackets ("durasi", not "[DURASI]"). Never comment on, check or correct the values the owner filled in.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const user = [
+    `Template: ${template}`,
+    `Blanks: ${blanks.map((b) => `[${b}]`).join(", ")}`,
+    given.length ? `Already filled in by the owner — use these values exactly, in every set:\n${given.map(([b, v]) => `- [${b}] = ${String(v).trim()}`).join("\n")}` : "",
+    title ? `Video title: ${title}` : "",
+    idea ? `Video idea / topic: ${idea}` : "",
+    HOOK_FILL_FUNNEL[funnel] ? `Goal of this video: ${HOOK_FILL_FUNNEL[funnel]}` : "",
+    platform ? `Platform: ${platform}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const parsed = parseJsonObject(await callModel(ai, system, user, 900, { temperature: 0.8, json: true, feature: "hook-template" }));
+  // The words on each side of every blank, to drop a value's repeat of them.
+  const parts = templateParts(template);
+  const sideWords = (b) => {
+    const at = parts.findIndex((p) => p.blank === b);
+    const lastWord = (s) => (String(s || "").trim().match(/([\p{L}\p{N}-]+)$/u) || [])[1] || "";
+    const firstWord = (s) => (String(s || "").trim().match(/^([\p{L}\p{N}-]+)/u) || [])[1] || "";
+    return { before: lastWord(parts[at - 1]?.text), after: firstWord(parts[at + 1]?.text) };
+  };
+  // A real-data blank keeps the model's value only when it comes from what
+  // was given: each number in it appears there as written, with the word
+  // after it ("2 minggu", "Rp18.000" — not "18rb"), or — with no number —
+  // the whole value does.
+  // The prompt alone still let "tanggal 31", "akhir bulan ini" or "2 minggu"
+  // through for things nobody gave. Any other blank only loses a value with
+  // a number that appears nowhere in what was given.
+  const norm = (x) => String(x || "").toLowerCase().replace(/\s+/g, " ");
+  const source = norm([brandContext, title, idea, ...given.map(([, v]) => v)].join(" "));
+  const hasNumber = (n) => new RegExp(`(^|[^\\d.,])${n.replace(/[.]/g, "\\.")}($|[^\\d])`).test(source);
+  const grounded = (v, strict) => {
+    const s = norm(v);
+    const nums = [...s.matchAll(/\d+(?:[.,]\d+)*[\p{L}%]*(?:\s+[\p{L}%]+)?/gu)].map((m) => m[0]);
+    if (!nums.length) return !strict || source.includes(s);
+    return nums.every((n) => (strict ? source.includes(n) : hasNumber(n.match(/^[\d.,]+/)[0])));
+  };
+  const clean = (b, v) => {
+    const own = given.find(([g]) => g === b);
+    if (own) return String(own[1]).trim();
+    let out = String(v ?? "").replace(/^[\s"'“”[]+|[\s"'“”\].?!]+$/g, "").trim();
+    const { before, after } = sideWords(b);
+    if (before && out.toLowerCase().startsWith(before.toLowerCase() + " ")) out = out.slice(before.length).trim();
+    if (after && out.toLowerCase().endsWith(" " + after.toLowerCase())) out = out.slice(0, -after.length).trim();
+    if (out && !grounded(out, facts.includes(b))) return "";
+    return out;
+  };
+  const seen = new Set();
+  const options = (Array.isArray(parsed?.options) ? parsed.options : [])
+    .map((o) => (o && typeof o.values === "object" ? o.values : o))
+    .filter((o) => o && typeof o === "object")
+    .map((o) => Object.fromEntries(blanks.map((b) => [b, clean(b, o[b])])))
+    .filter((o) => {
+      const key = JSON.stringify(o);
+      if (seen.has(key) || !Object.entries(o).some(([b, v]) => v && !given.some(([g]) => g === b))) return false;
+      seen.add(key);
+      return true;
+    });
+  if (!options.length) throw new AiApiError(t("ai.error.readOptions"));
+  // The note is for a box left empty; with every box filled it was only
+  // ever noise (a remark about the owner's own price, a blank that isn't there).
+  const note = options.some((o) => Object.values(o).some((v) => !v)) && typeof parsed?.note === "string" ? parsed.note.trim() : "";
+  return { options: options.slice(0, count), note };
 }
 
 // Every chat-shaped feature below (consultant, brainstorm, companion,

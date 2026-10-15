@@ -29,6 +29,7 @@ import { openWeekPlanMenu, openScriptChat } from "../consultant-panel.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
 import { wireMic } from "../voice-input.js";
+import { openHookTemplatePicker } from "../hook-template-picker.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -175,6 +176,9 @@ const DURATION_OPTIONS = [
 ];
 const defaultDuration = (format) => (/long|panjang|youtube/i.test(format || "") ? "2-3 menit" : /story/i.test(format || "") ? "15 dtk" : "30 dtk");
 const HOOK_CHIPS_SHOWN = 6;
+// The last "Template hook" line put into each piece this visit, so the next
+// one replaces it instead of stacking on top in a plain-text script.
+const lastTemplateHook = new Map();
 const MAX_HOOK_TYPES = 3;
 
 // "Tipe hook": the owner picks up to three kinds of opening (or leaves it
@@ -1147,6 +1151,55 @@ function paint(root, brandId, state, refresh) {
       updateSettings({ scriptEditor: btn.dataset.scriptMode });
     });
   });
+  // "Template hook": the picker builds the line and it goes where the hook
+  // goes — the first part of the script (applyHook; the old hook's screen
+  // text goes with it, its Visual stays), or slide 1 of a carousel. Using
+  // another template replaces the one used before, also in a script typed
+  // as plain text.
+  const templateAi = () => {
+    if (!hasAiKey(getSettings().ai || {}) || isTourDemo()) return null;
+    return () => ({
+      title: qs("#f-title", root)?.value ?? selected.title ?? "",
+      idea: qs("#f-idea", root)?.value ?? selected.idea ?? "",
+      funnel: getContent(selected.id)?.funnel || selected.funnel || "",
+      platform: selected.platform || "",
+      brandContext: brand ? buildFullContext(brand, { campaigns: listCampaigns(brand.id), pulseText: pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() }) }) : "",
+    });
+  };
+  // The lines are in the language the brand's videos are in.
+  const templateLang = () => (brand?.audienceLanguage ? (brand.audienceLanguage === "en" ? "en" : "id") : getLang());
+  const withTemplateHook = (script, line) => {
+    if (isCarouselContent(getContent(selected.id) || selected)) {
+      const slides = parseSlides(script);
+      if (slides.length) slides[0] = { ...slides[0], text: line };
+      else slides.push({ text: line });
+      return serializeSlides(slides);
+    }
+    return applyHook(script, { say: line, onScreen: "" }, lastTemplateHook.get(selected.id) || "", { lang: getLang() });
+  };
+  const openTemplatePicker = (apply) =>
+    openHookTemplatePicker({ funnel: getContent(selected.id)?.funnel || selected.funnel || "TOFU", brandId: brand?.id || null, lang: templateLang(), aiContext: templateAi(), onUse: apply });
+  const templateBtn = qs("#hook-template-open", root);
+  templateBtn?.addEventListener("mousedown", (e) => e.preventDefault());
+  templateBtn?.addEventListener("click", () => {
+    saveScriptField();
+    openTemplatePicker((line) => {
+      const contentId = selected.id;
+      const scriptEl = qs("#f-script", root);
+      const next = withTemplateHook(scriptEl ? scriptEl.value : getContent(contentId)?.script || "", line);
+      lastTemplateHook.set(contentId, line);
+      if (scriptEl) scriptEl.value = next;
+      const patch = { script: next };
+      // A brand-new piece has no title yet — the hook is a good working one.
+      const titleEl = qs("#f-title", root);
+      if (titleEl && !titleEl.value.trim()) patch.title = titleEl.value = line.slice(0, 80);
+      updateContent(contentId, patch);
+      flashSaved();
+      toast(t(scriptEl ? "hooktpl.used" : "hooktpl.usedSlide"));
+      if (!scriptEl) refresh();
+    });
+  });
+
   // "Layar penuh": the script on one big page (js/script-focus.js), with the
   // script chat docked beside it. mousedown keeps the box's focus, so its
   // blur-save (and the repaint it triggers) can't swallow the click.
@@ -1169,6 +1222,12 @@ function paint(root, brandId, state, refresh) {
       onChange: save,
       onClose: (text) => save(text),
       onTeleprompter: (text) => openTeleprompter(spokenText(text), { title: selected.title || t("common.untitled") }),
+      onHookTemplate: () =>
+        openTemplatePicker((line) => {
+          focus.setValue(withTemplateHook(focus.value, line));
+          lastTemplateHook.set(contentId, line);
+          toast(t("hooktpl.used"));
+        }),
       onDiscuss: () =>
         openScriptChat({
           contentId,
@@ -1931,6 +1990,7 @@ function slidesFieldHTML(c) {
           </div>
         </div>
         <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("cr.f.slidesHint")}</p>
+        ${hookTemplateButtonHTML()}
         <div class="slide-editor" id="slide-editor">
           ${cards || `<p class="text-faint" style="font-size:12.5px;margin:0 0 10px;">${t("cr.f.slidesEmpty")}</p>`}
         </div>
@@ -1938,20 +1998,25 @@ function slidesFieldHTML(c) {
       </div>`;
 }
 
+// "Template hook" (js/hook-template-picker.js): one button above the
+// script or the slides — the line it makes becomes the first part.
+const hookTemplateButtonHTML = () =>
+  `<div class="htpl-open-row"><button type="button" class="htpl-open" id="hook-template-open" title="${escapeHtml(t("hooktpl.openTitle"))}">${icon("layers", { size: 14 })}<span>${t("hooktpl.open")}</span></button></div>`;
+
 // ---- Video script: "Biasa" or "Pro" ---------------------------------------
 // Two ways to write the same script, remembered on the account
 // (settings.scriptEditor): "Biasa" is one plain box that shows only the
 // words — no part names, no Visual / Teks layar lines (plainScript); "Pro"
-// is one card per part (js/script-cards.js). Until someone picks, it
-// follows the app's own Pemula / Pro. #f-script stays in the page, hidden,
+// is one card per part (js/script-cards.js). Until someone picks, it is
+// Biasa — also in the app's Pro mode. #f-script stays in the page, hidden,
 // with the stored text — everything that reads or writes the script goes
 // through it.
 const scriptEditorMode = () => {
   const picked = getSettings()?.scriptEditor;
-  if (picked === "cards") return "cards";
-  // "text" is what "Ketik biasa" used to save.
-  if (picked === "plain" || picked === "text") return "plain";
-  return getMode() === "advanced" ? "cards" : "plain";
+  // Anything else — "plain", the old "text" ("Ketik biasa"), or nothing
+  // picked yet — is Biasa: everyone starts there; Pro (parts) is one tap
+  // away and stays once chosen.
+  return "plain";
 };
 
 function scriptFieldHTML(c) {
@@ -1972,6 +2037,7 @@ function scriptFieldHTML(c) {
             <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
           </div>
         </div>
+        ${hookTemplateButtonHTML()}
         ${cards ? `<div id="script-cards"></div>` : `<textarea class="textarea" id="f-script-plain" style="min-height:220px;" placeholder="${escapeHtml(t("cr.f.scriptPh"))}">\n${escapeHtml(shown.text)}</textarea>`}
         <textarea id="f-script" hidden>\n${escapeHtml(c.script || "")}</textarea>
         ${cards ? "" : `<p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>
