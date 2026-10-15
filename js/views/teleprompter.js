@@ -1,6 +1,7 @@
 import { icon } from "../icons.js";
 import { escapeHtml } from "../dom.js";
 import { t } from "../i18n.js";
+import { openRecordMode } from "./teleprompter-record.js";
 
 // Fill light for shooting: the backdrop around the script panel turns into
 // a bright colour field (a phone/laptop screen is often the only light a
@@ -35,7 +36,9 @@ function saveLight(light) {
 }
 
 // Centered, dimmed-backdrop overlay for reading a script aloud — adjustable
-// scroll speed and text size, play/pause, restart, plus the fill light.
+// scroll speed and text size, play/pause, restart, the fill light, and
+// "Rekam video": record straight from the camera with the script rolling
+// right under it (js/views/teleprompter-record.js).
 export function openTeleprompter(scriptText, { title = "" } = {}) {
   const hasScript = !!(scriptText && scriptText.trim());
   const light = loadLight();
@@ -59,6 +62,7 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
       <div class="tp-controls">
         <button class="btn btn-secondary btn-sm" id="tp-restart" aria-label="${t("tp.restart")}" title="${t("tp.restart")}">${icon("refresh", { size: 14 })}</button>
         <button class="btn btn-primary" id="tp-play" ${hasScript ? "" : "disabled"}>${icon("play", { size: 16 })}<span>${t("tp.play")}</span></button>
+        <button type="button" class="btn btn-secondary btn-sm tp-rec-btn" id="tp-rec" title="${t("tp.rec.openTitle")}"><i class="tp-rec-dot" aria-hidden="true"></i><span>${t("tp.rec.open")}</span></button>
         <label class="tp-slider">${t("tp.speed")}<input type="range" id="tp-speed" min="1" max="10" value="4" /></label>
         <label class="tp-slider">${t("tp.size")}<input type="range" id="tp-size" min="18" max="64" value="32" /></label>
         <button type="button" class="btn btn-secondary btn-sm tp-light-toggle" id="tp-light" aria-pressed="${light.on}" title="${t("tp.lightTitle")}">${icon("sun", { size: 14 })}<span>${t("tp.light")}</span></button>
@@ -194,6 +198,22 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
   });
   applyLight();
 
+  // ---- Record mode ----
+  let recMode = null;
+  const recBtn = overlay.querySelector("#tp-rec");
+  recBtn.addEventListener("click", () => {
+    if (recMode) return;
+    pause();
+    recMode = openRecordMode({
+      text: hasScript ? scriptText : "",
+      title,
+      onExit: () => {
+        recMode = null;
+        if (document.body.contains(recBtn)) recBtn.focus?.();
+      },
+    });
+  });
+
   // Fullscreen hides the browser chrome so the whole display glows.
   const fsBtn = overlay.querySelector("#tp-fullscreen");
   fsBtn.addEventListener("click", () => {
@@ -204,6 +224,8 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
   if (!document.documentElement.requestFullscreen) fsBtn.hidden = true;
 
   function close() {
+    recMode?.close();
+    recMode = null;
     pause();
     keepAwake(false);
     document.removeEventListener("keydown", onKeydown);
@@ -212,7 +234,9 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
     overlay.remove();
   }
   function onKeydown(e) {
-    if (e.key === "Escape") close();
+    if (e.key !== "Escape") return;
+    if (recMode) recMode.onEscape();
+    else close();
   }
 
   overlay.querySelector("#tp-close").addEventListener("click", close);
