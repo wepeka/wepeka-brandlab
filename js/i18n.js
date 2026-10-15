@@ -351,6 +351,9 @@ const CORE = {
   // #12: ad-hoc celebration (js/celebrate.js) when a Quick Fill save is what
   // pushes a piece's engagement rate into "good" — see openQuickFillModal.
   "celebrate.erWinTitle": { en: "Your content just hit a healthy ER! 🎉", id: "Kontenmu baru aja hit ER yang sehat! 🎉" },
+  "celebrate.erExcellentTitle": { en: "Your content just broke 10% engagement — excellent! 🔥", id: "Kontenmu tembus engagement 10% — sangat bagus! 🔥" },
+  // Flame next to a title whose ER is 10%+ (ER_SCALE in js/store.js).
+  "contentList.erExcellentMark": { en: "Excellent engagement (10%+)", id: "Engagement sangat bagus (10%+)" },
   "contentList.fp.funnel": { en: "Funnel", id: "Funnel" },
   "contentList.fp.format": { en: "Format", id: "Format" },
   "contentList.fp.allFormats": { en: "All formats", id: "Semua format" },
@@ -376,9 +379,11 @@ const CORE = {
   "dashboard.stat.avgER": { en: "Avg. engagement rate", id: "Rata-rata Engagement Rate" },
   "dashboard.perfByFunnel": { en: "Performance by funnel", id: "Performa per Funnel" },
   "dashboard.topPerforming": { en: "Top performing content", id: "Konten Berperforma Terbaik" },
+  // The four ER ratings (ER_SCALE in js/store.js): 10%+, 8–10%, 4–8%, under 4%.
+  "dashboard.excellent": { en: "Excellent", id: "Sangat bagus" },
   "dashboard.healthy": { en: "Healthy", id: "Sehat" },
-  "dashboard.average": { en: "Average", id: "Cukup" },
-  "dashboard.underperforming": { en: "Underperforming", id: "Kurang Perform" },
+  "dashboard.average": { en: "Average", id: "Sedang" },
+  "dashboard.underperforming": { en: "Very poor", id: "Buruk banget" },
 
   // Content Editor drawer (js/views/content-editor.js)
   "contentEditor.editTitle": { en: "Edit content", id: "Edit Konten" },

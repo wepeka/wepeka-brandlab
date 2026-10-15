@@ -1,5 +1,5 @@
 import { getBrand, listContent, getContent, listCampaigns, listSeries, getSettings, onChange, archiveContent, deleteContent, updateContent, trashContentBatch, TRASH_DAYS, METRIC_KEYS, STATUS_LABELS, FUNNELS, performanceCheckDue, performanceHasNumbers } from "../store.js";
-import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
+import { computeContentMetrics, HEALTH_LABEL, isHealthy } from "../formulas.js";
 import { icon, platformIcon } from "../icons.js";
 import { formatNumber, formatPercent, formatDate, debounce, resizeImageFile, qs, qsa, toast, openMenu, closeMenu, escapeHtml as escapeText, loadingHTML, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
@@ -431,13 +431,13 @@ function rowHTML({ c, perf, m }, campaignsById) {
   const campaign = c.campaignId ? campaignsById.get(c.campaignId) : null;
   return `
     <tr data-id="${c.id}" role="row">
-      <td class="cell-title">${escapeText(c.title || t("common.untitled"))}</td>
+      <td class="cell-title">${escapeText(c.title || t("common.untitled"))}${isPublished && m.erRating === "excellent" ? `<span class="er-flame" role="img" title="${escapeText(t("contentList.erExcellentMark"))}" aria-label="${escapeText(t("contentList.erExcellentMark"))}">${icon("flame", { size: 13 })}</span>` : ""}</td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaignDisplayName(campaign.name) || t("common.untitled"))}</span>` : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${escapeText(c.status)}"><span class="status-dot"></span>${escapeText(STATUS_LABELS[c.status] || c.status)}</span></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf.views) : "—"}</td>
-      <td data-label="${escapeText(t("contentList.th.engagement"))}">${isPublished && m.health ? `<span class="health-badge health-${m.health}"><span class="health-dot"></span>${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
+      <td data-label="${escapeText(t("contentList.th.engagement"))}">${isPublished && m.health ? `<span class="health-badge health-${m.health}" title="${escapeText(HEALTH_LABEL[m.health])}">${m.health === "excellent" ? icon("flame", { size: 13 }) : `<span class="health-dot"></span>`}${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
       <td data-row-actions>
         <div class="flex gap-4">
           ${isPublished ? `<button type="button" class="icon-btn" data-quick-fill="${c.id}" aria-label="${t("contentList.fillEngagement")}" title="${t("contentList.fillEngagement")}" style="width:30px;height:30px;">${icon("chart", { size: 15 })}</button>` : ""}
@@ -669,9 +669,9 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
   qs("#qe-save", overlay).addEventListener("click", () => {
     const settings = getSettings();
     // #12: an ad-hoc "big win" celebration when this save is what pushes
-    // the content's ER rating into "good" — compare before/after so a
-    // re-save of an already-good piece doesn't celebrate every time.
-    const wasGood = computeContentMetrics(c, settings).erRating === "good";
+    // the content's ER rating into "good" (or past 10% into "excellent") —
+    // compare before/after so a re-save doesn't celebrate every time.
+    const before = computeContentMetrics(c, settings).erRating;
     const performance = readPerformance();
     if (isPro) {
       const raw = readRetention();
@@ -685,7 +685,9 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     closeOverlay(overlay);
     toast(t("contentList.qf.updatedToast", { title: c.title || t("common.untitled") }));
     const updated = computeContentMetrics({ ...c, performance }, settings);
-    if (!wasGood && updated.erRating === "good") {
+    if (updated.erRating === "excellent" && before !== "excellent") {
+      toast(t("celebrate.erExcellentTitle"));
+    } else if (!isHealthy(before) && updated.erRating === "good") {
       toast(t("celebrate.erWinTitle"));
     }
     onSaved?.();

@@ -34,6 +34,15 @@ export const METRIC_KEYS = [
   "views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained",
 ].map((key) => ({ key, label: t(`store.metric.${key}`) }));
 
+// The engagement-rate scale every piece of content is rated on, whatever
+// its funnel or platform (owner's call, 2026-10-15): 10%+ "Sangat bagus"
+// (solid green + a flame on the content), 8–10% "Sehat", 4–8% "Sedang",
+// under 4% "Buruk banget" (red). 4% is the old TOFU "poor" line, kept.
+// Floors are inclusive — formulas.js rateValue(). Fixed in code on
+// purpose: no Settings panel for it (owner's call), change it here.
+// Accounts read it through settings.erScale.
+export const ER_SCALE = { excellent: 10, good: 8, average: 4 };
+
 // Sums each metric across whatever platforms have a number for it (e.g. IG
 // views + Facebook views = one combined total) — platforms with nothing yet
 // just don't contribute. Returns null for a metric no platform has at all,
@@ -327,28 +336,16 @@ function defaultDB() {
         engagementRate: "(likes + comments + shares + saves) / reach * 100",
         followerConversionRate: "followersGained / reach * 100",
       },
-      // Starting assumptions for a SMALL account (< ~5K followers), rated on
-      // ER-by-reach (the default formula above). 2025–26 reach-based
-      // medians sit around 4–6% on Instagram Reels and 5–8% on TikTok, and
-      // small accounts usually run higher — so TOFU 8% "good" is fair
-      // there, while the MOFU/BOFU "average" bars are set closer to the
-      // actual medians. Follower conversion (new followers ÷ reach) is
-      // typically 0.1–0.5%; 1% is already a strong result, so "good" is 1%
-      // and "average" 0.3% rather than the old 1–2% floors. Per-platform
-      // overrides live in thresholdsByPlatform below.
+      // Engagement rate: one scale for all content — see ER_SCALE above.
+      erScale: { ...ER_SCALE },
+      // Follower conversion (new followers ÷ reach) is typically 0.1–0.5%;
+      // 1% is already a strong result, so "good" is 1% and "average" 0.3%
+      // rather than the old 1–2% floors. Per-platform overrides live in
+      // thresholdsByPlatform below.
       thresholds: {
-        TOFU: {
-          engagementRate: { good: 8, average: 4 },
-          followerConversionRate: { good: 1, average: 0.3 },
-        },
-        MOFU: {
-          engagementRate: { good: 6, average: 2.5 },
-          followerConversionRate: { good: 1.5, average: 0.5 },
-        },
-        BOFU: {
-          engagementRate: { good: 4, average: 2 },
-          followerConversionRate: { good: 2, average: 0.7 },
-        },
+        TOFU: { followerConversionRate: { good: 1, average: 0.3 } },
+        MOFU: { followerConversionRate: { good: 1.5, average: 0.5 } },
+        BOFU: { followerConversionRate: { good: 2, average: 0.7 } },
       },
       // Optional per-platform overrides, keyed by platform name exactly as
       // it appears on content (e.g. "TikTok"), same shape as `thresholds`.
@@ -603,6 +600,10 @@ export function initStore(uid) {
         ...fresh.settings,
         ...personalData,
         formulas: { ...fresh.settings.formulas, ...(personalData.formulas || {}) },
+        // A new key, so ER floors some accounts saved under the old
+        // per-funnel `thresholds` (from the removed benchmark form) no
+        // longer apply — everyone starts on ER_SCALE.
+        erScale: { ...fresh.settings.erScale, ...(personalData.erScale || {}) },
         thresholds: { ...fresh.settings.thresholds, ...(personalData.thresholds || {}) },
         thresholdsByPlatform: { ...(personalData.thresholdsByPlatform || {}) },
         ai: isGlobalAiActive() ? { ...personalAi, ...globalAi } : personalAi,
@@ -3389,7 +3390,6 @@ export function updatePlatformThresholds(platform, funnel, patch) {
     all[platform] = {
       ...base,
       [funnel]: {
-        engagementRate: { ...current.engagementRate, ...(patch.engagementRate || {}) },
         followerConversionRate: { ...current.followerConversionRate, ...(patch.followerConversionRate || {}) },
       },
     };
@@ -3399,7 +3399,6 @@ export function updatePlatformThresholds(platform, funnel, patch) {
 }
 export function updateThresholds(funnel, patch) {
   db.settings.thresholds[funnel] = {
-    engagementRate: { ...db.settings.thresholds[funnel].engagementRate, ...(patch.engagementRate || {}) },
     followerConversionRate: { ...db.settings.thresholds[funnel].followerConversionRate, ...(patch.followerConversionRate || {}) },
   };
   persistSettings(["thresholds"]);

@@ -9,7 +9,7 @@
 // is laid out as A4 portrait pages from whole blocks — a table or a stat
 // row is never cut across a page — then each page is rasterized.
 import { getBrand, listContent, listCampaigns, getSettings, updateBrand, organicViews, FUNNELS, localISODate } from "../store.js";
-import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
+import { computeContentMetrics, HEALTH_LABEL, isHealthy } from "../formulas.js";
 import { campaignStages, activeStageIndex, readStage, campaignHeadline } from "../campaign-metrics.js";
 import { getTracker } from "../sales-tracker.js";
 import { brandTopAction } from "../next-action.js";
@@ -55,7 +55,7 @@ export function computeReportData(brand, start, end) {
   const ers = published.map((x) => x.m.engagementRate).filter((v) => v != null);
   const fcrs = published.map((x) => x.m.followerConversionRate).filter((v) => v != null);
   const healthEvaluated = published.filter((x) => x.m.health);
-  const healthyPct = healthEvaluated.length ? (healthEvaluated.filter((x) => x.m.health === "good").length / healthEvaluated.length) * 100 : null;
+  const healthyPct = healthEvaluated.length ? (healthEvaluated.filter((x) => isHealthy(x.m.health)).length / healthEvaluated.length) * 100 : null;
   const funnelStats = FUNNELS.map((f) => {
     const items = published.filter((x) => x.c.funnel === f);
     return { funnel: f, count: items.length, avgER: avg(items.map((x) => x.m.engagementRate).filter((v) => v != null)) };

@@ -5,7 +5,7 @@ import {
   validateFormula,
   evaluateFormula,
   rateValue,
-  overallHealth,
+  isHealthy,
   resolveThresholds,
   computeContentMetrics,
 } from "../js/formulas.js";
@@ -45,8 +45,9 @@ describe("evaluateFormula", () => {
   });
 });
 
-describe("rateValue / overallHealth (health rating thresholds)", () => {
+describe("rateValue (health rating thresholds)", () => {
   const threshold = { good: 8, average: 4 };
+  const erScale = { excellent: 10, good: 8, average: 4 };
 
   test("at or above 'good' floor rates good", () => {
     assert.equal(rateValue(8, threshold), "good");
@@ -60,7 +61,7 @@ describe("rateValue / overallHealth (health rating thresholds)", () => {
 
   test("below 'average' floor rates poor", () => {
     assert.equal(rateValue(0, threshold), "poor");
-    assert.equal(rateValue(3.99, threshold), "poor");
+    assert.equal(rateValue(3.9, threshold), "poor");
   });
 
   test("null value or missing threshold yields null rating", () => {
@@ -69,19 +70,26 @@ describe("rateValue / overallHealth (health rating thresholds)", () => {
     assert.equal(rateValue(5, undefined), null);
   });
 
-  test("overallHealth takes the worse of the two available ratings", () => {
-    assert.equal(overallHealth("good", "poor"), "poor");
-    assert.equal(overallHealth("average", "good"), "average");
-    assert.equal(overallHealth("good", "good"), "good");
+  test("the ER scale: 10%+ excellent, 8–10 good, 4–8 average, under 4 poor", () => {
+    assert.equal(rateValue(10, erScale), "excellent");
+    assert.equal(rateValue(25, erScale), "excellent");
+    assert.equal(rateValue(9.9, erScale), "good");
+    assert.equal(rateValue(8, erScale), "good");
+    assert.equal(rateValue(7.9, erScale), "average");
+    assert.equal(rateValue(4, erScale), "average");
+    assert.equal(rateValue(3.9, erScale), "poor");
   });
 
-  test("overallHealth falls back to whichever single rating exists", () => {
-    assert.equal(overallHealth("average", null), "average");
-    assert.equal(overallHealth(null, "poor"), "poor");
+  test("rates the value as shown: 9.96% reads 10.0% and rates excellent", () => {
+    assert.equal(rateValue(9.96, erScale), "excellent");
+    assert.equal(rateValue(9.94, erScale), "good");
   });
 
-  test("overallHealth is null when neither rating is available", () => {
-    assert.equal(overallHealth(null, null), null);
+  test("isHealthy counts good and excellent", () => {
+    assert.equal(isHealthy("excellent"), true);
+    assert.equal(isHealthy("good"), true);
+    assert.equal(isHealthy("average"), false);
+    assert.equal(isHealthy(null), false);
   });
 });
 
@@ -92,10 +100,10 @@ describe("resolveThresholds / computeContentMetrics", () => {
       followerConversionRate: "followersGained / reach * 100",
     },
     thresholds: {
-      TOFU: { engagementRate: { good: 8, average: 4 }, followerConversionRate: { good: 1, average: 0.3 } },
+      TOFU: { followerConversionRate: { good: 1, average: 0.3 } },
     },
     thresholdsByPlatform: {
-      TikTok: { TOFU: { engagementRate: { good: 10, average: 5 } } },
+      TikTok: { TOFU: { followerConversionRate: { good: 2, average: 1 } } },
     },
   };
 
@@ -109,14 +117,37 @@ describe("resolveThresholds / computeContentMetrics", () => {
     assert.deepEqual(th, settings.thresholdsByPlatform.TikTok.TOFU);
   });
 
-  test("computeContentMetrics rates a healthy piece of content 'good'", () => {
+  test("computeContentMetrics: health follows the ER rating", () => {
     const content = { platform: "Instagram", funnel: "TOFU", performance: { likes: 40, comments: 5, shares: 3, saves: 2, reach: 1000, followersGained: 10 } };
     const result = computeContentMetrics(content, settings);
     assert.equal(result.engagementRate, 5);
     assert.equal(result.erRating, "average"); // 5 is between average(4) and good(8)
     assert.equal(result.followerConversionRate, 1);
     assert.equal(result.fcrRating, "good");
-    assert.equal(result.health, "average"); // worse of average/good
+    assert.equal(result.health, "average");
+  });
+
+  test("a 12% ER stays excellent even with zero followers gained", () => {
+    const content = { platform: "Instagram", funnel: "BOFU", performance: { likes: 100, comments: 10, shares: 5, saves: 5, reach: 1000, followersGained: 0 } };
+    const result = computeContentMetrics(content, settings);
+    assert.equal(result.engagementRate, 12);
+    assert.equal(result.erRating, "excellent");
+    assert.equal(result.health, "excellent");
+  });
+
+  test("the ER scale is the same for every funnel and platform", () => {
+    const perf = { likes: 70, comments: 5, shares: 3, saves: 2, reach: 1000 }; // 8%
+    for (const funnel of ["TOFU", "MOFU", "BOFU", undefined]) {
+      for (const platform of ["Instagram", "TikTok"]) {
+        assert.equal(computeContentMetrics({ platform, funnel, performance: perf }, settings).erRating, "good");
+      }
+    }
+  });
+
+  test("an account's own erScale wins over the default", () => {
+    const perf = { likes: 70, comments: 5, shares: 3, saves: 2, reach: 1000 }; // 8%
+    const custom = { ...settings, erScale: { excellent: 8, good: 6, average: 3 } };
+    assert.equal(computeContentMetrics({ funnel: "TOFU", performance: perf }, custom).erRating, "excellent");
   });
 
   test("computeContentMetrics with no performance data yields null ratings/health", () => {

@@ -5,7 +5,7 @@
 // shortcuts) and because the widget catalog + chart drawing needs room to
 // grow without bloating home.js.
 import { getSettings, updateSettings, FUNNELS, localISODate } from "../store.js";
-import { computeContentMetrics } from "../formulas.js";
+import { computeContentMetrics, HEALTH_LABEL } from "../formulas.js";
 import { formatNumber, formatPercent, qs, qsa, openMenu, escapeHtml as escapeText, emptyInlineHTML } from "../dom.js";
 import { icon } from "../icons.js";
 import { t } from "../i18n.js";
@@ -207,7 +207,7 @@ function widgetHTML(key, data) {
             <div class="t">${escapeText(x.c.title || t("common.untitled"))}</div>
             <div class="m">${t("bha.views", { count: formatNumber(x.c.performance.views) })}${x.m.engagementRate !== null ? ` · <span title="${t("bha.erTitle")}">${formatPercent(x.m.engagementRate)} ${t("bha.erShort")}</span>` : ""}</div>
           </div>
-          ${x.m.health ? `<span class="health-badge health-${x.m.health}"><span class="health-dot"></span></span>` : ""}
+          ${x.m.health ? `<span class="health-badge health-${x.m.health}" title="${escapeText(HEALTH_LABEL[x.m.health])}">${x.m.health === "excellent" ? icon("flame", { size: 13 }) : `<span class="health-dot"></span>`}</span>` : ""}
         </div>`
             )
             .join("")
@@ -232,14 +232,15 @@ function widgetHTML(key, data) {
     }
     case "contentHealth": {
       if (!data.evaluated) return widgetShellHTML(key, "brandHome.analytics.widget.contentHealth", emptyHTML("health"));
-      const { good, average, poor } = data.healthCounts;
-      const seg = (n, color) => `<div style="width:${Math.round((n / data.evaluated) * 100)}%;background:var(--health-${color});height:100%;"></div>`;
+      const { excellent, good, average, poor } = data.healthCounts;
+      const seg = (n, color, extra = "") => `<div style="width:${Math.round((n / data.evaluated) * 100)}%;background:var(--health-${color});height:100%;${extra}"></div>`;
       return widgetShellHTML(
         key,
         "brandHome.analytics.widget.contentHealth",
         `
-        <div style="display:flex;height:12px;border-radius:999px;overflow:hidden;margin-bottom:14px;">${seg(good, "good")}${seg(average, "average")}${seg(poor, "poor")}</div>
-        <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-good);display:inline-block;margin-right:6px;"></span>${t("dashboard.healthy")}</span><span class="v">${good}</span></div>
+        <div style="display:flex;height:12px;border-radius:999px;overflow:hidden;margin-bottom:14px;">${seg(excellent, "good")}${seg(good, "good", "opacity:.45;")}${seg(average, "average")}${seg(poor, "poor")}</div>
+        <div class="kv"><span class="k"><span class="er-flame" style="margin:0 6px 0 0;">${icon("flame", { size: 13 })}</span>${t("dashboard.excellent")}</span><span class="v">${excellent}</span></div>
+        <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-good);opacity:.45;display:inline-block;margin-right:6px;"></span>${t("dashboard.healthy")}</span><span class="v">${good}</span></div>
         <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-average);display:inline-block;margin-right:6px;"></span>${t("dashboard.average")}</span><span class="v">${average}</span></div>
         <div class="kv"><span class="k"><span class="health-dot" style="color:var(--health-poor);display:inline-block;margin-right:6px;"></span>${t("dashboard.underperforming")}</span><span class="v">${poor}</span></div>
       `
@@ -383,9 +384,9 @@ export function analyticsSectionHTML(content, settings, state, extraHeadHTML = "
     funnelStats[f] = { avgER: ers.length ? ers.reduce((a, b) => a + b, 0) / ers.length : null };
   });
 
-  const healthCounts = { good: 0, average: 0, poor: 0, none: 0 };
+  const healthCounts = { excellent: 0, good: 0, average: 0, poor: 0, none: 0 };
   withMetrics.forEach((x) => { healthCounts[x.m.health || "none"]++; });
-  const evaluated = healthCounts.good + healthCounts.average + healthCounts.poor;
+  const evaluated = healthCounts.excellent + healthCounts.good + healthCounts.average + healthCounts.poor;
 
   const retention = brandRetentionStats(published, settings, computeContentMetrics);
 

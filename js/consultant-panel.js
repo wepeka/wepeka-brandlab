@@ -52,6 +52,7 @@ import {
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, deleteBrainstorm,
   getCompanionThread, ensureCompanionThread, getConsultThread, ensureConsultThread, ROLLING_THREAD_MODES, addBrandMoments, removeBrandLogEntry, MOMENT_KINDS, MOMENT_ACTIONS,
   getCampaign, updateCampaign, getContent, updateContent, getSeries, listSeries, findSeriesByNameInText, getGoal, listGoals, formatEventDate, phaseNameLabel, onChange,
+  ER_SCALE,
 } from "./store.js";
 import { eventCampaignFor, openEventPhases, addEventMilestone } from "./goal-actions.js";
 import { aiLimitReached, aiQuotaPeriod } from "./ai-usage.js";
@@ -506,6 +507,7 @@ function buildSnapshot(brandId) {
   const published = content.filter((c) => c.status === "published" && c.performance);
   const ers = published.map((c) => computeContentMetrics(c, settings).engagementRate).filter((v) => v !== null);
   const avgER = ers.length ? ers.reduce((a, b) => a + b, 0) / ers.length : null;
+  const erScale = settings.erScale || ER_SCALE;
 
   const { overdue } = listOverdueAndDueSoon();
   const brandOverdue = overdue.filter((x) => x.brand.id === brandId).length;
@@ -538,6 +540,9 @@ function buildSnapshot(brandId) {
     `Konten overdue (lewat jadwal, belum terbit): ${brandOverdue}.`,
     `Total konten: ${content.length}, sudah terbit: ${published.length}.`,
     avgER !== null ? `Rata-rata engagement rate dari konten yang udah terbit dan ada data performanya: ${formatPercent(avgER)}.` : "Belum ada data engagement rate (belum ada konten terbit dengan data performa diisi).",
+    // Same scale the app paints content with (ER_SCALE, js/store.js), so the
+    // AI never calls a 5% post "bagus" while the list shows it as Sedang.
+    `Skala engagement rate di Brandlab (dipakai untuk menilai konten): ${erScale.excellent}% ke atas = sangat bagus, ${erScale.good}–${erScale.excellent}% = sehat, ${erScale.average}–${erScale.good}% = sedang, di bawah ${erScale.average}% = buruk banget.`,
     retentionSnapshotText(published),
     campaigns.length ? `Campaign aktif:\n${coverageLines.join("\n")}` : "Belum ada campaign aktif.",
   ].join("\n");

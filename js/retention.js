@@ -162,7 +162,7 @@ export function retentionVerdict(analysis, engagement = null) {
   if (a.dropoff && a.dropoff.dropPts >= 8) lines.push(t("ret.diag.dropAt", { sec: a.dropoff.sec, pts: Math.round(a.dropoff.dropPts) }));
   if (engagement) {
     if (a.overall === "good" && engagement.erRating === "poor") lines.push(t("ret.diag.holdButNoAction"));
-    else if (a.ratings.hook === "poor" && engagement.erRating === "good") lines.push(t("ret.diag.nicheButLoyal"));
+    else if (a.ratings.hook === "poor" && (engagement.erRating === "good" || engagement.erRating === "excellent")) lines.push(t("ret.diag.nicheButLoyal"));
   }
   return lines;
 }

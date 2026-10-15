@@ -3,7 +3,7 @@
 // nothing is hard-coded. Expressions are validated against a whitelist before
 // being evaluated, since they're just local settings, not remote input.
 
-import { METRIC_KEYS } from "./store.js";
+import { METRIC_KEYS, ER_SCALE } from "./store.js";
 import { t } from "./i18n.js";
 
 const VAR_NAMES = METRIC_KEYS.map((m) => m.key);
@@ -115,22 +115,22 @@ export function evaluateFormula(expr, metrics) {
   }
 }
 
-// rating: 'good' | 'average' | 'poor' | null
+// rating: 'excellent' | 'good' | 'average' | 'poor' | null. 'excellent'
+// only exists when the threshold has that floor (the ER scale does,
+// follower conversion doesn't). Rated on the value as shown (1 decimal),
+// so a 9.96% that reads "10.0%" also rates as 10%.
 export function rateValue(value, threshold) {
   if (value === null || value === undefined || !threshold) return null;
-  if (value >= threshold.good) return "good";
-  if (value >= threshold.average) return "average";
+  const v = Math.round(value * 10) / 10;
+  if (threshold.excellent != null && v >= threshold.excellent) return "excellent";
+  if (v >= threshold.good) return "good";
+  if (v >= threshold.average) return "average";
   return "poor";
 }
 
-const RANK = { poor: 0, average: 1, good: 2 };
-
-// Combines engagement + follower-conversion ratings into one overall health.
-// Takes the worse of whichever ratings are actually available.
-export function overallHealth(erRating, fcrRating) {
-  const ratings = [erRating, fcrRating].filter(Boolean);
-  if (!ratings.length) return null;
-  return ratings.reduce((worst, r) => (RANK[r] < RANK[worst] ? r : worst));
+// "Good or better" — for checks that used to ask `=== "good"`.
+export function isHealthy(rating) {
+  return rating === "good" || rating === "excellent";
 }
 
 // A platform-specific threshold set wins over the funnel defaults when one
@@ -142,16 +142,20 @@ export function resolveThresholds(settings, funnel, platform) {
   return (byPlatform && byPlatform[funnel]) || settings.thresholds[funnel] || {};
 }
 
+// A content's health IS its engagement-rate rating (the scale the owner
+// set — ER_SCALE in store.js); follower conversion only stands in when ER
+// can't be worked out. It used to be the worse of the two, which painted a
+// 12% ER post red just because it gained no followers.
 export function computeContentMetrics(content, settings) {
   const m = content.performance || {};
   const er = evaluateFormula(settings.formulas.engagementRate, m);
   const fcr = evaluateFormula(settings.formulas.followerConversionRate, m);
   const th = resolveThresholds(settings, content.funnel, content.platform);
-  const erRating = rateValue(er, th.engagementRate);
+  const erRating = rateValue(er, settings.erScale || ER_SCALE);
   const fcrRating = rateValue(fcr, th.followerConversionRate);
-  const health = overallHealth(erRating, fcrRating);
+  const health = erRating || fcrRating;
   return { engagementRate: er, followerConversionRate: fcr, erRating, fcrRating, health };
 }
 
 // Language switches reload the page, so resolving these once at load is fine.
-export const HEALTH_LABEL = { good: t("dashboard.healthy"), average: t("dashboard.average"), poor: t("dashboard.underperforming") };
+export const HEALTH_LABEL = { excellent: t("dashboard.excellent"), good: t("dashboard.healthy"), average: t("dashboard.average"), poor: t("dashboard.underperforming") };
