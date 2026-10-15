@@ -8,7 +8,7 @@ import { runSpotlightTour } from "../tour.js";
 import { openContentEditor } from "./content-editor.js";
 import { celebrateBuilderCompleteIfFlagged, consumeDnaJustCompleted, consumeVisualBasicsJustDone } from "./brand-builder.js";
 import { ensureGoogleFont, ensureCustomFont } from "./brand-guidelines.js";
-import { getCachedAccount, isReadOnly, isTrial, isLifetime, trialDaysLeft } from "../account.js";
+import { getCachedAccount, isReadOnly, isTrial, trialDaysLeft } from "../account.js";
 import { campaignStages, campaignPlatform, activeStageIndex, campaignHeadline, TRACK_ICON } from "../campaign-metrics.js";
 import { go } from "../nav-context.js";
 import { statusLabel } from "../funnel-field.js";
@@ -590,8 +590,9 @@ function paint(root, brandId, state, refresh) {
   // "Isi jadwal minggu ini": the chat's week plan (ideas the owner ticks).
   qs("[data-week-plan]", root)?.addEventListener("click", () => openWeekPlan());
   wireRecapCard(root, { brandId, refresh });
-  // Founder Circle: a line on a mentoring day (Lifetime accounts only).
-  if (isLifetime(getCachedAccount())) import("../founder-circle.js").then((m) => m.mountCircleNotice(root)).catch(() => {});
+  // Founder Circle: a line on a mentoring day (mountCircleNotice itself
+  // does nothing for an account without Lifetime).
+  import("../founder-circle.js").then((m) => m.mountCircleNotice(root)).catch(() => {});
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
 
   qs("[data-today-cta]", root)?.addEventListener("click", () => { if (top) runTodayAction(top, { brandId, brand, content, refresh }); });
