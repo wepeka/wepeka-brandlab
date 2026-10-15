@@ -364,7 +364,7 @@ export default {
   "pricing.what.ai": { en: "An AI that already knows your brand — for ideas, captions and advice.", id: "AI yang sudah kenal brand kamu — buat ide, caption, dan saran." },
   "pricing.what.more": { en: "See what Brandlab can do first", id: "Lihat dulu Brandlab bisa apa" },
   "pricing.pending.snapTitle": { en: "Waiting for your payment", id: "Menunggu pembayaran kamu" },
-  "pricing.pending.snapBody": { en: "Finish paying with the instructions Midtrans showed (virtual account / QRIS). Access opens on its own once it's in — no need to pay again.", id: "Selesaikan pembayaran sesuai instruksi dari Midtrans (virtual account / QRIS). Akses terbuka sendiri begitu masuk — nggak perlu bayar ulang." },
+  "pricing.pending.snapBody": { en: "Finish paying with the instructions Midtrans showed (virtual account). Access opens on its own once it's in — no need to pay again.", id: "Selesaikan pembayaran sesuai instruksi dari Midtrans (virtual account). Akses terbuka sendiri begitu masuk — nggak perlu bayar ulang." },
   "pricing.pending.slowTitle": { en: "Payment is still being verified", id: "Pembayaran masih diverifikasi" },
   "pricing.pending.slowBody": { en: "This sometimes takes a few minutes. Don't pay again — refresh this page in a moment. If it still hasn't opened after 10 minutes, message us.", id: "Kadang butuh beberapa menit. Jangan bayar ulang — refresh halaman ini sebentar lagi. Kalau 10 menit belum terbuka juga, chat kami." },
   "pricing.pending.wa": { en: "Ask on WhatsApp", id: "Tanya lewat WhatsApp" },

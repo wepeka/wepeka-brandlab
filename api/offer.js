@@ -10,6 +10,7 @@ import { adminDb } from "./_firebaseAdmin.js";
 import { PLANS, SLOT_CAPS, SLOTS_DOC, FOUNDER_TIERS, seatsTaken, seatPrice } from "./_plans.js";
 import { MIDTRANS_IS_PRODUCTION, MIDTRANS_CLIENT_KEY } from "./_payments.js";
 import { promoFor, normalizePromo, communityOffer } from "./_promo.js";
+import { PLAN_QUOTA } from "./_aiQuota.js";
 
 // Lifetime's price once the Founder seats are gone — the struck-through
 // anchor. Same numbers as js/views/pricing.js LIFETIME_NORMAL_PRICE /
@@ -43,7 +44,17 @@ export function agencyFacts(slotsDoc, now = Date.now()) {
   const plan = PLANS["founder-ultimate"];
   const cap = SLOT_CAPS[plan.slot];
   const taken = Math.min(cap, seatsTaken(slotsDoc, plan.slot, now));
-  return { taken, cap, soldOut: taken >= cap, price: plan.amount, brands: plan.brandLimit, normal: NORMAL_PRICES["founder-ultimate"] };
+  return { taken, cap, soldOut: taken >= cap, price: plan.amount, brands: plan.brandLimit, credits: PLAN_QUOTA["founder-ultimate"]?.limit ?? null, normal: NORMAL_PRICES["founder-ultimate"] };
+}
+
+// The other plans, for the page's "Lihat paket lain" at the very bottom:
+// brands, AI credits a day and both prices of each subscription, straight
+// from the tables that bill them (PLANS, api/_aiQuota.js PLAN_QUOTA).
+export function otherPlans() {
+  return ["starter", "pro", "studio"].map((key) => ({
+    key, brands: PLANS[`${key}-monthly`].brandLimit, credits: PLAN_QUOTA[key]?.limit ?? null,
+    monthly: PLANS[`${key}-monthly`].amount, yearly: PLANS[`${key}-yearly`].amount,
+  }));
 }
 
 // A YouTube watch/short/embed link → its 11-character id.
@@ -67,6 +78,8 @@ export default async function handler(req, res) {
     founder: slots ? founderFacts(slots) : null,
     agency: slots ? agencyFacts(slots) : null,
     proMonthly: PRO_MONTHLY,
+    others: otherPlans(),
+    trialCredits: PLAN_QUOTA.trial?.limit ?? null,
     // How much a Wepeka Community code saves (never the code itself).
     community: communityOffer(),
     payOpen: MIDTRANS_IS_PRODUCTION && !!process.env.MIDTRANS_SERVER_KEY && !!MIDTRANS_CLIENT_KEY,

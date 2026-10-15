@@ -9,7 +9,7 @@ import path from "node:path";
 
 const { PROMO_CODES, normalizePromo, promoFor, applyPromo, communityOffer } = await import("../api/_promo.js");
 const { FOUNDER_TIERS, PLANS, MIN_CHARGE } = await import("../api/_plans.js");
-const { founderFacts, agencyFacts, youtubeId, NORMAL_PRICES, PRO_MONTHLY } = await import("../api/offer.js");
+const { founderFacts, agencyFacts, youtubeId, otherPlans, NORMAL_PRICES, PRO_MONTHLY } = await import("../api/offer.js");
 const { composePaidEmail } = await import("../api/_community.js");
 const { composeSaleNote } = await import("../api/_ownerNotify.js");
 const page = await import("../founder/founder.js");
@@ -42,6 +42,11 @@ describe("community code (api/_promo.js)", () => {
   test("the page learns the discount, never the code", () => {
     assert.deepEqual(communityOffer({ A: { off: 30000, plans: ["founder"] }, B: { off: 50000, plans: ["founder", "founder-ultimate"] } }), { founder: 50000, "founder-ultimate": 50000 });
     assert.ok(!JSON.stringify(communityOffer()).includes(CODE));
+  });
+
+  test("the page names no payment method that isn't live (QRIS is off, 2026-10-15)", async () => {
+    const html = await readFile(path.join(ROOT, "founder/index.html"), "utf8");
+    assert.doesNotMatch(html, /QRIS/i);
   });
 
   test("no code is written in anything shipped to the browser", async () => {
@@ -156,6 +161,20 @@ describe("Founder's Deal page (founder/founder.js)", () => {
     assert.equal(nb(v.text.priceBefore), "Rp 499.000");
   });
 
+  test("per day: the real division, and the first year under Rp 1.000", () => {
+    const nb = (s) => s.replace(/\u00a0/g, " ");
+    const v = page.offerView(offer(4));
+    // Rp 499.000 / 365 = 1.367 — a single year is NOT under Rp 1.000; two are.
+    assert.match(nb(v.text.perDayRows), /1 tahun<\/span>.*Rp 1\.367\/hari/);
+    assert.match(nb(v.text.perDayRows), /2 tahun<\/span>.*Rp 684\/hari/);
+    assert.match(nb(v.text.perDayRows), /5 tahun<\/span>.*Rp 273\/hari/);
+    assert.equal(nb(v.text.perDayHead), "Dipakai 2 tahun, per harinya di bawah Rp 1.000.");
+    // With the community code (Rp 449.000) still 1.230 a day over one year.
+    assert.match(nb(page.offerView(offer(4), { code: CODE, off: 50000 }).text.perDayRows), /Rp 1\.230\/hari/);
+    // The last wave too: 599.000 / 730 = 820.
+    assert.equal(nb(page.offerView(offer(20)).text.perDayHead), "Dipakai 2 tahun, per harinya di bawah Rp 1.000.");
+  });
+
   test("no answer from the server: the waves are stated instead", () => {
     const v = page.offerView(null);
     assert.equal(v.known, false);
@@ -172,6 +191,27 @@ describe("Founder's Deal page (founder/founder.js)", () => {
   test("buy links open sign-up first and carry the code", () => {
     assert.equal(page.buyHref("founder", null), "https://www.wepeka.com/brandlab/connect?to=pricing&plan=founder&join=1");
     assert.equal(page.buyHref("founder", ` ${CODE.toLowerCase()} `), `https://www.wepeka.com/brandlab/connect?to=pricing&plan=founder&join=1&promo=${CODE}`);
+  });
+
+  test("subscription links never carry a code", () => {
+    assert.equal(page.buyHref("pro-monthly", CODE), "https://www.wepeka.com/brandlab/connect?to=pricing&plan=pro-monthly&join=1");
+    assert.match(page.buyHref("founder-ultimate", CODE), new RegExp(`&promo=${CODE}$`));
+  });
+
+  test("other plans at the bottom: the billed prices, credits and the trial", () => {
+    const o = { ...offer(4), others: otherPlans(), trialCredits: 40 };
+    for (const p of otherPlans()) {
+      assert.equal(p.monthly, PLANS[`${p.key}-monthly`].amount);
+      assert.equal(p.yearly, PLANS[`${p.key}-yearly`].amount);
+      assert.equal(p.brands, PLANS[`${p.key}-monthly`].brandLimit);
+    }
+    const html = page.offerView(o).text.othersList.replace(/\u00a0/g, " ");
+    assert.match(html, /Trial gratis/);
+    assert.match(html, /Langganan 3 brand.*Rp 99\.000\/bulan.*Rp 799\.000\/tahun/s);
+    assert.match(html, /Studio · 10 brand/);
+    assert.match(html, /Agency Lifetime · 15 brand.*sisa 15 dari 15 kursi.*Rp 799\.000 sekali/s);
+    assert.equal(page.planPrice(o, "studio-yearly", 0), PLANS["studio-yearly"].amount);
+    assert.equal(page.offerView({ ...o, payOpen: false }).others, false);
   });
 
   test("video length in half minutes", () => {

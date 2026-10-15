@@ -458,7 +458,7 @@ export default {
         },
         {
           "q": "How do I claim a Founder seat?",
-          "a": "Press Claim a Founder seat, sign in or create a Wepeka account (free), and the payment opens right away through Midtrans (bank transfer, e-wallet, QRIS). As soon as the payment lands your account becomes Founder. No need to claim the trial first, and if you are on a trial you don't have to finish it.",
+          "a": "Press Claim a Founder seat, sign in or create a Wepeka account (free), and the payment opens right away by GoPay or bank transfer (BCA is still being set up; our admin can help). As soon as the payment lands your account becomes Founder. No need to claim the trial first, and if you are on a trial you don't have to finish it.",
           "aClosed": "Coming soon. Online payment is being set up and will open right here on this site — Founder seats are bought on the Brandlab plans page, no chat needed. No account yet? Create one (free) — your trial can run while you wait."
         }
       ]

@@ -41,6 +41,37 @@ export function tiersSentence(tiers) {
 // What the page says, from /api/offer's answer (null = no answer) and the
 // community code in hand ({ code, off } or null). Pure, so it is tested
 // without a browser.
+// "Lihat paket lain": the trial, each subscription with both prices, and
+// Agency Lifetime. Buy links get their href in paint() like every [data-buy].
+function othersHTML(offer) {
+  const trialDoor = `${WEPEKA_CONNECT_URL}?join=1`;
+  const row = (name, meta, actions, extra = "") => `<div class="fd-other"><div class="fd-other-info"><b>${name}</b><span>${meta}</span>${extra}</div><div class="fd-other-actions">${actions}</div></div>`;
+  const credits = (n) => (n ? ` · ${n} AI credit/hari` : "");
+  const rows = [row("Trial gratis", `${FALLBACK.trialDays} hari · 1 brand${credits(offer.trialCredits)} · tanpa kartu`, `<a class="fd-other-btn" href="${trialDoor}" data-trial="others">Coba gratis</a>`)];
+  for (const p of offer.others || []) {
+    const name = p.key === "studio" ? `Studio · ${p.brands} brand` : `Langganan ${p.brands} brand`;
+    rows.push(row(name, `${p.brands} brand${credits(p.credits)} · bisa berhenti kapan aja`,
+      `<a class="fd-other-btn" href="#" data-buy="others" data-plan="${p.key}-monthly">${rp(p.monthly)}/bulan</a><a class="fd-other-btn" href="#" data-buy="others" data-plan="${p.key}-yearly">${rp(p.yearly)}/tahun</a>`,
+      p.monthly * 12 > p.yearly ? `<em>Tahunan hemat ${rp(p.monthly * 12 - p.yearly)}</em>` : ""));
+  }
+  const a = offer.agency;
+  if (a) {
+    rows.push(row(`Agency Lifetime · ${a.brands} brand`, `${a.brands} brand${credits(a.credits)} · sekali bayar · ${a.soldOut ? "kursi habis" : `sisa ${a.cap - a.taken} dari ${a.cap} kursi`}`,
+      a.soldOut ? `<span class="fd-other-btn is-off">Habis</span>` : `<a class="fd-other-btn is-main" href="#" data-buy="others" data-plan="founder-ultimate">${rp(a.price)} sekali</a>`,
+      a.normal ? `<em><s>${rp(a.normal)}</s> harga normal</em>` : ""));
+  }
+  return rows.join("");
+}
+
+// What a plan costs as the page shows it (analytics value of a buy click).
+export function planPrice(offer, plan, founderPay) {
+  if (plan === "founder") return founderPay;
+  if (plan === "founder-ultimate") return Number(offer?.agency?.price) || FALLBACK.agency.price;
+  const [key, billing] = plan.split("-");
+  const p = (offer?.others || []).find((o) => o.key === key);
+  return p ? p[billing] : 0;
+}
+
 export function offerView(offer, promo = null) {
   const f = offer?.founder || null;
   const tiers = f?.tiers?.length ? f.tiers : FALLBACK.tiers;
@@ -62,6 +93,10 @@ export function offerView(offer, promo = null) {
   const agency = offer?.agency || null;
   const agencyPrice = agency?.price || FALLBACK.agency.price;
   const months = Math.floor(pay / proMonthly) + 1;
+  // Lifetime per day over 1, 2 and 5 years, and the first whole year at
+  // which a day costs under Rp 1.000 (the owner's "di bawah 1000 rupiah").
+  const perDay = (years) => Math.round(pay / (365 * years));
+  const underYears = [1, 2, 3, 4, 5].find((y) => perDay(y) < 1000);
   return {
     known: !!f,
     soldOut,
@@ -69,6 +104,7 @@ export function offerView(offer, promo = null) {
     payOpen,
     promoOn: promoOff > 0,
     community: communityOff > 0 && !soldOut && payOpen,
+    others: !!offer?.others?.length && payOpen,
     text: {
       price: rp(pay),
       priceBefore: rp(price),
@@ -91,14 +127,19 @@ export function offerView(offer, promo = null) {
       chipLabel: promoOff > 0 ? `Kode ${promo.code} aktif · hemat ${rp(promoOff)}` : `Hemat ${rp(communityOff)} lagi pakai kode Wepeka Community`,
       codeTitle: `Hemat ${rp(communityOff)} lagi lewat Wepeka Community`,
       promoCode: promo?.code || "",
-      promoSave: promoOff > 0 ? `· hemat ${rp(promoOff)}` : "",
+      promoSave: promoOff > 0 ? `− ${rp(promoOff)}` : "",
       codeOnText: promoOff > 0 ? `Kode <b>${esc(promo.code)}</b> aktif. Harga Founder-mu jadi <b>${rp(pay)}</b>.` : "",
       agencyLine: `${agency?.brands || FALLBACK.agency.brands} brand, ${rp(agencyPrice)} sekali bayar`,
       agencyCap: String(agency?.cap || FALLBACK.agency.cap),
       trialDays: String(FALLBACK.trialDays),
       videoLen: offer?.video?.seconds ? `(${minutesLabel(offer.video.seconds)})` : "",
+      perDayHead: underYears === 1 ? `Dihitung setahun saja, per harinya sudah di bawah ${rp(1000)}.`
+        : underYears ? `Dipakai ${underYears} tahun, per harinya di bawah ${rp(1000)}.`
+        : "Makin lama dipakai, makin murah per harinya.",
+      othersList: offer?.others ? othersHTML(offer) : "",
+      perDayRows: [1, 2, 5].map((y) => `<div class="fd-perday-row"><span>${y} tahun</span><i style="--w:${Math.max(6, Math.round((perDay(y) / perDay(1)) * 100))}%"></i><b>${rp(perDay(y))}/hari</b></div>`).join(""),
     },
-    html: new Set(["seatNote", "codeOnText"]),
+    html: new Set(["seatNote", "codeOnText", "perDayRows", "othersList"]),
     seatNote,
     pips: f ? { size: f.waveSize, taken: f.waveTaken } : null,
     agencyOpen: !agency?.soldOut,
@@ -111,7 +152,8 @@ export function offerView(offer, promo = null) {
 // survives a sign-up finished in another browser (wpk-dp connect passes
 // `promo` through; js/main.js keeps it).
 export function buyHref(planKey, code) {
-  const c = normalizePromo(code);
+  // Only the pay-once plans take a community code (api/_promo.js).
+  const c = /^founder/.test(planKey) ? normalizePromo(code) : "";
   return `${buyUrl(planKey)}&join=1${c ? `&promo=${encodeURIComponent(c)}` : ""}`;
 }
 
@@ -136,7 +178,7 @@ function start() {
     const show = {
       seats: v.known && !v.soldOut, seatsUnknown: !v.known, soldOut: v.soldOut, notSoldOut: !v.soldOut,
       canBuy: v.canBuy, cantBuy: !v.canBuy, payClosed: !v.payOpen && !v.soldOut,
-      community: v.community, promoOn: v.promoOn, promoOff: !v.promoOn, video: !!offer?.video,
+      community: v.community, promoOn: v.promoOn, promoOff: !v.promoOn, video: !!offer?.video, others: v.others,
     };
     for (const el of all("[data-show]")) el.hidden = !show[el.dataset.show];
     if (offer) for (const el of all(".is-pending")) el.classList.remove("is-pending");
@@ -156,7 +198,7 @@ function start() {
   // The trial door, sign-up form first like the buy buttons (wpk-dp connect `join=1`).
   for (const a of all("[data-trial]")) a.href = `${WEPEKA_CONNECT_URL}?join=1`;
   for (const a of all("[data-join]")) a.href = COMMUNITY_WA_GROUP_URL;
-  for (const a of all("[data-wa]")) a.href = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent("Halo Wepeka, aku mau tanya soal Founder Lifetime Brandlab.")}`;
+  for (const a of all("[data-wa]")) a.href = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent(a.dataset.waText || "Halo Wepeka, aku mau tanya soal Founder Lifetime Brandlab.")}`;
 
   // A link with the code in it (?kode=…, e.g. from the community group):
   // apply it, then take it out of the address bar and of analytics.
@@ -215,7 +257,7 @@ function start() {
       e.preventDefault();
       const plan = buy.dataset.plan || "founder";
       const v = offerView(offer, promo);
-      const value = plan === "founder" ? Number(v.text.price.replace(/\D/g, "")) : Number(offer?.agency?.price) || FALLBACK.agency.price;
+      const value = planPrice(offer, plan, Number(v.text.price.replace(/\D/g, "")));
       gaEvent("add_to_cart", { currency: "IDR", value, items: [{ item_id: plan, price: value }], cta_location: buy.dataset.buy, promo: v.promoOn ? "community" : "none" });
       metaTrack("AddToCart", { content_ids: [plan], content_type: "product", currency: "IDR", value });
       go(buy.href);
@@ -229,7 +271,8 @@ function start() {
       return;
     }
     if (e.target.closest("[data-join]")) gaEvent("community_join_click", {});
-    if (e.target.closest("[data-wa]")) gaEvent("whatsapp_click", { cta_location: "final" });
+    const wa = e.target.closest("[data-wa]");
+    if (wa) gaEvent("whatsapp_click", { cta_location: wa.dataset.waText ? "bca" : "final" });
     if (e.target.closest("[data-code-remove]")) {
       promo = null;
       forgetPromo();
