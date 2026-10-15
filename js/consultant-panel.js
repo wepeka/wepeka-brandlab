@@ -65,6 +65,8 @@ import { brandDnaCompleteness } from "./brand-progress.js";
 import { askBrandConsultant, chatBrainstorm, companionChat, recapCompanion, classifyChatIntent, summarizeConcept, generateWeekPlan, discussScript, buildSeriesOverview, seriesEpisodeTitles, hasAiKey, aiCanSeeImages, AiApiError } from "./ai.js";
 import { addDays, weekdayOf } from "./goal-roadmap.js";
 import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, currentPlanEntry, planMessageKind, seriesDays, seriesForDate, missingEpisodes } from "./week-plan.js";
+import { weekPlanBasis } from "./brand-learning.js";
+import { trackStep } from "./activation.js";
 import { analyzeScreenshot } from "./ocr.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
@@ -804,7 +806,10 @@ function weekPlanCardHTML(entry, index, campaigns, formats) {
       <button type="button" class="btn btn-primary btn-sm" data-week-save="${index}" ${pickedCount ? "" : "disabled"}>${icon("calendar", { size: 14 })}${t("chat.week.save", { n: pickedCount })}</button>
       <button type="button" class="btn btn-ghost btn-sm" data-week-close="${index}">${t("chat.week.close")}</button>
     </div>`;
-  return `<div class="cp-week">${rows}${footer}</div>`;
+  const basis = !closed && Array.isArray(wp.basis) && wp.basis.length
+    ? `<p class="ai-basis cp-week-basis"><b>${t("learn.basis.label")}</b> ${wp.basis.map((x) => esc(x)).join(" · ")}</p>`
+    : "";
+  return `<div class="cp-week">${basis}${rows}${footer}</div>`;
 }
 
 // A weekPlan entry that is no longer the newest one in the thread — a
@@ -1848,6 +1853,7 @@ function wire(host, brandId, input, history) {
     });
     wp.savedAt = Date.now();
     syncThreadBlocks(h);
+    trackStep("week_plan_saved", { n: todo.length });
     toast(t("chat.week.savedToast", { n: todo.length }));
     rerender();
   });
@@ -2729,7 +2735,9 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           });
           if (!isRevision || result.changed) {
             const normalized = normalizePlanItems(result.items, slots, { campaigns: activeCampaigns, formats: formatNames, forceCampaign: scopeCampaign, slotSeries });
-            appendBrainstormMessage(th.id, { role: "assistant", text: result.note || "", blocks: { weekPlan: { v: 1, campaignId: scopeCampaign?.id || "", items: normalized, savedAt: null, closed: false } }, sessionId });
+            // What this plan was made from, kept on it ("Dibuat berdasarkan").
+            const basis = weekPlanBasis(brand, { campaigns: activeCampaigns, scopeCampaign, content: contentAll, settings });
+            appendBrainstormMessage(th.id, { role: "assistant", text: result.note || "", blocks: { weekPlan: { v: 1, campaignId: scopeCampaign?.id || "", items: normalized, savedAt: null, closed: false, ...(basis.length ? { basis } : {}) } }, sessionId });
           } else {
             appendBrainstormMessage(th.id, { role: "assistant", text: result.note || t("chat.week.talkFallback"), blocks: { planTalk: true }, sessionId });
           }

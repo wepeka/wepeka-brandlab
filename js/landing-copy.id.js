@@ -434,7 +434,7 @@ export default {
         },
         {
           "q": "AI-nya beneran ngerti brand saya, atau jawaban generik kayak ChatGPT?",
-          "a": "AI Consultant di Brandlab baca data brand kamu sendiri sebelum jawab — engagement rate, konten yang belum kepublish, progress campaign. Jadi kalau kamu tanya “gimana performa bulan ini”, jawabannya nyebut angka asli kamu, bukan tips umum."
+          "a": "Ngerti, karena tiap fitur AI di Brandlab baca Brand DNA, konten, dan angka brand kamu dulu, jadi kamu nggak perlu copas info brand tiap kali nanya. Tapi bedanya yang paling besar ada di luar AI-nya: ChatGPT kasih jawaban, lalu rencananya kamu simpan dan pantau sendiri. Di Brandlab, rencana itu masuk ke kalender, angka yang kamu isi dibandingin sama target, dan Beranda nunjukin langkah berikutnya. Keputusannya tetap di kamu."
         },
         {
           "q": "Bisa berhenti kapan aja?",

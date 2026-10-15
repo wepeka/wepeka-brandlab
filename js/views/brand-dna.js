@@ -1,5 +1,5 @@
 import { backLinkHTML } from "../back-link.js";
-import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality } from "../store.js";
+import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality, listCampaigns, listContent, localISODate } from "../store.js";
 import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu, loadingHTML, revealStepTop } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -18,6 +18,7 @@ import { dnaExamples, businessKind } from "../dna-examples.js";
 import { aiUsageRemaining } from "../ai-usage.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
 import { aiReportButtonHTML } from "../ai-report.js";
+import { trackStep, trackIdentityIfDone } from "../activation.js";
 
 const TOUR_STEPS = [
   { selector: ".dna-progress-label", title: t("dna.tour.title"), body: t("dna.tour.body") },
@@ -658,6 +659,50 @@ function firstCompletion(brandId, state) {
   return true;
 }
 
+// "Jalanmu berikutnya" under the finished card: the three steps from here
+// (Warna & Font → Tujuan → the week's plan) with what's already done ticked,
+// and what the answers are still missing that the owner can add later.
+// Only reads what's saved — nothing here writes or fills anything in.
+export function dnaNextSteps(brand, { campaigns = [], content = [], today = localISODate() } = {}) {
+  const steps = [
+    { key: "visual", done: visualBasicsDone(brand) },
+    { key: "goal", done: campaigns.length > 0 },
+    { key: "week", done: content.some((c) => c.scheduleDate && c.scheduleDate >= today) },
+  ];
+  const next = steps.find((s) => !s.done);
+  if (next) next.next = true;
+  const thin = [];
+  // Proof is a list box inside the "guide" step. A brand saved before the
+  // boxes were kept has no parts.guide at all — say nothing then, instead
+  // of claiming there's no proof when it may be inside the saved paragraph.
+  const guide = brand.brandDNA?.parts?.guide;
+  if (guide && !(Array.isArray(guide.proof) && guide.proof.some((x) => String(x || "").trim()))) thin.push({ key: "proof", step: "guide" });
+  if (!brand.brandBuilder?.personality?.feeling) thin.push({ key: "character", step: "identity" });
+  return { steps, thin };
+}
+
+function dnaNextHTML(brand) {
+  const { steps, thin } = dnaNextSteps(brand, { campaigns: listCampaigns(brand.id), content: listContent(brand.id) });
+  const stepsHTML = steps.map((s, i) => `
+    <li class="dna-next-step${s.done ? " is-done" : ""}${s.next ? " is-next" : ""}">
+      <span class="dna-next-mark" aria-hidden="true">${s.done ? icon("check", { size: 13 }) : i + 1}</span>
+      <span class="dna-next-text"><b>${t(`dna.done.path.${s.key}`)}</b><small>${t(`dna.done.path.${s.key}.desc`)}</small></span>
+      ${s.done ? `<span class="dna-next-tag">${t("dna.done.path.done")}</span>` : s.next ? `<span class="dna-next-tag is-next">${t("dna.done.path.next")}</span>` : ""}
+    </li>`).join("");
+  const thinHTML = thin.length
+    ? `<div class="dna-next-thin">
+        <span class="dna-next-thin-title">${t("dna.done.thinTitle")}</span>
+        ${thin.map((x) => `<p>${t(`dna.done.thin.${x.key}`)} <a class="link" href="#/brand/${brand.id}/dna/${x.step}" data-dna-thin>${t(`dna.done.thin.${x.key}Cta`)}</a></p>`).join("")}
+      </div>`
+    : "";
+  return `
+    <div class="dna-next">
+      <span class="dna-next-title">${t("dna.done.pathTitle")}</span>
+      <ol class="dna-next-steps">${stepsHTML}</ol>
+      ${thinHTML}
+    </div>`;
+}
+
 function showDnaDoneModal(state, brand, next) {
   // Colours + fonts already in (filled first, or an older brand): this save
   // completes the identity, so the next step is a goal — not "kasih warna &
@@ -665,7 +710,7 @@ function showDnaDoneModal(state, brand, next) {
   const visualDone = visualBasicsDone(getBrand(brand.id) || brand);
   const overlay = openModal({
     title: t("dna.done.title"),
-    bodyHTML: `<p class="text-muted" style="margin:0 0 14px;font-size:14px;">${t(visualDone ? "dna.done.subReady" : "dna.done.sub")}</p><div class="dna-live-card dna-live-card-big">${liveCardInnerHTML(liveValues(null, state, brand), state, brand)}</div>`,
+    bodyHTML: `<p class="text-muted" style="margin:0 0 14px;font-size:14px;">${t("dna.done.sub")}</p><div class="dna-live-card dna-live-card-big">${liveCardInnerHTML(liveValues(null, state, brand), state, brand)}</div>${dnaNextHTML(getBrand(brand.id) || brand)}`,
     footHTML: `<button class="btn btn-secondary" data-later>${t("dna.done.later")}</button><button class="btn btn-primary" data-next>${t(visualDone ? "dna.done.nextGoal" : "dna.done.next")}${icon("arrowRight", { size: 14 })}</button>`,
   });
   // Pemula: Tujuan is still locked until Warna & Font — say so on the way
@@ -677,6 +722,9 @@ function showDnaDoneModal(state, brand, next) {
   overlay.querySelector("[data-later]").addEventListener("click", () => { closeOverlay(overlay); later(); });
   overlay.querySelector("[data-next]").addEventListener("click", () => { closeOverlay(overlay); location.hash = visualDone ? `#/brand/${brand.id}/campaigns` : `#/brand/${brand.id}/guidelines/color`; });
   overlay.querySelector("[data-close]")?.addEventListener("click", () => later());
+  // "Tambah bukti" / "Pilih karakter": back into this wizard at that step —
+  // the link's own hash change does the navigation.
+  overlay.querySelectorAll("[data-dna-thin]").forEach((a) => a.addEventListener("click", () => closeOverlay(overlay)));
 }
 
 function composePartHTML(part, value) {
@@ -1519,8 +1567,11 @@ function wireReview(root, brandId, brand, state, refresh) {
     if (complete) markDnaJustCompleted(brandId);
     const go = () => { location.hash = complete || getMode() === "guided" ? `#/brand/${brandId}` : `#/brand/${brandId}/builder`; };
     // The first time it's complete, show the finished identity card first.
-    if (firstCompletion(brandId, state)) showDnaDoneModal(state, getBrand(brandId), go);
-    else go();
+    if (firstCompletion(brandId, state)) {
+      trackStep("dna_done", {}, { once: brandId });
+      trackIdentityIfDone(brandId);
+      showDnaDoneModal(state, getBrand(brandId), go);
+    } else go();
   });
   // The ⋯ menu: fill the blanks with AI, download the PDF, reset — the
   // rare actions, out of the way of Back/Save.

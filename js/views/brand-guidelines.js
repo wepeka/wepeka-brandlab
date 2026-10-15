@@ -12,6 +12,7 @@ import {
   FEELING_TYPE_VIBE, FEELING_TONE, FONT_PAIRINGS, sectorFromText, personalityProfile,
 } from "../brandbook-data.js";
 import { isBrandBuilderComplete, markBuilderJustCompleted, markVisualBasicsJustDone } from "./brand-builder.js";
+import { trackIdentityIfDone } from "../activation.js";
 import { generateValueProposition, generateColorEssence, detectToneOfVoice, hasAiKey, AiApiError } from "../ai.js";
 import { wireMic } from "../voice-input.js";
 import { t } from "../i18n.js";
@@ -469,6 +470,7 @@ function isStepFilled(stepKey, a, state) {
 function goHomeFromGuidelines(brandId, state) {
   updateBrand(brandId, { brandGuidelines: { ...state.answers } });
   markVisualBasicsJustDone(brandId);
+  trackIdentityIfDone(brandId);
   toast(t("guidelines.finishVisual.done"));
   location.hash = `#/brand/${brandId}`;
 }
@@ -3299,6 +3301,7 @@ function wireReview(root, brandId, brand, state, refresh) {
   qs("#wiz-save", root).addEventListener("click", () => {
     updateBrand(brandId, { brandGuidelines: { ...state.answers } });
     if (visualBasicsDone(getBrand(brandId))) markVisualBasicsJustDone(brandId);
+    trackIdentityIfDone(brandId);
     toast(t("guidelines.bookSaved"));
     // Same "take them back to where the progress actually shows" pattern as
     // Brand DNA's own save: the hub, so anything still unfinished (sections

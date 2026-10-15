@@ -3741,6 +3741,23 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .cd-headline-target{ font-size:16px; font-weight:600; color: var(--text-muted); letter-spacing:0; }
 .cd-bar{ height:8px; border-radius:999px; background: var(--surface-2); overflow:hidden; margin:12px 0 10px; }
 .cd-bar span{ display:block; height:100%; background: var(--accent); border-radius:999px; transition: width .3s; }
+/* Beranda "Progres ke target" (home.js targetProgressParts) */
+.home-progress{ display:flex; flex-direction:column; gap:4px; }
+.home-progress-row{ display:flex; gap:12px; align-items:flex-start; padding:10px 8px; margin:0 -8px; border-radius: var(--radius-md); color: var(--text); text-decoration:none; }
+.home-progress-row:hover{ background: var(--surface-2); }
+.home-progress-row + .home-progress-row{ border-top:1px solid var(--border-soft, var(--border)); border-radius:0; }
+.home-progress-icon{ flex:none; width:30px; height:30px; border-radius:10px; display:grid; place-items:center; background: var(--surface-2); color: var(--text-muted); }
+.home-progress-icon--social{ background: var(--track-social-soft); color: var(--track-social); }
+.home-progress-icon--community{ background: var(--track-community-soft); color: var(--track-community); }
+.home-progress-icon--sales{ background: var(--track-sales-soft); color: var(--track-sales); }
+.home-progress-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.home-progress-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.home-progress-head b{ font-size:14px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.home-progress-head small{ flex:none; font-size:12px; color: var(--text-muted); font-weight:700; }
+.home-progress-num{ font-size:13px; color: var(--text-muted); }
+.home-progress-num b{ color: var(--text); font-size:15px; }
+.home-progress-num.is-empty{ font-style:italic; color: var(--text-faint); }
+.home-progress .cd-bar{ margin:4px 0 0; height:6px; }
 .cd-headline-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:12.5px; color: var(--text-muted); }
 .cd-stale{ color: var(--health-average); font-weight:700; }
 .cd-next{ margin-bottom:18px; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); padding:18px 22px; }
@@ -4951,6 +4968,7 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    even in the small floating panel (360px). */
 .consultant-msg:has(.cp-week){ max-width:100%; }
 .cp-week{ margin-top:8px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.cp-week-basis{ margin:0 0 8px; }
 .cp-week .cp-plan-body{ overflow-wrap: anywhere; }
 .cp-week-row{ display:grid; grid-template-columns: auto auto minmax(0,1fr) auto; gap:10px; align-items:flex-start; padding:9px 0; border-top:1px solid var(--border-soft, var(--border)); }
 .cp-week-row:first-child{ border-top:0; }
@@ -5620,6 +5638,24 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .dna-live-count{ margin-left:auto; font-size:12px; font-weight:700; color: var(--text-muted); }
 .dna-live-card-big{ border:1px solid var(--border); border-radius: var(--radius-lg); padding:16px; background: var(--surface); }
 .dna-live-card-big .dna-live-top b{ font-size:20px; }
+/* "Jalanmu berikutnya" under the finished card (brand-dna.js dnaNextHTML) */
+.dna-next{ margin-top:16px; }
+.dna-next-title, .dna-next-thin-title{ display:block; font-size:11.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color: var(--text-muted); margin-bottom:8px; }
+.dna-next-steps{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.dna-next-step{ display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.dna-next-step.is-next{ border-color: var(--brand-tint); background: color-mix(in srgb, var(--brand-tint) 14%, var(--surface)); }
+.dna-next-mark{ width:24px; height:24px; flex:none; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:800; background: var(--surface-2); color: var(--text-muted); }
+.dna-next-step.is-done .dna-next-mark{ background: var(--health-good-soft); color: var(--health-good); }
+.dna-next-step.is-next .dna-next-mark{ background: var(--brand-tint); color: var(--brand-tint-text); }
+.dna-next-text{ flex:1; min-width:0; }
+.dna-next-text b{ display:block; font-size:14px; }
+.dna-next-text small{ display:block; font-size:12.5px; color: var(--text-muted); line-height:1.4; margin-top:1px; }
+.dna-next-step.is-done .dna-next-text b{ color: var(--text-muted); }
+.dna-next-tag{ flex:none; font-size:11.5px; font-weight:800; color: var(--text-muted); }
+.dna-next-tag.is-next{ color: var(--text); }
+.dna-next-thin{ margin-top:12px; padding-top:10px; border-top:1px solid var(--border-soft, var(--border)); }
+.dna-next-thin p{ margin:0 0 6px; font-size:13px; line-height:1.45; color: var(--text-muted); }
+.dna-next-thin a{ color: var(--accent); font-weight:700; white-space:nowrap; }
 @media (min-width: 1000px){
   .dna-wizard-main{ max-width:none !important; display:grid; grid-template-columns: minmax(0, 640px) 300px; column-gap:32px; }
   .dna-wizard-main > *{ grid-column:1; }
@@ -6180,6 +6216,8 @@ div.home-path-step{ cursor:pointer; }
 .home-col{ display:contents; }
 .home-b-today{ order:1; }
 .home-b-recap{ order:2; }
+/* Same order as the recap: on phones the two follow Hari ini in source order. */
+.home-b-progress{ order:2; }
 .home-b-week{ order:3; }
 .home-b-goal{ order:4; }
 .home-b-recent{ order:5; }

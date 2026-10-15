@@ -26,6 +26,7 @@ document.documentElement.lang = getLang();
 import { shellHTML, wireShell, updateShellForRoute } from "./layout.js";
 import { noteNavigation } from "./nav-context.js";
 import { initAnalytics, setUser } from "./analytics.js";
+import { initActivation } from "./activation.js";
 import { initMetaPixel } from "./meta-pixel.js";
 import { trackTrialStart } from "./trial-start.js";
 import { checkPendingOrders } from "./pending-orders.js";
@@ -1001,6 +1002,7 @@ let lastUser = null;
 showLoading();
 consumeWepekaToken();
 initAnalytics();
+initActivation();
 initMetaPixel();
 window.addEventListener("hashchange", () => {
   if (!lastUser) { boot(lastUser); return; } // toggle pricing <-> login while logged out

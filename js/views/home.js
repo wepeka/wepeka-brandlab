@@ -1,6 +1,6 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue } from "../store.js";
 import { icon } from "../icons.js";
-import { initials, formatDate, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
+import { initials, formatDate, formatNumber, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
 import { goalWidget, wireGoalCard } from "../goal-card.js";
 import { setPageGuide } from "../section-guide.js";
@@ -9,7 +9,7 @@ import { openContentEditor } from "./content-editor.js";
 import { celebrateBuilderCompleteIfFlagged, consumeDnaJustCompleted, consumeVisualBasicsJustDone } from "./brand-builder.js";
 import { ensureGoogleFont, ensureCustomFont } from "./brand-guidelines.js";
 import { getCachedAccount, isReadOnly, isTrial, trialDaysLeft } from "../account.js";
-import { campaignStages, campaignPlatform } from "../campaign-metrics.js";
+import { campaignStages, campaignPlatform, activeStageIndex, campaignHeadline, TRACK_ICON } from "../campaign-metrics.js";
 import { go } from "../nav-context.js";
 import { statusLabel } from "../funnel-field.js";
 import { brandTodayAction } from "../next-action.js";
@@ -522,6 +522,14 @@ function paint(root, brandId, state, refresh) {
             })
       }</div>`
     : "";
+  const progress = identityDone ? targetProgressParts(brandId, targetProgressRows({ brand, campaigns, content, settings })) : null;
+  const progressHTML = progress
+    ? `<div class="home-b-progress" id="home-progress">${
+        collapsed.has("progress")
+          ? widgetCollapsedHTML("progress", "chart", t("home.progress.title"), progress.summary)
+          : widgetCardHTML("progress", "chart", t("home.progress.title"), progress.bodyHTML, { sub: t("home.progress.sub") })
+      }</div>`
+    : "";
   const goalHTML = goal && !goalIsInvite
     ? `<div class="home-b-goal">${
         collapsed.has(goal.key)
@@ -554,6 +562,7 @@ function paint(root, brandId, state, refresh) {
       <div class="home-col home-col-main">
         <div class="home-b-today">${identityDone ? todayHeroHTML(brandId, brand, campaigns, content, top) : identityHeroHTML(brandId, brand)}</div>
         ${recaps[0] ? `<div class="home-b-recap">${recapCardHTML(recaps[0], { brandId })}</div>` : ""}
+        ${progressHTML}
         ${goalHTML}
         ${recentContentHTML(brandId, content, shownAbove)}
         ${moreSectionHTML(moreItems)}
@@ -642,6 +651,53 @@ function wireRecapCard(root, { brandId, refresh }) {
       }
     })
   );
+}
+
+// ---- Progres ke target ---------------------------------------------------------
+// "Am I making progress?": one line per running Grow Brand campaign — the
+// level it's on and the number that level counts (followers, members, sold)
+// against its target. Same reading as the Tujuan list's cards
+// (js/views/campaigns.js campaignCard), so the two never disagree. Nothing
+// logged yet says so, instead of a bare 0 that reads like a result.
+export function targetProgressRows({ brand, campaigns, content, settings, limit = 3 }) {
+  return campaigns
+    .filter((c) => c.status === "active" && c.goalPlan?.version === 3 && c.goalPlan.track)
+    .map((campaign) => {
+      const stages = campaignStages(campaign);
+      const idx = activeStageIndex(campaign, stages, content);
+      const stage = stages[idx];
+      const head = stage ? campaignHeadline(campaign, stages, idx, { brand, campaign, content, settings }) : null;
+      if (!head || head.reading.isCheck || !head.reading.target) return null;
+      const r = head.reading;
+      return {
+        campaign, track: campaign.goalPlan.track, level: idx + 1, levels: stages.length,
+        label: head.milestone.label, current: r.current || 0, target: r.target, unit: r.unit,
+        pct: r.pct, noData: !r.logged && !r.current,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function targetProgressParts(brandId, rows) {
+  if (!rows.length) return null;
+  const name = (r) => esc(campaignDisplayName(r.campaign.name) || t("camp.untitled"));
+  const bodyHTML = `<div class="home-progress">${rows.map((r) => `
+    <a class="home-progress-row" href="#/brand/${brandId}/campaigns/${r.campaign.id}">
+      <span class="home-progress-icon home-progress-icon--${r.track}" aria-hidden="true">${icon(TRACK_ICON[r.track] || "target", { size: 15 })}</span>
+      <span class="home-progress-main">
+        <span class="home-progress-head"><b>${name(r)}</b><small>${t("camp.levelOf", { n: r.level, total: r.levels })}</small></span>
+        ${r.noData
+          ? `<span class="home-progress-num is-empty">${t("home.progress.noData", { target: formatNumber(r.target), unit: esc(r.unit) })}</span>`
+          : `<span class="home-progress-num"><b>${formatNumber(r.current)}</b> / ${formatNumber(r.target)} ${esc(r.unit)}${String(r.label).toLowerCase() === String(r.unit).toLowerCase() ? "" : ` <span class="text-faint">· ${esc(r.label)}</span>`}</span>
+        <span class="cd-bar"><span style="width:${Math.round(r.pct * 100)}%"></span></span>`}
+      </span>
+    </a>`).join("")}</div>`;
+  const first = rows[0];
+  const summary = first.noData
+    ? t("home.progress.summaryNoData", { name: name(first) })
+    : t("home.progress.summary", { name: name(first), current: formatNumber(first.current), target: formatNumber(first.target), unit: esc(first.unit) });
+  return { bodyHTML, summary };
 }
 
 // ---- Trial reminder (audit-1005) --------------------------------------------

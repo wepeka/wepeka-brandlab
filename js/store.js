@@ -1483,6 +1483,7 @@ export function updateBrandInsights(brandId, platform, { followers = null, reach
     source,
   };
   const history = [...(b.insightsHistory || []), entry].sort((x, y) => x.at - y.at).slice(-INSIGHTS_HISTORY_CAP);
+  if (source === "manual" && entry.followers !== null) emitStep("numbers_logged", { brandId, kind: "followers" });
   return updateBrand(brandId, { insights, insightsHistory: history });
 }
 // Follower count closest to (at or before) `atMs`, else the earliest one
@@ -2138,9 +2139,25 @@ export function createContent(brandId, data = {}) {
   persist(() => setDoc(doc(fdb, "content", item.id), item));
   return item;
 }
+// What just happened, for js/activation.js (GA4 activation steps). The store
+// never talks to analytics itself; it only says so, and a failing listener
+// can never break a write.
+export function emitStep(step, detail = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent("app:step", { detail: { step, ...detail } }));
+  } catch { /* analytics must never break a write */ }
+}
+const isNum = (v) => (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)));
+const hasNumber = (obj) => Object.values(obj || {}).some((v) => (v && typeof v === "object" ? hasNumber(v) : isNum(v)));
+
 export function updateContent(id, patch) {
   const item = getContent(id);
   if (!item) return null;
+  const wasPublished = item.status === "published";
+  // Numbers count as "typed in" only when they change — a Save that writes
+  // the same performance back isn't someone filling numbers.
+  const numbersBefore = JSON.stringify([item.performance || {}, item.performanceByPlatform || {}]);
+  const numbersPatched = hasNumber(patch.performance) || hasNumber(patch.performanceByPlatform);
   const fields = [...Object.keys(patch), "updatedAt"];
   if (patch.performance) {
     item.performance = { ...item.performance, ...patch.performance };
@@ -2148,6 +2165,8 @@ export function updateContent(id, patch) {
   }
   Object.assign(item, patch, { updatedAt: Date.now() });
   persist(() => updateFields("content", item.id, item, fields));
+  if (!wasPublished && item.status === "published") emitStep("content_published", { brandId: item.brandId });
+  if (numbersPatched && JSON.stringify([item.performance || {}, item.performanceByPlatform || {}]) !== numbersBefore) emitStep("numbers_logged", { brandId: item.brandId, kind: "content" });
   return item;
 }
 export function archiveContent(id, archived = true) {
@@ -3091,6 +3110,7 @@ export function createCampaign(brandId, data = {}) {
   const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId, ownerId: ownerUid };
   db.campaigns = [...(db.campaigns || []), item];
   persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
+  emitStep("goal_created", { brandId, objective: item.objective || "", track: item.goalPlan?.track || "" });
   return item;
 }
 export function updateCampaign(id, patch) {
@@ -3108,6 +3128,7 @@ export function setCampaignManualMetric(campaignId, milestoneId, patch) {
   if (!c) return null;
   const manualMetrics = { ...(c.manualMetrics || {}) };
   manualMetrics[milestoneId] = { ...(manualMetrics[milestoneId] || {}), ...patch, updatedAt: Date.now() };
+  if (hasNumber(patch)) emitStep("numbers_logged", { brandId: c.brandId, kind: "manual" });
   return updateCampaign(campaignId, { manualMetrics });
 }
 // Marks a mission-ladder level done (auto-advance, or a Pro "force").

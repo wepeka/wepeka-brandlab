@@ -22,7 +22,7 @@
 import { getBrand, updateBrand, organicViews, localISODate, getSettings, listContent } from "./store.js";
 import { hookOf } from "./script-format.js";
 import { computeContentMetrics } from "./formulas.js";
-import { t, getLang } from "./i18n.js";
+import { t, getLang, campaignDisplayName } from "./i18n.js";
 
 const DAY = 86400000;
 const TASTE_CAP = 10;
@@ -189,6 +189,28 @@ export function learningBasis(brand, { content = [], settings = getSettings() } 
   if (lesson?.points?.length) out.push(t("learn.basis.lesson", { point: clip(lesson.points[0], 80) }));
   return out.slice(0, 3);
 }
+// The same "Dibuat berdasarkan" line for Rencanakan minggu ini, built from
+// what js/ai.js generateWeekPlan is actually handed: the Brand DNA, the goal
+// it plans for (the one picked, else the running ones), the upload days the
+// dates came from, then what the brand has learned. Worked out once when the
+// plan is made and kept on it, so the line keeps saying what THAT plan read.
+const WEEK_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+export function weekPlanBasis(brand, { campaigns = [], scopeCampaign = null, content = [], settings = getSettings() } = {}) {
+  if (!brand) return [];
+  const out = [];
+  const dna = brand.brandDNA || {};
+  if ([dna.targetAudience, dna.problemSolved, dna.differentiation].some((x) => String(x || "").trim())) out.push(t("learn.basis.weekDna"));
+  const goals = scopeCampaign ? [scopeCampaign] : campaigns;
+  if (goals.length) {
+    const names = goals.slice(0, 2).map((c) => clip(campaignDisplayName(c.name) || t("camp.untitled"), 40));
+    out.push(t("learn.basis.weekGoal", { names: names.join(", ") + (goals.length > 2 ? ` +${goals.length - 2}` : "") }));
+  }
+  const cad = brand.contentCadence;
+  const days = cad?.configured ? WEEK_ORDER.filter((d) => (cad.uploadDays || []).includes(d)) : [];
+  if (days.length) out.push(t("learn.basis.weekDays", { days: days.map((d) => t(`calendar.dow.${d}`)).join(", ") }));
+  return [...out, ...learningBasis(brand, { content, settings })].slice(0, 4);
+}
+
 export function basisHTML(brand, opts = {}) {
   const items = learningBasis(brand, opts);
   if (!items.length) return "";

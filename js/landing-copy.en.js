@@ -434,7 +434,7 @@ export default {
         },
         {
           "q": "Does the AI really know my brand, or is it generic like ChatGPT?",
-          "a": "The AI Consultant reads your brand's own data before answering — engagement rate, unpublished content, campaign progress. Ask “how did this month go” and the answer quotes your real numbers, not general tips."
+          "a": "It does: every AI feature in Brandlab reads your Brand DNA, content and numbers first, so you never paste your brand info again. But the bigger difference is outside the AI: ChatGPT gives you an answer, and keeping and tracking the plan is up to you. In Brandlab the plan goes into your calendar, the numbers you log are checked against your target, and Home shows your next step. The decisions stay yours."
         },
         {
           "q": "Can I stop anytime?",

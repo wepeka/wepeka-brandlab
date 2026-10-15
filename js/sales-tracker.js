@@ -33,7 +33,7 @@
 //
 // Still 100% manual entry: there is no sales backend and nothing here reads
 // or asks for ads data.
-import { getBrand, updateBrand, listCampaigns, updateCampaign, getContent, listContent, localISODate, isBrandSalesReady, ensureBrandSales } from "./store.js";
+import { getBrand, updateBrand, listCampaigns, updateCampaign, getContent, listContent, localISODate, isBrandSalesReady, ensureBrandSales, emitStep } from "./store.js";
 
 const DAY = 86400000;
 const uid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -131,6 +131,7 @@ export function logSale(brandId, { productId, qty = 1, amount = null, date = loc
   const src = normalizeSource(source, eventId);
   const entry = { id: uid("s"), productId, qty: q, amount: amount === null || amount === "" ? effectivePrice(product, date) * q : Math.max(0, num(amount)), date, repeat: !!repeat, referral: !!referral, note: String(note || "").trim().slice(0, 140), eventId: eventId || null, ...(src ? { source: src } : {}), at: Date.now() };
   save(brandId, { entries: [...tr.entries, entry] });
+  emitStep("numbers_logged", { brandId, kind: "sales" });
   return entry;
 }
 // A sale's origin: a piece of content brings its campaign along; an event

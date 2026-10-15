@@ -152,6 +152,10 @@ export default {
   "learn.basis.dislikeNote": { en: "you didn't like: {note}", id: "kamu gak suka: {note}" },
   "learn.basis.dislike": { en: "you turned down \"{sample}\"", id: "kamu menolak \"{sample}\"" },
   "learn.basis.lesson": { en: "last month's lesson: {point}", id: "pelajaran bulan lalu: {point}" },
+  // Rencanakan minggu ini (weekPlanBasis).
+  "learn.basis.weekDna": { en: "your Brand DNA", id: "Brand DNA-mu" },
+  "learn.basis.weekGoal": { en: "the goal {names}", id: "tujuan {names}" },
+  "learn.basis.weekDays": { en: "your upload days ({days})", id: "hari upload-mu ({days})" },
   "learn.gap.now": { en: "You haven't posted in {days} days.", id: "Kamu belum posting {days} hari." },
   "learn.gap.before": { en: "The last time you paused {gap} days, the next post got {pct}% fewer views.", id: "Terakhir kali jeda {gap} hari, konten berikutnya dapat views {pct}% lebih sedikit." },
   "learn.format": { en: "Your {format} posts average {x}× the views of your other formats — make one more this week.", id: "{format} kamu rata-rata dapat {x}× views dibanding format lain — bikin satu lagi minggu ini." },
