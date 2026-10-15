@@ -5393,6 +5393,10 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .circle-empty{ margin:0; font-size:13px; line-height:1.55; color: var(--text-faint); }
 .circle-session{ display:flex; flex-direction:column; gap:4px; padding:12px 14px; border-radius: var(--radius-md); border:1px solid var(--border); background: var(--surface-2); }
 .circle-session.is-live{ border-color: color-mix(in srgb, var(--health-good) 50%, var(--border)); }
+.circle-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.circle-kind{ display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius: var(--radius-pill); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.circle-kind.is-public{ color: var(--accent); background: var(--accent-soft); }
+.circle-kind.is-founder{ color: var(--text-muted); background: var(--surface); border:1px solid var(--border); }
 .circle-live{ align-self:flex-start; padding:2px 8px; border-radius: var(--radius-pill); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color: var(--health-good); background: var(--health-good-soft); }
 .circle-when{ font-size:14.5px; }
 .circle-topic{ margin:0; font-size:13.5px; }

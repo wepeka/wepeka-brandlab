@@ -1,14 +1,15 @@
 // Founder Circle — the human part of a Lifetime plan, inside the app
 // (owner picked no. 18 of the 2026-10-15 "biar orang mau beli" analysis):
-// the next monthly live mentoring with the Wepeka team, the recordings of
-// past ones (wepeka.com/brandlab promises "direkam kalau kamu nggak
-// sempat"), the one Brand Book review every Founder gets, and a sign-up to
-// have your brand taken apart ("dibedah") live in a session.
+// the next live session with the Wepeka team — a public Instagram live, or
+// the closed monthly Founder session — the recordings of past ones
+// (wepeka.com/brandlab promises "direkam kalau kamu nggak sempat"), the one
+// Brand Book review every Founder gets, and a sign-up to have your brand
+// taken apart ("dibedah") in a Founder session.
 //
 // Where it lives (Brandlab's Firestore, Admin SDK only — no client rule
 // opens either path, so the browser only ever sees it through
 // api/founder-circle.js):
-//   meta/founderCircle    { nextSession: { at, minutes, topic, link, note },
+//   meta/founderCircle    { nextSession: { at, minutes, kind, topic, link, note },
 //                           recordings: [{ title, url, at }] }
 //                         written by wepeka.com /admin/brandlab/founder-circle
 //   founderCircle/{uid}   { review: { brandId, brandName, note, wa, status,
@@ -26,6 +27,11 @@ import { ADMIN_URL } from "./_ownerNotify.js";
 export const CIRCLE_DOC = "meta/founderCircle";
 export const MEMBER_COLLECTION = "founderCircle";
 export const REVIEW_STATES = ["requested", "scheduled", "done"];
+// What the next session is (owner, 2026-10-16: a 2-person team runs one
+// slot a week — a public Instagram live most weeks, the closed Founder
+// session once a month): "public" is shown to every account, "founder"
+// (and anything unknown — the safe side) only to Lifetime accounts.
+export const SESSION_KINDS = ["public", "founder"];
 export const MAX_RECORDINGS = 24;
 const MINUTE = 60 * 1000;
 
@@ -49,7 +55,8 @@ export function sessionOf(raw) {
   const at = time(raw.at);
   if (!at) return null;
   const minutes = Math.min(240, Math.max(15, Math.round(Number(raw.minutes) || 90)));
-  return { at, minutes, topic: str(raw.topic, 140), link: httpsUrl(raw.link), note: str(raw.note, 280) };
+  const kind = raw.kind === "public" ? "public" : "founder";
+  return { at, minutes, kind, topic: str(raw.topic, 140), link: httpsUrl(raw.link), note: str(raw.note, 280) };
 }
 
 export function recordingsOf(raw) {
@@ -77,12 +84,23 @@ export function bedahOf(raw) {
   return { on: true, brandId: str(raw.brandId, 128), brandName: str(raw.brandName, 120), at: time(raw.at) };
 }
 
-// What a member's app gets. A session stays "next" until an hour after it
+// The session still worth showing: it stays "next" until an hour after it
 // ends, so the room link still works for someone who joins late.
-export function circleView(config, mine, now = Date.now()) {
+function upcomingSession(config, now) {
   const session = sessionOf(config?.nextSession);
-  const upcoming = session && session.at + (session.minutes + 60) * MINUTE > now ? session : null;
-  return { member: true, session: upcoming, recordings: recordingsOf(config?.recordings), review: reviewOf(mine?.review), bedah: bedahOf(mine?.bedah) };
+  return session && session.at + (session.minutes + 60) * MINUTE > now ? session : null;
+}
+
+// What a member's app gets.
+export function circleView(config, mine, now = Date.now()) {
+  return { member: true, session: upcomingSession(config, now), recordings: recordingsOf(config?.recordings), review: reviewOf(mine?.review), bedah: bedahOf(mine?.bedah) };
+}
+
+// What every other account gets: a public live only — never a Founder
+// session's room link, the recordings or anyone's requests.
+export function publicView(config, now = Date.now()) {
+  const session = upcomingSession(config, now);
+  return { member: false, session: session?.kind === "public" ? session : null };
 }
 
 // A WhatsApp number as wa.me wants it: digits only, 08… → 628…; "" when it

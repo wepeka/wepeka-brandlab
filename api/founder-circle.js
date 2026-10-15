@@ -8,10 +8,10 @@
 //   POST { action: "bedah", on, brandId? }
 //                                     → signs a brand up to be taken apart in
 //                                       a live session (or takes it off)
-// A non-member gets { member: false } (the app then shows what Lifetime
-// includes instead).
+// A non-member gets { member: false, session } — only a public live, never
+// a Founder session (the app then shows what Lifetime includes, and the live).
 import { adminDb, requireAuth } from "./_firebaseAdmin.js";
-import { CIRCLE_DOC, MEMBER_COLLECTION, isCircleMember, circleView, reviewRequest, composeReviewNote } from "./_founderCircle.js";
+import { CIRCLE_DOC, MEMBER_COLLECTION, isCircleMember, circleView, publicView, reviewRequest, composeReviewNote } from "./_founderCircle.js";
 import { sendEmail, emailConfigured } from "./_email.js";
 import { ownerEmails } from "./_ownerNotify.js";
 
@@ -43,7 +43,11 @@ async function mailTeam(note, key) {
 export async function handleCircleRequest(req, res, { db, uid, now = Date.now(), notify = mailTeam }) {
   const accountSnap = await db.doc(`accounts/${uid}`).get();
   const account = accountSnap.exists ? accountSnap.data() : null;
-  if (!isCircleMember(uid, account)) return res.status(200).json({ member: false });
+  if (!isCircleMember(uid, account)) {
+    if (req.method !== "GET") return res.status(200).json({ member: false });
+    const config = await db.doc(CIRCLE_DOC).get();
+    return res.status(200).json(publicView(config.exists ? config.data() : null, now));
+  }
 
   const memberRef = db.doc(`${MEMBER_COLLECTION}/${uid}`);
   const view = async () => {

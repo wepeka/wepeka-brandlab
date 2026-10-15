@@ -52,6 +52,11 @@ describe("Founder Circle: what the app gets", () => {
     assert.ok(circleView(cfg, null, NOW + 4 * HOUR).session);
     assert.equal(circleView(cfg, null, NOW + 4.6 * HOUR).session, null);
   });
+  test("a session is public only when it says so", () => {
+    assert.equal(sessionOf({ at: NOW, kind: "public" }).kind, "public");
+    assert.equal(sessionOf({ at: NOW }).kind, "founder");
+    assert.equal(sessionOf({ at: NOW, kind: "anything" }).kind, "founder");
+  });
   test("links must be https; junk is dropped", () => {
     assert.equal(sessionOf({ at: NOW, link: "javascript:alert(1)" }).link, "");
     assert.equal(sessionOf({ at: 0 }), null);
@@ -86,10 +91,21 @@ describe("Founder Circle: what the app gets", () => {
 });
 
 describe("api/founder-circle.js", () => {
-  test("a non-member gets member:false and nothing else", async () => {
-    const db = fakeDb({ "accounts/u1": { plan: "trial", status: "active" }, [CIRCLE_DOC]: { nextSession: { at: NOW + HOUR, link: "https://x.y" } } });
+  test("a non-member never sees a Founder session (no kind = Founders only)", async () => {
+    const db = fakeDb({ "accounts/u1": { plan: "trial", status: "active" }, [CIRCLE_DOC]: { nextSession: { at: NOW + HOUR, link: "https://x.y" }, recordings: [{ title: "Sesi 1", url: "https://youtu.be/a", at: 1 }] } });
     const res = await call(db);
-    assert.deepEqual(res.body, { member: false });
+    assert.deepEqual(res.body, { member: false, session: null });
+  });
+  test("a public live is shown to every account — and only the live", async () => {
+    const db = fakeDb({ "accounts/u1": { plan: "trial", status: "active" }, "brands/b1": { ownerId: "u1", name: "Kopi" }, [CIRCLE_DOC]: { nextSession: { at: NOW + HOUR, kind: "public", topic: "Live Brandlab", link: "https://www.instagram.com/winkhsin" }, recordings: [{ title: "Sesi 1", url: "https://youtu.be/a", at: 1 }] } });
+    const res = await call(db);
+    assert.equal(res.body.member, false);
+    assert.equal(res.body.session.kind, "public");
+    assert.equal(res.body.session.link, "https://www.instagram.com/winkhsin");
+    assert.equal(res.body.recordings, undefined);
+    const post = await call(db, { method: "POST", body: { action: "review", brandId: "b1" } });
+    assert.deepEqual(post.body, { member: false });
+    assert.equal(db.read("founderCircle/u1"), undefined);
   });
   test("a Founder sees the session and recordings", async () => {
     const db = fakeDb({ "accounts/u1": founder, [CIRCLE_DOC]: { nextSession: { at: NOW + HOUR, minutes: 60, topic: "Q&A" }, recordings: [{ title: "Sesi 1", url: "https://youtu.be/a", at: NOW - 30 * 24 * HOUR }] } });

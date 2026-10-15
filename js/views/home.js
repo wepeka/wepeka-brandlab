@@ -590,8 +590,8 @@ function paint(root, brandId, state, refresh) {
   // "Isi jadwal minggu ini": the chat's week plan (ideas the owner ticks).
   qs("[data-week-plan]", root)?.addEventListener("click", () => openWeekPlan());
   wireRecapCard(root, { brandId, refresh });
-  // Founder Circle: a line on a mentoring day (mountCircleNotice itself
-  // does nothing for an account without Lifetime).
+  // Founder Circle: a line from the day before a live — a public Instagram
+  // live for every account, a Founders-only session for Lifetime accounts.
   import("../founder-circle.js").then((m) => m.mountCircleNotice(root)).catch(() => {});
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
 
