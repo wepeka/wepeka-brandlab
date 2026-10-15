@@ -261,7 +261,7 @@ export default async function handler(req, res) {
     const invoice = firstTime === true
       ? sendInvoice({
         paymentRef, uid, buyer, label: plan.label || planKey, isPlan: Boolean(PLANS[planKey] || LEGACY_PLANS[planKey]), lifetime: isLifetimePlan(plan.plan),
-        orderId: order_id, amount: Number(gross_amount), price: pending.price, credit: pending.credit, paidAt: now, notification: body,
+        orderId: order_id, amount: Number(gross_amount), price: pending.price, credit: pending.credit, promo: pending.promo, paidAt: now, notification: body,
       }).catch((err) => console.error("Midtrans webhook: invoice failed", order_id, err?.message))
       : null;
     // Wepeka's own note that money came in — also for a paid order that
@@ -270,16 +270,21 @@ export default async function handler(req, res) {
     const note = notifyOwner(db, {
       uid, buyer, label: plan.label || planKey, slot: firstTime === true ? plan.slot : null, newAccount: Boolean(pending.newAccount),
       review: buyer.paymentIssue?.orderId === order_id ? buyer.paymentIssue.status : "",
-      orderId: order_id, amount: Number(gross_amount), paidAt: now, notification: body,
+      orderId: order_id, amount: Number(gross_amount), promo: pending.promo, paidAt: now, notification: body,
     }).catch((err) => console.error("Midtrans webhook: owner note failed", order_id, err?.message));
     await Promise.all([invoice, note]);
   }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
 }
 
+// A community code on the order (payments/{orderId}.promo, written by
+// create-transaction from api/_promo.js) as the invoice's and the owner
+// note's discount line.
+const promoLine = (promo) => (Number(promo?.off) > 0 ? { discount: Number(promo.off), discountLabel: `${promo.label || "Diskon"}${promo.code ? ` (${promo.code})` : ""}` } : {});
+
 // The invoice number and how it was paid go on the payment record either
 // way (the admin can quote them); the email itself needs Resend.
-async function sendInvoice({ paymentRef, uid, buyer, label, isPlan, renewal = false, lifetime = false, orderId, amount, price, credit, paidAt, notification }) {
+async function sendInvoice({ paymentRef, uid, buyer, label, isPlan, renewal = false, lifetime = false, orderId, amount, price, credit, promo = null, paidAt, notification }) {
   const invoiceNo = invoiceNumber(orderId, paidAt);
   const method = paymentMethodLabel(notification);
   await paymentRef.set({ invoiceNo, ...(method ? { paymentMethod: method } : {}) }, { merge: true });
@@ -288,7 +293,7 @@ async function sendInvoice({ paymentRef, uid, buyer, label, isPlan, renewal = fa
   const user = buyer.email && buyer.displayName ? null : await getAuth(getApps()[0]).getUser(uid).catch(() => null);
   const to = String(buyer.email || user?.email || "").trim();
   if (!to) return;
-  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", email: to, label, amount, price, credit, orderId, invoiceNo, paidAt, method, isPlan, renewal, lifetime });
+  const mail = composePaidEmail({ name: buyer.displayName || user?.displayName || "", email: to, label, amount, price, credit, ...promoLine(promo), orderId, invoiceNo, paidAt, method, isPlan, renewal, lifetime });
   const r = await sendEmail({ to, ...mail, idempotencyKey: `brandlab-paid-${orderId}` });
   if (r.ok) await paymentRef.set({ invoiceEmailedAt: Date.now() }, { merge: true });
   else if (!r.skipped) console.error("Midtrans webhook: invoice email not sent", orderId, r.error || r.status);
@@ -298,7 +303,7 @@ async function sendInvoice({ paymentRef, uid, buyer, label, isPlan, renewal = fa
 // owner's address(es) and a push to the team account's own devices, the
 // ones that turned Notifikasi on in Settings → Pengingat. Each channel is
 // simply skipped while it isn't set up.
-async function notifyOwner(db, { uid, buyer, label, slot = null, renewal = false, newAccount = false, review = "", orderId, amount, paidAt, notification }) {
+async function notifyOwner(db, { uid, buyer, label, slot = null, renewal = false, newAccount = false, review = "", orderId, amount, promo = null, paidAt, notification }) {
   const to = emailConfigured() ? ownerEmails() : [];
   const push = await webPushSender().catch(() => null);
   if (!to.length && !push) return;
@@ -306,7 +311,7 @@ async function notifyOwner(db, { uid, buyer, label, slot = null, renewal = false
   // A capped plan: how many of its seats are sold now, this one included.
   const sold = slot ? Number((await db.doc(SLOTS_DOC).get().catch(() => null))?.data()?.[slot]) || 0 : 0;
   const { push: pushPayload, ...mail } = composeSaleNote({
-    label, amount, uid, orderId, paidAt, renewal, newAccount, review,
+    label, amount, uid, orderId, paidAt, renewal, newAccount, review, ...promoLine(promo),
     buyerName: buyer.displayName || user?.displayName || "", buyerEmail: buyer.email || user?.email || "",
     invoiceNo: invoiceNumber(orderId, paidAt), method: paymentMethodLabel(notification),
     seat: slot ? { sold, cap: SLOT_CAPS[slot] } : null, sandbox: !MIDTRANS_IS_PRODUCTION,

@@ -36,8 +36,9 @@ import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { logout } from "../auth.js";
 import { t, getLang } from "../i18n.js";
-import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS, buyUrl } from "../site-links.js";
+import { WEPEKA_CONNECT_URL, WEPEKA_SITE_URL, SUPPORT_WA_NUMBER, COMMUNITY_WA_GROUP_URL, AI_TOPUPS, AI_UNLIMITED, BRAND_ADDONS, buyUrl } from "../site-links.js";
 import { takeBuyIntent } from "../buy-intent.js";
+import { readPromo, readPromoInfo, rememberPromo, forgetPromo, checkPromo } from "../promo-code.js";
 import { agreeLine } from "../legal-links.js";
 import { showPayLoading, hidePayLoading, hidePayLoadingWhenSnapShows } from "../pay-loading.js";
 // Firestore loads on demand (js/firebase.js loadFirestore): this page is
@@ -171,10 +172,14 @@ export async function payPlan(planKey, uid, { onSuccess, successToast = true } =
     const res = await fetch("/api/midtrans/create-transaction", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ planKey, ...confirmed }),
+      // A Wepeka Community code kept from the Founder's Deal page or the
+      // field below the plans (js/promo-code.js): the server applies it
+      // where it is valid and ignores it everywhere else.
+      body: JSON.stringify({ planKey, ...confirmed, ...(readPromo() ? { promo: readPromo() } : {}) }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || t("pricing.err.createTx"));
-    const { token, orderId, amount, label } = await res.json();
+    const { token, orderId, amount, label, promo } = await res.json();
+    if (promo?.off) toast(t("pricing.promo.applied", { code: promo.code, off: rp(promo.off) }));
     const order = { orderId, planKey, amount, label };
     const { item, metaParams } = checkoutParams(order);
     // Remembered until its purchase is reported: a transfer paid after Snap
@@ -189,6 +194,7 @@ export async function payPlan(planKey, uid, { onSuccess, successToast = true } =
         // GA4 purchase + Meta Purchase, with the same event id as the
         // webhook's Conversions API Purchase (api/midtrans/webhook.js).
         reportPurchase(uid, order);
+        if (promo) forgetPromo();
         if (successToast) toast(t("pricing.pay.success"));
         onSuccess?.();
       },
@@ -548,6 +554,54 @@ function founderCardHTML({ open, tier, soldOut }, uid, owned) {
     </div>`;
 }
 
+// The Wepeka Community code (api/_promo.js): a line saying it is on, or a
+// folded field to type one in, with where to get it (the community's
+// WhatsApp group description). Lifetime plans only — the server decides.
+function promoHTML() {
+  const kept = readPromoInfo();
+  if (kept) {
+    return `
+      <div class="pricing-promo is-on" data-promo>
+        <p>${icon("check", { size: 14 })}<span>${kept.off ? t("pricing.promo.on", { code: kept.code, off: rp(kept.off) }) : t("pricing.promo.onNoAmount", { code: kept.code })}</span>
+        <button type="button" class="pricing-promo-remove" data-promo-remove>${t("pricing.promo.remove")}</button></p>
+      </div>`;
+  }
+  return `
+    <details class="pricing-promo" data-promo>
+      <summary>${icon("sparkle", { size: 13 })}${t("pricing.promo.ask")}${icon("chevronDown", { size: 15 })}</summary>
+      <form class="pricing-promo-form" data-promo-form novalidate>
+        <input name="promo" class="input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="24" placeholder="${t("pricing.promo.placeholder")}" aria-label="${t("pricing.promo.placeholder")}">
+        <button type="submit" class="btn btn-secondary btn-sm">${t("pricing.promo.apply")}</button>
+      </form>
+      <p class="pricing-promo-msg" data-promo-msg role="status" aria-live="polite"></p>
+      <p class="pricing-promo-where">${t("pricing.promo.where")} <a href="${COMMUNITY_WA_GROUP_URL}" target="_blank" rel="noopener noreferrer">${t("pricing.promo.join")}</a></p>
+    </details>`;
+}
+
+function wirePromo(root, repaint) {
+  qs("[data-promo-remove]", root)?.addEventListener("click", () => { forgetPromo(); repaint(); });
+  const form = qs("[data-promo-form]", root);
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = form.elements.promo;
+    const msg = qs("[data-promo-msg]", root);
+    const btn = form.querySelector("button");
+    if (!input.value.trim()) { input.focus(); return; }
+    btn.disabled = true;
+    msg.textContent = t("pricing.promo.checking");
+    try {
+      const r = await checkPromo(input.value);
+      if (!r.ok) { msg.textContent = t("pricing.promo.bad"); return; }
+      rememberPromo(r.code, Date.now(), r.off.founder || r.off["founder-ultimate"] || 0);
+      repaint();
+    } catch {
+      msg.textContent = t("pricing.promo.error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 function otherPlanHTML(plan, uid, owned) {
   const name = t(`pricing.${plan.key}.name`);
   return `
@@ -761,6 +815,7 @@ export function render(root, { user, account, backHref, locked, embed = false, o
           ${founderCardHTML({ open, tier, soldOut: founderSoldOut }, uid, owned)}
           ${subscriptionCardHTML(sel, uid, owned)}
         </div>
+        ${owned || (founderSoldOut && agencySoldOut) ? "" : promoHTML()}
         ${payState && !payState.open ? "" : `<p class="pricing-trust">${icon("check", { size: 13 })}${t("pricing.trust")}</p>${bankNoteHTML(user?.email)}`}
         ${uid ? "" : `<p class="pricing-trust pricing-trust--trial">${t("pricing.trialNote", { days: TRIAL_DAYS })}</p>`}
         ${agencyHTML(uid, agencySoldOut, owned, embed)}
@@ -831,6 +886,7 @@ export function render(root, { user, account, backHref, locked, embed = false, o
   qsa("[data-pay-addon]", root).forEach((btn) => {
     btn.addEventListener("click", () => payPlan(btn.dataset.payAddon, uid));
   });
+  wirePromo(root, repaintInPlace);
   qsa("[data-seg]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.dataset.seg === "brands") sel.brands = Number(btn.dataset.value);

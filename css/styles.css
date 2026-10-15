@@ -1164,6 +1164,23 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 }
 .pricing-trust{ display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px 6px; margin:18px auto 0; max-width:720px; text-align:center; font-size:12.5px; color: var(--text-muted); }
 .pricing-trust > svg{ flex:none; color:#10b981; }
+/* Wepeka Community code (js/views/pricing.js promoHTML) */
+.pricing-promo{ max-width:760px; margin:16px auto 0; border:1px dashed color-mix(in srgb, var(--pl-pink) 55%, var(--border)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--pl-pink) 6%, transparent); }
+.pricing-promo summary{ cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px; padding:12px 16px; font-size:13px; font-weight:700; color: var(--text); }
+.pricing-promo summary::-webkit-details-marker{ display:none; }
+.pricing-promo summary > svg:first-child{ color: var(--pl-pink-text); flex:none; }
+.pricing-promo summary > svg:last-child{ margin-left:auto; flex:none; transition:transform .18s; color: var(--text-muted); }
+.pricing-promo[open] summary > svg:last-child{ transform:rotate(180deg); }
+.pricing-promo-form{ display:flex; gap:8px; padding:0 16px; }
+.pricing-promo-form .input{ flex:1; min-width:0; text-transform:uppercase; letter-spacing:.06em; font-weight:700; }
+.pricing-promo-form .input::placeholder{ text-transform:none; letter-spacing:0; font-weight:400; }
+.pricing-promo-msg{ margin:6px 16px 0; font-size:12.5px; color: var(--text-muted); }
+.pricing-promo-msg:empty{ display:none; }
+.pricing-promo-where{ margin:8px 16px 14px; font-size:12.5px; color: var(--text-muted); }
+.pricing-promo-where a{ color: var(--pl-pink-text); font-weight:800; }
+.pricing-promo.is-on p{ display:flex; align-items:center; gap:8px; margin:0; padding:11px 16px; font-size:13px; font-weight:600; color: var(--text); }
+.pricing-promo.is-on p > svg{ flex:none; color:#10b981; }
+.pricing-promo-remove{ margin-left:auto; flex:none; border:0; background:none; padding:4px 2px; font:inherit; font-size:12.5px; font-weight:700; color: var(--text-muted); text-decoration:underline; cursor:pointer; }
 .pricing-trust--trial{ margin-top:4px; }
 .pricing-bank-note{ margin-top:10px; padding:8px 14px; width:fit-content; max-width:min(720px, 100%); border:1px dashed var(--border); border-radius:14px; flex-wrap:nowrap; align-items:flex-start; text-align:left; line-height:1.5; }
 .pricing-bank-note > svg{ color: var(--accent); margin-top:3px; }

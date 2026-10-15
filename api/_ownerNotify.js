@@ -47,9 +47,10 @@ export function reviewNote(code) {
 //   newAccount          bought without ever claiming the trial
 //   seat                { sold, cap } after this sale, for a capped plan
 //   review              accounts/{uid}.paymentIssue.status for this order
+//   discount(Label)     a community code's cut (api/_promo.js), if any
 //   sandbox             Midtrans is on sandbox keys (a tester's "payment")
 // → { subject, html, text, push: { title, body, url, tag } }
-export function composeSaleNote({ label = "", amount = 0, buyerName = "", buyerEmail = "", uid = "", orderId = "", invoiceNo = "", paidAt = Date.now(), method = "", renewal = false, newAccount = false, seat = null, review = "", sandbox = false, appUrl = APP_URL } = {}) {
+export function composeSaleNote({ label = "", amount = 0, buyerName = "", buyerEmail = "", uid = "", orderId = "", invoiceNo = "", paidAt = Date.now(), method = "", renewal = false, newAccount = false, seat = null, review = "", discount = 0, discountLabel = "", sandbox = false, appUrl = APP_URL } = {}) {
   const what = String(label || "Brandlab").replace(/^Brandlab\s*(—\s*)?/, "") || "Brandlab";
   const paid = rupiah(amount);
   const note = reviewNote(review);
@@ -66,6 +67,8 @@ export function composeSaleNote({ label = "", amount = 0, buyerName = "", buyerE
     ["Waktu", paidAtLabel(paidAt)],
     ["Kursi", seatLine],
     ["Akun", newAccount ? "Baru, beli tanpa trial" : ""],
+    // A community code (api/_promo.js): how many sales the WhatsApp group brings.
+    ["Kode", Number(discount) > 0 ? `${discountLabel || "Diskon"}, − ${rupiah(discount)}` : ""],
     ["No. invoice", invoiceNo],
     ["No. pesanan", orderId],
   ].filter(([, v]) => v);

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Founder's Deal · Wepeka Brandlab</title>
+<meta name="description" content="Founder Lifetime Wepeka Brandlab: bayar sekali, pakai selamanya. Brand DNA, Brand Book, tujuan terukur, sampai konten dan hasilnya, semuanya nyambung di satu tempat. Kursi terbatas.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b0a10">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Founder's Deal · Wepeka Brandlab">
+<meta property="og:description" content="Bayar sekali, pakai Brandlab selamanya. Kursi Founder terbatas.">
+<meta property="og:image" content="https://www.wepeka.com/brandlab/opengraph-image">
+<link rel="icon" type="image/png" href="/assets/wepeka-favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/wepeka-apple-icon.png">
+<!-- Seats + prices start loading with the page, not after the script (founder.js reuses this response). -->
+<link rel="preload" href="/api/offer" as="fetch" crossorigin>
+<link rel="preload" href="/fonts/grift-black.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/JUST%20Sans%20Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/JUST%20Sans%20ExBold.woff2" as="font" type="font/woff2" crossorigin>
+<!-- build.mjs inlines this file into a <style> tag for production. -->
+<link rel="stylesheet" href="/founder/founder.css">
+<noscript><style>.is-pending{ color:inherit !important; background:none !important; animation:none !important; }</style></noscript>
+</head>
+<body>
+
+<header class="fd-top">
+  <a class="fd-logo" href="/" aria-label="Wepeka Brandlab"><span class="fd-logo-we" aria-hidden="true"></span><span class="fd-logo-sep" aria-hidden="true"></span><span>Brandlab</span></a>
+  <span class="fd-live" data-show="seats" hidden><span class="fd-dot" aria-hidden="true"></span><span data-f="liveLabel">Sisa kursi</span></span>
+</header>
+
+<main>
+  <!-- 1 · The offer, before anything else -->
+  <section class="fd-hero" aria-labelledby="fd-title">
+    <span class="fd-eyebrow">Founder's Deal · <span data-f="capLabel">cuma 50 kursi</span></span>
+    <h1 id="fd-title" class="fd-h1">Bayar sekali.<br>Pakai Brandlab <span class="fd-grad">selamanya.</span></h1>
+    <p class="fd-sub">Dari Brand DNA sampai konten &amp; hasilnya, semuanya nyambung di satu tempat. Dibantu AI.</p>
+
+    <div class="fd-card fd-price-card" data-founder>
+      <div data-show="notSoldOut">
+      <div class="fd-anchor-row">
+        <span>Harga normal <s data-f="normal">Rp&nbsp;3.000.000</s></span>
+        <span class="fd-save" data-f="savePct">Hemat 83%</span>
+      </div>
+      <div class="fd-price-row">
+        <span class="fd-price is-pending" data-f="price">Rp&nbsp;499.000</span>
+      </div>
+      <p class="fd-per">Sekali bayar · tanpa langganan</p>
+      </div>
+      <p class="fd-promo-line" data-show="promoOn" hidden><s data-f="priceBefore"></s> <span data-f="promoSave"></span> pakai kode <b data-f="promoCode"></b></p>
+
+      <div class="fd-seats" data-show="seats" hidden>
+        <div class="fd-seats-head">
+          <span data-f="waveLabel">Gelombang 1</span>
+          <span><b data-f="waveTaken">0</b>/<span data-f="waveSize">15</span> kursi terisi</span>
+        </div>
+        <div class="fd-pips" data-f="pips" aria-hidden="true"></div>
+        <p class="fd-seats-note" data-f="seatNote"></p>
+      </div>
+      <p class="fd-seats-note" data-show="seatsUnknown" hidden data-f="tiersNote"></p>
+      <p class="fd-soldout" data-show="soldOut" hidden>Semua kursi Founder sudah terisi. Makasih buat 50 Founder pertama!</p>
+    </div>
+
+    <a class="fd-btn fd-btn-main" data-buy="hero" data-show="canBuy" href="https://www.wepeka.com/brandlab/connect?to=pricing&amp;plan=founder&amp;join=1">
+      <span data-f="ctaLabel">Beli Lifetime</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+    <a class="fd-btn fd-btn-main" data-trial="hero-main" data-show="cantBuy" hidden href="https://www.wepeka.com/brandlab/connect">
+      <span>Coba gratis <span data-f="trialDays">30</span> hari</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+    <p class="fd-seats-note" data-show="payClosed" hidden>Pembayaran online sebentar lagi dibuka. Sambil nunggu, kamu bisa mulai trial dulu.</p>
+    <ul class="fd-trust" data-show="canBuy">
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Bayar aman: QRIS, e-wallet, transfer bank</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Akun langsung jadi Founder begitu bayar</li>
+    </ul>
+
+    <a class="fd-chip" href="#kode" data-show="community" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z"/><path d="M14 5v14" stroke-dasharray="2 2.5"/></svg>
+      <span data-f="chipLabel">Hemat lagi pakai kode Wepeka Community</span>
+    </a>
+
+    <p class="fd-alt" data-show="canBuy">Belum yakin? <a href="https://www.wepeka.com/brandlab/connect?join=1" data-trial="hero">Coba gratis <span data-f="trialDays">30</span> hari dulu</a></p>
+  </section>
+
+  <!-- 2 · Why brands stall, and the system -->
+  <section class="fd-section" aria-labelledby="fd-why">
+    <span class="fd-kicker">Kenapa brand susah naik</span>
+    <h2 id="fd-why" class="fd-h2">Bukan karena kamu kurang rajin. Tapi karena semuanya jalan sendiri-sendiri.</h2>
+    <p class="fd-lead">Identitas belum jelas, target nggak terukur, konten asal posting lalu berharap. Brandlab nyambungin semuanya jadi satu sistem.</p>
+
+    <ol class="fd-rail">
+      <li>
+        <span class="fd-step-n" aria-hidden="true">1</span>
+        <div class="fd-step-body">
+          <h3>Brand DNA</h3>
+          <p>Siapa pelangganmu, masalah mereka, dan kenapa harus kamu. AI kasih pilihan jawaban, kamu yang milih dan nyunting.</p>
+          <img src="/founder/img/brand-dna.webp" width="800" height="500" loading="lazy" decoding="async" alt="Layar Brand DNA di Brandlab: pertanyaan per langkah dengan pilihan jawaban dari AI dan kartu identitas brand">
+        </div>
+      </li>
+      <li>
+        <span class="fd-step-n" aria-hidden="true">2</span>
+        <div class="fd-step-body">
+          <h3>Brand Book</h3>
+          <p>Warna, font, dan gaya bicara nyambung dari Brand DNA. Jadi PDF pedoman yang bisa kamu bagi ke tim.</p>
+          <img src="/founder/img/brand-book.webp" width="800" height="500" loading="lazy" decoding="async" alt="Layar Brand Book di Brandlab: palet warna brand">
+        </div>
+      </li>
+      <li>
+        <span class="fd-step-n" aria-hidden="true">3</span>
+        <div class="fd-step-body">
+          <h3>Tujuan terukur</h3>
+          <p>Pilih arah tumbuh: jualan, followers, atau komunitas. Targetnya pakai angka dan dipecah per level.</p>
+          <img src="/founder/img/tujuan.webp" width="800" height="500" loading="lazy" decoding="async" alt="Layar Tujuan di Brandlab: target dan tangga level">
+        </div>
+      </li>
+      <li>
+        <span class="fd-step-n" aria-hidden="true">4</span>
+        <div class="fd-step-body">
+          <h3>Rencana &amp; hasil</h3>
+          <p>Script, kalender konten, sampai catat penjualan. Kelihatan konten mana yang beneran jalan.</p>
+          <img src="/founder/img/kalender.webp" width="800" height="500" loading="lazy" decoding="async" alt="Layar Kalender di Brandlab: jadwal konten satu bulan">
+        </div>
+      </li>
+    </ol>
+    <p class="fd-note">AI-nya bantu kasih bahan dan sudut pandang. Kemudinya tetap di kamu.</p>
+
+    <div class="fd-video" data-show="video" hidden>
+      <button type="button" class="fd-video-btn" data-video aria-label="Putar video: Apa itu Brandlab?">
+        <img data-f="videoThumb" alt="" width="480" height="270" loading="lazy" decoding="async">
+        <span class="fd-play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        <span class="fd-video-label">Lihat isinya <span data-f="videoLen"></span></span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 3 · What a Founder gets, and the math -->
+  <section class="fd-section" aria-labelledby="fd-get">
+    <span class="fd-kicker">Isi Founder Lifetime</span>
+    <h2 id="fd-get" class="fd-h2">Semua yang kamu butuh buat bangun brand, sekali bayar.</h2>
+    <ul class="fd-checks">
+      <li><b>3 brand</b>, AI Consultant, semua fitur. Selamanya.</li>
+      <li><b>100 AI credit per hari</b>, reset tiap hari, selamanya.</li>
+      <li><b>Semua fitur baru</b> nanti, tanpa biaya upgrade.</li>
+      <li><b>3 gaya Brand Book premium</b>: Pop, Scrapbook, Photo (senilai Rp 60.000).</li>
+      <li><b>Founder Circle</b>: grup WhatsApp + mentoring live bulanan bareng tim Wepeka.</li>
+      <li><b>1× review Brand Book</b> bareng tim Wepeka.</li>
+      <li><b>Lencana Founder Batch 1</b>. Permanen, nggak dijual lagi.</li>
+    </ul>
+
+    <div class="fd-card fd-math">
+      <p class="fd-math-title">Hitung-hitungannya</p>
+      <div class="fd-math-row is-old"><span>Sewa agency / social media manager</span><s>Rp 1,5–5 jt / bulan</s></div>
+      <div class="fd-math-row is-old"><span>Langganan Pro, 3 brand</span><s data-f="proYear">Rp 1.188.000 / tahun</s></div>
+      <div class="fd-math-row is-new"><span>Founder Lifetime</span><b><span data-f="priceMath">Rp&nbsp;499.000</span> · sekali</b></div>
+      <p class="fd-math-note" data-f="mathNote">Lebih murah dari 6 bulan langganan Pro, dan setelah itu nggak ada tagihan lagi.</p>
+    </div>
+
+    <a class="fd-btn fd-btn-main" data-buy="value" data-show="canBuy" href="https://www.wepeka.com/brandlab/connect?to=pricing&amp;plan=founder&amp;join=1">
+      <span data-f="ctaLabel">Beli Lifetime</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+  </section>
+
+  <!-- 4 · Wepeka Community code -->
+  <section class="fd-section fd-code" id="kode" data-show="community" hidden aria-labelledby="fd-code">
+    <span class="fd-kicker fd-kicker--pink">Bonus member komunitas</span>
+    <h2 id="fd-code" class="fd-h2"><span data-f="codeTitle">Hemat lagi lewat Wepeka Community</span></h2>
+    <p class="fd-lead">Gabung grup WhatsApp Wepeka Community, gratis. Kode diskonnya ada di deskripsi grup.</p>
+    <ol class="fd-mini-steps">
+      <li><span>1</span>Gabung grup WhatsApp-nya</li>
+      <li><span>2</span>Buka info grup, salin kode di deskripsinya</li>
+      <li><span>3</span>Tempel di sini, harganya langsung turun</li>
+    </ol>
+    <a class="fd-btn fd-btn-wa" data-join href="https://chat.whatsapp.com/CCk7zkSbXhrBxKyjG92Yt1" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5A11 11 0 0 0 3.2 17.1L2 22l5-1.3A11 11 0 0 0 20.5 3.5zM12 20a8.9 8.9 0 0 1-4.6-1.3l-.3-.2-3 .8.8-2.9-.2-.3A9 9 0 1 1 12 20zm4.9-6.7c-.3-.1-1.6-.8-1.8-.9s-.4-.1-.6.1-.7.9-.8 1-.3.2-.6.1a7.3 7.3 0 0 1-3.6-3.2c-.3-.5.3-.4.8-1.4a.5.5 0 0 0 0-.5l-.8-2c-.2-.5-.4-.5-.6-.5h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.6 2.6 0 0 0 1.7-1.2 2.1 2.1 0 0 0 .1-1.2c0-.1-.2-.2-.5-.3z"/></svg>
+      Gabung grup gratis
+    </a>
+    <form class="fd-code-form" data-code-form data-show="promoOff" novalidate>
+      <label class="fd-sr" for="fd-code-input">Kode Wepeka Community</label>
+      <input id="fd-code-input" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="24" placeholder="Tempel kodenya di sini">
+      <button type="submit" class="fd-btn fd-btn-ghost">Pakai</button>
+    </form>
+    <p class="fd-code-msg" data-f="codeMsg" role="status" aria-live="polite"></p>
+    <div class="fd-code-on" data-show="promoOn" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>
+      <p><span data-f="codeOnText"></span> <button type="button" class="fd-link" data-code-remove>Hapus kode</button></p>
+    </div>
+  </section>
+
+  <!-- 5 · Questions people ask before buying -->
+  <section class="fd-section" aria-labelledby="fd-faq">
+    <span class="fd-kicker">Sebelum beli</span>
+    <h2 id="fd-faq" class="fd-h2">Yang biasa ditanya</h2>
+    <div class="fd-faq">
+      <details>
+        <summary>Lifetime itu beneran sekali bayar?</summary>
+        <p>Iya. Sekali bayar, nggak ada tagihan bulanan. Semua fitur, termasuk fitur baru nanti, tetap kebuka selamanya. AI credit-nya 100 per hari dan reset tiap hari. Butuh lebih di hari yang sibuk? Bisa top-up.</p>
+      </details>
+      <details>
+        <summary>Aku belum paham branding. Bisa pakai?</summary>
+        <p>Bisa. Ada mode Pemula yang nuntun langkah demi langkah, plus video singkat di tiap halaman. Mulainya dari Brand DNA, sisanya nyambung dari situ.</p>
+      </details>
+      <details>
+        <summary>Bedanya sama nanya ke ChatGPT?</summary>
+        <p>AI di Brandlab baca data brand-mu dulu (Brand DNA, konten, angka performa) sebelum kasih saran. Jadi yang dibahas brand kamu, bukan tips umum. Keputusannya tetap di kamu.</p>
+      </details>
+      <details>
+        <summary>Cara bayarnya gimana?</summary>
+        <p>Klik Beli Lifetime, masuk atau daftar akun Wepeka (gratis), lalu pembayaran langsung terbuka: QRIS, e-wallet, atau transfer bank. Begitu pembayaran masuk, akunmu langsung jadi Founder. Nggak perlu klaim trial dulu.</p>
+      </details>
+      <details>
+        <summary>Boleh coba dulu sebelum beli?</summary>
+        <p>Boleh, ada trial <span data-f="trialDays">30</span> hari gratis tanpa kartu. Semua yang kamu buat selama trial tetap ada waktu kamu beli. Cuma ingat, harga Founder ikut kursi: <span data-f="faqTiers">15 kursi pertama Rp 499.000, 35 berikutnya Rp 599.000, lalu Lifetime kembali Rp 3.000.000.</span></p>
+      </details>
+      <details>
+        <summary>Aku pegang banyak brand klien. Ada paketnya?</summary>
+        <p>Ada Agency Lifetime: <span data-f="agencyLine">15 brand, Rp 799.000 sekali bayar</span>, cuma <span data-f="agencyCap">15</span> kursi. <a href="https://www.wepeka.com/brandlab/connect?to=pricing&amp;plan=founder-ultimate&amp;join=1" data-buy="agency" data-plan="founder-ultimate">Beli Agency Lifetime</a></p>
+      </details>
+    </div>
+  </section>
+
+  <!-- 6 · Last push -->
+  <section class="fd-section fd-final" aria-labelledby="fd-final">
+    <h2 id="fd-final" class="fd-h2">Kursinya nggak dibuka lagi.</h2>
+    <p class="fd-lead" data-f="finalLead">Setelah 50 Founder, Lifetime kembali ke Rp 3.000.000. Kalau kamu serius bangun brand, ini saatnya.</p>
+    <div class="fd-final-price"><s data-f="normal">Rp&nbsp;3.000.000</s><span class="fd-price fd-price--sm is-pending" data-f="price">Rp&nbsp;499.000</span></div>
+    <a class="fd-btn fd-btn-main" data-buy="final" data-show="canBuy" href="https://www.wepeka.com/brandlab/connect?to=pricing&amp;plan=founder&amp;join=1">
+      <span data-f="ctaLabel">Beli Lifetime</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+    <p class="fd-alt">Atau <a href="https://www.wepeka.com/brandlab/connect?join=1" data-trial="final">coba gratis <span data-f="trialDays">30</span> hari dulu</a></p>
+    <a class="fd-wa-line" href="https://wa.me/6285196627609" data-wa target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 3.5A11 11 0 0 0 3.2 17.1L2 22l5-1.3A11 11 0 0 0 20.5 3.5zM12 20a8.9 8.9 0 0 1-4.6-1.3l-.3-.2-3 .8.8-2.9-.2-.3A9 9 0 1 1 12 20z"/></svg>Ada pertanyaan? Chat tim Wepeka</a>
+    <p class="fd-tagline">Build your brand smarter with Wepeka Brandlab.</p>
+  </section>
+</main>
+
+<footer class="fd-foot">
+  <span>© Wepeka</span>
+  <a href="https://www.wepeka.com/syarat-ketentuan">Syarat &amp; Ketentuan</a>
+  <a href="https://www.wepeka.com/kebijakan-privasi">Kebijakan Privasi</a>
+</footer>
+
+<div class="fd-sticky" data-sticky aria-hidden="true">
+  <div class="fd-sticky-info">
+    <span class="fd-sticky-price" data-f="stickyPrice">Rp&nbsp;499.000</span>
+    <span class="fd-sticky-sub" data-f="stickySub">sekali bayar · selamanya</span>
+  </div>
+  <a class="fd-btn fd-btn-main fd-btn-sm" data-buy="sticky" data-show="canBuy" tabindex="-1" href="https://www.wepeka.com/brandlab/connect?to=pricing&amp;plan=founder&amp;join=1">Beli Lifetime</a>
+</div>
+
+<script type="module" src="/founder/founder.js"></script>
+</body>
+</html>

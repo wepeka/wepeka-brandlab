@@ -3,7 +3,8 @@
 // client, same principle wpk-dp's own storefront already uses ("server-
 // authoritative pricing"). See js/views/pricing.js for the caller.
 import { adminDb, requireAuth, authUser } from "../_firebaseAdmin.js";
-import { PLANS, ADDONS, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, SEAT_CHECKOUT_MINUTES, switchQuote, recurringFor, holdKeyFor, seatsTaken, seatPrice } from "../_plans.js";
+import { PLANS, ADDONS, ADDON_ELIGIBLE_PLANS, isPaidAccount, SLOT_CAPS, SLOTS_DOC, SEAT_CHECKOUT_MINUTES, MIN_CHARGE, switchQuote, recurringFor, holdKeyFor, seatsTaken, seatPrice } from "../_plans.js";
+import { promoFor, applyPromo } from "../_promo.js";
 import { holdSeat, releaseHold } from "../_seats.js";
 import { RECURRING_ON } from "../_midtrans.js";
 import { metaContext } from "../_meta.js";
@@ -167,7 +168,14 @@ export default async function handler(req, res) {
   const quote = PLANS[planKey] ? switchQuote(account, planKey, price) : { mode: "new", amount: price, credit: 0 };
   if (quote.mode === "refused") return refuse(409, refusalBody(quote));
   amount = quote.amount;
-  if (quoteOnly) return res.status(200).json({ ...quote, price });
+  // A Wepeka Community code (api/_promo.js) comes off what is left to pay —
+  // not on a Founder → Agency upgrade, which the team prices by hand. An
+  // unknown code is simply not applied; the response says which one was.
+  const promo = quote.lifetimeUpgrade ? null : promoFor(req.body?.promo, planKey);
+  const discounted = applyPromo(amount, promo, MIN_CHARGE);
+  const promoApplied = promo && discounted.off > 0 ? { code: promo.code, off: discounted.off, label: promo.label } : null;
+  amount = discounted.amount;
+  if (quoteOnly) return res.status(200).json({ ...quote, amount, price, ...(promoApplied ? { promo: promoApplied } : {}) });
   // Unused value that doesn't fit under the new price is lost (switchQuote
   // `forfeit`) — only ever with the buyer's explicit OK from the switch
   // confirmation (js/views/pricing.js), never silently. An older open tab
@@ -224,7 +232,11 @@ export default async function handler(req, res) {
       uid, planKey, plan: plan.plan || planKey, amount, status: "pending", createdAt: Date.now(),
       // `price` = the plan's own price before any credit (a Lifetime's worth
       // for a later Founder → Agency upgrade, api/_plans.js settlePlanPurchase).
-      mode: quote.mode, price, credit: quote.credit || 0, ...(quote.forfeit ? { forfeit: quote.forfeit } : {}), ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
+      // With a community code, `price` is what the plan cost after it — the
+      // Lifetime's worth a later upgrade is credited from (api/_plans.js
+      // settlePlanPurchase lifetimePaid) is what was really paid for it.
+      mode: quote.mode, price: price - (promoApplied?.off || 0), credit: quote.credit || 0,
+      ...(promoApplied ? { promo: { ...promoApplied, listPrice: price } } : {}), ...(quote.forfeit ? { forfeit: quote.forfeit } : {}), ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
       ...(quote.lifetimeUpgrade ? { lifetimeUpgrade: true } : {}),
       // The seat this checkout holds (api/_seats.js): the webhook converts
       // it, an expired/cancelled order gives it back.
@@ -237,7 +249,7 @@ export default async function handler(req, res) {
     });
     // orderId/amount/label let the client report a GA4 purchase with the
     // real paid value (js/analytics.js) — nothing secret in them.
-    return res.status(200).json({ token: data.token, orderId, amount, label: plan.label });
+    return res.status(200).json({ token: data.token, orderId, amount, label: plan.label, ...(promoApplied ? { promo: promoApplied } : {}) });
   } catch (err) {
     console.error("create-transaction error", err);
     return refuse(500, { error: "Gagal menghubungi Midtrans." });

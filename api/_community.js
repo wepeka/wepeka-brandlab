@@ -89,7 +89,7 @@ function communityText({ lifetime = false } = {}) {
 // one, so the Lifetime group's link is included. → { subject, html, text }.
 const SELLER = "Wepeka";
 const localNumber = (intl) => String(intl).replace(/^62/, "0").replace(/^(\d{4})(\d{4})(\d+)$/, "$1-$2-$3");
-export function composePaidEmail({ name = "", email = "", label = "", amount = 0, price = 0, credit = 0, orderId = "", invoiceNo = "", paidAt = Date.now(), method = "", isPlan = true, renewal = false, lifetime = false, appUrl = APP_URL } = {}) {
+export function composePaidEmail({ name = "", email = "", label = "", amount = 0, price = 0, credit = 0, discount = 0, discountLabel = "", orderId = "", invoiceNo = "", paidAt = Date.now(), method = "", isPlan = true, renewal = false, lifetime = false, appUrl = APP_URL } = {}) {
   const hi = firstName(name) ? `Hai ${firstName(name)},` : "Hai,";
   const what = label || "Brandlab";
   const no = invoiceNo ? ` ${invoiceNo}` : "";
@@ -111,11 +111,17 @@ export function composePaidEmail({ name = "", email = "", label = "", amount = 0
   // The order's own id (long) sits in the small print: what the team looks
   // a payment up by.
   const ref = orderId ? `No. pesanan ${orderId}` : "";
-  // The credit line only when the numbers add up to what was charged.
+  // The credit and discount lines only when the numbers add up to what was
+  // charged. `price` is the plan's price after a community code (`discount`,
+  // api/_promo.js), so the list price is the two together.
   const paid = Math.round(Number(amount) || 0);
   const off = Math.round(Number(credit) || 0);
-  const showCredit = off > 0 && Math.round(Number(price) || 0) - off === paid;
-  const lines = showCredit ? [[what, rupiah(price)], ["Sisa nilai paket sebelumnya", `− ${rupiah(off)}`]] : [[what, rupiah(paid)]];
+  const cut = Math.round(Number(discount) || 0);
+  const list = Math.round(Number(price) || 0) + cut;
+  const showBreakdown = (off > 0 || cut > 0) && list - cut - off === paid;
+  const lines = showBreakdown
+    ? [[what, rupiah(list)], ...(cut > 0 ? [[discountLabel || "Diskon", `− ${rupiah(cut)}`]] : []), ...(off > 0 ? [["Sisa nilai paket sebelumnya", `− ${rupiah(off)}`]] : [])]
+    : [[what, rupiah(paid)]];
   const site = String(appUrl).replace(/^https?:\/\//, "");
   const issuer = `Diterbitkan oleh ${SELLER} · ${site} · WhatsApp ${localNumber(SUPPORT_WA_NUMBER)}`;
   const help = `Ada kendala? WhatsApp tim Wepeka: https://wa.me/${SUPPORT_WA_NUMBER}`;

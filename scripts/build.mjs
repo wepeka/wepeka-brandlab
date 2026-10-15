@@ -315,12 +315,56 @@ async function main() {
     }
   }
 
+  await buildFounderPage();
+
   const gz = async (f) => zlib.gzipSync(await fs.readFile(path.join(DIST_JS, f)), { level: 9 }).length;
   console.log(`i18n: ${i18nReport.keys} keys → js/${i18nChunks.en} (${i18nReport["i18n-en"]} B, ${await gz(i18nChunks.en)} B gzip), js/${i18nChunks.id} (${i18nReport["i18n-id"]} B, ${await gz(i18nChunks.id)} B gzip); only the active one loads`);
   if (i18nReport.noEnglish.length) console.warn(`i18n: ${i18nReport.noEnglish.length} key(s) with no English text: ${i18nReport.noEnglish.slice(0, 10).join(", ")}`);
   if (i18nReport.fullDirect.length) console.warn(`i18n: bundled whole (both languages) because imported directly — add to I18N_DIRECT_SUBSETS to trim: ${[...new Set(i18nReport.fullDirect)].join(", ")}`);
   const jsCount = Object.keys(result.metafile.outputs).filter((f) => f.endsWith(".js")).length;
   console.log(`\ndist/ ready — entry js/${mainEntryFile}, ${jsCount} JS chunks (${eager.length} modulepreloaded), CSS: ${Object.values(cssHashed).join(", ")}`);
+}
+
+// The Founder's Deal page (founder/ → brandlab.wepeka.com/founder, the
+// Instagram-ads landing): its own small bundle (founder.js and the few app
+// modules it imports), its stylesheet inlined into the HTML so the offer
+// paints with the first response, and its images. Served from /founder/,
+// not /js/, so none of it falls under the immutable cache rule; the script
+// still carries a content hash so a deploy never meets a stale copy.
+async function buildFounderPage() {
+  const SRC = path.join(ROOT, "founder");
+  const OUT = path.join(DIST, "founder");
+  await fs.mkdir(OUT, { recursive: true });
+  const js = await build({
+    absWorkingDir: ROOT,
+    entryPoints: [path.join(SRC, "founder.js")],
+    bundle: true,
+    format: "esm",
+    minify: true,
+    sourcemap: false,
+    outdir: OUT,
+    entryNames: "[name]-[hash]",
+    external: ["https://*"],
+    metafile: true,
+    logLevel: "warning",
+  });
+  const jsFile = path.basename(Object.keys(js.metafile.outputs).find((f) => f.endsWith(".js")));
+  const css = (await transform(await fs.readFile(path.join(SRC, "founder.css"), "utf8"), { loader: "css", minify: true, sourcefile: "founder.css", logLevel: "warning" })).code;
+  let html = await fs.readFile(path.join(SRC, "index.html"), "utf8");
+  const swaps = [
+    [/<!-- build\.mjs inlines this file[^>]*-->\n/, ""],
+    ['<link rel="stylesheet" href="/founder/founder.css">', `<style>${css.trim()}</style>`],
+    ['<script type="module" src="/founder/founder.js"></script>', `<script type="module" src="/founder/${jsFile}"></script>`],
+  ];
+  for (const [from, to] of swaps) {
+    const before = html;
+    html = html.replace(from, to);
+    if (typeof from === "string" && html === before) throw new Error(`build.mjs: founder/index.html no longer contains ${from} — update buildFounderPage()`);
+  }
+  await fs.writeFile(path.join(OUT, "index.html"), html);
+  await copyDir(path.join(SRC, "img"), path.join(OUT, "img"));
+  const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
+  console.log(`founder/: index.html ${kb(Buffer.byteLength(html))} (CSS inlined), ${jsFile} ${kb((await fs.stat(path.join(OUT, jsFile))).size)}`);
 }
 
 main().catch((err) => {

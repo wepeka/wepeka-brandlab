@@ -36,6 +36,12 @@ export const WEPEKA_IG_HANDLE = "wepeka.id";
 // bundle — the server hands it to a Lifetime account (api/community.js).
 export const BRANDLAB_WA_GROUP_URL = "https://chat.whatsapp.com/G3QM3TVztrH5jkFcoULjdu";
 export const FOLLOW_INSTAGRAM = ["winkhsin", WEPEKA_IG_HANDLE];
+// Wepeka Community's own WhatsApp group (wpk-dp src/lib/site.ts
+// communityWhatsappGroupUrl, wepeka.com/gabung) — NOT a Brandlab group. Its
+// description carries the community discount code (api/_promo.js), so the
+// Founder's Deal page and the plans page's code field send people there to
+// fetch it. Free to join.
+export const COMMUNITY_WA_GROUP_URL = "https://chat.whatsapp.com/CCk7zkSbXhrBxKyjG92Yt1";
 export const instagramUrl = (handle) => `https://www.instagram.com/${String(handle).replace(/^@/, "")}`;
 
 // Wepeka support WhatsApp — payments, top-ups, extra brands (same number as
