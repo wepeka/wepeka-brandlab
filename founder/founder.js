@@ -271,6 +271,8 @@ function start() {
       return;
     }
     if (e.target.closest("[data-join]")) gaEvent("community_join_click", {});
+    const site = e.target.closest("[data-site]");
+    if (site) gaEvent("website_click", { cta_location: site.dataset.site });
     const wa = e.target.closest("[data-wa]");
     if (wa) gaEvent("whatsapp_click", { cta_location: wa.dataset.waText ? "bca" : "final" });
     if (e.target.closest("[data-code-remove]")) {
