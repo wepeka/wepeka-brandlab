@@ -1894,6 +1894,39 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
   return { summary: String(parsed.summary || "").trim(), actions };
 }
 
+// The brand report's "Saran AI" (js/views/report.js): what the period's
+// numbers say, what is already working, and three moves for the next
+// period. The snapshot holds only the report's own figures (posts with
+// views/likes/comments/shares/saves, followers, sales, campaigns); the
+// rules keep the model from inventing anything beyond them.
+// Returns { summary, working: [string], actions: [{ title, why, how }] }.
+export async function suggestReportActions(ai, { brand, snapshotText, campaigns = [], pulseText = "" }) {
+  const system = [
+    "You are a practical content & marketing advisor for a small business, writing the advice section of this brand's own period report (a PDF the owner keeps or shows their team).",
+    outputLanguageRule(),
+    buildFullContext(brand, { campaigns, pulseText }),
+    MARKETING_FRAMEWORKS_CONTEXT,
+    NATURAL_WRITING_CONTEXT,
+    "Rules about numbers (strict): use ONLY the figures in the report data the user sends. Never invent or estimate a number that isn't there — no industry benchmarks, no 'average accounts get X%', no ad metrics, no follower forecasts. When you cite a number, cite it exactly as given. Judge engagement rate only against the scale given in the data.",
+    "Rules about certainty: the data shows WHAT happened, not WHY. Phrase causes as possibilities worth testing, never as facts. If the period is too thin to show a pattern (e.g. fewer than 3 published posts with numbers, or most posts have no numbers filled in), say so plainly in the summary and make the actions about posting consistently and filling in each post's numbers (the owner copies them from the platform's insights into each post in this app) — do not pretend to see a pattern, and leave `working` empty.",
+    "Look at the interactions, not just views: which posts got the most comments, shares and saves relative to their views, which formats or funnel stages did better, what changed against the previous period.",
+    "`working`: 1-2 short sentences on what already works and is worth repeating, each pointing at a specific post or number. Empty array if nothing in the data supports it.",
+    "`actions`: exactly 3 moves for the NEXT period, ordered by likely impact, each concrete enough to start this week without an ad budget. Each must point at something specific in the data (a post, a format, a metric that rose or dropped). No generic advice like 'post more consistently' unless the data is genuinely thin. The owner decides — offer, don't order.",
+    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the period shows","working":["..."],"actions":[{"title":"short imperative","why":"which number or post this comes from","how":"2-3 concrete steps in one short paragraph"}]}',
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const raw = await callModel(ai, system, `Report data:\n${snapshotText}`, 1500, { json: true, feature: "report" });
+  const parsed = parseJsonObject(raw);
+  const actions = (parsed?.actions || [])
+    .map((a) => ({ title: String(a?.title || "").trim(), why: String(a?.why || "").trim(), how: String(a?.how || "").trim() }))
+    .filter((a) => a.title)
+    .slice(0, 3);
+  if (!actions.length) throw new AiApiError(t("ai.error.unreadable"));
+  const working = (Array.isArray(parsed?.working) ? parsed.working : []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 2);
+  return { summary: String(parsed.summary || "").trim(), working, actions };
+}
+
 // The Teman tab of the chat (js/consultant-panel.js) — a friend's reply to
 // what the owner just said, in the flow of a real conversation, not a
 // consultant's report. Short on purpose: this fires on every message, so it

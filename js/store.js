@@ -2561,18 +2561,21 @@ export function performanceHasNumbers(p) {
   const has = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
   return METRIC_KEYS.some(({ key }) => has(p[key])) || !!p.retention;
 }
+// One performance metric of one piece of content — per-platform breakdown
+// when the item has one, flat `performance` otherwise, same precedence as
+// organicViews above. null = no number yet (not 0).
+export function contentMetric(c, key) {
+  const v = hasPlatformBreakdown(c.performanceByPlatform) ? combinePlatformMetrics(c.performanceByPlatform)[key] : c.performance?.[key];
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 // Sum of one performance metric (e.g. "shares", "saves") across published
-// content — per-platform breakdown when the item has one, flat
-// `performance` otherwise, same precedence as organicViews above.
+// content.
 export function contentMetricTotal(content, key) {
   return content
     .filter((c) => c.status === "published")
-    .reduce((sum, c) => {
-      const v = hasPlatformBreakdown(c.performanceByPlatform) ? combinePlatformMetrics(c.performanceByPlatform)[key] : c.performance?.[key];
-      if (v === null || v === undefined || v === "") return sum;
-      const n = Number(v);
-      return Number.isFinite(n) ? sum + n : sum;
-    }, 0);
+    .reduce((sum, c) => sum + (contentMetric(c, key) ?? 0), 0);
 }
 // index 0 is always at least "current". Soft-lock: locked missions still
 // render (just inert) — the user can always see what's coming next.

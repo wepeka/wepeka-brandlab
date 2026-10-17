@@ -9,6 +9,7 @@ import {
   cameraErrorKind,
   devicePlatform,
   formatDuration,
+  canPauseRecording,
 } from "../js/views/teleprompter-record.js";
 
 describe("teleprompter record mode: recording format", () => {
@@ -76,5 +77,15 @@ describe("teleprompter record mode: camera errors and device", () => {
     assert.equal(formatDuration(4_900), "0:04");
     assert.equal(formatDuration(61_000), "1:01");
     assert.equal(formatDuration(600_000), "10:00");
+  });
+});
+
+describe("teleprompter record mode: pause", () => {
+  test("the pause button needs both pause() and resume() on the recorder", () => {
+    class Full { pause() {} resume() {} }
+    class NoResume { pause() {} }
+    assert.equal(canPauseRecording(Full), true);
+    assert.equal(canPauseRecording(NoResume), false);
+    assert.equal(canPauseRecording(undefined), false);
   });
 });

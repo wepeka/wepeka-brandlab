@@ -1,23 +1,29 @@
 // The brand report — one tidy PDF of everything that happened in a period:
-// content and its numbers, followers, sales (and where they came from),
-// campaign progress, what's scheduled next, what the brand learned, and the
-// one thing to do next. Opened from the Home page head (and the Konten
+// content and its numbers (views, likes, comments, shares, saves — totals
+// and per post), followers, sales (and where they came from), campaign
+// progress, what's scheduled next, what the brand learned, the one thing to
+// do next, and the AI's read of the numbers ("Saran AI", owner's ask
+// 2026-10-17: made once per period and numbers, 1 credit, and made on the
+// way to the PDF when the owner downloads without asking first). Opened from the Home page head (and the Konten
 // list's menu); a weekly nudge on Home asks for it when a week has passed
 // (brand.lastReportAt, set when a PDF is downloaded).
 //
 // The PDF is a real file (js/pdf-libs.js: html2canvas + jsPDF): the sheet
 // is laid out as A4 portrait pages from whole blocks — a table or a stat
 // row is never cut across a page — then each page is rasterized.
-import { getBrand, listContent, listCampaigns, getSettings, updateBrand, organicViews, FUNNELS, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, getSettings, updateBrand, organicViews, contentMetric, FUNNELS, ER_SCALE, localISODate } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL, isHealthy } from "../formulas.js";
 import { campaignStages, activeStageIndex, readStage, campaignHeadline } from "../campaign-metrics.js";
 import { getTracker } from "../sales-tracker.js";
 import { brandTopAction } from "../next-action.js";
-import { postingLine, bestPostsLine, lessonsOf } from "../brand-learning.js";
+import { postingLine, bestPostsLine, lessonsOf, hookOf } from "../brand-learning.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
+import { suggestReportActions, hasAiKey, AiApiError } from "../ai.js";
+import { pulseTextFor } from "../brand-pulse.js";
+import { mountAiReport } from "../ai-report.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
-import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml as esc, avatarHTML } from "../dom.js";
+import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml as esc, avatarHTML, loadingHTML } from "../dom.js";
 import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
 
@@ -28,6 +34,8 @@ const A4_W = 794; // px at 96dpi
 const A4_H = 1123;
 
 const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
+// The interaction numbers the report adds up, in the order they're shown.
+export const RECAP_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained"];
 const iso = (d) => localISODate(d);
 const rp = (n) => `Rp ${formatNumber(Math.round(n || 0))}`;
 
@@ -61,6 +69,17 @@ export function computeReportData(brand, start, end) {
     return { funnel: f, count: items.length, avgER: avg(items.map((x) => x.m.engagementRate).filter((v) => v != null)) };
   });
   const top = published.filter((x) => organicViews(x.c)).sort((a, b) => organicViews(b.c) - organicViews(a.c)).slice(0, 5);
+  // Every published post with its own numbers (null = not filled in), oldest
+  // first, and the period's totals. `n` = how many posts have that number,
+  // so a metric nobody filled in reads "—" instead of a misleading 0.
+  const posts = published
+    .map((x) => ({ c: x.c, er: x.m.engagementRate, health: x.m.health, nums: Object.fromEntries(RECAP_KEYS.map((k) => [k, contentMetric(x.c, k)])) }))
+    .sort((a, b) => (a.c.publishedDate || a.c.scheduleDate || "").localeCompare(b.c.publishedDate || b.c.scheduleDate || ""));
+  const recap = Object.fromEntries(RECAP_KEYS.map((k) => {
+    const vals = posts.map((x) => x.nums[k]).filter((v) => v !== null);
+    return [k, { total: vals.reduce((a, b) => a + b, 0), n: vals.length }];
+  }));
+  const postsWithNumbers = posts.filter((x) => RECAP_KEYS.some((k) => x.nums[k] !== null)).length;
 
   // Followers: the latest number in the period vs the last one before it.
   const followers = [];
@@ -148,6 +167,9 @@ export function computeReportData(brand, start, end) {
     healthyPct,
     funnelStats,
     top,
+    posts,
+    recap,
+    postsWithNumbers,
     followers,
     sales,
     campaignRows,
@@ -169,6 +191,15 @@ export function computeReportData(brand, start, end) {
 
 const BRANDLAB_ORANGE = "#ffa52b";
 const FUNNEL_COLOR = { TOFU: "#3b82f6", MOFU: "#a855f7", BOFU: "#f97316" };
+const HEALTH_DOT = { excellent: "#15803d", good: "#22c55e", average: "#eab308", poor: "#dc2626" };
+// Per-post table: rows per block (a block never splits across pages) and
+// the most rows the PDF lists — past that, the posts with the most views.
+const ROWS_PER_BLOCK = 12;
+const MAX_POST_ROWS = 36;
+const clip = (s, n) => {
+  const str = String(s || "");
+  return str.length > n ? `${str.slice(0, n - 1).trimEnd()}…` : str;
+};
 const accentOf = (brand) => (/^#[0-9a-f]{6}$/i.test(brand?.color || "") ? brand.color : BRANDLAB_ORANGE);
 
 // The period before, same length — what the big numbers compare against.
@@ -207,7 +238,17 @@ function shortNum(n) {
   return formatNumber(v);
 }
 
-function reportBlocks(brand, start, end) {
+// The posts the per-post table (and the AI) get: all of them, or the ones
+// with the most views when there are too many — in date order either way.
+function postsShown(d, max = MAX_POST_ROWS) {
+  if (d.posts.length <= max) return d.posts;
+  const keep = new Set([...d.posts].sort((a, b) => (b.nums.views || 0) - (a.nums.views || 0)).slice(0, max));
+  return d.posts.filter((x) => keep.has(x));
+}
+
+// `advice`: the period's "Saran AI" ({ at, summary, working, actions }), or
+// null — then the section is left out.
+function reportBlocks(brand, start, end, advice = null) {
   const d = computeReportData(brand, start, end);
   const prevR = previousRange(start, end);
   const p = prevR ? computeReportData(brand, prevR.start, prevR.end) : null;
@@ -271,6 +312,49 @@ function reportBlocks(brand, start, end) {
       </div>`);
   }
 
+  // The AI's read of these numbers: what works, three moves for next period.
+  if (advice?.actions?.length) {
+    blocks.push(`
+      <div class="rp2-pad">
+        ${secHead(++n, t("rep3.ai"), t("rep3.aiSub", { date: formatDate(iso(new Date(advice.at || Date.now()))) }))}
+        <div class="rp2-ai" style="border-color:${accent}">
+          ${advice.summary ? `<p class="rp2-ai-summary">${esc(advice.summary)}</p>` : ""}
+          ${advice.working?.length ? `<div class="rp2-ai-label">${t("rep3.aiWorking")}</div>${advice.working.map((w) => `<div class="rp2-ai-work"><span style="color:${accent}">${icon("check", { size: 12 })}</span><span>${esc(w)}</span></div>`).join("")}` : ""}
+        </div>
+      </div>`);
+    blocks.push(`
+      <div class="rp2-pad">
+        <div class="rp2-ai-label">${t("rep3.aiNext")}</div>
+        <div class="rp2-ai-acts">${advice.actions.map((a, i) => `
+          <div class="rp2-ai-act">
+            <span class="rp2-ai-n" style="background:${accent}">${i + 1}</span>
+            <div><b>${esc(a.title)}</b>${a.why ? `<small>${esc(a.why)}</small>` : ""}${a.how ? `<p>${esc(a.how)}</p>` : ""}</div>
+          </div>`).join("")}</div>
+        <p class="rp2-compare">${t("rep3.aiNote")}</p>
+      </div>`);
+  }
+
+  // Interactions: the period's totals, against the period before.
+  if (d.publishedCount) {
+    const missing = d.publishedCount - d.postsWithNumbers;
+    const tile = (k) => {
+      const r = d.recap[k];
+      const pr = p?.recap[k];
+      return `
+        <div class="rp2-recap-tile">
+          <div class="rp2-recap-label">${t(`store.metric.${k}`)}</div>
+          <div class="rp2-recap-value">${r.n ? shortNum(r.total) : "—"}</div>
+          ${r.n && pr?.n ? deltaChip(r.total, pr.total) : ""}
+        </div>`;
+    };
+    blocks.push(`
+      <div class="rp2-pad">
+        ${secHead(++n, t("rep3.recap"), t("rep3.recapSub", { n: d.postsWithNumbers, total: d.publishedCount }))}
+        <div class="rp2-recap">${RECAP_KEYS.map(tile).join("")}</div>
+        ${missing ? `<p class="rp2-compare">${t("rep3.recapMissing", { n: missing })}</p>` : ""}
+      </div>`);
+  }
+
   // Content: best posts as bars
   const maxViews = Math.max(1, ...d.top.map((x) => organicViews(x.c) || 0));
   blocks.push(`
@@ -289,6 +373,36 @@ function reportBlocks(brand, start, end) {
             </div>`).join("")}</div>`
         : `<p class="rp2-empty">${t("rep.noTop")}</p>`}
     </div>`);
+
+  // Every post's own numbers; the best number in each column stands out.
+  if (d.posts.length) {
+    const cols = ["views", "likes", "comments", "shares", "saves"];
+    const shown = postsShown(d);
+    const best = Object.fromEntries(cols.map((k) => [k, Math.max(0, ...d.posts.map((x) => x.nums[k] || 0))]));
+    const head = `<thead><tr><th class="rp2-t-title">${t("rep3.colPost")}</th>${cols.map((k) => `<th>${t(`store.metric.${k}`)}</th>`).join("")}<th>ER</th></tr></thead>`;
+    const cell = (x, k) => {
+      const v = x.nums[k];
+      if (v === null) return `<td class="is-empty">—</td>`;
+      return best[k] && v === best[k] && shown.length > 1 ? `<td class="is-best" style="background:${accent}1f">${formatNumber(v)}</td>` : `<td>${formatNumber(v)}</td>`;
+    };
+    const row = (x) => {
+      const date = x.c.publishedDate || x.c.scheduleDate;
+      const er = Number.isFinite(x.er) ? `<span class="rp2-er-dot" style="background:${HEALTH_DOT[x.health] || "#c9c3bb"}"></span>${formatPercent(x.er)}` : "—";
+      return `<tr>
+          <td class="rp2-t-title"><b>${esc(clip(x.c.title || t("common.untitled"), 44))}</b><small>${esc(formatDate(date, { year: undefined }))}${x.c.format ? ` · ${esc(x.c.format)}` : ""}${x.c.funnel ? ` · ${esc(funnelShort(x.c.funnel))}` : ""}</small></td>
+          ${cols.map((k) => cell(x, k)).join("")}
+          <td${Number.isFinite(x.er) ? "" : ` class="is-empty"`}>${er}</td>
+        </tr>`;
+    };
+    const sub = shown.length < d.posts.length ? t("rep3.perPostTop", { n: shown.length, total: d.posts.length }) : t("rep3.perPostSub");
+    for (let i = 0; i < shown.length; i += ROWS_PER_BLOCK) {
+      blocks.push(`
+        <div class="rp2-pad">
+          ${i === 0 ? secHead(++n, t("rep3.perPost"), sub) : ""}
+          <div class="rp2-table-wrap"><table class="rp2-table">${head}<tbody>${shown.slice(i, i + ROWS_PER_BLOCK).map(row).join("")}</tbody></table></div>
+        </div>`);
+    }
+  }
 
   // Funnel mix
   const funnelTotal = d.funnelStats.reduce((a, f) => a + f.count, 0);
@@ -374,7 +488,59 @@ function reportBlocks(brand, start, end) {
         </div>
       </div>`);
   }
-  return { blocks, data: d, accent };
+  return { blocks, data: d, prev: p, prevRange: prevR, accent };
+}
+
+// What "Saran AI" reads: this report's own numbers and nothing else, in
+// plain lines. The engagement-rate formula and scale come along so the AI
+// judges a post the way the app does.
+export function reportSnapshotText(brand, start, end, d, p = null, prevR = null) {
+  const settings = getSettings();
+  const scale = settings.erScale || ER_SCALE;
+  const num = (v) => (v === null || v === undefined ? "?" : String(Math.round(v * 10) / 10));
+  const pct = (v) => (Number.isFinite(v) ? `${Number(v).toFixed(1)}%` : "?");
+  const lines = [`Brand: ${brand.name}`];
+  if (start === OVERALL_START) lines.push(`Period: everything up to ${end}`);
+  else lines.push(`Period: ${start} to ${end}${prevR ? ` (${prevR.days} days)` : ""}`);
+  if (p && prevR) lines.push(`Previous period, for comparison: ${prevR.start} to ${prevR.end}`);
+  lines.push(`Published posts: ${d.publishedCount}${p ? ` (previous period: ${p.publishedCount})` : ""}; posts with numbers filled in: ${d.postsWithNumbers}`);
+  lines.push(`Totals over the published posts (this period${p ? " | previous period" : ""}):`);
+  RECAP_KEYS.forEach((k) => {
+    const r = d.recap[k];
+    const pr = p?.recap[k];
+    lines.push(`- ${k}: ${r.n ? num(r.total) : "no data"}${p ? ` | ${pr?.n ? num(pr.total) : "no data"}` : ""}`);
+  });
+  lines.push(`Average engagement rate: ${pct(d.avgER)}${p ? ` (previous period: ${pct(p.avgER)})` : ""}. Formula: ${settings.formulas?.engagementRate || "(likes + comments + shares + saves) / reach * 100"}. This app's scale: ${scale.excellent}% and up very good, ${scale.good}–${scale.excellent}% healthy, ${scale.average}–${scale.good}% average, under ${scale.average}% poor.`);
+  const funnels = d.funnelStats.filter((f) => f.count);
+  if (funnels.length) lines.push(`By funnel stage: ${funnels.map((f) => `${f.funnel} ${f.count} posts, avg ER ${pct(f.avgER)}`).join(" | ")}`);
+  const shown = postsShown(d, 30);
+  if (shown.length) {
+    lines.push(`Posts${shown.length < d.posts.length ? ` (the ${shown.length} with the most views of ${d.posts.length})` : ""} — title | date | format | funnel | views | reach | likes | comments | shares | saves | ER | hook:`);
+    shown.forEach((x) => {
+      const hook = clip(hookOf(x.c.script), 90);
+      lines.push(`- "${clip(x.c.title || "untitled", 80)}" | ${x.c.publishedDate || x.c.scheduleDate || "?"} | ${x.c.format || "?"} | ${x.c.funnel || "?"} | ${["views", "reach", "likes", "comments", "shares", "saves"].map((k) => num(x.nums[k])).join(" | ")} | ${pct(x.er)}${hook ? ` | "${hook}"` : ""}`);
+    });
+  }
+  if (d.followers.length) lines.push(`Followers: ${d.followers.map((f) => `${f.platform} ${f.now}${f.delta !== null ? ` (${f.delta >= 0 ? "+" : ""}${f.delta} since before the period)` : ""}`).join("; ")}`);
+  if (d.sales.count) {
+    lines.push(`Sales: ${d.sales.count} sales, ${d.sales.qty} units, revenue Rp ${Math.round(d.sales.revenue)}${p ? ` (previous period: Rp ${Math.round(p.sales.revenue)})` : ""}`);
+    if (d.sales.products.length) lines.push(`Products: ${d.sales.products.map((x) => `${x.name} ${x.qty} units Rp ${Math.round(x.revenue)}`).join("; ")}`);
+    if (d.sales.sources.length) lines.push(`Sales came from: ${d.sales.sources.map((x) => `${x.name} Rp ${Math.round(x.revenue)}`).join("; ")}`);
+  } else if (p?.sales.count) {
+    lines.push(`Sales: none logged this period (previous period: ${p.sales.count} sales).`);
+  }
+  if (d.campaignRows.length) lines.push(`Running campaigns: ${d.campaignRows.map((c) => `${c.name} — stage ${c.stage}${c.total ? ` (${c.met}/${c.total})` : ""}${c.head ? ` — ${c.head}` : ""}`).join("; ")}`);
+  if (d.upcoming.length) lines.push(`Scheduled in the next 2 weeks: ${d.upcoming.map((c) => `"${clip(c.title || "untitled", 60)}" (${c.funnel || "?"}, ${c.scheduleDate})`).join("; ")}`);
+  return lines.join("\n");
+}
+
+// Same numbers → same advice: a short fingerprint of the snapshot (and the
+// language it was written in) decides whether a saved one still fits.
+export function adviceSig(text, lang = getLang()) {
+  let h = 5381;
+  const str = `${lang}|${text}`;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
 }
 
 // The footer every page carries: the mark, the brand, the page number.
@@ -387,16 +553,19 @@ const footerHTML = (brand, page, total) => `
 
 const sheetHTML = (brand, blocks) => `${blocks.map((b) => `<div class="rp-block">${b}</div>`).join("")}${footerHTML(brand, 0, 0)}`;
 
-function reportSummaryText(brand, start, end, d) {
+function reportSummaryText(brand, start, end, d, advice = null) {
+  const recapLine = ["likes", "comments", "shares", "saves"].filter((k) => d.recap[k].n).map((k) => `${t(`store.metric.${k}`)} ${formatNumber(d.recap[k].total)}`).join(" · ");
   return [
     t("rep.shareTitle", { brand: brand.name }),
     rangeLabel(start, end),
     "",
     `${t("rep.stat.published")}: ${d.publishedCount}`,
     `${t("rep.stat.totalViews")}: ${formatNumber(d.totalViews)}`,
+    recapLine,
     `${t("dashboard.stat.avgER")}: ${formatPercent(d.avgER)}`,
     d.sales.count ? `${t("rep.sales.revenue")}: ${rp(d.sales.revenue)} (${formatNumber(d.sales.qty)})` : "",
     ...d.highlights,
+    ...(advice?.actions?.length ? [`${t("rep3.ai")}:`, ...advice.actions.map((a, i) => `${i + 1}. ${a.title}`)] : []),
   ].filter((x) => x !== "").join("\n");
 }
 
@@ -457,7 +626,11 @@ async function downloadReportPdf(brand, start, end, blocks) {
 export function openReportModal(brandId, { range = "week" } = {}) {
   const brand = getBrand(brandId);
   if (!brand) return;
-  const st = { key: range, ...(rangeFor(range) || rangeFor("week")), busy: false };
+  const st = { key: range, ...(rangeFor(range) || rangeFor("week")), busy: false, aiBusy: false, aiError: "" };
+  // Advice made in this sitting, per period + numbers (switching periods
+  // back and forth keeps it); the latest one is also kept on the brand.
+  const made = new Map();
+  const aiOn = () => hasAiKey(getSettings().ai || {});
 
   const pickerHTML = () => `
     <div class="chip-select rp-range">
@@ -468,16 +641,81 @@ export function openReportModal(brandId, { range = "week" } = {}) {
   const overlay = openModal({
     title: t("rep.title"),
     wide: true,
-    bodyHTML: `<div id="rp-picker">${pickerHTML()}</div><div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`,
+    bodyHTML: `<div id="rp-picker">${pickerHTML()}</div><div class="rp-ai-strip" id="rp-ai" hidden></div><div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`,
     footHTML: `
       <button class="btn btn-secondary" id="report-share">${icon("link", { size: 14 })}${t("rep.share")}</button>
       <button class="btn btn-primary" id="report-download">${icon("download", { size: 14 })}${t("rep.downloadPdf")}</button>`,
   });
   let current = null;
-  const paint = () => {
-    current = reportBlocks(getBrand(brandId), st.start, st.end);
-    qs("#report-sheet", overlay).innerHTML = sheetHTML(getBrand(brandId), current.blocks);
+  let advice = null;
+  let sig = "";
+  let snapshot = "";
+  // The numbers decide which advice fits: one made for exactly these.
+  const adviceFor = () => {
+    const b = getBrand(brandId);
+    const d = computeReportData(b, st.start, st.end);
+    const prevR = previousRange(st.start, st.end);
+    snapshot = reportSnapshotText(b, st.start, st.end, d, prevR ? computeReportData(b, prevR.start, prevR.end) : null, prevR);
+    sig = adviceSig(snapshot);
+    const saved = b.reportAdvice;
+    return made.get(sig) || (saved && saved.sig === sig && saved.actions?.length ? saved : null);
   };
+  const paintAi = () => {
+    const box = qs("#rp-ai", overlay);
+    box.hidden = !aiOn();
+    if (box.hidden) return;
+    const hasPosts = current?.data.publishedCount || current?.data.sales.count;
+    box.innerHTML = `
+      <span class="rp-ai-icon">${icon("sparkle", { size: 16 })}</span>
+      <div class="rp-ai-text">
+        <b>${t("rep3.ai")}</b>
+        ${st.aiBusy
+          ? loadingHTML(t("rep3.aiBusy"), { style: "margin:2px 0 0;" })
+          : `<small>${advice ? t("rep3.aiReady") : hasPosts ? t("rep3.aiIntro") : t("rep3.aiThin")}</small>`}
+        ${st.aiError ? `<small class="rp-ai-err">${esc(st.aiError)}</small>` : ""}
+      </div>
+      <div class="rp-ai-actions" id="rp-ai-actions">
+        ${st.aiBusy || (!advice && !hasPosts) ? "" : `<button type="button" class="btn ${advice ? "btn-ghost" : "btn-secondary"} btn-sm" id="rp-ai-go">${icon(advice ? "refresh" : "sparkle", { size: 13 })}${t(advice ? "rep3.aiAgain" : "rep3.aiGo")}</button>`}
+      </div>`;
+    if (advice && !st.aiBusy) {
+      const text = [advice.summary, ...(advice.working || []), ...advice.actions.map((a, i) => `${i + 1}. ${a.title} — ${a.why} ${a.how}`)].filter(Boolean).join("\n");
+      mountAiReport(qs("#rp-ai-actions", overlay), { feature: "report-advice", output: text, prompt: snapshot, label: false });
+    }
+    qs("#rp-ai-go", overlay)?.addEventListener("click", async () => {
+      await makeAdvice().catch(() => {});
+      qs("#report-sheet .rp2-ai", overlay)?.closest(".rp-block")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+  const paint = () => {
+    advice = adviceFor();
+    current = reportBlocks(getBrand(brandId), st.start, st.end, advice);
+    qs("#report-sheet", overlay).innerHTML = sheetHTML(getBrand(brandId), current.blocks);
+    paintAi();
+  };
+  // One AI call (1 credit) for this period's numbers. Throws on failure,
+  // after showing why on the strip.
+  async function makeAdvice() {
+    if (st.aiBusy) return;
+    st.aiBusy = true;
+    st.aiError = "";
+    paintAi();
+    try {
+      const b = getBrand(brandId);
+      const campaigns = listCampaigns(brandId);
+      const pulseText = pulseTextFor(b, { content: listContent(brandId), campaigns, settings: getSettings() });
+      const forSig = sig;
+      const out = await suggestReportActions(getSettings().ai || {}, { brand: b, snapshotText: snapshot, campaigns, pulseText });
+      const saved = { ...out, start: st.start, end: st.end, sig: forSig, at: Date.now() };
+      made.set(forSig, saved);
+      updateBrand(brandId, { reportAdvice: saved });
+    } catch (e) {
+      st.aiError = e instanceof AiApiError ? e.message : t("rep3.aiErr");
+      throw e;
+    } finally {
+      st.aiBusy = false;
+      if (overlay.isConnected) paint();
+    }
+  }
   const wirePicker = () => {
     qsa("[data-range]", overlay).forEach((b) => b.addEventListener("click", () => {
       st.key = b.dataset.range;
@@ -495,9 +733,19 @@ export function openReportModal(brandId, { range = "week" } = {}) {
 
   const dl = qs("#report-download", overlay);
   dl.addEventListener("click", async () => {
-    if (st.busy) return;
+    if (st.busy || st.aiBusy) return;
     st.busy = true;
     dl.disabled = true;
+    // The PDF comes with the AI's advice: made now when it isn't there yet.
+    // If the AI can't (no credits left, offline), the PDF still goes out.
+    if (!advice && aiOn() && (current.data.publishedCount || current.data.sales.count)) {
+      dl.innerHTML = `<div class="spinner" style="width:14px;height:14px;"></div>${t("rep3.aiMaking")}`;
+      try {
+        await makeAdvice();
+      } catch {
+        toast(t("rep3.aiSkipped"), "error");
+      }
+    }
     dl.innerHTML = `<div class="spinner" style="width:14px;height:14px;"></div>${t("rep.making")}`;
     try {
       await downloadReportPdf(getBrand(brandId), st.start, st.end, current.blocks);
@@ -514,7 +762,7 @@ export function openReportModal(brandId, { range = "week" } = {}) {
     dl.innerHTML = `${icon("download", { size: 14 })}${t("rep.downloadPdf")}`;
   });
   qs("#report-share", overlay).addEventListener("click", async () => {
-    const summary = reportSummaryText(getBrand(brandId), st.start, st.end, current.data);
+    const summary = reportSummaryText(getBrand(brandId), st.start, st.end, current.data, advice);
     if (navigator.share) {
       try { await navigator.share({ title: t("rep.shareTitle", { brand: brand.name }), text: summary }); } catch { /* cancelled */ }
     } else if (navigator.clipboard) {

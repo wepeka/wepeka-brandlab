@@ -11,6 +11,9 @@ import { t, getLang } from "../i18n.js";
 // video. "Video cermin" (on by default, owner's ask 2026-10-15) saves the
 // file mirrored like the preview, by drawing each camera frame flipped onto
 // a canvas and recording that. Phone and laptop webcam work the same way.
+// A take can be paused and continued (owner's ask, 2026-10-17): the pause
+// button sits where the exit button was, the file keeps only the recorded
+// parts, and continuing gets the same 3-2-1 as the start.
 
 const PREFS_KEY = "contentos:tp-rec";
 // Long takes live in memory until they're saved; a phone browser tab that
@@ -83,6 +86,12 @@ export function devicePlatform(nav = globalThis.navigator || {}) {
   return "desktop";
 }
 
+// MediaRecorder.pause() is old news in Chrome and Firefox, Safari since
+// 14.1; the button only shows where it's there.
+export function canPauseRecording(Recorder = globalThis.MediaRecorder) {
+  return typeof Recorder?.prototype?.pause === "function" && typeof Recorder?.prototype?.resume === "function";
+}
+
 export function formatDuration(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -134,7 +143,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
         </div>
       </div>
       <div class="tpr-status">
-        <span class="tpr-timer" id="tpr-timer" hidden><i></i><span id="tpr-time">0:00</span></span>
+        <span class="tpr-timer" id="tpr-timer" hidden><i></i><span class="tpr-timer-label" id="tpr-timer-label" hidden>${t("tp.rec.paused")}</span><span id="tpr-time">0:00</span></span>
         <button type="button" class="tpr-chip" id="tpr-roll" ${hasText ? "" : "hidden"}></button>
         <button type="button" class="tpr-chip" id="tpr-top" hidden>${icon("refresh", { size: 13 })}<span>${t("tp.rec.fromTop")}</span></button>
       </div>
@@ -153,6 +162,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       </div>
       <div class="tpr-bar">
         <button type="button" class="tpr-round" id="tpr-exit" aria-label="${t("tp.rec.exit")}" title="${t("tp.rec.exit")}">${icon("x", { size: 20 })}</button>
+        <button type="button" class="tpr-pause" id="tpr-pause" hidden></button>
         <button type="button" class="tpr-rec" id="tpr-rec" aria-label="${t("tp.rec.start")}" disabled><span></span></button>
         <button type="button" class="tpr-round tpr-aa" id="tpr-aa" aria-label="${t("tp.rec.settings")}" title="${t("tp.rec.settings")}" aria-expanded="${prefs.sliders}">${icon("gear", { size: 20 })}</button>
       </div>
@@ -211,6 +221,8 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   const speedInput = $("#tpr-speed");
   const sizeInput = $("#tpr-size");
   const exitBtn = $("#tpr-exit");
+  const pauseBtn = $("#tpr-pause");
+  const timerLabel = $("#tpr-timer-label");
   const recBtn = $("#tpr-rec");
   const aaBtn = $("#tpr-aa");
   const mirrorBtn = $("#tpr-mirror");
@@ -228,7 +240,8 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   const savedEl = $("#tpr-saved");
 
   // starting → live → countdown → recording → finishing → review
-  // (error can replace starting/live; retake goes review → live).
+  // (error can replace starting/live; retake goes review → live;
+  // recording ⇄ paused, with a resuming 3-2-1 on the way back).
   let state = "starting";
   let stream = null;
   let recorder = null;
@@ -237,8 +250,12 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   let blobUrl = "";
   let fileName = "";
   let saved = false;
-  let startedAt = 0;
+  // Recorded time only: the parts before each pause, plus the running one.
+  let recordedMs = 0;
+  let segmentStart = 0;
   let elapsed = 0;
+  let rollAfterPause = false;
+  const pausable = canPauseRecording();
   let timerId = null;
   let countdownTimer = null;
   let closed = false;
@@ -303,6 +320,13 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       ? `${icon("pause", { size: 13 })}<span>${t("tp.rec.pauseText")}</span>`
       : `${icon("play", { size: 13 })}<span>${t("tp.rec.runText")}</span>`;
     rollBtn.hidden = !hasText || !["live", "recording"].includes(state);
+    // During the 3-2-1 back, the same button keeps the take paused.
+    pauseBtn.innerHTML = state === "recording" || state === "resuming"
+      ? `${icon("pause", { size: 16 })}<span>${t("tp.rec.pause")}</span>`
+      : `${icon("play", { size: 16 })}<span>${t("tp.rec.resume")}</span>`;
+    const pauseLabel = t(state === "recording" ? "tp.rec.pauseTitle" : state === "resuming" ? "tp.rec.cancelResume" : "tp.rec.resumeTitle");
+    pauseBtn.setAttribute("aria-label", pauseLabel);
+    pauseBtn.title = pauseLabel;
     topBtn.hidden = !hasText || state !== "live" || rolling || pos < 2;
   }
   scrollEl.addEventListener("scroll", () => {
@@ -351,29 +375,35 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   }
   function idleHint() {
     const lines = [t(phone ? "tp.rec.hint.phone" : "tp.rec.hint.desktop")];
-    if (!phone) lines.push(t("tp.rec.hint.space"));
+    if (!phone) lines.push(t(pausable ? "tp.rec.hint.keys" : "tp.rec.hint.space"));
     if (noMic) lines.push(t("tp.rec.noMic"));
     if (hitMax) lines.push(t("tp.rec.maxReached"));
     return lines.join(" ");
   }
 
+  const IN_TAKE = ["recording", "paused", "resuming", "finishing"];
   function setState(next) {
     state = next;
     el.dataset.state = next;
-    el.classList.toggle("is-recording", next === "recording" || next === "finishing");
+    const inTake = IN_TAKE.includes(next);
+    el.classList.toggle("is-recording", inTake);
+    el.classList.toggle("is-paused", next === "paused" || next === "resuming");
     el.classList.toggle("is-countdown", next === "countdown");
-    const label = next === "recording" ? t("tp.rec.stop") : next === "countdown" ? t("tp.rec.cancel") : t("tp.rec.start");
+    const label = inTake ? t("tp.rec.stop") : next === "countdown" ? t("tp.rec.cancel") : t("tp.rec.start");
     recBtn.setAttribute("aria-label", label);
     recBtn.title = label;
-    recBtn.disabled = !["live", "countdown", "recording"].includes(next);
-    exitBtn.hidden = next === "recording" || next === "finishing" || next === "countdown";
+    recBtn.disabled = !["live", "countdown", "recording", "paused", "resuming"].includes(next);
+    exitBtn.hidden = inTake || next === "countdown";
+    pauseBtn.hidden = !pausable || !["recording", "paused", "resuming"].includes(next);
     // The file is mirrored or not from its first frame: no switching mid-take.
-    mirrorBtn.disabled = next === "recording" || next === "finishing" || next === "countdown";
-    timerEl.hidden = !(next === "recording" || next === "finishing");
+    mirrorBtn.disabled = inTake || next === "countdown";
+    timerEl.hidden = !inTake;
+    timerLabel.hidden = !(next === "paused" || next === "resuming");
     bottomEl.hidden = next === "review";
     reviewEl.hidden = next !== "review";
-    countEl.hidden = next !== "countdown";
+    countEl.hidden = next !== "countdown" && next !== "resuming";
     if (next === "live") showHint(idleHint());
+    else if (next === "paused") showHint(t(phone ? "tp.rec.pausedHint.phone" : "tp.rec.pausedHint.desktop"));
     else if (next !== "recording") showHint("");
     paintChips();
   }
@@ -405,7 +435,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   }
   function onTrackEnded() {
     if (closed) return;
-    if (state === "recording") stopRecording();
+    if (["recording", "paused", "resuming"].includes(state)) stopRecording();
     else if (state === "live" || state === "countdown") showError("generic");
   }
   async function startCamera() {
@@ -453,17 +483,18 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   function onRecPress() {
     if (state === "live") startCountdown();
     else if (state === "countdown") cancelCountdown();
-    else if (state === "recording") stopRecording();
+    else if (["recording", "paused", "resuming"].includes(state)) stopRecording();
   }
-  function startCountdown() {
-    hitMax = false;
-    setState("countdown");
+  // 3-2-1 in `stateName`, then `done` — before the first frame, and again
+  // before a paused take continues.
+  function runCountdown(stateName, done) {
+    setState(stateName);
     let n = 3;
     const tick = () => {
-      if (closed || state !== "countdown") return;
+      if (closed || state !== stateName) return;
       if (n === 0) {
         countEl.textContent = "";
-        beginRecording();
+        done();
         return;
       }
       // A fresh span each second restarts the pop animation.
@@ -472,6 +503,10 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       countdownTimer = setTimeout(tick, 1000);
     };
     tick();
+  }
+  function startCountdown() {
+    hitMax = false;
+    runCountdown("countdown", beginRecording);
   }
   function cancelCountdown() {
     clearTimeout(countdownTimer);
@@ -536,7 +571,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       };
       recorder.onstop = finishRecording;
       recorder.onerror = () => {
-        if (state === "recording") stopRecording();
+        if (["recording", "paused", "resuming"].includes(state)) stopRecording();
       };
       recorder.start(1000);
     } catch {
@@ -546,7 +581,8 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       showHint(t("tp.rec.err.recordFailed"));
       return;
     }
-    startedAt = performance.now();
+    recordedMs = 0;
+    segmentStart = performance.now();
     elapsed = 0;
     timeEl.textContent = formatDuration(0);
     timerId = setInterval(tickTimer, 250);
@@ -554,18 +590,63 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     startRolling();
   }
   function tickTimer() {
-    elapsed = performance.now() - startedAt;
+    elapsed = recordedMs + (performance.now() - segmentStart);
     timeEl.textContent = formatDuration(elapsed);
     if (elapsed >= MAX_MS) {
       hitMax = true;
       stopRecording();
     }
   }
-  function stopRecording() {
-    if (state !== "recording") return;
+  // Pause: the recorder stops taking frames, the clock and the text stop
+  // with it. The text can still be dragged back a line before continuing.
+  function pauseRecording() {
+    if (state !== "recording" || !recorder) return;
+    try {
+      recorder.pause();
+    } catch {
+      return;
+    }
     clearInterval(timerId);
     timerId = null;
-    elapsed = performance.now() - startedAt;
+    recordedMs += performance.now() - segmentStart;
+    elapsed = recordedMs;
+    timeEl.textContent = formatDuration(elapsed);
+    rollAfterPause = rolling;
+    stopRolling();
+    setState("paused");
+  }
+  function resumeRecording() {
+    if (state !== "paused") return;
+    runCountdown("resuming", () => {
+      if (!recorder || recorder.state === "inactive") return stopRecording();
+      try {
+        recorder.resume();
+      } catch {
+        return stopRecording();
+      }
+      segmentStart = performance.now();
+      timerId = setInterval(tickTimer, 250);
+      setState("recording");
+      if (rollAfterPause) startRolling();
+    });
+  }
+  function cancelResume() {
+    clearTimeout(countdownTimer);
+    countdownTimer = null;
+    setState("paused");
+  }
+  function onPausePress() {
+    if (state === "recording") pauseRecording();
+    else if (state === "paused") resumeRecording();
+    else if (state === "resuming") cancelResume();
+  }
+  function stopRecording() {
+    if (!["recording", "paused", "resuming"].includes(state)) return;
+    clearTimeout(countdownTimer);
+    countdownTimer = null;
+    clearInterval(timerId);
+    timerId = null;
+    elapsed = state === "recording" ? recordedMs + (performance.now() - segmentStart) : recordedMs;
     stopRolling();
     setState("finishing");
     try {
@@ -706,13 +787,17 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
       wakeLock = null;
     }
   }
-  // Switching apps mid-take freezes the camera on phones: end the take
-  // there so what was recorded is kept, instead of a frozen tail.
+  // Switching apps mid-take freezes the camera on phones: the take pauses
+  // there (or ends, where pausing isn't possible) so no frozen frames get
+  // in. Back in the app, a paused take continues with the pause button; if
+  // the phone shut the camera meanwhile, the track ends and the take is
+  // kept up to the pause.
   const onVisibility = () => {
     if (document.visibilityState === "hidden") {
-      if (state === "recording") stopRecording();
+      if (state === "recording") pausable ? pauseRecording() : stopRecording();
+      else if (state === "resuming") cancelResume();
       else if (state === "countdown") cancelCountdown();
-    } else if (state === "live") {
+    } else if (state === "live" || state === "paused") {
       keepAwake(true);
       cam.play?.()?.catch?.(() => {});
     }
@@ -720,10 +805,17 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   const onResize = () => measure();
   // Laptop: Space starts and stops a take wherever the focus is (the record
   // button handles its own Space; text fields keep theirs).
+  // P pauses and continues.
   const onKey = (e) => {
-    if (e.key !== " " || e.repeat || e.target === recBtn) return;
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "") && e.target.type !== "range") return;
-    if (!["live", "countdown", "recording"].includes(state)) return;
+    if ((e.key === "p" || e.key === "P") && pausable && ["recording", "paused", "resuming"].includes(state)) {
+      e.preventDefault();
+      onPausePress();
+      return;
+    }
+    if (e.key !== " " || e.target === recBtn || e.target === pauseBtn) return;
+    if (!["live", "countdown", "recording", "paused", "resuming"].includes(state)) return;
     e.preventDefault();
     onRecPress();
   };
@@ -765,17 +857,19 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     onExit?.();
   }
 
-  // Esc: leave when nothing is at stake; a running take only stops with
-  // the stop button.
+  // Esc: leave when nothing is at stake; a running or paused take only
+  // stops with the stop button.
   function onEscape() {
     if (state === "countdown") cancelCountdown();
+    else if (state === "resuming") cancelResume();
     else if (state === "review") {
       if (!confirmEl.hidden) confirmEl.hidden = true;
       else whenDiscardOk(exit);
-    } else if (state !== "recording" && state !== "finishing") exit();
+    } else if (!IN_TAKE.includes(state)) exit();
   }
 
   recBtn.addEventListener("click", onRecPress);
+  pauseBtn.addEventListener("click", onPausePress);
   exitBtn.addEventListener("click", exit);
   $("#tpr-retry").addEventListener("click", startCamera);
   $("#tpr-back").addEventListener("click", exit);
