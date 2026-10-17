@@ -210,6 +210,10 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-math-note{ margin:8px 0 0; font-size:13.5px; color:#bdf5dd; }
 
 /* ---------- guided until it runs (Founder only) ---------- */
+/* Ask before paying: a WhatsApp chat right under the buy button's promises. */
+.fd-wa-ask{ align-self:center; display:inline-flex; align-items:center; gap:8px; margin-top:2px; padding:9px 15px; border-radius:999px; border:1px solid rgba(37,211,102,.35); background:rgba(37,211,102,.08); font-size:14px; color:#d1fae5; text-decoration:none; }
+.fd-wa-ask svg{ width:17px; height:17px; fill:#4ade80; stroke:none; }
+.fd-wa-ask b{ color:#86efac; }
 .fd-trust-link{ color:#bdf5dd; font-weight:700; text-decoration:underline; text-decoration-color:rgba(52,211,153,.45); text-underline-offset:3px; }
 .fd-guide{ background:radial-gradient(420px 260px at 50% 0%, rgba(52,211,153,.12), transparent 72%); }
 .fd-kicker--green{ color:#6ee7b7; }

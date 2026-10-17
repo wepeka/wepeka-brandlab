@@ -32,6 +32,13 @@ export const TESTIMONIALS = [];
 export const rp = (n) => `Rp\u00a0${Math.round(Number(n) || 0).toLocaleString("id-ID")}`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+// How far people read, for GA4: one event per part of the page and per
+// question opened, named after it (fd_view_bimbing, fd_faq_bayar…) so the
+// plain Events report shows the counts without any setup in GA4. The names
+// come from the markup's data-track / data-faq.
+export const sectionEvent = (name) => `fd_view_${name}`;
+export const faqEvent = (id) => `fd_faq_${id}`;
+
 // "1,5 menit" from 95 seconds (rounded to half minutes, at least "1 menit").
 export function minutesLabel(seconds) {
   const half = Math.max(2, Math.round((Number(seconds) || 0) / 30));
@@ -287,7 +294,10 @@ function start() {
     const site = e.target.closest("[data-site]");
     if (site) gaEvent("website_click", { cta_location: site.dataset.site });
     const wa = e.target.closest("[data-wa]");
-    if (wa) gaEvent("whatsapp_click", { cta_location: wa.dataset.waText ? "bca" : "final" });
+    if (wa) {
+      gaEvent("whatsapp_click", { cta_location: wa.dataset.waAt || "other" });
+      metaTrack("Contact", { content_name: "Brandlab Founder Lifetime" });
+    }
     if (e.target.closest("[data-code-remove]")) {
       promo = null;
       forgetPromo();
@@ -352,5 +362,27 @@ function start() {
     };
     new IntersectionObserver(([en]) => { pastHero = !en.isIntersecting && en.boundingClientRect.top < 0; update(); }).observe(heroBtn);
     new IntersectionObserver(([en]) => { atFinal = en.isIntersecting; update(); }, { rootMargin: "0px 0px -35% 0px" }).observe(finalSec);
+  }
+
+  // ---- how far people read: each part once, when its top reaches the
+  // upper 60% of the screen (a hidden part never counts); each question
+  // once, when it is opened ----
+  if ("IntersectionObserver" in window) {
+    const reached = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        reached.unobserve(en.target);
+        gaEvent(sectionEvent(en.target.dataset.track), { section: en.target.dataset.track });
+      }
+    }, { rootMargin: "0px 0px -40% 0px" });
+    for (const el of all("[data-track]")) reached.observe(el);
+  }
+  for (const d of all("[data-faq]")) {
+    let sent = false;
+    d.addEventListener("toggle", () => {
+      if (!d.open || sent) return;
+      sent = true;
+      gaEvent(faqEvent(d.dataset.faq), { question: d.dataset.faq });
+    });
   }
 }
