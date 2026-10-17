@@ -2013,6 +2013,7 @@ const hookTemplateButtonHTML = () =>
 // through it.
 const scriptEditorMode = () => {
   const picked = getSettings()?.scriptEditor;
+  if (picked === "cards") return "cards";
   // Anything else — "plain", the old "text" ("Ketik biasa"), or nothing
   // picked yet — is Biasa: everyone starts there; Pro (parts) is one tap
   // away and stays once chosen.
