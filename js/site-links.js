@@ -21,8 +21,6 @@ export const buyUrl = (planKey) => `${WEPEKA_CONNECT_URL}?to=pricing&plan=${enco
 export const TERMS_URL = `${WEPEKA_SITE_URL}/syarat-ketentuan`;
 export const PRIVACY_URL = `${WEPEKA_SITE_URL}/kebijakan-privasi`;
 export const REFUND_URL = `${TERMS_URL}#refund`;
-// The 14-day guarantee on Lifetime plans (its own section of the terms, right above #refund).
-export const GUARANTEE_URL = `${TERMS_URL}#garansi`;
 
 // Wepeka's Instagram handle (no @) — printed on the shareable campaign
 // story card and put in the caption that gets copied alongside it.
