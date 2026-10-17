@@ -65,7 +65,7 @@ export function payThanksHTML(account) {
       </header>
       <section class="pay-thanks-card">
         <h2>${t("pay.thanks.doors.title")}</h2>
-        <p class="community-lead">${t("pay.thanks.doors.body")}</p>
+        <p class="community-lead">${t(lifetime ? "pay.thanks.doors.bodyLifetime" : "pay.thanks.doors.body")}</p>
         ${communityLinksHTML({ lifetime })}
       </section>
       <div class="pay-thanks-foot">

@@ -283,6 +283,7 @@ function start() {
       return;
     }
     if (e.target.closest("[data-join]")) gaEvent("community_join_click", {});
+    if (e.target.closest("[data-guide-link]")) gaEvent("guide_click", {});
     const site = e.target.closest("[data-site]");
     if (site) gaEvent("website_click", { cta_location: site.dataset.site });
     const wa = e.target.closest("[data-wa]");

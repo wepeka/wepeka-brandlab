@@ -1,7 +1,8 @@
 // Brandlab's community doors: the WhatsApp group (announcements + a place
 // to ask the Wepeka team), for Lifetime accounts their own group on top of
 // it (the Founder Circle — its link comes from the server, api/community.js,
-// never from this bundle), and the two Instagram accounts to follow. Each
+// never from this bundle) and a chat to start their guided setup, and the
+// two Instagram accounts to follow. Each
 // door keeps its check once tapped, and says what would be missed until
 // then (owner, 2026-10-13). Shown
 //   - on the congratulations page right after an account becomes paid
@@ -18,7 +19,7 @@ import { getCachedAccount, isReadOnly, isLifetime } from "./account.js";
 import { auth } from "./firebase.js";
 import { readFlag, writeFlag } from "./seen-flags.js";
 import { gaEvent } from "./analytics.js";
-import { BRANDLAB_WA_GROUP_URL, FOLLOW_INSTAGRAM, instagramUrl } from "./site-links.js";
+import { BRANDLAB_WA_GROUP_URL, FOLLOW_INSTAGRAM, SUPPORT_WA_NUMBER, instagramUrl } from "./site-links.js";
 import { t } from "./i18n.js";
 
 const IG_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.3" cy="6.7" r="0.6" fill="currentColor"/></svg>`;
@@ -94,8 +95,16 @@ function loadLifetimeGroup(overlay) {
   });
 }
 
-// The doors: join the group (a Lifetime account: its own group first), then
-// follow each account.
+// A Lifetime account is guided by the Wepeka team until Brandlab runs: a
+// 1-on-1 intro, Brand DNA + Brand Book checked, the first goal and week
+// planned (the promise on /founder, owner 2026-10-18). It starts with a
+// WhatsApp chat to the team, so this door comes first.
+const guideDoorHTML = () => `
+  ${doorHTML({ id: "guide", cls: "community-wa community-guide", href: `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent(t("community.guideText"))}`, glyph: WA_ICON, todo: t("community.guide"), did: t("community.guided"), bubble: t("community.bubble.guide"), attrs: 'data-community="guide"' })}
+  <p class="community-note">${t("community.guideNote")}</p>`;
+
+// The doors: a Lifetime account's guidance and its own group first, then
+// the general group, then follow each account.
 export function communityLinksHTML({ lifetime = false } = {}) {
   const follow = FOLLOW_INSTAGRAM.map((handle) =>
     doorHTML({ id: `ig:${handle}`, cls: "community-ig", href: instagramUrl(handle), glyph: IG_ICON, todo: t("community.follow", { handle: `@${handle}` }), did: t("community.followed", { handle: `@${handle}` }), bubble: t("community.bubble.follow"), attrs: `data-community="instagram" data-handle="${escapeHtml(handle)}"` })
@@ -103,6 +112,7 @@ export function communityLinksHTML({ lifetime = false } = {}) {
   return `
     <div class="community-links">
       <p class="community-progress" data-community-progress></p>
+      ${lifetime ? guideDoorHTML() : ""}
       ${lifetime ? `<div class="community-slot" data-community-lifetime><p class="community-note community-wait"><span class="spinner" aria-hidden="true"></span>${t("community.lifetimeLoading")}</p></div>` : ""}
       ${doorHTML({ id: "wa", cls: "community-wa", href: BRANDLAB_WA_GROUP_URL, glyph: WA_ICON, todo: t("community.join"), did: t("community.joined"), bubble: t("community.bubble.group"), attrs: 'data-community="whatsapp" data-group="general"' })}
       <p class="community-note">${t("community.joinNote")}</p>
@@ -123,6 +133,7 @@ export function mountCommunityLinks(scope) {
     if (a.dataset.doneId) markDone(a.dataset.doneId);
     paintProgress(scope);
     if (a.dataset.community === "whatsapp") gaEvent("join_group", { method: "whatsapp", location: "brandlab_app", group: a.dataset.group || "general" });
+    else if (a.dataset.community === "guide") gaEvent("guide_start", { method: "whatsapp", location: "brandlab_app" });
     else gaEvent("social_click", { network: "instagram", handle: a.dataset.handle || "", location: "brandlab_app" });
   });
   loadLifetimeGroup(scope);

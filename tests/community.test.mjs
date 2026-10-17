@@ -87,6 +87,9 @@ describe("the Lifetime group", () => {
     const founder = composePaidEmail({ name: "Rani", label: "Brandlab Founder Lifetime", amount: 499000, orderId: "bl-1", isPlan: true, lifetime: true });
     for (const part of [founder.html, founder.text]) {
       assert.ok(part.includes(LIFETIME_WA_GROUP_URL));
+      const guide = server.GUIDE_WA_URL;
+      assert.ok(part.includes(guide), "the guided setup chat");
+      assert.ok(part.indexOf(guide) < part.indexOf(LIFETIME_WA_GROUP_URL), "the guided setup first");
       assert.ok(part.includes(server.BRANDLAB_WA_GROUP_URL), "and the general group too");
       assert.ok(part.indexOf(LIFETIME_WA_GROUP_URL) < part.indexOf(server.BRANDLAB_WA_GROUP_URL), "their own group first");
     }
@@ -95,6 +98,7 @@ describe("the Lifetime group", () => {
     const news = composeAnnouncementEmail({ title: "Fitur baru", body: "Isi", appUrl: "https://brandlab.wepeka.com" });
     for (const mail of [starter, addon, news]) {
       assert.ok(!mail.html.includes(INVITE) && !mail.text.includes(INVITE));
+      assert.ok(!mail.text.includes(server.GUIDE_WA_URL), "the guided setup is for Lifetime buyers");
     }
   });
 });
@@ -118,6 +122,21 @@ describe("the community sheet's doors", () => {
     const html = communityLinksHTML({ lifetime: true });
     assert.ok(html.indexOf("data-community-lifetime") < html.indexOf('data-done-id="wa"'));
     assert.ok(!communityLinksHTML().includes("data-community-lifetime"));
+  });
+
+  // Founders are guided until Brandlab runs (owner, 2026-10-18): the chat
+  // that starts it is a Lifetime account's first door, the same chat the
+  // email after payment opens.
+  test("a Lifetime account's first door starts the guided setup on WhatsApp", () => {
+    const html = communityLinksHTML({ lifetime: true });
+    const doors = [...html.matchAll(/data-done-id="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(doors, ["guide", "wa", "ig:winkhsin", "ig:wepeka.id"]);
+    assert.ok(html.indexOf('data-done-id="guide"') < html.indexOf("data-community-lifetime"));
+    const href = html.match(/href="([^"]+)"[^>]*data-done-id="guide"/)[1].replace(/&amp;/g, "&");
+    assert.equal(href, server.GUIDE_WA_URL);
+    assert.equal(t("community.guideText"), server.GUIDE_WA_TEXT);
+    assert.ok(html.includes(t("community.guide")) && html.includes(`>${t("community.bubble.guide")}<`));
+    assert.ok(!communityLinksHTML().includes('data-done-id="guide"'));
   });
 
   test("the line above them counts what is left", () => {

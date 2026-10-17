@@ -5442,6 +5442,10 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 /* A Lifetime account's own group (Founder Circle): the same green button,
    ringed in Brandlab's pink so it reads as the special one. */
 .community-lifetime{ box-shadow: 0 0 0 2px var(--surface, #171614), 0 0 0 4px #ec4899, 0 10px 26px -12px rgba(236,72,153,.7); }
+/* A Lifetime account's first step, the guided setup: still a WhatsApp chat,
+   in Brandlab's own orange-to-pink so it reads as the start. */
+.community-guide{ background: linear-gradient(95deg, #ff9a1f 0%, #ff6a3d 40%, #ec4899 100%); color:#fff; }
+.community-guide.is-done .community-tick{ color:#d9480f; }
 .community-slot{ display:flex; flex-direction:column; gap:10px; }
 .community-slot .community-note{ margin-top:-4px; }
 .community-wait{ display:flex; align-items:center; gap:8px; min-height:48px; margin:0 2px; }
