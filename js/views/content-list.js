@@ -18,6 +18,7 @@ import { guideVideoButtonHTML } from "../guide-videos.js";
 import { consumeNavContext } from "../nav-context.js";
 import { funnelShort } from "../funnel-field.js";
 import { aiReportButtonHTML } from "../ai-report.js";
+import { openScriptBulkPdf } from "../script-pdf.js";
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -207,6 +208,7 @@ function paint(root, brandId, state, refresh) {
       <button data-act="import-ig" ${igConfigured ? "" : "disabled"}>${platformIcon("instagram")}${t("contentList.importInstagram")}${igConfigured ? "" : ` <span class="text-faint" style="font-size:11px;">${igUnavailableNote}</span>`}</button>
       <button data-act="refresh-all" ${igConfigured ? "" : "disabled"}>${icon("refresh", { size: 15 })}${t("contentList.refreshAllIg")}</button>` : ""}
       <button data-act="report">${icon("download", { size: 15 })}${t("home.report")}</button>
+      <button data-act="scripts">${icon("download", { size: 15 })}${t("cr.bulk.open")}</button>
       <div class="menu-divider"></div>
       <button data-act="delete-all" class="danger">${icon("trash", { size: 15 })}${t("contentList.deleteAllContent", { count: allContentCount })}</button>
     `;
@@ -219,6 +221,7 @@ function paint(root, brandId, state, refresh) {
       else if (act === "import-ig") openInstagramImportPicker(brandId, refresh);
       else if (act === "refresh-all") await refreshExistingInstagram(brandId, brand.instagram, refresh);
       else if (act === "report") openReportModal(brandId);
+      else if (act === "scripts") openScriptBulkPdf({ brandId, seriesId: state.seriesId });
       else if (act === "delete-all") {
         if (!allContentCount) { toast(t("contentList.nothingToDelete"), "error"); return; }
         const ok = await confirmDialog({

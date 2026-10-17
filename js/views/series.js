@@ -15,6 +15,7 @@ import { t } from "../i18n.js";
 import { go } from "../nav-context.js";
 import { seriesDays } from "../week-plan.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
+import { openScriptBulkPdf } from "../script-pdf.js";
 
 export function render(root, { brandId }) {
   const refresh = () => paint(root, brandId, refresh);
@@ -58,7 +59,7 @@ function paint(root, brandId, refresh) {
   qs("#empty-new-series")?.addEventListener("click", () => openSeriesModal({ brandId, onSaved: refresh }));
   qsa("[data-open-series]", root).forEach((card) => {
     card.addEventListener("click", (e) => {
-      if (e.target.closest("[data-delete-series], [data-new-episode], [data-series-episodes], [data-series-days]")) return;
+      if (e.target.closest("[data-delete-series], [data-new-episode], [data-series-episodes], [data-series-days], [data-series-scripts]")) return;
       openSeriesModal({ brandId, series: getSeries(card.dataset.openSeries), onSaved: refresh });
     });
   });
@@ -82,6 +83,11 @@ function paint(root, brandId, refresh) {
     e.stopPropagation();
     go(`#/brand/${brandId}/content/list`, { fromLabel: getSeries(btn.dataset.seriesEpisodes)?.name || "", seriesId: btn.dataset.seriesEpisodes });
   }));
+  // Every script of the series as one PDF — the crew's pack for shoot day.
+  qsa("[data-series-scripts]", root).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openScriptBulkPdf({ brandId, seriesId: btn.dataset.seriesScripts });
+  }));
   qsa("[data-delete-series]", root).forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -95,7 +101,9 @@ function paint(root, brandId, refresh) {
 }
 
 function seriesCardHTML(s, content, days) {
-  const linked = content.filter((c) => c.seriesId === s.id).length;
+  const episodes = content.filter((c) => c.seriesId === s.id);
+  const linked = episodes.length;
+  const scripted = episodes.some((c) => String(c.script || "").trim());
   const airs = [...days].filter(([, x]) => x.id === s.id).map(([d]) => t(`store.day.${d}`));
   return `
     <div class="brand-card glass-card campaign-card" data-open-series="${s.id}" style="cursor:pointer;">
@@ -106,6 +114,7 @@ function seriesCardHTML(s, content, days) {
       <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:6px;">
         <button type="button" class="btn btn-primary btn-sm" data-new-episode="${s.id}">${icon("plus", { size: 13 })}${t("series.newEpisode")}</button>
         ${linked ? `<button type="button" class="btn btn-ghost btn-sm" data-series-episodes="${s.id}">${icon("layers", { size: 12 })}${t("series.episodeCount", { n: linked })}</button>` : ""}
+        ${scripted ? `<button type="button" class="btn btn-ghost btn-sm" data-series-scripts="${s.id}">${icon("download", { size: 12 })}${t("cr.bulk.open")}</button>` : ""}
       </div>
     </div>
   `;

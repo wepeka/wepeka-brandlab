@@ -334,6 +334,8 @@ export function hookOf(script) {
 export const hookText = (h) => (typeof h === "string" ? h : String(h?.say || h?.onScreen || "")).trim();
 
 // ---- Carousel -----------------------------------------------------------------
+// A piece whose format says carousel keeps "Slide N" text, not beats.
+export const isCarouselContent = (c) => (c?.format || "").toLowerCase().includes("carousel");
 const SLIDE_MARKER = /^\s*Slide\s+(\d+)\s*:?\s*$/i;
 export function parseSlides(script) {
   const text = (script || "").replace(/\r/g, "");

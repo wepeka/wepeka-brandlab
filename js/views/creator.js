@@ -1,15 +1,15 @@
 import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, updateSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
-import { escapeHtml, formatDate, formatNumber, toast, avatarHTML, qs, qsa, wireClickableCards } from "../dom.js";
+import { escapeHtml, formatDate, formatNumber, toast, qs, qsa, wireClickableCards } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext, go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine, durationToSeconds } from "../ai.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, orderedHookTypes, recommendedHookTypes, recommendedStructures, hookTypeByKey } from "../knowledge/hook-types.js";
-import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, parseScript, beatTimeline, plainScript, applyPlainScript } from "../script-format.js";
-import { downloadPagedPdf } from "../pdf-libs.js";
+import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, plainScript, applyPlainScript, isCarouselContent } from "../script-format.js";
+import { openScriptPdfPreview } from "../script-pdf.js";
 import { openScriptFocus } from "../script-focus.js";
 import { mountScriptCards } from "../script-cards.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
@@ -51,98 +51,6 @@ function updateContent(id, patch) {
   listContent(item.brandId)
     .filter((c) => c.mirrorGroupId === item.mirrorGroupId && c.id !== id)
     .forEach((c) => storeUpdateContent(c.id, shared));
-}
-
-// The script as a PDF for whoever shoots or edits it (an editor, a client)
-// — title, idea, the script, the caption, nothing else. A beat script is
-// laid out as a shooting table: time and part | what to show | what to
-// say, one row per part, so it reads like a rundown on set. "Unduh PDF"
-// makes a real .pdf (html2canvas + jsPDF, js/pdf-libs.js — like the Brand
-// Book, report and Brand DNA); "Cetak" still goes through the browser.
-function openScriptPdfPreview(content, brand) {
-  const blocks = scriptSheetBlocks(content, brand);
-  const overlay = openModal({
-    title: t("cr.pdf.title"),
-    wide: true,
-    bodyHTML: `<div class="report-preview-wrap script-preview-wrap"><div class="report-sheet script-sheet" id="script-pdf-sheet">${blocks.join("")}<div class="report-footer">Wepeka Brandlab — ${escapeHtml(brand?.name || "")}</div></div></div>`,
-    footHTML: `
-      <button class="btn btn-secondary" id="script-pdf-print">${icon("layers", { size: 14 })}${t("cr.pdf.print")}</button>
-      <button class="btn btn-primary" id="script-pdf-download">${icon("download", { size: 14 })}${t("cr.pdf.download")}</button>
-    `,
-  });
-  overlay.querySelector("#script-pdf-print").addEventListener("click", () => window.print());
-  const dlBtn = overlay.querySelector("#script-pdf-download");
-  dlBtn.addEventListener("click", async () => {
-    if (dlBtn.disabled) return;
-    const label = dlBtn.innerHTML;
-    dlBtn.disabled = true;
-    dlBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px;"></span>${t("cr.pdf.making")}`;
-    try {
-      const slug = (content.title || brand?.name || "script").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60).toLowerCase() || "script";
-      await downloadPagedPdf({
-        blocks,
-        pageClass: "report-sheet script-sheet",
-        footer: (n, total) => `Wepeka Brandlab — ${brand?.name || ""} · ${n}/${total}`,
-        filename: `${slug}-script.pdf`,
-      });
-      toast(t("cr.pdf.saved"));
-    } catch (e) {
-      console.error("Script PDF failed", e);
-      toast(t("cr.pdf.failed"), "error");
-    } finally {
-      dlBtn.disabled = false;
-      dlBtn.innerHTML = label;
-    }
-  });
-}
-
-// The sheet as separate blocks, so the PDF can break pages between them
-// (never inside a part of the script).
-function scriptSheetBlocks(c, brand) {
-  const para = (text) => `<p class="sp-text">${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
-  const title = (label) => `<div class="report-section-title">${label}</div>`;
-  const script = String(c.script || "").replace(/\r\n?/g, "\n");
-  const carousel = isCarouselContent(c);
-  const parsed = carousel ? null : parseScript(script);
-  const { words, seconds } = scriptLength(script);
-  const meta = [c.format, c.platform, !carousel && words ? t("cr.pdf.length", { s: parsed ? beatTimeline(parsed.beats).pop().to : seconds, w: words }) : ""].filter(Boolean);
-  const blocks = [`
-    <div class="report-header">
-      ${avatarHTML(brand || { name: "?" }, "width:44px;height:44px;border-radius:10px;font-size:16px;")}
-      <div>
-        <div class="report-brand">${escapeHtml(c.title || t("common.untitled"))}</div>
-        <div class="report-title">${escapeHtml(brand?.name || "")}</div>
-      </div>
-      <div class="report-range">
-        <div class="report-generated">${t("cr.pdf.generated", { date: formatDate(new Date().toISOString()) })}</div>
-      </div>
-    </div>
-    ${meta.length ? `<p class="sp-meta">${meta.map(escapeHtml).join(" · ")}</p>` : ""}`];
-  if (String(c.idea || "").trim()) blocks.push(`${title(t("cr.pdf.idea"))}${para(c.idea.trim())}`);
-
-  const scriptTitle = title(carousel ? t("cr.f.slides") : t("cr.pdf.script"));
-  if (parsed) {
-    const cell = (label, text, cls = "") => (String(text || "").trim() ? `<div class="sp-k">${escapeHtml(label)}</div><p class="sp-text${cls}">${escapeHtml(text.trim()).replace(/\n/g, "<br>")}</p>` : "");
-    const row = (b, i) => `
-      <div class="sp-beat${i === 0 ? " is-hook" : ""}">
-        <div class="sp-part"><em>${escapeHtml(b.label)}</em></div>
-        <div class="sp-show">${cell(t("cr.cards.visual"), b.visual)}${cell(t("cr.cards.screen"), b.onScreen, " sp-screen")}${cell(t("cr.cards.note"), b.note)}${!b.visual && !b.onScreen && !b.note ? `<p class="sp-text sp-none">—</p>` : ""}</div>
-        <div class="sp-say"><div class="sp-k sp-say-k">${t("cr.pdf.colSay")}</div>${String(b.say || "").trim() ? `<p>${escapeHtml(b.say.trim()).replace(/\n/g, "<br>")}</p>` : `<p class="sp-none">—</p>`}</div>
-      </div>`;
-    const head = `<div class="sp-cols"><span>${t("cr.pdf.colPart")}</span><span>${t("cr.pdf.colShow")}</span><span>${t("cr.pdf.colSay")}</span></div>`;
-    // The section title and column heads stay with the first part.
-    blocks.push(`${scriptTitle}${parsed.preamble ? para(parsed.preamble) : ""}${head}${row(parsed.beats[0], 0)}`);
-    parsed.beats.slice(1).forEach((b, i) => blocks.push(row(b, i + 1)));
-  } else if (carousel && script.trim()) {
-    const slides = parseSlides(script);
-    slides.forEach((sl, i) => blocks.push(`${i === 0 ? scriptTitle : ""}<div class="sp-slide"><span class="sp-slide-num">${escapeHtml(t("cr.ai.slideLabel", { n: i + 1 }))}</span>${para(sl.text || "—")}</div>`));
-  } else {
-    const paras = script.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean);
-    if (!paras.length) blocks.push(`${scriptTitle}${para("—")}`);
-    paras.forEach((p, i) => blocks.push(`${i === 0 ? scriptTitle : ""}${para(p)}`));
-  }
-  if (String(c.caption || "").trim()) blocks.push(`${title(t("cr.pdf.caption"))}${para(c.caption.trim())}`);
-  return blocks;
 }
 
 // Best-effort desktop notification — always toasts too, since Notification
@@ -1960,8 +1868,7 @@ function readyToUploadPanel(c) {
 // generateScript already writes for carousels — the teleprompter, the PDF
 // sheet, and every AI prompt keep reading one string, and an AI-generated
 // carousel parses straight back into cards.
-const isCarouselContent = (c) => (c?.format || "").toLowerCase().includes("carousel");
-// parseSlides / serializeSlides / applyHook live in js/script-format.js.
+// isCarouselContent / parseSlides / serializeSlides / applyHook live in js/script-format.js.
 const scriptLengthVars = (text) => { const { words, seconds } = scriptLength(text); return { s: seconds, w: words }; };
 
 function slidesFieldHTML(c) {

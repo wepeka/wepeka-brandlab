@@ -20,6 +20,7 @@ import { funnelShort } from "../funnel-field.js";
 import { openWeekPlanMenu, openSeriesEpisodeChat } from "../consultant-panel.js";
 import { seriesDays, missingEpisodes } from "../week-plan.js";
 import { mountAiReport } from "../ai-report.js";
+import { openScriptBulkPdf } from "../script-pdf.js";
 
 // Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
 // episode, date -> series. Only the rest of the visible range from today.
@@ -640,8 +641,11 @@ function paint(root, brandId, state, refresh) {
         <button class="btn btn-secondary btn-sm" id="cal-today">${t("calendar.today")}</button>
       </div>
       ${goalWeek ? `<a class="cal-goalchip" href="#/brand/${brandId}/goals" title="${escapeHtml(t("roadmap.cal.goalChip"))}">${icon("target", { size: 12 })}${t("roadmap.cal.weekChip", { slots: goalWeek.slots, deadlines: goalWeek.deadlines })}</a>` : ""}
-      <div class="segmented" style="width:150px;">
-        ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
+      <div class="cal-head-end">
+        <button type="button" class="btn btn-ghost btn-sm" id="cal-scripts">${icon("download", { size: 13 })}${t("cr.bulk.open")}</button>
+        <div class="segmented" style="width:150px;">
+          ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
+        </div>
       </div>
     </div>
     ${state.placingId ? placingBarHTML(state, brandId) : ""}
@@ -689,6 +693,11 @@ function paint(root, brandId, state, refresh) {
       else if (act === "cadence") openContentCadenceSetup(brand);
       else if (act === "clear") openClearMonth(brandId, state.cursor, refresh);
     });
+  });
+  // Every script of a week as one PDF: the week on screen in Minggu view,
+  // else this week (the picker can switch to any date or next week).
+  qs("#cal-scripts").addEventListener("click", () => {
+    openScriptBulkPdf({ brandId, week: state.view === "week" ? iso(state.cursor) : "this" });
   });
   wireHelpButtons(root);
   setPageGuide(() => startCalendarGuide(brandId));

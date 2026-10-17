@@ -43,12 +43,17 @@ export function ensurePdfLibs() {
 const A4_W = 794;
 const A4_H = 1123;
 
+// Put between two blocks to start the next one on a fresh page (one script
+// per page set in a many-script PDF).
+export const PDF_PAGE_BREAK = "<!--pdf-page-break-->";
+
 // Lays `blocks` (HTML strings) onto fixed A4 portrait pages off-screen — a
 // block never splits across two pages — writes `footer(n, total)` at the
 // bottom of each, rasterizes them and saves `filename`. The pages use
 // `pageClass` on top of .rp-page (css/styles.css), so they look like the
-// on-screen preview sheet.
-export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet", footer = null, filename = "document.pdf" } = {}) {
+// on-screen preview sheet. `onProgress(done, total)` hears each page as it
+// is drawn — a long PDF takes a while.
+export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet", footer = null, filename = "document.pdf", onProgress = null } = {}) {
   await ensurePdfLibs();
   const host = document.createElement("div");
   host.className = "rp-pdf-host";
@@ -68,6 +73,10 @@ export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet"
     newPage();
     const limit = A4_H - 96 - 40; // page padding + footer line
     blocks.forEach((html) => {
+      if (html === PDF_PAGE_BREAK) {
+        if (body.children.length) newPage();
+        return;
+      }
       const block = document.createElement("div");
       block.className = "rp-block";
       block.innerHTML = html;
@@ -94,6 +103,7 @@ export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet"
       const canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: "#ffffff", width: A4_W, height: A4_H, windowWidth: A4_W, logging: false, useCORS: true });
       if (i > 0) pdf.addPage("a4", "portrait");
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      onProgress?.(i + 1, pages.length);
     }
     pdf.save(filename);
   } finally {
