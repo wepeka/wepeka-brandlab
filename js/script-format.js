@@ -39,6 +39,22 @@ const FIELD_KEY = (raw) => {
 };
 // "[0-3 dtk] HOOK", "[0-3 detik — HOOK]", "[00:03-00:10] ISI 1 — Bukti"
 const HEADER_RE = /^\s*[*_#]*\s*\[\s*([\d.:]+)\s*(?:-|–|—|s\/d|to)\s*([\d.:]+)\s*(?:dtk|detik|det|s|sec|secs|seconds)?\s*(?:[—–-]\s*([^\]]+?))?\s*\]\s*[*_]*\s*(.*?)\s*[*_]*\s*$/i;
+// "[HOOK]", "**[TUNJUKIN CONTENT PLANNER]**", "[PENUTUP]:" — a part name in
+// brackets on a line of its own, without seconds: how people (and other
+// chats) usually write a script in parts.
+const BARE_HEADER_RE = /^\s*[*_#]*\s*\[\s*([^\]\d\s][^\]]*?)\s*\]\s*[*_]*\s*:?\s*[*_]*\s*$/;
+const TIME_TAIL_RE = /\s*[(—–-]?\s*[\d.:]+\s*(?:-|–|—|s\/d|to)\s*[\d.:]+\s*(?:dtk|detik|det|s|sec|secs|seconds)?\s*\)?\s*$/i;
+function bareHeader(line) {
+  const m = line.match(BARE_HEADER_RE);
+  if (!m || m[1].length > 80 || !/\p{L}/u.test(m[1])) return null;
+  let label = m[1].replace(TIME_TAIL_RE, "").trim();
+  let visual = "";
+  // "[OPENING — Kamera ke kamu, lalu arahkan HP ke laptop]": a name too long
+  // for a part name is the name plus what to show.
+  const split = label.match(/^(.{2,40}?)\s+[—–-]\s+(.+)$/);
+  if (label.length > 40 && split) [, label, visual] = split;
+  return { label, visual };
+}
 const LENGTH_RE = /^\s*⏱/;
 
 const countWords = (s) => (String(s || "").trim().match(/[^\s]+/g) || []).length;
@@ -101,9 +117,10 @@ export function renderScript(beats = [], { lang = "id" } = {}) {
   return blocks.join("\n\n");
 }
 
-// The canonical string (or a chat-written one in the same spirit) back into
-// beats. Returns null when the text has no beat headers at all — an old
-// HOOK/ISI PEMBAHASAN script, a carousel, or free text.
+// The canonical string (or a chat-written one in the same spirit, or parts
+// named "[HOOK]" without seconds) back into beats. Returns null when the text
+// has no beat headers at all — an old HOOK/ISI PEMBAHASAN script, a carousel,
+// or free text.
 export function parseScript(text) {
   const lines = String(text || "").replace(/\r/g, "").split("\n");
   const beats = [];
@@ -111,6 +128,10 @@ export function parseScript(text) {
   let length = "";
   let cur = null;
   let field = null;
+  // Once a script has timed headers, a "[NAME]" line in it is part of the
+  // text (a label pasted into a narration), not another part.
+  const timed = lines.some((l) => HEADER_RE.test(l));
+  let fielded = false;
   for (const line of lines) {
     const h = line.match(HEADER_RE);
     if (h) {
@@ -122,6 +143,13 @@ export function parseScript(text) {
       field = null;
       continue;
     }
+    const bare = !timed && bareHeader(line);
+    if (bare) {
+      cur = { label: bare.label || "ISI", time: "", visual: bare.visual, onScreen: "", say: "", note: "" };
+      beats.push(cur);
+      field = null;
+      continue;
+    }
     if (!cur) {
       if (LENGTH_RE.test(line)) length = line.trim();
       else preamble.push(line);
@@ -129,6 +157,7 @@ export function parseScript(text) {
     }
     const f = line.match(FIELD_RE);
     if (f) {
+      fielded = true;
       field = FIELD_KEY(f[1]);
       const who = f[2] ? `${f[2].trim()} ` : "";
       const val = unquote(f[3]);
@@ -140,6 +169,20 @@ export function parseScript(text) {
     else cur.note = `${cur.note}\n${line.trim()}`.trim();
   }
   if (!beats.length) return null;
+  // Only "[NAME]" parts, nothing marked Visual / Teks layar / Narasi, and
+  // words before the first one ("Sumpah, …" then "[TUNJUKIN APP]"): those
+  // words are the first part, not a note above the script.
+  const before = preamble.map((l) => l.trim()).filter(Boolean).join("\n");
+  if (!timed && !fielded && before) {
+    beats.unshift({ label: beats.some((b) => /hook/i.test(b.label)) ? "ISI" : "HOOK", time: "", visual: "", onScreen: "", say: "", note: before });
+    preamble.length = 0;
+  }
+  // A part without a Narasi line: its own text is what's said ("[HOOK]" then
+  // the sentence) — the same words the Biasa box shows and the teleprompter
+  // reads.
+  beats.forEach((b) => {
+    if (!b.say.trim() && b.note) [b.say, b.note] = [b.note, ""];
+  });
   return { beats, preamble: preamble.join("\n").trim(), length };
 }
 
@@ -178,7 +221,7 @@ export function scriptToBeats(text, { lang = "id" } = {}) {
       fromText: false,
     };
   }
-  const paras = spokenText(s).split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean);
+  const paras = withoutLabels(s).split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean);
   if (!paras.length) return { beats: [part("HOOK")], preamble: "", lang, fromText: false };
   return { beats: paras.map((p, i) => part(i ? "ISI" : "HOOK", p)), preamble: "", lang, fromText: true };
 }
@@ -194,17 +237,43 @@ const OLD_HOOK_RE = /(?:^|\n)\s*[*#_>]*\s*HOOK\s*[*_:]*\s*\n([\s\S]*?)(?:\n\s*\n
 const OLD_LABEL_LINE = "^[ \\t]*[*#_>]*[ \\t]*(HOOK|ISI PEMBAHASAN|MAIN CONTENT)[ \\t]*[*_:]*[ \\t]*$";
 const SLIDE_RE = /(?:^|\n)\s*Slide\s*1\s*:?\s*\n?([^\n]+)/i;
 
-// What gets read aloud: the narration only, one beat per paragraph. Old
-// scripts lose just their two section labels; anything else is returned
-// as it is.
+// Part names pasted in with the words — an old "HOOK" / "ISI PEMBAHASAN"
+// line, "[HOOK]" or "**[OPENING SERIES]**" (capitals, so a "[isi: …]" note
+// to the writer stays) — and **bold** marks: the Biasa box and the
+// teleprompter leave them out. Text with none of them comes back as it is.
+const LABEL_LINE = /^[ \t]*[*_#>]*[ \t]*\[[^\]\n\p{Ll}]*\][ \t]*[*_]*[ \t]*:?[ \t]*(?:\n|$)/gmu;
+function withoutLabels(s) {
+  const out = s.replace(new RegExp(OLD_LABEL_LINE, "gim"), "").replace(LABEL_LINE, "").replace(/\*\*|__/g, "");
+  return out === s ? s : out.replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n");
+}
+
+// A line that is only a [note] or a (direction) — nothing to say.
+const DIRECTION_LINE = /^[ \t]*[*_]*[ \t]*(?:\[[^\]\n]*\]|\([^)\n]*\))[ \t]*[*_]*[ \t]*(?:\n|$)/gm;
+// Ready to read out: no direction lines, and no quote marks wrapped around
+// the whole of it.
+function readable(s) {
+  let out = String(s || "").replace(DIRECTION_LINE, "").replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (/^["“]/.test(out) && /["”]$/.test(out) && (out.match(/["“”]/g) || []).length === 2) out = out.slice(1, -1).trim();
+  return out;
+}
+
+// "(FIO) Halo." — who says the line ("Narasi (FIO):"). In a dialogue every
+// line keeps its name ("FIO: Halo.") so each person finds theirs; with one
+// voice, or a "(pelan)" kind of cue, it goes.
+const LINE_TAG = /^\(([^)\n]{1,40})\)[ \t]*(?=\S)/gm;
+const speakerOf = (tag) => (/^\p{Lu}{2,}\b/u.test(tag.trim()) ? tag.trim().split(/\s*,\s*/)[0] : "");
+
+// What gets read aloud (the teleprompter): exactly the words the Biasa box
+// shows, one part per paragraph, without lines that are only a [note] or a
+// (direction).
 export function spokenText(text) {
   const s = String(text || "");
   const parsed = parseScript(s);
-  if (parsed) {
-    const said = parsed.beats.map((b) => b.say.replace(/^\([^)]*\)\s*/, "")).filter(Boolean);
-    if (said.length) return said.join("\n\n");
-  }
-  return s.replace(new RegExp(OLD_LABEL_LINE, "gim"), "").replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n");
+  if (!parsed) return readable(withoutLabels(s));
+  const words = parsed.beats.map(partWords);
+  const speakers = new Set(words.flatMap((w) => [...w.matchAll(LINE_TAG)].map((m) => speakerOf(m[1])).filter(Boolean)));
+  const named = (w) => w.replace(LINE_TAG, (_, tag) => (speakers.size > 1 && speakerOf(tag) ? `${speakerOf(tag)}: ` : ""));
+  return readable(words.map((w) => readable(named(w))).filter(Boolean).join("\n\n"));
 }
 
 // ---- "Biasa": the script as plain writing ------------------------------------
@@ -215,13 +284,13 @@ export function spokenText(text) {
 // such lines the box isn't showing.
 
 // The words of one part: what's said, or the loose text under its header.
-const partWords = (b) => (String(b.say || "").trim() ? b.say : b.note || "").trim();
+const partWords = (b) => withoutLabels(String(b.say || "").trim() ? b.say : b.note || "").trim();
 const splitParagraphs = (s) => s.split(/\n[ \t]*(?:\n[ \t]*)+/).map((p) => p.trim()).filter(Boolean);
 
 export function plainScript(text) {
   const s = String(text || "").replace(/\r\n?/g, "\n");
   const parsed = parseScript(s);
-  if (!parsed) return { text: new RegExp(OLD_LABEL_LINE, "im").test(s) ? spokenText(s) : s, directed: false };
+  if (!parsed) return { text: withoutLabels(s), directed: false };
   return {
     text: parsed.beats.map(partWords).filter(Boolean).join("\n\n"),
     directed: parsed.beats.some((b) => b.visual || b.onScreen || (b.note && String(b.say || "").trim())),

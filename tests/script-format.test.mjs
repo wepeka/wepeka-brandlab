@@ -162,6 +162,76 @@ describe("spokenText / scriptLength", () => {
   });
 });
 
+// Scripts written with "[HOOK]" part names and no seconds (pasted, or from
+// another chat): Biasa and the teleprompter show only what's said.
+describe("parts named in brackets, without seconds", () => {
+  const NAMED = '[HOOK]\nVisual: Foto kaleng Pringles.\nTeks layar: CHIPS GRATIS 200 TAHUN\nNarasi: Pringles mau ngasih chips gratis.\n\nHook B (kalau mau lebih pendek): "Ini strategi paling gelap."\n\n[PENUTUP]\nVisual: Wajahmu.\nNarasi: Stay sharp.';
+
+  test("they are parts: Biasa, the teleprompter, the hook and the length see only the narration", () => {
+    const { beats } = parseScript(NAMED);
+    assert.deepEqual(beats.map((b) => b.label), ["HOOK", "PENUTUP"]);
+    assert.match(beats[0].note, /^Hook B/);
+    assert.equal(spokenText(NAMED), "Pringles mau ngasih chips gratis.\n\nStay sharp.");
+    assert.deepEqual(plainScript(NAMED), { text: "Pringles mau ngasih chips gratis.\n\nStay sharp.", directed: true });
+    assert.equal(hookOf(NAMED), "Pringles mau ngasih chips gratis.");
+    assert.equal(scriptLength(NAMED).words, 7);
+    assert.deepEqual(scriptToBeats(NAMED).beats.map((b) => b.label), ["HOOK", "PENUTUP"]);
+  });
+  test("typing in Biasa keeps each part's name and Visual", () => {
+    assert.equal(applyPlainScript(NAMED, plainScript(NAMED).text), NAMED);
+    const { beats } = parseScript(applyPlainScript(NAMED, "Pringles mau ngasih chips gratis.\n\nStay sharp, guys."));
+    assert.deepEqual(beats.map((b) => b.label), ["HOOK", "PENUTUP"]);
+    assert.equal(beats[1].say, "Stay sharp, guys.");
+    assert.equal(beats[1].visual, "Wajahmu.");
+  });
+  test("a direction as the part name, the words under it", () => {
+    const show = '**[OPENING — Kamera ke kamu, lalu arahkan HP ke laptop]**\n\n"Sumpah, kalian wajib punya ini.\n\nCoba lihat ini...\n\n**[TUNJUKIN CONTENT PLANNER]**\n\nKalian bisa planning konten **sebulan penuh**.\n\nLink-nya ada di bio aku!"';
+    const { beats } = parseScript(show);
+    assert.deepEqual(beats.map((b) => b.label), ["OPENING", "TUNJUKIN CONTENT PLANNER"]);
+    assert.equal(beats[0].visual, "Kamera ke kamu, lalu arahkan HP ke laptop");
+    assert.equal(spokenText(show), "Sumpah, kalian wajib punya ini.\nCoba lihat ini...\n\nKalian bisa planning konten sebulan penuh.\nLink-nya ada di bio aku!");
+    assert.doesNotMatch(plainScript(show).text, /\[|\*\*/);
+  });
+  test("words before the first part name are the first part; a note above a directed script stays a note", () => {
+    const loose = "Sumpah, ini gila.\n\n[TUNJUKIN APP]\nKalian bisa planning.";
+    assert.deepEqual(parseScript(loose).beats.map((b) => b.label), ["HOOK", "TUNJUKIN APP"]);
+    assert.equal(spokenText(loose), "Sumpah, ini gila.\n\nKalian bisa planning.");
+    const noted = "Total: 30 detik\n\n[HOOK]\nNarasi: Halo.";
+    assert.equal(parseScript(noted).preamble, "Total: 30 detik");
+    assert.equal(spokenText(noted), "Halo.");
+  });
+  test("a bracket inside a sentence is not a part name", () => {
+    assert.equal(parseScript("Halo [nama talent], apa kabar?\nJadi gini."), null);
+  });
+});
+
+describe("what the teleprompter and Biasa leave out", () => {
+  test("part names pasted inside the words; a note to the writer stays in Biasa only", () => {
+    const pasted = "[0-4 dtk] HOOK\nNarasi: **[HOOK]**\nBranding itu beda.\n\n[4-8 dtk] ISI\nNarasi: [isi: contoh dari minggu ini]\nJadi gini.";
+    assert.equal(plainScript(pasted).text, "Branding itu beda.\n\n[isi: contoh dari minggu ini]\nJadi gini.");
+    assert.equal(spokenText(pasted), "Branding itu beda.\n\nJadi gini.");
+    assert.equal(applyPlainScript(pasted, plainScript(pasted).text), pasted);
+  });
+  test("a dialogue keeps who says each line; one voice doesn't", () => {
+    const dialog = "[0-3 dtk] HOOK\nNarasi (FIO): Kapan balikin duitku?\nNarasi (TALENT): Tīng bu dǒng.\n\n[3-6 dtk] BALIK\nNarasi (FIO): Oke, kamu yang traktir.";
+    assert.equal(spokenText(dialog), "FIO: Kapan balikin duitku?\nTALENT: Tīng bu dǒng.\n\nFIO: Oke, kamu yang traktir.");
+    const solo = "[0-3 dtk] HOOK\nNarasi (pelan): Halo.\n\n[3-5 dtk] ISI\nNarasi (WINSON): Jadi gini.";
+    assert.equal(spokenText(solo), "Halo.\n\nJadi gini.");
+  });
+  test("free text: a line that is only a (direction) isn't read but stays in Biasa; **bold** marks go from both", () => {
+    const typed = "Halo semua.\n(Tunjukkan layar)\nIni **fiturnya**.\n\nSampai jumpa.";
+    assert.equal(spokenText(typed), "Halo semua.\nIni fiturnya.\n\nSampai jumpa.");
+    assert.equal(plainScript(typed).text, "Halo semua.\n(Tunjukkan layar)\nIni fiturnya.\n\nSampai jumpa.");
+  });
+  test("in a timed script a pasted [NAME] line is neither a new part nor shown", () => {
+    const stored = "[0-4 dtk] ISI\nNarasi: Kalimat satu.\n[CTA]\nIkuti ya.";
+    assert.equal(parseScript(stored).beats.length, 1);
+    assert.equal(plainScript(stored).text, "Kalimat satu.\nIkuti ya.");
+    assert.equal(spokenText(stored), "Kalimat satu.\nIkuti ya.");
+    assert.equal(applyPlainScript(stored, "Kalimat satu.\nIkuti ya."), stored);
+  });
+});
+
 describe("hookOf", () => {
   test("beat script → the HOOK narration", () => assert.equal(hookOf(renderScript(BEATS)), BEATS[0].say));
   test("old script → text under HOOK", () => assert.equal(hookOf("HOOK\nPembuka lama\n\nISI PEMBAHASAN\nisi"), "Pembuka lama"));
