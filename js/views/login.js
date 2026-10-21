@@ -8,7 +8,7 @@ import { agreeLine } from "../legal-links.js";
 
 const friendlyAuthError = (err) => authErrorMessage(err, "auth.err.generic");
 
-const GOOGLE_G_SVG = `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.85-.08-1.67-.22-2.45H12v4.63h6.46c-.28 1.5-1.13 2.77-2.4 3.63v3h3.87c2.27-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.9l-3.87-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.1C3.24 21.3 7.27 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.3A7.2 7.2 0 014.9 12c0-.8.14-1.57.37-2.3v-3.1H1.27A12 12 0 000 12c0 1.94.46 3.77 1.27 5.4z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.27 0 3.24 2.7 1.27 6.6l4 3.1C6.22 6.86 8.87 4.75 12 4.75z"/></svg>`;
+export const GOOGLE_G_SVG = `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.85-.08-1.67-.22-2.45H12v4.63h6.46c-.28 1.5-1.13 2.77-2.4 3.63v3h3.87c2.27-2.09 3.57-5.17 3.57-8.81z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.9l-3.87-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.1C3.24 21.3 7.27 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.3A7.2 7.2 0 014.9 12c0-.8.14-1.57.37-2.3v-3.1H1.27A12 12 0 000 12c0 1.94.46 3.77 1.27 5.4z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.27 0 3.24 2.7 1.27 6.6l4 3.1C6.22 6.86 8.87 4.75 12 4.75z"/></svg>`;
 
 // Account creation happens exclusively on wepeka.com now (see auth.js) — this
 // screen only signs people into a Brandlab account that already exists:

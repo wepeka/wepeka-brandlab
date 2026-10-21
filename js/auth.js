@@ -64,9 +64,13 @@ const googleProvider = new GoogleAuthProvider();
 // NEW_GOOGLE_ACCOUNT instead of letting it through. Existing accounts
 // (created via wepeka.com SSO, or a Google sign-in from before this check
 // existed) are unaffected.
-export async function loginWithGoogle() {
+// `allowNew` — only the team invite page (js/views/invite.js) passes it: a
+// person invited to someone's team may make their account right there, and
+// that page deletes the new user again if the invite turns out not to be
+// theirs. Every other sign-in keeps the rule above.
+export async function loginWithGoogle({ allowNew = false } = {}) {
   const result = await signInWithPopup(auth, googleProvider);
-  if (getAdditionalUserInfo(result)?.isNewUser) {
+  if (getAdditionalUserInfo(result)?.isNewUser && !allowNew) {
     // Delete, not just sign out — a bare signOut would leave an orphan
     // Firebase user permanently squatting this email with no matching
     // account, forever. That would break wepeka.com's own sign-up for the
@@ -78,6 +82,7 @@ export async function loginWithGoogle() {
     throw err;
   }
   gaEvent("login", { method: "google" });
+  return { user: result.user, isNew: !!getAdditionalUserInfo(result)?.isNewUser };
 }
 export async function logout() {
   // Queued edits get a moment to reach the server while this person is

@@ -387,6 +387,11 @@ async function boot(user) {
       renderAuthScreen(document.getElementById("auth-root"));
       return;
     }
+    // A team invite link (Kerja Tim) opened while signed out.
+    if (location.hash.startsWith("#/undangan/")) {
+      renderInviteScreen();
+      return;
+    }
     // Everyone else who is not signed in gets the front page: what Brandlab
     // is, the plans, the guide videos (js/views/landing.js). A browser that
     // has signed in before sees "Masuk ke Lab-mu" as its main button instead
@@ -477,6 +482,14 @@ function onAccountChange(user, account) {
     return;
   }
 
+  // A team invite link wins over everything below (the plans, the app):
+  // signing in in the middle of it lands back on it (js/views/invite.js).
+  if (location.hash.startsWith("#/undangan/")) {
+    endPaidWait();
+    teardownApp();
+    renderInviteScreen();
+    return;
+  }
   // "member" = no plan of their own, but brands shared with them (Kerja Tim).
   const state = effectiveAccess(account);
   // Just back from a payment made in another app: a failure is said; a
@@ -679,6 +692,12 @@ async function renderRoute() {
   if (cleanup) { cleanup(); cleanup = null; }
   clearPageGuide();
 
+  // A team invite link opened from inside the app.
+  if (location.hash.startsWith("#/undangan/")) {
+    delete app.dataset.shellKey;
+    renderInviteScreen();
+    return;
+  }
   // Pricing, reached from inside the app (trial/read-only pill, or an
   // upgrade). The store stays loaded — leaving this hash just rebuilds the
   // shell, no second boot.
@@ -1039,6 +1058,24 @@ window.addEventListener("hashchange", () => {
 // Guided/Advanced toggle changes which view "home" resolves to — repaint
 // the current route immediately instead of waiting for the next navigation.
 window.addEventListener("mode:change", () => { if (storeReady) renderRoute(); });
+// Kerja Tim: the invite page (js/views/invite.js), full screen like the
+// login screen, loaded on demand.
+function renderInviteScreen() {
+  app.innerHTML = `<main class="view" id="invite-root" style="padding:0;max-width:none;"></main>`;
+  const token = location.hash.match(/^#\/undangan\/([^/?#]+)/)?.[1];
+  import("./views/invite.js")
+    .then((m) => {
+      const root = document.getElementById("invite-root");
+      if (root && token) m.renderInvite(root, decodeURIComponent(token));
+    })
+    .catch((e) => console.warn("invite page unavailable", e));
+}
+// Joined a team on the invite page: decide again what this person may open.
+window.addEventListener("team:joined", () => {
+  if (!lastUser) return;
+  if (storeReady) renderRoute();
+  else onAccountChange(lastUser, getCachedAccount());
+});
 // Kerja Tim: the owner took this account off a brand (or put it in Trash)
 // while one of its pages is open — say so and leave it.
 window.addEventListener("team:removed", (e) => {

@@ -1,6 +1,9 @@
 import {
-  listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent, TRASH_DAYS,
+  listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent, TRASH_DAYS, isOwnBrand, brandRole,
 } from "../store.js";
+import { getCachedAccount, accessState } from "../account.js";
+import { teamApi } from "../team.js";
+import { openInviteModal } from "./team-panel.js";
 import { icon } from "../icons.js";
 import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles, wireClickableCards } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -31,8 +34,21 @@ export function render(root) {
   return () => { window.removeEventListener("account:change", refresh); unmountBg(); }; // no store subscription needed — actions here re-render locally
 }
 
+// Brands shared with this account, one group per owner (Kerja Tim).
+function sharedGroups(brands) {
+  const groups = new Map();
+  for (const b of brands) {
+    if (isOwnBrand(b)) continue;
+    if (!groups.has(b.ownerId)) groups.set(b.ownerId, { ownerName: b.ownerName || "", brands: [] });
+    groups.get(b.ownerId).brands.push(b);
+  }
+  return [...groups.values()];
+}
+
 function paint(root, refresh) {
-  const brands = listBrands();
+  const all = listBrands();
+  const brands = all.filter(isOwnBrand);
+  const groups = sharedGroups(all);
   const guided = getMode() === "guided";
 
   // No brand yet (either mode): the whole page is one card with one
@@ -40,7 +56,7 @@ function paint(root, refresh) {
   // a brand-new account used to land on. Pemula gets the journey framing;
   // Pro gets the same card with a tour link. #add-brand keeps its id so
   // the onboarding tour (js/tour.js) still finds it.
-  if (!brands.length) {
+  if (!all.length) {
     root.innerHTML = `
       <section class="card journey-hero guided-first-brand" id="journey-hero">
         <div class="journey-hero-eyebrow"><span class="journey-hero-step">${guided ? t("brands.first.stepGuided") : t("brands.first.stepPro")}</span><span class="journey-hero-time">${icon("clock", { size: 12 })}${t("brands.first.time")}</span></div>
@@ -55,6 +71,9 @@ function paint(root, refresh) {
   }
 
   const locked = !canCreateBrand(ownBrandsOf(brands).length);
+  const noOwnPlan = !["paid", "trial"].includes(accessState(getCachedAccount()));
+  // A team member with no plan and no brand of their own: only what's shared.
+  const memberOnly = noOwnPlan && !brands.length && groups.length > 0;
   const previewOnly = lockedBrandIds(brands);
   const lockTitle = locked ? t("brands.offer.lockedTitle", { limit: brandLimitOf() }) : t("brands.add");
   root.innerHTML = `
@@ -64,22 +83,30 @@ function paint(root, refresh) {
       <p class="page-sub">${guided ? t("brands.hero.subGuided") : t("brands.hero.subPro")}</p>
     </div>
     ${slotReminderHTML()}
-    <div class="brand-row-head">
+    ${memberOnly ? "" : `<div class="brand-row-head">
       <button class="brand-quick-add ${locked ? "is-locked" : ""}" id="add-brand-quick" aria-label="${escapeText(lockTitle)}" title="${escapeText(lockTitle)}">${icon(locked ? "lock" : "plus", { size: 15 })}</button>
-    </div>
+    </div>`}
+    ${memberOnly ? "" : `${groups.length ? `<div class="section-title" style="margin-top:0;"><h2>${t("team.yourBrands")}</h2></div>` : ""}
     <div class="brand-grid brand-grid--picker" id="brand-grid">
       ${brands.map((b) => brandCard(b, previewOnly.has(b.id))).join("")}
       <button class="brand-tile brand-tile-add ${locked ? "is-locked" : ""}" id="add-brand" title="${escapeText(lockTitle)}">
         <div class="brand-tile-avatar brand-tile-avatar-add">${icon(locked ? "lock" : "plus", { size: 28 })}</div>
         <h3>${t("brands.add")}</h3>
-        ${locked ? `<div class="meta">${t("brands.offer.lockedMeta", { limit: brandLimitOf() })}</div>` : ""}
+        ${locked ? `<div class="meta">${noOwnPlan ? t("team.memberCreateBrand") : t("brands.offer.lockedMeta", { limit: brandLimitOf() })}</div>` : ""}
       </button>
-    </div>
+    </div>`}
+    ${groups.map((g) => `
+      <div class="section-title"><h2>${escapeText(t("team.sharedBy", { name: g.ownerName || "—" }))}</h2><span class="text-faint" style="font-size:12.5px;font-weight:700;">${t("team.sharedCount", { n: g.brands.length })}</span></div>
+      <div class="brand-grid brand-grid--picker brand-grid--shared">
+        ${g.brands.map((b) => brandCard(b, false)).join("")}
+      </div>
+    `).join("")}
+    ${memberOnly ? `<p class="hint" style="display:block;margin-top:24px;">${t("team.memberCreateBrand")} <a href="#/pricing" style="color:var(--accent);font-weight:700;">${t("team.seePlans")}</a></p>` : ""}
   `;
 
   const dragState = wireBrandGridDrag(qs("#brand-grid"));
 
-  qs("#add-brand").addEventListener("click", () => {
+  qs("#add-brand")?.addEventListener("click", () => {
     if (dragState.wasDragged) return;
     openBrandModal({ onSaved: refresh });
   });
@@ -106,19 +133,39 @@ function paint(root, refresh) {
       const rect = btn.getBoundingClientRect();
       const menu = openMenu(btn, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
       if (!menu) return;
-      menu.innerHTML = `
+      const own = isOwnBrand(all.find((b) => b.id === id));
+      menu.innerHTML = own ? `
+        <button data-act="share">${icon("users", { size: 15 })}${t("team.share")}</button>
         <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
         <button data-act="archive">${icon("archive", { size: 15 })}${t("brands.archive")}</button>
         <div class="menu-divider"></div>
         <button data-act="delete" class="danger">${icon("trash", { size: 15 })}${t("common.delete")}</button>
+      ` : `
+        <button data-act="leave" class="danger">${icon("logout", { size: 15 })}${t("team.leave")}</button>
       `;
       menu.addEventListener("click", async (ev) => {
         ev.stopPropagation();
         const act = ev.target.closest("[data-act]")?.dataset.act;
         if (!act) return;
         closeMenu();
-        const brand = brands.find((b) => b.id === id);
-        if (act === "edit") {
+        const brand = all.find((b) => b.id === id);
+        if (act === "share") {
+          openInviteModal({ brandId: id });
+        } else if (act === "leave") {
+          const ok = await confirmDialog({
+            title: t("team.leave.title", { name: escapeText(brand.ownerName || "") }),
+            message: t("team.leave.message", { brands: escapeText(brand.name) }),
+            confirmLabel: t("team.leave"),
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await teamApi("leave", { brandIds: [id] });
+            toast(t("team.left"));
+          } catch {
+            toast(t("team.err.generic"), "error");
+          }
+        } else if (act === "edit") {
           openBrandModal({ brand, onSaved: refresh });
         } else if (act === "archive") {
           const ok = await confirmDialog({
@@ -223,6 +270,7 @@ function brandCard(brand, previewOnly = false) {
       </div>
       <h3>${escapeText(brand.name)}</h3>
       <div class="meta">${previewOnly ? t("brands.locked.tileMeta") : t("brands.tile.meta", { count: contents.length, published })}</div>
+      ${isOwnBrand(brand) ? "" : `<div class="meta">${t(`team.role.${brandRole(brand) || "viewer"}`)}</div>`}
     </div>
   `;
 }
@@ -247,6 +295,12 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
   // At the plan's brand limit the "+" is locked: it opens the offer (buy a
   // slot on the spot), and the form itself once the slot has landed.
   if (!brand && !canCreateBrand(ownBrandsOf(listBrands()).length)) {
+    // A team member with no plan of their own (Kerja Tim): the plans first.
+    if (!["paid", "trial"].includes(accessState(getCachedAccount()))) {
+      toast(t("team.memberCreateBrand"));
+      location.hash = "#/pricing";
+      return;
+    }
     openBrandOffer({ onUnlocked: () => openBrandModal({ brand, onSaved }) });
     return;
   }
