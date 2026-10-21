@@ -427,7 +427,12 @@ function waLink(planName, price) {
 
 const check = () => icon("check", { size: 15 });
 const featureVars = (plan, f) => (f === "bookStyles" ? { price: rp(BOOK_STYLES_VALUE) } : { n: /credit|content/i.test(f) ? plan.credits : plan.brands });
-const featuresHTML = (plan) => plan.features.map((f) => `<li>${check()}<span>${t(`pricing.f.${f}`, featureVars(plan, f))}</span></li>`).join("");
+// Credits belong to the ACCOUNT (api/_aiQuota.js counts aiUsage/{uid}), so a
+// plan with several brands says the daily number is shared by all of them —
+// "3 brand · 100/hari" read as 100 for each brand (2026-10-21).
+const sharedKey = (plan, f) => (plan.brands > 1 && /^contentDay/.test(f) ? `${f}Shared` : f);
+const featuresHTML = (plan) => plan.features.map((f) => `<li>${check()}<span>${t(`pricing.f.${sharedKey(plan, f)}`, featureVars(plan, f))}</span></li>`).join("");
+const creditsLine = (plan) => t(`pricing.f.${sharedKey(plan, "contentDay")}`, { n: plan.credits });
 
 // Logged in → pay for real. Logged out → wepeka.com (register or log in
 // there, then SSO back here already signed in) with the plan riding along,
@@ -527,7 +532,7 @@ function subscriptionCardHTML(sel, uid, owned) {
         { value: "monthly", label: t("pricing.period.monthly"), on: !sel.yearly },
         { value: "yearly", label: t("pricing.period.yearly"), on: sel.yearly },
       ])}
-      <p class="pricing-way-credits">${t("pricing.f.contentDay", { n: plan.credits })}</p>
+      <p class="pricing-way-credits">${creditsLine(plan)}</p>
       ${owned ? disabledCtaHTML(t("pricing.owned.notNeeded")) : ctaHTML(planKey, t("pricing.way.subscription.cta"), uid)}
     </div>`;
 }
@@ -609,7 +614,7 @@ function otherPlanHTML(plan, uid, owned) {
       <div class="pricing-other-info">
         <strong>${name}</strong>
         <span>${t(`pricing.${plan.key}.who`)}</span>
-        <span class="pricing-other-meta">${t("pricing.f.brands", { n: plan.brands })} · ${t("pricing.f.contentDay", { n: plan.credits })}</span>
+        <span class="pricing-other-meta">${t("pricing.f.brands", { n: plan.brands })} · ${creditsLine(plan)}</span>
       </div>
       <div class="pricing-other-actions">
         ${owned
@@ -643,7 +648,7 @@ function agencyHTML(uid, agencySoldOut, owned, open = false) {
         <div class="pricing-other-info">
           <strong>${t("pricing.founder-ultimate.name")}</strong>
           <span>${t("pricing.ultimate.sub", { n: AGENCY.brands })}</span>
-          <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${t("pricing.f.contentDay", { n: AGENCY.credits })} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
+          <span class="pricing-other-meta">${t("pricing.f.brands", { n: AGENCY.brands })} · ${creditsLine(AGENCY)} · ${t("pricing.ultimate.perBrand", { price: perBrand })} · ${t("pricing.ultimate.slots", { cap: FOUNDER_SLOT_CAPS[AGENCY.slotField] })}</span>
           ${agencySoldOut ? "" : `<span class="pricing-anchor"><s>${t("pricing.lifetime.normal", { price: rp(AGENCY_NORMAL_PRICE) })}</s><span class="pricing-save">${t("pricing.lifetime.save", { pct: Math.round((1 - AGENCY.price / AGENCY_NORMAL_PRICE) * 100) })}</span></span>`}
         </div>
         <div class="pricing-other-actions">

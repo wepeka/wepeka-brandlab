@@ -82,5 +82,14 @@ export function showTourOffer() {
     else toast(text);
   });
   document.body.appendChild(el);
+  // Shrinks to its compass button once the page scrolls, so it stops sitting
+  // on top of what's being worked on (it covered "Laporkan" and form fields,
+  // 2026-10-21); hover or keyboard focus opens it again.
+  const fold = () => {
+    if (!el.isConnected) return window.removeEventListener("scroll", fold);
+    el.classList.toggle("is-mini", window.scrollY > 40);
+  };
+  window.addEventListener("scroll", fold, { passive: true });
+  fold();
   return el;
 }

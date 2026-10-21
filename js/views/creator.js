@@ -1893,7 +1893,7 @@ function slidesFieldHTML(c) {
         <div class="creator-field-head">
           <label style="margin-bottom:0;">${t("cr.f.slides")}</label>
           <div class="flex items-center gap-6">
-            <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickCarouselTitle")}">${icon("bot", { size: 15 })}</button>
+            <button type="button" class="ai-field-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickCarouselTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
           </div>
         </div>
         <p class="text-faint" style="font-size:11.5px;margin:0 0 10px;">${t("cr.f.slidesHint")}</p>
@@ -1942,7 +1942,7 @@ function scriptFieldHTML(c) {
               ${modeBtn("plain", "cr.cards.modePlain", "cr.cards.modePlainTitle")}${modeBtn("cards", "cr.cards.modePro", "cr.cards.modeProTitle")}
             </div>
             <button type="button" class="btn btn-ghost btn-sm script-focus-btn" id="script-focus-open" title="${escapeHtml(t("cr.focus.openTitle"))}">${icon("expand", { size: 13 })}<span>${t("cr.focus.open")}</span></button>
-            <button type="button" class="chip-icon-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}</button>
+            <button type="button" class="ai-field-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
           </div>
         </div>
         ${hookTemplateButtonHTML()}
@@ -2002,7 +2002,7 @@ function draftingPanel(c, campaigns, series = []) {
       <div class="field">
         <div class="creator-field-head">
           <label for="f-caption" style="margin-bottom:0;">${t("cr.f.caption")}</label>
-          <button type="button" class="chip-icon-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}</button>
+          <button type="button" class="ai-field-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
         </div>
         <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
       </div>

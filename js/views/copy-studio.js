@@ -703,7 +703,7 @@ function variantHTML(v, i, params, brand) {
         <span class="copy-variant-num">${t("copy.option", { n: i + 1 })}</span>
         <span class="copy-variant-meta">${multi ? `${t("copy.postCount", { n: v.parts.length })} · ` : ""}${charMetaHTML(v, params)}</span>
       </div>
-      ${v.editing ? editorHTML(v, i) : previewHTML(v, i, params, brand)}
+      ${v.editing ? editorHTML(v, i) : previewClickHTML(v, i, params, brand)}
       ${v.note ? `<div class="copy-note">${icon("sparkle", { size: 13 })}<span>${escapeHtml(v.note)}</span></div>` : ""}
       <div class="copy-actions">
         <button type="button" class="btn btn-primary btn-sm" data-copy-copy="${i}" ${lock}>${icon("copy", { size: 14 })}${multi ? t("copy.copyAll") : t("copy.copy")}</button>
@@ -819,6 +819,19 @@ function previewHTML(v, i, params, brand) {
   }
 }
 
+// The preview itself opens the editor: people click the Story text to
+// change it, and the "Edit" button sits below the sticker note, often out
+// of sight (2026-10-21: "mau edit tp gabisa dienter apa-apa").
+function previewClickHTML(v, i, params, brand) {
+  if (v.busy) return previewHTML(v, i, params, brand);
+  return `
+    <div class="copy-preview-click" data-copy-preview-edit="${i}" title="${escapeHtml(t("copy.preview.clickEdit"))}">
+      ${previewHTML(v, i, params, brand)}
+      <span class="copy-preview-hint" aria-hidden="true">${icon("edit", { size: 12 })}${t("copy.preview.clickEdit")}</span>
+    </div>
+  `;
+}
+
 function editorHTML(v, i) {
   return `
     <div class="copy-editor">
@@ -921,6 +934,22 @@ function wireResults(ctx, el) {
       }
       v.editing = !v.editing;
       paintResults(ctx);
+    })
+  );
+  qsa("[data-copy-preview-edit]", el).forEach((box) =>
+    box.addEventListener("click", (e) => {
+      // Its own buttons (copy one post, "… more") keep doing their job.
+      if (e.target instanceof Element && e.target.closest("button, a")) return;
+      const i = Number(box.dataset.copyPreviewEdit);
+      const v = at(i);
+      if (!v || v.busy || v.editing) return;
+      v.editing = true;
+      paintResults(ctx);
+      const ta = qs(`[data-copy-edit-part="${i}:0"]`, ctx.root);
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }
     })
   );
   qsa("[data-copy-save]", el).forEach((btn) =>

@@ -98,7 +98,7 @@ export default {
   // The cost, on every button that spends one (same pill as "Rencanakan
   // minggu ini", .btn-cost) — Brand DNA, Brand Book and the brand form.
   "ai.creditTag": { en: "1 AI credit", id: "1 AI credit" },
-  "ai.creditNote": { en: "AI credits are your allowance of AI help: each request uses 1. You have {left} left.", id: "AI credit = jatah bantuan AI kamu: tiap kali minta bantuan AI, terpakai 1. Sisa kamu sekarang: {left}." },
+  "ai.creditNote": { en: "AI credits are your allowance of AI help, one allowance for all your brands: each request uses 1. You have {left} left.", id: "AI credit = jatah bantuan AI kamu, satu jatah untuk semua brand: tiap kali minta bantuan AI, terpakai 1. Sisa kamu sekarang: {left}." },
   "ai.creditNote.unlimited": { en: "AI credits are your allowance of AI help. Your plan has no credit limit right now.", id: "AI credit = jatah bantuan AI kamu. Paketmu sekarang tanpa batas credit." },
   "dna.nav.saveProgress": { en: "Save progress", id: "Simpan progress" },
   "dna.nav.next": { en: "Next", id: "Lanjut" },
