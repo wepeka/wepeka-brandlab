@@ -199,25 +199,107 @@ ${communityHTML()}
 // "Gabung grup WhatsApp" (admin, api/announcements/group-invite.js): one
 // email per account, composed per recipient. `circle`: a Lifetime account
 // (lifetimeGroupFor), which gets both doors, its own group first; everyone
-// else gets the general group. → { subject, html, text }.
+// else gets the general group. Its own look (dark hero, brand gradient,
+// big WhatsApp-green buttons), not the plain shell the invoice uses; tables
+// and inline styles only, so Gmail and phone mail apps keep it.
+// → { subject, html, text }.
+const WA_GREEN = "#25D366";
+const GOLD = "#f5b544";
+const font = "font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;";
+// A button mail apps can't break: the colour sits on the cell, the link fills it.
+const bigButton = (href, label, bg, fg) => `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;"><tr><td bgcolor="${bg}" style="border-radius:999px;background:${bg};"><a href="${esc(href)}" style="display:inline-block;padding:15px 26px;${font}font-size:16px;font-weight:800;line-height:1;color:${fg};text-decoration:none;border-radius:999px;">${label}</a></td></tr></table>`;
+const groupCard = ({ step, tone, badge, title, body, href, cta }) => {
+  const gold = tone === "gold";
+  const bg = gold ? "#1c1409" : "#0f2418";
+  const line = gold ? GOLD : WA_GREEN;
+  return `<tr><td style="padding:0 28px 14px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;background:${bg};border:1px solid ${line};border-radius:18px;"><tr><td style="padding:20px 22px 22px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td width="30" height="30" align="center" bgcolor="${line}" style="width:30px;height:30px;border-radius:999px;background:${line};${font}font-size:14px;font-weight:800;color:#0c0a09;">${step}</td>
+<td style="padding-left:10px;${font}font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${line};">${esc(badge)}</td>
+</tr></table>
+<p style="margin:14px 0 6px;${font}font-size:20px;font-weight:800;line-height:1.25;color:#ffffff;">${esc(title)}</p>
+<p style="margin:0 0 18px;${font}font-size:14.5px;line-height:1.6;color:#d6d3d1;">${esc(body)}</p>
+${bigButton(href, cta, line, "#0c0a09")}
+</td></tr></table>
+</td></tr>`;
+};
+function groupInviteHTML({ circle, appUrl, settingsUrl }) {
+  const preheader = circle
+    ? "Founder Circle khusus akun Lifetime, plus grup Brandlab untuk semua pengguna."
+    : "Fitur baru, tips, dan tanya langsung ke tim Wepeka. Gabung sekali klik.";
+  const headline = circle
+    ? `Kamu dapat akses<br><span style="color:${GOLD};">2 grup WhatsApp</span> &#10024;`
+    : `Yuk gabung<br><span style="color:${WA_GREEN};">grup WhatsApp</span> Brandlab &#128172;`;
+  const sub = circle
+    ? "Sebagai pemilik akun Lifetime, kamu masuk ke Founder Circle (khusus Lifetime) dan ke grup Brandlab untuk semua pengguna."
+    : "Biar nggak ketinggalan info, semua kabar Brandlab sekarang diumumkan di grup WhatsApp duluan.";
+  const perks = [
+    ["&#128640;", "Info fitur baru paling duluan"],
+    ["&#128161;", "Tips konten dan branding dari tim Wepeka"],
+    ["&#128172;", "Tanya langsung kalau ada yang bingung"],
+  ];
+  const perksHTML = `<tr><td style="padding:24px 28px 8px;">
+<p style="margin:0 0 12px;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Di grup kamu dapat</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+${perks.map(([emoji, label]) => `<tr><td width="44" valign="middle" style="padding:6px 0;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="36" height="36" align="center" bgcolor="#f5f5f4" style="width:36px;height:36px;border-radius:12px;background:#f5f5f4;font-size:18px;line-height:36px;">${emoji}</td></tr></table></td><td valign="middle" style="padding:6px 0 6px 6px;${font}font-size:15px;font-weight:600;color:#1c1917;">${label}</td></tr>`).join("")}
+</table>
+</td></tr>`;
+  const regularCTA = `<tr><td style="padding:4px 28px 30px;">
+${bigButton(BRANDLAB_WA_GROUP_URL, "Gabung grup WhatsApp &rarr;", WA_GREEN, "#052e16")}
+<p style="margin:12px 0 0;${font}font-size:12.5px;color:#a8a29e;">Gratis, sekali klik langsung masuk.</p>
+</td></tr>`;
+  const cards = circle
+    ? `<tr><td style="height:24px;line-height:24px;font-size:0;">&nbsp;</td></tr>
+${groupCard({ step: 1, tone: "gold", badge: "Khusus Lifetime", title: "Founder Circle", body: "Bareng tim Wepeka dan Founder lain. Link ini khusus buat kamu, jangan dibagikan ya.", href: LIFETIME_WA_GROUP_URL, cta: "Gabung Founder Circle &rarr;" })}
+${groupCard({ step: 2, tone: "green", badge: "Semua pengguna", title: "Grup Brandlab", body: "Fitur baru, perbaikan, dan tips diumumkan di sana duluan, sekaligus tempat tanya langsung ke tim Wepeka.", href: BRANDLAB_WA_GROUP_URL, cta: "Gabung grup Brandlab &rarr;" })}
+<tr><td style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>`
+    : regularCTA;
+  const follow = FOLLOW_INSTAGRAM.map((h) => `<td style="padding:0 4px;"><a href="${esc(instagramUrl(h))}" style="display:inline-block;padding:9px 14px;border-radius:999px;background:#fdf2f8;border:1px solid #fbcfe8;${font}font-size:13.5px;font-weight:700;color:#be185d;text-decoration:none;">@${esc(h)}</a></td>`).join("");
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>Grup WhatsApp Brandlab</title></head>
+<body style="margin:0;padding:0;background:#f3efe9;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f3efe9" style="background:#f3efe9;"><tr><td align="center" style="padding:24px 12px 32px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;border-collapse:separate;background:#0c0a09;border-radius:22px;overflow:hidden;">
+<tr><td height="5" bgcolor="#ec4899" style="height:5px;line-height:5px;font-size:0;background:#ec4899;background-image:linear-gradient(90deg,#ffa52b,#ec4899,#8b5cf6);">&nbsp;</td></tr>
+<tr><td style="padding:24px 28px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td valign="middle"><img src="${esc(appUrl)}/assets/wepeka-logo.png" width="104" height="26" alt="Wepeka" style="display:block;border:0;outline:none;"></td>
+<td valign="middle" style="padding:0 10px;${font}font-size:20px;color:#57534e;">|</td>
+<td valign="middle" style="${font}font-size:19px;font-weight:800;color:#ffffff;">Brandlab</td>
+</tr></table>
+</td></tr>
+<tr><td style="padding:26px 28px 0;">
+<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:${circle ? "#2a1f0b" : "#0f2418"};${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${circle ? GOLD : "#4ade80"};">${circle ? "&#9733; Founder Brandlab" : "&#9679; Grup WhatsApp"}</span>
+<h1 style="margin:16px 0 12px;${font}font-size:30px;font-weight:800;line-height:1.18;color:#ffffff;">${headline}</h1>
+<p style="margin:0 0 22px;${font}font-size:16px;line-height:1.6;color:#d6d3d1;">${esc(sub)}</p>
+</td></tr>
+${cards}
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;">
+${perksHTML}
+<tr><td style="padding:10px 28px 26px;">
+<p style="margin:0 0 10px;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Follow juga di Instagram</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin-left:-4px;"><tr>${follow}</tr></table>
+</td></tr>
+</table>
+<p style="max-width:520px;margin:18px auto 0;${font}font-size:12px;line-height:1.6;color:#8a817a;text-align:center;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#8a817a;">Pengaturan &rarr; Pengingat</a>.<br>Wepeka Brandlab &middot; <a href="${esc(appUrl)}" style="color:#8a817a;">${esc(appUrl.replace(/^https?:\/\//, ""))}</a></p>
+</td></tr></table>
+</body></html>`;
+}
 export function composeGroupInviteEmail({ circle = false, appUrl = APP_URL } = {}) {
   const settingsUrl = `${appUrl}/#/settings/reminders`;
   const subject = circle ? "2 grup WhatsApp untuk Founder Brandlab" : "Gabung grup WhatsApp Brandlab, biar nggak ketinggalan info";
   const intro = circle
-    ? "Sebagai pemilik akun Lifetime, kamu punya akses ke 2 grup WhatsApp: grup Founder Circle yang khusus akun Lifetime, dan grup Brandlab untuk semua pengguna."
-    : "Grup WhatsApp Brandlab sudah ada. Gabung lewat tombol di bawah, biar nggak ketinggalan info.";
-  const html = shell(`<p style="margin:0 0 6px;color:#888;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">Grup WhatsApp</p>
-<h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;">${circle ? "Link 2 grup WhatsApp kamu" : "Yuk gabung grup WhatsApp Brandlab"}</h1>
-<p style="margin:0;">${esc(intro)}</p>
-${communityHTML({ circle })}
-<p style="margin:18px 0 0;color:#888;font-size:12px;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#888;">Pengaturan → Pengingat</a>.</p>`);
+    ? "Sebagai pemilik akun Lifetime, kamu masuk ke Founder Circle (khusus Lifetime) dan ke grup Brandlab untuk semua pengguna."
+    : "Biar nggak ketinggalan info, semua kabar Brandlab sekarang diumumkan di grup WhatsApp duluan.";
   const text = [
-    circle ? "Link 2 grup WhatsApp kamu" : "Yuk gabung grup WhatsApp Brandlab", "",
+    circle ? "Kamu dapat akses 2 grup WhatsApp" : "Yuk gabung grup WhatsApp Brandlab", "",
     intro, "",
     communityText({ circle }), "",
     `Nggak mau terima email info seperti ini? Matikan di Pengaturan → Pengingat: ${settingsUrl}`,
   ].join("\n");
-  return { subject, html, text };
+  return { subject, html: groupInviteHTML({ circle, appUrl, settingsUrl }), text };
 }
 
 const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/.test(v);
