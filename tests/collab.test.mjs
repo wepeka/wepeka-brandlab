@@ -44,3 +44,29 @@ describe("listEdit / applyListEdit: two people adding ideas at once", () => {
     assert.equal(listEdit([{ id: "a" }], [{ id: "a" }]).empty, true);
   });
 });
+
+describe("preserveEditing (js/collab/preserve.js)", () => {
+  test("a repaint gives the focused field back its text, caret and focus", async () => {
+    const { captureEditing, restoreEditing } = await import("../js/collab/preserve.js");
+    const made = [];
+    const field = (id, value) => {
+      const el = { tagName: "TEXTAREA", type: "", id, value, selectionStart: 0, selectionEnd: 0, selectionDirection: "none", scrollTop: 0, scrollLeft: 0, isConnected: true, isContentEditable: false,
+        getAttribute: () => null, focus() { doc.activeElement = this; }, setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; } };
+      made.push(el);
+      return el;
+    };
+    const doc = { activeElement: null, querySelector: (sel) => made.filter((e) => e.isConnected).find((e) => `#${e.id}` === sel) || null };
+    const old = field("f-caption", "Halo pagi, kopi");
+    old.selectionStart = 5; old.selectionEnd = 9; old.scrollTop = 12;
+    doc.activeElement = old;
+    const snap = captureEditing(doc);
+    // The view repaints: the field is rebuilt from the saved value.
+    old.isConnected = false;
+    doc.activeElement = null;
+    const fresh = field("f-caption", "Halo");
+    assert.equal(restoreEditing(snap, doc), true);
+    assert.equal(fresh.value, "Halo pagi, kopi");
+    assert.deepEqual([fresh.selectionStart, fresh.selectionEnd, fresh.scrollTop], [5, 9, 12]);
+    assert.equal(doc.activeElement, fresh);
+  });
+});

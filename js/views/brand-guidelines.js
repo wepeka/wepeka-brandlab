@@ -1,5 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
-import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles, onChange } from "../store.js";
+import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles, onChange, isSharedBrand } from "../store.js";
+import { merge3 } from "../collab/diff.js";
 import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML, revealStepTop } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
@@ -231,6 +232,20 @@ export function render(root, { brandId, section }) {
   // Every save on this page lands in the store first; the moment one of
   // them completes the identity, say so (Pemula's Tujuan just opened).
   const offGate = onChange(() => { if (root.isConnected) announceTujuanOpen(brandId, state); });
+  // Kerja Tim: in a shared brand a teammate's saved parts of the Book come in
+  // while this page is open — what this page hasn't changed takes theirs.
+  const offTeam = isSharedBrand(brandId) ? onChange(() => {
+    if (!root.isConnected) return;
+    const fresh = getBrand(brandId);
+    if (!fresh) return;
+    const remote = answersFromBrand(fresh);
+    const merged = merge3(state.answers, state.savedGuidelines, remote);
+    state.savedGuidelines = JSON.parse(JSON.stringify(remote));
+    if (JSON.stringify(merged) === JSON.stringify(state.answers)) return;
+    Object.keys(state.answers).forEach((k) => { if (!(k in merged)) delete state.answers[k]; });
+    Object.assign(state.answers, merged);
+    refresh();
+  }) : null;
   // Uploaded files load without blocking the page (js/store.js
   // loadBrandAssets): once they're in, fill them into this page's own
   // answers IN PLACE — the step handlers hold that object, so a photo or
@@ -240,7 +255,10 @@ export function render(root, { brandId, section }) {
     if (root.isConnected && fillGuidelinesFiles(brandId, state.answers)) refresh();
   });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
-  return () => offGate();
+  return () => {
+    offGate();
+    offTeam?.();
+  };
 }
 
 // The moment colours + fonts complete the identity (Brand DNA already

@@ -1,5 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
-import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality, listCampaigns, listContent, localISODate } from "../store.js";
+import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality, listCampaigns, listContent, localISODate, isSharedBrand, onChange } from "../store.js";
+import { merge3 } from "../collab/diff.js";
 import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu, loadingHTML, revealStepTop } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -295,7 +296,25 @@ export function render(root, { brandId, step }) {
   // it's better to answer one by one.
   refresh();
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
-  return () => {};
+  // Kerja Tim: in a shared brand a teammate's saved answers come in while
+  // this page is open — every answer this page hasn't changed takes theirs,
+  // what is being written here stays (js/collab/diff.js merge3).
+  if (!isSharedBrand(brandId)) return () => {};
+  return onChange(() => {
+    if (!root.isConnected) return;
+    const fresh = getBrand(brandId)?.brandDNA;
+    if (!fresh) return;
+    const base = state.savedDna;
+    const local = dnaOf(state, base.aiDraftPending);
+    const remote = { ...base, ...fresh, parts: { ...(base.parts || {}), ...(fresh.parts || {}) }, aiDraftPending: !!fresh.aiDraftPending };
+    const merged = merge3(local, base, remote);
+    state.savedDna = JSON.parse(JSON.stringify(remote));
+    if (JSON.stringify(merged) === JSON.stringify(local)) return;
+    const { parts, aiDraftPending, ...answers } = merged;
+    Object.assign(state.answers, answers);
+    state.parts = { ...state.parts, ...(parts || {}) };
+    refresh();
+  });
 }
 
 // One write for everything this wizard owns: the Brand DNA answers, the

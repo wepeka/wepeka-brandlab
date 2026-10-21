@@ -12,6 +12,7 @@ import { db as fdb, auth, loadFirestore } from "./firebase.js";
 import { BLOB_FIELDS, isDataUrl, isAssetRef, assetIdOf, assetRefsOf, hasInlineBlobs, dehydrateBlobs, hydrateBlobs, blobValues, mapBlobSlots } from "./brand-assets.js";
 import { brandLimitOf } from "./account.js";
 import { leafDiff, listEdit, applyListEdit, isPlainObject } from "./collab/diff.js";
+import { preserveEditing } from "./collab/preserve.js";
 
 // The Firestore SDK is loaded on first use (js/firebase.js loadFirestore),
 // not with this module: the login screen imports store.js through the app
@@ -1609,9 +1610,13 @@ export function updateGlobalBrandsBg(next) {
   dispatchDbChange();
 }
 
+// Every listener runs through preserveEditing (js/collab/preserve.js): a
+// repaint never takes away the text, caret or focus of the field someone
+// is typing in, and waits out a drag or an IME composition.
 export function onChange(fn) {
-  window.addEventListener("db:change", fn);
-  return () => window.removeEventListener("db:change", fn);
+  const wrapped = preserveEditing(fn);
+  window.addEventListener("db:change", wrapped);
+  return () => window.removeEventListener("db:change", wrapped);
 }
 
 // ---------- Trash (soft delete) ----------
