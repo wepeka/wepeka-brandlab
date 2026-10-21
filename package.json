@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/setup.mjs --test \"tests/*.test.mjs\"",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-brandlab \"node --test \\\"tests/rules/*.test.mjs\\\"\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-brandlab \"node --test --test-concurrency=1 \\\"tests/rules/*.test.mjs\\\"\"",
     "emu": "firebase emulators:start --only auth,firestore --project demo-brandlab",
     "emu:seed": "node --import ./tests/setup.mjs scripts/emu-seed.mjs",
     "dev:api": "node scripts/dev-api.mjs",
