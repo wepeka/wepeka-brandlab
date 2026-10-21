@@ -5559,6 +5559,20 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .circle-topic{ margin:0; font-size:13.5px; }
 .circle-session .circle-muted{ margin:0; }
 .circle-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
+.circle-soon{ display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius: var(--radius-pill); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color: var(--accent); background: var(--accent-soft); }
+/* The team's note about the session: the week's announcement. */
+.circle-note{ display:flex; gap:8px; margin:4px 0 0; padding:10px 12px; border-radius: var(--radius-sm); border:1px solid var(--border); background: var(--surface); font-size:13.5px; line-height:1.55; color: var(--text); }
+.circle-note svg{ flex:none; margin-top:2px; color: var(--accent); }
+.circle-actions .btn.is-live{ --glow-color: color-mix(in srgb, var(--health-good) 55%, transparent); animation: glow-pulse 2.4s ease-in-out infinite; }
+.circle-cal{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:6px; font-size:12.5px; color: var(--text-muted); }
+/* The Update page's "Sesi Founder" tab (js/views/announcements.js): the
+   same circle as the sheet, the session a little bigger. */
+.ann-tabs{ max-width:760px; margin:-12px 0 20px; }
+.ann-tab-dot{ width:8px; height:8px; border-radius:50%; background: var(--health-poor); box-shadow: 0 0 0 2px var(--bg); }
+.ann-tab-dot[hidden]{ display:none; }
+.circle-page{ padding:18px 20px; }
+.circle-page .circle-session{ padding:16px 18px; gap:6px; }
+.circle-page .circle-when{ font-size:18px; }
 .circle-recs{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
 .circle-recs a{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius: var(--radius-sm); border:1px solid var(--border); color: var(--text); text-decoration:none; font-size:13.5px; }
 .circle-recs a:hover{ background: var(--surface-2); }

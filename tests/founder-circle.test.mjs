@@ -142,3 +142,52 @@ describe("api/founder-circle.js", () => {
     assert.equal((await call(db, { method: "POST", body: { action: "nope" } })).statusCode, 400);
   });
 });
+
+// The "Sesi Founder" tab's session card (owner, 2026-10-21: "join meeting",
+// "add to calendar" / "add to your phone").
+describe("Founder Circle: the session card", async () => {
+  const { sessionHTML, icsFor, startsIn } = await import("../js/founder-circle.js");
+  const { t } = await import("../js/i18n.js");
+  const MIN = 60 * 1000;
+  const s = { at: NOW + 2 * 24 * HOUR, minutes: 90, kind: "founder", topic: "Bedah Reels, hook & CTA", note: "Bawa 1 Reels-mu; kita bedah bareng", link: "https://meet.google.com/abc-defg-hij" };
+
+  test("before it starts: join meeting, the countdown, the note, and both calendar buttons", () => {
+    const html = sessionHTML(s, NOW);
+    assert.ok(html.includes(t("circle.session.joinMeeting")) && html.includes(`href="${s.link}"`));
+    assert.ok(html.includes(t("circle.in.days", { n: 2 })));
+    assert.ok(html.includes("circle-note") && html.includes("Bawa 1 Reels-mu"));
+    assert.ok(html.includes('data-circle-cal="google"') && html.includes('data-circle-cal="phone"'));
+    assert.ok(html.includes(t("circle.session.phone")));
+  });
+
+  test("on now: join stands out, no countdown, no calendar buttons", () => {
+    const html = sessionHTML(s, s.at - 5 * MIN);
+    assert.ok(html.includes("circle-live") && html.includes("is-live"));
+    assert.ok(!html.includes("circle-soon") && !html.includes("data-circle-cal"));
+  });
+
+  test("no link yet: says it comes before the session", () => {
+    assert.ok(sessionHTML({ ...s, link: "" }, NOW).includes(t("circle.session.linkLater")));
+  });
+
+  test("the countdown in minutes, hours and days; nothing once the room is open", () => {
+    assert.equal(startsIn(s, s.at - 40 * MIN), t("circle.in.minutes", { n: 40 }));
+    assert.equal(startsIn(s, s.at - 5 * HOUR), t("circle.in.hours", { n: 5 }));
+    assert.equal(startsIn(s, s.at - 3 * 24 * HOUR), t("circle.in.days", { n: 3 }));
+    assert.equal(startsIn(s, s.at - 10 * MIN), "");
+    assert.equal(startsIn(null, NOW), "");
+  });
+
+  test("the phone's calendar file: one event in UTC, with the link and a reminder 30 minutes before", () => {
+    const ics = icsFor(s, NOW);
+    assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\n") && ics.endsWith("END:VCALENDAR\r\n"));
+    const unfolded = ics.replace(/\r\n /g, "");
+    assert.match(unfolded, /\r\nDTSTART:20261022T060000Z\r\n/);
+    assert.match(unfolded, /\r\nDTEND:20261022T073000Z\r\n/);
+    assert.match(unfolded, /\r\nTRIGGER:-PT30M\r\n/);
+    assert.ok(unfolded.includes(`URL:${s.link}`));
+    assert.ok(unfolded.includes("Bedah Reels\\, hook & CTA") && unfolded.includes("Reels-mu\\; kita"), "commas and semicolons escaped");
+    assert.equal(ics.split("BEGIN:VEVENT").length, 2);
+    for (const line of ics.split("\r\n")) assert.ok(line.length <= 61, `folded: ${line}`);
+  });
+});

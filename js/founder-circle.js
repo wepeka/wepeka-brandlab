@@ -4,10 +4,14 @@
 // sign-up to have your brand taken apart ("dibedah") in a Founder session.
 // A session is either a public Instagram live (every account sees it) or
 // a closed Founder session (Lifetime accounts only) — owner, 2026-10-16.
-//   openFounderCircle()   the sheet, from ⋯ → Founder Circle and from the
-//                         Brand Book's "Minta review tim Wepeka". An account
-//                         without Lifetime sees what's in it instead, plus
-//                         the next public live.
+//   mountCircle(body)     the circle itself, in whatever holds it: the
+//                         Update page's "Sesi Founder" tab (#/updates/sesi,
+//                         js/views/announcements.js — where ⋯ → Founder
+//                         Circle takes a Lifetime account) and the sheet.
+//   openFounderCircle()   the sheet, from the Brand Book's "Minta review tim
+//                         Wepeka", and from ⋯ → Founder Circle for an
+//                         account without Lifetime: what's in it instead,
+//                         plus the next public live.
 //   mountCircleNotice()   Beranda's line from the day before a session —
 //                         for every account when it's a public live.
 // Everything goes through api/founder-circle.js with the sign-in token; the
@@ -75,25 +79,80 @@ export function calendarUrl(s) {
   return `https://calendar.google.com/calendar/render?${q}`;
 }
 
+// "Simpan ke HP" — the same event as a calendar file (.ics): iPhone and
+// Android open it in their own calendar app, with a reminder 30 minutes
+// before. Times in UTC, so the phone shows them on its own clock. Long
+// lines folded, as the format asks.
+export function icsFor(s, now = Date.now()) {
+  const stamp = (ms) => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const text = (v) => String(v ?? "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  const fold = (line) => line.match(/.{1,60}/gu).join("\r\n ");
+  const title = text(t(`circle.cal.${kindOf(s)}`));
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Wepeka//Brandlab//ID", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:brandlab-session-${s.at}@wepeka.com`,
+    `DTSTAMP:${stamp(now)}`,
+    `DTSTART:${stamp(s.at)}`,
+    `DTEND:${stamp(s.at + s.minutes * MINUTE)}`,
+    `SUMMARY:${title}`,
+    `DESCRIPTION:${text([s.topic, s.note, s.link].filter(Boolean).join("\n"))}`,
+    ...(s.link ? [`URL:${s.link}`, `LOCATION:${text(s.link)}`] : []),
+    "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${title}`, "TRIGGER:-PT30M", "END:VALARM",
+    "END:VEVENT", "END:VCALENDAR",
+  ].map(fold).join("\r\n") + "\r\n";
+}
+function saveIcs(s) {
+  const url = URL.createObjectURL(new Blob([icsFor(s)], { type: "text/calendar;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "sesi-brandlab.ics";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// "3 hari lagi" / "5 jam lagi" / "20 menit lagi" until the room opens; ""
+// once it's live.
+export function startsIn(s, now = Date.now()) {
+  if (!s || isLive(s, now) || s.at <= now) return "";
+  const minutes = Math.max(1, Math.round((s.at - now) / MINUTE));
+  if (minutes < 60) return t("circle.in.minutes", { n: minutes });
+  const hours = Math.round(minutes / 60);
+  return hours < 24 ? t("circle.in.hours", { n: hours }) : t("circle.in.days", { n: Math.round(hours / 24) });
+}
+
 const brandOptions = (selected = "") => listBrands().map((b) => `<option value="${esc(b.id)}" ${b.id === selected ? "selected" : ""}>${esc(b.name)}</option>`).join("");
 
-function sessionHTML(s, now) {
+// The next session: when, what, the team's note about it (the week's
+// announcement), "Join meeting", and — until it starts — the two ways to
+// put it in a calendar: Google Calendar, or the phone's own (owner,
+// 2026-10-21: "join meeting", "add to calendar" / "add to your phone").
+export function sessionHTML(s, now = Date.now()) {
   if (!s) return `<p class="circle-empty">${t("circle.session.none")}</p>`;
   const live = isLive(s, now);
   const kind = kindOf(s);
+  const soon = startsIn(s, now);
+  const join = kind === "public" ? (live ? "circle.session.joinNow" : "circle.session.joinPublic") : "circle.session.joinMeeting";
   return `
     <div class="circle-session${live ? " is-live" : ""}">
       <div class="circle-chips">
         <span class="circle-kind is-${kind}">${icon(kind === "public" ? "instagram" : "lock", { size: 12 })}${t(`circle.kind.${kind}`)}</span>
-        ${live ? `<span class="circle-live">${t("circle.session.live")}</span>` : ""}
+        ${live ? `<span class="circle-live">${t("circle.session.live")}</span>` : soon ? `<span class="circle-soon">${icon("clock", { size: 12 })}${esc(soon)}</span>` : ""}
       </div>
       <b class="circle-when">${esc(sessionWhen(s.at))}</b>
       ${s.topic ? `<p class="circle-topic">${esc(s.topic)}</p>` : ""}
-      ${s.note ? `<p class="circle-muted">${esc(s.note)}</p>` : ""}
+      ${s.note ? `<p class="circle-note">${icon("megaphone", { size: 14 })}<span>${esc(s.note)}</span></p>` : ""}
       <div class="circle-actions">
-        ${s.link ? `<a class="btn ${live ? "btn-primary" : "btn-secondary"} btn-sm" href="${esc(s.link)}" target="_blank" rel="noopener noreferrer" data-circle-join data-kind="${kind}">${icon("play", { size: 13 })}${t(live ? "circle.session.joinNow" : kind === "public" ? "circle.session.joinPublic" : "circle.session.join")}</a>` : `<span class="circle-muted">${t("circle.session.linkLater")}</span>`}
-        <a class="btn btn-ghost btn-sm" href="${esc(calendarUrl(s))}" target="_blank" rel="noopener noreferrer">${icon("calendar", { size: 13 })}${t("circle.session.calendar")}</a>
+        ${s.link ? `<a class="btn ${live || kind === "founder" ? "btn-primary" : "btn-secondary"} btn-sm${live ? " is-live" : ""}" href="${esc(s.link)}" target="_blank" rel="noopener noreferrer" data-circle-join data-kind="${kind}">${icon("play", { size: 13 })}${t(join)}</a>` : `<span class="circle-muted">${t("circle.session.linkLater")}</span>`}
       </div>
+      ${live ? "" : `
+      <div class="circle-cal">
+        <span>${t("circle.session.addTo")}</span>
+        <a class="btn btn-secondary btn-sm" href="${esc(calendarUrl(s))}" target="_blank" rel="noopener noreferrer" data-circle-cal="google">${icon("calendar", { size: 13 })}${t("circle.session.google")}</a>
+        <button type="button" class="btn btn-secondary btn-sm" data-circle-cal="phone">${icon("download", { size: 13 })}${t("circle.session.phone")}</button>
+      </div>`}
     </div>`;
 }
 
@@ -139,47 +198,48 @@ export function circleBodyHTML(view, now = Date.now()) {
     const items = ["mentoring", "recordings", "review", "bedah"].map((k) => `<li>${icon(k === "review" ? "book" : k === "bedah" ? "target" : k === "recordings" ? "play" : "users", { size: 15 })}<span><b>${t(`circle.teaser.${k}`)}</b> ${t(`circle.teaser.${k}Body`)}</span></li>`).join("");
     // The next public live is open to everyone — it leads, when there is one.
     const live = view?.session && kindOf(view.session) === "public"
-      ? `<section class="circle-sec"><h3>${icon("instagram", { size: 15 })}${t("circle.publicTitle")}</h3>${sessionHTML(view.session, now)}</section>`
+      ? `<section class="circle-sec"><h3>${icon("instagram", { size: 15 })}${t("circle.publicTitle")}</h3><div data-circle-session>${sessionHTML(view.session, now)}</div></section>`
       : "";
     return `${live}<p class="community-lead">${t("circle.teaser.lead")}</p><ul class="circle-teaser">${items}</ul>`;
   }
   return `
     <p class="community-lead">${t("circle.lead")}</p>
-    <section class="circle-sec"><h3>${icon("users", { size: 15 })}${t("circle.session.title")}</h3>${sessionHTML(view.session, now)}</section>
+    <section class="circle-sec"><h3>${icon("users", { size: 15 })}${t("circle.session.title")}</h3><div data-circle-session>${sessionHTML(view.session, now)}</div></section>
     <section class="circle-sec"><h3>${icon("play", { size: 15 })}${t("circle.rec.title")}</h3>${recordingsHTML(view.recordings || [])}</section>
     <section class="circle-sec" id="circle-review"><h3>${icon("book", { size: 15 })}${t("circle.review.title")}</h3><p class="circle-muted">${t("circle.review.body")}</p>${reviewHTML(view.review)}</section>
     <section class="circle-sec"><h3>${icon("target", { size: 15 })}${t("circle.bedah.title")}</h3><p class="circle-muted">${t("circle.bedah.body")}</p>${bedahHTML(view.bedah)}</section>`;
 }
 
-// The sheet. `focus: "review"` scrolls to the review part (from the Brand Book).
-export function openFounderCircle({ focus = "" } = {}) {
-  const member = isLifetime(getCachedAccount());
-  const overlay = openModal({
-    title: t("circle.title"),
-    bodyHTML: `<div data-circle-body>${member ? `<p class="community-note community-wait"><span class="spinner" aria-hidden="true"></span>${t("circle.loading")}</p>` : circleBodyHTML({ member: false })}</div>`,
-    footHTML: member
-      ? `<button type="button" class="btn btn-primary" data-circle-close>${t("common.close")}</button>`
-      : `<button type="button" class="btn btn-secondary" data-circle-close>${t("common.close")}</button><a class="btn btn-primary" href="#/pricing" data-circle-pricing>${t("circle.teaser.cta")}</a>`,
-  });
-  overlay.setAttribute("data-circle-modal", "");
-  gaEvent("founder_circle_open", { member: member ? "yes" : "no", focus: focus || "menu" });
-  overlay.querySelector("[data-circle-close]").addEventListener("click", () => closeOverlay(overlay));
-  overlay.querySelector("[data-circle-pricing]")?.addEventListener("click", () => closeOverlay(overlay));
-
-  const body = overlay.querySelector("[data-circle-body]");
+// The circle inside `body` (the sheet below, or the "Sesi Founder" tab):
+// loads it, paints it, and wires its buttons. `focus: "review"` scrolls to
+// the review part (from the Brand Book). A non-member's body already holds
+// the teaser; a public live, if any, is added to it. The session's
+// countdown and "on now" keep themselves current while it's on screen.
+export function mountCircle(body, { member = isLifetime(getCachedAccount()), focus = "" } = {}) {
+  let current = null;
   const paint = (view) => {
     if (!body.isConnected) return;
+    current = view;
     body.innerHTML = circleBodyHTML(view);
     if (focus === "review") body.querySelector("#circle-review")?.scrollIntoView({ block: "start" });
   };
+  const tick = setInterval(() => {
+    if (!body.isConnected) { clearInterval(tick); return; }
+    const slot = body.querySelector("[data-circle-session]");
+    if (slot && current?.session) slot.innerHTML = sessionHTML(current.session);
+  }, 30 * 1000);
   body.addEventListener("click", (e) => {
     const join = e.target.closest("[data-circle-join]");
     if (join) gaEvent("founder_session_join", { kind: join.dataset.kind || "", member: member ? "yes" : "no" });
+    const cal = e.target.closest("[data-circle-cal]");
+    if (cal && current?.session) {
+      if (cal.dataset.circleCal === "phone") saveIcs(current.session);
+      gaEvent("founder_session_calendar", { via: cal.dataset.circleCal, kind: kindOf(current.session) });
+    }
   });
   if (!member) {
-    // The teaser is on screen already; a public live, if any, is added to it.
     loadCircle({ fresh: true }).then((view) => { if (view?.session) paint({ member: false, session: view.session }); }).catch(() => {});
-    return overlay;
+    return;
   }
 
   const fail = () => { if (body.isConnected) body.innerHTML = `<p class="circle-empty">${t("circle.error")}</p>`; };
@@ -217,6 +277,26 @@ export function openFounderCircle({ focus = "" } = {}) {
       toast(t("circle.error"));
     }
   });
+}
+
+// Where a Lifetime account's circle lives: the Update page's tab.
+export const CIRCLE_ROUTE = "#/updates/sesi";
+
+// The sheet.
+export function openFounderCircle({ focus = "" } = {}) {
+  const member = isLifetime(getCachedAccount());
+  const overlay = openModal({
+    title: t("circle.title"),
+    bodyHTML: `<div data-circle-body>${member ? `<p class="community-note community-wait"><span class="spinner" aria-hidden="true"></span>${t("circle.loading")}</p>` : circleBodyHTML({ member: false })}</div>`,
+    footHTML: member
+      ? `<button type="button" class="btn btn-primary" data-circle-close>${t("common.close")}</button>`
+      : `<button type="button" class="btn btn-secondary" data-circle-close>${t("common.close")}</button><a class="btn btn-primary" href="#/pricing" data-circle-pricing>${t("circle.teaser.cta")}</a>`,
+  });
+  overlay.setAttribute("data-circle-modal", "");
+  gaEvent("founder_circle_open", { member: member ? "yes" : "no", focus: focus || "menu" });
+  overlay.querySelector("[data-circle-close]").addEventListener("click", () => closeOverlay(overlay));
+  overlay.querySelector("[data-circle-pricing]")?.addEventListener("click", () => closeOverlay(overlay));
+  mountCircle(overlay.querySelector("[data-circle-body]"), { member, focus });
   return overlay;
 }
 
@@ -239,7 +319,11 @@ export function mountCircleNotice(root) {
       ${live && s.link
         ? `<a class="btn btn-primary btn-sm trial-remind-cta" href="${esc(s.link)}" target="_blank" rel="noopener noreferrer" data-circle-notice-join>${esc(t("circle.session.joinNow"))}</a>`
         : `<button type="button" class="btn btn-secondary btn-sm trial-remind-cta" data-circle-open>${esc(t("circle.notice.open"))}</button>`}`;
-    el.querySelector("[data-circle-open]")?.addEventListener("click", () => openFounderCircle({ focus: "notice" }));
+    // A Lifetime account goes to its tab; everyone else sees the public live in the sheet.
+    el.querySelector("[data-circle-open]")?.addEventListener("click", () => {
+      if (isLifetime(getCachedAccount())) location.hash = CIRCLE_ROUTE;
+      else openFounderCircle({ focus: "notice" });
+    });
     el.querySelector("[data-circle-notice-join]")?.addEventListener("click", () => gaEvent("founder_session_join", { kind, from: "beranda" }));
     let box = root.querySelector(".home-notices");
     if (!box) {

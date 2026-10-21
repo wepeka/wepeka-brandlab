@@ -7,7 +7,7 @@ import { getMode, toggleMode } from "./mode.js";
 import { t, getLang } from "./i18n.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
-import { getCachedAccount, isTrial, isReadOnly, trialDaysLeft, TRIAL_DAYS } from "./account.js";
+import { getCachedAccount, isTrial, isReadOnly, isLifetime, trialDaysLeft, TRIAL_DAYS } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod, aiExtras } from "./ai-usage.js";
 import { identityDone, identityGate, identityGateCopy } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
@@ -537,6 +537,9 @@ export function wireShell({ brandId }) {
       else if (act === "videos") openVideoLibrary();
       else if (act === "tour") startOnboardingTour();
       else if (act === "community") import("./community.js").then((m) => m.openCommunityModal()).catch((e) => console.warn("[community] unavailable", e));
+      // A Lifetime account's circle is the Update page's "Sesi Founder" tab;
+      // anyone else gets the sheet saying what's in it.
+      else if (act === "founder-circle" && isLifetime(getCachedAccount())) location.hash = "#/updates/sesi";
       else if (act === "founder-circle") import("./founder-circle.js").then((m) => m.openFounderCircle()).catch((e) => console.warn("[founder-circle] unavailable", e));
       else if (act === "report") import("./report-problem.js").then((m) => m.openReportProblem()).catch((e) => console.warn("[report] unavailable", e));
       else if (act === "theme") toggleTheme();

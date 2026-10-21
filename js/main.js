@@ -231,6 +231,7 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
   if (h === "/updates") return { view: "announcements" };
+  if (h === "/updates/sesi") return { view: "announcements", tab: "sesi" };
   return { view: "brands" };
 }
 
@@ -807,6 +808,9 @@ async function renderRoute() {
         break;
       case "settings":
         cleanup = view.render(viewRoot, { panel: route.panel });
+        break;
+      case "announcements":
+        cleanup = view.render(viewRoot, { tab: route.tab });
         break;
       default:
         cleanup = view.render(viewRoot);

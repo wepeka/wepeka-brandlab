@@ -1,6 +1,11 @@
 // Pengumuman page (#/updates) — every update and fix the Wepeka team has
 // posted, newest first. Admins also get the composer at the top (post,
 // edit, delete); everyone else just reads. Data and rules: js/announcements.js.
+// A Lifetime account gets a second tab, "Sesi Founder" (#/updates/sesi):
+// the next live session — when, the team's note about it, "Join meeting",
+// Google Calendar or the phone's own calendar — and the rest of Founder
+// Circle (js/founder-circle.js mountCircle). Everyone else sees the posts
+// only (owner, 2026-10-21).
 import {
   KINDS, listAnnouncements, announcementsStatus, onAnnouncements, startAnnouncements, announcementsSeenAt, markAnnouncementsSeen,
   isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement, announcementEmailReady, emailAnnouncement,
@@ -8,6 +13,9 @@ import {
 import { renderLightMarkdown } from "../ai-directives.js";
 import { backToLastBrandHTML } from "../back-link.js";
 import { getBrand } from "../store.js";
+import { getCachedAccount, isLifetime } from "../account.js";
+import { mountCircle, loadCircle, isSoon, CIRCLE_ROUTE } from "../founder-circle.js";
+import { gaEvent } from "../analytics.js";
 import { confirmDialog } from "../modals.js";
 import { icon } from "../icons.js";
 import { qs, escapeHtml as esc, toast, skeletonHTML } from "../dom.js";
@@ -69,8 +77,49 @@ function itemHTML(a, { seenAt, admin }) {
     </article>`;
 }
 
-export function render(root) {
+// The two tabs, for a Lifetime account. A dot on "Sesi Founder" from the
+// day before a session until it's over.
+function tabsHTML(active) {
+  const tab = (key, href, glyph, label) => `<a class="tab ${active === key ? "active" : ""}" href="${href}" ${active === key ? 'aria-current="page"' : ""}>${icon(glyph, { size: 15 })}${label}</a>`;
+  return `<nav class="tabs ann-tabs" aria-label="${esc(t("ann.title"))}">
+    ${tab("updates", "#/updates", "megaphone", t("ann.tab.updates"))}
+    ${tab("sesi", CIRCLE_ROUTE, "users", `${t("ann.tab.sessions")}<span class="ann-tab-dot" data-sesi-dot hidden></span>`)}
+  </nav>`;
+}
+const sessionSoon = () => loadCircle().then((view) => isSoon(view?.session)).catch(() => false);
+function showSessionDot(root, soon) {
+  soon.then((on) => { if (on) root.querySelectorAll("[data-sesi-dot]").forEach((d) => d.removeAttribute("hidden")); });
+}
+
+const headHTML = (tab) => `
+  <div class="page-head">
+    <div>
+      <div class="page-eyebrow">${backToLastBrandHTML(getBrand)}</div>
+      <h1>${t("ann.title")}</h1>
+      <p class="page-sub">${t(tab === "sesi" ? "ann.sessions.sub" : "ann.sub")}</p>
+    </div>
+  </div>`;
+
+function renderSessions(root) {
+  root.innerHTML = `
+    ${headHTML("sesi")}
+    ${tabsHTML("sesi")}
+    <div class="ann-wrap">
+      <section class="card circle-page" data-circle-body><p class="community-note community-wait"><span class="spinner" aria-hidden="true"></span>${t("circle.loading")}</p></section>
+    </div>`;
+  gaEvent("founder_circle_open", { member: "yes", focus: "tab" });
+  mountCircle(root.querySelector("[data-circle-body]"), { member: true });
+}
+
+export function render(root, { tab } = {}) {
+  const lifetime = isLifetime(getCachedAccount());
+  if (tab === "sesi") {
+    if (lifetime) return renderSessions(root);
+    location.replace("#/updates");
+    return;
+  }
   startAnnouncements();
+  const soon = lifetime ? sessionSoon() : null;
   // "Baru" marks what arrived since the last visit — read before marking,
   // so this visit still shows them.
   let seenAt = announcementsSeenAt();
@@ -90,13 +139,8 @@ export function render(root) {
     const draft = qs("#ann-composer") ? { title: qs("#ann-title")?.value, body: qs("#ann-body")?.value, link: qs("#ann-link")?.value, kind: qs('input[name="ann-kind"]:checked')?.value, email: !!qs("#ann-email")?.checked } : null;
     const hadFocus = document.activeElement?.id;
     root.innerHTML = `
-      <div class="page-head">
-        <div>
-          <div class="page-eyebrow">${backToLastBrandHTML(getBrand)}</div>
-          <h1>${t("ann.title")}</h1>
-          <p class="page-sub">${t("ann.sub")}</p>
-        </div>
-      </div>
+      ${headHTML("updates")}
+      ${lifetime ? tabsHTML("updates") : ""}
       <div class="ann-wrap">
         ${admin ? composerHTML(editing) : ""}
         <div class="ann-list">
@@ -120,6 +164,7 @@ export function render(root) {
     }
     if (hadFocus && qs(`#${hadFocus}`)) qs(`#${hadFocus}`).focus();
     wire();
+    if (soon) showSessionDot(root, soon);
     // Opened = read. Once the list is in, so "Baru" counts are right.
     if (!marked && status === "ready") { marked = true; markAnnouncementsSeen(); }
   };

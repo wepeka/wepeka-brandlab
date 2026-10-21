@@ -2,6 +2,9 @@
 // Key prefix: ann. Shape: "key": { en: "...", id: "..." }. Merged into js/i18n.js.
 export default {
   "ann.title": { en: "Updates", id: "Pengumuman" },
+  "ann.tab.updates": { en: "Updates", id: "Update" },
+  "ann.tab.sessions": { en: "Founder sessions", id: "Sesi Founder" },
+  "ann.sessions.sub": { en: "Live sessions with the Wepeka team: when, the meeting link, and the recordings. For Lifetime accounts.", id: "Sesi live bareng tim Wepeka: jadwal, link meeting, dan rekamannya. Khusus akun Lifetime." },
   "ann.sub": { en: "What's new and what got fixed in Brandlab, straight from the Wepeka team.", id: "Fitur baru dan perbaikan di Brandlab, langsung dari tim Wepeka." },
   "ann.topbar": { en: "Updates", id: "Update" },
   "ann.topbarTitle": { en: "Brandlab updates", id: "Pengumuman & update Brandlab" },
