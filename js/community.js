@@ -173,11 +173,11 @@ export function openCommunityModal() {
 // The WhatsApp button in the topbar (owner, 2026-10-21: a button in the top
 // corner to join the group; once joined it takes you to WhatsApp, so the
 // group is one tap away and easy to spot — green, glowing).
-//   Not joined yet  "Gabung grup WA", pulsing. A tap opens a small popover:
+//   Not joined yet  "Join grup Brandlab" (owner's words), pulsing. A tap opens a small popover:
 //                   what the group is for and its button — two groups and
 //                   two buttons for a Lifetime account (its own group, then
 //                   the Brandlab group), one for everyone else.
-//   Joined          "Buka grup WA", a steady glow. With one group the button
+//   Joined          "Buka grup Brandlab", a steady glow. With one group the button
 //                   goes straight there; a Lifetime account picks one of its
 //                   two in the same popover.
 // "Joined" is the Komunitas sheet's own mark ("wa", "wa-lifetime"): a tap on
@@ -192,7 +192,9 @@ export function waTopbarHTML() {
   const joined = waAllJoined(lifetime);
   const name = escapeHtml(t(joined ? "wa.top.openTitle" : "wa.top.joinTitle"));
   const attrs = `id="wa-group-btn" class="wa-top${joined ? " is-joined" : ""}" data-wa-state="${waState(lifetime, joined)}" title="${name}" aria-label="${name}"`;
-  const inner = `${WA_ICON}<span class="wa-top-label">${escapeHtml(t(joined ? "wa.top.open" : "wa.top.join"))}</span>`;
+  // The words in full where the row has room, shortened where it's tight
+  // (css/styles.css .wa-top).
+  const inner = `${WA_ICON}<span class="wa-top-label"><span class="wa-top-long">${escapeHtml(t(joined ? "wa.top.open" : "wa.top.join"))}</span><span class="wa-top-short">${escapeHtml(t(joined ? "wa.top.openShort" : "wa.top.joinShort"))}</span></span>`;
   if (joined && !lifetime) return `<a ${attrs} href="${escapeHtml(BRANDLAB_WA_GROUP_URL)}" target="_blank" rel="noopener noreferrer" data-wa-direct>${inner}</a>`;
   return `<button type="button" ${attrs} aria-haspopup="dialog" aria-expanded="false">${inner}</button>`;
 }
