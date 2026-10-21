@@ -6,8 +6,25 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 
+// Local dev only (scripts/dev-api.mjs): the Admin SDK talks to the Firebase
+// Emulator Suite on its own once FIRESTORE_EMULATOR_HOST /
+// FIREBASE_AUTH_EMULATOR_HOST are set, and needs no service account there.
+// All three conditions must hold — an explicit flag, both emulator hosts and
+// a demo-* project (never a real one) — so a stray variable on Vercel can't
+// switch production to it.
+export function emulatorProjectId(env = process.env) {
+  if (env.BRANDLAB_EMULATOR !== "1") return null;
+  const project = env.GCLOUD_PROJECT || env.FIREBASE_ADMIN_PROJECT_ID || "";
+  if (!env.FIRESTORE_EMULATOR_HOST || !env.FIREBASE_AUTH_EMULATOR_HOST || !project.startsWith("demo-")) {
+    throw new Error("BRANDLAB_EMULATOR=1 needs FIRESTORE_EMULATOR_HOST, FIREBASE_AUTH_EMULATOR_HOST and a demo-* project");
+  }
+  return project;
+}
+
 function adminApp() {
   if (getApps().length) return getApps()[0];
+  const emulatorProject = emulatorProjectId();
+  if (emulatorProject) return initializeApp({ projectId: emulatorProject });
   return initializeApp({
     credential: cert({
       projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,

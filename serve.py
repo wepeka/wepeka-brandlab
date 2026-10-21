@@ -9,8 +9,11 @@
 # showing" confusion for good.
 #
 # Usage: python3 serve.py  (always serves this same folder, on port 8743)
+#        python3 serve.py --emu  (Firebase Emulator mode, see below)
 import http.server
 import functools
+import os
+import sys
 import urllib.error
 import urllib.request
 
@@ -25,6 +28,14 @@ PORT = 8743
 API_ORIGIN = "https://brandlab.wepeka.com"
 PROXIED_API = ("/api/ai", "/api/guide-videos")
 
+# --emu (or BRANDLAB_EMU=1): local testing on the Firebase Emulator Suite —
+# EVERY /api/* request (and /__dev/*) goes to scripts/dev-api.mjs on
+# 127.0.0.1:8787, which runs the handlers on the emulators with a fake AI
+# and an email outbox. Nothing is ever sent to production in this mode.
+# Open the app with http://localhost:8743/?emu=1 (js/emulator.js).
+EMU = "--emu" in sys.argv[1:] or os.environ.get("BRANDLAB_EMU") == "1"
+EMU_API_ORIGIN = "http://127.0.0.1:8787"
+
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -32,13 +43,21 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _is_proxied(self):
-        return self.path.split("?")[0] in PROXIED_API
+        path = self.path.split("?")[0]
+        if EMU:
+            return path.startswith("/api/") or path.startswith("/__dev/")
+        return path in PROXIED_API
 
     def _proxy(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
         headers = {k: v for k, v in self.headers.items() if k.lower() in ("content-type", "authorization", "accept")}
-        req = urllib.request.Request(API_ORIGIN + self.path, data=body, headers=headers, method=self.command)
+        origin = EMU_API_ORIGIN if EMU else API_ORIGIN
+        if EMU:
+            # Invite links are built from the page's own origin (localhost or
+            # 127.0.0.1 — two origins = two separate sign-ins for testing).
+            headers["Origin"] = self.headers.get("Origin") or "http://%s" % (self.headers.get("Host") or "localhost:%d" % PORT)
+        req = urllib.request.Request(origin + self.path, data=body, headers=headers, method=self.command)
         try:
             upstream = urllib.request.urlopen(req, timeout=150)
         except urllib.error.HTTPError as err:
@@ -73,6 +92,11 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
             return self._proxy()
         self.send_error(501)
 
+    def do_DELETE(self):
+        if EMU and self._is_proxied():
+            return self._proxy()
+        self.send_error(501)
+
 
 Handler = functools.partial(NoCacheHandler, directory=".")
 
@@ -87,5 +111,7 @@ class Server(http.server.ThreadingHTTPServer):
 # Loopback only (audit S-25): binding "" served this folder — and the
 # /api/ai proxy with whatever token a browser sends — to the whole network.
 with Server(("127.0.0.1", PORT), Handler) as httpd:
+    if EMU:
+        print(f"EMULATOR MODE: open http://localhost:{PORT}/?emu=1 — /api/* goes to {EMU_API_ORIGIN} (npm run dev:api), never to production")
     print(f"Serving Wepeka Brandlab at http://localhost:{PORT} (caching disabled)")
     httpd.serve_forever()

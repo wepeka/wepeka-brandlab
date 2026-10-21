@@ -8,9 +8,10 @@
 // firestore.rules / storage.rules (requires a logged-in user), not in
 // hiding this object — safe to commit as-is.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { getAuth, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { IS_EMULATOR, EMULATOR_CONFIG, EMULATOR_AUTH_URL, EMULATOR_FIRESTORE } from "./emulator.js";
 
-const firebaseConfig = {
+const liveConfig = {
   apiKey: "AIzaSyDcApVGM0CyxfcTERsrwr7CK07YWlQT_vI",
   authDomain: "wepeka-ba996.firebaseapp.com",
   projectId: "wepeka-ba996",
@@ -18,6 +19,8 @@ const firebaseConfig = {
   messagingSenderId: "494668744644",
   appId: "1:494668744644:web:e4bdc9aea34800849f0691",
 };
+// Local emulator only (js/emulator.js): never true on brandlab.wepeka.com.
+const firebaseConfig = IS_EMULATOR ? EMULATOR_CONFIG : liveConfig;
 
 export const app = initializeApp(firebaseConfig);
 // Plain getFirestore() defaults to the WebChannel streaming transport,
@@ -36,6 +39,13 @@ export const app = initializeApp(firebaseConfig);
 // memory on its own if IndexedDB fails later, at first use.
 function createDb(fs) {
   const base = { experimentalAutoDetectLongPolling: true };
+  if (IS_EMULATOR) {
+    // Memory cache: the emulator is wiped between runs, and a cache on disk
+    // would paint the previous run's data.
+    const emu = fs.initializeFirestore(app, { ...base, localCache: fs.memoryLocalCache() });
+    fs.connectFirestoreEmulator(emu, EMULATOR_FIRESTORE.host, EMULATOR_FIRESTORE.port);
+    return emu;
+  }
   if (typeof indexedDB !== "undefined") {
     try {
       return fs.initializeFirestore(app, { ...base, localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) });
@@ -46,6 +56,8 @@ function createDb(fs) {
   return fs.initializeFirestore(app, { ...base, localCache: fs.memoryLocalCache() });
 }
 export const auth = getAuth(app);
+if (IS_EMULATOR) connectAuthEmulator(auth, EMULATOR_AUTH_URL, { disableWarnings: true });
+export { IS_EMULATOR };
 
 // Firestore (~680 KB of SDK) is NOT part of the first download: a logged-out
 // visitor gets the login/pricing screen from Firebase app + auth alone.

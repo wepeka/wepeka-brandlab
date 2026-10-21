@@ -47,6 +47,8 @@ export function persistentLocalCache(settings = {}) {
 export function persistentMultipleTabManager() {
   return { kind: "multiTab" };
 }
+// js/firebase.js calls it only in local emulator mode (js/emulator.js).
+export function connectFirestoreEmulator() {}
 export function memoryLocalCache() {
   return { kind: "memory" };
 }
