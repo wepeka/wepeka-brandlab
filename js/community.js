@@ -7,12 +7,14 @@
 // then (owner, 2026-10-13). Shown
 //   - on the congratulations page right after an account becomes paid
 //     (js/pay-thanks.js), before anything else of that boot,
-//   - any time from the ⋯ menu → Komunitas, for every account, and
-//   - from the plans page's "Kamu sudah Lifetime" note.
+//   - any time from the ⋯ menu → Komunitas, for every account,
+//   - from the plans page's "Kamu sudah Lifetime" note, and
+//   - the WhatsApp groups alone from the green button in the topbar
+//     (waTopbarHTML below).
 // The links themselves live in js/site-links.js (and api/_community.js for
 // the email sent after payment — same values, checked by a test).
 import { icon } from "./icons.js";
-import { escapeHtml } from "./dom.js";
+import { escapeHtml, openMenu, closeMenu } from "./dom.js";
 import { openModal, closeOverlay } from "./modals.js";
 import { getSettings, updateSettings } from "./store.js";
 import { getCachedAccount, isReadOnly, isLifetime } from "./account.js";
@@ -49,7 +51,7 @@ function doorHTML({ id, cls, href, glyph, todo, did, bubble, attrs = "" }) {
       ${glyph}
       <span class="community-label"><span class="community-todo">${escapeHtml(todo)}</span><span class="community-did">${escapeHtml(did)}</span></span>
       <span class="community-tick" aria-hidden="true">${icon("check", { size: 14 })}</span>
-      <span class="community-bubble" aria-hidden="true">${escapeHtml(bubble)}</span>
+      ${bubble ? `<span class="community-bubble" aria-hidden="true">${escapeHtml(bubble)}</span>` : ""}
     </a>`;
 }
 
@@ -69,14 +71,19 @@ function paintProgress(scope) {
 }
 
 // A Lifetime account's own group. The server decides who gets the link; a
-// failed or empty answer simply leaves the button out.
+// failed or empty answer simply leaves the button out. A link once given is
+// kept for the session, so the topbar's popover opens with it in place.
+let lifetimeUrlKnown = null;
 async function lifetimeGroupUrl() {
+  if (lifetimeUrlKnown) return lifetimeUrlKnown;
   try {
     const idToken = await auth.currentUser?.getIdToken();
     if (!idToken) return null;
     const res = await fetch("/api/community", { headers: { Authorization: `Bearer ${idToken}` } });
     const url = res.ok ? (await res.json())?.lifetimeGroupUrl : null;
-    return typeof url === "string" && /^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]+$/.test(url) ? url : null;
+    if (typeof url !== "string" || !/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]+$/.test(url)) return null;
+    lifetimeUrlKnown = url;
+    return url;
   } catch {
     return null;
   }
@@ -160,5 +167,123 @@ export function openCommunityModal() {
       resolve();
     });
     obs.observe(document.body, { childList: true });
+  });
+}
+
+// The WhatsApp button in the topbar (owner, 2026-10-21: a button in the top
+// corner to join the group; once joined it takes you to WhatsApp, so the
+// group is one tap away and easy to spot — green, glowing).
+//   Not joined yet  "Gabung grup WA", pulsing. A tap opens a small popover:
+//                   what the group is for and its button — two groups and
+//                   two buttons for a Lifetime account (its own group, then
+//                   the Brandlab group), one for everyone else.
+//   Joined          "Buka grup WA", a steady glow. With one group the button
+//                   goes straight there; a Lifetime account picks one of its
+//                   two in the same popover.
+// "Joined" is the Komunitas sheet's own mark ("wa", "wa-lifetime"): a tap on
+// either group's button, here or there, counts.
+export const waGroupIds = (lifetime) => (lifetime ? ["wa-lifetime", "wa"] : ["wa"]);
+export const waAllJoined = (lifetime, done = isDone) => waGroupIds(lifetime).every((id) => done(id));
+
+const waState = (lifetime, joined) => `${lifetime ? "two" : "one"}:${joined ? "in" : "out"}`;
+
+export function waTopbarHTML() {
+  const lifetime = isLifetime(getCachedAccount());
+  const joined = waAllJoined(lifetime);
+  const name = escapeHtml(t(joined ? "wa.top.openTitle" : "wa.top.joinTitle"));
+  const attrs = `id="wa-group-btn" class="wa-top${joined ? " is-joined" : ""}" data-wa-state="${waState(lifetime, joined)}" title="${name}" aria-label="${name}"`;
+  const inner = `${WA_ICON}<span class="wa-top-label">${escapeHtml(t(joined ? "wa.top.open" : "wa.top.join"))}</span>`;
+  if (joined && !lifetime) return `<a ${attrs} href="${escapeHtml(BRANDLAB_WA_GROUP_URL)}" target="_blank" rel="noopener noreferrer" data-wa-direct>${inner}</a>`;
+  return `<button type="button" ${attrs} aria-haspopup="dialog" aria-expanded="false">${inner}</button>`;
+}
+
+// What each group is for. Only what the groups really carry (owner,
+// 2026-10-13/16): news, fixes and tips, questions to the team; for the
+// Founder Circle, the Founder sessions' schedule and the Founders themselves.
+const WA_PERKS = { wa: ["news", "tips", "ask"], "wa-lifetime": ["live", "founders"] };
+const PERK_ICON = { news: "megaphone", tips: "bulb", ask: "chat", live: "calendar", founders: "users" };
+const perksHTML = (id) => `<ul class="wa-pop-perks">${WA_PERKS[id].map((k) => `<li>${icon(PERK_ICON[k], { size: 15 })}<span>${escapeHtml(t(`wa.perk.${k}`))}</span></li>`).join("")}</ul>`;
+const generalPopDoorHTML = () => doorHTML({ id: "wa", cls: "community-wa", href: BRANDLAB_WA_GROUP_URL, glyph: WA_ICON, todo: t("community.join"), did: t("wa.pop.openGeneral"), attrs: 'data-community="whatsapp" data-group="general"' });
+const lifetimePopDoorHTML = (url) => doorHTML({ id: "wa-lifetime", cls: "community-wa community-lifetime", href: url, glyph: WA_ICON, todo: t("community.joinLifetime"), did: t("wa.pop.openLifetime"), attrs: 'data-community="whatsapp" data-group="lifetime"' });
+
+export function waPopoverHTML({ lifetime = false } = {}) {
+  const wait = `<p class="community-note community-wait"><span class="spinner" aria-hidden="true"></span>${t("community.lifetimeLoading")}</p>`;
+  return `
+    <div class="wa-pop-head">
+      <span class="wa-pop-glyph" aria-hidden="true">${WA_ICON}</span>
+      <div>
+        <p class="wa-pop-title">${t(lifetime ? "wa.pop.titleTwo" : "wa.pop.title")}</p>
+        <p class="wa-pop-sub">${t(lifetime ? "wa.pop.subTwo" : "wa.pop.sub")}</p>
+      </div>
+    </div>
+    ${lifetime ? `
+    <section class="wa-pop-group is-lifetime" data-wa-group="lifetime">
+      <p class="wa-pop-name">${t("wa.pop.lifetime")}<span class="wa-pop-tag">${t("community.bubble.guide")}</span></p>
+      ${perksHTML("wa-lifetime")}
+      <div class="wa-pop-door" data-wa-lifetime>${lifetimeUrlKnown ? lifetimePopDoorHTML(lifetimeUrlKnown) : wait}</div>
+    </section>` : ""}
+    <section class="wa-pop-group" data-wa-group="general">
+      <p class="wa-pop-name">${t(lifetime ? "wa.pop.general" : "wa.pop.canDo")}</p>
+      ${perksHTML("wa")}
+      <div class="wa-pop-door">${generalPopDoorHTML()}</div>
+    </section>
+    <p class="wa-pop-foot">${t("community.joinNote")}</p>`;
+}
+
+// The button changes its words once every group of the account is tapped,
+// and its groups when the plan changes with the app open (a Founder payment
+// lands while the shell stays).
+function repaintWaTopbar() {
+  const old = document.getElementById("wa-group-btn");
+  const lifetime = isLifetime(getCachedAccount());
+  if (!old || old.dataset.waState === waState(lifetime, waAllJoined(lifetime))) return;
+  old.insertAdjacentHTML("afterend", waTopbarHTML());
+  old.remove();
+  wireWaTopbar();
+}
+let accountWatched = false;
+
+function openWaPopover(btn) {
+  const lifetime = isLifetime(getCachedAccount());
+  const width = 330;
+  const rect = btn.getBoundingClientRect();
+  const pop = openMenu(btn, { className: "wa-pop", top: rect.bottom + 8, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)) });
+  if (!pop) return;
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", t(lifetime ? "wa.pop.titleTwo" : "wa.pop.title"));
+  pop.innerHTML = waPopoverHTML({ lifetime });
+  pop.addEventListener("click", (e) => {
+    const a = e.target instanceof Element ? e.target.closest("[data-community]") : null;
+    if (!a) return;
+    const again = a.classList.contains("is-done");
+    a.classList.add("is-done");
+    markDone(a.dataset.doneId);
+    gaEvent(again ? "wa_group_open" : "join_group", { method: "whatsapp", location: "brandlab_topbar", group: a.dataset.group || "general" });
+    if (waAllJoined(lifetime)) closeMenu();
+    repaintWaTopbar();
+  });
+  if (!lifetime || lifetimeUrlKnown) return;
+  const slot = pop.querySelector("[data-wa-lifetime]");
+  lifetimeGroupUrl().then((url) => {
+    if (!slot?.isConnected) return;
+    if (url) slot.innerHTML = lifetimePopDoorHTML(url);
+    else slot.closest("[data-wa-group]")?.remove();
+  });
+}
+
+// For js/layout.js wireShell, once the topbar is on the page.
+export function wireWaTopbar() {
+  if (!accountWatched) {
+    accountWatched = true;
+    window.addEventListener("account:change", repaintWaTopbar);
+  }
+  const btn = document.getElementById("wa-group-btn");
+  btn?.addEventListener("click", (e) => {
+    if (btn.hasAttribute("data-wa-direct")) {
+      gaEvent("wa_group_open", { method: "whatsapp", location: "brandlab_topbar", group: "general" });
+      return;
+    }
+    e.stopPropagation();
+    openWaPopover(btn);
   });
 }

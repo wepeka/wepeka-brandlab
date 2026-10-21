@@ -12,7 +12,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { sendEmailBatch, EMAIL_BATCH_SIZE } from "../api/_email.js";
-import { communityLinksHTML, progressText } from "../js/community.js";
+import { communityLinksHTML, progressText, waTopbarHTML, waPopoverHTML, waGroupIds, waAllJoined } from "../js/community.js";
+import { setCachedAccount } from "../js/account.js";
+import { getSettings, updateSettings } from "../js/store.js";
 import { paidWelcomeDue, welcomeMarks } from "../js/paid-welcome.js";
 import { payThanksHTML, planLabel } from "../js/pay-thanks.js";
 import { t } from "../js/i18n.js";
@@ -373,5 +375,70 @@ describe("sendEmailBatch", () => {
   test("a network failure never throws", async () => {
     const r = await sendEmailBatch(msgs(2), { env, fetchImpl: async () => { throw new Error("offline"); } });
     assert.deepEqual(r, { ok: false, sent: 0, failed: 2, error: "offline" });
+  });
+});
+
+// The green WhatsApp button in the topbar (owner, 2026-10-21): join the
+// group from the top corner; once joined it takes you to WhatsApp. A tap
+// before that explains what the group is for — two groups (two buttons) for
+// a Lifetime account, one for everyone else.
+describe("the topbar's WhatsApp button", () => {
+  // Tapped = the account's mark, the one that follows it to other devices.
+  const tap = (id) => updateSettings({ guideSeen: { ...(getSettings()?.guideSeen || {}), [`community:done:${id}`]: Date.now() } });
+  const words = (html) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const doors = (html) => [...html.matchAll(/data-done-id="([^"]+)"/g)].map((m) => m[1]);
+  const founder = { status: "active", plan: "founder", subscriptionExpiresAt: null };
+  const trial = { status: "active", plan: "trial", trialEndsAt: Date.now() + 5 * DAY };
+
+  test("joined means every group of the account was tapped", () => {
+    assert.deepEqual(waGroupIds(false), ["wa"]);
+    assert.deepEqual(waGroupIds(true), ["wa-lifetime", "wa"]);
+    assert.equal(waAllJoined(false, (id) => id === "wa"), true);
+    assert.equal(waAllJoined(true, (id) => id === "wa"), false, "a Lifetime account still has its own group");
+    assert.equal(waAllJoined(true, () => true), true);
+    assert.equal(waAllJoined(false, () => false), false);
+  });
+
+  test("one group: says what it is for, with one button", () => {
+    const html = waPopoverHTML({ lifetime: false });
+    assert.deepEqual(doors(html), ["wa"]);
+    for (const k of ["news", "tips", "ask"]) assert.ok(words(html).includes(t(`wa.perk.${k}`)), k);
+    assert.ok(!html.includes("data-wa-lifetime") && !words(html).includes(t("wa.perk.live")));
+    assert.ok(html.includes(client.BRANDLAB_WA_GROUP_URL));
+    assert.ok(html.includes(t("community.join")) && html.includes(t("wa.pop.openGeneral")), "join, and once joined: open");
+    assert.ok(!html.includes("community-bubble"));
+  });
+
+  test("Lifetime: its own group first, then the Brandlab group — two buttons, the first from the server", () => {
+    const html = waPopoverHTML({ lifetime: true });
+    assert.ok(html.indexOf("data-wa-lifetime") < html.indexOf('data-done-id="wa"'));
+    assert.ok(words(html).includes(t("wa.perk.live")) && words(html).includes(t("wa.perk.founders")));
+    assert.ok(words(html).includes(t("wa.perk.news")));
+    assert.ok(!html.includes(LIFETIME_WA_GROUP_URL.split("/").pop()), "never in the page until the server hands it over");
+  });
+
+  test("not joined: a button that opens the explanation; joined with one group: a link straight to it", () => {
+    setCachedAccount(trial);
+    const before = waTopbarHTML();
+    assert.match(before, /^<button[^>]*id="wa-group-btn"/);
+    assert.ok(before.includes(`>${t("wa.top.join")}<`) && !before.includes("is-joined"));
+    tap("wa");
+    const after = waTopbarHTML();
+    assert.match(after, /^<a [^>]*id="wa-group-btn"[^>]*is-joined/);
+    assert.ok(after.includes(`href="${client.BRANDLAB_WA_GROUP_URL}"`) && after.includes(`>${t("wa.top.open")}<`));
+  });
+
+  test("Lifetime with only the Brandlab group joined: still asks; both joined: opens the two-button popover", () => {
+    setCachedAccount(founder);
+    tap("wa");
+    const half = waTopbarHTML();
+    assert.match(half, /^<button/);
+    assert.ok(half.includes(`>${t("wa.top.join")}<`));
+    tap("wa-lifetime");
+    const both = waTopbarHTML();
+    assert.match(both, /^<button[^>]*is-joined/);
+    assert.ok(both.includes(`>${t("wa.top.open")}<`) && !both.includes("href="));
+    setCachedAccount(null);
+    updateSettings({ guideSeen: {} });
   });
 });

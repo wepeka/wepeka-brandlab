@@ -15,6 +15,7 @@ import { installTopUpNotice, canTopUp } from "./ai-topup.js";
 import { rememberLastBrand } from "./back-link.js";
 import { brandTintColor } from "./brand-tint.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
+import { waTopbarHTML, wireWaTopbar } from "./community.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
 // chunk in the app, and the whole reason the logged-out login/pricing
@@ -271,6 +272,7 @@ export function shellHTML({ brandId, active }) {
         ${planBadgeHTML()}
         ${modeConfig().bell ? bellHTML() : ""}
         ${updatesBtnHTML(active)}
+        ${waTopbarHTML()}
         <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" aria-haspopup="menu" aria-expanded="false" data-tour="settings">${icon("dots", { size: 18 })}<span class="notif-badge app-menu-badge" ${unreadCount() ? "" : "hidden"}></span></button>
       </div>
     </header>
@@ -498,6 +500,7 @@ export function wireShell({ brandId }) {
     })
   );
 
+  wireWaTopbar();
   if (brandId) mountConsultantPanel(brandId);
   else unmountConsultantPanel();
   if (brandId) mountNotesFloat(brandId);

@@ -389,22 +389,30 @@ html{ scrollbar-width: thin; scrollbar-color: var(--brand-tint) var(--bg-raised)
 }
 /* Narrower still (tablets upright): the logo steps aside inside a brand
    (the brand switcher already says where you are) and the trial badge keeps
-   its days, dropping the "Upgrade" pill — the whole badge is the link. */
-@media (min-width: 721px) and (max-width: 980px) {
+   its days, dropping the "Upgrade" pill — the whole badge is the link.
+   From 1040px down since the WhatsApp button (js/community.js) joined the
+   row. */
+@media (min-width: 721px) and (max-width: 1040px) {
   .topbar:has(.brand-switch) .brand-mark, .topbar:has(.brand-switch) .topbar-sep{ display:none; }
   .topbar .plan-badge{ padding:0 10px; }
   .topbar .plan-badge strong{ display:none; }
 }
-/* The last 80px before the phone layout takes over: Pro (bell) on a trial
+/* The last 120px before the phone layout takes over: Pro (bell) on a trial
    (badge) is the fullest row there is — tighter spacing keeps it on one
    line with every tab still labelled. */
-@media (min-width: 721px) and (max-width: 800px) {
+@media (min-width: 721px) and (max-width: 840px) {
   .topbar{ gap:8px; padding-left:12px; padding-right:12px; }
   .topbar .brand-switch{ max-width: 104px; }
   .topbar .tabs{ gap:0; }
   .topbar .tabs .tab{ font-size:12.5px; gap:5px; padding:9px 7px; }
   .topbar .topbar-right{ gap:4px; }
   .topbar .plan-badge{ padding:0 8px; }
+}
+/* And its last 40px, now with the WhatsApp button too: the brand switcher
+   and the tabs give up a little more room. */
+@media (min-width: 721px) and (max-width: 760px) {
+  .topbar:has(.plan-badge):has(#notif-bell-btn) .brand-switch{ max-width: 84px; }
+  .topbar:has(.plan-badge):has(#notif-bell-btn) .tabs .tab{ padding:9px 5px; }
 }
 .tab svg{ width:16px; height:16px; }
 
@@ -5454,6 +5462,60 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .community-note{ margin:-4px 2px 0; font-size:12px; color: var(--text-faint); }
 .community-sep{ display:flex; align-items:center; gap:10px; margin:8px 0 0; font-size:11.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color: var(--text-faint); }
 .community-sep::before, .community-sep::after{ content:""; flex:1; height:1px; background: var(--border); }
+
+/* The WhatsApp button in the topbar (js/community.js waTopbarHTML):
+   WhatsApp's own green so it reads as "the group" before its words do,
+   pulsing until every group is joined, then a steady glow — still the
+   easiest thing to find up there (owner, 2026-10-21). Its words only
+   where the row has room for them (see .topbar above): from 1241px, or
+   from 1440px next to the trial badge; elsewhere just the glyph, like
+   "Update". */
+.wa-top{ display:inline-flex; align-items:center; justify-content:center; gap:7px; height:38px; padding:0 14px 0 11px; border-radius: var(--radius-pill); border:0; background:#25D366; color:#062b14; font-size:12.5px; font-weight:800; white-space:nowrap; text-decoration:none; cursor:pointer; flex:none; --glow-color: rgba(37,211,102,.6); box-shadow: 0 0 14px rgba(37,211,102,.45); transition: filter .12s ease, transform .08s ease; }
+.wa-top svg{ width:18px; height:18px; flex:none; }
+.wa-top:hover{ filter: brightness(1.07); }
+.wa-top:active{ transform: scale(.97); }
+.wa-top:focus-visible{ outline:2px solid #25D366; outline-offset:3px; }
+.wa-top[aria-expanded="true"]{ filter: brightness(.94); }
+@media (prefers-reduced-motion: no-preference){
+  .wa-top:not(.is-joined){ animation: glow-pulse 2.4s ease-in-out infinite; }
+}
+@media (max-width: 1240px){
+  .wa-top{ width:38px; padding:0; }
+  .wa-top .wa-top-label{ display:none; }
+}
+@media (min-width: 1241px) and (max-width: 1439px){
+  .topbar:has(.plan-badge) .wa-top{ width:38px; padding:0; }
+  .topbar:has(.plan-badge) .wa-top .wa-top-label{ display:none; }
+}
+/* Pro on a trial is the fullest row: up to 1320px the "Brandlab" wordmark
+   steps aside for the glyph, as it does in the compact band. */
+@media (min-width: 1241px) and (max-width: 1320px){
+  .topbar:has(.plan-badge):has(.brand-switch) .brand-mark{ font-size:0; gap:0; }
+  .topbar:has(.plan-badge):has(.brand-switch) .brand-mark-divider{ display:none; }
+}
+@media (max-width: 720px){ .wa-top{ width:36px; height:36px; } }
+/* Its popover: what each group is for, and the group's own button (the
+   Komunitas sheet's doors, js/community.js doorHTML). */
+.wa-pop{ width:330px; max-width: calc(100vw - 16px); padding:14px; cursor:default; }
+.wa-pop-head{ display:flex; align-items:center; gap:11px; margin:0 0 12px; }
+.wa-pop-glyph{ flex:none; display:grid; place-items:center; width:38px; height:38px; border-radius:50%; background:#25D366; color:#062b14; box-shadow: 0 0 14px rgba(37,211,102,.45); }
+.wa-pop-title{ margin:0; font-size:15px; font-weight:800; color: var(--text); }
+.wa-pop-sub{ margin:2px 0 0; font-size:12.5px; color: var(--text-muted); }
+.wa-pop-group{ padding:12px; border-radius:14px; background: var(--surface); border:1px solid var(--border); }
+.wa-pop-group + .wa-pop-group{ margin-top:10px; }
+.wa-pop-group.is-lifetime{ border-color: color-mix(in srgb, #ec4899 50%, var(--border)); background: color-mix(in srgb, #ec4899 8%, var(--surface)); }
+.wa-pop-name{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 0 9px; font-size:12.5px; font-weight:800; color: var(--text); }
+.wa-pop-tag{ padding:2px 8px; border-radius:999px; background:#ec4899; color:#fff; font-size:10.5px; font-weight:800; }
+.wa-pop-perks{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
+.wa-pop-perks li{ display:flex; align-items:flex-start; gap:9px; font-size:13px; line-height:1.45; color: var(--text-muted); }
+.wa-pop-perks svg{ flex:none; margin-top:1px; color:#25D366; }
+:root[data-theme="light"] .wa-pop-perks svg{ color:#128C4A; }
+.wa-pop-door .community-btn{ margin-top:12px; min-height:44px; font-size:14px; }
+.wa-pop-door .community-wait{ min-height:44px; margin:12px 0 0; font-size:12.5px; color: var(--text-faint); }
+/* Joined: the button is the way back to WhatsApp, so it stays bright. */
+.wa-pop .community-btn.is-done{ filter:none; }
+.wa-pop .community-lifetime{ box-shadow: 0 10px 24px -14px rgba(236,72,153,.9); }
+.wa-pop-foot{ margin:10px 2px 0; font-size:11.5px; color: var(--text-faint); }
 
 /* Founder Circle sheet (js/founder-circle.js) */
 .circle-sec{ padding:14px 0; border-top:1px solid var(--border); }
