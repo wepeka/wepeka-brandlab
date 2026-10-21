@@ -40,6 +40,10 @@ export function adminDb() {
   return getFirestore(adminApp());
 }
 
+export function adminAuth() {
+  return getAuth(adminApp());
+}
+
 // The Firebase Auth record behind a uid (email, display name), for when a
 // sign-in token doesn't carry them itself.
 export function authUser(uid) {

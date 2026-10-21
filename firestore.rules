@@ -159,10 +159,10 @@ service cloud.firestore {
       return ['members', 'memberIds', 'ownerName'];
     }
     // What an editor may never change on the brand doc: the team, the
-    // owner, the brand's life (archive/Trash), the Instagram/Facebook
-    // connection, the owner's own chats and the owner's rating settings.
+    // owner, the brand's life (archive/Trash), the Instagram/Facebook/ads
+    // connections, the owner's own chats and the owner's rating settings.
     function ownerOnlyKeys() {
-      return ['ownerId', 'members', 'memberIds', 'ownerName', 'archived', 'deletedAt', 'instagram', 'facebook',
+      return ['ownerId', 'members', 'memberIds', 'ownerName', 'archived', 'deletedAt', 'instagram', 'facebook', 'ads',
         'chatSessions', 'companion', 'teamSettings', 'createdAt'];
     }
     // A brand doc (content, campaign, series) a member may read: it sits in

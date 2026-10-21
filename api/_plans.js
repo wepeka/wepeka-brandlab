@@ -483,3 +483,27 @@ export const LEGACY_PLANS = {
   "content-os": { plan: "content-os", durationMs: null },
   monthly: { plan: "monthly", durationMs: MONTH_MS },
 };
+
+// Kerja Tim: how many people an owner may invite onto their brands, by
+// plan (the owner is not a seat). Proposed 2026-10-21, not final — the one
+// place to change them; js/team.js mirrors this table for display
+// (tests/team.test.mjs keeps the two equal). Admin = no limit.
+export const TEAM_SEATS = {
+  trial: 1,
+  starter: 1,
+  pro: 3,
+  studio: 10,
+  founder: 3,
+  "founder-ultimate": 10,
+  lifetime: 3,
+  builder: 1,
+  "content-os": 1,
+  monthly: 1,
+  free: 0,
+};
+export const DEFAULT_TEAM_SEATS = 1;
+export function teamSeatsFor(account) {
+  if (!account) return 0;
+  const n = TEAM_SEATS[account.plan];
+  return Number.isInteger(n) ? n : DEFAULT_TEAM_SEATS;
+}
