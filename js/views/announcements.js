@@ -9,6 +9,7 @@
 import {
   KINDS, listAnnouncements, announcementsStatus, onAnnouncements, startAnnouncements, announcementsSeenAt, markAnnouncementsSeen,
   isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement, announcementEmailReady, emailAnnouncement,
+  groupInviteStatus, sendGroupInvite,
 } from "../announcements.js";
 import { renderLightMarkdown } from "../ai-directives.js";
 import { backToLastBrandHTML } from "../back-link.js";
@@ -52,6 +53,30 @@ function composerHTML(editing) {
       <div class="ann-composer-actions">
         ${editing ? `<button type="button" class="btn btn-secondary" id="ann-cancel">${t("common.cancel")}</button>` : ""}
         <button type="button" class="btn btn-primary" id="ann-send">${icon(editing ? "check" : "send", { size: 14 })}${editing ? t("ann.save") : t("ann.send")}</button>
+      </div>
+    </section>`;
+}
+
+// "Email: gabung grup WhatsApp" (admin, once email works). `invite`: what
+// the real send reached so far ({ sent, total, remaining }) and, after a
+// test, how many it would reach ({ reach: { total, circle } }).
+function inviteHTML(invite) {
+  const st = invite.status;
+  const line = st?.total != null
+    ? st.remaining > 0 ? t("ann.invite.progress", { sent: st.sent, total: st.total, remaining: st.remaining }) : t("ann.invite.done", { sent: st.sent })
+    : t("ann.invite.never");
+  const reach = invite.reach && !(st?.total != null && st.remaining === 0) ? ` ${t("ann.invite.reach", invite.reach)}` : "";
+  return `
+    <section class="card ann-composer ann-invite" id="ann-invite">
+      <div class="ann-composer-head">
+        <b>${t("ann.invite.title")}</b>
+        <span class="tag">${t("ann.adminOnly")}</span>
+      </div>
+      <p class="field-hint">${t("ann.invite.hint")}</p>
+      <p class="field-hint" id="ann-invite-status">${esc(line + reach)}</p>
+      <div class="ann-composer-actions">
+        <button type="button" class="btn btn-secondary" id="ann-invite-test" ${invite.busy ? "disabled" : ""}>${icon("send", { size: 14 })}${t("ann.invite.test")}</button>
+        <button type="button" class="btn btn-primary" id="ann-invite-send" ${invite.busy ? "disabled" : ""}>${icon("send", { size: 14 })}${t("ann.invite.send")}</button>
       </div>
     </section>`;
 }
@@ -128,6 +153,7 @@ export function render(root, { tab } = {}) {
   // A connection that never answers (offline, blocked network) used to
   // leave "Memuat…" up forever. After a while, say so and offer a retry.
   let slow = false;
+  const invite = { status: null, reach: null, busy: false };
   const slowTimer = setTimeout(() => { slow = true; paint(); }, 12000);
 
   const paint = () => {
@@ -143,6 +169,7 @@ export function render(root, { tab } = {}) {
       ${lifetime ? tabsHTML("updates") : ""}
       <div class="ann-wrap">
         ${admin ? composerHTML(editing) : ""}
+        ${admin && emailOn && !editing ? inviteHTML(invite) : ""}
         <div class="ann-list">
           ${status === "error"
             ? `<div class="card ann-empty">${t("ann.error")}</div>`
@@ -215,6 +242,32 @@ export function render(root, { tab } = {}) {
       }
     });
     qs("#ann-cancel", root)?.addEventListener("click", () => { editingId = null; paint(); });
+    qs("#ann-invite-test", root)?.addEventListener("click", async () => {
+      invite.busy = true;
+      paint();
+      const r = await sendGroupInvite({ test: true }).catch(() => ({ ok: false, error: "network" }));
+      invite.busy = false;
+      if (r.ok) {
+        invite.reach = { total: r.total ?? 0, circle: r.circle ?? 0 };
+        toast(t("ann.invite.testSent", { to: r.to || "" }));
+      } else toast(t(r.error === "email-off" ? "ann.email.off" : "ann.invite.failed"), "error");
+      paint();
+    });
+    qs("#ann-invite-send", root)?.addEventListener("click", async () => {
+      const ok = await confirmDialog({ title: t("ann.invite.confirmTitle"), message: t("ann.invite.confirmBody"), confirmLabel: t("ann.invite.send") });
+      if (!ok) return;
+      invite.busy = true;
+      paint();
+      toast(t("ann.email.sending"));
+      const r = await sendGroupInvite().catch(() => ({ ok: false, error: "network" }));
+      invite.busy = false;
+      if (r.ok) {
+        invite.status = { sent: r.sentTotal ?? 0, total: r.total ?? 0, remaining: r.remaining ?? 0 };
+        if (!r.sent && !r.partial) toast(t("ann.invite.nothing"));
+        else toast(t(r.partial ? "ann.invite.partial" : "ann.invite.sent", { sent: r.sent ?? 0, remaining: r.remaining ?? 0 }));
+      } else toast(t(r.error === "busy" ? "ann.invite.busy" : r.error === "email-off" ? "ann.email.off" : "ann.invite.failed"), "error");
+      paint();
+    });
     root.querySelectorAll("[data-ann-email]").forEach((b) => b.addEventListener("click", async () => {
       const a = listAnnouncements().find((x) => x.id === b.dataset.annEmail);
       if (!a) return;
@@ -243,6 +296,8 @@ export function render(root, { tab } = {}) {
   const off = onAnnouncements(paint);
   // Admin: once we know email can be sent, the composer gets its checkbox.
   if (isAnnouncementAdmin()) announcementEmailReady().then((on) => { if (on && !emailOn && root.isConnected) { emailOn = true; paint(); } });
+  // Admin: how far the WhatsApp group email got (one small read).
+  if (isAnnouncementAdmin()) groupInviteStatus().then((r) => { if (r.ok && root.isConnected) { invite.status = r; paint(); } }).catch(() => {});
   root.addEventListener("click", (e) => { if (e.target.closest("[data-ann-retry]")) location.reload(); });
   return () => { clearTimeout(slowTimer); off(); };
 }

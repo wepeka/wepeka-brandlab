@@ -6586,3 +6586,6 @@ div.home-path-step{ cursor:pointer; }
   .home-b-week .dash-widget-card-title h2,
   .home-b-week .dash-widget-card-title p{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 }
+/* "Email: gabung grup WhatsApp" card under the composer (admin). */
+.ann-invite{ border-color: color-mix(in srgb, #25D366 45%, var(--border)); }
+.ann-invite #ann-invite-status{ color: var(--text-muted); font-weight:600; }

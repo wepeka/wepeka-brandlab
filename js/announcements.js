@@ -152,6 +152,23 @@ export async function emailAnnouncement(id) {
   return res.ok ? { ok: true, ...data } : { ok: false, ...data, error: data?.error || `http-${res.status}` };
 }
 
+// "Gabung grup WhatsApp" email (api/announcements/group-invite.js, admin
+// only). groupInviteStatus → { sent, total, remaining, updatedAt } of the
+// real send; sendGroupInvite({ test }) → the endpoint's answer + { ok }.
+async function groupInviteCall(method, body) {
+  const { auth } = await import("./firebase.js");
+  const token = await auth.currentUser?.getIdToken();
+  const res = await fetch("/api/announcements/group-invite", {
+    method,
+    headers: { ...(body ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${token}` },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  return res.ok ? { ok: true, ...data } : { ok: false, ...data, error: data?.error || `http-${res.status}` };
+}
+export const groupInviteStatus = () => groupInviteCall("GET");
+export const sendGroupInvite = ({ test = false } = {}) => groupInviteCall("POST", test ? { test: true } : {});
+
 export async function editAnnouncement(id, fields) {
   const { doc, updateDoc } = await loadFirestore();
   const patch = { ...clean(fields), updatedAt: Date.now() };

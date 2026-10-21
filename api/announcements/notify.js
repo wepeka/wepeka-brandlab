@@ -8,12 +8,11 @@
 // stops at 100 emails a day: when the list is longer than what went out,
 // the answer says how many were sent, and the claim is kept (sending the
 // rest is a manual decision, not an automatic second run to the same people).
-import { getApps } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
 import { adminDb, requireAuth } from "../_firebaseAdmin.js";
 import { isAdminUid } from "../_aiQuota.js";
 import { emailConfigured, sendEmailBatch } from "../_email.js";
-import { composeAnnouncementEmail, announcementRecipients } from "../_community.js";
+import { composeAnnouncementEmail } from "../_community.js";
+import { loadMailRecipients } from "../_mailList.js";
 
 export const config = { maxDuration: 60 };
 
@@ -45,24 +44,7 @@ export default async function handler(req, res) {
   if (claimed.error === "already") return res.status(409).json({ error: "already", sent: claimed.sent });
 
   try {
-    const [accountsSnap, offSnap] = await Promise.all([
-      db.collection("accounts").where("status", "==", "active").get(),
-      db.collection("settings").where("updatesEmailOff", "==", true).get(),
-    ]);
-    const optedOut = new Set(offSnap.docs.map((d) => d.id));
-    const accounts = accountsSnap.docs.map((d) => ({ uid: d.id, ...d.data() }));
-    // accounts/{uid}.email is written by the server; an account without one
-    // (older docs) falls back to its Firebase Auth address.
-    const missing = accounts.filter((a) => !a.email && !optedOut.has(a.uid)).slice(0, 300);
-    if (missing.length) {
-      const auth = getAuth(getApps()[0]);
-      for (let i = 0; i < missing.length; i += 100) {
-        const found = await auth.getUsers(missing.slice(i, i + 100).map((a) => ({ uid: a.uid }))).catch(() => ({ users: [] }));
-        const byUid = new Map(found.users.map((u) => [u.uid, u.email || ""]));
-        missing.slice(i, i + 100).forEach((a) => { a.email = byUid.get(a.uid) || ""; });
-      }
-    }
-    const recipients = announcementRecipients(accounts, optedOut);
+    const recipients = await loadMailRecipients(db);
     const mail = composeAnnouncementEmail(claimed.announcement);
     const result = await sendEmailBatch(recipients.map((r) => ({ to: r.email, ...mail })), { idempotencyKey: `brandlab-ann-${id}` });
     await ref.update({ emailed: { sent: result.sent, total: recipients.length, at: Date.now(), ...(result.ok ? {} : { error: String(result.error || "").slice(0, 200) }) } });

@@ -62,30 +62,31 @@ export const GUIDE_WA_URL = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURI
 // The block every email ends on: join the group, follow the accounts.
 // `lifetime`: the buyer just got a Lifetime plan, so the guided setup and
 // their own group come first (never in an announcement, which goes to
-// everyone).
-function communityHTML({ lifetime = false } = {}) {
+// everyone). `circle`: the Lifetime group's door alone, for an email that
+// is composed per recipient (composeGroupInviteEmail).
+function communityHTML({ lifetime = false, circle = lifetime } = {}) {
   const follow = FOLLOW_INSTAGRAM.map((h) => `<a href="${esc(instagramUrl(h))}" style="color:#c2185b;font-weight:700;text-decoration:none;">@${esc(h)}</a>`).join(" &nbsp;·&nbsp; ");
   const guide = lifetime ? `<div style="margin:22px 0 0;padding:16px 18px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;">
 <p style="margin:0 0 6px;font-weight:700;">Mulai dibimbing tim Wepeka</p>
 <p style="margin:0 0 12px;color:#444;font-size:14px;">Chat kami di WhatsApp. Kita atur sesi kenalan 1-on-1, lalu kami temani sampai Brand DNA, Brand Book, dan rencana minggu pertamamu jadi.</p>
 <p style="margin:0;"><a href="${esc(GUIDE_WA_URL)}" style="${BUTTON}background:#f97316;color:#fff;">Mulai dibimbing</a></p>
 </div>` : "";
-  const circle = lifetime ? `<div style="margin:12px 0 0;padding:16px 18px;background:#fff4f9;border:1px solid #f6c7dd;border-radius:12px;">
+  const circleBlock = circle ? `<div style="margin:${lifetime ? "12px" : "22px"} 0 0;padding:16px 18px;background:#fff4f9;border:1px solid #f6c7dd;border-radius:12px;">
 <p style="margin:0 0 6px;font-weight:700;">Grup WhatsApp Lifetime (Founder Circle)</p>
 <p style="margin:0 0 12px;color:#444;font-size:14px;">Khusus akun Lifetime: bareng tim Wepeka dan Founder lain. Link ini khusus buat kamu, jangan dibagikan ya.</p>
 <p style="margin:0;"><a href="${esc(LIFETIME_WA_GROUP_URL)}" style="${BUTTON}background:#25D366;color:#062b14;">Gabung grup Lifetime</a></p>
 </div>` : "";
-  return `${guide}${circle}<div style="margin:${lifetime ? "12px" : "22px"} 0 0;padding:16px 18px;background:#f1fbf4;border:1px solid #cdeed8;border-radius:12px;">
+  return `${guide}${circleBlock}<div style="margin:${lifetime || circle ? "12px" : "22px"} 0 0;padding:16px 18px;background:#f1fbf4;border:1px solid #cdeed8;border-radius:12px;">
 <p style="margin:0 0 6px;font-weight:700;">Gabung grup WhatsApp Brandlab</p>
 <p style="margin:0 0 12px;color:#444;font-size:14px;">Fitur baru, perbaikan, dan tips diumumkan di sana dulu — sekaligus tempat tanya langsung ke tim Wepeka.</p>
 <p style="margin:0 0 12px;"><a href="${esc(BRANDLAB_WA_GROUP_URL)}" style="${BUTTON}background:#25D366;color:#062b14;">Gabung grup WhatsApp</a></p>
 <p style="margin:0;color:#444;font-size:14px;">Follow juga di Instagram: ${follow}</p>
 </div>`;
 }
-function communityText({ lifetime = false } = {}) {
+function communityText({ lifetime = false, circle = lifetime } = {}) {
   return [
     ...(lifetime ? ["Mulai dibimbing tim Wepeka (sesi kenalan 1-on-1, lalu kami temani sampai Brand DNA, Brand Book, dan rencana minggu pertamamu jadi):", GUIDE_WA_URL, ""] : []),
-    ...(lifetime ? ["Grup WhatsApp Lifetime (Founder Circle), khusus akun Lifetime. Link ini jangan dibagikan ya:", LIFETIME_WA_GROUP_URL, ""] : []),
+    ...(circle ? ["Grup WhatsApp Lifetime (Founder Circle), khusus akun Lifetime. Link ini jangan dibagikan ya:", LIFETIME_WA_GROUP_URL, ""] : []),
     "Gabung grup WhatsApp Brandlab (fitur baru, perbaikan, dan tips diumumkan di sana dulu):",
     BRANDLAB_WA_GROUP_URL,
     "",
@@ -195,6 +196,30 @@ ${communityHTML()}
   return { subject, html, text };
 }
 
+// "Gabung grup WhatsApp" (admin, api/announcements/group-invite.js): one
+// email per account, composed per recipient. `circle`: a Lifetime account
+// (lifetimeGroupFor), which gets both doors, its own group first; everyone
+// else gets the general group. → { subject, html, text }.
+export function composeGroupInviteEmail({ circle = false, appUrl = APP_URL } = {}) {
+  const settingsUrl = `${appUrl}/#/settings/reminders`;
+  const subject = circle ? "2 grup WhatsApp untuk Founder Brandlab" : "Gabung grup WhatsApp Brandlab, biar nggak ketinggalan info";
+  const intro = circle
+    ? "Sebagai pemilik akun Lifetime, kamu punya akses ke 2 grup WhatsApp: grup Founder Circle yang khusus akun Lifetime, dan grup Brandlab untuk semua pengguna."
+    : "Grup WhatsApp Brandlab sudah ada. Gabung lewat tombol di bawah, biar nggak ketinggalan info.";
+  const html = shell(`<p style="margin:0 0 6px;color:#888;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">Grup WhatsApp</p>
+<h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;">${circle ? "Link 2 grup WhatsApp kamu" : "Yuk gabung grup WhatsApp Brandlab"}</h1>
+<p style="margin:0;">${esc(intro)}</p>
+${communityHTML({ circle })}
+<p style="margin:18px 0 0;color:#888;font-size:12px;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#888;">Pengaturan → Pengingat</a>.</p>`);
+  const text = [
+    circle ? "Link 2 grup WhatsApp kamu" : "Yuk gabung grup WhatsApp Brandlab", "",
+    intro, "",
+    communityText({ circle }), "",
+    `Nggak mau terima email info seperti ini? Matikan di Pengaturan → Pengingat: ${settingsUrl}`,
+  ].join("\n");
+  return { subject, html, text };
+}
+
 const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/.test(v);
 
 // Who an announcement is mailed to: every account that can use Brandlab
@@ -212,7 +237,7 @@ export function announcementRecipients(accounts, optedOut = new Set(), now = Dat
     const email = String(a.email || "").trim().toLowerCase();
     if (!looksLikeEmail(email) || seen.has(email)) continue;
     seen.add(email);
-    out.push({ uid: a.uid, email });
+    out.push({ uid: a.uid, email, circle: Boolean(lifetimeGroupFor(a.uid, a)) });
   }
   return out;
 }
