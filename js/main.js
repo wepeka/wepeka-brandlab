@@ -30,7 +30,7 @@ import { initActivation } from "./activation.js";
 import { initMetaPixel } from "./meta-pixel.js";
 import { trackTrialStart } from "./trial-start.js";
 import { checkPendingOrders } from "./pending-orders.js";
-import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales } from "./store.js";
+import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales, isOwnBrand } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { auth, wipeLocalFirestore, claimLocalCache } from "./firebase.js";
@@ -45,6 +45,7 @@ import { showPayLoading, hidePayLoading } from "./pay-loading.js";
 import { WEPEKA_CONNECT_URL } from "./site-links.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
+import { subscribeMemberships, effectiveAccess } from "./team.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -431,7 +432,28 @@ async function boot(user) {
   // copy straight away (persistent cache) and the server's right after.
   await claimLocalCache(user.uid);
   if (subscribedUid !== user.uid) return; // signed out / switched meanwhile
-  accountUnsub = subscribeAccount(user.uid, (account) => onAccountChange(user, account));
+  // The account and the brands shared with it (Kerja Tim, js/team.js)
+  // decide together what this person may open: both first snapshots are
+  // waited for, then every change of either re-runs onAccountChange.
+  let accountSeen = false;
+  let teamSeen = false;
+  let lastAccount = null;
+  const decide = () => {
+    if (accountSeen && teamSeen && subscribedUid === user.uid) onAccountChange(user, lastAccount);
+  };
+  const stopAccount = subscribeAccount(user.uid, (account) => {
+    accountSeen = true;
+    lastAccount = account;
+    decide();
+  });
+  const stopTeam = subscribeMemberships(user.uid, () => {
+    teamSeen = true;
+    decide();
+  });
+  accountUnsub = () => {
+    stopAccount();
+    stopTeam();
+  };
 }
 
 // Fires once immediately with the current account doc, then again live on
@@ -455,7 +477,8 @@ function onAccountChange(user, account) {
     return;
   }
 
-  const state = accessState(account);
+  // "member" = no plan of their own, but brands shared with them (Kerja Tim).
+  const state = effectiveAccess(account);
   // Just back from a payment made in another app: a failure is said; a
   // success that the webhook hasn't written yet waits under "setting up"
   // rather than on the plans page (a new buyer has no account for a second
@@ -487,10 +510,10 @@ function onAccountChange(user, account) {
     return;
   }
 
-  // state is "paid" or "trial" — the only two that ever render the app.
+  // state is "paid", "trial" or "member" — the only three that ever render the app.
   if (!storeReady) {
     showLoading();
-    initStore(user.uid).then(async () => {
+    initStore(user.uid, { ownPlan: state !== "member" }).then(async () => {
       // GA4 "start_trial", once per account, the first time a brand-new
       // trial opens the app (js/trial-start.js). Never waited for.
       trackTrialStart();
@@ -618,7 +641,8 @@ let welcomeShown = false;
 // against Firestore rules anyway).
 const pulsedBrands = new Set();
 async function runPulseOnce(brandId) {
-  if (pulsedBrands.has(brandId) || isReadOnly(getCachedAccount())) return;
+  // Own brands only: a shared brand's signals are its owner's to write.
+  if (pulsedBrands.has(brandId) || isReadOnly(getCachedAccount()) || !isOwnBrand(getBrand(brandId))) return;
   pulsedBrands.add(brandId);
   // Signals are written into the brand's log — computed from the server's
   // copy, never from a cache that may be a day old.
@@ -643,7 +667,7 @@ async function runPulseOnce(brandId) {
     ]);
     const ai = getSettings().ai || {};
     const state = accessState(getCachedAccount());
-    await maybeMonthlyLessons(brandId, { ai, summarize: summarizeMonthLessons, allowed: hasAiKey(ai) && (state === "paid" || state === "trial") && !isTourDemo() });
+    await maybeMonthlyLessons(brandId, { ai, summarize: summarizeMonthLessons, allowed: hasAiKey(ai) && (state === "paid" || state === "trial") && !isTourDemo() && isOwnBrand(getBrand(brandId)) });
   } catch (e) {
     console.warn("[monthly lessons] unavailable", e);
   }
@@ -1015,4 +1039,12 @@ window.addEventListener("hashchange", () => {
 // Guided/Advanced toggle changes which view "home" resolves to — repaint
 // the current route immediately instead of waiting for the next navigation.
 window.addEventListener("mode:change", () => { if (storeReady) renderRoute(); });
+// Kerja Tim: the owner took this account off a brand (or put it in Trash)
+// while one of its pages is open — say so and leave it.
+window.addEventListener("team:removed", (e) => {
+  const open = parseRoute(location.hash).brandId;
+  if (!open || !e.detail?.brandIds?.includes(open)) return;
+  toast(t("team.removed"), "error");
+  location.hash = "#/";
+});
 onAuthChange((user) => { lastUser = user; setUser(user?.uid); boot(user); });

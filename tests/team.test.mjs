@@ -7,6 +7,7 @@ import {
 } from "../api/_team.js";
 import { TEAM_SEATS, teamSeatsFor, PLANS } from "../api/_plans.js";
 import { firstShareScrub } from "../api/team.js";
+import { TEAM_SEATS as CLIENT_SEATS, teamSeatsFor as clientSeatsFor, effectiveAccess } from "../js/team.js";
 
 const DAY = 86400000;
 
@@ -117,5 +118,21 @@ describe("first share: what leaves the brand doc before members can read it", ()
   });
   test("nothing to move → null", () => {
     assert.equal(firstShareScrub({ name: "x", instagram: { username: "a" } }), null);
+  });
+});
+
+describe("client side (js/team.js)", () => {
+  test("the seat table is the server's, exactly", () => {
+    assert.deepEqual(CLIENT_SEATS, TEAM_SEATS);
+    for (const plan of Object.keys(TEAM_SEATS)) assert.equal(clientSeatsFor({ plan }), teamSeatsFor({ plan }));
+  });
+  test("access: an own plan wins; brands shared with you open the app as a member", () => {
+    const later = Date.now() + DAY;
+    const shared = { brands: { b1: { ownerId: "owen", role: "editor" } } };
+    assert.equal(effectiveAccess({ status: "active", plan: "pro", subscriptionExpiresAt: later }, shared), "paid");
+    assert.equal(effectiveAccess(null, shared), "member");
+    assert.equal(effectiveAccess({ status: "readonly", plan: "trial", trialEndsAt: 1 }, shared), "member");
+    assert.equal(effectiveAccess(null, null), "none");
+    assert.equal(effectiveAccess(null, { brands: {} }), "none");
   });
 });

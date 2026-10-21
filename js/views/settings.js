@@ -16,7 +16,7 @@ import { confirmDialog } from "../modals.js";
 import { typedConfirmDialog } from "../typed-confirm.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout, authErrorMessage } from "../auth.js";
-import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS, brandLimitOf, canCreateBrand } from "../account.js";
+import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS, brandLimitOf, canCreateBrand, ownBrandsOf } from "../account.js";
 import { aiDailyLimit, aiQuotaPeriod, aiUsageToday } from "../ai-usage.js";
 import { canTopUp } from "../ai-topup.js";
 import { t, getLang, setLang } from "../i18n.js";
@@ -158,7 +158,7 @@ function renderBrands(content, refresh) {
         </div>
       `).join("")}
       <div class="flex gap-8" style="margin-top:16px;">
-        <button class="btn btn-primary" id="add-brand">${icon(canCreateBrand(listBrands().length) ? "plus" : "lock", { size: 15 })}${t("brands.add")}</button>
+        <button class="btn btn-primary" id="add-brand">${icon(canCreateBrand(ownBrandsOf(listBrands()).length) ? "plus" : "lock", { size: 15 })}${t("brands.add")}</button>
       </div>
     </div>
   `;
@@ -468,7 +468,7 @@ function planCardHTML(account) {
       <h3 style="font-size:16px;margin-bottom:14px;">${t("set.plan.title")}</h3>
       <div class="kv"><span class="k">${t("set.plan.name")}</span><span class="v">${escapeHtml(planName(account))}</span></div>
       <div class="kv"><span class="k">${t("set.plan.status")}</span><span class="v">${escapeHtml(planStatus(account))}</span></div>
-      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${listBrands().length} / ${brandLimitOf(account)}</span></div>
+      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${ownBrandsOf(listBrands()).length} / ${brandLimitOf(account)}</span></div>
       <div class="kv"><span class="k">AI credit</span><span class="v">${escapeHtml(credits)}</span></div>
       ${account.scheduledPlan?.plan ? `<div class="kv"><span class="k">${t("set.plan.next")}</span><span class="v">${escapeHtml(t("set.plan.nextValue", { name: planName({ plan: account.scheduledPlan.plan, brandLimit: account.scheduledPlan.brandLimit }), date: formatDate(localISODate(new Date(Number(account.scheduledPlan.startsAt)))) }))}</span></div>` : ""}
       ${autoRenewHTML(account)}

@@ -7,7 +7,7 @@ import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
 import { canUseInstagramApi } from "../account.js";
 import { testFacebookConnection } from "../facebook.js";
-import { canCreateBrand, brandLimitOf, lockedBrandIds } from "../account.js";
+import { canCreateBrand, brandLimitOf, lockedBrandIds, ownBrandsOf } from "../account.js";
 import { slotReminderHTML } from "../brand-locked.js";
 import { buyAddon } from "../purchase.js";
 import { BRAND_ADDONS } from "../site-links.js";
@@ -54,7 +54,7 @@ function paint(root, refresh) {
     return;
   }
 
-  const locked = !canCreateBrand(brands.length);
+  const locked = !canCreateBrand(ownBrandsOf(brands).length);
   const previewOnly = lockedBrandIds(brands);
   const lockTitle = locked ? t("brands.offer.lockedTitle", { limit: brandLimitOf() }) : t("brands.add");
   root.innerHTML = `
@@ -246,7 +246,7 @@ function brandMarkPreviewHTML(name, avatar, color) {
 export function openBrandModal({ brand = null, onSaved } = {}) {
   // At the plan's brand limit the "+" is locked: it opens the offer (buy a
   // slot on the spot), and the form itself once the slot has landed.
-  if (!brand && !canCreateBrand(listBrands().length)) {
+  if (!brand && !canCreateBrand(ownBrandsOf(listBrands()).length)) {
     openBrandOffer({ onUnlocked: () => openBrandModal({ brand, onSaved }) });
     return;
   }

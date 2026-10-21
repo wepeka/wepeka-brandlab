@@ -507,6 +507,157 @@ function updateOp(col, item, fields) {
 // with this same value so it round-trips through that filter.
 let ownerUid = null;
 
+// ---------- Kerja Tim: brands shared with this account ----------
+// Besides its own docs (ownerId == this uid), an account loads the brands
+// other owners shared with it (brands where memberIds contains this uid,
+// see firestore.rules "Brand teams") and their content/campaigns/series —
+// each by its own listener, queried with the brand OWNER's id + the brand
+// id, which is what the rules can check for a whole query. `own` and
+// `shared` keep the two apart; `db` shows both. Docs a member creates in a
+// shared brand carry the brand owner's ownerId (docOwnerFor), so the owner
+// keeps them, counts them and can purge them; a member's chat threads stay
+// theirs alone. `ownPlan` false = a member with no plan of their own.
+let ownPlan = true;
+const own = { brands: [], content: [], campaigns: [], routineTemplate: [], series: [] };
+const shared = { brands: [], content: new Map(), campaigns: new Map(), series: new Map() };
+const sharedListeners = new Map();
+const SHARED_CHILDREN = ["content", "campaigns", "series"];
+
+export function storeUid() {
+  return ownerUid;
+}
+export function isOwnBrand(brand) {
+  return !!brand && (!brand.ownerId || brand.ownerId === ownerUid);
+}
+// "owner" | "editor" | "viewer" | null for the signed-in person on a brand.
+export function brandRole(brandOrId) {
+  const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
+  if (!b) return null;
+  if (isOwnBrand(b)) return "owner";
+  const role = b.members?.[ownerUid]?.role;
+  return role === "editor" || role === "viewer" ? role : null;
+}
+// A brand more than one person works on: shared with this account, or this
+// account's own brand that it has shared with others.
+export function isSharedBrand(brandOrId) {
+  const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
+  return !!b && (!isOwnBrand(b) || (Array.isArray(b.memberIds) && b.memberIds.length > 0));
+}
+export function canEditBrand(brandOrId) {
+  const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
+  if (!b) return true; // not loaded (yet): the rules decide
+  const role = brandRole(b);
+  return role === "owner" || role === "editor";
+}
+// Who a new doc in this brand belongs to: the brand's owner.
+export function docOwnerFor(brandId) {
+  return getBrand(brandId)?.ownerId || ownerUid;
+}
+// A viewer's edit stops here, before anything changes locally (the rules
+// would refuse it anyway): one quiet note, not one per keystroke.
+let viewerNoteAt = 0;
+function writableBrand(brandId) {
+  if (!brandId || canEditBrand(brandId)) return true;
+  if (Date.now() - viewerNoteAt > 4000) {
+    viewerNoteAt = Date.now();
+    try {
+      toast(t("team.viewerOnly"), "error");
+    } catch {
+      /* no page to show it on (tests, scripts) */
+    }
+  }
+  return false;
+}
+// This account's own docs in `db[key]` (what export/reset may touch).
+function ownDocs(key) {
+  return (db[key] || []).filter((x) => !x.ownerId || x.ownerId === ownerUid);
+}
+function composeDocs(key) {
+  const list = [...own[key]];
+  const ids = new Set(list.map((x) => x.id));
+  for (const arr of shared[key]?.values?.() || []) {
+    for (const x of arr) {
+      if (!ids.has(x.id)) {
+        ids.add(x.id);
+        list.push(x);
+      }
+    }
+  }
+  return list;
+}
+// The owner's side of a shared brand: its Instagram/Facebook/ads tokens live
+// in brands/{id}/private/integrations (members read the brand doc, never
+// that one — api/team.js moves them there on the first share). They are
+// merged back into this owner's in-memory brand only, and split off again
+// on every write (writeBrand), so the app works on them as before.
+const SECRET_SUBKEYS = {
+  instagram: (k) => k === "accessToken",
+  facebook: (k) => k === "pageAccessToken",
+  ads: (k) => /token/i.test(k),
+};
+const privateSecrets = new Map();
+const privateListeners = new Map();
+function withSecrets(raw) {
+  const sec = privateSecrets.get(raw.id);
+  if (!sec || !isOwnBrand(raw)) return raw;
+  const out = { ...raw };
+  for (const f of Object.keys(SECRET_SUBKEYS)) {
+    if (sec[f] && typeof sec[f] === "object") out[f] = { ...(raw[f] || {}), ...sec[f] };
+  }
+  return out;
+}
+// Splits the secret keys off `out`'s connection fields being written (in
+// place) and returns what goes to private/integrations; a field written
+// without a secret clears it there (a disconnect).
+export function splitBrandSecrets(out, keys) {
+  const secrets = {};
+  let touched = false;
+  for (const [f, isSecret] of Object.entries(SECRET_SUBKEYS)) {
+    if (!keys.has(f)) continue;
+    touched = true;
+    const v = out[f];
+    if (!v || typeof v !== "object") {
+      secrets[f] = null;
+      continue;
+    }
+    const sec = Object.fromEntries(Object.entries(v).filter(([k]) => isSecret(k)));
+    out[f] = Object.fromEntries(Object.entries(v).filter(([k]) => !isSecret(k)));
+    secrets[f] = Object.keys(sec).length ? sec : null;
+  }
+  return touched ? secrets : null;
+}
+function syncPrivateListeners() {
+  const want = new Set(own.brands.filter((b) => Array.isArray(b.memberIds) && b.memberIds.length).map((b) => b.id));
+  for (const [id, unsub] of privateListeners) {
+    if (want.has(id)) continue;
+    try {
+      unsub();
+    } catch {
+      /* already stopped */
+    }
+    privateListeners.delete(id);
+    privateSecrets.delete(id);
+  }
+  for (const id of want) {
+    if (privateListeners.has(id)) continue;
+    privateListeners.set(id, onSnapshot(doc(fdb, "brands", id, "private", "integrations"), (snap) => {
+      privateSecrets.set(id, snap.exists() ? snap.data() : null);
+      applyBrands();
+      dispatchDbChange();
+    }, (e) => console.warn(`Brand connections (${id}) unavailable`, e)));
+  }
+}
+function applyBrands() {
+  const ownIds = new Set(own.brands.map((b) => b.id));
+  const raws = [...own.brands, ...shared.brands.filter((b) => !ownIds.has(b.id))];
+  db.brands = withPendingCreates(raws.map((raw) => {
+    noteStoredBrand(raw);
+    return overlayHeld(hydrateBrand(withSecrets({ ...raw })));
+  }));
+  // A new file ref (uploaded on another device) on the brand on screen.
+  if (scope.brandId) loadBrandAssets(scope.brandId);
+}
+
 // Attaches realtime listeners for every collection (scoped to this account)
 // and resolves once the first snapshot of each has arrived — main.js awaits
 // this once, after login + account/plan check, before the first render, so
@@ -532,10 +683,30 @@ export function isServerSynced() {
   return serverSyncedNow;
 }
 
-export function initStore(uid) {
+function resetTeamState() {
+  const stop = (u) => {
+    try {
+      u();
+    } catch {
+      /* already stopped */
+    }
+  };
+  for (const { unsubs } of sharedListeners.values()) unsubs.forEach(stop);
+  sharedListeners.clear();
+  privateListeners.forEach(stop);
+  privateListeners.clear();
+  privateSecrets.clear();
+  Object.keys(own).forEach((k) => { own[k] = []; });
+  shared.brands = [];
+  SHARED_CHILDREN.forEach((col) => shared[col].clear());
+}
+
+export function initStore(uid, { ownPlan: hasOwnPlan = true } = {}) {
   ownerUid = uid;
+  ownPlan = hasOwnPlan;
+  resetTeamState();
   return ensureSdk().then(() => new Promise((resolve) => {
-    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, series: false, settings: false };
+    const ready = { brands: false, content: false, campaigns: false, routineTemplate: false, series: false, settings: false, shared: false };
     const checkReady = () => {
       if (!Object.values(ready).every(Boolean)) return;
       resolve();
@@ -547,6 +718,7 @@ export function initStore(uid) {
       if (!Object.values(synced).every(Boolean)) return;
       serverSyncedNow = true;
       serverSyncedResolve();
+      syncTeamSettings();
       // Fire-and-forget: everything this account owns is confirmed by the
       // server now, so Trash rows older than TRASH_DAYS are safe to sweep
       // (a cached row could have been restored on another device since).
@@ -574,7 +746,7 @@ export function initStore(uid) {
     // server confirms a cached snapshot is seen (see whenServerSynced) — a
     // metadata-only event (cache → server with nothing changed, or a local
     // write being acknowledged) doesn't rebuild the mirror or repaint.
-    const watch = (key, label, apply = (snap) => { db[key] = snap.docs.map((d) => d.data()); }, onEvery = null) => {
+    const watch = (key, label, apply = (snap) => { own[key] = snap.docs.map((d) => d.data()); db[key] = composeDocs(key); }, onEvery = null) => {
       let seen = false;
       onSnapshot(mine(key), { includeMetadataChanges: true }, (snap) => {
         const changed = !seen || typeof snap.docChanges !== "function" || snap.docChanges().length > 0;
@@ -590,19 +762,20 @@ export function initStore(uid) {
       }, onErr(key, label));
     };
     watch("brands", "brands", (snap) => {
-      db.brands = withPendingCreates(snap.docs.map((d) => {
-        const raw = d.data();
-        noteStoredBrand(raw);
-        return overlayHeld(hydrateBrand(raw));
-      }));
-      // A new file ref (uploaded on another device) on the brand on screen.
-      if (scope.brandId) loadBrandAssets(scope.brandId);
+      own.brands = snap.docs.map((d) => d.data());
+      syncPrivateListeners();
+      applyBrands();
+      syncTeamSettings();
     }, noteBrandConfirmations);
     watch("content", "content");
     watch("campaigns", "campaigns");
     watch("routineTemplate", "routine");
     // Chat threads: per brand, see watchBrandScope.
     watch("series", "series");
+    watchShared(uid, () => {
+      ready.shared = true;
+      checkReady();
+    });
 
     // One settings doc per account (not shared globally) — platforms,
     // formats, thresholds etc. are this account's own, never visible to
@@ -626,6 +799,7 @@ export function initStore(uid) {
         ai: isGlobalAiActive() ? { ...personalAi, ...globalAi } : personalAi,
       };
       dispatchDbChange();
+      syncTeamSettings();
     };
     onSnapshot(doc(fdb, "settings", uid), (snap) => {
       personalData = snap.exists() ? snap.data() : {};
@@ -656,6 +830,12 @@ export function initStore(uid) {
     // This account's active-brand count (see "Brand count" below). Only a
     // server-confirmed value counts; missing → the server recounts it once.
     // Not part of `ready`: brand writes wait for it themselves.
+    // A team member without a plan of their own has no brands to count.
+    if (!ownPlan) {
+      brandCountDoc = null;
+      settleBrandCount();
+      return;
+    }
     onSnapshot(doc(fdb, "brandCounts", uid), { includeMetadataChanges: true }, (snap) => {
       if (snap.metadata?.fromCache) return;
       brandCountDoc = snap.exists() ? snap.data() : null;
@@ -669,6 +849,84 @@ export function initStore(uid) {
       settleBrandCount();
     });
   }));
+}
+
+// The brands other owners shared with this account, and each one's
+// content/campaigns/series. `onReady` runs once every shared brand present
+// at the first snapshot has its docs — or after SHARED_READY_MAX_MS, so one
+// slow listener never holds the first paint. A brand that leaves the list
+// (the owner took this account off it, or put it in Trash) is dropped, and
+// "team:removed" tells main.js, which leaves its pages.
+const SHARED_READY_MAX_MS = 4000;
+function watchShared(uid, onReady) {
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    onReady();
+  };
+  setTimeout(finish, SHARED_READY_MAX_MS);
+  let seen = false;
+  onSnapshot(query(collection(fdb, "brands"), where("memberIds", "array-contains", uid)), { includeMetadataChanges: true }, (snap) => {
+    noteBrandConfirmations(snap);
+    const changed = !seen || typeof snap.docChanges !== "function" || snap.docChanges().length > 0;
+    const first = !seen;
+    seen = true;
+    if (!changed) return;
+    const next = snap.docs.map((d) => d.data()).filter((b) => b.ownerId !== uid && !b.deletedAt);
+    const nextIds = new Set(next.map((b) => b.id));
+    const removed = shared.brands.filter((b) => !nextIds.has(b.id)).map((b) => b.id);
+    shared.brands = next;
+    removed.forEach(dropShared);
+    const waits = next.map(attachShared);
+    if (first) Promise.all(waits).then(finish);
+    applyBrands();
+    dispatchDbChange();
+    if (removed.length && typeof window !== "undefined") window.dispatchEvent(new CustomEvent("team:removed", { detail: { brandIds: removed } }));
+  }, (e) => {
+    // Rules without the team part (not deployed yet), or offline: the app
+    // runs on its own docs alone, as before.
+    console.warn("Shared brands unavailable", e);
+    finish();
+  });
+}
+function attachShared(b) {
+  const have = sharedListeners.get(b.id);
+  if (have) return have.ready;
+  const unsubs = [];
+  const ready = Promise.all(SHARED_CHILDREN.map((col) => new Promise((resolve) => {
+    let seen = false;
+    unsubs.push(onSnapshot(query(collection(fdb, col), where("ownerId", "==", b.ownerId), where("brandId", "==", b.id)), (snap) => {
+      shared[col].set(b.id, snap.docs.map((d) => d.data()));
+      db[col] = composeDocs(col);
+      dispatchDbChange();
+      if (!seen) {
+        seen = true;
+        resolve();
+      }
+    }, (e) => {
+      // Refused = this account was just taken off the brand; the brand
+      // listener drops it a moment later.
+      console.warn(`Shared ${col} (${b.id}) unavailable`, e);
+      resolve();
+    }));
+  })));
+  sharedListeners.set(b.id, { unsubs, ready });
+  return ready;
+}
+function dropShared(brandId) {
+  sharedListeners.get(brandId)?.unsubs.forEach((u) => {
+    try {
+      u();
+    } catch {
+      /* already stopped */
+    }
+  });
+  sharedListeners.delete(brandId);
+  SHARED_CHILDREN.forEach((col) => {
+    shared[col].delete(brandId);
+    db[col] = composeDocs(col);
+  });
 }
 
 // ---------- Brand count: the plan's brand limit, enforced by the server ----------
@@ -1086,7 +1344,7 @@ let bulkBusy = 0;
 const millisOf = (v) => (typeof v?.toMillis === "function" ? v.toMillis() : Number(v) || 0);
 export async function sweepBrandAssets(brandId, { now = Date.now(), force = false } = {}) {
   const result = { marked: 0, cleared: 0, deleted: 0 };
-  if (bulkBusy || !ownerUid || !serverSyncedNow || !confirmedBrands.has(brandId)) return result;
+  if (bulkBusy || !ownerUid || !serverSyncedNow || !confirmedBrands.has(brandId) || !isOwnBrand(getBrand(brandId))) return result;
   const key = `brandlab:assetSweep:${brandId}`;
   if (!force) {
     try {
@@ -1191,7 +1449,7 @@ export function ensureBrandSales(brandId, { strict = false } = {}) {
   if (!live && !strict && salesData.has(brandId)) return Promise.resolve();
   if (!live && !strict && salesLoads.has(brandId)) return salesLoads.get(brandId);
   const run = ensureSdk().then(() => {
-    const ref = query(collection(fdb, "brands", brandId, "sales"), where("ownerId", "==", ownerUid));
+    const ref = query(collection(fdb, "brands", brandId, "sales"), where("ownerId", "==", docOwnerFor(brandId)));
     if (!live) return getDocs(ref).then((snap) => rememberSalesDocs(brandId, snap.docs));
     return new Promise((resolve) => {
       if (scope.brandId !== brandId) return resolve();
@@ -1401,6 +1659,7 @@ export function createBrand({ name, avatar = "", color = "", instagram, facebook
 export function updateBrand(id, patch) {
   const b = getBrand(id);
   if (!b) return null;
+  if (!writableBrand(id)) return null;
   // What a refused move must restore, and the sales log as it was (the
   // Sales Tracker save is written as what it added/removed — salesWritePlan).
   const before = Object.fromEntries(Object.keys(patch).map((k) => [k, b[k]]));
@@ -1445,6 +1704,15 @@ function writeBrand(b, fields, { wasActive = brandIsActive(b), prevEntries, reve
     const out = { ...b, ...values };
     const subOps = [];
     let undoUploads = null;
+    // A shared brand: its connection tokens go to private/, never the brand doc.
+    if (isOwnBrand(b) && Array.isArray(b.memberIds) && b.memberIds.length) {
+      const secrets = splitBrandSecrets(out, keys);
+      if (secrets) {
+        const data = { ownerId: ownerUid };
+        for (const [f, v] of Object.entries(secrets)) data[f] = v || deleteField();
+        subOps.push({ type: "set", ref: doc(fdb, "brands", b.id, "private", "integrations"), data, options: { merge: true } });
+      }
+    }
     if (BLOB_FIELDS.some((k) => keys.has(k))) {
       const { stored, uploads } = dehydrateBlobs(Object.fromEntries(BLOB_FIELDS.filter((k) => keys.has(k) && k in values).map((k) => [k, values[k]])));
       Object.assign(out, stored);
@@ -1641,7 +1909,7 @@ export function removeBrandIdea(brandId, id) {
 // unique would be gained by copying it too.
 function migrateLegacyIdeasOnce(b) {
   // Never from a cached copy that may predate a migration made elsewhere.
-  if (b.ideasMigratedAt || !serverSyncedNow) return;
+  if (b.ideasMigratedAt || !serverSyncedNow || !isOwnBrand(b)) return;
   const fromCampaigns = (db.campaigns || []).filter((c) => c.brandId === b.id && c.ideas?.length);
   if (fromCampaigns.length) {
     const existingIds = new Set((b.ideas || []).map((i) => i.id));
@@ -1960,6 +2228,7 @@ export function ensureConsultThread(brandId) {
   return getConsultThread(brandId) || createBrainstorm(brandId, { id: consultThreadId(brandId), mode: "consult", title: "" });
 }
 export function archiveBrand(id, archived = true) {
+  if (!isOwnBrand(getBrand(id))) return; // a shared brand's life is its owner's
   return updateBrand(id, { archived });
 }
 // Soft delete: the brand and everything it owns (campaigns, content,
@@ -1968,6 +2237,7 @@ export function archiveBrand(id, archived = true) {
 // a chat thread isn't one of the trashed entities this cleanup covers, and
 // nothing shows a "restore this conversation" affordance for it.
 export function deleteBrand(id) {
+  if (!isOwnBrand(getBrand(id))) return; // a shared brand's life is its owner's
   const b = getBrand(id);
   if (!b) return;
   const now = Date.now();
@@ -2014,6 +2284,7 @@ export function deleteBrand(id) {
   });
 }
 export function restoreBrand(id) {
+  if (!isOwnBrand(getBrand(id))) return; // a shared brand's life is its owner's
   const b = getBrand(id);
   if (!b || !b.deletedAt) return;
   const was = b.deletedAt;
@@ -2024,6 +2295,7 @@ export function restoreBrand(id) {
 // whatever the soft delete above already trashed alongside this brand, so
 // nothing is left orphaned in Trash with no brand to show it under.
 export function purgeBrand(id) {
+  if (!isOwnBrand(getBrand(id))) return; // a shared brand's life is its owner's
   const wasActive = brandIsActive(db.brands.find((b) => b.id === id));
   const contentIds = db.content.filter((c) => c.brandId === id).map((c) => c.id);
   const campaignIds = (db.campaigns || []).filter((c) => c.brandId === id).map((c) => c.id);
@@ -2148,7 +2420,8 @@ export function campaignContentPlatform(campaign, settings = db.settings) {
   return hit?.name || PLATFORM_CANON[id] || id;
 }
 export function createContent(brandId, data = {}) {
-  const item = { ...emptyContent(brandId), ...data, id: uid(), brandId, ownerId: ownerUid };
+  if (!writableBrand(brandId)) return null;
+  const item = { ...emptyContent(brandId), ...data, id: uid(), brandId, ownerId: docOwnerFor(brandId) };
   // Made for a Social Media Growth campaign without a platform of its own
   // (chat drafts, plan ideas): it takes the campaign's, so it counts there.
   if (!item.platform && item.campaignId) item.platform = campaignContentPlatform(getCampaign(item.campaignId)) || "";
@@ -2170,6 +2443,7 @@ const hasNumber = (obj) => Object.values(obj || {}).some((v) => (v && typeof v =
 export function updateContent(id, patch) {
   const item = getContent(id);
   if (!item) return null;
+  if (!writableBrand(item.brandId)) return null;
   const wasPublished = item.status === "published";
   // Numbers count as "typed in" only when they change — a Save that writes
   // the same performance back isn't someone filling numbers.
@@ -2193,6 +2467,7 @@ export function archiveContent(id, archived = true) {
 export function deleteContent(id) {
   const item = getContent(id);
   if (!item) return;
+  if (!writableBrand(item.brandId)) return;
   item.deletedAt = Date.now();
   // trashedWithCampaign rides along: deleteCampaign/restoreCampaign set it
   // on the item right before calling these.
@@ -2201,6 +2476,7 @@ export function deleteContent(id) {
 export function restoreContent(id) {
   const item = getContent(id);
   if (!item || !item.deletedAt) return;
+  if (!writableBrand(item.brandId)) return;
   item.deletedAt = null;
   persist(() => updateFields("content", item.id, item, ["deletedAt", ..."trashedWithCampaign" in item ? ["trashedWithCampaign"] : []]));
 }
@@ -3127,7 +3403,8 @@ export const EVENT_PLAN_TERMS = {
 };
 
 export function createCampaign(brandId, data = {}) {
-  const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId, ownerId: ownerUid };
+  if (!writableBrand(brandId)) return null;
+  const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId, ownerId: docOwnerFor(brandId) };
   db.campaigns = [...(db.campaigns || []), item];
   persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
   emitStep("goal_created", { brandId, objective: item.objective || "", track: item.goalPlan?.track || "" });
@@ -3136,6 +3413,7 @@ export function createCampaign(brandId, data = {}) {
 export function updateCampaign(id, patch) {
   const item = getCampaign(id);
   if (!item) return null;
+  if (!writableBrand(item.brandId)) return null;
   Object.assign(item, patch, { updatedAt: Date.now() });
   persist(() => updateFields("campaigns", item.id, item, [...Object.keys(patch), "updatedAt"]));
   return item;
@@ -3146,6 +3424,7 @@ export function updateCampaign(id, patch) {
 export function setCampaignManualMetric(campaignId, milestoneId, patch) {
   const c = getCampaign(campaignId);
   if (!c) return null;
+  if (!writableBrand(c.brandId)) return null;
   const manualMetrics = { ...(c.manualMetrics || {}) };
   manualMetrics[milestoneId] = { ...(manualMetrics[milestoneId] || {}), ...patch, updatedAt: Date.now() };
   if (hasNumber(patch)) emitStep("numbers_logged", { brandId: c.brandId, kind: "manual" });
@@ -3195,6 +3474,7 @@ export function planIdeasNote(c) {
 export function deleteCampaign(id) {
   const c = getCampaign(id);
   if (!c) return;
+  if (!writableBrand(c.brandId)) return;
   untouchedPlanIdeaIds(c).forEach((cid) => {
     const item = getContent(cid);
     item.trashedWithCampaign = c.id;
@@ -3208,6 +3488,7 @@ export function deleteCampaign(id) {
 export function restoreCampaign(id) {
   const c = getCampaign(id);
   if (!c || !c.deletedAt) return;
+  if (!writableBrand(c.brandId)) return;
   c.deletedAt = null;
   persist(() => updateFields("campaigns", c.id, c, ["deletedAt"]));
   (db.content || []).filter((x) => x.trashedWithCampaign === c.id && x.deletedAt).forEach((x) => { x.trashedWithCampaign = null; restoreContent(x.id); });
@@ -3303,7 +3584,8 @@ export function findSeriesByNameInText(brandId, text) {
   return matches.sort((a, b) => b.name.length - a.name.length)[0];
 }
 export function createSeries(brandId, data = {}) {
-  const item = { ...emptySeries(brandId), ...data, id: uid(), brandId, ownerId: ownerUid, dna: { ...defaultSeriesDNA(), ...(data.dna || {}) } };
+  if (!writableBrand(brandId)) return null;
+  const item = { ...emptySeries(brandId), ...data, id: uid(), brandId, ownerId: docOwnerFor(brandId), dna: { ...defaultSeriesDNA(), ...(data.dna || {}) } };
   db.series = [...(db.series || []), item];
   persist(() => setDoc(doc(fdb, "series", item.id), item));
   return item;
@@ -3311,6 +3593,7 @@ export function createSeries(brandId, data = {}) {
 export function updateSeries(id, patch) {
   const item = getSeries(id);
   if (!item) return null;
+  if (!writableBrand(item.brandId)) return null;
   if (patch.dna) { item.dna = { ...item.dna, ...patch.dna }; patch = { ...patch, dna: item.dna }; }
   Object.assign(item, patch, { updatedAt: Date.now() });
   persist(() => updateFields("series", item.id, item, [...Object.keys(patch), "updatedAt"]));
@@ -3322,12 +3605,14 @@ export function updateSeries(id, patch) {
 export function deleteSeries(id) {
   const s = getSeries(id);
   if (!s) return;
+  if (!writableBrand(s.brandId)) return;
   s.deletedAt = Date.now();
   persist(() => updateFields("series", s.id, s, ["deletedAt"]));
 }
 export function restoreSeries(id) {
   const s = getSeries(id);
   if (!s || !s.deletedAt) return;
+  if (!writableBrand(s.brandId)) return;
   s.deletedAt = null;
   persist(() => updateFields("series", s.id, s, ["deletedAt"]));
 }
@@ -3365,6 +3650,7 @@ export function restoreTrashItem(kind, id) {
   TRASH_RESTORE[kind]?.(id);
 }
 export function purgeTrashItem(kind, id) {
+  if (!trashRowIsOwn({ kind, id })) return;
   TRASH_PURGE[kind]?.(id);
 }
 // Best-effort client-side sweep of anything past TRASH_DAYS — called once
@@ -3373,11 +3659,20 @@ export function purgeTrashItem(kind, id) {
 // permission blip, e.g.) just leaves those rows for the next load to try
 // again, same "never block on cleanup" spirit as everything else in this
 // file that fires a persist() and moves on.
+// Only this account's own docs are ever purged — a shared brand's Trash is
+// its owner's to empty (firestore.rules let only the owner delete).
+function trashRowIsOwn(row) {
+  const item = row.kind === "brand" ? getBrand(row.id)
+    : row.kind === "content" ? getContent(row.id)
+    : row.kind === "campaign" ? getCampaign(row.id)
+    : getSeries(row.id);
+  return !!item && (!item.ownerId || item.ownerId === ownerUid);
+}
 export function purgeOldTrash() {
   const cutoff = Date.now() - TRASH_DAYS * 24 * 60 * 60 * 1000;
   try {
     listTrash()
-      .filter((row) => row.deletedAt < cutoff)
+      .filter((row) => row.deletedAt < cutoff && trashRowIsOwn(row))
       .forEach((row) => TRASH_PURGE[row.kind]?.(row.id));
   } catch (e) {
     console.error("Trash auto-purge failed", e);
@@ -3385,8 +3680,40 @@ export function purgeOldTrash() {
 }
 
 // ---------- Settings ----------
+// In a brand shared with this account, content is rated by its OWNER's
+// settings (platforms, formats, formulas, ER scale, thresholds), which the
+// owner's app copies onto the brand as `teamSettings` (syncTeamSettings).
+export const RATING_KEYS = ["platforms", "formats", "formulas", "erScale", "thresholds", "thresholdsByPlatform"];
 export function getSettings() {
-  return db.settings;
+  const open = scope.brandId ? getBrand(scope.brandId) : null;
+  const team = open && !isOwnBrand(open) ? open.teamSettings : null;
+  if (!team || typeof team !== "object") return db.settings;
+  return { ...db.settings, ...Object.fromEntries(RATING_KEYS.filter((k) => team[k] !== undefined).map((k) => [k, team[k]])) };
+}
+// Is the open brand rated by someone else's settings (shown read-only)?
+export function settingsFromOwner() {
+  const open = scope.brandId ? getBrand(scope.brandId) : null;
+  return !!open && !isOwnBrand(open) && !!open.teamSettings;
+}
+// Owner side: keep `teamSettings` on every brand this account shares equal
+// to its own rating settings. Debounced; only from a server-confirmed state.
+let teamSettingsTimer = null;
+function ratingSettingsOf(settings) {
+  return JSON.parse(JSON.stringify(Object.fromEntries(RATING_KEYS.map((k) => [k, settings?.[k] ?? null]))));
+}
+function syncTeamSettings() {
+  if (!ownPlan || typeof setTimeout !== "function") return;
+  clearTimeout(teamSettingsTimer);
+  teamSettingsTimer = setTimeout(() => {
+    if (!serverSyncedNow || !db.settings) return;
+    const want = ratingSettingsOf(db.settings);
+    const wantJson = JSON.stringify(want);
+    for (const b of own.brands) {
+      if (!Array.isArray(b.memberIds) || !b.memberIds.length || b.deletedAt) continue;
+      if (JSON.stringify(b.teamSettings ?? null) === wantJson) continue;
+      updateBrand(b.id, { teamSettings: want });
+    }
+  }, 2000);
 }
 // `fields`: the top-level settings this change touched. Only those are
 // written (setDoc + mergeFields: each replaced whole, the doc created if
@@ -3551,11 +3878,11 @@ export async function prepareExport() {
   bulkBusy++;
   try {
     exportThreads = null;
-    for (const b of db.brands || []) await loadBrandAssets(b, { strict: true });
-    await Promise.all((db.brands || []).map((b) => ensureBrandSales(b.id, { strict: true })));
+    for (const b of ownDocs("brands")) await loadBrandAssets(b, { strict: true });
+    await Promise.all(ownDocs("brands").map((b) => ensureBrandSales(b.id, { strict: true })));
     const snap = await getDocs(query(collection(fdb, "brainstorms"), where("ownerId", "==", ownerUid)));
     exportThreads = snap.docs.map((d) => d.data());
-    return (db.brands || []).flatMap((b) => blobValues(hydrateBrand(b)).filter((v) => isAssetRef(v.value)).map((v) => ({ brandName: b.name || "", kind: v.kind })));
+    return ownDocs("brands").flatMap((b) => blobValues(hydrateBrand(b)).filter((v) => isAssetRef(v.value)).map((v) => ({ brandName: b.name || "", kind: v.kind })));
   } finally {
     bulkBusy--;
   }
@@ -3568,8 +3895,10 @@ export function exportJSON() {
   const brainstorms = exportThreads || db.brainstorms;
   exportThreads = null;
   // A file that couldn't be found leaves its slot empty, not a dead ref.
-  const brands = (db.brands || []).map((b) => stripBrandSecrets(mapBlobSlots(hydrateBrand(b), (v) => (isAssetRef(v) ? "" : v))));
-  return JSON.stringify({ ...db, brainstorms, brands, settings: settingsRest }, null, 2);
+  // This account's own docs only: a brand shared with it is its owner's to back up.
+  const brands = ownDocs("brands").map((b) => stripBrandSecrets(mapBlobSlots(hydrateBrand(b), (v) => (isAssetRef(v) ? "" : v))))
+    .map(({ members, memberIds, ownerName, ...b }) => b);
+  return JSON.stringify({ ...db, content: ownDocs("content"), campaigns: ownDocs("campaigns"), series: ownDocs("series"), brainstorms, brands, settings: settingsRest }, null, 2);
 }
 // The one-time (or occasional) bulk migration path — e.g. moving an
 // existing local backup into this shared cloud database. Unlike every
@@ -3588,7 +3917,11 @@ export async function importJSON(json) {
   // outright by firestore.rules) right after import. Brand social tokens
   // and the shared AI config never belong in a backup (see exportJSON
   // above) — strip them here too, in case an older backup still has them.
-  next.brands = (next.brands || []).map((b) => ({ ...stripBrandSecrets(b), ownerId: ownerUid }));
+  // The team lives on the server (api/team.js): a backup never carries it in.
+  next.brands = (next.brands || []).map((b) => {
+    const { members, memberIds, ownerName, ...rest } = stripBrandSecrets(b);
+    return { ...rest, ownerId: ownerUid };
+  });
   next.content = (next.content || []).map((c) => ({ ...c, ownerId: ownerUid }));
   next.campaigns = (next.campaigns || []).map((c) => ({ ...c, ownerId: ownerUid }));
   next.routineTemplate = (next.routineTemplate || []).map((r) => ({ ...r, ownerId: ownerUid }));
@@ -3635,12 +3968,16 @@ export async function importJSON(json) {
   dispatchDbChange();
 }
 export function resetAll() {
-  const brandIds = db.brands.map((b) => b.id);
-  const activeIds = db.brands.filter(brandIsActive).map((b) => b.id);
-  const contentIds = db.content.map((c) => c.id);
-  const campaignIds = (db.campaigns || []).map((c) => c.id);
-  const routineIds = (db.routineTemplate || []).map((r) => r.id);
+  // This account's own data only: brands shared with it stay as they are.
+  const brandIds = ownDocs("brands").map((b) => b.id);
+  const activeIds = ownDocs("brands").filter(brandIsActive).map((b) => b.id);
+  const contentIds = ownDocs("content").map((c) => c.id);
+  const campaignIds = ownDocs("campaigns").map((c) => c.id);
+  const routineIds = ownDocs("routineTemplate").map((r) => r.id);
   db = defaultDB();
+  Object.keys(own).forEach((k) => { own[k] = []; });
+  applyBrands();
+  SHARED_CHILDREN.forEach((col) => { db[col] = composeDocs(col); });
   persist(async () => {
     await whenBrandCountSettled();
     const subRefs = (await Promise.all(brandIds.map(brandSubDocRefs))).flat();

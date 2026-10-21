@@ -280,7 +280,8 @@ function matching(ref) {
   return [...__docs.keys()]
     .filter((p) => p.startsWith(coll.path + "/") && p.split("/").length === depth)
     .map(snapOf)
-    .filter((d) => clauses.every((c) => c.op === "==" && d.data()[c.field] === c.value));
+    .filter((d) => clauses.every((c) => (c.op === "==" && d.data()[c.field] === c.value)
+      || (c.op === "array-contains" && Array.isArray(d.data()[c.field]) && d.data()[c.field].includes(c.value))));
 }
 export async function getDocs(ref) {
   const docs = matching(ref);

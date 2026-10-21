@@ -1,0 +1,144 @@
+// Kerja Tim in js/store.js: brands shared with this account load next to its
+// own, what a member creates carries the brand owner, a viewer writes
+// nothing, and owner-only work (Trash purge, export) never touches shared
+// docs. On the test stubs (tests/stubs/firebase-firestore.js).
+import { test, describe, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+
+import { __docs, __writes, __reset } from "./stubs/firebase-firestore.js";
+import * as store from "../js/store.js";
+
+const flush = () => new Promise((r) => setTimeout(r, 5));
+const writesTo = (path) => __writes.flatMap((w) => (w.op === "batch" ? w.ops : [w])).filter((w) => w.path === path);
+const DAY = 86400000;
+
+function seedShared({ role = "editor", trashedAgo = null } = {}) {
+  __docs.set("brands/b1", {
+    id: "b1", ownerId: "owen", name: "Kopi Pagi", createdAt: 1, memberIds: ["rina"],
+    members: { rina: { role, name: "Rina", email: "rina@test.local", addedAt: 1 } }, ownerName: "Owen",
+  });
+  __docs.set("content/c1", { id: "c1", ownerId: "owen", brandId: "b1", title: "Cara pesan", status: "idea" });
+  if (trashedAgo !== null) __docs.set("content/c2", { id: "c2", ownerId: "owen", brandId: "b1", title: "Lama", deletedAt: Date.now() - trashedAgo });
+  __docs.set("brands/r1", { id: "r1", ownerId: "rina", name: "Rina Craft", createdAt: 2 });
+  __docs.set("content/r9", { id: "r9", ownerId: "rina", brandId: "r1", title: "Punya Rina" });
+}
+
+beforeEach(() => {
+  __reset();
+});
+
+describe("loading shared brands", () => {
+  test("a member sees the shared brand and its content next to their own", async () => {
+    seedShared();
+    await store.initStore("rina");
+    await flush();
+    assert.deepEqual(store.listBrands().map((b) => b.id).sort(), ["b1", "r1"]);
+    assert.deepEqual(store.listContent("b1").map((c) => c.id), ["c1"]);
+    assert.deepEqual(store.listContent("r1").map((c) => c.id), ["r9"]);
+    assert.equal(store.brandRole("b1"), "editor");
+    assert.equal(store.brandRole("r1"), "owner");
+    assert.equal(store.isSharedBrand("b1"), true);
+    assert.equal(store.isSharedBrand("r1"), false);
+  });
+
+  test("what an editor creates in a shared brand belongs to its owner", async () => {
+    seedShared();
+    await store.initStore("rina");
+    await flush();
+    const c = store.createContent("b1", { title: "Ide Rina" });
+    const k = store.createCampaign("b1", { name: "Launch" });
+    const s = store.createSeries("b1", { name: "Pagi" });
+    const mine = store.createContent("r1", { title: "Punyaku" });
+    await flush();
+    assert.equal(writesTo(`content/${c.id}`)[0].data.ownerId, "owen");
+    assert.equal(writesTo(`campaigns/${k.id}`)[0].data.ownerId, "owen");
+    assert.equal(writesTo(`series/${s.id}`)[0].data.ownerId, "owen");
+    assert.equal(writesTo(`content/${mine.id}`)[0].data.ownerId, "rina");
+  });
+
+  test("a viewer changes nothing: no local change, no write", async () => {
+    seedShared({ role: "viewer" });
+    await store.initStore("rina");
+    await flush();
+    __writes.length = 0;
+    assert.equal(store.canEditBrand("b1"), false);
+    assert.equal(store.updateContent("c1", { title: "x" }), null);
+    assert.equal(store.createContent("b1", { title: "x" }), null);
+    assert.equal(store.updateBrand("b1", { tagline: "x" }), null);
+    await flush();
+    assert.equal(store.getContent("c1").title, "Cara pesan");
+    assert.equal(__writes.length, 0);
+  });
+
+  test("a shared brand's life is its owner's: no archive, delete or purge from a member", async () => {
+    seedShared();
+    await store.initStore("rina");
+    await flush();
+    __writes.length = 0;
+    store.archiveBrand("b1");
+    store.deleteBrand("b1");
+    store.purgeBrand("b1");
+    await flush();
+    assert.equal(__writes.length, 0);
+  });
+});
+
+describe("owner-only work never touches shared docs", () => {
+  test("the 30-day Trash sweep purges only this account's own rows", async () => {
+    seedShared({ trashedAgo: 40 * DAY });
+    __docs.set("content/r8", { id: "r8", ownerId: "rina", brandId: "r1", title: "Lama punyaku", deletedAt: Date.now() - 40 * DAY });
+    await store.initStore("rina");
+    await flush();
+    __writes.length = 0;
+    store.purgeOldTrash();
+    await flush();
+    assert.equal(writesTo("content/c2").length, 0, "the owner's trashed doc stays");
+    assert.equal(writesTo("content/r8").filter((w) => w.op === "delete").length, 1);
+  });
+
+  test("a backup holds this account's own docs only, never the team fields", async () => {
+    seedShared();
+    await store.initStore("rina");
+    await flush();
+    const out = JSON.parse(store.exportJSON());
+    assert.deepEqual(out.brands.map((b) => b.id), ["r1"]);
+    assert.deepEqual(out.content.map((c) => c.id), ["r9"]);
+  });
+});
+
+describe("the owner's side of a shared brand", () => {
+  test("its tokens come from private/ in memory only, and go back there on a save", async () => {
+    __docs.set("brands/o1", {
+      id: "o1", ownerId: "owen", name: "Kopi Pagi", createdAt: 1, memberIds: ["rina"],
+      members: { rina: { role: "editor" } }, instagram: { username: "kopipagi", igUserId: "1" },
+    });
+    __docs.set("brands/o1/private/integrations", { ownerId: "owen", instagram: { accessToken: "IG" } });
+    await store.initStore("owen");
+    await flush();
+    await flush();
+    const b = store.getBrand("o1");
+    assert.equal(b.instagram.accessToken, "IG", "merged in memory");
+    assert.equal(store.isSharedBrand(b), true);
+    assert.equal(store.brandRole(b), "owner");
+    __writes.length = 0;
+    store.updateBrand("o1", { instagram: { ...b.instagram, lastAutoSyncAt: 5 } });
+    await flush();
+    const brandWrite = writesTo("brands/o1").at(-1);
+    assert.equal(brandWrite.data.instagram.accessToken, undefined, "no token on the brand doc");
+    assert.equal(brandWrite.data.instagram.lastAutoSyncAt, 5);
+    const priv = writesTo("brands/o1/private/integrations").at(-1);
+    assert.equal(priv.data.instagram.accessToken, "IG");
+    assert.deepEqual(priv.options, { merge: true });
+  });
+
+  test("a solo brand saves exactly as before (token stays inline)", async () => {
+    __docs.set("brands/s1", { id: "s1", ownerId: "owen", name: "Solo", createdAt: 1, instagram: { username: "solo", accessToken: "T" } });
+    await store.initStore("owen");
+    await flush();
+    __writes.length = 0;
+    store.updateBrand("s1", { instagram: { ...store.getBrand("s1").instagram, lastAutoSyncAt: 1 } });
+    await flush();
+    assert.equal(writesTo("brands/s1").at(-1).data.instagram.accessToken, "T");
+    assert.equal(writesTo("brands/s1/private/integrations").length, 0);
+  });
+});
