@@ -271,6 +271,7 @@ export function render(root, { brandId, step }) {
   };
   const refresh = () => paint(root, brandId, brand, state, refresh);
   state.doneAtOpen = brandDnaDone(brand);
+  state.savedDna = JSON.parse(JSON.stringify(dnaOf(state, brand.brandDNA?.aiDraftPending)));
   exampleKind = businessKind(brand);
   // Delegated once on the page root (paint() replaces its contents on every
   // step): example chips fill their box, and any typing refreshes the card.
@@ -305,9 +306,15 @@ export function render(root, { brandId, step }) {
 // back — only a real save of their own does. Every other call clears it,
 // which is exactly right: Next, "Simpan progress" and Save are all the owner
 // saying "yes, this is mine".
+// The Brand DNA this page saves, in one shape — also what a save is compared
+// to (state.savedDna): in a shared brand only the answers changed since the
+// last save on this page are written (js/store.js updateBrand `base`).
+function dnaOf(state, aiDraft) {
+  return { ...state.answers, parts: state.parts, aiDraftPending: !!aiDraft };
+}
 function persistDna(brandId, state, { aiDraft = false } = {}) {
   const brand = getBrand(brandId);
-  const patch = { brandDNA: { ...state.answers, parts: state.parts, aiDraftPending: aiDraft } };
+  const patch = { brandDNA: dnaOf(state, aiDraft) };
   const name = (state.brandName || "").trim();
   if (name && brand && name !== brand.name) patch.name = name;
   const p = state.personality;
@@ -321,7 +328,8 @@ function persistDna(brandId, state, { aiDraft = false } = {}) {
       personality: { feeling: p.feeling, primary: p.primary, secondary: p.secondary, avoid: p.avoid, source: "user" },
     };
   }
-  updateBrand(brandId, patch);
+  updateBrand(brandId, patch, { base: state.savedDna ? { brandDNA: state.savedDna } : null });
+  state.savedDna = JSON.parse(JSON.stringify(patch.brandDNA));
 }
 
 function stepAnswerSummaries(state, upToIndex) {

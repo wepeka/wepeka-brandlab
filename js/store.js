@@ -11,6 +11,7 @@ import CAMPAIGN_DICT from "./i18n/campaigns.js";
 import { db as fdb, auth, loadFirestore } from "./firebase.js";
 import { BLOB_FIELDS, isDataUrl, isAssetRef, assetIdOf, assetRefsOf, hasInlineBlobs, dehydrateBlobs, hydrateBlobs, blobValues, mapBlobSlots } from "./brand-assets.js";
 import { brandLimitOf } from "./account.js";
+import { leafDiff, listEdit, applyListEdit, isPlainObject } from "./collab/diff.js";
 
 // The Firestore SDK is loaded on first use (js/firebase.js loadFirestore),
 // not with this module: the login screen imports store.js through the app
@@ -1711,7 +1712,11 @@ export function createBrand({ name, avatar = "", color = "", instagram, facebook
   return brand;
 }
 
-export function updateBrand(id, patch) {
+// `base` (Kerja Tim): for a field a page edited on its own copy since it
+// opened (Brand DNA, Brand Book), that copy as it was when last saved — so
+// in a shared brand only what THIS page changed is written, never the
+// older values of parts a teammate changed meanwhile.
+export function updateBrand(id, patch, { base = null } = {}) {
   const b = getBrand(id);
   if (!b) return null;
   if (!writableBrand(id)) return null;
@@ -1720,9 +1725,102 @@ export function updateBrand(id, patch) {
   const before = Object.fromEntries(Object.keys(patch).map((k) => [k, b[k]]));
   const wasActive = brandIsActive(b);
   const prevEntries = b.salesTracker?.entries;
+  // What is compared at save time: the brand as it was in memory, so only
+  // this change goes out (with `base`, b[k] below = memory + the page's
+  // own changes, which is exactly that difference).
+  const diffBase = { ...before };
   Object.assign(b, patch);
-  writeBrand(b, Object.keys(patch), { wasActive, prevEntries, revert: () => Object.assign(b, before) });
+  // A shared brand applies the page's own changes onto the newest copy.
+  if (base && isSharedBrand(b)) {
+    for (const k of Object.keys(base)) {
+      if (isPlainObject(before[k]) && isPlainObject(patch[k]) && isPlainObject(base[k])) {
+        b[k] = applyChanges(before[k], leafDiff(base[k], patch[k]));
+      }
+    }
+  }
+  writeBrand(b, Object.keys(patch), { wasActive, prevEntries, diffBase, revert: () => Object.assign(b, before) });
   return b;
+}
+function applyChanges(obj, changes) {
+  const root = structuredCloneSafe(obj);
+  for (const c of changes) {
+    let node = root;
+    for (const k of c.path.slice(0, -1)) {
+      if (!isPlainObject(node[k])) node[k] = {};
+      node = node[k];
+    }
+    const last = c.path[c.path.length - 1];
+    if (c.delete) delete node[last];
+    else node[last] = c.value;
+  }
+  return root;
+}
+function structuredCloneSafe(v) {
+  try {
+    return typeof structuredClone === "function" ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+  } catch {
+    return JSON.parse(JSON.stringify(v));
+  }
+}
+
+// ---------- Kerja Tim: a shared brand saves only what changed ----------
+// Nested sections (Brand DNA, Brand Book, …) go out as the leaves that
+// changed ("brandDNA.mission"), id-keyed lists (ideas, goals, notes, Memori
+// Brand) as what was added/changed/removed, applied in a transaction to the
+// server's copy — so two people working on different parts of one brand
+// never undo each other. A brand nobody else is on saves exactly as before.
+const LIST_FIELDS = new Set(["ideas", "goals", "developmentLog", "scratch", "scratchFolders"]);
+const STAMPED_FIELDS = new Set(["name", "businessDescription", "brandDNA", "brandGuidelines", "brandBuilder", "goals", "ideas", "scratch", "contentCadence", "coverPhoto", "salesTracker", "writingRules", "aiVoiceGuide"]);
+const MAX_LEAVES = 300;
+// → { patch, lists } for updateDoc / the list transaction, or null when a
+// plain whole-field write is the way (nothing comparable).
+function sharedWritePlan(b, out, keys, diffBase) {
+  const patch = {};
+  const lists = {};
+  const now = Date.now();
+  for (const k of keys) {
+    const value = out[k];
+    const baseValue = diffBase?.[k];
+    if (LIST_FIELDS.has(k)) {
+      const edit = listEdit(baseValue, value);
+      if (edit) {
+        if (!edit.empty) lists[k] = edit;
+        if (STAMPED_FIELDS.has(k) && !edit.empty) patch[`editedBy.${k}`] = { uid: ownerUid, at: now };
+        continue;
+      }
+    }
+    if (isPlainObject(value) && isPlainObject(baseValue)) {
+      const comparable = BLOB_FIELDS.includes(k) ? dehydrateBlobs({ [k]: baseValue }).stored[k] : baseValue;
+      const changes = leafDiff(comparable, value);
+      if (changes.length <= MAX_LEAVES && changes.every((c) => c.path.every((seg) => PLAIN_FIELD.test(seg)))) {
+        changes.forEach((c) => { patch[[k, ...c.path].join(".")] = c.delete ? deleteField() : c.value; });
+        if (changes.length && STAMPED_FIELDS.has(k)) patch[`editedBy.${k}`] = { uid: ownerUid, at: now };
+        continue;
+      }
+    }
+    patch[k] = value === undefined ? deleteField() : value;
+    if (STAMPED_FIELDS.has(k)) patch[`editedBy.${k}`] = { uid: ownerUid, at: now };
+  }
+  return { patch, lists };
+}
+// The list edits on top of the server's copy, in one transaction. Offline
+// (a transaction needs the server) the lists are written whole instead.
+async function writeSharedLists(b, lists, out) {
+  const names = Object.keys(lists);
+  if (!names.length) return;
+  const ref = doc(fdb, "brands", b.id);
+  try {
+    await runTransaction(fdb, async (tx) => {
+      const snap = await tx.get(ref);
+      const server = snap.exists() ? snap.data() : {};
+      const patch = {};
+      names.forEach((k) => { patch[k] = applyListEdit(server[k] || [], lists[k]); });
+      tx.update(ref, patch);
+    });
+  } catch (e) {
+    console.warn("Shared list merge unavailable, saving the lists whole", e);
+    await updateDoc(ref, Object.fromEntries(names.map((k) => [k, out[k] ?? []])));
+  }
 }
 // Every write of an existing brand doc goes through here: only `fields`
 // (top-level) are sent, with their values as they are NOW (a snapshot that
@@ -1736,7 +1834,7 @@ export function updateBrand(id, patch) {
 // acknowledged; only a brand-activity write (archived/deletedAt) waits for
 // the count to be known, and any write waits behind its brand's own
 // pending create. A refusal is handled when its answer comes back.
-function writeBrand(b, fields, { wasActive = brandIsActive(b), prevEntries, revert } = {}) {
+function writeBrand(b, fields, { wasActive = brandIsActive(b), prevEntries, revert, diffBase = null } = {}) {
   const keys = new Set(fields);
   // A field name that can't be a field path means a whole-doc write
   // (updateFields' fallback): files and entries must then be split out too.
@@ -1783,6 +1881,19 @@ function writeBrand(b, fields, { wasActive = brandIsActive(b), prevEntries, reve
       const plan = salesWritePlan({ ...b, salesTracker: values.salesTracker }, prevEntries);
       out.salesTracker = plan.stored;
       subOps.push(...plan.ops);
+    }
+    // Kerja Tim: a shared brand writes only what changed (sharedWritePlan).
+    if (diffBase && isSharedBrand(b) && wasActive === isActive && [...keys].every((k) => PLAIN_FIELD.test(k))) {
+      const { patch, lists } = sharedWritePlan(b, out, [...keys], diffBase);
+      const ops = [...subOps];
+      if (Object.keys(patch).length) ops.push({ type: "update", ref: doc(fdb, "brands", b.id), data: patch });
+      try {
+        if (ops.length) await commitInChunks(ops);
+      } catch (e) {
+        undoUploads?.();
+        throw e;
+      }
+      return writeSharedLists(b, lists, out);
     }
     if (wasActive === isActive && !subOps.length) return updateFields("brands", b.id, out, [...keys]);
     try {
@@ -2523,8 +2634,10 @@ export function updateContent(id, patch) {
     item.performance = { ...item.performance, ...patch.performance };
     delete patch.performance;
   }
-  Object.assign(item, patch, { updatedAt: Date.now() });
-  persist(() => updateFields("content", item.id, item, fields));
+  // Kerja Tim: who changed it last ("Diubah Rina · 5 menit lalu").
+  const by = isSharedBrand(item.brandId) ? { updatedBy: ownerUid } : {};
+  Object.assign(item, patch, { updatedAt: Date.now() }, by);
+  persist(() => updateFields("content", item.id, item, [...fields, ...Object.keys(by)]));
   if (!wasPublished && item.status === "published") emitStep("content_published", { brandId: item.brandId });
   if (numbersPatched && JSON.stringify([item.performance || {}, item.performanceByPlatform || {}]) !== numbersBefore) emitStep("numbers_logged", { brandId: item.brandId, kind: "content" });
   return item;
@@ -3483,8 +3596,9 @@ export function updateCampaign(id, patch) {
   const item = getCampaign(id);
   if (!item) return null;
   if (!writableBrand(item.brandId)) return null;
-  Object.assign(item, patch, { updatedAt: Date.now() });
-  persist(() => updateFields("campaigns", item.id, item, [...Object.keys(patch), "updatedAt"]));
+  const by = isSharedBrand(item.brandId) ? { updatedBy: ownerUid } : {};
+  Object.assign(item, patch, { updatedAt: Date.now() }, by);
+  persist(() => updateFields("campaigns", item.id, item, [...Object.keys(patch), "updatedAt", ...Object.keys(by)]));
   return item;
 }
 // Numbers the app genuinely can't observe (DMs, collaborations, community
@@ -3663,9 +3777,22 @@ export function updateSeries(id, patch) {
   const item = getSeries(id);
   if (!item) return null;
   if (!writableBrand(item.brandId)) return null;
+  const dnaBefore = item.dna || {};
   if (patch.dna) { item.dna = { ...item.dna, ...patch.dna }; patch = { ...patch, dna: item.dna }; }
-  Object.assign(item, patch, { updatedAt: Date.now() });
-  persist(() => updateFields("series", item.id, item, [...Object.keys(patch), "updatedAt"]));
+  const by = isSharedBrand(item.brandId) ? { updatedBy: ownerUid } : {};
+  Object.assign(item, patch, { updatedAt: Date.now() }, by);
+  // Kerja Tim: in a shared brand the series' DNA goes out key by key, so two
+  // people filling different parts of it don't undo each other.
+  if (patch.dna && isSharedBrand(item.brandId) && Object.keys(patch.dna).every((k) => PLAIN_FIELD.test(k))) {
+    const rest = Object.keys(patch).filter((k) => k !== "dna");
+    const data = fieldPatch(item, [...rest, "updatedAt", ...Object.keys(by)]);
+    Object.keys(patch.dna).filter((k) => JSON.stringify(patch.dna[k]) !== JSON.stringify(dnaBefore[k])).forEach((k) => {
+      data[`dna.${k}`] = patch.dna[k] === undefined ? deleteField() : patch.dna[k];
+    });
+    persist(() => updateDoc(doc(fdb, "series", item.id), data));
+    return item;
+  }
+  persist(() => updateFields("series", item.id, item, [...Object.keys(patch), "updatedAt", ...Object.keys(by)]));
   return item;
 }
 // Soft delete: content stays linked (seriesId untouched) while the series

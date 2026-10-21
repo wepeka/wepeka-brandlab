@@ -168,10 +168,18 @@ function applyUpdate(path, data) {
     err.code = "not-found";
     throw err;
   }
-  const next = { ...__docs.get(path) };
+  const next = JSON.parse(JSON.stringify(__docs.get(path)));
+  // "a.b.c" is a nested field, like the real updateDoc.
   Object.entries(data).forEach(([k, v]) => {
-    if (v && v._delete) delete next[k];
-    else next[k] = resolveValue(next[k], v);
+    const segs = k.split(".");
+    let node = next;
+    for (const seg of segs.slice(0, -1)) {
+      if (!node[seg] || typeof node[seg] !== "object" || Array.isArray(node[seg])) node[seg] = {};
+      node = node[seg];
+    }
+    const last = segs[segs.length - 1];
+    if (v && v._delete) delete node[last];
+    else node[last] = resolveValue(node[last], v);
   });
   __docs.set(path, next);
 }

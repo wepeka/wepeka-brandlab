@@ -124,8 +124,10 @@ describe("the owner's side of a shared brand", () => {
     store.updateBrand("o1", { instagram: { ...b.instagram, lastAutoSyncAt: 5 } });
     await flush();
     const brandWrite = writesTo("brands/o1").at(-1);
-    assert.equal(brandWrite.data.instagram.accessToken, undefined, "no token on the brand doc");
-    assert.equal(brandWrite.data.instagram.lastAutoSyncAt, 5);
+    assert.doesNotMatch(JSON.stringify(brandWrite.data), /"IG"/, "the token never goes to the brand doc");
+    assert.equal(__docs.get("brands/o1").instagram.lastAutoSyncAt, 5);
+    assert.equal(__docs.get("brands/o1").instagram.accessToken, undefined);
+    assert.equal(__docs.get("brands/o1").instagram.username, "kopipagi");
     const priv = writesTo("brands/o1/private/integrations").at(-1);
     assert.equal(priv.data.instagram.accessToken, "IG");
     assert.deepEqual(priv.options, { merge: true });
@@ -180,5 +182,52 @@ describe("private chats in a shared brand", () => {
     store.setChatSessions("s1", [{ id: "x" }]);
     await flush();
     assert.deepEqual(writesTo("brands/s1").at(-1).data.chatSessions, [{ id: "x" }]);
+  });
+});
+
+describe("two people saving one shared brand", () => {
+  test("Rina's mission and Winson's vision both survive; both new ideas are kept", async () => {
+    seedShared();
+    __docs.set("brands/b1", { ...__docs.get("brands/b1"), brandDNA: { mission: "m", vision: "v" }, ideas: [{ id: "i1", text: "lama" }] });
+    await store.initStore("rina");
+    await flush();
+    // Meanwhile Winson saved (the server has it; Rina's copy doesn't yet).
+    const server = __docs.get("brands/b1");
+    __docs.set("brands/b1", { ...server, brandDNA: { ...server.brandDNA, vision: "v-winson" }, ideas: [{ id: "i9", text: "ide Winson" }, ...server.ideas] });
+    const b = store.getBrand("b1");
+    store.updateBrand("b1", { brandDNA: { ...b.brandDNA, mission: "m-rina" } });
+    store.addBrandIdea("b1", { text: "ide Rina" });
+    await flush();
+    await flush();
+    const after = __docs.get("brands/b1");
+    assert.equal(after.brandDNA.mission, "m-rina");
+    assert.equal(after.brandDNA.vision, "v-winson", "Winson's vision was not overwritten");
+    const texts = after.ideas.map((i) => i.text).sort();
+    assert.deepEqual(texts, ["ide Rina", "ide Winson", "lama"]);
+    assert.equal(after.editedBy.brandDNA.uid, "rina");
+  });
+  test("a page's own copy (base): only what the page changed is written", async () => {
+    seedShared();
+    __docs.set("brands/b1", { ...__docs.get("brands/b1"), brandDNA: { mission: "m", vision: "v" } });
+    await store.initStore("rina");
+    await flush();
+    const opened = { ...store.getBrand("b1").brandDNA }; // the page's copy, when it opened
+    // A teammate's vision arrives in memory after the page opened.
+    store.getBrand("b1").brandDNA = { ...store.getBrand("b1").brandDNA, vision: "v-baru" };
+    __docs.set("brands/b1", { ...__docs.get("brands/b1"), brandDNA: { mission: "m", vision: "v-baru" } });
+    store.updateBrand("b1", { brandDNA: { ...opened, mission: "m-rina" } }, { base: { brandDNA: opened } });
+    await flush();
+    assert.deepEqual(__docs.get("brands/b1").brandDNA, { mission: "m-rina", vision: "v-baru" });
+    assert.deepEqual(store.getBrand("b1").brandDNA, { mission: "m-rina", vision: "v-baru" });
+  });
+  test("a solo brand still writes its sections whole", async () => {
+    __docs.set("brands/s1", { id: "s1", ownerId: "owen", name: "Solo", createdAt: 1, brandDNA: { mission: "m" } });
+    await store.initStore("owen");
+    await flush();
+    __writes.length = 0;
+    store.updateBrand("s1", { brandDNA: { mission: "m2" } });
+    await flush();
+    const w = writesTo("brands/s1").at(-1);
+    assert.deepEqual(Object.keys(w.data), ["brandDNA"]);
   });
 });
