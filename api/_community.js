@@ -210,10 +210,12 @@ const font = "font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-ser
 const bigButton = (href, label, bg, fg) => `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;"><tr><td bgcolor="${bg}" style="border-radius:999px;background:${bg};"><a href="${esc(href)}" style="display:inline-block;padding:15px 26px;${font}font-size:16px;font-weight:800;line-height:1;color:${fg};text-decoration:none;border-radius:999px;">${label}</a></td></tr></table>`;
 const groupCard = ({ step, tone, badge, title, body, href, cta }) => {
   const gold = tone === "gold";
+  // Translucent over the hero's gradient; the solid colour is the fallback.
   const bg = gold ? "#1c1409" : "#0f2418";
+  const glass = gold ? "rgba(40,26,8,.72)" : "rgba(10,40,24,.72)";
   const line = gold ? GOLD : WA_GREEN;
   return `<tr><td style="padding:0 28px 14px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;background:${bg};border:1px solid ${line};border-radius:18px;"><tr><td style="padding:20px 22px 22px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${bg}" style="border-collapse:separate;background:${bg};background:${glass};border:1px solid ${line};border-radius:18px;"><tr><td style="padding:20px 22px 22px;">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
 <td width="30" height="30" align="center" bgcolor="${line}" style="width:30px;height:30px;border-radius:999px;background:${line};${font}font-size:14px;font-weight:800;color:#0c0a09;">${step}</td>
 <td style="padding-left:10px;${font}font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:${line};">${esc(badge)}</td>
@@ -225,6 +227,11 @@ ${bigButton(href, cta, line, "#0c0a09")}
 </td></tr>`;
 };
 function groupInviteHTML({ circle, appUrl, settingsUrl }) {
+  // The hero: brand purple/pink fading to near-black; a Lifetime email
+  // starts warmer, toward its gold. Mail apps without gradients show #140d1f.
+  const heroGradient = circle
+    ? "linear-gradient(155deg,#4a2a0a 0%,#5b1747 42%,#1d0f2b 72%,#0c0a09 100%)"
+    : "linear-gradient(155deg,#5b21b6 0%,#9d174d 38%,#2a0f2e 70%,#0c0a09 100%)";
   const preheader = circle
     ? "Founder Circle khusus akun Lifetime, plus grup Brandlab untuk semua pengguna."
     : "Fitur baru, tips, dan tanya langsung ke tim Wepeka. Gabung sekali klik.";
@@ -257,10 +264,10 @@ ${groupCard({ step: 2, tone: "green", badge: "Semua pengguna", title: "Grup Bran
     : regularCTA;
   const follow = FOLLOW_INSTAGRAM.map((h) => `<td style="padding:0 4px;"><a href="${esc(instagramUrl(h))}" style="display:inline-block;padding:9px 14px;border-radius:999px;background:#fdf2f8;border:1px solid #fbcfe8;${font}font-size:13.5px;font-weight:700;color:#be185d;text-decoration:none;">@${esc(h)}</a></td>`).join("");
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>Grup WhatsApp Brandlab</title></head>
-<body style="margin:0;padding:0;background:#f3efe9;">
+<body style="margin:0;padding:0;background:#f6efe9;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f3efe9" style="background:#f3efe9;"><tr><td align="center" style="padding:24px 12px 32px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;border-collapse:separate;background:#0c0a09;border-radius:22px;overflow:hidden;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f6efe9" style="background:#f6efe9;background-image:linear-gradient(180deg,#ffedd5 0%,#fce7f3 48%,#ede9fe 100%);"><tr><td align="center" style="padding:24px 12px 32px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#140d1f" style="max-width:560px;border-collapse:separate;background:#140d1f;background-image:${heroGradient};border-radius:22px;overflow:hidden;">
 <tr><td height="5" bgcolor="#ec4899" style="height:5px;line-height:5px;font-size:0;background:#ec4899;background-image:linear-gradient(90deg,#ffa52b,#ec4899,#8b5cf6);">&nbsp;</td></tr>
 <tr><td style="padding:24px 28px 0;">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
@@ -270,7 +277,7 @@ ${groupCard({ step: 2, tone: "green", badge: "Semua pengguna", title: "Grup Bran
 </tr></table>
 </td></tr>
 <tr><td style="padding:26px 28px 0;">
-<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:${circle ? "#2a1f0b" : "#0f2418"};${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${circle ? GOLD : "#4ade80"};">${circle ? "&#9733; Founder Brandlab" : "&#9679; Grup WhatsApp"}</span>
+<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:${circle ? "#2a1f0b" : "#0f2418"};background:rgba(0,0,0,.34);${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${circle ? GOLD : "#4ade80"};">${circle ? "&#9733; Founder Brandlab" : "&#9679; Grup WhatsApp"}</span>
 <h1 style="margin:16px 0 12px;${font}font-size:30px;font-weight:800;line-height:1.18;color:#ffffff;">${headline}</h1>
 <p style="margin:0 0 22px;${font}font-size:16px;line-height:1.6;color:#d6d3d1;">${esc(sub)}</p>
 </td></tr>
@@ -283,7 +290,7 @@ ${perksHTML}
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin-left:-4px;"><tr>${follow}</tr></table>
 </td></tr>
 </table>
-<p style="max-width:520px;margin:18px auto 0;${font}font-size:12px;line-height:1.6;color:#8a817a;text-align:center;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#8a817a;">Pengaturan &rarr; Pengingat</a>.<br>Wepeka Brandlab &middot; <a href="${esc(appUrl)}" style="color:#8a817a;">${esc(appUrl.replace(/^https?:\/\//, ""))}</a></p>
+<p style="max-width:520px;margin:18px auto 0;${font}font-size:12px;line-height:1.6;color:#6b6259;text-align:center;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#6b6259;">Pengaturan &rarr; Pengingat</a>.<br>Wepeka Brandlab &middot; <a href="${esc(appUrl)}" style="color:#6b6259;">${esc(appUrl.replace(/^https?:\/\//, ""))}</a></p>
 </td></tr></table>
 </body></html>`;
 }
