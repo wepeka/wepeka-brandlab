@@ -119,4 +119,19 @@ export default {
   "invite.err.account-exists": { en: "There's already an account with this email. Sign in with it instead.", id: "Sudah ada akun dengan email ini. Masuk pakai akun itu saja." },
   "invite.err.weak-password": { en: "The password needs at least 8 characters.", id: "Password minimal 8 karakter." },
   "invite.err.self": { en: "This is your own brand.", id: "Ini brand kamu sendiri." },
+
+  // The live layer (js/collab/live.js)
+  "collab.typing": { en: "{name} is typing…", id: "{name} sedang mengetik…" },
+  "collab.writingScript": { en: "{name} · writing the script…", id: "{name} · menulis script…" },
+  "collab.editing": { en: "{name} is editing…", id: "{name} sedang mengedit…" },
+  "collab.aiLockedTitle": { en: "{name} is editing this content. The AI buttons open again once they're done.", id: "{name} sedang mengedit konten ini. Tombol AI terbuka lagi setelah dia selesai." },
+  "collab.lockedBy": { en: "{name} is typing here. Wait a moment.", id: "{name} sedang mengetik di sini. Tunggu sebentar ya." },
+  "collab.elsewhere": { en: "{name} is on another page · click to go there", id: "{name} sedang di halaman lain · klik untuk ke sana" },
+  "collab.here": { en: "{name} is on this page", id: "{name} ada di halaman ini" },
+  "collab.editedBy": { en: "Changed by {name} · {when}", id: "Diubah {name} · {when}" },
+  "collab.you": { en: "you", id: "kamu" },
+  "collab.justNow": { en: "just now", id: "baru saja" },
+  "collab.minutesAgo": { en: "{n} min ago", id: "{n} menit lalu" },
+  "collab.hoursAgo": { en: "{n} h ago", id: "{n} jam lalu" },
+  "collab.daysAgo": { en: "{n} days ago", id: "{n} hari lalu" },
 };

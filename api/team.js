@@ -23,7 +23,7 @@
 // 404 not-found, 409 seats-full/already-member/owner-inactive/account-exists,
 // 410 expired/revoked/used/code-expired, 429 too-soon/too-many/code-locked.
 import { FieldValue, FieldPath } from "firebase-admin/firestore";
-import { adminDb, adminAuth, requireAuth } from "./_firebaseAdmin.js";
+import { adminDb, adminAuth, adminRtdb, requireAuth } from "./_firebaseAdmin.js";
 import { accountCanWrite, isActiveBrand } from "./brands/recount.js";
 import { teamSeatsFor } from "./_plans.js";
 import { isAdminUid } from "./_aiQuota.js";
@@ -88,6 +88,7 @@ function deps(req) {
   return {
     db: adminDb(),
     auth: adminAuth(),
+    rtdb: adminRtdb(),
     send: (msg) => sendEmail({ ...msg, from: String(process.env.TEAM_EMAIL_FROM || "").trim() || TEAM_EMAIL_FROM_DEFAULT }),
     now: () => Date.now(),
     origin: String(req.headers?.origin || ""),
@@ -108,6 +109,27 @@ const ownerInvitesQuery = (db, ownerId) => db.collection("invites").where("owner
 const docs = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 const seatLimit = (ownerId, account) => (isAdminUid(ownerId) ? Infinity : teamSeatsFor(account));
 const displayNameOf = (user, account) => String(account?.displayName || user?.displayName || (user?.email || "").split("@")[0] || "Pemilik brand").slice(0, 80);
+
+// The Realtime Database's copy of who is on a brand — teams/{brandId} =
+// { uid: "owner" | "editor" | "viewer" } — which its rules read for the
+// live layer (presence, cursors, the Script written together). Rebuilt
+// from the brand docs after every team change; skipped where the database
+// isn't set up. Best effort: the Firestore team is the truth.
+export async function mirrorTeams(d, brandIds) {
+  if (!d.rtdb || !brandIds?.length) return;
+  for (const id of new Set(brandIds)) {
+    try {
+      const snap = await d.db.doc(`brands/${id}`).get();
+      const b = snap.exists ? snap.data() : null;
+      const members = Object.entries(b?.members || {});
+      const ref = d.rtdb.ref(`teams/${id}`);
+      if (!b || !members.length || b.deletedAt) await ref.remove();
+      else await ref.set({ [b.ownerId]: "owner", ...Object.fromEntries(members.map(([uid, m]) => [uid, m.role === "editor" ? "editor" : "viewer"])) });
+    } catch (e) {
+      console.warn("[team] live team copy not updated", id, e?.message);
+    }
+  }
+}
 
 // ---------- invite / rotate / revoke ----------
 export async function invite(d, caller, body) {
@@ -252,6 +274,9 @@ export async function accept(d, caller, body) {
     tx.set(d.db.doc(`memberships/${caller.uid}`), { ownerIds: FieldValue.arrayUnion(inv.ownerId), brands: membershipBrands }, { merge: true });
     tx.update(d.db.doc(`invites/${id}`), { status: "accepted", acceptedBy: caller.uid, acceptedAt: now });
     return { brandIds: targets.map((b) => b.id), ownerName: inv.ownerName };
+  }).then(async (out) => {
+    if (!out.already) await mirrorTeams(d, out.brandIds);
+    return out;
   });
 }
 
@@ -331,6 +356,7 @@ export async function changeRole(d, caller, body) {
     tx.update(ref, new FieldPath("members", memberUid, "role"), role);
     tx.set(d.db.doc(`memberships/${memberUid}`), { brands: { [brandId]: { role } } }, { merge: true });
   });
+  await mirrorTeams(d, [brandId]);
   return {};
 }
 
@@ -353,6 +379,11 @@ async function removeMember(d, ownerId, memberUid, brandIds) {
     return brands.map((b) => b.id);
   });
   if (removed.length) {
+    await mirrorTeams(d, removed);
+    // Their live marks there go too (presence, cursor).
+    if (d.rtdb) {
+      await Promise.all(removed.flatMap((bid) => [d.rtdb.ref(`presence/${bid}/${memberUid}`).remove(), d.rtdb.ref(`cursors/${bid}/${memberUid}`).remove()])).catch(() => {});
+    }
     const threads = await d.db.collection("brainstorms").where("ownerId", "==", memberUid).get();
     const batch = d.db.batch();
     threads.docs.filter((t) => removed.includes(t.data().brandId)).forEach((t) => batch.delete(t.ref));
@@ -399,6 +430,7 @@ export async function sync(d, caller) {
       tx.set(ref, { brands: all, ownerIds: [...new Set(Object.values(all).map((x) => x.ownerId))] });
     });
   }
+  await mirrorTeams(d, brands.map((b) => b.id));
   return { members: byMember.size };
 }
 

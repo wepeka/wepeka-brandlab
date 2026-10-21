@@ -1,0 +1,38 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "teams": {
+      "$brandId": {
+        ".read": "auth != null && data.child(auth.uid).exists()",
+        ".write": false
+      }
+    },
+    "presence": {
+      "$brandId": {
+        ".read": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists()",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && root.child('teams').child($brandId).child(auth.uid).exists()",
+          ".validate": "!newData.exists() || (newData.hasChildren(['name', 'page', 'at']) && newData.child('name').isString() && newData.child('name').val().length <= 80 && newData.child('page').isString() && newData.child('page').val().length <= 300)"
+        }
+      }
+    },
+    "cursors": {
+      "$brandId": {
+        ".read": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists()",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && root.child('teams').child($brandId).child(auth.uid).exists()"
+        }
+      }
+    },
+    "scripts": {
+      "$brandId": {
+        ".read": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists()",
+        "$contentId": {
+          ".write": "auth != null && (root.child('teams').child($brandId).child(auth.uid).val() === 'owner' || root.child('teams').child($brandId).child(auth.uid).val() === 'editor')",
+          ".validate": "!newData.exists() || (newData.child('text').isString() && newData.child('text').val().length <= 60000)"
+        }
+      }
+    }
+  }
+}

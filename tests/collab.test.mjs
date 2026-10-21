@@ -70,3 +70,20 @@ describe("preserveEditing (js/collab/preserve.js)", () => {
     assert.equal(doc.activeElement, fresh);
   });
 });
+
+describe("writing the Script together (js/collab/textmerge.js)", () => {
+  test("two people typing in different places both keep their words", async () => {
+    const { merge3text } = await import("../js/collab/textmerge.js");
+    const base = "[HOOK] Telat ngantor?\nPesan lewat WA.";
+    const mine = "[HOOK] Telat ngantor gara-gara antre?\nPesan lewat WA.";
+    const theirs = "[HOOK] Telat ngantor?\nPesan lewat WA, ambil 2 menit.";
+    assert.equal(merge3text(base, mine, theirs), "[HOOK] Telat ngantor gara-gara antre?\nPesan lewat WA, ambil 2 menit.");
+    assert.equal(merge3text(base, base, theirs), theirs);
+    assert.equal(merge3text(base, mine, base), mine);
+  });
+  test("my caret follows the text when theirs lands before it", async () => {
+    const { moveCaret } = await import("../js/collab/textmerge.js");
+    assert.equal(moveCaret("abc def", "XYZ abc def", 5), 9);
+    assert.equal(moveCaret("abc def", "abc def!!", 2), 2);
+  });
+});

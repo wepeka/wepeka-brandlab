@@ -5,6 +5,7 @@
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+import { getDatabase } from "firebase-admin/database";
 
 // Local dev only (scripts/dev-api.mjs): the Admin SDK talks to the Firebase
 // Emulator Suite on its own once FIRESTORE_EMULATOR_HOST /
@@ -24,8 +25,13 @@ export function emulatorProjectId(env = process.env) {
 function adminApp() {
   if (getApps().length) return getApps()[0];
   const emulatorProject = emulatorProjectId();
-  if (emulatorProject) return initializeApp({ projectId: emulatorProject });
+  if (emulatorProject) {
+    const rtdbHost = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+    return initializeApp({ projectId: emulatorProject, ...(rtdbHost ? { databaseURL: `http://${rtdbHost}?ns=${emulatorProject}` } : {}) });
+  }
   return initializeApp({
+    // Kerja Tim (Realtime Database): set once the database exists.
+    ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
     credential: cert({
       projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
       clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
@@ -42,6 +48,14 @@ export function adminDb() {
 
 export function adminAuth() {
   return getAuth(adminApp());
+}
+
+// Kerja Tim: the Realtime Database, or null where it isn't set up (the live
+// project until it's created) — callers then skip what they'd write there.
+export function adminRtdb() {
+  const app = adminApp();
+  if (!app.options?.databaseURL) return null;
+  return getDatabase(app);
 }
 
 // The Firebase Auth record behind a uid (email, display name), for when a

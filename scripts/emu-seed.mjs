@@ -16,11 +16,13 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+import { getDatabase } from "firebase-admin/database";
 
 const PROJECT = "demo-brandlab";
 const FS_HOST = "127.0.0.1:8080";
 const AUTH_HOST = "127.0.0.1:9099";
-Object.assign(process.env, { FIRESTORE_EMULATOR_HOST: FS_HOST, FIREBASE_AUTH_EMULATOR_HOST: AUTH_HOST, GCLOUD_PROJECT: PROJECT });
+const RTDB_HOST = "127.0.0.1:9000";
+Object.assign(process.env, { FIRESTORE_EMULATOR_HOST: FS_HOST, FIREBASE_AUTH_EMULATOR_HOST: AUTH_HOST, FIREBASE_DATABASE_EMULATOR_HOST: RTDB_HOST, GCLOUD_PROJECT: PROJECT });
 delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
 export const PASSWORD = "brandlab-dev-123";
@@ -78,7 +80,7 @@ async function brandDocs(ownerUid) {
 async function main() {
   const withMember = process.argv.includes("--with-member");
   await wipe();
-  initializeApp({ projectId: PROJECT });
+  initializeApp({ projectId: PROJECT, databaseURL: `http://${RTDB_HOST}?ns=${PROJECT}` });
   const auth = getAuth();
   const db = getFirestore();
 
@@ -112,6 +114,10 @@ async function main() {
     }
   }
   await batch.commit();
+  // The live layer's copy of the team (api/team.js mirrorTeams).
+  const rtdb = getDatabase();
+  await rtdb.ref("/").set(null);
+  if (withMember) await rtdb.ref(`teams/${brandId}`).set({ [owner.uid]: "owner", [editor.uid]: "editor", [viewer.uid]: "viewer" });
   console.log(`Seeded the emulator: brand Kopi Pagi (${brandId})${withMember ? " shared with Rina (editor) and Dimas (viewer)" : ""}.`);
   console.log(`Sign in at http://localhost:8743/?emu=1 with winson@test.local / ${PASSWORD} (rina@, dimas@, budi@ on http://127.0.0.1:8743/?emu=1).`);
   process.exit(0);

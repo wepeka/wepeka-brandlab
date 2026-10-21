@@ -9,7 +9,7 @@
 // hiding this object — safe to commit as-is.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { IS_EMULATOR, EMULATOR_CONFIG, EMULATOR_AUTH_URL, EMULATOR_FIRESTORE } from "./emulator.js";
+import { IS_EMULATOR, EMULATOR_CONFIG, EMULATOR_AUTH_URL, EMULATOR_FIRESTORE, EMULATOR_DATABASE } from "./emulator.js";
 
 const liveConfig = {
   apiKey: "AIzaSyDcApVGM0CyxfcTERsrwr7CK07YWlQT_vI",
@@ -80,6 +80,30 @@ export function loadFirestore() {
     loading.catch(() => { loading = null; });
   }
   return loading;
+}
+
+// Kerja Tim: the Realtime Database carries what moves fast between
+// teammates — who is where, mouse cursors, the "is typing" marks and the
+// Script written together (js/collab/*). Loaded on demand, only for a
+// shared brand. LIVE_DATABASE_URL stays empty until the database is created
+// in the Firebase project (owner's decision): until then the live app has
+// no cursors or presence and works exactly as before; the local emulator
+// always has them.
+const LIVE_DATABASE_URL = "";
+let rtdb = null;
+let rtdbLoading = null;
+export function loadDatabase() {
+  const url = IS_EMULATOR ? EMULATOR_DATABASE.url : LIVE_DATABASE_URL;
+  if (!url) return Promise.resolve(null);
+  if (!rtdbLoading) {
+    rtdbLoading = import("https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js").then((rd) => {
+      rtdb = rd.getDatabase(app, url);
+      if (IS_EMULATOR) rd.connectDatabaseEmulator(rtdb, EMULATOR_DATABASE.host, EMULATOR_DATABASE.port);
+      return { sdk: rd, db: rtdb };
+    });
+    rtdbLoading.catch(() => { rtdbLoading = null; });
+  }
+  return rtdbLoading;
 }
 
 const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))]);

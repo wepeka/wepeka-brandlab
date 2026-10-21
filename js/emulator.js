@@ -43,6 +43,7 @@ export const EMULATOR_CONFIG = {
 };
 export const EMULATOR_AUTH_URL = "http://127.0.0.1:9099";
 export const EMULATOR_FIRESTORE = { host: "127.0.0.1", port: 8080 };
+export const EMULATOR_DATABASE = { host: "127.0.0.1", port: 9000, url: "http://127.0.0.1:9000?ns=demo-brandlab" };
 
 // A red corner chip on every page in emulator mode, so a test session can
 // never be mistaken for the real app.

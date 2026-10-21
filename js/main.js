@@ -30,7 +30,7 @@ import { initActivation } from "./activation.js";
 import { initMetaPixel } from "./meta-pixel.js";
 import { trackTrialStart } from "./trial-start.js";
 import { checkPendingOrders } from "./pending-orders.js";
-import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales, isOwnBrand } from "./store.js";
+import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales, isOwnBrand, isSharedBrand } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { auth, wipeLocalFirestore, claimLocalCache } from "./firebase.js";
@@ -686,9 +686,19 @@ async function runPulseOnce(brandId) {
   }
 }
 
+// Kerja Tim: the live layer (cursors, typing marks, presence) for a shared
+// brand — loaded on demand, only once a shared brand is open.
+let liveModule = null;
+function syncLiveFor(brandId) {
+  if (brandId && isSharedBrand(brandId)) {
+    import("./collab/live.js").then((m) => { liveModule = m; return m.syncLive(brandId); }).catch((e) => console.warn("live layer unavailable", e));
+  } else liveModule?.stopLive();
+}
+
 async function renderRoute() {
   if (!storeReady) return;
   const token = ++renderToken;
+  syncLiveFor(parseRoute(location.hash).brandId || null);
   if (cleanup) { cleanup(); cleanup = null; }
   clearPageGuide();
 

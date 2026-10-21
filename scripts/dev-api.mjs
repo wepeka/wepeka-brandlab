@@ -24,6 +24,7 @@ Object.assign(env, {
   GCLOUD_PROJECT: "demo-brandlab",
   FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+  FIREBASE_DATABASE_EMULATOR_HOST: "127.0.0.1:9000",
   AI_PROVIDER: "deepseek",
   DEEPSEEK_API_KEY: "fake-dev-key",
   RESEND_API_KEY: "fake-dev-key",

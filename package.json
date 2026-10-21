@@ -6,11 +6,11 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --import ./tests/setup.mjs --test \"tests/*.test.mjs\"",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-brandlab \"node --test --test-concurrency=1 \\\"tests/rules/*.test.mjs\\\"\"",
-    "emu": "firebase emulators:start --only auth,firestore --project demo-brandlab",
+    "test:rules": "firebase emulators:exec --only firestore,database --project demo-brandlab \"node --test --test-concurrency=1 \\\"tests/rules/*.test.mjs\\\"\"",
+    "emu": "firebase emulators:start --only auth,firestore,database --project demo-brandlab",
     "emu:seed": "node --import ./tests/setup.mjs scripts/emu-seed.mjs",
     "dev:api": "node scripts/dev-api.mjs",
-    "test:emu": "firebase emulators:exec --only auth,firestore --project demo-brandlab \"node --test \\\"tests/emu/*.test.mjs\\\"\""
+    "test:emu": "firebase emulators:exec --only auth,firestore,database --project demo-brandlab \"node --test \\\"tests/emu/*.test.mjs\\\"\""
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",
@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
+    "diff-match-patch": "^1.0.5",
     "esbuild": "^0.28.2",
     "firebase": "^12.19.0"
   }
