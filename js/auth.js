@@ -100,6 +100,20 @@ export async function logout() {
   // main.js's boot(null) for the locked/pricing screens and other tabs).
   await wipeLocalFirestore();
 }
-export function resetPassword(email) {
+// Brandlab mails the link itself (api/auth-email.js, from a wepeka.com
+// address); Firebase's own email is only the fallback while that can't
+// (no email key, an error), since it tends to land in Spam.
+export async function resetPassword(email) {
+  try {
+    const res = await fetch("/api/auth-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (res.ok) return;
+    if (res.status === 429) throw Object.assign(new Error("too many requests"), { code: "auth/too-many-requests" });
+  } catch (err) {
+    if (err?.code === "auth/too-many-requests") throw err;
+  }
   return sendPasswordResetEmail(auth, email);
 }

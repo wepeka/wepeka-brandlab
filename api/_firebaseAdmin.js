@@ -29,6 +29,12 @@ export function authUser(uid) {
   return getAuth(adminApp()).getUser(uid);
 }
 
+// A "lupa password" link for this email (api/auth-email.js mails it itself).
+// Throws auth/email-not-found when no account has it.
+export function passwordResetLink(email, continueUrl) {
+  return getAuth(adminApp()).generatePasswordResetLink(email, { url: continueUrl });
+}
+
 // Verifies the caller's Firebase ID token from the Authorization header and
 // returns its decoded claims (including `uid`). Endpoints that must act on
 // behalf of a specific account (payments, above all) call this instead of

@@ -16,7 +16,8 @@ const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s
 // → { ok: true, id } | { ok: false, skipped?, status?, error? }. Never throws.
 // `idempotencyKey` (Resend keeps it 24 h) makes a retried cron send the
 // same day's email only once even if our own lastSentDate write was lost.
-export async function sendEmail({ to, subject, html, text, idempotencyKey }, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
+// `from` overrides RESEND_FROM for one email (same verified domain).
+export async function sendEmail({ to, subject, html, text, idempotencyKey, from }, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
   if (!emailConfigured(env)) return { ok: false, skipped: true };
   if (!looksLikeEmail(to)) return { ok: false, error: "bad-address" };
   try {
@@ -27,7 +28,7 @@ export async function sendEmail({ to, subject, html, text, idempotencyKey }, { e
         "Content-Type": "application/json",
         ...(idempotencyKey ? { "Idempotency-Key": String(idempotencyKey).slice(0, 256) } : {}),
       },
-      body: JSON.stringify({ from: String(env.RESEND_FROM).trim(), to: [to], subject: String(subject || "").slice(0, 200), html, text }),
+      body: JSON.stringify({ from: String(from || env.RESEND_FROM).trim(), to: [to], subject: String(subject || "").slice(0, 200), html, text }),
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
