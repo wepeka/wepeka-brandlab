@@ -728,7 +728,7 @@ function switchChipHTML(to, question, { fromModel }) {
 
 // Numbers the Konsultan read off a sent photo ([[metrics:…]]) — shown back
 // so the owner can check them, with one tap to file them on the post.
-const METRIC_CARD_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained"];
+const METRIC_CARD_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "reposts", "profileVisits", "followersGained"];
 function metricsCardHTML(mx, index) {
   const chips = [
     ...METRIC_CARD_KEYS.filter((k) => mx.metrics?.[k] !== undefined).map((k) => `<span><b>${Number(mx.metrics[k]).toLocaleString(getLang() === "en" ? "en-US" : "id-ID")}</b> ${esc(t(`store.metric.${k}`))}</span>`),

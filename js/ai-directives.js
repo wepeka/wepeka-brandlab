@@ -21,7 +21,7 @@ export const MAX_SAVES = 2;
 export const MAX_SCRIPTS = 1;
 // Numbers the consultant read off a screenshot the user sent
 // ([[metrics:views=12300;hookPct=62]]) — become a "save to a post" card.
-export const METRIC_DIRECTIVE_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained", "videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"];
+export const METRIC_DIRECTIVE_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "reposts", "profileVisits", "followersGained", "videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"];
 const RETENTION_DIRECTIVE_KEYS = new Set(["videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"]);
 const HANDOFF_TARGETS = ["consultant", "brainstorm", "companion"];
 

@@ -108,6 +108,12 @@ describe("parseMetricsFromText — Instagram in Indonesian", () => {
     assert.deepEqual(parseMetricsFromText(text), { views: 23456, followersGained: 15, saves: 1100 });
   });
 
+  test("Reposts / Posting ulang is its own number, not shares", () => {
+    assert.deepEqual(parseMetricsFromText("Likes 1,234\nComments 56\nReposts 21\nShares 78\nSaves 90"), { likes: 1234, comments: 56, reposts: 21, shares: 78, saves: 90 });
+    assert.deepEqual(parseMetricsFromText("Suka 1.234\nKomentar 56\nPosting ulang 21\nDibagikan 78\nDisimpan 90"), { likes: 1234, comments: 56, reposts: 21, shares: 78, saves: 90 });
+    assert.deepEqual(parseMetricsFromText("Posting ulang\n1,2 rb"), { reposts: 1200 });
+  });
+
   test("TikTok Indonesian: Favorit = saves, Bagikan = shares", () => {
     const text = "Total penayangan video\n45,6 rb\nSuka 3.210\nKomentar 98\nBagikan 120\nFavorit 340\nKunjungan profil 77";
     assert.deepEqual(parseMetricsFromText(text), { views: 45600, likes: 3210, comments: 98, shares: 120, saves: 340, profileVisits: 77 });

@@ -1,6 +1,6 @@
 // The brand report — one tidy PDF of everything that happened in a period:
-// content and its numbers (views, likes, comments, shares, saves — totals
-// and per post), followers, sales (and where they came from), campaign
+// content and its numbers (views, likes, comments, shares, saves, reposts —
+// totals and per post), followers, sales (and where they came from), campaign
 // progress, what's scheduled next, what the brand learned, the one thing to
 // do next, and the AI's read of the numbers ("Saran AI", owner's ask
 // 2026-10-17: made once per period and numbers, 1 credit, and made on the
@@ -11,7 +11,7 @@
 // The PDF is a real file (js/pdf-libs.js: html2canvas + jsPDF): the sheet
 // is laid out as A4 portrait pages from whole blocks — a table or a stat
 // row is never cut across a page — then each page is rasterized.
-import { getBrand, listContent, listCampaigns, getSettings, updateBrand, organicViews, contentMetric, FUNNELS, ER_SCALE, localISODate } from "../store.js";
+import { getBrand, listContent, listCampaigns, getSettings, updateBrand, organicViews, contentMetric, FUNNELS, ER_SCALE, DEFAULT_ER_FORMULA, localISODate } from "../store.js";
 import { computeContentMetrics, HEALTH_LABEL, isHealthy } from "../formulas.js";
 import { campaignStages, activeStageIndex, readStage, campaignHeadline } from "../campaign-metrics.js";
 import { getTracker } from "../sales-tracker.js";
@@ -35,7 +35,10 @@ const A4_H = 1123;
 
 const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
 // The interaction numbers the report adds up, in the order they're shown.
-export const RECAP_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained"];
+export const RECAP_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "reposts", "profileVisits", "followersGained"];
+// Reposts only show once a post in the period has the number (the box is
+// new on 2026-10-21; older posts never had it).
+const shownRecapKeys = (d) => RECAP_KEYS.filter((k) => k !== "reposts" || d.recap.reposts.n);
 const iso = (d) => localISODate(d);
 const rp = (n) => `Rp ${formatNumber(Math.round(n || 0))}`;
 
@@ -350,7 +353,7 @@ function reportBlocks(brand, start, end, advice = null) {
     blocks.push(`
       <div class="rp2-pad">
         ${secHead(++n, t("rep3.recap"), t("rep3.recapSub", { n: d.postsWithNumbers, total: d.publishedCount }))}
-        <div class="rp2-recap">${RECAP_KEYS.map(tile).join("")}</div>
+        <div class="rp2-recap${shownRecapKeys(d).length === 9 ? " is-9" : ""}">${shownRecapKeys(d).map(tile).join("")}</div>
         ${missing ? `<p class="rp2-compare">${t("rep3.recapMissing", { n: missing })}</p>` : ""}
       </div>`);
   }
@@ -376,7 +379,7 @@ function reportBlocks(brand, start, end, advice = null) {
 
   // Every post's own numbers; the best number in each column stands out.
   if (d.posts.length) {
-    const cols = ["views", "likes", "comments", "shares", "saves"];
+    const cols = ["views", "likes", "comments", "shares", "saves", "reposts"].filter((k) => shownRecapKeys(d).includes(k));
     const shown = postsShown(d);
     const best = Object.fromEntries(cols.map((k) => [k, Math.max(0, ...d.posts.map((x) => x.nums[k] || 0))]));
     const head = `<thead><tr><th class="rp2-t-title">${t("rep3.colPost")}</th>${cols.map((k) => `<th>${t(`store.metric.${k}`)}</th>`).join("")}<th>ER</th></tr></thead>`;
@@ -505,20 +508,22 @@ export function reportSnapshotText(brand, start, end, d, p = null, prevR = null)
   if (p && prevR) lines.push(`Previous period, for comparison: ${prevR.start} to ${prevR.end}`);
   lines.push(`Published posts: ${d.publishedCount}${p ? ` (previous period: ${p.publishedCount})` : ""}; posts with numbers filled in: ${d.postsWithNumbers}`);
   lines.push(`Totals over the published posts (this period${p ? " | previous period" : ""}):`);
-  RECAP_KEYS.forEach((k) => {
+  const keys = shownRecapKeys(d);
+  keys.forEach((k) => {
     const r = d.recap[k];
     const pr = p?.recap[k];
     lines.push(`- ${k}: ${r.n ? num(r.total) : "no data"}${p ? ` | ${pr?.n ? num(pr.total) : "no data"}` : ""}`);
   });
-  lines.push(`Average engagement rate: ${pct(d.avgER)}${p ? ` (previous period: ${pct(p.avgER)})` : ""}. Formula: ${settings.formulas?.engagementRate || "(likes + comments + shares + saves) / reach * 100"}. This app's scale: ${scale.excellent}% and up very good, ${scale.good}–${scale.excellent}% healthy, ${scale.average}–${scale.good}% average, under ${scale.average}% poor.`);
+  lines.push(`Average engagement rate: ${pct(d.avgER)}${p ? ` (previous period: ${pct(p.avgER)})` : ""}. Formula: ${settings.formulas?.engagementRate || DEFAULT_ER_FORMULA}. This app's scale: ${scale.excellent}% and up very good, ${scale.good}–${scale.excellent}% healthy, ${scale.average}–${scale.good}% average, under ${scale.average}% poor.`);
   const funnels = d.funnelStats.filter((f) => f.count);
   if (funnels.length) lines.push(`By funnel stage: ${funnels.map((f) => `${f.funnel} ${f.count} posts, avg ER ${pct(f.avgER)}`).join(" | ")}`);
   const shown = postsShown(d, 30);
+  const postCols = ["views", "reach", "likes", "comments", "shares", "saves", "reposts"].filter((k) => keys.includes(k));
   if (shown.length) {
-    lines.push(`Posts${shown.length < d.posts.length ? ` (the ${shown.length} with the most views of ${d.posts.length})` : ""} — title | date | format | funnel | views | reach | likes | comments | shares | saves | ER | hook:`);
+    lines.push(`Posts${shown.length < d.posts.length ? ` (the ${shown.length} with the most views of ${d.posts.length})` : ""} — title | date | format | funnel | ${postCols.join(" | ")} | ER | hook:`);
     shown.forEach((x) => {
       const hook = clip(hookOf(x.c.script), 90);
-      lines.push(`- "${clip(x.c.title || "untitled", 80)}" | ${x.c.publishedDate || x.c.scheduleDate || "?"} | ${x.c.format || "?"} | ${x.c.funnel || "?"} | ${["views", "reach", "likes", "comments", "shares", "saves"].map((k) => num(x.nums[k])).join(" | ")} | ${pct(x.er)}${hook ? ` | "${hook}"` : ""}`);
+      lines.push(`- "${clip(x.c.title || "untitled", 80)}" | ${x.c.publishedDate || x.c.scheduleDate || "?"} | ${x.c.format || "?"} | ${x.c.funnel || "?"} | ${postCols.map((k) => num(x.nums[k])).join(" | ")} | ${pct(x.er)}${hook ? ` | "${hook}"` : ""}`);
     });
   }
   if (d.followers.length) lines.push(`Followers: ${d.followers.map((f) => `${f.platform} ${f.now}${f.delta !== null ? ` (${f.delta >= 0 ? "+" : ""}${f.delta} since before the period)` : ""}`).join("; ")}`);
@@ -554,7 +559,7 @@ const footerHTML = (brand, page, total) => `
 const sheetHTML = (brand, blocks) => `${blocks.map((b) => `<div class="rp-block">${b}</div>`).join("")}${footerHTML(brand, 0, 0)}`;
 
 function reportSummaryText(brand, start, end, d, advice = null) {
-  const recapLine = ["likes", "comments", "shares", "saves"].filter((k) => d.recap[k].n).map((k) => `${t(`store.metric.${k}`)} ${formatNumber(d.recap[k].total)}`).join(" · ");
+  const recapLine = ["likes", "comments", "shares", "saves", "reposts"].filter((k) => d.recap[k].n).map((k) => `${t(`store.metric.${k}`)} ${formatNumber(d.recap[k].total)}`).join(" · ");
   return [
     t("rep.shareTitle", { brand: brand.name }),
     rangeLabel(start, end),

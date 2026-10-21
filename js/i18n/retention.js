@@ -57,6 +57,7 @@ export default {
   "ret.diagShort.mixed": { en: "so-so retention", id: "retensi setengah-setengah" },
   "ret.mix.saveRate": { en: "Saves", id: "Saves" },
   "ret.mix.shareRate": { en: "Shares", id: "Shares" },
+  "ret.mix.repostRate": { en: "Reposts", id: "Repost" },
   "ret.mix.commentRate": { en: "Comments", id: "Komentar" },
   "ret.mix.likeRate": { en: "Likes", id: "Likes" },
   "ret.mix.hint": { en: "Saves and shares are the distribution signals — above ~1% of reach each is strong.", id: "Saves dan shares itu sinyal distribusi — di atas ~1% dari reach masing-masing sudah bagus." },

@@ -32,7 +32,7 @@ export function openContentEditor({ brandId, contentId = null, defaults = {}, on
         funnel: "TOFU", status: "idea", scheduleDate: "", publishedDate: "", publishedUrl: "",
         script: "", caption: "", reference: "", cta: "", notes: "", thumbnail: "",
         performanceByPlatform: { instagram: {}, facebook: {} },
-        performance: { views: null, reach: null, likes: null, comments: null, shares: null, saves: null, profileVisits: null, followersGained: null, insightScreenshot: "", confirmedAt: null },
+        performance: { views: null, reach: null, likes: null, comments: null, shares: null, saves: null, reposts: null, profileVisits: null, followersGained: null, insightScreenshot: "", confirmedAt: null },
         adsPerformance: null,
         ...defaults,
       };

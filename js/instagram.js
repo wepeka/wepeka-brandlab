@@ -125,6 +125,9 @@ const COMMON_METRICS = [
   { key: "reach", names: ["reach"] },
   { key: "saves", names: ["saved"] },
   { key: "shares", names: ["shares"] },
+  // Newer than the others: an API version or account without it just
+  // leaves the box for the owner, no warning (quiet).
+  { key: "reposts", names: ["reposts"], quiet: true },
 ];
 const PROFILE_METRICS = [
   { key: "profileVisits", names: ["profile_visits", "profile_activity"] },
@@ -193,7 +196,7 @@ export async function fetchMediaMetrics({ accessToken }, media) {
   // (this varies by API version), which was silently wiping out every other
   // number too. Fetching independently means one bad metric name only costs
   // that one number, not all of them.
-  for (const { key, names } of wantedMetrics) {
+  for (const { key, names, quiet } of wantedMetrics) {
     let lastError = null;
     let found = false;
     for (const metricName of names) {
@@ -204,7 +207,7 @@ export async function fetchMediaMetrics({ accessToken }, media) {
       found = true;
       break;
     }
-    if (!found && lastError) warnings.push(`${key}: ${lastError.message}`);
+    if (!found && lastError && !quiet) warnings.push(`${key}: ${lastError.message}`);
   }
 
   {

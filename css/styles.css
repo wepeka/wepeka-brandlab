@@ -5187,6 +5187,7 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 /* A4 pages for the PDF: the footer sits at the bottom of each page */
 /* Interactions recap, per-post table, Saran AI (2026-10-17) */
 .rp2-recap{ display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; }
+.rp2-recap.is-9{ grid-template-columns: repeat(3, 1fr); }
 .rp2-recap-tile{ border:1px solid #ece7e0; border-radius:12px; padding:10px 12px; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
 .rp2-recap-label{ font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#8a837b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .rp2-recap-value{ font-family: var(--font-display); font-size:19px; line-height:1.1; color:#1c1a17; }

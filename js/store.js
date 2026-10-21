@@ -31,8 +31,25 @@ function ensureSdk() {
 }
 
 export const METRIC_KEYS = [
-  "views", "reach", "likes", "comments", "shares", "saves", "profileVisits", "followersGained",
+  "views", "reach", "likes", "comments", "shares", "saves", "reposts", "profileVisits", "followersGained",
 ].map((key) => ({ key, label: t(`store.metric.${key}`) }));
+
+// Numbers a post may simply not have: Reposts are newer than Instagram's
+// other numbers and posts logged before 2026-10-21 never had the box.
+// A formula reads a missing one as 0 (formulas.js evaluateFormula)
+// instead of leaving the whole engagement rate blank.
+export const OPTIONAL_METRICS = ["reposts"];
+
+// The engagement rate every account uses. Reposts joined it 2026-10-21
+// (owner: "itu kan juga komponen ER"); accounts that saved the old default
+// get this one when their settings load (applySettings).
+export const DEFAULT_ER_FORMULA = "(likes + comments + shares + saves + reposts) / reach * 100";
+const OLD_ER_FORMULAS = ["(likes + comments + shares + saves) / reach * 100"];
+const squash = (expr) => String(expr || "").replace(/\s+/g, "");
+export function upgradeFormulas(formulas) {
+  const old = OLD_ER_FORMULAS.map(squash).includes(squash(formulas.engagementRate));
+  return old ? { ...formulas, engagementRate: DEFAULT_ER_FORMULA } : formulas;
+}
 
 // The engagement-rate scale every piece of content is rated on, whatever
 // its funnel or platform (owner's call, 2026-10-15): 10%+ "Sangat bagus"
@@ -333,7 +350,7 @@ function defaultDB() {
         { id: "static-post", name: "Static Post" },
       ],
       formulas: {
-        engagementRate: "(likes + comments + shares + saves) / reach * 100",
+        engagementRate: DEFAULT_ER_FORMULA,
         followerConversionRate: "followersGained / reach * 100",
       },
       // Engagement rate: one scale for all content — see ER_SCALE above.
@@ -599,7 +616,7 @@ export function initStore(uid) {
       db.settings = {
         ...fresh.settings,
         ...personalData,
-        formulas: { ...fresh.settings.formulas, ...(personalData.formulas || {}) },
+        formulas: upgradeFormulas({ ...fresh.settings.formulas, ...(personalData.formulas || {}) }),
         // A new key, so ER floors some accounts saved under the old
         // per-funnel `thresholds` (from the removed benchmark form) no
         // longer apply — everyone starts on ER_SCALE.
@@ -2085,7 +2102,7 @@ function emptyContent(brandId) {
     performanceByPlatform: { instagram: {}, facebook: {} },
     performance: {
       views: null, reach: null, likes: null, comments: null,
-      shares: null, saves: null, profileVisits: null, followersGained: null,
+      shares: null, saves: null, reposts: null, profileVisits: null, followersGained: null,
       insightScreenshot: "", confirmedAt: null,
     },
     // Manually confirmed at the Ready to Upload stage — checking both moves

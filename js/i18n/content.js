@@ -146,7 +146,7 @@ export default {
   "rep3.aiWorking": { en: "What's working", id: "Yang sudah jalan" },
   "rep3.aiNext": { en: "Try next period", id: "Coba di periode berikutnya" },
   "rep3.aiNote": { en: "Advice from AI, read from the numbers in this report. It can miss — you decide what to use.", id: "Saran dari AI, dibaca dari angka di report ini. Bisa meleset — kamu yang memutuskan mana yang dipakai." },
-  "rep3.aiIntro": { en: "The AI reads this period's numbers (views, likes, comments, shares, saves, sales) and gives 3 ideas for the next period. It goes into the PDF.", id: "AI membaca angka periode ini (views, likes, komentar, shares, saves, penjualan) lalu kasih 3 saran untuk periode berikutnya. Ikut masuk ke PDF." },
+  "rep3.aiIntro": { en: "The AI reads this period's numbers (views, likes, comments, shares, saves, reposts, sales) and gives 3 ideas for the next period. It goes into the PDF.", id: "AI membaca angka periode ini (views, likes, komentar, shares, saves, repost, penjualan) lalu kasih 3 saran untuk periode berikutnya. Ikut masuk ke PDF." },
   "rep3.aiReady": { en: "It's in the report, in the AI advice section.", id: "Sudah masuk ke report, di bagian Saran AI." },
   "rep3.aiThin": { en: "Nothing published or sold in this period yet, so there's nothing for the AI to read.", id: "Belum ada konten terbit atau penjualan di periode ini, jadi belum ada yang bisa dibaca AI." },
   "rep3.aiGo": { en: "Get AI advice", id: "Buat saran AI" },

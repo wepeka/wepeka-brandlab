@@ -3,7 +3,7 @@
 // nothing is hard-coded. Expressions are validated against a whitelist before
 // being evaluated, since they're just local settings, not remote input.
 
-import { METRIC_KEYS, ER_SCALE } from "./store.js";
+import { METRIC_KEYS, ER_SCALE, OPTIONAL_METRICS } from "./store.js";
 import { t } from "./i18n.js";
 
 const VAR_NAMES = METRIC_KEYS.map((m) => m.key);
@@ -97,12 +97,13 @@ export function validateFormula(expr) {
 }
 
 // Returns a number, or null if a metric the formula depends on isn't available yet.
+// An optional one (OPTIONAL_METRICS, e.g. reposts) counts as 0 when blank.
 export function evaluateFormula(expr, metrics) {
   const check = validateFormula(expr);
   if (!check.valid) return null;
   for (const v of check.usedVars) {
     const val = metrics[v];
-    if (val === null || val === undefined || val === "") return null;
+    if ((val === null || val === undefined || val === "") && !OPTIONAL_METRICS.includes(v)) return null;
   }
   try {
     const fn = compileFormula(expr);

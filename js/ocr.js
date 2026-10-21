@@ -36,6 +36,7 @@ const LABEL_MAP = [
   { key: "comments", patterns: [/\bcomments?\b/i, /\bkomentar\b/i] },
   { key: "shares", patterns: [/\bshares?\b/i, /\bsends?\b/i, /\bbagikan\b/i, /\bdibagikan\b/i, /\bkiriman\b/i, /\bdikirim\b/i] },
   { key: "saves", patterns: [/\bsaves?\b/i, /\bsaved\b/i, /\bsimpan\b/i, /\bdisimpan\b/i, /\bfavorit\b/i, /\bfavorites?\b/i] },
+  { key: "reposts", patterns: [/\breposts?\b/i, /\breposted\b/i, /\bposting(?:an)? ulang\b/i, /\bdiposting ulang\b/i] },
   { key: "profileVisits", patterns: [/\bprofile visits?\b/i, /\bprofile activity\b/i, /\bkunjungan profil\b/i, /\baktivitas profil\b/i] },
   { key: "followersGained", patterns: [/\bfollows?\b/i, /\bfollowers?\b/i, /\bnew followers?\b/i, /\baccounts followed\b/i, /\bpengikut\b/i, /\bikuti\b/i, /\bdiikuti\b/i] },
 ];

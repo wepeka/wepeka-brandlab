@@ -9,6 +9,7 @@ import {
   resolveThresholds,
   computeContentMetrics,
 } from "../js/formulas.js";
+import { DEFAULT_ER_FORMULA, upgradeFormulas } from "../js/store.js";
 
 describe("evaluateFormula", () => {
   const engagementRate = "(likes + comments + shares + saves) / reach * 100";
@@ -37,6 +38,29 @@ describe("evaluateFormula", () => {
   test("an empty-string metric counts as missing", () => {
     const metrics = { likes: 10, comments: 5, shares: 0, saves: 0, reach: "" };
     assert.equal(evaluateFormula(engagementRate, metrics), null);
+  });
+
+  test("reposts are part of the default engagement rate", () => {
+    const metrics = { likes: 40, comments: 5, shares: 3, saves: 2, reposts: 10, reach: 1000 };
+    assert.equal(evaluateFormula(DEFAULT_ER_FORMULA, metrics), 6);
+  });
+
+  test("a post without a reposts number keeps its engagement rate (reposts = 0)", () => {
+    for (const reposts of [undefined, null, ""]) {
+      const metrics = { likes: 40, comments: 5, shares: 3, saves: 2, reposts, reach: 1000 };
+      assert.equal(evaluateFormula(DEFAULT_ER_FORMULA, metrics), 5);
+    }
+    // ...but the numbers that are not optional still have to be there.
+    assert.equal(evaluateFormula(DEFAULT_ER_FORMULA, { likes: 40, comments: 5, shares: 3, reposts: 4, reach: 1000 }), null);
+  });
+
+  test("accounts that saved the old default ER formula get the one with reposts", () => {
+    const fcr = "followersGained / reach * 100";
+    assert.equal(upgradeFormulas({ engagementRate: "(likes + comments + shares + saves) / reach * 100", followerConversionRate: fcr }).engagementRate, DEFAULT_ER_FORMULA);
+    assert.equal(upgradeFormulas({ engagementRate: "(likes+comments+shares+saves)/reach*100" }).engagementRate, DEFAULT_ER_FORMULA);
+    // A formula someone wrote themselves is left alone.
+    assert.equal(upgradeFormulas({ engagementRate: "likes / reach * 100" }).engagementRate, "likes / reach * 100");
+    assert.equal(upgradeFormulas({ engagementRate: "(likes + comments + shares + saves) / views * 100" }).engagementRate, "(likes + comments + shares + saves) / views * 100");
   });
 
   test("rejects an invalid/unknown-variable expression up front", () => {

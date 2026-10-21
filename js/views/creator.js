@@ -1726,7 +1726,7 @@ function channelFieldsHTML(c) {
 // Daftar Konten, with nothing here pointing at them.
 function publishedCardHTML(c) {
   const p = c.performance || {};
-  const has = ["views", "likes", "comments", "shares", "saves"].some((k) => p[k] !== null && p[k] !== undefined && p[k] !== "");
+  const has = ["views", "likes", "comments", "shares", "saves", "reposts"].some((k) => p[k] !== null && p[k] !== undefined && p[k] !== "");
   return `
     <div class="card dark-surface card-tight cr-published">
       <div class="cr-published-head">${icon("check", { size: 14 })}<b>${t("cr.pub.title")}</b>${c.publishedDate ? `<span class="text-faint">${escapeHtml(formatDate(c.publishedDate))}</span>` : ""}</div>

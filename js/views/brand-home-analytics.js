@@ -390,9 +390,9 @@ export function analyticsSectionHTML(content, settings, state, extraHeadHTML = "
 
   const retention = brandRetentionStats(published, settings, computeContentMetrics);
 
-  // Saves / shares / comments / likes as % of reach, averaged per post —
+  // Saves / shares / reposts / comments / likes as % of reach, averaged per post —
   // the distribution signals a specialist reads before the headline ER.
-  const mixKeys = [["saveRate", "saves"], ["shareRate", "shares"], ["commentRate", "comments"], ["likeRate", "likes"]];
+  const mixKeys = [["saveRate", "saves"], ["shareRate", "shares"], ["repostRate", "reposts"], ["commentRate", "comments"], ["likeRate", "likes"]];
   const mixRows = mixKeys
     .map(([key, metric]) => {
       const vals = withMetrics

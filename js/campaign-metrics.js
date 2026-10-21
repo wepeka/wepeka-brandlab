@@ -349,7 +349,7 @@ export const METRIC_SOURCES = {
   },
 };
 // content.metric:<key> — any per-content performance number summed over the pool.
-const CONTENT_METRIC_LABELS = Object.fromEntries(["shares", "saves", "comments", "views", "likes", "reach"].map((k) => [k, t(`store.metric.${k}`)]));
+const CONTENT_METRIC_LABELS = Object.fromEntries(["shares", "saves", "reposts", "comments", "views", "likes", "reach"].map((k) => [k, t(`store.metric.${k}`)]));
 export function metricSource(key) {
   if (METRIC_SOURCES[key]) return METRIC_SOURCES[key];
   const m = /^content\.metric:(\w+)$/.exec(key || "");
@@ -372,6 +372,7 @@ function guessMetricFromLabel(label, kind) {
   if (/followers baru/.test(l)) return "profile.followersGained";
   if (/\bshares?\b/.test(l)) return "content.metric:shares";
   if (/\bsaves?\b/.test(l)) return "content.metric:saves";
+  if (/\breposts?\b/.test(l)) return "content.metric:reposts";
   if (/komentar/.test(l)) return "content.metric:comments";
   if (/\bviews\b/.test(l) && /dapatkan/.test(l)) return "content.metric:views";
   if (/\breach\b|jangkau/.test(l) && !/booth/.test(l)) return "content.metric:reach";
