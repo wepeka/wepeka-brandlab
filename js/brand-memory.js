@@ -10,7 +10,7 @@
 // bits: the recap validator and the "Memori Brand" modal the chat, the Home
 // card and Creator all open, so there is exactly one place to see and
 // delete what AI keeps reading.
-import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS, localISODate } from "./store.js";
+import { getBrand, getCompanionThread, updateBrainstorm, removeBrandLogEntry, clearBrandLog, addBrandMoments, MOMENT_KINDS, MOMENT_ACTIONS, localISODate, companionStateOf } from "./store.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { formatDate, escapeHtml as esc, toast, qsa, emptyInlineHTML } from "./dom.js";
 import { icon } from "./icons.js";
@@ -30,8 +30,7 @@ export function savedMoments(brand) {
 // would read. Messages that already carry a moment card are left out: the
 // owner already decided on those one by one.
 export function unrecappedMessages(brandId) {
-  const brand = getBrand(brandId);
-  const since = brand?.companion?.lastRecapAt || 0;
+  const since = companionStateOf(brandId)?.lastRecapAt || 0;
   return (getCompanionThread(brandId)?.messages || []).filter((m) => m.at > since && !m.blocks?.recap && m.text);
 }
 

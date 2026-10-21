@@ -9,7 +9,7 @@ import { aiLimitReached, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
-import { brandVoiceText, listBrandIdeas } from "./store.js";
+import { brandVoiceText, listBrandIdeas, scopeBrandId, getBrand, isOwnBrand } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
 import { templateParts, isFactBlank } from "./knowledge/hook-templates.js";
 import { renderScript } from "./script-format.js";
@@ -98,6 +98,14 @@ function proxyError(code, extra = {}) {
 // (stream) — same onText(text, {whole}) contract callModel always offered
 // its callers, so nothing downstream of callModel had to change. A stream
 // that stops before the end also calls onText(fullText, { cut: true }).
+// Kerja Tim: an AI call made in a brand shared with this account is paid
+// from the brand owner's credits — the server checks that this account is
+// really an editor there (api/_aiQuota.js resolvePayer).
+function teamBrandField() {
+  const open = scopeBrandId();
+  const brand = open ? getBrand(open) : null;
+  return brand && !isOwnBrand(brand) ? { teamBrandId: open } : {};
+}
 async function callProxy(system, userPrompt, maxTokens, { temperature, json = false, images = [], stream = false, countUsage = true, feature = "", history = [] } = {}, onText = null) {
   let token;
   try {
@@ -119,7 +127,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
     res = await fetch("/api/ai", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature, ...(history.length ? { history } : {}) }),
+      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature, ...(history.length ? { history } : {}), ...teamBrandField() }),
       signal: ctrl.signal,
     });
   } catch {

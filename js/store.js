@@ -1112,6 +1112,47 @@ function brandMoveFailed(e, revert) {
 // loadBrandAssets): pages render, and fill them in when they arrive.
 // Switching brands swaps the listeners.
 let scope = { brandId: null, unsubs: [], ready: null };
+const teamAiUsage = new Map();
+export function getTeamAiUsageDoc(ownerId) {
+  return teamAiUsage.get(ownerId) || null;
+}
+
+// ---------- Kerja Tim: what is private to one person in a shared brand ----------
+// brands/{id}/people/{uid} = { uid, brandId, chatSessions, companion, updatedAt }:
+// this person's chat sessions (the Otomatis "Obrolan" list) and Teman state.
+// Only for a shared brand — a brand nobody else is on keeps them on the
+// brand doc, as before. Readable and writable by that person alone.
+const personal = new Map();
+function personalOf(brandId) {
+  return personal.get(brandId) || null;
+}
+function writePersonal(brandId, patch) {
+  const next = { ...(personalOf(brandId) || {}), ...patch, uid: ownerUid, brandId, updatedAt: Date.now() };
+  personal.set(brandId, next);
+  persist(() => setDoc(doc(fdb, "brands", brandId, "people", ownerUid), { ...patch, uid: ownerUid, brandId, updatedAt: next.updatedAt }, { merge: true }));
+}
+export function chatSessionsOf(brandId) {
+  const b = getBrand(brandId);
+  if (!b) return [];
+  if (!isSharedBrand(b)) return b.chatSessions || [];
+  return personalOf(brandId)?.chatSessions || (isOwnBrand(b) ? b.chatSessions || [] : []);
+}
+export function setChatSessions(brandId, list) {
+  const b = getBrand(brandId);
+  if (b && isSharedBrand(b)) return writePersonal(brandId, { chatSessions: list });
+  return updateBrand(brandId, { chatSessions: list });
+}
+export function companionStateOf(brandId) {
+  const b = getBrand(brandId);
+  if (!b) return null;
+  if (!isSharedBrand(b)) return b.companion || null;
+  return personalOf(brandId)?.companion || (isOwnBrand(b) ? b.companion || null : null);
+}
+export function setCompanionState(brandId, value) {
+  const b = getBrand(brandId);
+  if (b && isSharedBrand(b)) return writePersonal(brandId, { companion: value });
+  return updateBrand(brandId, { companion: value });
+}
 export function watchBrandScope(brandId) {
   if (!brandId || !ownerUid) return Promise.resolve();
   if (!onSnapshot) return ensureSdk().then(() => watchBrandScope(brandId));
@@ -1144,6 +1185,20 @@ export function watchBrandScope(brandId) {
     listen(mineIn("brainstorms"), (snap) => applyThreadSnapshot(brandId, snap), { includeMetadataChanges: true }),
   ];
   if (brandUsesSales(brandId)) waits.push(ensureBrandSales(brandId));
+  // Kerja Tim: in a brand shared with this account the AI meter counts the
+  // owner's credits (one pool per team; firestore.rules let members read it).
+  const shareOwner = getBrand(brandId);
+  if (shareOwner && isSharedBrand(shareOwner)) {
+    waits.push(listen(doc(fdb, "brands", brandId, "people", ownerUid), (snap) => {
+      personal.set(brandId, snap.exists() ? snap.data() : null);
+    }));
+  }
+  if (shareOwner && !isOwnBrand(shareOwner)) {
+    const ownerId = shareOwner.ownerId;
+    waits.push(listen(doc(fdb, "aiUsage", ownerId), (snap) => {
+      teamAiUsage.set(ownerId, snap.exists() ? snap.data() : null);
+    }));
+  }
   scope.ready = Promise.all(waits).then(() => {});
   loadBrandAssets(brandId);
   setTimeout(() => {
@@ -2049,9 +2104,13 @@ function threadMetaOf(id) {
   const th = getBrainstorm(id);
   if (th?.brandId) return { brandId: th.brandId, ownerId: th.ownerId || ownerUid };
   if (threadMeta.has(id)) return threadMeta.get(id);
-  // The rolling threads carry their brand in the id.
+  // The rolling threads carry their brand in the id (and, in a shared
+  // brand, this person's uid on the end).
   const m = /^(?:companion|consult)-(.+)$/.exec(String(id));
-  return m ? { brandId: m[1], ownerId: ownerUid } : null;
+  if (!m) return null;
+  let brandId = m[1];
+  if (ownerUid && brandId.endsWith(`-${ownerUid}`)) brandId = brandId.slice(0, -(ownerUid.length + 1));
+  return { brandId, ownerId: ownerUid };
 }
 function applyThreadSnapshot(brandId, snap) {
   db.brainstorms = snap.docs.map((d) => normalizeThread(d.data()));
@@ -2209,8 +2268,18 @@ export function deleteBrainstorm(id) {
 // two devices never make two of them. ROLLING_THREAD_MODES keeps them out
 // of the Brainstorm conversation list.
 export const ROLLING_THREAD_MODES = ["companion", "consult"];
+// Kerja Tim: in a brand shared with this account, its chats are this
+// person's own — their rolling threads get their uid on the end (the
+// owner's keep the plain ids, so nothing of theirs moves).
+function personalSuffix(brandId) {
+  const b = getBrand(brandId);
+  return b && !isOwnBrand(b) && ownerUid ? `-${ownerUid}` : "";
+}
+export function scriptThreadId(contentId, brandId) {
+  return `script-${contentId}${personalSuffix(brandId)}`;
+}
 export function companionThreadId(brandId) {
-  return `companion-${brandId}`;
+  return `companion-${brandId}${personalSuffix(brandId)}`;
 }
 export function getCompanionThread(brandId) {
   return getBrainstorm(companionThreadId(brandId));
@@ -2219,7 +2288,7 @@ export function ensureCompanionThread(brandId) {
   return getCompanionThread(brandId) || createBrainstorm(brandId, { id: companionThreadId(brandId), mode: "companion", title: "" });
 }
 export function consultThreadId(brandId) {
-  return `consult-${brandId}`;
+  return `consult-${brandId}${personalSuffix(brandId)}`;
 }
 export function getConsultThread(brandId) {
   return getBrainstorm(consultThreadId(brandId));

@@ -142,3 +142,43 @@ describe("the owner's side of a shared brand", () => {
     assert.equal(writesTo("brands/s1/private/integrations").length, 0);
   });
 });
+
+describe("private chats in a shared brand", () => {
+  test("a member's rolling threads carry their uid; the owner's keep the plain ids", async () => {
+    seedShared();
+    await store.initStore("rina");
+    await flush();
+    assert.equal(store.consultThreadId("b1"), "consult-b1-rina");
+    assert.equal(store.companionThreadId("b1"), "companion-b1-rina");
+    assert.equal(store.scriptThreadId("c1", "b1"), "script-c1-rina");
+    assert.equal(store.consultThreadId("r1"), "consult-r1", "her own brand: as before");
+    const th = store.ensureConsultThread("b1");
+    await flush();
+    assert.equal(th.ownerId, "rina", "the thread is hers, not the owner's");
+  });
+  test("her chat sessions go to people/{uid}, never onto the shared brand doc", async () => {
+    seedShared();
+    await store.initStore("rina");
+    await flush();
+    await store.watchBrandScope("b1");
+    __writes.length = 0;
+    store.setChatSessions("b1", [{ id: "s1", title: "Ide" }]);
+    store.setCompanionState("b1", { lastAskedAt: "2026-10-22" });
+    await flush();
+    assert.equal(writesTo("brands/b1").length, 0);
+    const p = writesTo("brands/b1/people/rina");
+    assert.equal(p.length, 2);
+    assert.deepEqual(p[0].options, { merge: true });
+    assert.deepEqual(store.chatSessionsOf("b1"), [{ id: "s1", title: "Ide" }]);
+    assert.equal(store.companionStateOf("b1").lastAskedAt, "2026-10-22");
+  });
+  test("a solo brand keeps its sessions on the brand doc", async () => {
+    __docs.set("brands/s1", { id: "s1", ownerId: "owen", name: "Solo", createdAt: 1 });
+    await store.initStore("owen");
+    await flush();
+    __writes.length = 0;
+    store.setChatSessions("s1", [{ id: "x" }]);
+    await flush();
+    assert.deepEqual(writesTo("brands/s1").at(-1).data.chatSessions, [{ id: "x" }]);
+  });
+});

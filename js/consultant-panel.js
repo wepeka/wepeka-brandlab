@@ -52,7 +52,7 @@ import {
   listBrainstorms, getBrainstorm, createBrainstorm, appendBrainstormMessage, updateBrainstormMessage, removeBrainstormMessage, updateBrainstorm, deleteBrainstorm,
   getCompanionThread, ensureCompanionThread, getConsultThread, ensureConsultThread, ROLLING_THREAD_MODES, addBrandMoments, removeBrandLogEntry, MOMENT_KINDS, MOMENT_ACTIONS,
   getCampaign, updateCampaign, getContent, updateContent, getSeries, listSeries, findSeriesByNameInText, getGoal, listGoals, formatEventDate, phaseNameLabel, onChange,
-  ER_SCALE,
+  ER_SCALE, chatSessionsOf, setChatSessions, companionStateOf, setCompanionState, scriptThreadId,
 } from "./store.js";
 import { eventCampaignFor, openEventPhases, addEventMilestone } from "./goal-actions.js";
 import { aiLimitReached, aiQuotaPeriod } from "./ai-usage.js";
@@ -229,16 +229,16 @@ const EMPTY_SCOPE = { campaignId: null, stageId: null, contentId: null, goalId: 
 // message of it goes to Brainstorm), so ideas stay with their conversation.
 const sessionUid = () => `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 export function listSessions(brandId) {
-  return [...(getBrand(brandId)?.chatSessions || [])].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return [...chatSessionsOf(brandId)].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
-const getSession = (brandId, id) => (id ? (getBrand(brandId)?.chatSessions || []).find((x) => x.id === id) || null : null);
+const getSession = (brandId, id) => (id ? chatSessionsOf(brandId).find((x) => x.id === id) || null : null);
 function currentSessionOf(brandId) {
   if (currentSession.has(brandId)) return getSession(brandId, currentSession.get(brandId));
   return listSessions(brandId)[0] || null;
 }
 function patchSession(brandId, id, patch) {
-  const list = getBrand(brandId)?.chatSessions || [];
-  updateBrand(brandId, { chatSessions: list.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
+  const list = chatSessionsOf(brandId);
+  setChatSessions(brandId, list.map((x) => (x.id === id ? { ...x, ...patch } : x)));
 }
 // The open session, or a new one named after its first message.
 function ensureSession(brandId, title) {
@@ -246,8 +246,8 @@ function ensureSession(brandId, title) {
   if (cur) { patchSession(brandId, cur.id, { updatedAt: Date.now() }); return cur; }
   const now = Date.now();
   const sess = { id: sessionUid(), title: String(title || "").slice(0, THREAD_TITLE_MAX), createdAt: now, updatedAt: now, threadId: null };
-  const list = [...(getBrand(brandId)?.chatSessions || []), sess].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, SESSIONS_CAP);
-  updateBrand(brandId, { chatSessions: list });
+  const list = [...chatSessionsOf(brandId), sess].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, SESSIONS_CAP);
+  setChatSessions(brandId, list);
   currentSession.set(brandId, sess.id);
   return sess;
 }
@@ -259,7 +259,7 @@ function deleteSession(brandId, id) {
     if (th && (th.messages || []).some((m) => m.sessionId === id)) updateBrainstorm(th.id, { messages: th.messages.filter((m) => m.sessionId !== id) });
   });
   if (sess?.threadId) deleteBrainstorm(sess.threadId);
-  updateBrand(brandId, { chatSessions: (getBrand(brandId)?.chatSessions || []).filter((x) => x.id !== id) });
+  setChatSessions(brandId, chatSessionsOf(brandId).filter((x) => x.id !== id));
   if (currentSessionOf(brandId)?.id === id || currentSession.get(brandId) === id) currentSession.set(brandId, null);
 }
 
@@ -430,8 +430,8 @@ function companionEntries(brandId, th) {
   });
   const brand = getBrand(brandId);
   const saidToday = entries.some((e) => e.role === "user" && dayKey(e.at || 0) === todayIso);
-  if (day !== todayIso && (brand.companion?.lastAskedAt !== todayIso || unrecappedMessages(brandId).some((m) => m.role === "user"))) out.push({ role: "day", label: dayLabel(todayIso, todayIso) });
-  if (brand.companion?.lastAskedAt !== todayIso) out.push({ role: "assistant", engine: "companion", text: companionGreeting(brandId, now), ephemeral: true });
+  if (day !== todayIso && (companionStateOf(brandId)?.lastAskedAt !== todayIso || unrecappedMessages(brandId).some((m) => m.role === "user"))) out.push({ role: "day", label: dayLabel(todayIso, todayIso) });
+  if (companionStateOf(brandId)?.lastAskedAt !== todayIso) out.push({ role: "assistant", engine: "companion", text: companionGreeting(brandId, now), ephemeral: true });
   const unrecapped = unrecappedMessages(brandId).filter((m) => m.role === "user").length;
   if (unrecapped && !saidToday && !pending) out.push({ role: "assistant", engine: "companion", text: t("companion.recap.nudge", { n: unrecapped }), nudge: unrecapped, ephemeral: true });
   return out;
@@ -2438,7 +2438,7 @@ function leaveScriptThread(brandId) {
 export function openScriptChat({ contentId, title = "", getCurrent = null, applyRevision = null, onRegenerate = null, docked = false } = {}) {
   const brandId = page ? page.brandId : mountedBrandId;
   if (!brandId || !contentId) return;
-  const threadId = `script-${contentId}`;
+  const threadId = scriptThreadId(contentId, brandId);
   if (!getBrainstorm(threadId)) createBrainstorm(brandId, { id: threadId, mode: "script", contentId, title });
   scriptHosts.set(threadId, { contentId, getCurrent, applyRevision, onRegenerate });
   if (currentThread(brandId)?.mode !== "script") modeBeforeScript.set(brandId, modeOf(brandId));
@@ -2801,7 +2801,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         const asked = askOnce(thread.id, { role: "user", text, sessionId }, retryRef);
         askedRef = asked ? { threadId: thread.id, msgId: asked.id } : null;
         tails.delete(tk);
-        updateBrand(brandId, { companion: { ...(brand.companion || {}), lastAskedAt: localISODate() } });
+        setCompanionState(brandId, { ...(companionStateOf(brandId) || {}), lastAskedAt: localISODate() });
         const msgs = getCompanionThread(brandId)?.messages || [];
         const threadHistory = historyForModel(brandId, cur, msgs, asked?.id, COMPANION_HISTORY_FOR_MODEL);
         const raw = await companionChat(ai, { brand, pulseText, history: threadHistory, message: text, kinds: MOMENT_KINDS });
@@ -2905,7 +2905,7 @@ async function runRecap(brandId) {
     const now = Date.now();
     const thread = ensureCompanionThread(brandId);
     appendBrainstormMessage(thread.id, { role: "assistant", text: summary, at: now, blocks: { recap: { moments: valid, decided: valid.length === 0, savedCount: 0 } } });
-    updateBrand(brandId, { companion: { ...(getBrand(brandId)?.companion || {}), lastRecapAt: now } });
+    setCompanionState(brandId, { ...(companionStateOf(brandId) || {}), lastRecapAt: now });
   } catch (err) {
     tails.set(tailKey(brandId, "companion"), [{ role: "assistant", text: err instanceof AiApiError ? err.message : t("companion.recap.failed") }]);
   } finally {
@@ -3101,7 +3101,7 @@ export function mountChatPage(el, { brandId, threadId = null, ctx = null }) {
   if (!expanding && isGuided()) setMode(brandId, "auto");
   if (ctx) applyChatContext(brandId, ctx, { render: false, threadId });
   else if (threadId) {
-    const bySession = getSession(brandId, threadId) || (getBrand(brandId)?.chatSessions || []).find((x) => x.threadId === threadId);
+    const bySession = getSession(brandId, threadId) || chatSessionsOf(brandId).find((x) => x.threadId === threadId);
     if (bySession) openSession(brandId, bySession.id);
     else if (!loadThread(brandId, threadId)) page.wantThread = threadId; // not synced yet
   }

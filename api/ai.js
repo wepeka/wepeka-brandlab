@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { adminDb, requireAuth } from "./_firebaseAdmin.js";
-import { quotaFor, reserveCall, releaseCall, MAX_INFLIGHT, isAdminUid, isReadOnlyAccount } from "./_aiQuota.js";
+import { quotaFor, reserveCall, releaseCall, MAX_INFLIGHT, isAdminUid, isReadOnlyAccount, resolvePayer } from "./_aiQuota.js";
 
 // Calls the app starts on its own — routing a chat message, the monthly
 // lessons, re-writing saved advice that went stale, the key test — don't
@@ -466,10 +466,21 @@ export default async function handler(req, res) {
 // verified uid — split out so tests can drive the whole charge → call →
 // refund path with a fake Firestore and a fake provider.
 export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now() }) {
-  const accountSnap = await db.doc(`accounts/${uid}`).get();
-  if (!accountSnap.exists) return res.status(404).json({ error: "account" });
+  // Kerja Tim: in a brand shared with the caller the brand owner pays (one
+  // pool per team) — resolvePayer decides it from server-written data, never
+  // from the request alone. Everything about the allowance below is the
+  // payer's; the in-flight slots stay the caller's own.
+  const payer = await resolvePayer(db, uid, req.body?.teamBrandId);
+  if (payer.error) return res.status(403).json({ error: payer.error });
+  const payerUid = payer.payerUid;
+  const accountSnap = await db.doc(`accounts/${payerUid}`).get();
+  if (!accountSnap.exists) {
+    // A team member with no plan of their own, asking outside a shared brand.
+    const member = !payer.team && (await db.doc(`memberships/${uid}`).get()).exists;
+    return res.status(member ? 403 : 404).json({ error: member ? "member-no-plan" : "account" });
+  }
   const account = accountSnap.data();
-  if (account.status === "deactivated") return res.status(403).json({ error: "deactivated" });
+  if (account.status === "deactivated") return res.status(403).json({ error: payer.team ? "owner-inactive" : "deactivated" });
 
   const {
     system = "",
@@ -486,7 +497,7 @@ export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now(
 
   // An ended trial or lapsed plan has no AI (the app shows the pricing
   // screen instead); refuse here too so the endpoint can't be used directly.
-  if (!isAdminUid(uid) && isReadOnlyAccount(account)) return res.status(403).json({ error: "readonly" });
+  if (!isAdminUid(payerUid) && isReadOnlyAccount(account)) return res.status(403).json({ error: payer.team ? "owner-inactive" : "readonly" });
   if (typeof system !== "string" || typeof user !== "string" || system.length + user.length > MAX_INPUT_CHARS) {
     return res.status(413).json({ error: "too-large" });
   }
@@ -521,11 +532,11 @@ export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now(
   // started together can never spend the same credit. From here on,
   // settle() always runs (the finally below): it gives the slot back and
   // refunds the credit when no usable reply came out of the call.
-  const quota = quotaFor(account, uid);
+  const quota = quotaFor(account, payerUid);
   const leaseId = randomUUID();
   let settling = null;
   const settle = (outcome) => {
-    settling ||= releaseCall(db, uid, leaseId, { outcome, period: quota.period, freeLimit: FREE_CALLS_PER_DAY }).catch((err) => {
+    settling ||= releaseCall(db, payerUid, leaseId, { outcome, period: quota.period, freeLimit: FREE_CALLS_PER_DAY, inflightUid: uid }).catch((err) => {
       console.error("api/ai: releasing the call failed", uid, outcome, err?.message);
       return null;
     });
@@ -534,7 +545,7 @@ export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now(
   let reserved;
   try {
     // Admin (Wepeka's own account) stays unmetered, in-flight slots included.
-    reserved = await reserveCall(db, uid, { period: quota.period, limit: quota.limit, leaseId, free: !!freeSpec, freeLimit: FREE_CALLS_PER_DAY, maxInflight: isAdminUid(uid) ? Infinity : MAX_INFLIGHT });
+    reserved = await reserveCall(db, payerUid, { period: quota.period, limit: quota.limit, leaseId, free: !!freeSpec, freeLimit: FREE_CALLS_PER_DAY, maxInflight: isAdminUid(uid) ? Infinity : MAX_INFLIGHT, inflightUid: uid });
   } catch (err) {
     console.error("api/ai: reserving the call failed", uid, err?.message);
     await settle("fail"); // in case the transaction landed after all

@@ -1,7 +1,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { reserveCall, releaseCall, MAX_INFLIGHT, LEASE_TTL_MS, ADMIN_UIDS } from "../api/_aiQuota.js";
+import { reserveCall, releaseCall, MAX_INFLIGHT, LEASE_TTL_MS, ADMIN_UIDS, resolvePayer } from "../api/_aiQuota.js";
 
 // api/ai.js reads its provider key when it loads — set a fake one first,
 // and never let a test reach a real provider (globalThis.fetch is faked
@@ -133,7 +133,8 @@ describe("releaseCall: refunds exactly what was reserved, once", () => {
     assert.deepEqual([first.refunded, first.used], [true, 3]);
     const second = await releaseCall(db, "u", id, { outcome: "fail", period: "day", now: NOW });
     assert.deepEqual([second.released, second.refunded], [false, false]);
-    assert.deepEqual(db.read("aiUsage/u"), { date: TODAY, count: 3, month: MONTH, monthCount: 3, totalCount: 9 });
+    // quotaLimit/quotaPeriod: the payer's allowance, for a team member's meter (Kerja Tim).
+    assert.deepEqual(db.read("aiUsage/u"), { date: TODAY, count: 3, month: MONTH, monthCount: 3, totalCount: 9, quotaLimit: 20, quotaPeriod: "day" });
     assert.deepEqual(db.read("aiInflight/u").leases, {});
   });
 
@@ -646,5 +647,41 @@ describe("api/ai.js pictures", () => {
     assert.equal(res.body.error, "vision");
     assert.equal(providerCalls.length, 0);
     assert.equal(db.read("aiUsage/u"), undefined);
+  });
+});
+
+describe("Kerja Tim: one AI pool per team", () => {
+  const team = () => fakeFirestore({
+    "memberships/rina": { ownerIds: ["owen"], brands: { b1: { ownerId: "owen", role: "editor" }, b2: { ownerId: "owen", role: "viewer" } } },
+    "brands/b1": { ownerId: "owen", members: { rina: { role: "editor" } } },
+    "brands/b2": { ownerId: "owen", members: { rina: { role: "viewer" } } },
+    "brands/b3": { ownerId: "owen", members: {} },
+  });
+  test("an editor's call in a shared brand is paid by its owner", async () => {
+    assert.deepEqual(await resolvePayer(team(), "rina", "b1"), { payerUid: "owen", team: true });
+  });
+  test("a viewer gets no AI there", async () => {
+    assert.deepEqual(await resolvePayer(team(), "rina", "b2"), { error: "viewer" });
+  });
+  test("no brand, an unknown brand, or an index the brand no longer agrees with: the caller pays", async () => {
+    const db = team();
+    assert.deepEqual(await resolvePayer(db, "rina", null), { payerUid: "rina", team: false });
+    assert.deepEqual(await resolvePayer(db, "rina", "zz"), { payerUid: "rina", team: false });
+    const stale = fakeFirestore({ "memberships/rina": { brands: { b3: { ownerId: "owen", role: "editor" } } }, "brands/b3": { ownerId: "owen", members: {} } });
+    assert.deepEqual(await resolvePayer(stale, "rina", "b3"), { payerUid: "rina", team: false });
+    assert.deepEqual(await resolvePayer(db, "rina", "../x"), { payerUid: "rina", team: false });
+  });
+  test("the owner's pool pays; the in-flight slot is the caller's", async () => {
+    const db = fakeFirestore({ "aiUsage/owen": { date: TODAY, count: 5, month: MONTH, monthCount: 5, totalCount: 5 } });
+    const id = lease();
+    const r = await reserveCall(db, "owen", { period: "day", limit: 100, leaseId: id, now: NOW, inflightUid: "rina" });
+    assert.equal(r.ok, true);
+    assert.equal(db.read("aiUsage/owen").count, 6);
+    assert.equal(db.read("aiUsage/owen").quotaLimit, 100);
+    assert.ok(db.read("aiInflight/rina").leases[id]);
+    assert.equal(db.read("aiInflight/owen"), undefined);
+    await releaseCall(db, "owen", id, { outcome: "fail", period: "day", now: NOW, inflightUid: "rina" });
+    assert.equal(db.read("aiUsage/owen").count, 5);
+    assert.deepEqual(db.read("aiInflight/rina").leases, {});
   });
 });

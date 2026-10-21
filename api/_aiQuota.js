@@ -246,9 +246,14 @@ function liveLeases(leases, nowMs, ttlMs) {
 // Returns { ok: true, leaseId, kind, used, dailyUsed, credits } — `used` is
 // the plan's count for `period` after this call — or { ok: false, error:
 // "busy" | "quota", ... } with nothing written at all.
-export async function reserveCall(db, uid, { period, limit = Infinity, leaseId, free = false, freeLimit = Infinity, maxInflight = MAX_INFLIGHT, leaseTtlMs = LEASE_TTL_MS, now = new Date() } = {}) {
+// `inflightUid` (Kerja Tim): whose in-flight slots this call takes — the
+// person calling — when the credit comes from someone else's pool (`uid`,
+// the brand owner). The usage doc also keeps the payer's limit and period
+// (quotaLimit/quotaPeriod), which is how a team member's meter reads the
+// owner's allowance without reading the owner's account.
+export async function reserveCall(db, uid, { period, limit = Infinity, leaseId, free = false, freeLimit = Infinity, maxInflight = MAX_INFLIGHT, leaseTtlMs = LEASE_TTL_MS, now = new Date(), inflightUid = uid } = {}) {
   const usageRef = db.doc(`aiUsage/${uid}`);
-  const leaseRef = db.doc(`aiInflight/${uid}`);
+  const leaseRef = db.doc(`aiInflight/${inflightUid}`);
   const accountRef = db.doc(`accounts/${uid}`);
   const today = isoDate(now);
   const month = isoMonth(now);
@@ -276,20 +281,22 @@ export async function reserveCall(db, uid, { period, limit = Infinity, leaseId, 
 
     let used = planUsed;
     let credits = extras.credits;
+    const stamp = { quotaLimit: Number.isFinite(limit) ? limit : null, quotaPeriod: period || "day" };
     if (kind === "plan") {
       const count = (u.date === today ? Number(u.count) || 0 : 0) + 1;
       const monthCount = (u.month === month ? Number(u.monthCount) || 0 : 0) + 1;
       const totalCount = (Number(u.totalCount) || 0) + 1;
-      tx.set(usageRef, { date: today, count, month, monthCount, totalCount }, { merge: true });
+      tx.set(usageRef, { date: today, count, month, monthCount, totalCount, ...stamp }, { merge: true });
       used = period === "total" ? totalCount : period === "month" ? monthCount : count;
     } else if (kind === "daily") {
       dailyUsed += 1;
-      tx.set(usageRef, { extraDate: today, extraCount: dailyUsed }, { merge: true });
+      tx.set(usageRef, { extraDate: today, extraCount: dailyUsed, ...stamp }, { merge: true });
     } else if (kind === "credits") {
       credits -= 1;
       tx.set(accountRef, { aiCredits: credits }, { merge: true });
+      tx.set(usageRef, stamp, { merge: true });
     } else {
-      tx.set(usageRef, { freeDate: today, freeCount: freeUsed + 1 }, { merge: true });
+      tx.set(usageRef, { freeDate: today, freeCount: freeUsed + 1, ...stamp }, { merge: true });
     }
     leases[leaseId] = { at: now.getTime(), kind, date: today, month };
     tx.set(leaseRef, { leases });
@@ -309,9 +316,9 @@ export async function reserveCall(db, uid, { period, limit = Infinity, leaseId, 
 // left alone — that count belongs to a window that's already over.
 // Returns { released, refunded, kind, used } (`used`: the plan's count for
 // `period` afterwards, or null when nothing was read).
-export async function releaseCall(db, uid, leaseId, { outcome = "ok", period = "day", freeLimit = Infinity, leaseTtlMs = LEASE_TTL_MS, now = new Date() } = {}) {
+export async function releaseCall(db, uid, leaseId, { outcome = "ok", period = "day", freeLimit = Infinity, leaseTtlMs = LEASE_TTL_MS, now = new Date(), inflightUid = uid } = {}) {
   const usageRef = db.doc(`aiUsage/${uid}`);
-  const leaseRef = db.doc(`aiInflight/${uid}`);
+  const leaseRef = db.doc(`aiInflight/${inflightUid}`);
   const accountRef = db.doc(`accounts/${uid}`);
   const today = isoDate(now);
   return db.runTransaction(async (tx) => {
@@ -351,4 +358,24 @@ export async function releaseCall(db, uid, leaseId, { outcome = "ok", period = "
     if (Object.keys(next).length) tx.set(usageRef, next, { merge: true });
     return { released: true, refunded: true, kind: lease.kind, used: usedInPeriod({ ...u, ...next }, period, now) };
   });
+}
+
+// Kerja Tim: who pays for a call. A call made in a brand shared with the
+// caller (`teamBrandId`, sent by js/ai.js) is paid from the brand OWNER's
+// pool — one pool per team. Decided from server-written data only: the
+// caller's memberships/{uid} entry for that brand, checked against the brand
+// doc itself (the index could lag a removal). A viewer may not use AI there.
+// Anything else (no brand, own brand, not a member) is the caller's own call.
+// → { payerUid, team: boolean } | { error: "viewer" }
+export async function resolvePayer(db, uid, teamBrandId) {
+  if (!teamBrandId || typeof teamBrandId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(teamBrandId)) return { payerUid: uid, team: false };
+  const m = await db.doc(`memberships/${uid}`).get();
+  const entry = m.exists ? m.data()?.brands?.[teamBrandId] : null;
+  if (!entry?.ownerId || entry.ownerId === uid) return { payerUid: uid, team: false };
+  const b = await db.doc(`brands/${teamBrandId}`).get();
+  const brand = b.exists ? b.data() : null;
+  const member = brand?.members?.[uid];
+  if (!brand || brand.ownerId !== entry.ownerId || !member) return { payerUid: uid, team: false };
+  if (member.role !== "editor") return { error: "viewer" };
+  return { payerUid: brand.ownerId, team: true };
 }
