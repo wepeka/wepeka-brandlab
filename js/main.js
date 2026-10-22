@@ -236,9 +236,13 @@ function parseRoute(hash) {
   if (h === "/settings") return { view: "settings" };
   if (h === "/updates") return { view: "announcements" };
   if (h === "/updates/sesi") return { view: "announcements", tab: "sesi" };
+  // Shortcut for announcements and WhatsApp posts (see route()).
+  if (h === "/papan") return { view: "papan-go" };
   return { view: "brands" };
 }
 
+// The brand opened last on this device, for the "#/papan" shortcut.
+const LAST_BRAND_KEY = "brandlab:lastBrand";
 let storeReady = false;
 // The store was opened for a team member with no plan of their own
 // (initStore ownPlan:false): no brand counter, no settings copy to the team.
@@ -760,6 +764,18 @@ async function renderRoute() {
     }
   }
 
+  // "#/papan": the Papan of the brand used last, or of the only one; with
+  // several and none remembered, the brand list asks which and opens its Papan.
+  if (route.view === "papan-go") {
+    const all = listBrands(), open = all.filter((b) => !isBrandLocked(b.id, all));
+    let last = null;
+    try { last = localStorage.getItem(LAST_BRAND_KEY); } catch { /* private mode */ }
+    const pick = open.find((b) => b.id === last) || (open.length === 1 ? open[0] : null);
+    if (pick) { location.replace(`#/brand/${pick.id}/papan`); return; }
+    route.view = "brands";
+    route.next = "papan";
+  }
+
   if (route.brandId && !getBrand(route.brandId)) {
     location.hash = "#/";
     return;
@@ -777,6 +793,7 @@ async function renderRoute() {
     return;
   }
   if (route.brandId) {
+    try { localStorage.setItem(LAST_BRAND_KEY, route.brandId); } catch { /* private mode */ }
     // A brand's chat threads (and, for a brand using the Sales Tracker, its
     // month docs of sales — in parallel) load per brand (js/store.js
     // watchBrandScope); the page waits for them so every view still reads
@@ -883,6 +900,9 @@ async function renderRoute() {
         break;
       case "announcements":
         cleanup = view.render(viewRoot, { tab: route.tab });
+        break;
+      case "brands":
+        cleanup = view.render(viewRoot, { next: route.next });
         break;
       default:
         cleanup = view.render(viewRoot);

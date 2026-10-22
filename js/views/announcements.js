@@ -96,10 +96,22 @@ function itemHTML(a, { seenAt, admin }) {
       </div>
       <h2 class="ann-title">${esc(a.title || "")}</h2>
       ${a.body ? `<div class="ann-body consultant-md">${renderLightMarkdown(a.body)}</div>` : ""}
-      ${a.link ? `<a class="btn btn-secondary btn-sm ann-link" href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${t("ann.open")}${icon("arrowRight", { size: 12 })}</a>` : ""}
+      ${shotsHTML(a)}
+      ${a.link ? (/^#\//.test(a.link)
+        // A page inside Brandlab ("#/papan", "#/settings/team"): same tab.
+        ? `<a class="btn btn-primary btn-sm ann-link" href="${esc(a.link)}">${esc(a.linkLabel || t("ann.open"))}${icon("arrowRight", { size: 12 })}</a>`
+        : `<a class="btn btn-secondary btn-sm ann-link" href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.linkLabel || t("ann.open"))}${icon("arrowRight", { size: 12 })}</a>`) : ""}
       ${admin && a.emailedAt ? `<p class="ann-emailed text-faint">${icon("send", { size: 12 })}${esc(t("ann.email.done", { n: a.emailed?.sent ?? 0 }))}</p>` : ""}
       ${admin && !a.emailedAt && emailOn ? `<button type="button" class="btn btn-ghost btn-sm ann-email-btn" data-ann-email="${esc(a.id)}">${icon("send", { size: 12 })}${t("ann.email.send")}</button>` : ""}
     </article>`;
+}
+
+// Screenshots under a post, each with a line saying where to find it:
+// images: [{ src: "/assets/announcements/…" or https, alt, caption }].
+function shotsHTML(a) {
+  const shots = (Array.isArray(a.images) ? a.images : []).filter((x) => x && /^(\/[^/]|https:\/\/)/.test(String(x.src || ""))).slice(0, 6);
+  if (!shots.length) return "";
+  return `<div class="ann-shots${shots.length === 1 ? " one" : ""}">${shots.map((x) => `<figure class="ann-shot"><a href="${esc(x.src)}" target="_blank" rel="noopener"><img src="${esc(x.src)}" alt="${esc(x.alt || x.caption || "")}" loading="lazy" decoding="async"></a>${x.caption ? `<figcaption>${renderLightMarkdown(x.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`;
 }
 
 // The two tabs, for a Lifetime account. A dot on "Sesi Founder" from the
@@ -214,7 +226,7 @@ export function render(root, { tab } = {}) {
         kind: qs('input[name="ann-kind"]:checked')?.value || "info",
       };
       if (!fields.title.trim()) { toast(t("ann.needTitle"), "error"); qs("#ann-title").focus(); return; }
-      if (fields.link.trim() && !/^https:\/\//i.test(fields.link.trim())) { toast(t("ann.badLink"), "error"); qs("#ann-link").focus(); return; }
+      if (fields.link.trim() && !/^https:\/\//i.test(fields.link.trim()) && !/^#\//.test(fields.link.trim())) { toast(t("ann.badLink"), "error"); qs("#ann-link").focus(); return; }
       const btn = e.currentTarget;
       btn.disabled = true;
       try {

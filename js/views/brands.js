@@ -23,8 +23,10 @@ import { t } from "../i18n.js";
 import { mountBrandsBg } from "../brands-bg.js";
 import { aiReportButtonHTML } from "../ai-report.js";
 
-export function render(root) {
-  const refresh = () => paint(root, refresh);
+// `next`: a page inside the brand to open once one is picked ("papan" from
+// the #/papan shortcut, js/main.js).
+export function render(root, { next = null } = {}) {
+  const refresh = () => paint(root, refresh, next);
   refresh();
   // Full-screen background lives on <body> (see js/brands-bg.js), so it has
   // to be torn down when this view goes away.
@@ -45,7 +47,7 @@ function sharedGroups(brands) {
   return [...groups.values()];
 }
 
-function paint(root, refresh) {
+function paint(root, refresh, next = null) {
   const all = listBrands();
   const brands = all.filter(isOwnBrand);
   const groups = sharedGroups(all);
@@ -80,7 +82,7 @@ function paint(root, refresh) {
     <div class="hero-strip">
       <div class="kicker">Wepeka Brandlab</div>
       <h1>${guided ? t("brands.hero.titleGuided") : t("brands.hero.titlePro")}</h1>
-      <p class="page-sub">${guided ? t("brands.hero.subGuided") : t("brands.hero.subPro")}</p>
+      <p class="page-sub">${next === "papan" ? t("brands.pickForPapan") : guided ? t("brands.hero.subGuided") : t("brands.hero.subPro")}</p>
     </div>
     ${slotReminderHTML()}
     ${memberOnly ? "" : `<div class="brand-row-head">
@@ -121,7 +123,7 @@ function paint(root, refresh) {
     card.addEventListener("click", (e) => {
       if (dragState.wasDragged) return;
       if (e.target.closest("[data-menu-toggle]") || e.target.closest(".menu")) return;
-      location.hash = `#/brand/${card.dataset.id}`;
+      location.hash = `#/brand/${card.dataset.id}${next ? `/${next}` : ""}`;
     });
   });
   wireClickableCards(root, ".brand-tile:not(.brand-tile-add)", { role: "link" });
