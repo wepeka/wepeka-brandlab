@@ -213,7 +213,8 @@ const Panels = (() => {
   // ---------- meeting recap ----------
   function recap() {
     let r = Rules.recap();
-    const SECS = [["ringkasan", "Gambaran rapat", true], ["topik", "Topik yang dibahas"], ["ide", "Ide utama"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"]];
+    if (!r.peserta?.length) r.peserta = Board.attendees().map((p) => p.name);
+    const SECS = [["ringkasan", "Gambaran rapat", true], ["peserta", "Peserta rapat"], ["topik", "Topik yang dibahas"], ["ide", "Ide utama"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"]];
     const draw = () => {
       $("#rcBody").innerHTML = SECS.map(([k, label, single]) => {
         if (single) return `<div class="recap-sec"><h5>${label}</h5><textarea class="field" data-k="${k}" rows="3">${esc(r[k] || "")}</textarea></div>`;
@@ -364,7 +365,12 @@ const Panels = (() => {
     const r = Board.round();
     const list = Store.objects().filter((o) => o.type === "sticky").map((o) => ({ o, n: Board.votesFor(o).count })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
     const max = list[0]?.n || 1;
-    open("votes", null, { title: "Hasil voting", icon: "vote", body: `<div class="stack">${Board.votingActive() ? `<div class="note violet">${ic("vote")}<span>Voting masih berjalan. Hasil berubah langsung.</span></div>` : ""}${!r ? '<p class="muted">Belum pernah ada voting di papan ini.</p>' : list.length ? list.map((x) => `<div class="res-row"><span class="t" title="${esc(x.o.text)}">${esc(x.o.text)}</span><span class="bar"><i style="width:${(x.n / max) * 100}%"></i></span><b class="tnum">${x.n}</b><button class="icon-btn" data-go="${x.o.id}" aria-label="Lihat">${ic("arrowRight")}</button></div>`).join("") : '<p class="muted">Belum ada vote masuk.</p>'}</div>`,
+    // While voting runs the counts stay hidden (no bandwagon), only the turnout shows.
+    if (Board.votingActive()) return open("votes", null, { title: "Voting berjalan", icon: "vote",
+      body: `<div class="stack"><div class="note violet">${ic("vote")}<span>Hasil disembunyikan sampai voting selesai, supaya tiap orang memilih sendiri. Klik sticky untuk vote.</span></div><p><b class="tnum">${Board.voters()}</b> orang sudah vote · tiap orang ${Board.votesPer()} vote.</p></div>`,
+      foot: Store.canWrite && !GUEST() ? `<button class="btn btn-primary" id="vtEnd">Selesai & lihat hasil</button>` : "",
+      wire() { $("#vtEnd") && ($("#vtEnd").onclick = () => Board.endVoting()); } });
+    open("votes", null, { title: "Hasil voting", icon: "vote", body: `<div class="stack">${!r ? '<p class="muted">Belum pernah ada voting di papan ini.</p>' : list.length ? list.map((x) => `<div class="res-row"><span class="t" title="${esc(x.o.text)}">${esc(x.o.text)}</span><span class="bar"><i style="width:${(x.n / max) * 100}%"></i></span><b class="tnum">${x.n}</b><button class="icon-btn" data-go="${x.o.id}" aria-label="Lihat">${ic("arrowRight")}</button></div>`).join("") : '<p class="muted">Belum ada vote masuk.</p>'}</div>`,
       foot: Store.canWrite ? `${list.length ? `<button class="btn btn-primary" id="vtTop">Tandai 3 teratas sebagai terpilih</button>` : ""}${Board.votingActive() ? `<button class="btn btn-secondary" id="vtEnd">Selesai voting</button>` : `<button class="btn btn-secondary" id="vtNew">Voting baru</button>`}` : "",
       wire(s) {
         s.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => Actions.jumpTo(b.dataset.go)));

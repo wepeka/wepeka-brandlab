@@ -122,7 +122,7 @@ const R = {
     const r = o.data || {};
     const sec = (t, arr) => (arr && arr.length ? `<h4>${t}</h4><ul>${arr.map((x) => `<li>${esc(typeof x === "string" ? x : x.tugas + (x.pic ? ` (${x.pic}` + (x.deadline ? `, ${x.deadline}` : "") + ")" : ""))}</li>`).join("")}</ul>` : "");
     return `<div class="card-h"><span class="ic" style="background:var(--violet-soft);color:var(--violet)">${ic("file")}</span><b>${esc(o.text || "Ringkasan rapat")}</b><span class="chip">${fmtDate(r.at || o.createdAt)}</span></div>
-      <div class="card-b">${r.ringkasan ? `<p style="margin:0 0 6px">${esc(r.ringkasan)}</p>` : ""}${sec("Keputusan", r.keputusan)}${sec("Ide terpilih", r.terpilih)}${sec("Pertanyaan terbuka", r.pertanyaan)}${sec("Tugas", r.aksi)}${sec("Langkah berikutnya", r.langkah)}</div>`;
+      <div class="card-b">${r.ringkasan ? `<p style="margin:0 0 6px">${esc(r.ringkasan)}</p>` : ""}${r.peserta?.length ? `<p class="muted" style="margin:0 0 6px">Peserta: ${esc(r.peserta.join(", "))}</p>` : ""}${sec("Keputusan", r.keputusan)}${sec("Ide terpilih", r.terpilih)}${sec("Pertanyaan terbuka", r.pertanyaan)}${sec("Tugas", r.aksi)}${sec("Langkah berikutnya", r.langkah)}</div>`;
   },
 };
 

@@ -14,21 +14,41 @@ const Board = (() => {
     votingKey: () => `${b().voting?.active ? 1 : 0}:${round()}:${myVotesUsed()}`,
     round, votesFor, myVotesUsed,
     votesLeft: () => (b().voting?.per || 3) - myVotesUsed(),
+    votesPer: () => b().voting?.per || 3,
     startVoting(per = 3) { Store.updateBoard({ voting: { active: true, round: round() + 1, per, by: Store.me.id, at: Date.now() } }); Store.emit("voting"); toast(`Voting dimulai. Tiap orang punya ${per} vote.`); },
     endVoting() { Store.updateBoard({ voting: { active: false, endedAt: Date.now() } }); Store.emit("voting"); Panels.votes(); },
     toggleVote(o) {
       if (!Board.votingActive()) return;
       const v = votesFor(o);
       if (v.mine) Store.patchObj(o.id, { votes: { [Store.me.id]: 0 } });
-      else if (Board.votesLeft() > 0) Store.patchObj(o.id, { votes: { [Store.me.id]: round() } });
+      else if (Board.votesLeft() > 0) { Store.patchObj(o.id, { votes: { [Store.me.id]: round() } }); Canvas.flash(o.id); }
       else return toast("Vote kamu sudah habis. Batalkan satu vote dulu kalau mau pindah.");
       Store.emit("voting");
     },
+    // Who voted this round (the facilitator sees turnout; the counts wait for the end).
+    voters() { const r = round(), ids = new Set(); if (!r) return 0; for (const o of Store.objects()) for (const [id, x] of Object.entries(o.votes || {})) if (x === r) ids.add(id); return ids.size; },
+    // Meeting timer, seen by everyone: a countdown ("down") or a stopwatch ("up").
     timer() { return b().timer || null; },
-    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id } }); },
-    pauseTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: { running: false, remaining: Math.max(0, t.endsAt - Date.now()) } }); },
-    resumeTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: { running: true, endsAt: Date.now() + (t.remaining || 0) } }); },
+    timerMs(t = b().timer) { if (!t) return 0; if (t.mode === "up") return t.running ? Date.now() - t.startedAt : t.elapsed || 0; return t.running ? Math.max(0, t.endsAt - Date.now()) : t.remaining || 0; },
+    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { mode: "down", dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id } }); Board.addPresent(); },
+    startStopwatch() { Store.updateBoard({ timer: { mode: "up", startedAt: Date.now(), elapsed: 0, running: true, by: Store.me.id } }); Board.addPresent(); },
+    pauseTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: false, elapsed: Date.now() - t.startedAt } : { running: false, remaining: Math.max(0, t.endsAt - Date.now()) } }); },
+    resumeTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: true, startedAt: Date.now() - (t.elapsed || 0) } : { running: true, endsAt: Date.now() + (t.remaining || 0) } }); },
     resetTimer() { Store.updateBoard({ timer: null }); },
+    // Meeting attendees: everyone on the board while a timer runs is added on
+    // its own (by a team member's screen: guests can't write the board), and
+    // anyone can be added by name. They go into the meeting recap.
+    attendees() { return Object.entries(b().meeting?.people || {}).filter(([, n]) => n).map(([id, name]) => ({ id, name })); },
+    addPresent() {
+      if (!Store.canWrite || GUEST()) return;
+      const have = b().meeting?.people || {}, add = {};
+      const me = Store.me; if (me.id && !have[me.id]) add[me.id] = me.name || "Kamu";
+      for (const p of Collab.others()) { const id = p.by || p.presence?.uid; if (id && p.presence?.b === Store.S.boardId && !have[id] && !p.isMe) add[id] = Collab.nameOf(id, p.presence?.nm); }
+      if (Object.keys(add).length) Store.updateBoard({ meeting: { people: add } });
+    },
+    addAttendee(name) { const n = String(name || "").trim().slice(0, 60); if (n) Store.updateBoard({ meeting: { people: { [uid("p")]: n } } }); },
+    removeAttendee(id) { Store.updateBoard({ meeting: { people: { [id]: null } } }); },
+    clearAttendees() { Store.updateBoard({ meeting: null }); },
   };
 })();
 

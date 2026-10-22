@@ -411,8 +411,9 @@ function guestRoom(D, rdb, brandId, uid) {
   let bridge = null;
   try { bridge = window.parent && window.parent !== window ? window.parent.__papanBridge : null; } catch { bridge = null; }
   window.__papanHost = "brandlab";
-  // Brandlab's own chat button sits over the board, so the board's purple
-  // "Tanya Brandlab" pill would be a second door to the same chat.
+  // On the Papan page Brandlab hides its own floating buttons (css/styles.css),
+  // so they can't cover the board's controls; the board's "Tanya Brandlab"
+  // pill opens that same chat (window.__papanChat below).
   document.documentElement.classList.add("host-brandlab");
   // A board's guest link (api/papan.js): someone outside the team, no Brandlab.
   const tamu = !bridge && new URLSearchParams(location.search).get("tamu");
@@ -664,6 +665,7 @@ const ICON = {
   image: `<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5.5-5.5a2 2 0 00-2.8 0L4 19"/>`,
   link: `<path d="M9.5 14.5l5-5"/><path d="M7 17l-1.5 1.5a3.5 3.5 0 01-5-5L4 12"/><path d="M17 7l1.5-1.5a3.5 3.5 0 015 5L22 12"/>`,
   clock: `<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>`,
+  stopwatch: `<circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.2 1.6M9.5 2.5h5M12 2.5V6M18.4 6.6l1.3-1.3"/>`,
   flame: `<path d="M12 21.5c-3.9 0-6.6-2.6-6.6-6.3 0-3.3 2.3-5.4 3.6-7.7.4 1.6 1.3 2.7 2.4 3.2.1-3.1 1.3-5.6 3.8-7.7-.2 3 1 4.7 2.3 6.5 1 1.4 1.9 2.9 1.9 5.2 0 3.9-3.1 6.8-7.4 6.8z"/>`,
   sparkle: `<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>`,
   arrowRight: `<path d="M5 12h14M13 6l6 6-6 6"/>`,
@@ -1570,7 +1572,7 @@ const R = {
     const r = o.data || {};
     const sec = (t, arr) => (arr && arr.length ? `<h4>${t}</h4><ul>${arr.map((x) => `<li>${esc(typeof x === "string" ? x : x.tugas + (x.pic ? ` (${x.pic}` + (x.deadline ? `, ${x.deadline}` : "") + ")" : ""))}</li>`).join("")}</ul>` : "");
     return `<div class="card-h"><span class="ic" style="background:var(--violet-soft);color:var(--violet)">${ic("file")}</span><b>${esc(o.text || "Ringkasan rapat")}</b><span class="chip">${fmtDate(r.at || o.createdAt)}</span></div>
-      <div class="card-b">${r.ringkasan ? `<p style="margin:0 0 6px">${esc(r.ringkasan)}</p>` : ""}${sec("Keputusan", r.keputusan)}${sec("Ide terpilih", r.terpilih)}${sec("Pertanyaan terbuka", r.pertanyaan)}${sec("Tugas", r.aksi)}${sec("Langkah berikutnya", r.langkah)}</div>`;
+      <div class="card-b">${r.ringkasan ? `<p style="margin:0 0 6px">${esc(r.ringkasan)}</p>` : ""}${r.peserta?.length ? `<p class="muted" style="margin:0 0 6px">Peserta: ${esc(r.peserta.join(", "))}</p>` : ""}${sec("Keputusan", r.keputusan)}${sec("Ide terpilih", r.terpilih)}${sec("Pertanyaan terbuka", r.pertanyaan)}${sec("Tugas", r.aksi)}${sec("Langkah berikutnya", r.langkah)}</div>`;
   },
 };
 
@@ -1826,7 +1828,8 @@ const Canvas = (() => {
     if (bd.length && o.type !== "frame" && o.type !== "pen") h += `<div class="badges">${bd.join("")}</div>`;
     if (o.type === "sticky" || o.type === "shape" || o.type === "embed" || o.type === "image") {
       const v = Board.votesFor(o);
-      if (Board.votingActive() && Store.canWrite && o.type === "sticky") h += `<button class="votebtn${v.mine ? " on" : ""}" data-act="vote" title="${v.mine ? "Batalkan vote" : "Vote ide ini"}">${v.mine ? "✓ " : "+"}${v.count || ""}</button>`;
+      // While voting: only your own vote shows (no bandwagon); counts come at the end.
+      if (Board.votingActive()) { if (Store.canWrite && o.type === "sticky" && (o.text || "").trim()) h += `<button class="votebtn${v.mine ? " on" : ""}" data-act="vote" title="${v.mine ? "Batalkan vote" : "Vote ide ini"}" aria-label="${v.mine ? "Batalkan vote" : "Vote ide ini"}">${v.mine ? "✓" : "+"}</button>`; }
       else if (v.count) h += `<span class="votecount" title="${v.count} vote">${v.count}</span>`;
     }
     if (o.locked) h += `<span class="lockmark" title="Terkunci">${ic("lock")}</span>`;
@@ -2093,6 +2096,11 @@ const Canvas = (() => {
     }
     // select tool
     if (isInteractive(e.target) && hitObj) { if (!sel.has(hitObj.id)) select([hitObj.id]); return; }
+    // Voting: a click on a written sticky is a vote (a second click takes it back).
+    if (Board.votingActive() && Store.canWrite && hitObj?.type === "sticky" && (hitObj.text || "").trim() && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (e.detail < 2) Board.toggleVote(hitObj);
+      return;
+    }
     let target = hitObj || hitConn;
     if (target && target.type === "frame" && !e.target.closest(".ftitle")) target = null; // frame body = empty canvas, title = frame
     if (!target && e.pointerType === "touch") { startPan(e); return; } // one finger on empty canvas pans on phones/tablets
@@ -2592,21 +2600,41 @@ const Board = (() => {
     votingKey: () => `${b().voting?.active ? 1 : 0}:${round()}:${myVotesUsed()}`,
     round, votesFor, myVotesUsed,
     votesLeft: () => (b().voting?.per || 3) - myVotesUsed(),
+    votesPer: () => b().voting?.per || 3,
     startVoting(per = 3) { Store.updateBoard({ voting: { active: true, round: round() + 1, per, by: Store.me.id, at: Date.now() } }); Store.emit("voting"); toast(`Voting dimulai. Tiap orang punya ${per} vote.`); },
     endVoting() { Store.updateBoard({ voting: { active: false, endedAt: Date.now() } }); Store.emit("voting"); Panels.votes(); },
     toggleVote(o) {
       if (!Board.votingActive()) return;
       const v = votesFor(o);
       if (v.mine) Store.patchObj(o.id, { votes: { [Store.me.id]: 0 } });
-      else if (Board.votesLeft() > 0) Store.patchObj(o.id, { votes: { [Store.me.id]: round() } });
+      else if (Board.votesLeft() > 0) { Store.patchObj(o.id, { votes: { [Store.me.id]: round() } }); Canvas.flash(o.id); }
       else return toast("Vote kamu sudah habis. Batalkan satu vote dulu kalau mau pindah.");
       Store.emit("voting");
     },
+    // Who voted this round (the facilitator sees turnout; the counts wait for the end).
+    voters() { const r = round(), ids = new Set(); if (!r) return 0; for (const o of Store.objects()) for (const [id, x] of Object.entries(o.votes || {})) if (x === r) ids.add(id); return ids.size; },
+    // Meeting timer, seen by everyone: a countdown ("down") or a stopwatch ("up").
     timer() { return b().timer || null; },
-    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id } }); },
-    pauseTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: { running: false, remaining: Math.max(0, t.endsAt - Date.now()) } }); },
-    resumeTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: { running: true, endsAt: Date.now() + (t.remaining || 0) } }); },
+    timerMs(t = b().timer) { if (!t) return 0; if (t.mode === "up") return t.running ? Date.now() - t.startedAt : t.elapsed || 0; return t.running ? Math.max(0, t.endsAt - Date.now()) : t.remaining || 0; },
+    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { mode: "down", dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id } }); Board.addPresent(); },
+    startStopwatch() { Store.updateBoard({ timer: { mode: "up", startedAt: Date.now(), elapsed: 0, running: true, by: Store.me.id } }); Board.addPresent(); },
+    pauseTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: false, elapsed: Date.now() - t.startedAt } : { running: false, remaining: Math.max(0, t.endsAt - Date.now()) } }); },
+    resumeTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: true, startedAt: Date.now() - (t.elapsed || 0) } : { running: true, endsAt: Date.now() + (t.remaining || 0) } }); },
     resetTimer() { Store.updateBoard({ timer: null }); },
+    // Meeting attendees: everyone on the board while a timer runs is added on
+    // its own (by a team member's screen: guests can't write the board), and
+    // anyone can be added by name. They go into the meeting recap.
+    attendees() { return Object.entries(b().meeting?.people || {}).filter(([, n]) => n).map(([id, name]) => ({ id, name })); },
+    addPresent() {
+      if (!Store.canWrite || GUEST()) return;
+      const have = b().meeting?.people || {}, add = {};
+      const me = Store.me; if (me.id && !have[me.id]) add[me.id] = me.name || "Kamu";
+      for (const p of Collab.others()) { const id = p.by || p.presence?.uid; if (id && p.presence?.b === Store.S.boardId && !have[id] && !p.isMe) add[id] = Collab.nameOf(id, p.presence?.nm); }
+      if (Object.keys(add).length) Store.updateBoard({ meeting: { people: add } });
+    },
+    addAttendee(name) { const n = String(name || "").trim().slice(0, 60); if (n) Store.updateBoard({ meeting: { people: { [uid("p")]: n } } }); },
+    removeAttendee(id) { Store.updateBoard({ meeting: { people: { [id]: null } } }); },
+    clearAttendees() { Store.updateBoard({ meeting: null }); },
   };
 })();
 
@@ -2982,30 +3010,51 @@ const UI = (() => {
       } });
   }
   const roleLabel = () => (Store.canWrite ? (Store._isOwner ? "Pemilik" : "Editor") : "Lihat saja");
+  const clock = (ms) => { const sec = Math.floor(ms / 1000), h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60; return `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`; };
+  let lastPresent = 0;
   function updateTimer() {
     const t = Board.timer(), chip = $("#timerBtn");
     if (!t) { chip.className = "timer-chip"; chip.innerHTML = `${ic("clock")}<span class="hide-sm">Timer</span>`; return; }
-    const left = t.running ? Math.max(0, t.endsAt - Date.now()) : t.remaining || 0;
-    const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-    const done = t.running && left <= 0;
+    const ms = Board.timerMs(t), up = t.mode === "up";
+    const done = !up && t.running && ms <= 0;
     chip.className = "timer-chip" + (done ? " done" : t.running ? " run" : "");
-    chip.innerHTML = `${ic(t.running ? "clock" : "pause")}<span class="tnum">${done ? "Waktu habis" : `${m}:${String(s).padStart(2, "0")}`}</span>`;
+    chip.innerHTML = `${ic(!t.running ? "pause" : up ? "stopwatch" : "clock")}<span class="tnum">${done ? "Waktu habis" : clock(ms)}</span>`;
     if (done && !chip._beeped) { chip._beeped = true; beep(); toast("Waktu rapat habis"); }
     if (!done) chip._beeped = false;
+    // whoever is on the board while the clock runs joins the attendee list
+    if (t.running && Date.now() - lastPresent > 15000) { lastPresent = Date.now(); Board.addPresent(); }
   }
   setInterval(updateTimer, 1000);
+  let timerMode = "down";
   function timerPop(anchor) {
-    const t = Board.timer();
-    pop(anchor || $("#timerBtn"), `<div class="mh">Timer rapat (terlihat semua orang)</div><div class="row">${[5, 10, 15, 25, 45].map((m) => `<button class="btn btn-secondary btn-sm" data-pick="m${m}">${m} mnt</button>`).join("")}</div>
-      <div class="row" style="align-items:center"><input class="field" id="tmin" type="number" min="1" max="240" placeholder="Menit" style="width:90px"><button class="btn btn-primary btn-sm" data-pick="custom">Mulai</button></div>
-      ${t ? `<div class="sep"></div>${t.running ? `<button class="mi" data-pick="pause">${ic("pause")} Jeda</button>` : `<button class="mi" data-pick="resume">${ic("play")} Lanjutkan</button>`}<button class="mi" data-pick="reset">${ic("x")} Hapus timer</button>` : ""}`, {
-      center: true, onPick: (k, b, e) => {
-        if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
-        if (k[0] === "m" && k !== "custom") Board.startTimer(+k.slice(1));
+    const t = Board.timer(), can = Store.canWrite;
+    if (t) timerMode = t.mode === "up" ? "up" : "down";
+    const people = Board.attendees();
+    const el = pop(anchor || $("#timerBtn"), `<div class="mh">Timer rapat (terlihat semua orang)</div>
+      <div class="seg" role="tablist" style="margin:0 10px 10px"><button class="${timerMode === "down" ? "on" : ""}" data-pick="mode:down" role="tab">Hitung mundur</button><button class="${timerMode === "up" ? "on" : ""}" data-pick="mode:up" role="tab">Stopwatch</button></div>
+      ${timerMode === "down"
+        ? `<div class="row">${[5, 10, 15, 25, 45].map((m) => `<button class="btn btn-secondary btn-sm" data-pick="m${m}">${m} mnt</button>`).join("")}</div>
+      <div class="row" style="align-items:center"><input class="field" id="tmin" type="number" min="1" max="240" placeholder="Menit" style="width:90px"><button class="btn btn-primary btn-sm" data-pick="custom">Mulai</button></div>`
+        : `<div class="row"><button class="btn btn-primary btn-sm" data-pick="sw">${ic("stopwatch")} ${t?.mode === "up" ? "Mulai dari nol" : "Mulai stopwatch"}</button></div>`}
+      ${t ? `<div class="sep"></div>${t.running ? `<button class="mi" data-pick="pause">${ic("pause")} Jeda</button>` : `<button class="mi" data-pick="resume">${ic("play")} Lanjutkan</button>`}<button class="mi" data-pick="reset">${ic("x")} Hapus timer</button>` : ""}
+      <div class="sep"></div>
+      <div class="mh">Peserta rapat (${people.length})</div>
+      <div class="chips" style="padding:0 10px 8px;max-width:300px">${people.map((p) => `<span class="chip">${esc(p.name)}${can && !GUEST() ? ` <button class="chip-x" data-pick="rm:${esc(p.id)}" aria-label="Hapus ${esc(p.name)}">×</button>` : ""}</span>`).join("") || '<span class="faint" style="font-size:12px">Belum ada. Yang membuka papan saat timer berjalan tercatat otomatis.</span>'}</div>
+      ${can && !GUEST() ? `<div class="row" style="align-items:center"><input class="field" id="tpName" placeholder="Tambah nama" style="width:150px" maxlength="60"><button class="btn btn-secondary btn-sm" data-pick="addp">Tambah</button>${people.length ? `<button class="btn btn-ghost btn-sm" data-pick="clearp">Kosongkan</button>` : ""}</div>` : ""}`, {
+      center: true, onPick: (k) => {
+        if (k.startsWith("mode:")) { timerMode = k.slice(5); setTimeout(() => timerPop(anchor), 0); return true; }
+        if (!can || GUEST()) return toast(GUEST() ? "Timer diatur oleh tim brand" : "Kamu hanya bisa melihat papan ini");
+        if (k[0] === "m" && /^m\d+$/.test(k)) Board.startTimer(+k.slice(1));
         if (k === "custom") { const v = +$("#tmin").value; if (!v) { toast("Isi jumlah menit dulu"); return true; } Board.startTimer(clamp(v, 1, 240)); }
+        if (k === "sw") Board.startStopwatch();
         if (k === "pause") Board.pauseTimer(); if (k === "resume") Board.resumeTimer(); if (k === "reset") Board.resetTimer();
+        const again = () => { setTimeout(() => timerPop(anchor), 60); return true; };
+        if (k === "addp") { const n = $("#tpName").value.trim(); if (!n) { toast("Tulis namanya dulu"); return true; } Board.addAttendee(n); return again(); }
+        if (k.startsWith("rm:")) { Board.removeAttendee(k.slice(3)); return again(); }
+        if (k === "clearp") { Board.clearAttendees(); return again(); }
         setTimeout(updateTimer, 50);
       } });
+    const inp = el.querySelector("#tpName"); if (inp) inp.onkeydown = (e) => { if (e.key === "Enter") el.querySelector('[data-pick="addp"]').click(); };
   }
   function votingPop(anchor) {
     if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
@@ -3016,11 +3065,17 @@ const UI = (() => {
     const box = $("#banner");
     let h = "";
     if (Collab.followPeer) { const p = Collab.others().find((x) => x.peer === Collab.followPeer); h = `<span>${ic("follow")}</span><span>Mengikuti layar ${esc(p ? Collab.nameOf(p.by || p.presence?.uid, p.presence?.nm) : "")}</span><button class="btn btn-secondary btn-xs" data-b="unfollow">Berhenti</button>`; box.className = "banner glass"; }
-    else if (Board.votingActive()) { const left = Board.votesLeft(); h = `<span style="color:var(--violet)">${ic("vote")}</span><span>Voting berjalan · sisa vote kamu <b class="tnum">${left}</b></span>${Store.canWrite ? '<button class="btn btn-secondary btn-xs" data-b="endvote">Selesai voting</button>' : ""}`; box.className = "banner glass violet"; }
+    else if (Board.votingActive()) {
+      const left = Math.max(0, Board.votesLeft()), per = Board.votesPer();
+      const dots = `<span class="vdots" aria-hidden="true">${Array.from({ length: Math.min(per, 10) }, (_, i) => `<i class="${i < per - left ? "on" : ""}"></i>`).join("")}</span>`;
+      h = `<span style="color:var(--violet)">${ic("vote")}</span><span>${Store.canWrite ? `Klik sticky untuk vote · sisa <b class="tnum">${left}</b> ${dots}` : "Voting sedang berjalan"} · hasil muncul saat selesai</span>${Store.canWrite && !GUEST() ? '<button class="btn btn-secondary btn-xs" data-b="endvote">Selesai & lihat hasil</button>' : ""}`;
+      box.className = "banner glass violet";
+    }
     else if (Canvas.clientView && !GUEST()) { h = `<span style="color:var(--bad)">${ic("eye")}</span><span>Tampilan klien: frame & komentar internal disembunyikan</span><button class="btn btn-secondary btn-xs" data-b="client">Keluar</button>`; box.className = "banner glass red"; }
     else if (!Store.canWrite) { h = `<span>${ic("eye")}</span><span>Kamu hanya bisa melihat papan ini</span>`; box.className = "banner glass"; }
     box.hidden = !h;
     if (box._h !== h) { box.innerHTML = h; box._h = h; }
+    document.body.classList.toggle("voting", Board.votingActive());
   }
 
   // ---------- toolbar ----------
@@ -3652,7 +3707,8 @@ const Panels = (() => {
   // ---------- meeting recap ----------
   function recap() {
     let r = Rules.recap();
-    const SECS = [["ringkasan", "Gambaran rapat", true], ["topik", "Topik yang dibahas"], ["ide", "Ide utama"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"]];
+    if (!r.peserta?.length) r.peserta = Board.attendees().map((p) => p.name);
+    const SECS = [["ringkasan", "Gambaran rapat", true], ["peserta", "Peserta rapat"], ["topik", "Topik yang dibahas"], ["ide", "Ide utama"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"]];
     const draw = () => {
       $("#rcBody").innerHTML = SECS.map(([k, label, single]) => {
         if (single) return `<div class="recap-sec"><h5>${label}</h5><textarea class="field" data-k="${k}" rows="3">${esc(r[k] || "")}</textarea></div>`;
@@ -3803,7 +3859,12 @@ const Panels = (() => {
     const r = Board.round();
     const list = Store.objects().filter((o) => o.type === "sticky").map((o) => ({ o, n: Board.votesFor(o).count })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
     const max = list[0]?.n || 1;
-    open("votes", null, { title: "Hasil voting", icon: "vote", body: `<div class="stack">${Board.votingActive() ? `<div class="note violet">${ic("vote")}<span>Voting masih berjalan. Hasil berubah langsung.</span></div>` : ""}${!r ? '<p class="muted">Belum pernah ada voting di papan ini.</p>' : list.length ? list.map((x) => `<div class="res-row"><span class="t" title="${esc(x.o.text)}">${esc(x.o.text)}</span><span class="bar"><i style="width:${(x.n / max) * 100}%"></i></span><b class="tnum">${x.n}</b><button class="icon-btn" data-go="${x.o.id}" aria-label="Lihat">${ic("arrowRight")}</button></div>`).join("") : '<p class="muted">Belum ada vote masuk.</p>'}</div>`,
+    // While voting runs the counts stay hidden (no bandwagon), only the turnout shows.
+    if (Board.votingActive()) return open("votes", null, { title: "Voting berjalan", icon: "vote",
+      body: `<div class="stack"><div class="note violet">${ic("vote")}<span>Hasil disembunyikan sampai voting selesai, supaya tiap orang memilih sendiri. Klik sticky untuk vote.</span></div><p><b class="tnum">${Board.voters()}</b> orang sudah vote · tiap orang ${Board.votesPer()} vote.</p></div>`,
+      foot: Store.canWrite && !GUEST() ? `<button class="btn btn-primary" id="vtEnd">Selesai & lihat hasil</button>` : "",
+      wire() { $("#vtEnd") && ($("#vtEnd").onclick = () => Board.endVoting()); } });
+    open("votes", null, { title: "Hasil voting", icon: "vote", body: `<div class="stack">${!r ? '<p class="muted">Belum pernah ada voting di papan ini.</p>' : list.length ? list.map((x) => `<div class="res-row"><span class="t" title="${esc(x.o.text)}">${esc(x.o.text)}</span><span class="bar"><i style="width:${(x.n / max) * 100}%"></i></span><b class="tnum">${x.n}</b><button class="icon-btn" data-go="${x.o.id}" aria-label="Lihat">${ic("arrowRight")}</button></div>`).join("") : '<p class="muted">Belum ada vote masuk.</p>'}</div>`,
       foot: Store.canWrite ? `${list.length ? `<button class="btn btn-primary" id="vtTop">Tandai 3 teratas sebagai terpilih</button>` : ""}${Board.votingActive() ? `<button class="btn btn-secondary" id="vtEnd">Selesai voting</button>` : `<button class="btn btn-secondary" id="vtNew">Voting baru</button>`}` : "",
       wire(s) {
         s.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => Actions.jumpTo(b.dataset.go)));

@@ -7,8 +7,9 @@
   let bridge = null;
   try { bridge = window.parent && window.parent !== window ? window.parent.__papanBridge : null; } catch { bridge = null; }
   window.__papanHost = "brandlab";
-  // Brandlab's own chat button sits over the board, so the board's purple
-  // "Tanya Brandlab" pill would be a second door to the same chat.
+  // On the Papan page Brandlab hides its own floating buttons (css/styles.css),
+  // so they can't cover the board's controls; the board's "Tanya Brandlab"
+  // pill opens that same chat (window.__papanChat below).
   document.documentElement.classList.add("host-brandlab");
   // A board's guest link (api/papan.js): someone outside the team, no Brandlab.
   const tamu = !bridge && new URLSearchParams(location.search).get("tamu");

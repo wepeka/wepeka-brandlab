@@ -120,30 +120,51 @@ const UI = (() => {
       } });
   }
   const roleLabel = () => (Store.canWrite ? (Store._isOwner ? "Pemilik" : "Editor") : "Lihat saja");
+  const clock = (ms) => { const sec = Math.floor(ms / 1000), h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60; return `${h ? h + ":" + String(m).padStart(2, "0") : m}:${String(s).padStart(2, "0")}`; };
+  let lastPresent = 0;
   function updateTimer() {
     const t = Board.timer(), chip = $("#timerBtn");
     if (!t) { chip.className = "timer-chip"; chip.innerHTML = `${ic("clock")}<span class="hide-sm">Timer</span>`; return; }
-    const left = t.running ? Math.max(0, t.endsAt - Date.now()) : t.remaining || 0;
-    const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-    const done = t.running && left <= 0;
+    const ms = Board.timerMs(t), up = t.mode === "up";
+    const done = !up && t.running && ms <= 0;
     chip.className = "timer-chip" + (done ? " done" : t.running ? " run" : "");
-    chip.innerHTML = `${ic(t.running ? "clock" : "pause")}<span class="tnum">${done ? "Waktu habis" : `${m}:${String(s).padStart(2, "0")}`}</span>`;
+    chip.innerHTML = `${ic(!t.running ? "pause" : up ? "stopwatch" : "clock")}<span class="tnum">${done ? "Waktu habis" : clock(ms)}</span>`;
     if (done && !chip._beeped) { chip._beeped = true; beep(); toast("Waktu rapat habis"); }
     if (!done) chip._beeped = false;
+    // whoever is on the board while the clock runs joins the attendee list
+    if (t.running && Date.now() - lastPresent > 15000) { lastPresent = Date.now(); Board.addPresent(); }
   }
   setInterval(updateTimer, 1000);
+  let timerMode = "down";
   function timerPop(anchor) {
-    const t = Board.timer();
-    pop(anchor || $("#timerBtn"), `<div class="mh">Timer rapat (terlihat semua orang)</div><div class="row">${[5, 10, 15, 25, 45].map((m) => `<button class="btn btn-secondary btn-sm" data-pick="m${m}">${m} mnt</button>`).join("")}</div>
-      <div class="row" style="align-items:center"><input class="field" id="tmin" type="number" min="1" max="240" placeholder="Menit" style="width:90px"><button class="btn btn-primary btn-sm" data-pick="custom">Mulai</button></div>
-      ${t ? `<div class="sep"></div>${t.running ? `<button class="mi" data-pick="pause">${ic("pause")} Jeda</button>` : `<button class="mi" data-pick="resume">${ic("play")} Lanjutkan</button>`}<button class="mi" data-pick="reset">${ic("x")} Hapus timer</button>` : ""}`, {
-      center: true, onPick: (k, b, e) => {
-        if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
-        if (k[0] === "m" && k !== "custom") Board.startTimer(+k.slice(1));
+    const t = Board.timer(), can = Store.canWrite;
+    if (t) timerMode = t.mode === "up" ? "up" : "down";
+    const people = Board.attendees();
+    const el = pop(anchor || $("#timerBtn"), `<div class="mh">Timer rapat (terlihat semua orang)</div>
+      <div class="seg" role="tablist" style="margin:0 10px 10px"><button class="${timerMode === "down" ? "on" : ""}" data-pick="mode:down" role="tab">Hitung mundur</button><button class="${timerMode === "up" ? "on" : ""}" data-pick="mode:up" role="tab">Stopwatch</button></div>
+      ${timerMode === "down"
+        ? `<div class="row">${[5, 10, 15, 25, 45].map((m) => `<button class="btn btn-secondary btn-sm" data-pick="m${m}">${m} mnt</button>`).join("")}</div>
+      <div class="row" style="align-items:center"><input class="field" id="tmin" type="number" min="1" max="240" placeholder="Menit" style="width:90px"><button class="btn btn-primary btn-sm" data-pick="custom">Mulai</button></div>`
+        : `<div class="row"><button class="btn btn-primary btn-sm" data-pick="sw">${ic("stopwatch")} ${t?.mode === "up" ? "Mulai dari nol" : "Mulai stopwatch"}</button></div>`}
+      ${t ? `<div class="sep"></div>${t.running ? `<button class="mi" data-pick="pause">${ic("pause")} Jeda</button>` : `<button class="mi" data-pick="resume">${ic("play")} Lanjutkan</button>`}<button class="mi" data-pick="reset">${ic("x")} Hapus timer</button>` : ""}
+      <div class="sep"></div>
+      <div class="mh">Peserta rapat (${people.length})</div>
+      <div class="chips" style="padding:0 10px 8px;max-width:300px">${people.map((p) => `<span class="chip">${esc(p.name)}${can && !GUEST() ? ` <button class="chip-x" data-pick="rm:${esc(p.id)}" aria-label="Hapus ${esc(p.name)}">×</button>` : ""}</span>`).join("") || '<span class="faint" style="font-size:12px">Belum ada. Yang membuka papan saat timer berjalan tercatat otomatis.</span>'}</div>
+      ${can && !GUEST() ? `<div class="row" style="align-items:center"><input class="field" id="tpName" placeholder="Tambah nama" style="width:150px" maxlength="60"><button class="btn btn-secondary btn-sm" data-pick="addp">Tambah</button>${people.length ? `<button class="btn btn-ghost btn-sm" data-pick="clearp">Kosongkan</button>` : ""}</div>` : ""}`, {
+      center: true, onPick: (k) => {
+        if (k.startsWith("mode:")) { timerMode = k.slice(5); setTimeout(() => timerPop(anchor), 0); return true; }
+        if (!can || GUEST()) return toast(GUEST() ? "Timer diatur oleh tim brand" : "Kamu hanya bisa melihat papan ini");
+        if (k[0] === "m" && /^m\d+$/.test(k)) Board.startTimer(+k.slice(1));
         if (k === "custom") { const v = +$("#tmin").value; if (!v) { toast("Isi jumlah menit dulu"); return true; } Board.startTimer(clamp(v, 1, 240)); }
+        if (k === "sw") Board.startStopwatch();
         if (k === "pause") Board.pauseTimer(); if (k === "resume") Board.resumeTimer(); if (k === "reset") Board.resetTimer();
+        const again = () => { setTimeout(() => timerPop(anchor), 60); return true; };
+        if (k === "addp") { const n = $("#tpName").value.trim(); if (!n) { toast("Tulis namanya dulu"); return true; } Board.addAttendee(n); return again(); }
+        if (k.startsWith("rm:")) { Board.removeAttendee(k.slice(3)); return again(); }
+        if (k === "clearp") { Board.clearAttendees(); return again(); }
         setTimeout(updateTimer, 50);
       } });
+    const inp = el.querySelector("#tpName"); if (inp) inp.onkeydown = (e) => { if (e.key === "Enter") el.querySelector('[data-pick="addp"]').click(); };
   }
   function votingPop(anchor) {
     if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
@@ -154,11 +175,17 @@ const UI = (() => {
     const box = $("#banner");
     let h = "";
     if (Collab.followPeer) { const p = Collab.others().find((x) => x.peer === Collab.followPeer); h = `<span>${ic("follow")}</span><span>Mengikuti layar ${esc(p ? Collab.nameOf(p.by || p.presence?.uid, p.presence?.nm) : "")}</span><button class="btn btn-secondary btn-xs" data-b="unfollow">Berhenti</button>`; box.className = "banner glass"; }
-    else if (Board.votingActive()) { const left = Board.votesLeft(); h = `<span style="color:var(--violet)">${ic("vote")}</span><span>Voting berjalan · sisa vote kamu <b class="tnum">${left}</b></span>${Store.canWrite ? '<button class="btn btn-secondary btn-xs" data-b="endvote">Selesai voting</button>' : ""}`; box.className = "banner glass violet"; }
+    else if (Board.votingActive()) {
+      const left = Math.max(0, Board.votesLeft()), per = Board.votesPer();
+      const dots = `<span class="vdots" aria-hidden="true">${Array.from({ length: Math.min(per, 10) }, (_, i) => `<i class="${i < per - left ? "on" : ""}"></i>`).join("")}</span>`;
+      h = `<span style="color:var(--violet)">${ic("vote")}</span><span>${Store.canWrite ? `Klik sticky untuk vote · sisa <b class="tnum">${left}</b> ${dots}` : "Voting sedang berjalan"} · hasil muncul saat selesai</span>${Store.canWrite && !GUEST() ? '<button class="btn btn-secondary btn-xs" data-b="endvote">Selesai & lihat hasil</button>' : ""}`;
+      box.className = "banner glass violet";
+    }
     else if (Canvas.clientView && !GUEST()) { h = `<span style="color:var(--bad)">${ic("eye")}</span><span>Tampilan klien: frame & komentar internal disembunyikan</span><button class="btn btn-secondary btn-xs" data-b="client">Keluar</button>`; box.className = "banner glass red"; }
     else if (!Store.canWrite) { h = `<span>${ic("eye")}</span><span>Kamu hanya bisa melihat papan ini</span>`; box.className = "banner glass"; }
     box.hidden = !h;
     if (box._h !== h) { box.innerHTML = h; box._h = h; }
+    document.body.classList.toggle("voting", Board.votingActive());
   }
 
   // ---------- toolbar ----------

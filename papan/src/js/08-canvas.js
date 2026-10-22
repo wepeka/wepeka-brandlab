@@ -152,7 +152,8 @@ const Canvas = (() => {
     if (bd.length && o.type !== "frame" && o.type !== "pen") h += `<div class="badges">${bd.join("")}</div>`;
     if (o.type === "sticky" || o.type === "shape" || o.type === "embed" || o.type === "image") {
       const v = Board.votesFor(o);
-      if (Board.votingActive() && Store.canWrite && o.type === "sticky") h += `<button class="votebtn${v.mine ? " on" : ""}" data-act="vote" title="${v.mine ? "Batalkan vote" : "Vote ide ini"}">${v.mine ? "✓ " : "+"}${v.count || ""}</button>`;
+      // While voting: only your own vote shows (no bandwagon); counts come at the end.
+      if (Board.votingActive()) { if (Store.canWrite && o.type === "sticky" && (o.text || "").trim()) h += `<button class="votebtn${v.mine ? " on" : ""}" data-act="vote" title="${v.mine ? "Batalkan vote" : "Vote ide ini"}" aria-label="${v.mine ? "Batalkan vote" : "Vote ide ini"}">${v.mine ? "✓" : "+"}</button>`; }
       else if (v.count) h += `<span class="votecount" title="${v.count} vote">${v.count}</span>`;
     }
     if (o.locked) h += `<span class="lockmark" title="Terkunci">${ic("lock")}</span>`;
@@ -419,6 +420,11 @@ const Canvas = (() => {
     }
     // select tool
     if (isInteractive(e.target) && hitObj) { if (!sel.has(hitObj.id)) select([hitObj.id]); return; }
+    // Voting: a click on a written sticky is a vote (a second click takes it back).
+    if (Board.votingActive() && Store.canWrite && hitObj?.type === "sticky" && (hitObj.text || "").trim() && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (e.detail < 2) Board.toggleVote(hitObj);
+      return;
+    }
     let target = hitObj || hitConn;
     if (target && target.type === "frame" && !e.target.closest(".ftitle")) target = null; // frame body = empty canvas, title = frame
     if (!target && e.pointerType === "touch") { startPan(e); return; } // one finger on empty canvas pans on phones/tablets
