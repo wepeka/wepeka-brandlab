@@ -240,6 +240,9 @@ function parseRoute(hash) {
 }
 
 let storeReady = false;
+// The store was opened for a team member with no plan of their own
+// (initStore ownPlan:false): no brand counter, no settings copy to the team.
+let storeAsMember = false;
 let accountUnsub = null;
 let subscribedUid = null;
 
@@ -513,6 +516,14 @@ function onAccountChange(user, account) {
   }
   payReturn = null;
   if (paidWait) return;
+  // A team member who just got a plan of their own (bought one, or a trial):
+  // the store they're on was opened as a member's — start it over as their
+  // own account, so their brand counter and limits apply from the first brand.
+  if (storeReady && storeAsMember && (state === "paid" || state === "trial")) {
+    storeAsMember = false;
+    location.reload();
+    return;
+  }
   // "none" (never claimed a trial / never paid — no accounts/{uid} doc at
   // all) and "expired" (a lapsed sub or ended trial) both get the same
   // locked pricing screen now — no more in-app read-only browsing for a
@@ -529,7 +540,8 @@ function onAccountChange(user, account) {
   // state is "paid", "trial" or "member" — the only three that ever render the app.
   if (!storeReady) {
     showLoading();
-    initStore(user.uid, { ownPlan: state !== "member" }).then(async () => {
+    storeAsMember = state === "member";
+    initStore(user.uid, { ownPlan: !storeAsMember }).then(async () => {
       // GA4 "start_trial", once per account, the first time a brand-new
       // trial opens the app (js/trial-start.js). Never waited for.
       trackTrialStart();

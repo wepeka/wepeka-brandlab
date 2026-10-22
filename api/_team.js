@@ -124,7 +124,7 @@ export function inviteLink(token, origin, fallback = "https://brandlab.wepeka.co
 
 const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const ROLE_TEXT = {
-  editor: { name: "Editor", what: "bisa mengubah semua isi brand: Brand DNA, Brand Book, konten, campaign, dan ide" },
+  editor: { name: "Editor", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, dan ide)" },
   viewer: { name: "Lihat saja", what: "bisa melihat semua isi brand tanpa mengubahnya" },
 };
 export function joinNames(names) {
@@ -153,7 +153,7 @@ export function composeInviteEmail({ ownerName, brandNames, role, link, email, a
   const text = [
     `Halo!`,
     ``,
-    `${who} mengundangmu bergabung ke tim ${brands} di Wepeka Brandlab sebagai ${r.name} (${r.what}).`,
+    `${who} mengundangmu bergabung ke tim ${brands} di Wepeka Brandlab sebagai ${r.name}. Kamu ${r.what}.`,
     ``,
     `Buka link ini untuk bergabung:`,
     link,
@@ -165,7 +165,7 @@ export function composeInviteEmail({ ownerName, brandNames, role, link, email, a
     preheader: `Kerjakan ${brands} bareng-bareng di Brandlab.`,
     title: `${who} mengundangmu ke timnya`,
     appUrl,
-    body: `<p style="margin:0 0 12px;">${esc(who)} mengundangmu bergabung ke tim <b>${esc(brands)}</b> di Brandlab sebagai <b>${esc(r.name)}</b>: ${esc(r.what)}.</p>
+    body: `<p style="margin:0 0 12px;">${esc(who)} mengundangmu bergabung ke tim <b>${esc(brands)}</b> di Brandlab sebagai <b>${esc(r.name)}</b>. Kamu ${esc(r.what)}.</p>
 <p style="margin:0 0 18px;"><a href="${esc(link)}" style="display:inline-block;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700;font-size:15px;background:#111;color:#fff;">Gabung ke tim</a></p>
 <p style="margin:0 0 14px;color:#666;font-size:13px;">Tombolnya tidak bisa diklik? Salin link ini ke browser:<br><a href="${esc(link)}" style="color:#444;word-break:break-all;">${esc(link)}</a></p>
 <p style="margin:0;color:#888;font-size:13px;">Link berlaku 7 hari dan hanya bisa dipakai dengan email ini (${esc(email)}). Tidak kenal ${esc(who)}? Abaikan saja email ini.</p>`,
