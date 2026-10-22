@@ -193,7 +193,55 @@ const Actions = (() => {
   function addText(p = at()) { return Canvas.createAt("text", { cx: p.x, cy: p.y }); }
   function addShape(shape, p = at()) { Canvas.toolOpts.shape = shape; return Canvas.createAt("shape", { cx: p.x, cy: p.y }); }
   function addFrame(p = at()) { return Canvas.createAt("frame", { cx: p.x, cy: p.y }); }
-  function addTable(p = at()) { const o = Store.newObject({ type: "table", x: Math.round(p.x - 240), y: Math.round(p.y - 90), w: 480, h: 180, text: "", data: { rows: [["Kolom 1", "Kolom 2", "Kolom 3"], ["", "", ""], ["", "", ""]] } }); Canvas.add([o], { select: true }); return o; }
+  // A table of `rows` × `cols` (the first row is the header), or the rows given.
+  function addTable(p = at(), rows = 3, cols = 3, data = null) {
+    const grid = data || [Array.from({ length: cols }, (_, i) => `Kolom ${i + 1}`), ...Array.from({ length: Math.max(1, rows - 1) }, () => Array(cols).fill(""))];
+    const n = grid[0].length, w = clamp(n * 150, 320, 1200), h = 40 + grid.length * 34;
+    p = Canvas.freeSpot(w, h, p);
+    const o = Store.newObject({ type: "table", x: Math.round(p.x - w / 2), y: Math.round(p.y - h / 2), w, h: 180, text: "", data: { rows: grid } });
+    Canvas.add([o], { select: true }); return o;
+  }
+  // Rows copied from Google Sheets or Excel arrive tab-separated: a table, not stickies.
+  function tableFromText(txt, p = at()) {
+    const lines = txt.replace(/\r/g, "").split("\n").filter((l) => l.trim()).slice(0, 60);
+    const rows = lines.map((l) => l.split("\t").map((c) => c.trim().replace(/^"(.*)"$/s, "$1").slice(0, 500)).slice(0, 20));
+    const cols = Math.max(...rows.map((r) => r.length));
+    const o = addTable(p, 0, 0, rows.map((r) => [...r, ...Array(cols - r.length).fill("")]));
+    toast(`Tabel ${rows.length} baris × ${cols} kolom ditempel`);
+    return o;
+  }
+  // "Flowchart dari langkah": one step per line, top to bottom. A line ending
+  // in "?" is a decision: "Ya" carries on down, "Tidak" gets its own box.
+  function flowFromText(text, p = at(), ends = true) {
+    let steps = String(text || "").split(/\r?\n/).map((s) => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).slice(0, 30);
+    if (!steps.length) { toast("Tulis minimal satu langkah"); return null; }
+    if (ends && !/^mulai\b/i.test(steps[0])) steps.unshift("Mulai");
+    if (ends && !/^selesai\b/i.test(steps[steps.length - 1])) steps.push("Selesai");
+    const objs = [], W = 240, H = 104, GAP = 70;
+    let y = 0, prev = null, k = 0;
+    const id = () => "f" + k++;
+    const join = (a, b, label) => objs.push({ id: id(), type: "connector", x: 0, y: 0, w: 0, h: 0, color: "ink", data: { from: { id: a, x: null, y: null }, to: { id: b, x: null, y: null }, arrow: "end", style: "elbow", dash: false, ...(label ? { label } : {}) } });
+    steps.forEach((s, i) => {
+      const end = ends && ((i === 0 && /^mulai\b/i.test(s)) || (i === steps.length - 1 && /^selesai\b/i.test(s)));
+      const dec = !end && /\?\s*$/.test(s);
+      const shape = end ? "pill" : dec ? "diamond" : "rect";
+      const w = dec ? 260 : W, h = end ? 72 : dec ? 150 : H;
+      const o = { id: id(), type: "shape", x: -w / 2, y, w, h, fs: 18, color: { pill: "#3ddc84", diamond: "#ffc94a" }[shape] || "#7ab8ff", text: s, data: { shape, fill: true } };
+      objs.push(o);
+      if (prev) join(prev.id, o.id, prev.dec ? "Ya" : "");
+      if (dec) {
+        const no = { id: id(), type: "shape", x: w / 2 + 120, y: y + (h - H) / 2, w: W, h: H, fs: 18, color: "#ff7eb6", text: "Kalau tidak: …", data: { shape: "rect", fill: true } };
+        objs.push(no); join(o.id, no.id, "Tidak");
+      }
+      prev = { id: o.id, dec };
+      y += h + GAP;
+    });
+    const out = Canvas.insertObjects(objs, Canvas.freeSpot(260 + 120 + W, y, p), { select: false });
+    Canvas.deselect();
+    setTimeout(() => Canvas.fit(out.filter((o) => o.type !== "connector").map((o) => o.id)), 60);
+    toast("Flowchart dibuat. Pilih kotak, lalu klik + di sisinya untuk menambah langkah.");
+    return out;
+  }
   function addChecklist(p = at()) { const o = Store.newObject({ type: "checklist", x: Math.round(p.x - 170), y: Math.round(p.y - 80), w: 340, h: 160, text: "Checklist", data: { items: [{ t: "", done: false }] } }); Canvas.add([o], { select: true }); setTimeout(() => Canvas.startEdit(o.id, { item: 0 }), 40); return o; }
   const WSIZE = { dna: [400, 520], brandbook: [400, 400], campaign: [400, 400], growth: [400, 360], sales: [400, 340], calc: [400, 400], content: [400, 300], tasks: [380, 400] };
   function addWidget(kind, p = at(), extra = {}) {
@@ -286,6 +334,7 @@ const Actions = (() => {
     if (clip && (txt === clipText || !txt)) return pasteClip(at());
     if (!txt.trim()) return;
     if (looksLikeUrl(txt)) return addEmbed(txt.trim());
+    if (/\t/.test(txt)) return tableFromText(txt);
     textToStickies(txt);
   }
   function onDrop(e) {
@@ -297,6 +346,6 @@ const Actions = (() => {
     if (u && looksLikeUrl(u.split("\n")[0])) addEmbed(u.split("\n")[0].trim(), p);
     else if (u) textToStickies(u, p);
   }
-  return { remove, duplicate, copy, group, ungroup, lock, nudge, order, setColor, setTag, setStatus, toggleInternal, setConn, setFont, toggleReaction, addChecklistItem, tableEdit, jumpTo,
+  return { remove, duplicate, copy, group, ungroup, lock, nudge, order, setColor, setTag, setStatus, toggleInternal, setConn, setFont, toggleReaction, addChecklistItem, tableEdit, jumpTo, tableFromText, flowFromText,
     onClick, onInput, onPaste, onDrop, addSticky, addText, addShape, addFrame, addTable, addChecklist, addWidget, addEmbed, addFiles, pickFiles, addTemplate, textToStickies, toggleWidgetMode, changeSel };
 })();

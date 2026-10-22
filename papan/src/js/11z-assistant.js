@@ -186,7 +186,7 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     const objs = items.slice(0, 12).map((u, k) => ({ id: "L" + k, type: "sticky", x: (k % cols) * 220, y: Math.floor(k / cols) * 220, w: 200, h: 200, text: String(u.text || "").slice(0, 280), color: "violet", ai: true }));
     const s = Canvas.selObjs(); const near = s.length ? (() => { const b = Canvas.bboxOf(s); return { x: b.x + b.w + 300, y: b.y + b.h / 2 }; })() : Canvas.centerWorld();
     const rows = Math.ceil(objs.length / cols);
-    const out = Canvas.insertObjects(objs, freeSpot(cols * 220 - 20, rows * 220 - 20, near));
+    const out = Canvas.insertObjects(objs, Canvas.freeSpot(cols * 220 - 20, rows * 220 - 20, near));
     setTimeout(() => {
       // Show them without zooming in; in Brandlab the chat panel covers the
       // right side of the board, so they land left of the middle.
@@ -195,24 +195,6 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
       Canvas.animateTo(t);
     }, 60);
     return out.length;
-  }
-  // Nearest empty spot around `near` for a w×h group, so chat ideas never
-  // land on top of a frame, widget or another note.
-  function freeSpot(w, h, near) {
-    const boxes = Store.objects().filter((o) => o.type !== "connector").map((o) => Canvas.bboxOf([o]));
-    const gap = 40, step = 260;
-    const free = (c) => !boxes.some((b) => c.x - w / 2 - gap < b.x + b.w && c.x + w / 2 + gap > b.x && c.y - h / 2 - gap < b.y + b.h && c.y + h / 2 + gap > b.y);
-    if (free(near)) return near;
-    for (let ring = 1; ring <= 14; ring++) {
-      const cand = [];
-      for (let dx = -ring; dx <= ring; dx++) for (let dy = -ring; dy <= ring; dy++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cand.push({ x: near.x + dx * step, y: near.y + dy * step });
-      }
-      cand.sort((a, b) => Math.hypot(a.x - near.x, a.y - near.y) - Math.hypot(b.x - near.x, b.y - near.y));
-      const hit = cand.find(free);
-      if (hit) return hit;
-    }
-    return near;
   }
   window.__papanSummary = () => `Papan "${(Store.board()?.name || "").replace(/^Contoh · /, "")}"\n${boardContext(false, true)}`;
   window.__papanPlace = place;

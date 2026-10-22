@@ -317,6 +317,13 @@ svg.links .hit{ pointer-events:stroke; cursor:pointer; }
 .selbox.multi{ border-style:dashed; }
 .hdl{ position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px; background:#fff; border:1.5px solid var(--accent-fill); border-radius:4px; pointer-events:auto; touch-action:none; box-sizing:border-box; }
 .hdl.rot{ border-radius:50%; width:14px; height:14px; margin:-7px 0 0 -7px; cursor:grab; }
+/* flowchart: + on each side of a selected box (08-canvas.js quickAdd) */
+.hdl.qc{ width:22px; height:22px; margin:-11px 0 0 -11px; border-radius:50%; background:var(--accent-fill); border:2px solid var(--bg); color:var(--accent-text); font:900 15px/18px var(--font-body); text-align:center; cursor:pointer; box-shadow:var(--shadow-sm); opacity:.9; }
+.hdl.qc:hover{ opacity:1; transform:scale(1.15); }
+.links .clabel{ font:800 15px var(--font-body); fill:var(--text); paint-order:stroke; stroke:var(--canvas); stroke-width:7px; stroke-linejoin:round; }
+.tpick{ display:grid; grid-template-columns:repeat(8, 1fr); gap:4px; max-width:290px; margin:0 auto; }
+.tpick .tc{ aspect-ratio:1; border-radius:5px; border:1.5px solid var(--border); background:var(--surface-2); padding:0; cursor:pointer; }
+.tpick .tc.on{ background:var(--accent-soft); border-color:var(--accent-fill); }
 .hdl.ep{ border-radius:50%; width:14px; height:14px; margin:-7px 0 0 -7px; background:var(--accent-fill); border-color:#fff; cursor:move; }
 .marquee{ position:absolute; border:1px solid var(--accent-fill); background:color-mix(in srgb, var(--accent-fill) 10%, transparent); pointer-events:none; }
 .ghost-line{ position:absolute; pointer-events:none; }

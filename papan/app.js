@@ -665,6 +665,10 @@ const ICON = {
   image: `<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5.5-5.5a2 2 0 00-2.8 0L4 19"/>`,
   link: `<path d="M9.5 14.5l5-5"/><path d="M7 17l-1.5 1.5a3.5 3.5 0 01-5-5L4 12"/><path d="M17 7l1.5-1.5a3.5 3.5 0 015 5L22 12"/>`,
   clock: `<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>`,
+  para: `<path d="M7 5h14l-4 14H3z"/>`,
+  doc: `<path d="M5 3h14v13.5c-3.5-2.5-7 2.5-14 .5z"/>`,
+  flow: `<rect x="7.5" y="2.5" width="9" height="5" rx="1.5"/><path d="M12 7.5v3"/><path d="M12 10.5l3.5 3-3.5 3-3.5-3z"/><path d="M12 16.5v2.5"/><rect x="7.5" y="19" width="9" height="2.5" rx="1"/>`,
+  elbow: `<path d="M4 6h8v12h8"/><path d="M17 15l3 3-3 3"/>`,
   stopwatch: `<circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.2 1.6M9.5 2.5h5M12 2.5V6M18.4 6.6l1.3-1.3"/>`,
   flame: `<path d="M12 21.5c-3.9 0-6.6-2.6-6.6-6.3 0-3.3 2.3-5.4 3.6-7.7.4 1.6 1.3 2.7 2.4 3.2.1-3.1 1.3-5.6 3.8-7.7-.2 3 1 4.7 2.3 6.5 1 1.4 1.9 2.9 1.9 5.2 0 3.9-3.1 6.8-7.4 6.8z"/>`,
   sparkle: `<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>`,
@@ -1480,6 +1484,9 @@ function shapeSVG(o) {
     case "diamond": el = `<polygon points="${w / 2},1.5 ${w - 1.5},${h / 2} ${w / 2},${h - 1.5} 1.5,${h / 2}" ${st} stroke-linejoin="round"/>`; break;
     case "triangle": el = `<polygon points="${w / 2},1.5 ${w - 1.5},${h - 1.5} 1.5,${h - 1.5}" ${st} stroke-linejoin="round"/>`; break;
     case "pill": el = `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="${(h - 3) / 2}" ${st}/>`; break;
+    // flowchart: input/output and document
+    case "para": el = `<polygon points="${w * 0.16},1.5 ${w - 1.5},1.5 ${w * 0.84},${h - 1.5} 1.5,${h - 1.5}" ${st} stroke-linejoin="round"/>`; break;
+    case "doc": el = `<path d="M1.5 1.5 H${w - 1.5} V${h * 0.84} C${w * 0.72} ${h * 0.66} ${w * 0.42} ${h * 1.02} 1.5 ${h * 0.86} Z" ${st} stroke-linejoin="round"/>`; break;
     default: el = `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="14" ${st}/>`;
   }
   return `<svg class="sh" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${el}</svg>`;
@@ -1772,7 +1779,16 @@ const Canvas = (() => {
     if (end && end.id) { const o = Store.obj(end.id); if (o) { const oc = other && other.id && Store.obj(other.id) ? center(Store.obj(other.id)) : other && other.x != null ? other : center(o); return edgePoint(o, oc); } }
     return { x: end?.x || 0, y: end?.y || 0 };
   }
-  function connPoints(o) { const d = o.data || {}; return [endPos(d.from, d.to), endPos(d.to, d.from)]; }
+  // Flowchart lines ("elbow"): they leave and enter a box at the middle of a
+  // side, across or down depending on where the other end lies.
+  function elbowEnds(d) {
+    const fo = d.from?.id && Store.obj(d.from.id), to = d.to?.id && Store.obj(d.to.id);
+    const pa = fo ? center(fo) : { x: d.from?.x || 0, y: d.from?.y || 0 }, pb = to ? center(to) : { x: d.to?.x || 0, y: d.to?.y || 0 };
+    const horiz = Math.abs(pb.x - pa.x) >= Math.abs(pb.y - pa.y);
+    const side = (o, c, toward) => { const g = geo(o); return horiz ? { x: toward.x > c.x ? g.x + g.w + 4 : g.x - 4, y: c.y } : { x: c.x, y: toward.y > c.y ? g.y + g.h + 4 : g.y - 4 }; };
+    return { a: fo ? side(fo, pa, pb) : pa, b: to ? side(to, pb, pa) : pb, horiz };
+  }
+  function connPoints(o) { const d = o.data || {}; if (d.style === "elbow") { const e = elbowEnds(d); return [e.a, e.b]; } return [endPos(d.from, d.to), endPos(d.to, d.from)]; }
   const visible = (o) => !(clientView && (o.internal || insideInternal(o)));
   function insideInternal(o) {
     if (o.type === "frame") return false;
@@ -1872,16 +1888,21 @@ const Canvas = (() => {
       let [a, b] = connPoints(o);
       if (drag && drag.kind === "endpoint" && drag.id === o.id) { if (drag.end === "from") a = drag.pt; else b = drag.pt; }
       const col = inkColor(o.color);
-      let path;
-      if (d.style === "curve") {
+      let path, endDir, startDir, mid;
+      if (d.style === "elbow") {
+        const horiz = elbowEnds(d).horiz;
+        if (horiz) { const mx = (a.x + b.x) / 2; path = `M${a.x} ${a.y} H${mx} V${b.y} H${b.x}`; endDir = b.x >= mx ? 0 : Math.PI; startDir = a.x <= mx ? Math.PI : 0; mid = { x: mx, y: (a.y + b.y) / 2 }; }
+        else { const my = (a.y + b.y) / 2; path = `M${a.x} ${a.y} V${my} H${b.x} V${b.y}`; endDir = b.y >= my ? Math.PI / 2 : -Math.PI / 2; startDir = a.y <= my ? -Math.PI / 2 : Math.PI / 2; mid = { x: (a.x + b.x) / 2, y: my }; }
+      } else if (d.style === "curve") {
         const dx = b.x - a.x, dy = b.y - a.y, horiz = Math.abs(dx) > Math.abs(dy);
         const c1 = horiz ? { x: a.x + dx * 0.45, y: a.y } : { x: a.x, y: a.y + dy * 0.45 }, c2 = horiz ? { x: b.x - dx * 0.45, y: b.y } : { x: b.x, y: b.y - dy * 0.45 };
         path = `M${a.x} ${a.y} C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`;
-        var endDir = Math.atan2(b.y - c2.y, b.x - c2.x), startDir = Math.atan2(a.y - c1.y, a.x - c1.x);
-      } else { path = `M${a.x} ${a.y} L${b.x} ${b.y}`; var endDir = Math.atan2(b.y - a.y, b.x - a.x), startDir = endDir + Math.PI; }
+        endDir = Math.atan2(b.y - c2.y, b.x - c2.x); startDir = Math.atan2(a.y - c1.y, a.x - c1.x);
+        mid = { x: 0.125 * a.x + 0.375 * c1.x + 0.375 * c2.x + 0.125 * b.x, y: 0.125 * a.y + 0.375 * c1.y + 0.375 * c2.y + 0.125 * b.y };
+      } else { path = `M${a.x} ${a.y} L${b.x} ${b.y}`; endDir = Math.atan2(b.y - a.y, b.x - a.x); startDir = endDir + Math.PI; mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
       const head = (p, ang) => { const L = 13, w = 0.45; return `<path d="M${p.x + L * Math.cos(ang + Math.PI - w)} ${p.y + L * Math.sin(ang + Math.PI - w)} L${p.x} ${p.y} L${p.x + L * Math.cos(ang + Math.PI + w)} ${p.y + L * Math.sin(ang + Math.PI + w)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`; };
       const isSel = sel.has(o.id);
-      out.push(`<g data-id="${o.id}"${off ? ` transform="translate(${off.dx} ${off.dy})"` : ""}><path class="hit" d="${path}" fill="none" stroke="transparent" stroke-width="16" vector-effect="non-scaling-stroke"/>${isSel ? `<path d="${path}" fill="none" stroke="var(--accent-fill)" stroke-width="7" stroke-opacity=".35" stroke-linecap="round"/>` : ""}<path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round"${d.dash ? ' stroke-dasharray="9 8"' : ""}/>${d.arrow === "end" || d.arrow === "both" ? head(b, endDir) : ""}${d.arrow === "both" ? head(a, startDir) : ""}</g>`);
+      out.push(`<g data-id="${o.id}"${off ? ` transform="translate(${off.dx} ${off.dy})"` : ""}><path class="hit" d="${path}" fill="none" stroke="transparent" stroke-width="16" vector-effect="non-scaling-stroke"/>${isSel ? `<path d="${path}" fill="none" stroke="var(--accent-fill)" stroke-width="7" stroke-opacity=".35" stroke-linecap="round"/>` : ""}<path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round"${d.dash ? ' stroke-dasharray="9 8"' : ""}/>${d.arrow === "end" || d.arrow === "both" ? head(b, endDir) : ""}${d.arrow === "both" ? head(a, startDir) : ""}${d.label ? `<text class="clabel" x="${mid.x}" y="${mid.y}" text-anchor="middle" dominant-baseline="central">${esc(d.label)}</text>` : ""}</g>`);
     }
     linksL.innerHTML = out.join("");
   }
@@ -1904,7 +1925,7 @@ const Canvas = (() => {
       const a = toScreen(drag.x1, drag.y1), b = toScreen(drag.x2, drag.y2);
       selL.insertAdjacentHTML("beforeend", `<div class="marquee" style="left:${Math.min(a.x, b.x)}px;top:${Math.min(a.y, b.y)}px;width:${Math.abs(a.x - b.x)}px;height:${Math.abs(a.y - b.y)}px"></div>`);
     }
-    if (drag && (drag.kind === "connector")) {
+    if (drag && (drag.kind === "connector" || (drag.kind === "qc" && drag.moved))) {
       const a = toScreen(drag.a.x, drag.a.y), b = toScreen(drag.pt.x, drag.pt.y);
       selL.insertAdjacentHTML("beforeend", `<svg class="ghost-line" style="left:0;top:0;width:100%;height:100%;overflow:visible"><line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--accent-fill)" stroke-width="2.5" stroke-dasharray="6 6"/></svg>`);
     }
@@ -1940,6 +1961,11 @@ const Canvas = (() => {
           if ((objs[0].type === "text" || objs[0].type === "table" || objs[0].type === "checklist") && /^(n|s|nw|ne|sw|se)$/.test(k)) continue;
           const s = toScreen(pt.x, pt.y);
           selL.insertAdjacentHTML("beforeend", `<div class="hdl${k === "rot" ? " rot" : ""}" data-h="${k}" style="left:${s.x}px;top:${s.y}px;cursor:${k === "rot" ? "grab" : cursorFor(k, g.r || 0)}"></div>`);
+        }
+        // Flowchart: a + on each side adds the next step (click) or draws a line (drag).
+        if (["shape", "sticky"].includes(objs[0].type) && !g.r) {
+          const sides = { e: [g.x + g.w, g.y + g.h / 2, 1, 0], w: [g.x, g.y + g.h / 2, -1, 0], s: [g.x + g.w / 2, g.y + g.h, 0, 1], n: [g.x + g.w / 2, g.y, 0, -1] };
+          for (const [k, [x, y, dx, dy]] of Object.entries(sides)) { const s = toScreen(x, y); selL.insertAdjacentHTML("beforeend", `<div class="hdl qc" data-h="qc-${k}" style="left:${s.x + dx * 24}px;top:${s.y + dy * 24}px" title="Klik: langkah berikutnya · Tarik: sambungkan">+</div>`); }
         }
       }
       const cs = corners(g).map((c) => toScreen(c.x, c.y));
@@ -2134,6 +2160,7 @@ const Canvas = (() => {
   function startHandle(e, h, p) {
     const objs = selObjs(); if (!objs.length) return;
     if (h.startsWith("ep-")) { drag = { kind: "endpoint", id: objs[0].id, end: h.slice(3), orig: clone(objs[0]), pt: p }; capture(e); return; }
+    if (h.startsWith("qc-")) { const o = objs[0]; drag = { kind: "qc", dir: h.slice(3), id: o.id, a: center(o), pt: p, sx: e.clientX, sy: e.clientY, moved: false }; capture(e); return; }
     if (h.startsWith("m-")) { const b = bboxOf(objs); drag = { kind: "mresize", h: h.slice(2), box: b, orig: new Map(objs.map((o) => [o.id, clone(o)])) }; capture(e); return; }
     const o = objs[0];
     if (h === "rot") { const c = center(o); drag = { kind: "rotate", id: o.id, c, a0: Math.atan2(p.y - c.y, p.x - c.x), r0: o.r || 0, orig: clone(o) }; }
@@ -2148,6 +2175,7 @@ const Canvas = (() => {
     if (!drag) return;
     switch (drag.kind) {
       case "pan": cam.x = drag.cx + e.clientX - drag.sx; cam.y = drag.cy + e.clientY - drag.sy; applyCam(); break;
+      case "qc": drag.pt = p; if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) drag.moved = true; drawOverlay(); break;
       case "pinch": {
         if (pointers.size < 2) return;
         const [a, b] = [...pointers.values()];
@@ -2260,6 +2288,14 @@ const Canvas = (() => {
     if (d.kind === "pinch") { if (pointers.size === 1) { const [q] = pointers.values(); drag = { kind: "pan", sx: q.x, sy: q.y, cx: cam.x, cy: cam.y }; } return; }
     const p = toWorld(e.clientX, e.clientY);
     switch (d.kind) {
+      case "qc": {
+        const src = Store.obj(d.id); if (!src) break;
+        if (!d.moved) { quickAdd(src, d.dir); break; }
+        const hit = objUnder(e);
+        if (hit && hit.id !== src.id && hit.type !== "frame" && hit.type !== "connector") { link(src, hit); break; }
+        quickAdd(src, d.dir, p);
+        break;
+      }
       case "move": {
         Collab.presence({ drag: null });
         if (!d.moved) { for (const id of d.ids) busy.delete(id); break; }
@@ -2369,9 +2405,58 @@ const Canvas = (() => {
     switch (type) {
       case "sticky": return { w: 200, h: 200, color: toolOpts.stickyColor, text: "" };
       case "text": return { w: 320, h: 30, color: "ink", text: "", fs: 22 };
-      case "shape": return { w: 220, h: toolOpts.shape === "pill" ? 80 : 150, color: "#7ab8ff", text: "", data: { shape: toolOpts.shape, fill: true } };
+      case "shape": return { w: toolOpts.shape === "diamond" ? 240 : 220, h: toolOpts.shape === "pill" ? 80 : ["para", "doc", "rect"].includes(toolOpts.shape) ? 120 : 150, color: { pill: "#3ddc84", diamond: "#ffc94a", para: "#ff7eb6", doc: "#b38cff" }[toolOpts.shape] || "#7ab8ff", text: "", data: { shape: toolOpts.shape, fill: true } };
       case "frame": return { w: 640, h: 440, color: "#ffa52b", text: "Frame baru" };
     }
+  }
+  // Flowchart: the next step beside a box (or where the line was dropped),
+  // joined by an arrow. After a start/end pill or a decision comes a process box.
+  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  function link(src, dst) {
+    const c = Store.newObject({ type: "connector", x: 0, y: 0, w: 0, h: 0, color: "ink", data: { from: { id: src.id, x: null, y: null }, to: { id: dst.id, x: null, y: null }, arrow: "end", style: "elbow", dash: false } });
+    add([c]); return c;
+  }
+  function quickAdd(src, dir, at) {
+    if (!Store.canWrite) return;
+    const g = geo(src), gap = 110, isShape = src.type === "shape";
+    const shape = isShape ? (["pill", "diamond"].includes(src.data?.shape) ? "rect" : src.data?.shape || "rect") : null;
+    const fresh = isShape && shape !== src.data?.shape;
+    const w = fresh ? 220 : g.w, h = fresh ? 110 : g.h;
+    let x, y;
+    if (at) { x = at.x - w / 2; y = at.y - h / 2; }
+    else {
+      const [vx, vy] = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] }[dir];
+      x = vx > 0 ? g.x + g.w + gap : vx < 0 ? g.x - gap - w : g.x + g.w / 2 - w / 2;
+      y = vy > 0 ? g.y + g.h + gap : vy < 0 ? g.y - gap - h : g.y + g.h / 2 - h / 2;
+      for (let i = 0; i < 8 && Store.objects().some((o) => o.id !== src.id && !["connector", "frame", "pen"].includes(o.type) && overlaps(geo(o), { x, y, w, h })); i++) { x += vx * (w + gap); y += vy * (h + gap); }
+    }
+    const n = Store.newObject(isShape
+      ? { type: "shape", x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), ...(src.fs ? { fs: src.fs } : {}), color: fresh ? "#7ab8ff" : src.color, text: "", data: { ...(src.data || {}), shape } }
+      : { type: "sticky", x: Math.round(x), y: Math.round(y), w: g.w, h: g.h, color: src.color, text: "" });
+    const c = Store.newObject({ type: "connector", x: 0, y: 0, w: 0, h: 0, color: "ink", data: { from: { id: src.id, x: null, y: null }, to: { id: n.id, x: null, y: null }, arrow: "end", style: "elbow", dash: false } });
+    add([n, c]);
+    renderAll(); // the box must be on the page before its text can be edited
+    select([n.id]);
+    setTimeout(() => startEdit(n.id), 30);
+    return n;
+  }
+  // Nearest empty spot around `near` for a w×h group, so new things (chat
+  // ideas, a table, a flowchart) never land on top of what's already there.
+  function freeSpot(w, h, near) {
+    const boxes = Store.objects().filter((o) => o.type !== "connector").map((o) => bboxOf([o]));
+    const gap = 40, step = 260;
+    const free = (c) => !boxes.some((b) => c.x - w / 2 - gap < b.x + b.w && c.x + w / 2 + gap > b.x && c.y - h / 2 - gap < b.y + b.h && c.y + h / 2 + gap > b.y);
+    if (free(near)) return near;
+    for (let ring = 1; ring <= 14; ring++) {
+      const cand = [];
+      for (let dx = -ring; dx <= ring; dx++) for (let dy = -ring; dy <= ring; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cand.push({ x: near.x + dx * step, y: near.y + dy * step });
+      }
+      cand.sort((a, b) => Math.hypot(a.x - near.x, a.y - near.y) - Math.hypot(b.x - near.x, b.y - near.y));
+      const hit = cand.find(free);
+      if (hit) return hit;
+    }
+    return near;
   }
   function createAt(type, at) {
     const d = defaults(type);
@@ -2479,6 +2564,11 @@ const Canvas = (() => {
       e.preventDefault(); const [r, c] = editing.part.cell.split(",").map(Number); const id = editing.id; finishEdit();
       const o = Store.obj(id); const cols = o.data.rows[0].length; const nr = c + 1 < cols ? r : r + 1, nc = c + 1 < cols ? c + 1 : 0;
       if (nr < o.data.rows.length) setTimeout(() => startEdit(id, { cell: `${nr},${nc}` }), 10);
+      else if (Store.canWrite) { // Tab past the last cell: a new row, like a spreadsheet
+        const after = clone(o); after.data.rows.push(o.data.rows[0].map(() => ""));
+        const ch = [{ id, before: o, after }]; Store.commit(ch); History.push(ch, "Tambah baris");
+        setTimeout(() => startEdit(id, { cell: `${nr},0` }), 30);
+      }
     }
   }
   function onEditBlur() { setTimeout(() => { if (editing && document.activeElement !== editing.el) finishEdit(); }, 0); }
@@ -2571,7 +2661,7 @@ const Canvas = (() => {
   }
   return {
     init, cam, applyCam, zoomAt, fit, animateTo, centerWorld, toWorld, toScreen, select, deselect, sel, selObjs, setTool, get tool() { return tool; }, toolOpts,
-    startEdit, finishEdit, insertObjects, add, createAt, renderAll, scheduleRender, geo, center, bboxOf, frameChildren, els, frameAtPoint, camFor, lookAt,
+    startEdit, finishEdit, insertObjects, add, createAt, freeSpot, renderAll, scheduleRender, geo, center, bboxOf, frameChildren, els, frameAtPoint, camFor, lookAt,
     on: (f) => handlers.add(f), get editing() { return editing; }, get clientView() { return clientView; }, set clientView(v) { clientView = v; scheduleRender(); }, visibleObjects, visible, drawOverlay,
     flash(id) { const el = els.get(id); if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } },
   };
@@ -2779,7 +2869,55 @@ const Actions = (() => {
   function addText(p = at()) { return Canvas.createAt("text", { cx: p.x, cy: p.y }); }
   function addShape(shape, p = at()) { Canvas.toolOpts.shape = shape; return Canvas.createAt("shape", { cx: p.x, cy: p.y }); }
   function addFrame(p = at()) { return Canvas.createAt("frame", { cx: p.x, cy: p.y }); }
-  function addTable(p = at()) { const o = Store.newObject({ type: "table", x: Math.round(p.x - 240), y: Math.round(p.y - 90), w: 480, h: 180, text: "", data: { rows: [["Kolom 1", "Kolom 2", "Kolom 3"], ["", "", ""], ["", "", ""]] } }); Canvas.add([o], { select: true }); return o; }
+  // A table of `rows` × `cols` (the first row is the header), or the rows given.
+  function addTable(p = at(), rows = 3, cols = 3, data = null) {
+    const grid = data || [Array.from({ length: cols }, (_, i) => `Kolom ${i + 1}`), ...Array.from({ length: Math.max(1, rows - 1) }, () => Array(cols).fill(""))];
+    const n = grid[0].length, w = clamp(n * 150, 320, 1200), h = 40 + grid.length * 34;
+    p = Canvas.freeSpot(w, h, p);
+    const o = Store.newObject({ type: "table", x: Math.round(p.x - w / 2), y: Math.round(p.y - h / 2), w, h: 180, text: "", data: { rows: grid } });
+    Canvas.add([o], { select: true }); return o;
+  }
+  // Rows copied from Google Sheets or Excel arrive tab-separated: a table, not stickies.
+  function tableFromText(txt, p = at()) {
+    const lines = txt.replace(/\r/g, "").split("\n").filter((l) => l.trim()).slice(0, 60);
+    const rows = lines.map((l) => l.split("\t").map((c) => c.trim().replace(/^"(.*)"$/s, "$1").slice(0, 500)).slice(0, 20));
+    const cols = Math.max(...rows.map((r) => r.length));
+    const o = addTable(p, 0, 0, rows.map((r) => [...r, ...Array(cols - r.length).fill("")]));
+    toast(`Tabel ${rows.length} baris × ${cols} kolom ditempel`);
+    return o;
+  }
+  // "Flowchart dari langkah": one step per line, top to bottom. A line ending
+  // in "?" is a decision: "Ya" carries on down, "Tidak" gets its own box.
+  function flowFromText(text, p = at(), ends = true) {
+    let steps = String(text || "").split(/\r?\n/).map((s) => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean).slice(0, 30);
+    if (!steps.length) { toast("Tulis minimal satu langkah"); return null; }
+    if (ends && !/^mulai\b/i.test(steps[0])) steps.unshift("Mulai");
+    if (ends && !/^selesai\b/i.test(steps[steps.length - 1])) steps.push("Selesai");
+    const objs = [], W = 240, H = 104, GAP = 70;
+    let y = 0, prev = null, k = 0;
+    const id = () => "f" + k++;
+    const join = (a, b, label) => objs.push({ id: id(), type: "connector", x: 0, y: 0, w: 0, h: 0, color: "ink", data: { from: { id: a, x: null, y: null }, to: { id: b, x: null, y: null }, arrow: "end", style: "elbow", dash: false, ...(label ? { label } : {}) } });
+    steps.forEach((s, i) => {
+      const end = ends && ((i === 0 && /^mulai\b/i.test(s)) || (i === steps.length - 1 && /^selesai\b/i.test(s)));
+      const dec = !end && /\?\s*$/.test(s);
+      const shape = end ? "pill" : dec ? "diamond" : "rect";
+      const w = dec ? 260 : W, h = end ? 72 : dec ? 150 : H;
+      const o = { id: id(), type: "shape", x: -w / 2, y, w, h, fs: 18, color: { pill: "#3ddc84", diamond: "#ffc94a" }[shape] || "#7ab8ff", text: s, data: { shape, fill: true } };
+      objs.push(o);
+      if (prev) join(prev.id, o.id, prev.dec ? "Ya" : "");
+      if (dec) {
+        const no = { id: id(), type: "shape", x: w / 2 + 120, y: y + (h - H) / 2, w: W, h: H, fs: 18, color: "#ff7eb6", text: "Kalau tidak: …", data: { shape: "rect", fill: true } };
+        objs.push(no); join(o.id, no.id, "Tidak");
+      }
+      prev = { id: o.id, dec };
+      y += h + GAP;
+    });
+    const out = Canvas.insertObjects(objs, Canvas.freeSpot(260 + 120 + W, y, p), { select: false });
+    Canvas.deselect();
+    setTimeout(() => Canvas.fit(out.filter((o) => o.type !== "connector").map((o) => o.id)), 60);
+    toast("Flowchart dibuat. Pilih kotak, lalu klik + di sisinya untuk menambah langkah.");
+    return out;
+  }
   function addChecklist(p = at()) { const o = Store.newObject({ type: "checklist", x: Math.round(p.x - 170), y: Math.round(p.y - 80), w: 340, h: 160, text: "Checklist", data: { items: [{ t: "", done: false }] } }); Canvas.add([o], { select: true }); setTimeout(() => Canvas.startEdit(o.id, { item: 0 }), 40); return o; }
   const WSIZE = { dna: [400, 520], brandbook: [400, 400], campaign: [400, 400], growth: [400, 360], sales: [400, 340], calc: [400, 400], content: [400, 300], tasks: [380, 400] };
   function addWidget(kind, p = at(), extra = {}) {
@@ -2872,6 +3010,7 @@ const Actions = (() => {
     if (clip && (txt === clipText || !txt)) return pasteClip(at());
     if (!txt.trim()) return;
     if (looksLikeUrl(txt)) return addEmbed(txt.trim());
+    if (/\t/.test(txt)) return tableFromText(txt);
     textToStickies(txt);
   }
   function onDrop(e) {
@@ -2883,7 +3022,7 @@ const Actions = (() => {
     if (u && looksLikeUrl(u.split("\n")[0])) addEmbed(u.split("\n")[0].trim(), p);
     else if (u) textToStickies(u, p);
   }
-  return { remove, duplicate, copy, group, ungroup, lock, nudge, order, setColor, setTag, setStatus, toggleInternal, setConn, setFont, toggleReaction, addChecklistItem, tableEdit, jumpTo,
+  return { remove, duplicate, copy, group, ungroup, lock, nudge, order, setColor, setTag, setStatus, toggleInternal, setConn, setFont, toggleReaction, addChecklistItem, tableEdit, jumpTo, tableFromText, flowFromText,
     onClick, onInput, onPaste, onDrop, addSticky, addText, addShape, addFrame, addTable, addChecklist, addWidget, addEmbed, addFiles, pickFiles, addTemplate, textToStickies, toggleWidgetMode, changeSel };
 })();
 
@@ -2897,11 +3036,17 @@ const UI = (() => {
     { sec: "Dasar", k: "text", name: "Teks", icon: "text", cmd: ["teks", "judul"], c: "#a19b92", run: (p) => Actions.addText(p) },
     { sec: "Dasar", k: "shape", name: "Bentuk", icon: "shapes", cmd: ["bentuk", "kotak", "lingkaran"], c: "#7ab8ff", run: (p) => Actions.addShape("rect", p) },
     { sec: "Dasar", k: "frame", name: "Frame", icon: "frame", cmd: ["frame", "bagian"], c: "#ffa52b", run: (p) => Actions.addFrame(p) },
-    { sec: "Dasar", k: "table", name: "Tabel", icon: "table", cmd: ["tabel"], c: "#5fd3d0", run: (p) => Actions.addTable(p) },
+    { sec: "Dasar", k: "table", name: "Tabel", icon: "table", cmd: ["tabel", "table"], c: "#5fd3d0", run: (p) => tablePicker(p) },
     { sec: "Dasar", k: "check", name: "Checklist", icon: "checklist", cmd: ["checklist", "todo"], c: "#3ddc84", run: (p) => Actions.addChecklist(p) },
     { sec: "Dasar", k: "image", name: "Gambar & file", icon: "image", cmd: ["gambar", "image", "file", "foto"], c: "#ff7eb6", run: () => Actions.pickFiles() },
     { sec: "Dasar", k: "link", name: "Link & video", icon: "video", cmd: ["video", "link", "youtube", "tiktok"], c: "#ff6a5c", run: (p) => linkDialog(p) },
     { sec: "Dasar", k: "tpl", name: "Template", icon: "template", cmd: ["template"], c: "#b38cff", run: () => templates() },
+    { sec: "Diagram", k: "flow", name: "Flowchart dari langkah", icon: "flow", cmd: ["flowchart", "alur", "diagram", "flow"], c: "#7ab8ff", run: (p) => flowDialog(p) },
+    { sec: "Diagram", k: "f-end", name: "Mulai / Selesai", icon: "pill", cmd: ["mulai", "selesai", "start"], c: "#3ddc84", run: (p) => Actions.addShape("pill", p) },
+    { sec: "Diagram", k: "f-step", name: "Proses", icon: "square", cmd: ["proses", "langkah", "step"], c: "#7ab8ff", run: (p) => Actions.addShape("rect", p) },
+    { sec: "Diagram", k: "f-dec", name: "Keputusan", icon: "diamond", cmd: ["keputusan", "decision", "pilihan"], c: "#ffc94a", run: (p) => Actions.addShape("diamond", p) },
+    { sec: "Diagram", k: "f-io", name: "Input / Output", icon: "para", cmd: ["input", "output", "data"], c: "#ff7eb6", run: (p) => Actions.addShape("para", p) },
+    { sec: "Diagram", k: "f-doc", name: "Dokumen", icon: "doc", cmd: ["dokumen", "laporan"], c: "#b38cff", run: (p) => Actions.addShape("doc", p) },
     { sec: "Komponen Brandlab", k: "dna", name: "Brand DNA", icon: "dna", cmd: ["brand-dna", "dna"], c: "#ffa52b", run: (p) => Actions.addWidget("dna", p) },
     { sec: "Komponen Brandlab", k: "brandbook", name: "Brand Book", icon: "palette", cmd: ["brand-book", "warna", "logo"], c: "#ff7eb6", run: (p) => Actions.addWidget("brandbook", p) },
     { sec: "Komponen Brandlab", k: "campaign", name: "Campaign", icon: "megaphone", cmd: ["campaign"], c: "#7ab8ff", run: (p) => Actions.addWidget("campaign", p) },
@@ -2920,7 +3065,7 @@ const UI = (() => {
     { sec: "Rapat", k: "voting", name: "Mulai voting", icon: "vote", cmd: ["voting", "vote"], c: "#b38cff", run: () => votingPop($("#moreBtn")) },
   ];
   // Guests draw, write and ask the AI; brand components and meeting tools stay with the team.
-  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || ["calc", "ask", "ideas", "organize"].includes(i.k)) : ALL_ITEMS;
+  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || i.sec === "Diagram" || ["calc", "ask", "ideas", "organize"].includes(i.k)) : ALL_ITEMS;
 
   // ---------- popovers ----------
   function closePops() { if (popEl) { popEl.remove(); popEl = null; } $$(".tip").forEach((t) => t.remove()); }
@@ -3082,7 +3227,7 @@ const UI = (() => {
   function toolFlyout(t) {
     const btn = $(`[data-tool="${t}"]`);
     if (t === "sticky") pop(btn, `<div class="row">${Object.entries(STICKY).map(([k, v]) => `<button class="swb${Canvas.toolOpts.stickyColor === k ? " on" : ""}" style="background:${v}" data-pick="${k}" aria-label="Warna ${k}"></button>`).join("")}</div>`, { side: "right", onPick: (k) => { Canvas.toolOpts.stickyColor = k; updateToolbar(); } });
-    if (t === "shape") pop(btn, `<div class="row">${["rect", "ellipse", "diamond", "triangle", "pill"].map((s) => `<button class="icon-btn${Canvas.toolOpts.shape === s ? " on" : ""}" data-pick="${s}" aria-label="${s}">${ic({ rect: "square", ellipse: "circle" }[s] || s)}</button>`).join("")}</div>`, { side: "right", onPick: (k) => { Canvas.toolOpts.shape = k; } });
+    if (t === "shape") pop(btn, `<div class="row">${["rect", "ellipse", "diamond", "triangle", "pill", "para", "doc"].map((s) => `<button class="icon-btn${Canvas.toolOpts.shape === s ? " on" : ""}" data-pick="${s}" aria-label="${{ rect: "Kotak", ellipse: "Oval", diamond: "Keputusan", triangle: "Segitiga", pill: "Mulai/Selesai", para: "Input/Output", doc: "Dokumen" }[s]}" data-tip="${{ rect: "Kotak / proses", ellipse: "Oval", diamond: "Keputusan", triangle: "Segitiga", pill: "Mulai / selesai", para: "Input / output", doc: "Dokumen" }[s]}">${ic({ rect: "square", ellipse: "circle" }[s] || s)}</button>`).join("")}</div>`, { side: "right", onPick: (k) => { Canvas.toolOpts.shape = k; } });
     if (t === "pen") pop(btn, `<div class="row">${INKS.map((c) => `<button class="swb${Canvas.toolOpts.penColor === c ? " on" : ""}" style="background:${inkColor(c)}" data-pick="c:${c}" aria-label="Warna"></button>`).join("")}</div><div class="row">${[2, 3, 6, 12].map((w) => `<button class="icon-btn${Canvas.toolOpts.penWidth === w ? " on" : ""}" data-pick="w:${w}" aria-label="Tebal ${w}"><span style="width:18px;height:${w}px;border-radius:9px;background:currentColor;display:block"></span></button>`).join("")}</div>`, { side: "right", onPick: (k) => { const [a, v] = k.split(":"); if (a === "c") Canvas.toolOpts.penColor = v; else Canvas.toolOpts.penWidth = +v; updateToolbar(); toolFlyout("pen"); return true; } });
   }
   function updateToolbar() {
@@ -3108,7 +3253,7 @@ const UI = (() => {
           b.push(`<button class="icon-btn" data-c="color" data-popper data-tip="Warna"><span class="cdot" style="background:${c}"></span></button>`);
         }
         if (textish) b.push(`<button class="icon-btn" data-c="font-" data-tip="Huruf lebih kecil" style="font-weight:800;font-size:12px">A−</button><button class="icon-btn" data-c="font+" data-tip="Huruf lebih besar" style="font-weight:800;font-size:15px">A+</button>`);
-        if (one && one.type === "connector") b.push(`<button class="icon-btn" data-c="arrow" data-tip="Ujung panah">${ic("arrowRight")}</button><button class="icon-btn${one.data.style === "curve" ? " on" : ""}" data-c="curve" data-tip="Garis lengkung">${ic("share")}</button><button class="icon-btn${one.data.dash ? " on" : ""}" data-c="dash" data-tip="Garis putus-putus"><span style="font-weight:800;letter-spacing:1px">- -</span></button>`);
+        if (one && one.type === "connector") b.push(`<button class="icon-btn" data-c="arrow" data-tip="Ujung panah">${ic("arrowRight")}</button><button class="icon-btn${one.data.style === "elbow" ? " on" : ""}" data-c="elbow" data-tip="Garis siku (flowchart)">${ic("elbow")}</button><button class="icon-btn${one.data.style === "curve" ? " on" : ""}" data-c="curve" data-tip="Garis lengkung">${ic("share")}</button><button class="btn btn-ghost btn-xs" data-c="label" data-tip="Tulisan di garis">${one.data.label ? esc(one.data.label).slice(0, 14) : "Label"}</button><button class="icon-btn${one.data.dash ? " on" : ""}" data-c="dash" data-tip="Garis putus-putus"><span style="font-weight:800;letter-spacing:1px">- -</span></button>`);
         if (one && one.type === "table") b.push(`<button class="btn btn-ghost btn-xs" data-c="row+">+ Baris</button><button class="btn btn-ghost btn-xs" data-c="col+">+ Kolom</button><button class="btn btn-ghost btn-xs" data-c="row-">− Baris</button><button class="btn btn-ghost btn-xs" data-c="col-">− Kolom</button>`);
         if (one && one.type === "frame") b.push(`<button class="icon-btn" data-c="rename" data-tip="Ganti nama">${ic("edit")}</button><button class="icon-btn${one.internal ? " on" : ""}" data-c="internal" data-tip="${one.internal ? "Tampilkan ke klien" : "Jadikan internal (disembunyikan dari klien)"}">${ic("eye")}</button>`);
       }
@@ -3153,6 +3298,17 @@ const UI = (() => {
       case "font+": return Actions.setFont(1.15);
       case "arrow": { const n = { end: "both", both: "none", none: "end" }[one.data.arrow || "end"]; return Actions.setConn({ arrow: n }); }
       case "curve": return Actions.setConn({ style: one.data.style === "curve" ? "straight" : "curve" });
+      case "elbow": return Actions.setConn({ style: one.data.style === "elbow" ? "straight" : "elbow" });
+      case "label": {
+        const el = pop(b, `<div class="mh">Tulisan di garis</div><div class="row">${["Ya", "Tidak", "Lalu", "Kalau gagal"].map((x) => `<button class="btn btn-secondary btn-xs" data-pick="t:${x}">${x}</button>`).join("")}</div><div class="row" style="align-items:center"><input class="field" id="clbl" maxlength="40" placeholder="Tulis sendiri" value="${esc(one.data.label || "")}" style="width:150px"><button class="btn btn-primary btn-sm" data-pick="set">Pasang</button>${one.data.label ? `<button class="btn btn-ghost btn-sm" data-pick="clear">Hapus</button>` : ""}</div>`, {
+          center: true, onPick: (k) => {
+            if (k.startsWith("t:")) Actions.setConn({ label: k.slice(2) });
+            if (k === "set") Actions.setConn({ label: $("#clbl").value.trim() || null });
+            if (k === "clear") Actions.setConn({ label: null });
+          } });
+        const inp = el.querySelector("#clbl"); if (inp) { setTimeout(() => inp.focus(), 30); inp.onkeydown = (e) => { if (e.key === "Enter") el.querySelector('[data-pick="set"]').click(); }; }
+        return;
+      }
       case "dash": return Actions.setConn({ dash: !one.data.dash });
       case "row+": case "row-": case "col+": case "col-": return Actions.tableEdit(c);
       case "rename": return Canvas.startEdit(one.id);
@@ -3238,6 +3394,25 @@ const UI = (() => {
       if (e.key === "ArrowUp") { act = Math.max(act - 1, 0); draw(); e.preventDefault(); }
       if (e.key === "Enter" && list[act]) { e.preventDefault(); closePops(); runItem(list[act].sec + "|" + list[act].k); }
     });
+  }
+  // Table size like a word processor: hover the grid, click to place.
+  function tablePicker(p) {
+    const N = 8;
+    const s = modal("Tabel baru", `<div class="tpick" id="tpick">${Array.from({ length: N * N }, (_, i) => `<button class="tc" data-r="${Math.floor(i / N) + 1}" data-c="${(i % N) + 1}" aria-label="${Math.floor(i / N) + 1} baris × ${(i % N) + 1} kolom"></button>`).join("")}</div><p id="tpickL" style="margin:10px 0 0;text-align:center;font-weight:800">3 baris × 3 kolom</p><p class="muted" style="font-size:12px;margin:8px 0 0">Baris pertama jadi judul kolom. Tekan Tab di sel terakhir untuk menambah baris. Tabel dari Google Sheets atau Excel juga bisa langsung disalin lalu ditempel (Ctrl/⌘ V) di papan.</p>`, "", { cls: "sm" });
+    const cells = [...s.querySelectorAll(".tc")];
+    const hl = (r, c) => { cells.forEach((b) => b.classList.toggle("on", +b.dataset.r <= r && +b.dataset.c <= c)); s.querySelector("#tpickL").textContent = `${r} baris × ${c} kolom`; };
+    cells.forEach((b) => { b.onmouseenter = b.onfocus = () => hl(+b.dataset.r, +b.dataset.c); b.onclick = () => { s.remove(); Actions.addTable(p, +b.dataset.r, +b.dataset.c); }; });
+    hl(3, 3);
+  }
+  // Flowchart from a list of steps, free (no AI): Actions.flowFromText.
+  function flowDialog(p) {
+    const ex = "Klien kirim brief\nTim bikin konsep\nKonsep disetujui?\nProduksi konten\nPosting & pantau hasil";
+    const s = modal("Flowchart dari langkah", `<label class="lbl" for="flowT">Tulis satu langkah per baris</label><textarea class="field" id="flowT" rows="7" style="resize:vertical">${esc(ex)}</textarea>
+      <label class="pickrow" style="margin-top:10px"><input type="checkbox" id="flowEnds" checked><span class="t"><b>Tambah "Mulai" dan "Selesai"</b><span>Langkah yang diakhiri tanda tanya (?) jadi kotak keputusan dengan cabang Ya / Tidak.</span></span></label>`,
+      `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="flowGo">${ic("flow")} Buat flowchart</button>`, { cls: "sm" });
+    s.querySelector("[data-close2]").onclick = () => s.remove();
+    $("#flowGo").onclick = () => { if (Actions.flowFromText($("#flowT").value, p, $("#flowEnds").checked)) s.remove(); };
+    setTimeout(() => { const t = $("#flowT"); t.focus(); t.select(); }, 30);
   }
   function linkDialog(p) {
     const s = modal("Tempel link atau video", `<label class="lbl" for="lnk">Link YouTube, TikTok, Instagram, atau website</label><input class="field" id="lnk" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"><div class="note" style="margin-top:12px">${ic("info")}<span>${window.__papanWeb || BL() ? "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Video YouTube, TikTok, dan Instagram bisa diputar langsung di papan." : "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Di prototipe ini video dibuka di tab baru karena halaman ini tidak boleh memuat pemutar luar. Di Brandlab nanti video YouTube dan TikTok diputar langsung di papan."}</span></div>`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="lnkGo">Taruh di papan</button>`, { cls: "sm" });
@@ -4179,7 +4354,7 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     const objs = items.slice(0, 12).map((u, k) => ({ id: "L" + k, type: "sticky", x: (k % cols) * 220, y: Math.floor(k / cols) * 220, w: 200, h: 200, text: String(u.text || "").slice(0, 280), color: "violet", ai: true }));
     const s = Canvas.selObjs(); const near = s.length ? (() => { const b = Canvas.bboxOf(s); return { x: b.x + b.w + 300, y: b.y + b.h / 2 }; })() : Canvas.centerWorld();
     const rows = Math.ceil(objs.length / cols);
-    const out = Canvas.insertObjects(objs, freeSpot(cols * 220 - 20, rows * 220 - 20, near));
+    const out = Canvas.insertObjects(objs, Canvas.freeSpot(cols * 220 - 20, rows * 220 - 20, near));
     setTimeout(() => {
       // Show them without zooming in; in Brandlab the chat panel covers the
       // right side of the board, so they land left of the middle.
@@ -4188,24 +4363,6 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
       Canvas.animateTo(t);
     }, 60);
     return out.length;
-  }
-  // Nearest empty spot around `near` for a w×h group, so chat ideas never
-  // land on top of a frame, widget or another note.
-  function freeSpot(w, h, near) {
-    const boxes = Store.objects().filter((o) => o.type !== "connector").map((o) => Canvas.bboxOf([o]));
-    const gap = 40, step = 260;
-    const free = (c) => !boxes.some((b) => c.x - w / 2 - gap < b.x + b.w && c.x + w / 2 + gap > b.x && c.y - h / 2 - gap < b.y + b.h && c.y + h / 2 + gap > b.y);
-    if (free(near)) return near;
-    for (let ring = 1; ring <= 14; ring++) {
-      const cand = [];
-      for (let dx = -ring; dx <= ring; dx++) for (let dy = -ring; dy <= ring; dy++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cand.push({ x: near.x + dx * step, y: near.y + dy * step });
-      }
-      cand.sort((a, b) => Math.hypot(a.x - near.x, a.y - near.y) - Math.hypot(b.x - near.x, b.y - near.y));
-      const hit = cand.find(free);
-      if (hit) return hit;
-    }
-    return near;
   }
   window.__papanSummary = () => `Papan "${(Store.board()?.name || "").replace(/^Contoh · /, "")}"\n${boardContext(false, true)}`;
   window.__papanPlace = place;

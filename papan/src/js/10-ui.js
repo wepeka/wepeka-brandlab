@@ -7,11 +7,17 @@ const UI = (() => {
     { sec: "Dasar", k: "text", name: "Teks", icon: "text", cmd: ["teks", "judul"], c: "#a19b92", run: (p) => Actions.addText(p) },
     { sec: "Dasar", k: "shape", name: "Bentuk", icon: "shapes", cmd: ["bentuk", "kotak", "lingkaran"], c: "#7ab8ff", run: (p) => Actions.addShape("rect", p) },
     { sec: "Dasar", k: "frame", name: "Frame", icon: "frame", cmd: ["frame", "bagian"], c: "#ffa52b", run: (p) => Actions.addFrame(p) },
-    { sec: "Dasar", k: "table", name: "Tabel", icon: "table", cmd: ["tabel"], c: "#5fd3d0", run: (p) => Actions.addTable(p) },
+    { sec: "Dasar", k: "table", name: "Tabel", icon: "table", cmd: ["tabel", "table"], c: "#5fd3d0", run: (p) => tablePicker(p) },
     { sec: "Dasar", k: "check", name: "Checklist", icon: "checklist", cmd: ["checklist", "todo"], c: "#3ddc84", run: (p) => Actions.addChecklist(p) },
     { sec: "Dasar", k: "image", name: "Gambar & file", icon: "image", cmd: ["gambar", "image", "file", "foto"], c: "#ff7eb6", run: () => Actions.pickFiles() },
     { sec: "Dasar", k: "link", name: "Link & video", icon: "video", cmd: ["video", "link", "youtube", "tiktok"], c: "#ff6a5c", run: (p) => linkDialog(p) },
     { sec: "Dasar", k: "tpl", name: "Template", icon: "template", cmd: ["template"], c: "#b38cff", run: () => templates() },
+    { sec: "Diagram", k: "flow", name: "Flowchart dari langkah", icon: "flow", cmd: ["flowchart", "alur", "diagram", "flow"], c: "#7ab8ff", run: (p) => flowDialog(p) },
+    { sec: "Diagram", k: "f-end", name: "Mulai / Selesai", icon: "pill", cmd: ["mulai", "selesai", "start"], c: "#3ddc84", run: (p) => Actions.addShape("pill", p) },
+    { sec: "Diagram", k: "f-step", name: "Proses", icon: "square", cmd: ["proses", "langkah", "step"], c: "#7ab8ff", run: (p) => Actions.addShape("rect", p) },
+    { sec: "Diagram", k: "f-dec", name: "Keputusan", icon: "diamond", cmd: ["keputusan", "decision", "pilihan"], c: "#ffc94a", run: (p) => Actions.addShape("diamond", p) },
+    { sec: "Diagram", k: "f-io", name: "Input / Output", icon: "para", cmd: ["input", "output", "data"], c: "#ff7eb6", run: (p) => Actions.addShape("para", p) },
+    { sec: "Diagram", k: "f-doc", name: "Dokumen", icon: "doc", cmd: ["dokumen", "laporan"], c: "#b38cff", run: (p) => Actions.addShape("doc", p) },
     { sec: "Komponen Brandlab", k: "dna", name: "Brand DNA", icon: "dna", cmd: ["brand-dna", "dna"], c: "#ffa52b", run: (p) => Actions.addWidget("dna", p) },
     { sec: "Komponen Brandlab", k: "brandbook", name: "Brand Book", icon: "palette", cmd: ["brand-book", "warna", "logo"], c: "#ff7eb6", run: (p) => Actions.addWidget("brandbook", p) },
     { sec: "Komponen Brandlab", k: "campaign", name: "Campaign", icon: "megaphone", cmd: ["campaign"], c: "#7ab8ff", run: (p) => Actions.addWidget("campaign", p) },
@@ -30,7 +36,7 @@ const UI = (() => {
     { sec: "Rapat", k: "voting", name: "Mulai voting", icon: "vote", cmd: ["voting", "vote"], c: "#b38cff", run: () => votingPop($("#moreBtn")) },
   ];
   // Guests draw, write and ask the AI; brand components and meeting tools stay with the team.
-  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || ["calc", "ask", "ideas", "organize"].includes(i.k)) : ALL_ITEMS;
+  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || i.sec === "Diagram" || ["calc", "ask", "ideas", "organize"].includes(i.k)) : ALL_ITEMS;
 
   // ---------- popovers ----------
   function closePops() { if (popEl) { popEl.remove(); popEl = null; } $$(".tip").forEach((t) => t.remove()); }
@@ -192,7 +198,7 @@ const UI = (() => {
   function toolFlyout(t) {
     const btn = $(`[data-tool="${t}"]`);
     if (t === "sticky") pop(btn, `<div class="row">${Object.entries(STICKY).map(([k, v]) => `<button class="swb${Canvas.toolOpts.stickyColor === k ? " on" : ""}" style="background:${v}" data-pick="${k}" aria-label="Warna ${k}"></button>`).join("")}</div>`, { side: "right", onPick: (k) => { Canvas.toolOpts.stickyColor = k; updateToolbar(); } });
-    if (t === "shape") pop(btn, `<div class="row">${["rect", "ellipse", "diamond", "triangle", "pill"].map((s) => `<button class="icon-btn${Canvas.toolOpts.shape === s ? " on" : ""}" data-pick="${s}" aria-label="${s}">${ic({ rect: "square", ellipse: "circle" }[s] || s)}</button>`).join("")}</div>`, { side: "right", onPick: (k) => { Canvas.toolOpts.shape = k; } });
+    if (t === "shape") pop(btn, `<div class="row">${["rect", "ellipse", "diamond", "triangle", "pill", "para", "doc"].map((s) => `<button class="icon-btn${Canvas.toolOpts.shape === s ? " on" : ""}" data-pick="${s}" aria-label="${{ rect: "Kotak", ellipse: "Oval", diamond: "Keputusan", triangle: "Segitiga", pill: "Mulai/Selesai", para: "Input/Output", doc: "Dokumen" }[s]}" data-tip="${{ rect: "Kotak / proses", ellipse: "Oval", diamond: "Keputusan", triangle: "Segitiga", pill: "Mulai / selesai", para: "Input / output", doc: "Dokumen" }[s]}">${ic({ rect: "square", ellipse: "circle" }[s] || s)}</button>`).join("")}</div>`, { side: "right", onPick: (k) => { Canvas.toolOpts.shape = k; } });
     if (t === "pen") pop(btn, `<div class="row">${INKS.map((c) => `<button class="swb${Canvas.toolOpts.penColor === c ? " on" : ""}" style="background:${inkColor(c)}" data-pick="c:${c}" aria-label="Warna"></button>`).join("")}</div><div class="row">${[2, 3, 6, 12].map((w) => `<button class="icon-btn${Canvas.toolOpts.penWidth === w ? " on" : ""}" data-pick="w:${w}" aria-label="Tebal ${w}"><span style="width:18px;height:${w}px;border-radius:9px;background:currentColor;display:block"></span></button>`).join("")}</div>`, { side: "right", onPick: (k) => { const [a, v] = k.split(":"); if (a === "c") Canvas.toolOpts.penColor = v; else Canvas.toolOpts.penWidth = +v; updateToolbar(); toolFlyout("pen"); return true; } });
   }
   function updateToolbar() {
@@ -218,7 +224,7 @@ const UI = (() => {
           b.push(`<button class="icon-btn" data-c="color" data-popper data-tip="Warna"><span class="cdot" style="background:${c}"></span></button>`);
         }
         if (textish) b.push(`<button class="icon-btn" data-c="font-" data-tip="Huruf lebih kecil" style="font-weight:800;font-size:12px">A−</button><button class="icon-btn" data-c="font+" data-tip="Huruf lebih besar" style="font-weight:800;font-size:15px">A+</button>`);
-        if (one && one.type === "connector") b.push(`<button class="icon-btn" data-c="arrow" data-tip="Ujung panah">${ic("arrowRight")}</button><button class="icon-btn${one.data.style === "curve" ? " on" : ""}" data-c="curve" data-tip="Garis lengkung">${ic("share")}</button><button class="icon-btn${one.data.dash ? " on" : ""}" data-c="dash" data-tip="Garis putus-putus"><span style="font-weight:800;letter-spacing:1px">- -</span></button>`);
+        if (one && one.type === "connector") b.push(`<button class="icon-btn" data-c="arrow" data-tip="Ujung panah">${ic("arrowRight")}</button><button class="icon-btn${one.data.style === "elbow" ? " on" : ""}" data-c="elbow" data-tip="Garis siku (flowchart)">${ic("elbow")}</button><button class="icon-btn${one.data.style === "curve" ? " on" : ""}" data-c="curve" data-tip="Garis lengkung">${ic("share")}</button><button class="btn btn-ghost btn-xs" data-c="label" data-tip="Tulisan di garis">${one.data.label ? esc(one.data.label).slice(0, 14) : "Label"}</button><button class="icon-btn${one.data.dash ? " on" : ""}" data-c="dash" data-tip="Garis putus-putus"><span style="font-weight:800;letter-spacing:1px">- -</span></button>`);
         if (one && one.type === "table") b.push(`<button class="btn btn-ghost btn-xs" data-c="row+">+ Baris</button><button class="btn btn-ghost btn-xs" data-c="col+">+ Kolom</button><button class="btn btn-ghost btn-xs" data-c="row-">− Baris</button><button class="btn btn-ghost btn-xs" data-c="col-">− Kolom</button>`);
         if (one && one.type === "frame") b.push(`<button class="icon-btn" data-c="rename" data-tip="Ganti nama">${ic("edit")}</button><button class="icon-btn${one.internal ? " on" : ""}" data-c="internal" data-tip="${one.internal ? "Tampilkan ke klien" : "Jadikan internal (disembunyikan dari klien)"}">${ic("eye")}</button>`);
       }
@@ -263,6 +269,17 @@ const UI = (() => {
       case "font+": return Actions.setFont(1.15);
       case "arrow": { const n = { end: "both", both: "none", none: "end" }[one.data.arrow || "end"]; return Actions.setConn({ arrow: n }); }
       case "curve": return Actions.setConn({ style: one.data.style === "curve" ? "straight" : "curve" });
+      case "elbow": return Actions.setConn({ style: one.data.style === "elbow" ? "straight" : "elbow" });
+      case "label": {
+        const el = pop(b, `<div class="mh">Tulisan di garis</div><div class="row">${["Ya", "Tidak", "Lalu", "Kalau gagal"].map((x) => `<button class="btn btn-secondary btn-xs" data-pick="t:${x}">${x}</button>`).join("")}</div><div class="row" style="align-items:center"><input class="field" id="clbl" maxlength="40" placeholder="Tulis sendiri" value="${esc(one.data.label || "")}" style="width:150px"><button class="btn btn-primary btn-sm" data-pick="set">Pasang</button>${one.data.label ? `<button class="btn btn-ghost btn-sm" data-pick="clear">Hapus</button>` : ""}</div>`, {
+          center: true, onPick: (k) => {
+            if (k.startsWith("t:")) Actions.setConn({ label: k.slice(2) });
+            if (k === "set") Actions.setConn({ label: $("#clbl").value.trim() || null });
+            if (k === "clear") Actions.setConn({ label: null });
+          } });
+        const inp = el.querySelector("#clbl"); if (inp) { setTimeout(() => inp.focus(), 30); inp.onkeydown = (e) => { if (e.key === "Enter") el.querySelector('[data-pick="set"]').click(); }; }
+        return;
+      }
       case "dash": return Actions.setConn({ dash: !one.data.dash });
       case "row+": case "row-": case "col+": case "col-": return Actions.tableEdit(c);
       case "rename": return Canvas.startEdit(one.id);
@@ -348,6 +365,25 @@ const UI = (() => {
       if (e.key === "ArrowUp") { act = Math.max(act - 1, 0); draw(); e.preventDefault(); }
       if (e.key === "Enter" && list[act]) { e.preventDefault(); closePops(); runItem(list[act].sec + "|" + list[act].k); }
     });
+  }
+  // Table size like a word processor: hover the grid, click to place.
+  function tablePicker(p) {
+    const N = 8;
+    const s = modal("Tabel baru", `<div class="tpick" id="tpick">${Array.from({ length: N * N }, (_, i) => `<button class="tc" data-r="${Math.floor(i / N) + 1}" data-c="${(i % N) + 1}" aria-label="${Math.floor(i / N) + 1} baris × ${(i % N) + 1} kolom"></button>`).join("")}</div><p id="tpickL" style="margin:10px 0 0;text-align:center;font-weight:800">3 baris × 3 kolom</p><p class="muted" style="font-size:12px;margin:8px 0 0">Baris pertama jadi judul kolom. Tekan Tab di sel terakhir untuk menambah baris. Tabel dari Google Sheets atau Excel juga bisa langsung disalin lalu ditempel (Ctrl/⌘ V) di papan.</p>`, "", { cls: "sm" });
+    const cells = [...s.querySelectorAll(".tc")];
+    const hl = (r, c) => { cells.forEach((b) => b.classList.toggle("on", +b.dataset.r <= r && +b.dataset.c <= c)); s.querySelector("#tpickL").textContent = `${r} baris × ${c} kolom`; };
+    cells.forEach((b) => { b.onmouseenter = b.onfocus = () => hl(+b.dataset.r, +b.dataset.c); b.onclick = () => { s.remove(); Actions.addTable(p, +b.dataset.r, +b.dataset.c); }; });
+    hl(3, 3);
+  }
+  // Flowchart from a list of steps, free (no AI): Actions.flowFromText.
+  function flowDialog(p) {
+    const ex = "Klien kirim brief\nTim bikin konsep\nKonsep disetujui?\nProduksi konten\nPosting & pantau hasil";
+    const s = modal("Flowchart dari langkah", `<label class="lbl" for="flowT">Tulis satu langkah per baris</label><textarea class="field" id="flowT" rows="7" style="resize:vertical">${esc(ex)}</textarea>
+      <label class="pickrow" style="margin-top:10px"><input type="checkbox" id="flowEnds" checked><span class="t"><b>Tambah "Mulai" dan "Selesai"</b><span>Langkah yang diakhiri tanda tanya (?) jadi kotak keputusan dengan cabang Ya / Tidak.</span></span></label>`,
+      `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="flowGo">${ic("flow")} Buat flowchart</button>`, { cls: "sm" });
+    s.querySelector("[data-close2]").onclick = () => s.remove();
+    $("#flowGo").onclick = () => { if (Actions.flowFromText($("#flowT").value, p, $("#flowEnds").checked)) s.remove(); };
+    setTimeout(() => { const t = $("#flowT"); t.focus(); t.select(); }, 30);
   }
   function linkDialog(p) {
     const s = modal("Tempel link atau video", `<label class="lbl" for="lnk">Link YouTube, TikTok, Instagram, atau website</label><input class="field" id="lnk" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"><div class="note" style="margin-top:12px">${ic("info")}<span>${window.__papanWeb || BL() ? "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Video YouTube, TikTok, dan Instagram bisa diputar langsung di papan." : "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Di prototipe ini video dibuka di tab baru karena halaman ini tidak boleh memuat pemutar luar. Di Brandlab nanti video YouTube dan TikTok diputar langsung di papan."}</span></div>`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="lnkGo">Taruh di papan</button>`, { cls: "sm" });

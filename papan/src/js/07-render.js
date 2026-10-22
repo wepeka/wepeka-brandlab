@@ -30,6 +30,9 @@ function shapeSVG(o) {
     case "diamond": el = `<polygon points="${w / 2},1.5 ${w - 1.5},${h / 2} ${w / 2},${h - 1.5} 1.5,${h / 2}" ${st} stroke-linejoin="round"/>`; break;
     case "triangle": el = `<polygon points="${w / 2},1.5 ${w - 1.5},${h - 1.5} 1.5,${h - 1.5}" ${st} stroke-linejoin="round"/>`; break;
     case "pill": el = `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="${(h - 3) / 2}" ${st}/>`; break;
+    // flowchart: input/output and document
+    case "para": el = `<polygon points="${w * 0.16},1.5 ${w - 1.5},1.5 ${w * 0.84},${h - 1.5} 1.5,${h - 1.5}" ${st} stroke-linejoin="round"/>`; break;
+    case "doc": el = `<path d="M1.5 1.5 H${w - 1.5} V${h * 0.84} C${w * 0.72} ${h * 0.66} ${w * 0.42} ${h * 1.02} 1.5 ${h * 0.86} Z" ${st} stroke-linejoin="round"/>`; break;
     default: el = `<rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="14" ${st}/>`;
   }
   return `<svg class="sh" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${el}</svg>`;

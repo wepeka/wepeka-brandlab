@@ -96,7 +96,16 @@ const Canvas = (() => {
     if (end && end.id) { const o = Store.obj(end.id); if (o) { const oc = other && other.id && Store.obj(other.id) ? center(Store.obj(other.id)) : other && other.x != null ? other : center(o); return edgePoint(o, oc); } }
     return { x: end?.x || 0, y: end?.y || 0 };
   }
-  function connPoints(o) { const d = o.data || {}; return [endPos(d.from, d.to), endPos(d.to, d.from)]; }
+  // Flowchart lines ("elbow"): they leave and enter a box at the middle of a
+  // side, across or down depending on where the other end lies.
+  function elbowEnds(d) {
+    const fo = d.from?.id && Store.obj(d.from.id), to = d.to?.id && Store.obj(d.to.id);
+    const pa = fo ? center(fo) : { x: d.from?.x || 0, y: d.from?.y || 0 }, pb = to ? center(to) : { x: d.to?.x || 0, y: d.to?.y || 0 };
+    const horiz = Math.abs(pb.x - pa.x) >= Math.abs(pb.y - pa.y);
+    const side = (o, c, toward) => { const g = geo(o); return horiz ? { x: toward.x > c.x ? g.x + g.w + 4 : g.x - 4, y: c.y } : { x: c.x, y: toward.y > c.y ? g.y + g.h + 4 : g.y - 4 }; };
+    return { a: fo ? side(fo, pa, pb) : pa, b: to ? side(to, pb, pa) : pb, horiz };
+  }
+  function connPoints(o) { const d = o.data || {}; if (d.style === "elbow") { const e = elbowEnds(d); return [e.a, e.b]; } return [endPos(d.from, d.to), endPos(d.to, d.from)]; }
   const visible = (o) => !(clientView && (o.internal || insideInternal(o)));
   function insideInternal(o) {
     if (o.type === "frame") return false;
@@ -196,16 +205,21 @@ const Canvas = (() => {
       let [a, b] = connPoints(o);
       if (drag && drag.kind === "endpoint" && drag.id === o.id) { if (drag.end === "from") a = drag.pt; else b = drag.pt; }
       const col = inkColor(o.color);
-      let path;
-      if (d.style === "curve") {
+      let path, endDir, startDir, mid;
+      if (d.style === "elbow") {
+        const horiz = elbowEnds(d).horiz;
+        if (horiz) { const mx = (a.x + b.x) / 2; path = `M${a.x} ${a.y} H${mx} V${b.y} H${b.x}`; endDir = b.x >= mx ? 0 : Math.PI; startDir = a.x <= mx ? Math.PI : 0; mid = { x: mx, y: (a.y + b.y) / 2 }; }
+        else { const my = (a.y + b.y) / 2; path = `M${a.x} ${a.y} V${my} H${b.x} V${b.y}`; endDir = b.y >= my ? Math.PI / 2 : -Math.PI / 2; startDir = a.y <= my ? -Math.PI / 2 : Math.PI / 2; mid = { x: (a.x + b.x) / 2, y: my }; }
+      } else if (d.style === "curve") {
         const dx = b.x - a.x, dy = b.y - a.y, horiz = Math.abs(dx) > Math.abs(dy);
         const c1 = horiz ? { x: a.x + dx * 0.45, y: a.y } : { x: a.x, y: a.y + dy * 0.45 }, c2 = horiz ? { x: b.x - dx * 0.45, y: b.y } : { x: b.x, y: b.y - dy * 0.45 };
         path = `M${a.x} ${a.y} C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`;
-        var endDir = Math.atan2(b.y - c2.y, b.x - c2.x), startDir = Math.atan2(a.y - c1.y, a.x - c1.x);
-      } else { path = `M${a.x} ${a.y} L${b.x} ${b.y}`; var endDir = Math.atan2(b.y - a.y, b.x - a.x), startDir = endDir + Math.PI; }
+        endDir = Math.atan2(b.y - c2.y, b.x - c2.x); startDir = Math.atan2(a.y - c1.y, a.x - c1.x);
+        mid = { x: 0.125 * a.x + 0.375 * c1.x + 0.375 * c2.x + 0.125 * b.x, y: 0.125 * a.y + 0.375 * c1.y + 0.375 * c2.y + 0.125 * b.y };
+      } else { path = `M${a.x} ${a.y} L${b.x} ${b.y}`; endDir = Math.atan2(b.y - a.y, b.x - a.x); startDir = endDir + Math.PI; mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
       const head = (p, ang) => { const L = 13, w = 0.45; return `<path d="M${p.x + L * Math.cos(ang + Math.PI - w)} ${p.y + L * Math.sin(ang + Math.PI - w)} L${p.x} ${p.y} L${p.x + L * Math.cos(ang + Math.PI + w)} ${p.y + L * Math.sin(ang + Math.PI + w)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`; };
       const isSel = sel.has(o.id);
-      out.push(`<g data-id="${o.id}"${off ? ` transform="translate(${off.dx} ${off.dy})"` : ""}><path class="hit" d="${path}" fill="none" stroke="transparent" stroke-width="16" vector-effect="non-scaling-stroke"/>${isSel ? `<path d="${path}" fill="none" stroke="var(--accent-fill)" stroke-width="7" stroke-opacity=".35" stroke-linecap="round"/>` : ""}<path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round"${d.dash ? ' stroke-dasharray="9 8"' : ""}/>${d.arrow === "end" || d.arrow === "both" ? head(b, endDir) : ""}${d.arrow === "both" ? head(a, startDir) : ""}</g>`);
+      out.push(`<g data-id="${o.id}"${off ? ` transform="translate(${off.dx} ${off.dy})"` : ""}><path class="hit" d="${path}" fill="none" stroke="transparent" stroke-width="16" vector-effect="non-scaling-stroke"/>${isSel ? `<path d="${path}" fill="none" stroke="var(--accent-fill)" stroke-width="7" stroke-opacity=".35" stroke-linecap="round"/>` : ""}<path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round"${d.dash ? ' stroke-dasharray="9 8"' : ""}/>${d.arrow === "end" || d.arrow === "both" ? head(b, endDir) : ""}${d.arrow === "both" ? head(a, startDir) : ""}${d.label ? `<text class="clabel" x="${mid.x}" y="${mid.y}" text-anchor="middle" dominant-baseline="central">${esc(d.label)}</text>` : ""}</g>`);
     }
     linksL.innerHTML = out.join("");
   }
@@ -228,7 +242,7 @@ const Canvas = (() => {
       const a = toScreen(drag.x1, drag.y1), b = toScreen(drag.x2, drag.y2);
       selL.insertAdjacentHTML("beforeend", `<div class="marquee" style="left:${Math.min(a.x, b.x)}px;top:${Math.min(a.y, b.y)}px;width:${Math.abs(a.x - b.x)}px;height:${Math.abs(a.y - b.y)}px"></div>`);
     }
-    if (drag && (drag.kind === "connector")) {
+    if (drag && (drag.kind === "connector" || (drag.kind === "qc" && drag.moved))) {
       const a = toScreen(drag.a.x, drag.a.y), b = toScreen(drag.pt.x, drag.pt.y);
       selL.insertAdjacentHTML("beforeend", `<svg class="ghost-line" style="left:0;top:0;width:100%;height:100%;overflow:visible"><line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="var(--accent-fill)" stroke-width="2.5" stroke-dasharray="6 6"/></svg>`);
     }
@@ -264,6 +278,11 @@ const Canvas = (() => {
           if ((objs[0].type === "text" || objs[0].type === "table" || objs[0].type === "checklist") && /^(n|s|nw|ne|sw|se)$/.test(k)) continue;
           const s = toScreen(pt.x, pt.y);
           selL.insertAdjacentHTML("beforeend", `<div class="hdl${k === "rot" ? " rot" : ""}" data-h="${k}" style="left:${s.x}px;top:${s.y}px;cursor:${k === "rot" ? "grab" : cursorFor(k, g.r || 0)}"></div>`);
+        }
+        // Flowchart: a + on each side adds the next step (click) or draws a line (drag).
+        if (["shape", "sticky"].includes(objs[0].type) && !g.r) {
+          const sides = { e: [g.x + g.w, g.y + g.h / 2, 1, 0], w: [g.x, g.y + g.h / 2, -1, 0], s: [g.x + g.w / 2, g.y + g.h, 0, 1], n: [g.x + g.w / 2, g.y, 0, -1] };
+          for (const [k, [x, y, dx, dy]] of Object.entries(sides)) { const s = toScreen(x, y); selL.insertAdjacentHTML("beforeend", `<div class="hdl qc" data-h="qc-${k}" style="left:${s.x + dx * 24}px;top:${s.y + dy * 24}px" title="Klik: langkah berikutnya · Tarik: sambungkan">+</div>`); }
         }
       }
       const cs = corners(g).map((c) => toScreen(c.x, c.y));
@@ -458,6 +477,7 @@ const Canvas = (() => {
   function startHandle(e, h, p) {
     const objs = selObjs(); if (!objs.length) return;
     if (h.startsWith("ep-")) { drag = { kind: "endpoint", id: objs[0].id, end: h.slice(3), orig: clone(objs[0]), pt: p }; capture(e); return; }
+    if (h.startsWith("qc-")) { const o = objs[0]; drag = { kind: "qc", dir: h.slice(3), id: o.id, a: center(o), pt: p, sx: e.clientX, sy: e.clientY, moved: false }; capture(e); return; }
     if (h.startsWith("m-")) { const b = bboxOf(objs); drag = { kind: "mresize", h: h.slice(2), box: b, orig: new Map(objs.map((o) => [o.id, clone(o)])) }; capture(e); return; }
     const o = objs[0];
     if (h === "rot") { const c = center(o); drag = { kind: "rotate", id: o.id, c, a0: Math.atan2(p.y - c.y, p.x - c.x), r0: o.r || 0, orig: clone(o) }; }
@@ -472,6 +492,7 @@ const Canvas = (() => {
     if (!drag) return;
     switch (drag.kind) {
       case "pan": cam.x = drag.cx + e.clientX - drag.sx; cam.y = drag.cy + e.clientY - drag.sy; applyCam(); break;
+      case "qc": drag.pt = p; if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) drag.moved = true; drawOverlay(); break;
       case "pinch": {
         if (pointers.size < 2) return;
         const [a, b] = [...pointers.values()];
@@ -584,6 +605,14 @@ const Canvas = (() => {
     if (d.kind === "pinch") { if (pointers.size === 1) { const [q] = pointers.values(); drag = { kind: "pan", sx: q.x, sy: q.y, cx: cam.x, cy: cam.y }; } return; }
     const p = toWorld(e.clientX, e.clientY);
     switch (d.kind) {
+      case "qc": {
+        const src = Store.obj(d.id); if (!src) break;
+        if (!d.moved) { quickAdd(src, d.dir); break; }
+        const hit = objUnder(e);
+        if (hit && hit.id !== src.id && hit.type !== "frame" && hit.type !== "connector") { link(src, hit); break; }
+        quickAdd(src, d.dir, p);
+        break;
+      }
       case "move": {
         Collab.presence({ drag: null });
         if (!d.moved) { for (const id of d.ids) busy.delete(id); break; }
@@ -693,9 +722,58 @@ const Canvas = (() => {
     switch (type) {
       case "sticky": return { w: 200, h: 200, color: toolOpts.stickyColor, text: "" };
       case "text": return { w: 320, h: 30, color: "ink", text: "", fs: 22 };
-      case "shape": return { w: 220, h: toolOpts.shape === "pill" ? 80 : 150, color: "#7ab8ff", text: "", data: { shape: toolOpts.shape, fill: true } };
+      case "shape": return { w: toolOpts.shape === "diamond" ? 240 : 220, h: toolOpts.shape === "pill" ? 80 : ["para", "doc", "rect"].includes(toolOpts.shape) ? 120 : 150, color: { pill: "#3ddc84", diamond: "#ffc94a", para: "#ff7eb6", doc: "#b38cff" }[toolOpts.shape] || "#7ab8ff", text: "", data: { shape: toolOpts.shape, fill: true } };
       case "frame": return { w: 640, h: 440, color: "#ffa52b", text: "Frame baru" };
     }
+  }
+  // Flowchart: the next step beside a box (or where the line was dropped),
+  // joined by an arrow. After a start/end pill or a decision comes a process box.
+  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  function link(src, dst) {
+    const c = Store.newObject({ type: "connector", x: 0, y: 0, w: 0, h: 0, color: "ink", data: { from: { id: src.id, x: null, y: null }, to: { id: dst.id, x: null, y: null }, arrow: "end", style: "elbow", dash: false } });
+    add([c]); return c;
+  }
+  function quickAdd(src, dir, at) {
+    if (!Store.canWrite) return;
+    const g = geo(src), gap = 110, isShape = src.type === "shape";
+    const shape = isShape ? (["pill", "diamond"].includes(src.data?.shape) ? "rect" : src.data?.shape || "rect") : null;
+    const fresh = isShape && shape !== src.data?.shape;
+    const w = fresh ? 220 : g.w, h = fresh ? 110 : g.h;
+    let x, y;
+    if (at) { x = at.x - w / 2; y = at.y - h / 2; }
+    else {
+      const [vx, vy] = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] }[dir];
+      x = vx > 0 ? g.x + g.w + gap : vx < 0 ? g.x - gap - w : g.x + g.w / 2 - w / 2;
+      y = vy > 0 ? g.y + g.h + gap : vy < 0 ? g.y - gap - h : g.y + g.h / 2 - h / 2;
+      for (let i = 0; i < 8 && Store.objects().some((o) => o.id !== src.id && !["connector", "frame", "pen"].includes(o.type) && overlaps(geo(o), { x, y, w, h })); i++) { x += vx * (w + gap); y += vy * (h + gap); }
+    }
+    const n = Store.newObject(isShape
+      ? { type: "shape", x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), ...(src.fs ? { fs: src.fs } : {}), color: fresh ? "#7ab8ff" : src.color, text: "", data: { ...(src.data || {}), shape } }
+      : { type: "sticky", x: Math.round(x), y: Math.round(y), w: g.w, h: g.h, color: src.color, text: "" });
+    const c = Store.newObject({ type: "connector", x: 0, y: 0, w: 0, h: 0, color: "ink", data: { from: { id: src.id, x: null, y: null }, to: { id: n.id, x: null, y: null }, arrow: "end", style: "elbow", dash: false } });
+    add([n, c]);
+    renderAll(); // the box must be on the page before its text can be edited
+    select([n.id]);
+    setTimeout(() => startEdit(n.id), 30);
+    return n;
+  }
+  // Nearest empty spot around `near` for a w×h group, so new things (chat
+  // ideas, a table, a flowchart) never land on top of what's already there.
+  function freeSpot(w, h, near) {
+    const boxes = Store.objects().filter((o) => o.type !== "connector").map((o) => bboxOf([o]));
+    const gap = 40, step = 260;
+    const free = (c) => !boxes.some((b) => c.x - w / 2 - gap < b.x + b.w && c.x + w / 2 + gap > b.x && c.y - h / 2 - gap < b.y + b.h && c.y + h / 2 + gap > b.y);
+    if (free(near)) return near;
+    for (let ring = 1; ring <= 14; ring++) {
+      const cand = [];
+      for (let dx = -ring; dx <= ring; dx++) for (let dy = -ring; dy <= ring; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cand.push({ x: near.x + dx * step, y: near.y + dy * step });
+      }
+      cand.sort((a, b) => Math.hypot(a.x - near.x, a.y - near.y) - Math.hypot(b.x - near.x, b.y - near.y));
+      const hit = cand.find(free);
+      if (hit) return hit;
+    }
+    return near;
   }
   function createAt(type, at) {
     const d = defaults(type);
@@ -803,6 +881,11 @@ const Canvas = (() => {
       e.preventDefault(); const [r, c] = editing.part.cell.split(",").map(Number); const id = editing.id; finishEdit();
       const o = Store.obj(id); const cols = o.data.rows[0].length; const nr = c + 1 < cols ? r : r + 1, nc = c + 1 < cols ? c + 1 : 0;
       if (nr < o.data.rows.length) setTimeout(() => startEdit(id, { cell: `${nr},${nc}` }), 10);
+      else if (Store.canWrite) { // Tab past the last cell: a new row, like a spreadsheet
+        const after = clone(o); after.data.rows.push(o.data.rows[0].map(() => ""));
+        const ch = [{ id, before: o, after }]; Store.commit(ch); History.push(ch, "Tambah baris");
+        setTimeout(() => startEdit(id, { cell: `${nr},0` }), 30);
+      }
     }
   }
   function onEditBlur() { setTimeout(() => { if (editing && document.activeElement !== editing.el) finishEdit(); }, 0); }
@@ -895,7 +978,7 @@ const Canvas = (() => {
   }
   return {
     init, cam, applyCam, zoomAt, fit, animateTo, centerWorld, toWorld, toScreen, select, deselect, sel, selObjs, setTool, get tool() { return tool; }, toolOpts,
-    startEdit, finishEdit, insertObjects, add, createAt, renderAll, scheduleRender, geo, center, bboxOf, frameChildren, els, frameAtPoint, camFor, lookAt,
+    startEdit, finishEdit, insertObjects, add, createAt, freeSpot, renderAll, scheduleRender, geo, center, bboxOf, frameChildren, els, frameAtPoint, camFor, lookAt,
     on: (f) => handlers.add(f), get editing() { return editing; }, get clientView() { return clientView; }, set clientView(v) { clientView = v; scheduleRender(); }, visibleObjects, visible, drawOverlay,
     flash(id) { const el = els.get(id); if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } },
   };
