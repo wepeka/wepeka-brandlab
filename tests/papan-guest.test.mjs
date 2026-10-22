@@ -13,7 +13,10 @@ function fakeDeps(seed) {
     async get() { const v = docs.get(path); return { id: path.split("/").pop(), exists: v !== undefined, data: () => (v === undefined ? undefined : structuredClone(v)) }; },
     async update(patch) { docs.set(path, { ...docs.get(path), ...structuredClone(patch) }); },
     async set(v, opts) { docs.set(path, opts?.merge ? { ...(docs.get(path) || {}), ...structuredClone(v) } : structuredClone(v)); },
-    collection: (sub) => ({ doc: (id) => ref(`${path}/${sub}/${id}`) }),
+    collection: (sub) => ({
+      doc: (id) => ref(`${path}/${sub}/${id}`),
+      count: () => ({ get: async () => ({ data: () => ({ count: [...docs.keys()].filter((k) => k.startsWith(`${path}/${sub}/`) && !k.slice(path.length + sub.length + 2).includes("/")).length }) }) }),
+    }),
   });
   const tokens = [];
   return {
@@ -73,6 +76,7 @@ describe("api/papan share + join", () => {
     assert.deepEqual(d.rt.get("papanShare/b1/k1"), { on: true, role: "edit", t: share.t, owner: "owen" });
     const out = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t: share.t, name: " Sari ", key: KEY });
     assert.equal(out.uid, guestUid(KEY));
+    assert.equal(out.name, "Sari");
     assert.equal(out.role, "edit");
     assert.equal(out.ownerId, "owen");
     assert.deepEqual(out.brand, { name: "Kopi Pagi", color: "#c7773b" });
@@ -106,10 +110,22 @@ describe("api/papan share + join", () => {
     const out = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t: b.t, name: "Sari", key: KEY });
     assert.equal(out.role, "view");
   });
-  test("no name, a bad key, a missing board or a lapsed owner plan: no entry", async () => {
+  test("without a name a guest goes straight in as Tamu N, and keeps that name next time", async () => {
     const d = fakeDeps(seed());
     const { t } = (await runPapan(d, "share", { uid: "owen" }, { brandId: "b1", boardId: "k1", on: true })).share;
-    await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, name: "  ", key: KEY }), "bad-request");
+    const a = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, name: "  ", key: KEY });
+    assert.equal(a.name, "Tamu 1");
+    const b = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, key: "y".repeat(32) });
+    assert.equal(b.name, "Tamu 2");
+    const again = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, key: KEY });
+    assert.equal(again.name, "Tamu 1");
+    const renamed = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, name: "Sari", key: KEY });
+    assert.equal(renamed.name, "Sari");
+    assert.equal(d.docs.get(`brands/b1/boards/k1/guests/${a.uid}`).name, "Sari");
+  });
+  test("a bad key, a missing board or a lapsed owner plan: no entry", async () => {
+    const d = fakeDeps(seed());
+    const { t } = (await runPapan(d, "share", { uid: "owen" }, { brandId: "b1", boardId: "k1", on: true })).share;
     await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, name: "Sari", key: "short" }), "bad-request");
     await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "nope", t, name: "Sari", key: KEY }), "not-found");
     d.docs.set("accounts/owen", { status: "expired", plan: "pro" });

@@ -665,8 +665,9 @@ body.ro .readonly-hide{ display:none !important; }
 .linkbtn{ background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--accent); text-decoration:underline; cursor:pointer; }
 .guest-link{ display:flex; flex-direction:column; }
 
-/* Guests on a board's guest link (host/guest.js): only this board, no brand data, no AI */
-.papan-guest #shareBtn, .papan-guest #deckBtn, .papan-guest #timerBtn, .papan-guest #aiBtn, .papan-guest .btn-ai, .papan-guest #boardBtn svg.i{ display:none !important; }
+/* Guests on a board's guest link (host/guest.js): only this board, no brand data; AI on the owner's credits */
+.papan-guest #shareBtn, .papan-guest #deckBtn, .papan-guest #timerBtn, .papan-guest #boardBtn svg.i{ display:none !important; }
+.papan-guest .fab{ display:flex; }
 .papan-guest #boardBtn{ cursor:default; }
 .guest-chip{ font-size:11px; font-weight:800; padding:2px 8px; border-radius:var(--r-pill); background:var(--accent-soft); color:var(--accent); }
 .guest-gate{ position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }

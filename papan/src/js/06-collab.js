@@ -20,6 +20,8 @@ const Collab = (() => {
     if (!id) return fallback || "Seseorang";
     if (id === Store.me.id) return Store.me.name || "Kamu";
     if (String(id).startsWith("contoh")) return "Contoh";
+    // A guest's live name (presence) wins over the cached one: they can rename themselves.
+    if (fallback && String(id).startsWith("pg-")) return `${fallback} (tamu)`;
     const n = names.get(id); want(id);
     return (n && n.name) || fallback || "Seseorang";
   }

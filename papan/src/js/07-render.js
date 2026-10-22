@@ -93,7 +93,10 @@ const R = {
     const title = `<div class="tt" data-f="title">${esc(d.title || (d.kind === "link" ? d.domain : ""))}</div>`;
     const desc = d.desc ? `<div class="ds" data-f="desc">${esc(d.desc)}</div>` : "";
     const open = (lbl) => `<a class="open" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">${lbl} ↗</a>`;
-    const web = window.__papanWeb, canPlay = web && embedSrc(d);
+    // Videos play right on the board wherever the page may load the players
+    // (Brandlab's CSP frame-src: YouTube, TikTok, Instagram); the claude.ai
+    // prototype can't, so there the play button opens the video's page.
+    const web = window.__papanWeb || BL(), canPlay = web && embedSrc(d);
     const playBtn = (cls, style = "") => canPlay ? `<button class="play" ${style} data-act="play-embed" aria-label="Putar di papan">${ic("play")}</button>` : `<a class="play" ${style} href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" aria-label="Buka">${ic("play")}</a>`;
     if (d.kind === "youtube") return `<div class="media yt"${web && d.vid ? ` style="background:#000 url('https://i.ytimg.com/vi/${esc(d.vid)}/hqdefault.jpg') center/cover"` : ""}><span class="plat">${ic("youtube")} YouTube${d.short ? " Shorts" : ""}</span>${playBtn()}${web ? "" : '<span class="proto-note">Prototipe: diputar di tab baru</span>'}</div><div class="meta">${title}${desc}<div class="dom">${open("Putar di YouTube")}</div></div>`;
     if (d.kind === "tiktok") return `<div class="media tt"><span class="plat">${ic("tiktok")} TikTok${d.handle ? " · @" + esc(d.handle) : ""}</span>${playBtn("", 'style="color:#111"')}</div><div class="meta">${title}${desc}<div class="dom">${open("Buka di TikTok")}</div></div>`;

@@ -5,17 +5,20 @@
 //        → { share: {on, role, t} }. Turns the board's guest link on or off,
 //          sets what guests may do ("edit" = coret-coret, "view" = lihat saja);
 //          rotate makes a new link and the old one stops working at once.
-//   POST {action:"join", brandId, boardId, t, name, key}         no sign-in
-//        → { token, uid, role, ownerId, board, brand, people }: a Firebase
-//          custom token for a guest uid (pg-…, from the browser's own random
-//          key) whose "papan" claim names this brand, board and link secret.
+//   POST {action:"join", brandId, boardId, t, name?, key}        no sign-in
+//        → { token, uid, name, role, ownerId, board, brand, people }: a
+//          Firebase custom token for a guest uid (pg-…, from the browser's own
+//          random key) whose "papan" claim names this brand, board and link
+//          secret. No name = straight in as "Tamu N" (or the name this browser
+//          had before); joining again with a name renames the guest.
 //
 // The secret lives on the board doc (share.t, which the team can read) and in
 // the Realtime Database at papanShare/{brandId}/{boardId} (server-only), and
 // firestore.rules / database.rules.json compare the guest's claim with it on
 // every read and write — so turning the link off locks guests out right away.
 // Guests never see the brand's data: the board's Brandlab components stay
-// blank for them and they get no AI (it would spend the owner's credits).
+// blank for them. Their AI (api/ai.js, papanGuestPayer) is paid from the
+// owner's credits, GUEST_AI_PER_DAY answers per guest per day.
 //
 // Errors: { error } 400 bad-request, 401 auth, 403 not-editor, 404 not-found,
 // 409 owner-inactive, 410 link-off.
@@ -93,15 +96,17 @@ export async function share(d, caller, body) {
 export async function join(d, body) {
   const { brandId, boardId, t, key } = body;
   if (!SECRET.test(String(t || "")) || !SECRET.test(String(key || ""))) fail("bad-request", 400);
-  const name = cleanGuestName(body.name);
-  if (!name) fail("bad-request", 400);
   const { brand, board, boardRef } = await loadBoard(d, brandId, boardId);
   const s = board.share || {};
   if (!s.on || !sameSecret(s.t, t)) fail("link-off", 410);
   const role = s.role === "view" ? "view" : "edit";
   const uid = guestUid(key);
   // Names the team sees next to what the guest made (js/papan/bridge.js profiles).
-  await boardRef.collection("guests").doc(uid).set({ name, at: d.now(), ownerId: brand.ownerId, brandId, boardId }, { merge: true });
+  const guests = boardRef.collection("guests");
+  const before = await guests.doc(uid).get();
+  let name = cleanGuestName(body.name) || (before.exists ? before.data().name : "");
+  if (!name) name = `Tamu ${((await guests.count().get()).data().count || 0) + 1}`;
+  await guests.doc(uid).set({ name, at: d.now(), ownerId: brand.ownerId, brandId, boardId }, { merge: true });
   const token = await d.auth.createCustomToken(uid, { papan: { b: brandId, k: boardId, t: s.t, r: role } });
   let ownerName = brand.ownerName || "";
   if (!ownerName) {
@@ -114,11 +119,43 @@ export async function join(d, body) {
   const people = { [brand.ownerId]: ownerName || "Pemilik" };
   for (const [id, m] of Object.entries(brand.members || {})) if (m?.name) people[id] = m.name;
   return {
-    token, uid, role, ownerId: brand.ownerId,
+    token, uid, name, role, ownerId: brand.ownerId,
     board: { name: board.name || "Papan" },
     brand: { name: brand.name || "", color: brand.color || "" },
     people,
   };
+}
+
+// ---------- guests' AI (api/ai.js) ----------
+export const GUEST_AI_PER_DAY = 10;
+// Who pays for a guest's AI call: the brand owner, while the guest's link
+// (the papan claim on their token) is still the board's current one.
+export async function papanGuestPayer(db, claim) {
+  const { b, k, t } = claim || {};
+  if (!ID.test(String(b || "")) || !ID.test(String(k || ""))) return { error: "link-off" };
+  const snap = await db.doc(`brands/${b}/boards/${k}`).get();
+  const s = snap.exists ? snap.data().share || {} : {};
+  if (!s.on || !sameSecret(s.t, t)) return { error: "link-off" };
+  return { payerUid: snap.data().ownerId, team: true, guest: true };
+}
+// One of today's GUEST_AI_PER_DAY answers for this guest, or false. A call
+// that brings no answer gives it back (releaseGuestAi).
+export async function reserveGuestAi(db, uid, day) {
+  const ref = db.doc(`papanGuestAi/${uid}`);
+  return db.runTransaction(async (tx) => {
+    const cur = (await tx.get(ref)).data() || {};
+    const used = cur.day === day ? cur.used || 0 : 0;
+    if (used >= GUEST_AI_PER_DAY) return false;
+    tx.set(ref, { day, used: used + 1 });
+    return true;
+  });
+}
+export async function releaseGuestAi(db, uid, day) {
+  const ref = db.doc(`papanGuestAi/${uid}`);
+  await db.runTransaction(async (tx) => {
+    const cur = (await tx.get(ref)).data() || {};
+    if (cur.day === day && cur.used > 0) tx.set(ref, { day, used: cur.used - 1 });
+  });
 }
 
 export async function runPapan(d, action, caller, body) {

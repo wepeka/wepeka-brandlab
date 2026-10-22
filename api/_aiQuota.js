@@ -91,7 +91,7 @@ export function quotaFor(account, uid) {
 // UTC — otherwise 00:00–07:00 WIB would show a different "today" than the
 // one the server counts against.
 const TZ = "Asia/Jakarta";
-function isoDate(d = new Date()) {
+export function isoDate(d = new Date()) {
   return d.toLocaleDateString("en-CA", { timeZone: TZ }); // YYYY-MM-DD
 }
 function isoMonth(d = new Date()) {

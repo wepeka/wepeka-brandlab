@@ -68,9 +68,11 @@ function papanGuestHost(param) {
     "link-off": "Link ini sudah tidak aktif. Minta link baru ke orang yang membagikannya.",
     "not-found": "Papan ini tidak ditemukan. Mungkin sudah dihapus.",
     "owner-inactive": "Papan ini sedang tidak bisa dibuka. Hubungi orang yang membagikannya.",
-    "bad-request": "Tulis namamu dulu.",
+    "bad-request": "Link papan ini tidak lengkap. Salin ulang dari pesan yang kamu terima.",
     "closed": "Pemilik papan baru saja menutup link ini. Minta link baru kalau masih mau ikut.",
   };
+  // Shown only when going straight in didn't work (or the link was closed
+  // mid-session): what happened, and a way to try again with a name.
   function gate(message) {
     let el = document.querySelector(".guest-gate");
     if (!el) { el = document.createElement("div"); el.className = "guest-gate"; document.body.appendChild(el); }
@@ -78,28 +80,26 @@ function papanGuestHost(param) {
     el.innerHTML = `<div class="guest-card" role="dialog" aria-modal="true" aria-labelledby="ggT">
       <div class="gk">Wepeka Brandlab · Papan</div>
       <h1 id="ggT">${broken ? "Link papan tidak lengkap" : "Kamu diajak ke sebuah papan"}</h1>
-      <p class="muted">${broken ? "Salin ulang link dari pesan yang kamu terima, lalu buka lagi." : "Tulis namamu supaya yang lain tahu siapa yang sedang ikut mencoret-coret."}</p>
-      ${broken ? "" : `<form id="ggForm" novalidate><label class="lbl" for="ggName">Nama kamu</label><input class="field" id="ggName" maxlength="40" autocomplete="name" value="${esc(ls.get("papan:guest:name"))}"><button class="btn btn-primary" type="submit" id="ggGo">Masuk ke papan</button></form>`}
+      <p class="muted">${broken ? "Salin ulang link dari pesan yang kamu terima, lalu buka lagi." : "Tanpa akun. Namamu terlihat oleh yang lain di papan."}</p>
+      ${broken ? "" : `<form id="ggForm" novalidate><label class="lbl" for="ggName">Nama kamu (boleh dikosongkan)</label><input class="field" id="ggName" maxlength="40" autocomplete="name" placeholder="Tamu" value="${esc(ls.get("papan:guest:name"))}"><button class="btn btn-primary" type="submit" id="ggGo">Masuk ke papan</button></form>`}
       ${message ? `<p class="gerr" role="alert">${esc(message)}</p>` : ""}
-      <p class="gfoot">Tanpa akun. Papan ini milik sebuah brand di Brandlab.</p></div>`;
+      <p class="gfoot">Papan ini milik sebuah brand di Brandlab.</p></div>`;
     const f = el.querySelector("#ggForm");
     if (!f) return;
     const input = el.querySelector("#ggName");
-    setTimeout(() => input.focus(), 50);
     f.onsubmit = (e) => {
       e.preventDefault();
       const name = input.value.trim();
-      if (!name) return gate(ERR["bad-request"]);
-      // Shut out mid-session (the link was closed): start the page over and
-      // join straight away with this name.
-      if (closed) { ls.set("papan:guest:name", name); try { sessionStorage.setItem("papan:guest:auto", "1"); } catch {} location.reload(); return; }
+      // Shut out mid-session (the link was closed): start the page over;
+      // it goes straight in again if the link works by now.
+      if (closed) { if (name) ls.set("papan:guest:name", name); location.reload(); return; }
       el.querySelector("#ggGo").disabled = true;
       el.querySelector("#ggGo").textContent = "Membuka papan…";
       enter(name).then(() => el.remove(), (err) => gate(ERR[err?.code] || "Gagal tersambung. Periksa internetmu lalu coba lagi."));
     };
   }
 
-  async function enter(name) {
+  const join = async (name) => {
     const res = await fetch("/api/papan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -107,7 +107,14 @@ function papanGuestHost(param) {
     });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw { code: out.error || "unknown" };
-    ls.set("papan:guest:name", name);
+    return out;
+  };
+
+  // Straight in: the name this browser used before, else the server's "Tamu N".
+  async function enter(name) {
+    const first = !ls.get("papan:guest:name");
+    const out = await join(name);
+    ls.set("papan:guest:name", out.name);
 
     const V = "12.18.0", sdk = (m) => import(`https://www.gstatic.com/firebasejs/${V}/firebase-${m}.js`);
     // Local testing on the Firebase emulators: the app's own switch (js/emulator.js).
@@ -131,13 +138,20 @@ function papanGuestHost(param) {
     const rdb = D.getDatabase(app, emu ? emu.EMULATOR_DATABASE.url : "https://wepeka-ba996-default-rtdb.asia-southeast1.firebasedatabase.app");
     if (emu) D.connectDatabaseEmulator(rdb, emu.EMULATOR_DATABASE.host, emu.EMULATOR_DATABASE.port);
 
-    const uid = out.uid, canEdit = out.role === "edit";
+    const uid = out.uid, canEdit = out.role === "edit", me = { name: out.name };
     lab.brand = { id: brandId, name: out.brand?.name || "", tagline: "", color: out.brand?.color || "" };
     lab.people = Object.values(out.people || {});
     labListeners.forEach((f) => { try { f(); } catch {} });
     const chip = document.querySelector(".brand-chip");
     if (chip) chip.innerHTML = `<span class="bn">${esc(lab.brand.name)}</span><span class="guest-chip">Tamu</span>`;
     window.__papanCanWrite = () => canEdit;
+    // "Ganti nama" in the guest's ⋯ menu (10-ui.js).
+    window.__papanRename = async (name) => {
+      const r = await join(name);
+      me.name = r.name; ls.set("papan:guest:name", r.name);
+      Store.me.name = r.name; Collab.presence({ nm: r.name }); Store.emit("names");
+      return r.name;
+    };
 
     // The team turns the link off or makes a new one: this guest is out at
     // once (the rules refuse the next read). "Lihat saja" ↔ "coret-coret"
@@ -160,19 +174,60 @@ function papanGuestHost(param) {
     };
     resolveReady({
       db: guestDb(F, fdb, brandId, boardId, out.ownerId, hooks),
-      user: guestUser(F, fdb, brandId, boardId, uid, name, canEdit, out.people || {}),
+      user: guestUser(F, fdb, brandId, boardId, uid, me, canEdit, out.people || {}),
       room: guestRoom(D, rdb, brandId, uid),
-      sample: null,
+      sample: guestAi(() => auth.currentUser?.getIdToken(), hooks),
       downloads: papanDownloads,
       assets: null,
     });
+    if (first) setTimeout(() => { try { toast(`Kamu masuk sebagai ${out.name}. Ganti nama lewat menu ⋯ di kanan atas.`); } catch {} }, 900);
   }
 
-  let auto = false;
-  try { auto = sessionStorage.getItem("papan:guest:auto") === "1"; sessionStorage.removeItem("papan:guest:auto"); } catch {}
-  const start = () => { gate(); if (auto && ls.get("papan:guest:name")) document.querySelector("#ggForm")?.requestSubmit(); };
+  const start = () => {
+    if (!brandId || !boardId || !OK.test(secret || "")) return gate();
+    enter(ls.get("papan:guest:name")).catch((err) => gate(ERR[err?.code] || "Gagal tersambung. Periksa internetmu lalu coba lagi."));
+  };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
+}
+
+// A guest's AI: api/ai.js charges the board owner's credits, at most
+// GUEST_AI_PER_DAY (api/papan.js) answers per guest per day. Same JSON
+// contract as the team's papanJson (js/ai.js): {"hasil": …}.
+function guestAi(idToken, hooks) {
+  const SYSTEM = [
+    "Kamu Tanya Brandlab yang sedang membantu seorang tamu di Papan (whiteboard sebuah brand). Ikuti format jawaban yang diminta dengan tepat. Jangan mengarang angka, nama orang, tanggal, atau keputusan yang tidak ada di papan.",
+    "Tulis seperti orang sungguhan yang paham branding, bukan seperti asisten AI: tanpa kata promosi yang berlebihan, langsung ke isi. Bahasa Indonesia santai (pakai 'kamu') kecuali diminta lain.",
+    'Respond ONLY with valid JSON, no markdown fences: {"hasil": <the answer in exactly the format the request asks for>}',
+  ].join("\n\n");
+  const say = (msg) => { try { toast(msg); } catch {} };
+  const sample = Object.assign(async (input) => ({ text: JSON.stringify(await sample.json(input)), truncated: false }), {
+    async json(input) {
+      const prompt = typeof input === "string" ? input : (input || []).map((m) => m.content).join("\n\n");
+      let res, out = {};
+      try {
+        const token = await idToken();
+        res = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ system: SYSTEM, user: String(prompt).slice(0, 40000), maxTokens: 2000, json: true, feature: "papan" }),
+        });
+        out = await res.json().catch(() => ({}));
+      } catch { say("AI gagal tersambung. Coba lagi."); throw { code: "upstream_error", shown: true }; }
+      if (!res.ok) {
+        const e = out.error;
+        if (e === "link-off") hooks.denied();
+        else say(e === "guest-limit" ? `Jatah AI-mu hari ini sudah habis (${out.limit || 10} jawaban). Coba lagi besok.` : e === "quota" ? "Kredit AI pemilik papan sedang habis." : e === "owner-inactive" || e === "readonly" ? "AI papan ini sedang tidak bisa dipakai." : e === "busy" ? "AI sedang sibuk. Coba lagi sebentar." : "AI gagal menjawab. Coba lagi.");
+        throw { code: res.status === 429 ? "rate_limited" : "upstream_error", shown: true };
+      }
+      let parsed = null;
+      try { parsed = JSON.parse(String(out.text || "").replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch {}
+      if (!parsed || typeof parsed !== "object" || !("hasil" in parsed)) throw { code: "invalid_json" };
+      return parsed.hasil;
+    },
+    limits: async () => ({ maxPromptBytes: 40000 }),
+  });
+  return sample;
 }
 
 // ---------- guest adapters: js/papan/bridge.js's, for one board ----------
@@ -256,7 +311,7 @@ function guestDb(F, fdb, brandId, boardId, ownerId, hooks) {
   return { doc: docRef, collection: (p) => collRef(p), cascadeDelete: true };
 }
 
-function guestUser(F, fdb, brandId, boardId, uid, name, canEdit, people) {
+function guestUser(F, fdb, brandId, boardId, uid, me, canEdit, people) {
   const names = new Map();
   const guestName = (id) => {
     if (!names.has(id)) names.set(id, F.getDoc(F.doc(fdb, `brands/${brandId}/boards/${boardId}/guests/${id}`)).then((s) => (s.exists() ? String(s.data().name || "") : ""), () => ""));
@@ -264,8 +319,8 @@ function guestUser(F, fdb, brandId, boardId, uid, name, canEdit, people) {
   };
   return {
     id: async () => uid,
-    me: async () => ({ id: uid, name, avatarUrl: "", color: null, email: "", isOwner: false, canEdit }),
-    name: async () => name,
+    me: async () => ({ id: uid, name: me.name, avatarUrl: "", color: null, email: "", isOwner: false, canEdit }),
+    name: async () => me.name,
     isOwner: async () => false,
     canEdit: async () => canEdit,
     can: async () => canEdit,
@@ -273,7 +328,7 @@ function guestUser(F, fdb, brandId, boardId, uid, name, canEdit, people) {
       const out = {};
       for (const id of [].concat(ids || [])) {
         const guest = String(id).startsWith("pg-");
-        const n = id === uid ? name : guest ? `${(await guestName(id)) || "Tamu"} (tamu)` : people[id] || "";
+        const n = id === uid ? me.name : guest ? `${(await guestName(id)) || "Tamu"} (tamu)` : people[id] || "";
         out[id] = { id, name: n, avatarUrl: "", color: null, email: null, isMe: id === uid, guest };
       }
       return out;
@@ -1341,6 +1396,8 @@ const Collab = (() => {
     if (!id) return fallback || "Seseorang";
     if (id === Store.me.id) return Store.me.name || "Kamu";
     if (String(id).startsWith("contoh")) return "Contoh";
+    // A guest's live name (presence) wins over the cached one: they can rename themselves.
+    if (fallback && String(id).startsWith("pg-")) return `${fallback} (tamu)`;
     const n = names.get(id); want(id);
     return (n && n.name) || fallback || "Seseorang";
   }
@@ -1484,7 +1541,10 @@ const R = {
     const title = `<div class="tt" data-f="title">${esc(d.title || (d.kind === "link" ? d.domain : ""))}</div>`;
     const desc = d.desc ? `<div class="ds" data-f="desc">${esc(d.desc)}</div>` : "";
     const open = (lbl) => `<a class="open" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">${lbl} ↗</a>`;
-    const web = window.__papanWeb, canPlay = web && embedSrc(d);
+    // Videos play right on the board wherever the page may load the players
+    // (Brandlab's CSP frame-src: YouTube, TikTok, Instagram); the claude.ai
+    // prototype can't, so there the play button opens the video's page.
+    const web = window.__papanWeb || BL(), canPlay = web && embedSrc(d);
     const playBtn = (cls, style = "") => canPlay ? `<button class="play" ${style} data-act="play-embed" aria-label="Putar di papan">${ic("play")}</button>` : `<a class="play" ${style} href="${esc(d.url)}" target="_blank" rel="noopener noreferrer" aria-label="Buka">${ic("play")}</a>`;
     if (d.kind === "youtube") return `<div class="media yt"${web && d.vid ? ` style="background:#000 url('https://i.ytimg.com/vi/${esc(d.vid)}/hqdefault.jpg') center/cover"` : ""}><span class="plat">${ic("youtube")} YouTube${d.short ? " Shorts" : ""}</span>${playBtn()}${web ? "" : '<span class="proto-note">Prototipe: diputar di tab baru</span>'}</div><div class="meta">${title}${desc}<div class="dom">${open("Putar di YouTube")}</div></div>`;
     if (d.kind === "tiktok") return `<div class="media tt"><span class="plat">${ic("tiktok")} TikTok${d.handle ? " · @" + esc(d.handle) : ""}</span>${playBtn("", 'style="color:#111"')}</div><div class="meta">${title}${desc}<div class="dom">${open("Buka di TikTok")}</div></div>`;
@@ -2831,8 +2891,8 @@ const UI = (() => {
     { sec: "Rapat", k: "timer", name: "Timer rapat", icon: "clock", cmd: ["timer"], c: "#ffa52b", run: () => timerPop($("#timerBtn")) },
     { sec: "Rapat", k: "voting", name: "Mulai voting", icon: "vote", cmd: ["voting", "vote"], c: "#b38cff", run: () => votingPop($("#moreBtn")) },
   ];
-  // Guests draw and write; brand components, AI and meeting tools stay with the team.
-  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || i.k === "calc" || i.k === "organize") : ALL_ITEMS;
+  // Guests draw, write and ask the AI; brand components and meeting tools stay with the team.
+  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || ["calc", "ask", "ideas", "organize"].includes(i.k)) : ALL_ITEMS;
 
   // ---------- popovers ----------
   function closePops() { if (popEl) { popEl.remove(); popEl = null; } $$(".tip").forEach((t) => t.remove()); }
@@ -3125,7 +3185,7 @@ const UI = (() => {
     });
   }
   function linkDialog(p) {
-    const s = modal("Tempel link atau video", `<label class="lbl" for="lnk">Link YouTube, TikTok, Instagram, atau website</label><input class="field" id="lnk" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"><div class="note" style="margin-top:12px">${ic("info")}<span>${window.__papanWeb ? "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Video YouTube, TikTok, dan Instagram bisa diputar langsung di papan." : "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Di prototipe ini video dibuka di tab baru karena halaman ini tidak boleh memuat pemutar luar. Di Brandlab nanti video YouTube dan TikTok diputar langsung di papan."}</span></div>`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="lnkGo">Taruh di papan</button>`, { cls: "sm" });
+    const s = modal("Tempel link atau video", `<label class="lbl" for="lnk">Link YouTube, TikTok, Instagram, atau website</label><input class="field" id="lnk" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"><div class="note" style="margin-top:12px">${ic("info")}<span>${window.__papanWeb || BL() ? "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Video YouTube, TikTok, dan Instagram bisa diputar langsung di papan." : "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Di prototipe ini video dibuka di tab baru karena halaman ini tidak boleh memuat pemutar luar. Di Brandlab nanti video YouTube dan TikTok diputar langsung di papan."}</span></div>`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="lnkGo">Taruh di papan</button>`, { cls: "sm" });
     const go = () => { const v = $("#lnk").value.trim(); if (!v) return; if (Actions.addEmbed(v, p)) s.remove(); };
     $("#lnkGo").onclick = go; $("#lnk").onkeydown = (e) => { if (e.key === "Enter") go(); };
     s.querySelector("[data-close2]").onclick = () => s.remove();
@@ -3188,10 +3248,12 @@ const UI = (() => {
   }
   function mainMenu(btn) {
     const theme = document.documentElement.dataset.theme || "system";
-    if (GUEST()) return pop(btn, `<button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
+    if (GUEST()) return pop(btn, `<button class="mi" data-pick="rename">${ic("edit")} Ganti nama (${esc(Store.me.name)})</button>
+      <button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
       <button class="mi" data-pick="keys">${ic("keyboard")} Pintasan keyboard<span class="k"><span class="kbd">?</span></span></button>
       <button class="mi" data-pick="tour">${ic("help")} Tur singkat</button>`, {
       onPick: (k) => {
+        if (k === "rename") setTimeout(renameGuest, 0);
         if (k === "theme") App.setTheme({ system: "dark", dark: "light", light: "system" }[theme]);
         if (k === "keys") shortcuts(); if (k === "tour") tour(true);
       } });
@@ -3249,6 +3311,18 @@ const UI = (() => {
     $("#shClient").onclick = () => { Canvas.clientView = !Canvas.clientView; $(".scrim")?.remove(); updateBanner(); };
     $("#shSummon") && ($("#shSummon").onclick = () => { Collab.summon(); $(".scrim")?.remove(); });
     $$("[data-follow]").forEach((b) => (b.onclick = () => { Collab.follow(b.dataset.follow); $(".scrim")?.remove(); }));
+  }
+  function renameGuest() {
+    const s = modal("Ganti nama", `<label class="lbl" for="gName">Nama yang terlihat oleh yang lain</label><input class="field" id="gName" maxlength="40" value="${esc(Store.me.name)}">`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="gNameGo">Simpan</button>`, { cls: "sm" });
+    const go = async () => {
+      const v = $("#gName").value.trim(); if (!v) return toast("Tulis namamu dulu");
+      try { const n = await window.__papanRename(v); s.remove(); toast(`Namamu sekarang ${n}`); }
+      catch { toast("Nama gagal diganti. Coba lagi."); }
+    };
+    s.querySelector("[data-close2]").onclick = () => s.remove();
+    $("#gNameGo").onclick = go;
+    $("#gName").onkeydown = (e) => { if (e.key === "Enter") go(); };
+    setTimeout(() => $("#gName")?.select(), 30);
   }
   // Guest link (api/papan.js): people outside the team open this one board
   // with just a name. Owner and editors switch it; it lives on the board doc.
@@ -4005,13 +4079,12 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     return c;
   };
   function open(seed) {
-    if (GUEST()) return toast("Tanya Brandlab hanya untuk tim brand");
     if (window.__papanChat) return window.__papanChat(); // Brandlab: its own Tanya Brandlab, with this board
     load();
     if (Canvas.sel.size) scope = "sel";
     Panels.open("assistant", null, { title: "Tanya Brandlab", icon: "sparkle",
       body: `<div class="as-wrap">${AI.available ? "" : `<div class="note violet" style="margin-bottom:10px">${ic("info")}<span>${window.__papanWeb ? "AI belum tersambung. Muat ulang halaman, atau login lagi." : "AI belum aktif di tampilan ini. Buka link di claude.ai lalu izinkan AI saat diminta."} Alat gratis di bawah tetap jalan.</span></div>`}
-        <div class="note" style="margin-bottom:10px">${ic("info")}<span>${window.__papanWeb ? "Dijawab AI Brandlab (DeepSeek) dengan persona Tanya Brandlab. Beta: maksimal 40 jawaban per hari per akun." : "Prototipe: jawaban dibuat Claude dengan persona, aturan, dan data brand yang sama. Di Brandlab: AI Brandlab, memakai kredit pemilik."}</span></div>
+        <div class="note" style="margin-bottom:10px">${ic("info")}<span>${GUEST() ? "Dijawab AI Brandlab dengan kredit pemilik papan. Untukmu maksimal 10 jawaban per hari." : window.__papanWeb ? "Dijawab AI Brandlab (DeepSeek) dengan persona Tanya Brandlab. Beta: maksimal 40 jawaban per hari per akun." : "Prototipe: jawaban dibuat Claude dengan persona, aturan, dan data brand yang sama. Di Brandlab: AI Brandlab, memakai kredit pemilik."}</span></div>
         <div id="asMsgs" class="as-msgs" aria-live="polite"></div></div>`,
       foot: `<div class="as-foot"><div class="as-chips" id="asChips">${CHIPS().map((c) => `<button class="chip" data-chip="${esc(c)}">${esc(c)}</button>`).join("")}</div>
         <div class="seg" id="asScope"></div>

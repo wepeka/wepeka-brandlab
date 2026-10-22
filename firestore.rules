@@ -578,6 +578,10 @@ service cloud.firestore {
     match /teamMail/{day} {
       allow read, write: if false;
     }
+    // Papan guests' AI answers today (api/papan.js reserveGuestAi).
+    match /papanGuestAi/{uid} {
+      allow read, write: if false;
+    }
 
     // Payment history — written only by api/midtrans/webhook.js and read
     // only by wpk-dp's admin dashboard, both via the Admin SDK (bypasses

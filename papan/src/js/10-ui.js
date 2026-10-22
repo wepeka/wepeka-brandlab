@@ -29,8 +29,8 @@ const UI = (() => {
     { sec: "Rapat", k: "timer", name: "Timer rapat", icon: "clock", cmd: ["timer"], c: "#ffa52b", run: () => timerPop($("#timerBtn")) },
     { sec: "Rapat", k: "voting", name: "Mulai voting", icon: "vote", cmd: ["voting", "vote"], c: "#b38cff", run: () => votingPop($("#moreBtn")) },
   ];
-  // Guests draw and write; brand components, AI and meeting tools stay with the team.
-  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || i.k === "calc" || i.k === "organize") : ALL_ITEMS;
+  // Guests draw, write and ask the AI; brand components and meeting tools stay with the team.
+  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || ["calc", "ask", "ideas", "organize"].includes(i.k)) : ALL_ITEMS;
 
   // ---------- popovers ----------
   function closePops() { if (popEl) { popEl.remove(); popEl = null; } $$(".tip").forEach((t) => t.remove()); }
@@ -323,7 +323,7 @@ const UI = (() => {
     });
   }
   function linkDialog(p) {
-    const s = modal("Tempel link atau video", `<label class="lbl" for="lnk">Link YouTube, TikTok, Instagram, atau website</label><input class="field" id="lnk" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"><div class="note" style="margin-top:12px">${ic("info")}<span>${window.__papanWeb ? "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Video YouTube, TikTok, dan Instagram bisa diputar langsung di papan." : "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Di prototipe ini video dibuka di tab baru karena halaman ini tidak boleh memuat pemutar luar. Di Brandlab nanti video YouTube dan TikTok diputar langsung di papan."}</span></div>`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="lnkGo">Taruh di papan</button>`, { cls: "sm" });
+    const s = modal("Tempel link atau video", `<label class="lbl" for="lnk">Link YouTube, TikTok, Instagram, atau website</label><input class="field" id="lnk" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"><div class="note" style="margin-top:12px">${ic("info")}<span>${window.__papanWeb || BL() ? "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Video YouTube, TikTok, dan Instagram bisa diputar langsung di papan." : "Bisa juga langsung tempel (Ctrl/⌘ V) link di kanvas. Di prototipe ini video dibuka di tab baru karena halaman ini tidak boleh memuat pemutar luar. Di Brandlab nanti video YouTube dan TikTok diputar langsung di papan."}</span></div>`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="lnkGo">Taruh di papan</button>`, { cls: "sm" });
     const go = () => { const v = $("#lnk").value.trim(); if (!v) return; if (Actions.addEmbed(v, p)) s.remove(); };
     $("#lnkGo").onclick = go; $("#lnk").onkeydown = (e) => { if (e.key === "Enter") go(); };
     s.querySelector("[data-close2]").onclick = () => s.remove();
@@ -386,10 +386,12 @@ const UI = (() => {
   }
   function mainMenu(btn) {
     const theme = document.documentElement.dataset.theme || "system";
-    if (GUEST()) return pop(btn, `<button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
+    if (GUEST()) return pop(btn, `<button class="mi" data-pick="rename">${ic("edit")} Ganti nama (${esc(Store.me.name)})</button>
+      <button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
       <button class="mi" data-pick="keys">${ic("keyboard")} Pintasan keyboard<span class="k"><span class="kbd">?</span></span></button>
       <button class="mi" data-pick="tour">${ic("help")} Tur singkat</button>`, {
       onPick: (k) => {
+        if (k === "rename") setTimeout(renameGuest, 0);
         if (k === "theme") App.setTheme({ system: "dark", dark: "light", light: "system" }[theme]);
         if (k === "keys") shortcuts(); if (k === "tour") tour(true);
       } });
@@ -447,6 +449,18 @@ const UI = (() => {
     $("#shClient").onclick = () => { Canvas.clientView = !Canvas.clientView; $(".scrim")?.remove(); updateBanner(); };
     $("#shSummon") && ($("#shSummon").onclick = () => { Collab.summon(); $(".scrim")?.remove(); });
     $$("[data-follow]").forEach((b) => (b.onclick = () => { Collab.follow(b.dataset.follow); $(".scrim")?.remove(); }));
+  }
+  function renameGuest() {
+    const s = modal("Ganti nama", `<label class="lbl" for="gName">Nama yang terlihat oleh yang lain</label><input class="field" id="gName" maxlength="40" value="${esc(Store.me.name)}">`, `<button class="btn btn-ghost" data-close2>Batal</button><button class="btn btn-primary" id="gNameGo">Simpan</button>`, { cls: "sm" });
+    const go = async () => {
+      const v = $("#gName").value.trim(); if (!v) return toast("Tulis namamu dulu");
+      try { const n = await window.__papanRename(v); s.remove(); toast(`Namamu sekarang ${n}`); }
+      catch { toast("Nama gagal diganti. Coba lagi."); }
+    };
+    s.querySelector("[data-close2]").onclick = () => s.remove();
+    $("#gNameGo").onclick = go;
+    $("#gName").onkeydown = (e) => { if (e.key === "Enter") go(); };
+    setTimeout(() => $("#gName")?.select(), 30);
   }
   // Guest link (api/papan.js): people outside the team open this one board
   // with just a name. Owner and editors switch it; it lives on the board doc.

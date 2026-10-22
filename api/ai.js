@@ -12,7 +12,8 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { adminDb, requireAuth } from "./_firebaseAdmin.js";
-import { quotaFor, reserveCall, releaseCall, MAX_INFLIGHT, isAdminUid, isReadOnlyAccount, resolvePayer } from "./_aiQuota.js";
+import { quotaFor, reserveCall, releaseCall, MAX_INFLIGHT, isAdminUid, isReadOnlyAccount, resolvePayer, isoDate } from "./_aiQuota.js";
+import { papanGuestPayer, reserveGuestAi, releaseGuestAi, GUEST_AI_PER_DAY } from "./papan.js";
 
 // Calls the app starts on its own — routing a chat message, the monthly
 // lessons, re-writing saved advice that went stale, the key test — don't
@@ -453,24 +454,26 @@ export default async function handler(req, res) {
   const startedAt = Date.now();
   if (req.method !== "POST") return res.status(405).json({ error: "method" });
 
-  let uid;
+  let uid, papan;
   try {
-    ({ uid } = await requireAuth(req));
+    // papan: a guest on a board's link (custom token from api/papan.js).
+    ({ uid, papan } = await requireAuth(req));
   } catch (err) {
     return res.status(err.status || 401).json({ error: "auth" });
   }
-  return handleAiRequest(req, res, { db: adminDb(), uid, startedAt });
+  return handleAiRequest(req, res, { db: adminDb(), uid, papan, startedAt });
 }
 
 // Everything after the token check, given the Firestore handle and the
 // verified uid — split out so tests can drive the whole charge → call →
 // refund path with a fake Firestore and a fake provider.
-export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now() }) {
+export async function handleAiRequest(req, res, { db, uid, papan = null, startedAt = Date.now() }) {
   // Kerja Tim: in a brand shared with the caller the brand owner pays (one
   // pool per team) — resolvePayer decides it from server-written data, never
   // from the request alone. Everything about the allowance below is the
-  // payer's; the in-flight slots stay the caller's own.
-  const payer = await resolvePayer(db, uid, req.body?.teamBrandId);
+  // payer's; the in-flight slots stay the caller's own. A Papan guest's
+  // calls are the board owner's too, while their link is still the board's.
+  const payer = papan ? await papanGuestPayer(db, papan) : await resolvePayer(db, uid, req.body?.teamBrandId);
   if (payer.error) return res.status(403).json({ error: payer.error });
   const payerUid = payer.payerUid;
   const accountSnap = await db.doc(`accounts/${payerUid}`).get();
@@ -534,8 +537,14 @@ export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now(
   // refunds the credit when no usable reply came out of the call.
   const quota = quotaFor(account, payerUid);
   const leaseId = randomUUID();
+  // A guest also spends one of their GUEST_AI_PER_DAY answers for today;
+  // a call that brings no answer gives it back with the owner's credit.
+  const guestDay = payer.guest ? isoDate() : null;
+  if (payer.guest && !(await reserveGuestAi(db, uid, guestDay))) return res.status(429).json({ error: "guest-limit", limit: GUEST_AI_PER_DAY });
+  const releaseGuest = () => (payer.guest ? releaseGuestAi(db, uid, guestDay).catch(() => {}) : null);
   let settling = null;
   const settle = (outcome) => {
+    if (!settling && outcome === "fail") releaseGuest();
     settling ||= releaseCall(db, payerUid, leaseId, { outcome, period: quota.period, freeLimit: FREE_CALLS_PER_DAY, inflightUid: uid }).catch((err) => {
       console.error("api/ai: releasing the call failed", uid, outcome, err?.message);
       return null;
@@ -554,9 +563,11 @@ export async function handleAiRequest(req, res, { db, uid, startedAt = Date.now(
   if (!reserved.ok && reserved.error === "busy") {
     // Not a usage cap (AI Sepuasnya stays unlimited): the account already
     // has MAX_INFLIGHT calls running; nothing was charged.
+    await releaseGuest();
     return res.status(429).json({ error: "busy", limit: MAX_INFLIGHT });
   }
   if (!reserved.ok) {
+    await releaseGuest();
     return res.status(429).json({ error: "quota", limit: quota.limit, period: quota.period, usage: { used: reserved.planUsed, limit: quota.limit, period: quota.period, dailyUsed: reserved.dailyUsed, dailyLimit: reserved.dailyLimit, credits: reserved.credits } });
   }
   // Only a call a free slot paid for gets the free reply length; past

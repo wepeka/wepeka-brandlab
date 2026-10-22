@@ -692,3 +692,53 @@ describe("Kerja Tim: one AI pool per team", () => {
     assert.deepEqual(db.read("aiInflight/rina").leases, {});
   });
 });
+
+// ---------------------------------------------------------------------------
+// Papan guests (api/papan.js): someone on a board's guest link asks the AI;
+// the board owner pays, at most GUEST_AI_PER_DAY answers per guest a day.
+describe("api/ai.js: Papan guests pay with the board owner's credits", () => {
+  const T = "s".repeat(24);
+  const claim = { b: "b1", k: "k1", t: T, r: "edit" };
+  const boardDb = (share = { on: true, role: "edit", t: T }) => fakeFirestore({ "accounts/owen": { plan: "pro", status: "active" }, "brands/b1/boards/k1": { ownerId: "owen", brandId: "b1", share } });
+  async function guestCall(db, papan = claim) {
+    const res = fakeRes();
+    providerCalls.length = 0;
+    await handleAiRequest({ body: { system: "s", user: "u", json: true, feature: "papan" } }, res, { db, uid: "pg-1", papan });
+    return res;
+  }
+  test("the owner pays and the guest's count for today goes up", async () => {
+    const db = boardDb();
+    provider = jsonReply('{"hasil":["ide"]}');
+    const res = await guestCall(db);
+    assert.equal(res.statusCode, 200);
+    assert.equal(db.read("aiUsage/owen").count, 1);
+    assert.equal(db.read("aiUsage/pg-1"), undefined);
+    assert.equal(db.read("papanGuestAi/pg-1").used, 1);
+  });
+  test("past 10 answers a day the guest is refused before anything is charged", async () => {
+    const db = boardDb();
+    provider = jsonReply('{"hasil":"ok"}');
+    for (let i = 0; i < 10; i++) assert.equal((await guestCall(db)).statusCode, 200);
+    const res = await guestCall(db);
+    assert.equal(res.statusCode, 429);
+    assert.equal(res.body.error, "guest-limit");
+    assert.equal(providerCalls.length, 0);
+    assert.equal(db.read("aiUsage/owen").count, 10);
+  });
+  test("a closed or replaced link gets no AI", async () => {
+    provider = jsonReply('{"hasil":"ok"}');
+    const off = await guestCall(boardDb({ on: false, role: "edit", t: T }));
+    assert.equal(off.statusCode, 403);
+    assert.equal(off.body.error, "link-off");
+    const old = await guestCall(boardDb({ on: true, role: "edit", t: "n".repeat(24) }));
+    assert.equal(old.statusCode, 403);
+  });
+  test("a call that brings no answer gives the guest's answer back too", async () => {
+    const db = boardDb();
+    provider = () => new Response(JSON.stringify({ error: { message: "bad request" } }), { status: 400 });
+    const res = await guestCall(db);
+    assert.equal(res.statusCode, 502);
+    assert.equal(db.read("aiUsage/owen").count, 0);
+    assert.equal(db.read("papanGuestAi/pg-1").used, 0);
+  });
+});

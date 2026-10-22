@@ -147,13 +147,12 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     return c;
   };
   function open(seed) {
-    if (GUEST()) return toast("Tanya Brandlab hanya untuk tim brand");
     if (window.__papanChat) return window.__papanChat(); // Brandlab: its own Tanya Brandlab, with this board
     load();
     if (Canvas.sel.size) scope = "sel";
     Panels.open("assistant", null, { title: "Tanya Brandlab", icon: "sparkle",
       body: `<div class="as-wrap">${AI.available ? "" : `<div class="note violet" style="margin-bottom:10px">${ic("info")}<span>${window.__papanWeb ? "AI belum tersambung. Muat ulang halaman, atau login lagi." : "AI belum aktif di tampilan ini. Buka link di claude.ai lalu izinkan AI saat diminta."} Alat gratis di bawah tetap jalan.</span></div>`}
-        <div class="note" style="margin-bottom:10px">${ic("info")}<span>${window.__papanWeb ? "Dijawab AI Brandlab (DeepSeek) dengan persona Tanya Brandlab. Beta: maksimal 40 jawaban per hari per akun." : "Prototipe: jawaban dibuat Claude dengan persona, aturan, dan data brand yang sama. Di Brandlab: AI Brandlab, memakai kredit pemilik."}</span></div>
+        <div class="note" style="margin-bottom:10px">${ic("info")}<span>${GUEST() ? "Dijawab AI Brandlab dengan kredit pemilik papan. Untukmu maksimal 10 jawaban per hari." : window.__papanWeb ? "Dijawab AI Brandlab (DeepSeek) dengan persona Tanya Brandlab. Beta: maksimal 40 jawaban per hari per akun." : "Prototipe: jawaban dibuat Claude dengan persona, aturan, dan data brand yang sama. Di Brandlab: AI Brandlab, memakai kredit pemilik."}</span></div>
         <div id="asMsgs" class="as-msgs" aria-live="polite"></div></div>`,
       foot: `<div class="as-foot"><div class="as-chips" id="asChips">${CHIPS().map((c) => `<button class="chip" data-chip="${esc(c)}">${esc(c)}</button>`).join("")}</div>
         <div class="seg" id="asScope"></div>
