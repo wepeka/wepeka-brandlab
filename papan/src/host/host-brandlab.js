@@ -1,4 +1,4 @@
-// Brandlab host (papan/build.mjs puts this first). The canvas runs in an
+// Brandlab host (papan/build.mjs puts it right after guest.js). The canvas runs in an
 // iframe on #/brand/:id/papan; Brandlab hands it a bridge
 // (js/papan/bridge.js, window.parent.__papanBridge) and this file turns that
 // into the window.claude.use() API the canvas was written against, so the
@@ -10,6 +10,9 @@
   // Brandlab's own chat button sits over the board, so the board's purple
   // "Tanya Brandlab" pill would be a second door to the same chat.
   document.documentElement.classList.add("host-brandlab");
+  // A board's guest link (api/papan.js): someone outside the team, no Brandlab.
+  const tamu = !bridge && new URLSearchParams(location.search).get("tamu");
+  if (tamu) { papanGuestHost(tamu); return; }
   if (!bridge) {
     // Opened on its own (bookmark, new tab): send people to the brand's page.
     document.addEventListener("DOMContentLoaded", () => {
@@ -64,16 +67,6 @@
     limits: async () => ({ maxPromptBytes: 40000 }),
   });
 
-  const downloads = {
-    async save({ filename, data }) {
-      const blob = data instanceof Blob ? data : new Blob([data]);
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-      return { status: "saved" };
-    },
-  };
-
   // The brand's real data for the widgets, and the simple actions on it.
   window.__papanLab = {
     get: () => jsonClone(bridge.lab.get()),
@@ -85,7 +78,10 @@
   window.__papanCanWrite = () => bridge.canWrite();
   // ✦ and the round button open Brandlab's own Tanya Brandlab, with the board.
   window.__papanChat = () => bridge.openChat(() => window.__papanSummary());
+  // The board's guest link, from the Bagikan dialog (10-ui.js guestLinkHTML).
+  window.__papanShare = async (id, opts) => jsonClone(await bridge.share(id, jsonClone(opts)));
+  window.__papanGuestLink = (id, t) => bridge.guestLink(id, t);
 
-  const adapters = { db, user: bridge.user, room: bridge.room || null, sample, downloads, assets: null };
+  const adapters = { db, user: bridge.user, room: bridge.room || null, sample, downloads: papanDownloads, assets: null };
   window.claude = { use: async (name) => adapters[name] || null };
 })();

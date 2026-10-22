@@ -35,6 +35,7 @@ const App = (() => {
   }
   function showEmpty() {
     const e = $("#empty"); e.hidden = false;
+    if (GUEST()) { e.innerHTML = `<div class="glass" style="border-radius:22px;padding:28px;max-width:460px;width:calc(100% - 32px);box-sizing:border-box;text-align:center"><h2 style="font-family:var(--font-display);font-weight:400;font-size:24px;margin:0 0 8px">Papan ini sudah tidak ada</h2><p class="muted" style="margin:0">Mungkin sudah dihapus oleh pemiliknya.</p></div>`; return; }
     e.innerHTML = `<div class="glass" style="border-radius:22px;padding:28px;max-width:560px;width:calc(100% - 32px);box-sizing:border-box;text-align:center">
       <div class="logo-mark" style="width:52px;height:52px;margin:0 auto 14px;font-size:24px;border-radius:15px;font-family:var(--font-display)">P</div>
       <h2 style="font-family:var(--font-display);font-weight:400;font-size:26px;margin:0 0 8px">Belum ada papan</h2>
@@ -86,6 +87,7 @@ const App = (() => {
     me.name = me.name || "Kamu";
     await Store.init({ db, assets, me, canWrite });
     if (!Store.canWrite) document.body.classList.add("ro");
+    if (GUEST()) Canvas.clientView = true; // guests see the board the way a client does
     Collab.init(room, user); AI.init(sample);
     Collab.presence({ uid: Store.me.id, nm: Store.me.name, b: null });
     // first board

@@ -74,6 +74,9 @@ const pct = (n, d = 1) => (isFinite(n) ? num(n, d) + "%" : "–");
 // "(data contoh)" only in the claude.ai prototype with its made-up brand.
 const EX = () => (window.__papanHost === "brandlab" ? "" : " (data contoh)");
 const BL = () => window.__papanHost === "brandlab";
+// Someone outside the team on the board's guest link (host/guest.js): no brand
+// data, no AI, only this board.
+const GUEST = () => !!window.__papanGuest;
 const LS = {
   key: (k) => "papan:" + (window.__papanNS ? window.__papanNS + ":" : "") + k,
   get(k, d = null) { try { const v = localStorage.getItem(LS.key(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },

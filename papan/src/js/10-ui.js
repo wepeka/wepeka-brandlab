@@ -2,7 +2,7 @@
 const UI = (() => {
   let lastPoint = null, popEl = null, ctxSig = "";
   const AI_COST = '<span class="cost">1 kredit</span>', FREE = '<span class="cost free">gratis</span>';
-  const ITEMS = [
+  const ALL_ITEMS = [
     { sec: "Dasar", k: "sticky", name: "Sticky note", icon: "sticky", cmd: ["sticky", "ide", "catatan"], c: "#ffc94a", run: (p) => Actions.addSticky(p) },
     { sec: "Dasar", k: "text", name: "Teks", icon: "text", cmd: ["teks", "judul"], c: "#a19b92", run: (p) => Actions.addText(p) },
     { sec: "Dasar", k: "shape", name: "Bentuk", icon: "shapes", cmd: ["bentuk", "kotak", "lingkaran"], c: "#7ab8ff", run: (p) => Actions.addShape("rect", p) },
@@ -29,6 +29,8 @@ const UI = (() => {
     { sec: "Rapat", k: "timer", name: "Timer rapat", icon: "clock", cmd: ["timer"], c: "#ffa52b", run: () => timerPop($("#timerBtn")) },
     { sec: "Rapat", k: "voting", name: "Mulai voting", icon: "vote", cmd: ["voting", "vote"], c: "#b38cff", run: () => votingPop($("#moreBtn")) },
   ];
+  // Guests draw and write; brand components, AI and meeting tools stay with the team.
+  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || i.k === "calc" || i.k === "organize") : ALL_ITEMS;
 
   // ---------- popovers ----------
   function closePops() { if (popEl) { popEl.remove(); popEl = null; } $$(".tip").forEach((t) => t.remove()); }
@@ -153,7 +155,7 @@ const UI = (() => {
     let h = "";
     if (Collab.followPeer) { const p = Collab.others().find((x) => x.peer === Collab.followPeer); h = `<span>${ic("follow")}</span><span>Mengikuti layar ${esc(p ? Collab.nameOf(p.by || p.presence?.uid, p.presence?.nm) : "")}</span><button class="btn btn-secondary btn-xs" data-b="unfollow">Berhenti</button>`; box.className = "banner glass"; }
     else if (Board.votingActive()) { const left = Board.votesLeft(); h = `<span style="color:var(--violet)">${ic("vote")}</span><span>Voting berjalan · sisa vote kamu <b class="tnum">${left}</b></span>${Store.canWrite ? '<button class="btn btn-secondary btn-xs" data-b="endvote">Selesai voting</button>' : ""}`; box.className = "banner glass violet"; }
-    else if (Canvas.clientView) { h = `<span style="color:var(--bad)">${ic("eye")}</span><span>Tampilan klien: frame & komentar internal disembunyikan</span><button class="btn btn-secondary btn-xs" data-b="client">Keluar</button>`; box.className = "banner glass red"; }
+    else if (Canvas.clientView && !GUEST()) { h = `<span style="color:var(--bad)">${ic("eye")}</span><span>Tampilan klien: frame & komentar internal disembunyikan</span><button class="btn btn-secondary btn-xs" data-b="client">Keluar</button>`; box.className = "banner glass red"; }
     else if (!Store.canWrite) { h = `<span>${ic("eye")}</span><span>Kamu hanya bisa melihat papan ini</span>`; box.className = "banner glass"; }
     box.hidden = !h;
     if (box._h !== h) { box.innerHTML = h; box._h = h; }
@@ -384,6 +386,13 @@ const UI = (() => {
   }
   function mainMenu(btn) {
     const theme = document.documentElement.dataset.theme || "system";
+    if (GUEST()) return pop(btn, `<button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
+      <button class="mi" data-pick="keys">${ic("keyboard")} Pintasan keyboard<span class="k"><span class="kbd">?</span></span></button>
+      <button class="mi" data-pick="tour">${ic("help")} Tur singkat</button>`, {
+      onPick: (k) => {
+        if (k === "theme") App.setTheme({ system: "dark", dark: "light", light: "system" }[theme]);
+        if (k === "keys") shortcuts(); if (k === "tour") tour(true);
+      } });
     pop(btn, `<button class="mi" data-pick="history">${ic("history")} Riwayat versi</button>
       <button class="mi" data-pick="recap">${ic("file")} Ringkas rapat</button>
       <button class="mi" data-pick="vote">${ic("vote")} ${Board.votingActive() ? "Selesai voting" : "Mulai voting"}</button>
@@ -430,12 +439,36 @@ const UI = (() => {
       <div class="note">${ic("users")}<span>Papan ini milik brand, jadi semua anggota tim brand bisa membukanya: <b>Editor</b> ikut mengubah, <b>Lihat saja</b> hanya membaca. Kursor dan editan teman terlihat langsung.</span></div>
       ${link ? `<div><label class="lbl" for="shLink">Link papan ini (untuk anggota tim)</label><div style="display:flex;gap:8px"><input class="field" id="shLink" readonly value="${esc(link)}"><button class="btn btn-primary" id="shCopy">${ic("copy")} Salin</button></div></div>` : ""}
       <div><label class="lbl">Di papan sekarang (${others.length + 1})</label><div class="vlist"><div class="vi"><span class="av me" style="background:${Collab.colorOf(Store.me.id)};margin:0">${esc(initials(Store.me.name))}</span><div class="t"><b>${esc(Store.me.name || "Kamu")}</b><span>kamu</span></div></div>${others.map((p) => `<div class="vi"><span class="av" style="background:${Collab.colorOf(p.by)};margin:0">${esc(initials(Collab.nameOf(p.by)))}</span><div class="t"><b>${esc(Collab.nameOf(p.by))}</b><span>sedang di papan ini</span></div><button class="btn btn-secondary btn-xs" data-follow="${p.peer}">Ikuti</button></div>`).join("")}</div></div>
+      ${guestLinkHTML()}
       <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" id="shTeam">${ic("users")} Undang anggota tim</button><button class="btn btn-secondary" id="shClient">${ic("eye")} ${Canvas.clientView ? "Keluar tampilan klien" : "Lihat sebagai klien"}</button>${others.length ? `<button class="btn btn-secondary" id="shSummon">${ic("megaphone")} Ajak semua lihat layarku</button>` : ""}</div></div>`, "", { cls: "sm" });
     const cp = $("#shCopy"); if (cp) cp.onclick = () => { const i = $("#shLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link papan disalin"), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } };
     $("#shTeam").onclick = () => { $(".scrim")?.remove(); window.__papanGo?.("team"); };
+    wireGuestLink();
     $("#shClient").onclick = () => { Canvas.clientView = !Canvas.clientView; $(".scrim")?.remove(); updateBanner(); };
     $("#shSummon") && ($("#shSummon").onclick = () => { Collab.summon(); $(".scrim")?.remove(); });
     $$("[data-follow]").forEach((b) => (b.onclick = () => { Collab.follow(b.dataset.follow); $(".scrim")?.remove(); }));
+  }
+  // Guest link (api/papan.js): people outside the team open this one board
+  // with just a name. Owner and editors switch it; it lives on the board doc.
+  function guestLinkHTML() {
+    if (!window.__papanShare) return "";
+    const s = Store.board()?.share || {}, on = !!s.on && !!s.t, can = Store.canWrite;
+    const link = on ? window.__papanGuestLink(Store.S.boardId, s.t) : "";
+    return `<div class="guest-link"><label class="pickrow"><input type="checkbox" id="gOn" ${on ? "checked" : ""} ${can ? "" : "disabled"}><span class="t"><b>Link tamu: siapa pun yang punya link bisa masuk</b><span>Tanpa akun, cukup tulis nama. Tamu hanya membuka papan ini, tidak melihat data brand, dan tidak memakai AI.</span></span></label>
+      ${on ? `<div style="display:flex;gap:8px;margin-top:8px"><select class="field" id="gRole" style="width:auto" ${can ? "" : "disabled"} aria-label="Yang bisa dilakukan tamu"><option value="edit" ${s.role !== "view" ? "selected" : ""}>Bisa coret-coret</option><option value="view" ${s.role === "view" ? "selected" : ""}>Lihat saja</option></select><input class="field" id="gLink" readonly value="${esc(link)}" aria-label="Link tamu"><button class="btn btn-primary" id="gCopy">${ic("copy")} Salin</button></div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Tamu melihat semua isi papan ini, termasuk bagian internal. Simpan yang rahasia di papan lain.${can ? ` <button class="linkbtn" id="gRotate">Buat link baru</button> (link lama langsung tidak bisa dipakai).` : ""}</p>` : ""}</div>`;
+  }
+  function wireGuestLink() {
+    const run = async (opts, done) => {
+      try { await window.__papanShare(Store.S.boardId, opts); toast(done); }
+      catch (e) { toast(e?.code === "owner-inactive" ? "Paket pemilik brand sedang tidak aktif" : e?.code === "not-editor" ? "Hanya pemilik dan editor yang bisa mengatur link tamu" : "Link tamu gagal diubah. Coba lagi."); }
+      $(".scrim")?.remove(); shareDialogBrandlab();
+    };
+    const role = () => $("#gRole")?.value || Store.board()?.share?.role || "edit";
+    $("#gOn") && ($("#gOn").onchange = (e) => run({ on: e.target.checked, role: role() }, e.target.checked ? "Link tamu aktif" : "Link tamu dimatikan"));
+    $("#gRole") && ($("#gRole").onchange = () => run({ on: true, role: role() }, role() === "view" ? "Tamu sekarang hanya bisa melihat" : "Tamu sekarang bisa coret-coret"));
+    $("#gRotate") && ($("#gRotate").onclick = () => run({ on: true, role: role(), rotate: true }, "Link baru dibuat. Link lama tidak bisa dipakai lagi."));
+    $("#gCopy") && ($("#gCopy").onclick = () => { const i = $("#gLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link tamu disalin"), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } });
   }
   function shortcuts() {
     const rows = [["Pilih", "V"], ["Geser kanvas", "H / tahan Spasi"], ["Sticky note", "N"], ["Teks", "T"], ["Bentuk", "S"], ["Garis penghubung", "C"], ["Pena", "P"], ["Penghapus", "E"], ["Frame", "F"], ["Komentar", "M"], ["Perintah cepat", "/"], ["Batal / ulang", "Ctrl Z / Ctrl Shift Z"], ["Duplikat", "Ctrl D"], ["Salin / tempel", "Ctrl C / Ctrl V"], ["Kelompokkan", "Ctrl G"], ["Kunci", "Ctrl L"], ["Hapus", "Del"], ["Geser pelan / cepat", "Panah / Shift + panah"], ["Zoom", "Ctrl + scroll, + / −"], ["Lihat semua", "Shift 1"], ["Zoom 100%", "Shift 0"], ["Zoom ke pilihan", "Shift 2"], ["Sticky baru", "Klik dua kali di kanvas"]];
@@ -453,17 +486,18 @@ const UI = (() => {
   function tour(force) {
     if (!force && LS.get("toured")) return;
     LS.set("toured", 1);
+    const steps = TOUR.filter((s) => { const el = $(s.sel); return el && el.getClientRects().length; });
     let i = 0;
     const hole = document.createElement("div"); hole.className = "tour-hole";
     const card = document.createElement("div"); card.className = "tour-card"; card.setAttribute("role", "dialog");
     document.body.append(hole, card);
     const end = () => { hole.remove(); card.remove(); window.removeEventListener("resize", show); };
     function show() {
-      const s = TOUR[i], el = $(s.sel); if (!el) return end();
+      const s = steps[i], el = $(s.sel); if (!el) return end();
       const r = el.getBoundingClientRect(), pad = s.pad ?? 8;
       const box = { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
       Object.assign(hole.style, { left: box.x + "px", top: box.y + "px", width: box.w + "px", height: box.h + "px" });
-      card.innerHTML = `<span class="stt">${i + 1} dari ${TOUR.length}</span><h4>${s.t}</h4><p>${s.d}</p><div class="row"><button class="btn btn-ghost btn-sm" data-t="skip">Lewati</button><button class="btn btn-primary btn-sm" data-t="next">${i === TOUR.length - 1 ? "Mulai" : "Lanjut"}</button></div>`;
+      card.innerHTML = `<span class="stt">${i + 1} dari ${steps.length}</span><h4>${s.t}</h4><p>${s.d}</p><div class="row"><button class="btn btn-ghost btn-sm" data-t="skip">Lewati</button><button class="btn btn-primary btn-sm" data-t="next">${i === steps.length - 1 ? "Mulai" : "Lanjut"}</button></div>`;
       const cw = card.offsetWidth, ch = card.offsetHeight;
       let x = box.x + box.w + 14, y = box.y;
       if (x + cw > innerWidth - 12) { x = box.x; y = box.y + box.h + 14; }
@@ -471,7 +505,7 @@ const UI = (() => {
       if (s.pad < 0) { x = innerWidth / 2 - cw / 2; y = innerHeight / 2 - ch / 2; }
       card.style.left = clamp(x, 12, innerWidth - cw - 12) + "px"; card.style.top = clamp(y, 12, innerHeight - ch - 12) + "px";
     }
-    card.addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (!b) return; if (b.dataset.t === "skip" || i === TOUR.length - 1) end(); else { i++; show(); } });
+    card.addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (!b) return; if (b.dataset.t === "skip" || i === steps.length - 1) end(); else { i++; show(); } });
     window.addEventListener("resize", show);
     show();
   }
@@ -494,7 +528,7 @@ const UI = (() => {
     Canvas.on((k) => { if (k === "cam") $("#zoomLbl").textContent = Math.round(Canvas.cam.z * 100) + "%"; });
     $("#undoBtn").onclick = () => History.undo();
     $("#redoBtn").onclick = () => History.redo();
-    $("#boardBtn").onclick = (e) => boardMenu(e.currentTarget);
+    $("#boardBtn").onclick = (e) => { if (!GUEST()) boardMenu(e.currentTarget); };
     $("#timerBtn").onclick = (e) => timerPop(e.currentTarget);
     $("#moreBtn").onclick = (e) => mainMenu(e.currentTarget);
     $("#shareBtn").onclick = () => shareDialog();
@@ -523,5 +557,5 @@ const UI = (() => {
       <div class="sep"></div><p class="muted" style="font-size:11.5px;margin:4px 10px 6px;max-width:280px">"Gratis" = dihitung dengan aturan, tanpa AI. Tiap alat punya tombol opsional untuk hasil lebih dalam dengan AI (1 kredit).</p>`, {
       side: innerWidth > 760 ? "right" : undefined, onPick: (k) => ({ ideas: () => Panels.ideas(), organize: () => Panels.organize(), recap: () => Panels.recap(), check: () => Panels.consistency(), deck: () => Deck.open() }[k]()) });
   }
-  return { init, ctx, closePops, pop, modal, slash, shortcuts, moreMenu, templates, newBoard, updateTop, tour, previewSVG, timerPop, votingPop, get lastPoint() { return lastPoint; }, AI_COST, FREE };
+  return { init, ctx, closePops, pop, modal, slash, shortcuts, moreMenu, templates, newBoard, updateTop, updateBanner, tour, previewSVG, timerPop, votingPop, get lastPoint() { return lastPoint; }, AI_COST, FREE };
 })();

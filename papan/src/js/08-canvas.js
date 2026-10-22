@@ -566,7 +566,7 @@ const Canvas = (() => {
   function eraseAt(p) {
     const rad = 10 / cam.z;
     for (const o of Store.objects()) {
-      if (o.type !== "pen" || drag.hits.has(o.id) || o.locked) continue;
+      if (o.type !== "pen" || drag.hits.has(o.id) || o.locked || (GUEST() && o.createdBy !== Store.me.id)) continue;
       if (penHit(o, p, rad)) { drag.hits.set(o.id, clone(o)); const el = els.get(o.id); if (el) el.style.opacity = ".15"; }
     }
   }
@@ -811,7 +811,7 @@ const Canvas = (() => {
     const o = Store.obj(id);
     if (o) {
       const after = applyEdit(o, part, v);
-      if ((o.type === "text" || (o.type === "sticky" && !(before.text || "").trim())) && !v.trim() && !part.field && !part.cell && part.item == null) { const ch = [{ id, before, after: null }]; Store.commit(ch); History.push(ch, "Hapus"); sel.delete(id); }
+      if ((o.type === "text" || (o.type === "sticky" && !(before.text || "").trim())) && !v.trim() && !part.field && !part.cell && part.item == null && (!GUEST() || o.createdBy === Store.me.id)) { const ch = [{ id, before, after: null }]; Store.commit(ch); History.push(ch, "Hapus"); sel.delete(id); }
       else { Store.commit([{ id, before: o, after }]); if (!deepEqual(before, after)) History.push([{ id, before, after: clone(Store.obj(id)) }], "Edit teks"); }
       const elo = els.get(id); if (elo) elo._key = null;
     }

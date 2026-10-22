@@ -169,7 +169,7 @@ const Store = (() => {
   let lastTouch = 0;
   function touchBoard() {
     const now = Date.now();
-    if (now - lastTouch < 30000) return;
+    if (GUEST() || now - lastTouch < 30000) return; // guests can't write the board doc itself
     lastTouch = now;
     updateBoard({ updatedAt: now, updatedBy: me.id });
   }

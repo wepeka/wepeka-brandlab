@@ -16,10 +16,11 @@
 //  - update() is a deep merge in the canvas's API, so a patch becomes
 //    FieldPath updates (null = deleteField).
 // Live cursors on the canvas: Realtime Database papanLive/{brandId}/{boardId}
-// (database.rules.json), shared brands only — like the rest of the live layer.
+// (database.rules.json) — for the team, and for guests who opened the board's
+// guest link (api/papan.js; their side is papan/src/host/guest.js).
 import { auth, db as liveDb, loadFirestore, loadDatabase } from "../firebase.js";
 import {
-  getBrand, docOwnerFor, canEditBrand, isSharedBrand, brandRole, onChange, listCampaigns, listContent, listGoals, updateGoal,
+  getBrand, docOwnerFor, canEditBrand, brandRole, onChange, listCampaigns, listContent, listGoals, updateGoal,
   createContent, updateContent, createCampaign, getBrandInsights, getSettings, STATUSES, STATUS_LABELS, CAMPAIGN_OBJECTIVES,
   CAMPAIGN_OBJECTIVE_LABELS, brandVoiceText, hydrateGuidelines,
 } from "../store.js";
@@ -29,7 +30,7 @@ import { goalItems } from "../goal-progress.js";
 import { colorFor } from "../collab/live.js";
 import { papanJson, buildBrandContext } from "../ai.js";
 
-const SUBS = ["objects", "comments", "versions", "recaps", "decks"];
+const SUBS = ["objects", "comments", "versions", "recaps", "decks", "guests"];
 const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const clean = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
 function encode(v) {
@@ -134,9 +135,11 @@ function makeDb(brandId) {
   return { doc: docRef, collection: (p) => collRef(p), cascadeDelete: true };
 }
 
-// ---------- live cursors (shared brands only) ----------
+// ---------- live cursors ----------
+// Any brand: a solo owner's board may have guests (the rules let the owner
+// in through papanShare/{brandId}/{boardId}). Before a board is shared the
+// writes are simply refused; refresh() listens again once it is.
 async function makeRoom(brandId, uid) {
-  if (!isSharedBrand(brandId)) return null;
   const live = await loadDatabase().catch(() => null);
   if (!live) return null;
   const { sdk: D, db: rdb } = live;
@@ -196,6 +199,7 @@ async function makeRoom(brandId, uid) {
       setTimeout(() => D.remove(r).catch(() => {}), 20000);
     },
     connected: () => connected,
+    refresh() { if (board) switchBoard(board); },
     onConnection(fn) { connHandlers.add(fn); setTimeout(() => fn(connected), 0); return () => connHandlers.delete(fn); },
     async canSendToClaudeSession() { return "off"; },
     close() { switchBoard(null); unOffset(); unConn(); },
@@ -211,7 +215,23 @@ function nameFor(brand, uid) {
   if (uid === auth.currentUser?.uid) return auth.currentUser.displayName || (auth.currentUser.email || "").split("@")[0];
   return "";
 }
-function makeUser(brandId) {
+// Guests (pg-…) aren't on the brand: their names sit next to the board
+// (boards/{id}/guests/{uid}, written by api/papan.js when they join).
+const guestNames = new Map();
+async function guestName(brandId, boardId, id) {
+  const key = `${boardId}/${id}`;
+  if (!guestNames.has(key)) {
+    guestNames.set(key, (async () => {
+      try {
+        const fs = await loadFirestore();
+        const s = await fs.getDoc(fs.doc(liveDb, `brands/${brandId}/boards/${boardId}/guests/${id}`));
+        return s.exists() ? String(s.data().name || "") : "";
+      } catch { return ""; }
+    })());
+  }
+  return guestNames.get(key);
+}
+function makeUser(brandId, boardOf) {
   const uid = auth.currentUser?.uid || null;
   return {
     id: async () => uid,
@@ -222,7 +242,11 @@ function makeUser(brandId) {
     can: async () => canEditBrand(brandId),
     async profiles(ids) {
       const b = getBrand(brandId), out = {};
-      for (const id of [].concat(ids || [])) out[id] = { id, name: nameFor(b, id), avatarUrl: "", color: colorFor(id), email: null, isMe: id === uid, guest: false };
+      for (const id of [].concat(ids || [])) {
+        const guest = String(id).startsWith("pg-");
+        const name = guest && boardOf() ? `${(await guestName(brandId, boardOf(), id)) || "Tamu"} (tamu)` : nameFor(b, id);
+        out[id] = { id, name, avatarUrl: "", color: colorFor(id), email: null, isMe: id === uid, guest };
+      }
       return out;
     },
     search: async () => [],
@@ -339,7 +363,7 @@ export async function createBridge({ brandId, boardId, onBoard, openChat }) {
   const lab = makeLab(brandId);
   const bridge = {
     brandId, boardId: boardId || null, host: "brandlab",
-    db: makeDb(brandId), user: makeUser(brandId), room, lab,
+    db: makeDb(brandId), user: makeUser(brandId, () => bridge.boardId), room, lab,
     canWrite: () => canEditBrand(brandId),
     theme: () => ({ theme: document.documentElement.dataset.theme || "dark", tint: getComputedStyle(document.documentElement).getPropertyValue("--brand-tint").trim() }),
     brandContext: () => { try { return buildBrandContext(getBrand(brandId)); } catch { return ""; } },
@@ -350,6 +374,20 @@ export async function createBridge({ brandId, boardId, onBoard, openChat }) {
       if (map[target]) location.hash = map[target];
     },
     boardChanged(id) { bridge.boardId = id; onBoard && onBoard(id); },
+    // The board's guest link (api/papan.js): {on, role: "edit"|"view", rotate}.
+    async share(id, opts = {}) {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/papan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ action: "share", brandId, boardId: id, on: !!opts.on, role: opts.role === "view" ? "view" : "edit", rotate: !!opts.rotate }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(out.error || "share"), { code: out.error || "unknown" });
+      room?.refresh();
+      return out.share;
+    },
+    guestLink: (id, t) => `${location.origin}/papan/?tamu=${encodeURIComponent(`${brandId}.${id}.${t}`)}`,
     openChat(summaryFn) { openChat && openChat(summaryFn); },
     close() { room?.close(); lab.close(); },
   };

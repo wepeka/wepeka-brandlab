@@ -107,10 +107,13 @@ const R = {
     const L = Store.lab();
     const snap = o.data.mode === "snapshot" && o.data.snap;
     const src = snap ? o.data.snap : W.live ? W.live(o, L) : null;
+    // Guests (GUEST()) don't see the brand's live data; a snapshot the team
+    // froze on the board is part of the board, so that still shows.
+    if (GUEST() && W.live && !snap) return `<div class="card-h" style="--wc:${W.color}"><span class="ic">${ic(W.icon)}</span><b>${esc(W.name)}</b></div><div class="card-b"><p class="muted" style="margin:0">Data brand di komponen ini hanya terlihat oleh tim brand.</p></div>`;
     const modeChip = W.live ? (snap ? `<span class="chip snap" title="Isi dibekukan">Snapshot ${fmtDate(o.data.snapAt)}</span>` : `<span class="chip live" title="Ikut berubah saat data Brandlab berubah">● Live</span>`) : "";
     return `<div class="card-h" style="--wc:${W.color}"><span class="ic">${ic(W.icon)}</span><b>${esc(W.title ? W.title(o, src, L) : W.name)}</b>${modeChip}${W.live && !inBrandlab() ? '<span class="chip ex" title="Brand fiktif untuk prototipe">Contoh</span>' : ""}</div>
       <div class="card-b">${W.body(o, src, L)}</div>
-      ${W.foot !== false ? `<div class="card-f"><button class="btn btn-secondary btn-xs" data-act="widget-detail">${ic("expand")} Detail</button>${W.live ? `<button class="btn btn-ghost btn-xs readonly-hide" data-act="widget-mode">${snap ? ic("refresh") + " Jadikan live" : ic("lock") + " Bekukan"}</button>` : ""}${W.open && inBrandlab() ? `<button class="btn btn-ghost btn-xs" data-act="open-in" data-to="${W.open}"${o.data.kind === "campaign" && src?.id ? ` data-id="${esc(src.id)}"` : ""}>${ic("arrowRight")} Buka</button>` : ""}</div>` : ""}`;
+      ${W.foot !== false && !GUEST() ? `<div class="card-f"><button class="btn btn-secondary btn-xs" data-act="widget-detail">${ic("expand")} Detail</button>${W.live ? `<button class="btn btn-ghost btn-xs readonly-hide" data-act="widget-mode">${snap ? ic("refresh") + " Jadikan live" : ic("lock") + " Bekukan"}</button>` : ""}${W.open && inBrandlab() ? `<button class="btn btn-ghost btn-xs" data-act="open-in" data-to="${W.open}"${o.data.kind === "campaign" && src?.id ? ` data-id="${esc(src.id)}"` : ""}>${ic("arrowRight")} Buka</button>` : ""}</div>` : ""}`;
   },
   doc(o) {
     const r = o.data || {};

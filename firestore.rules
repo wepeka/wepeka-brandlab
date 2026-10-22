@@ -369,22 +369,63 @@ service cloud.firestore {
       return (isOwner(resource.data) && accountActive())
         || (isEditor(brandAt(brandId)) && resource.data.ownerId == brandAt(brandId).ownerId && ownerActive(resource.data.ownerId));
     }
+    // Guests (api/papan.js): someone outside the team who opened the board's
+    // guest link signs in with a custom token whose "papan" claim names this
+    // brand, this board and the link's secret. Every read and write compares
+    // it with the board's current share {on, t, role}, so turning the link
+    // off or making a new one locks old guests out at once. Guests read the
+    // board (objects, comments, decks, guest names), write only objects and
+    // comments — stamped with the owner like the team's — and delete only
+    // what they made themselves. guests/{uid} (their names) is server-only.
+    function boardAt(brandId, boardId) {
+      return get(/databases/$(database)/documents/brands/$(brandId)/boards/$(boardId)).data;
+    }
+    function guestClaim() {
+      return request.auth.token.get('papan', {});
+    }
+    function papanGuest(brandId, boardId) {
+      return request.auth != null
+        && guestClaim().get('b', '') == brandId
+        && guestClaim().get('k', '') == boardId
+        && boardAt(brandId, boardId).get('share', {}).get('on', false) == true
+        && guestClaim().get('t', '') == boardAt(brandId, boardId).get('share', {}).get('t', '-');
+    }
+    function guestEdits(brandId, boardId) {
+      return papanGuest(brandId, boardId)
+        && boardAt(brandId, boardId).get('share', {}).get('role', 'view') == 'edit'
+        && ownerActive(boardAt(brandId, boardId).ownerId);
+    }
+    // objects carry createdBy, comments carry by: set by the guest, kept after.
+    function guestAuthor(sub) {
+      return sub == 'objects' ? 'createdBy' : 'by';
+    }
+    function guestWrites(brandId, boardId, sub) {
+      return sub in ['objects', 'comments']
+        && guestEdits(brandId, boardId)
+        && request.resource.data.ownerId == boardAt(brandId, boardId).ownerId
+        && (resource == null
+          ? request.resource.data.get(guestAuthor(sub), '') == request.auth.uid
+          : request.resource.data.get(guestAuthor(sub), '') == resource.data.get(guestAuthor(sub), ''));
+    }
     match /brands/{brandId}/boards/{boardId} {
-      allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
+      allow read: if canRead(brandAt(brandId)) || isOwner(resource.data) || papanGuest(brandId, boardId);
       allow create, update: if boardWriter(brandId)
         && (resource == null || keepsOwner())
         && request.resource.data.brandId == brandId
         && boardId.matches('[A-Za-z0-9_-]{1,64}');
       allow delete: if boardDeleter(brandId);
       match /{sub}/{docId} {
-        allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
+        allow read: if canRead(brandAt(brandId)) || isOwner(resource.data)
+          || (sub in ['objects', 'comments', 'decks', 'guests'] && papanGuest(brandId, boardId));
         allow create, update: if sub in ['objects', 'comments', 'versions', 'recaps', 'decks']
-          && boardWriter(brandId)
+          && (boardWriter(brandId) || guestWrites(brandId, boardId, sub))
           && (resource == null || keepsOwner())
           && request.resource.data.brandId == brandId
           && request.resource.data.boardId == boardId
           && docId.matches('[A-Za-z0-9_-]{1,64}');
-        allow delete: if boardDeleter(brandId);
+        allow delete: if boardDeleter(brandId)
+          || (sub in ['objects', 'comments'] && guestEdits(brandId, boardId)
+            && resource.data.get(guestAuthor(sub), '') == request.auth.uid);
       }
     }
     match /content/{id} {

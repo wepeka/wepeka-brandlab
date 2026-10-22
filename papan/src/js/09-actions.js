@@ -44,8 +44,9 @@ const Actions = (() => {
   function attachedConnectors(ids) { const s = new Set(ids); return Store.objects().filter((o) => o.type === "connector" && !s.has(o.id) && (s.has(o.data?.from?.id) || s.has(o.data?.to?.id))); }
 
   function remove() {
-    const objs = sel().filter((o) => !o.locked);
-    if (!objs.length) return sel().length && toast("Objek terkunci tidak bisa dihapus");
+    // A guest erases only what they put on the board (firestore.rules agrees).
+    const objs = sel().filter((o) => !o.locked && (!GUEST() || o.createdBy === Store.me.id));
+    if (!objs.length) return sel().length && toast(GUEST() ? "Tamu hanya bisa menghapus coretannya sendiri" : "Objek terkunci tidak bisa dihapus");
     const all = [...objs, ...attachedConnectors(objs.map((o) => o.id))];
     const ch = all.map((o) => ({ id: o.id, before: o, after: null }));
     Store.commit(ch); History.push(ch, "Hapus");

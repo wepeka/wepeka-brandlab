@@ -37,20 +37,25 @@
     "papanLive": {
       "$brandId": {
         "$boardId": {
-          ".read": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists()",
+          ".read": "auth != null && (root.child('teams').child($brandId).child(auth.uid).exists() || root.child('papanShare').child($brandId).child($boardId).child('owner').val() === auth.uid || (auth.token.papan != null && auth.token.papan.b === $brandId && auth.token.papan.k === $boardId && root.child('papanShare').child($brandId).child($boardId).child('on').val() === true && root.child('papanShare').child($brandId).child($boardId).child('t').val() === auth.token.papan.t))",
           "peers": {
             "$uid": {
-              ".write": "auth != null && auth.uid === $uid && root.child('teams').child($brandId).child(auth.uid).exists()",
+              ".write": "auth != null && auth.uid === $uid && (root.child('teams').child($brandId).child(auth.uid).exists() || root.child('papanShare').child($brandId).child($boardId).child('owner').val() === auth.uid || (auth.token.papan != null && auth.token.papan.b === $brandId && auth.token.papan.k === $boardId && root.child('papanShare').child($brandId).child($boardId).child('on').val() === true && root.child('papanShare').child($brandId).child($boardId).child('t').val() === auth.token.papan.t))",
               ".validate": "!newData.exists() || newData.child('by').val() === auth.uid"
             }
           },
           "events": {
+            ".indexOn": "at",
             "$eid": {
-              ".write": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists() && (!newData.exists() || newData.child('by').val() === auth.uid)"
+              ".write": "auth != null && (root.child('teams').child($brandId).child(auth.uid).exists() || root.child('papanShare').child($brandId).child($boardId).child('owner').val() === auth.uid || (auth.token.papan != null && auth.token.papan.b === $brandId && auth.token.papan.k === $boardId && root.child('papanShare').child($brandId).child($boardId).child('on').val() === true && root.child('papanShare').child($brandId).child($boardId).child('t').val() === auth.token.papan.t)) && (!newData.exists() || newData.child('by').val() === auth.uid)"
             }
           }
         }
       }
+    },
+    "papanShare": {
+      ".read": false,
+      ".write": false
     }
   }
 }

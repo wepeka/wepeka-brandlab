@@ -29,7 +29,8 @@ html,body{margin:0;height:100%}img{max-width:100%}
 
 async function main() {
   const jsFiles = (await fs.readdir(path.join(SRC, "js"))).filter((f) => f.endsWith(".js")).sort();
-  const parts = ['"use strict";', `/* ---- host-brandlab.js ---- */\n${await read("host/host-brandlab.js")}`];
+  const parts = ['"use strict";'];
+  for (const f of ["guest.js", "host-brandlab.js"]) parts.push(`/* ---- ${f} ---- */\n${await read(path.join("host", f))}`);
   for (const f of jsFiles) parts.push(`/* ---- ${f} ---- */\n${await read(path.join("js", f))}`);
   const js = parts.join("\n");
   const css = FONTS + (await read("style.css"));

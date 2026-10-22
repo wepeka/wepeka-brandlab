@@ -21,7 +21,7 @@ const Panels = (() => {
     if (s.length || !all) return { list: s, fromSel: true };
     return { list: Store.objects().filter((o) => o.type === "sticky" && (o.text || "").trim() && Canvas.visible(o)), fromSel: false };
   };
-  const aiNote = () => (AI.available ? "" : `<div class="note violet">${ic("info")}<span>${window.__papanWeb ? "AI belum tersambung. Muat ulang halaman." : "AI belum aktif di tampilan ini (butuh izin di Claude)."} Versi gratis tetap jalan.</span></div>`);
+  const aiNote = () => (AI.available ? "" : `<div class="note violet">${ic("info")}<span>${GUEST() ? "AI hanya untuk tim brand." : window.__papanWeb ? "AI belum tersambung. Muat ulang halaman." : "AI belum aktif di tampilan ini (butuh izin di Claude)."} Versi gratis tetap jalan.</span></div>`);
 
   // ---------- comments ----------
   function comments(objectId, keep) {
@@ -60,6 +60,7 @@ const Panels = (() => {
   // ---------- widget details ----------
   function widget(id) {
     const o = Store.obj(id); if (!o || o.type !== "widget") return;
+    if (GUEST()) return toast("Detail komponen ini hanya untuk tim brand");
     if (BL()) return blWidget(o);
     const kind = o.data.kind, W = WIDGETS[kind], L = Store.lab();
     const live = o.data.mode !== "snapshot";
@@ -470,7 +471,7 @@ const Panels = (() => {
 const Versions = (() => {
   let lastAuto = Date.now(), dirty = false;
   Store.on((k, info) => { if (k === "objects" && info?.local) dirty = true; if (k === "board-open") { lastAuto = Date.now(); dirty = false; } });
-  setInterval(() => { if (dirty && Store.canWrite && Date.now() - lastAuto > 10 * 60000) { save("Otomatis", true); } }, 60000);
+  setInterval(() => { if (dirty && Store.canWrite && !GUEST() && Date.now() - lastAuto > 10 * 60000) { save("Otomatis", true); } }, 60000);
   async function save(name, auto) { dirty = false; lastAuto = Date.now(); try { await Store.saveColl("versions", { name, auto, objects: Store.snapshotObjects() }, 30); } catch (e) { console.warn(e); if (!auto) toast("Versi gagal disimpan"); } }
   async function restore(v) {
     await save("Sebelum dipulihkan", true);

@@ -147,6 +147,7 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     return c;
   };
   function open(seed) {
+    if (GUEST()) return toast("Tanya Brandlab hanya untuk tim brand");
     if (window.__papanChat) return window.__papanChat(); // Brandlab: its own Tanya Brandlab, with this board
     load();
     if (Canvas.sel.size) scope = "sel";

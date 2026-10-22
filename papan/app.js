@@ -1,6 +1,353 @@
 "use strict";
+/* ---- guest.js ---- */
+// Guest host (papan/build.mjs puts it before host-brandlab.js, which calls
+// papanGuestHost when /papan/ is opened on its own with ?tamu=…).
+//
+// A board's guest link is /papan/?tamu=<brandId>.<boardId>.<secret>
+// (api/papan.js, "Link tamu" in the board's Bagikan dialog). The guest types a
+// name, the server hands back a sign-in for this one board, and this file
+// gives the canvas the same window.claude.use() adapters js/papan/bridge.js
+// gives the team, minus what guests don't get: brand data, AI, other boards.
+// It keeps its own Firebase app ("papan-guest", in-memory sign-in) so a
+// guest session never mixes with a Brandlab sign-in in the same browser.
+
+// Unduhan (PNG, PPTX, PDF) the same way for the team and for guests.
+const papanDownloads = {
+  async save({ filename, data }) {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    return { status: "saved" };
+  },
+};
+
+function papanGuestHost(param) {
+  const [brandId, boardId, secret] = String(param || "").split(".");
+  window.__papanHost = "brandlab";
+  window.__papanGuest = true;
+  window.__papanNS = `tamu-${brandId}`;
+  document.documentElement.classList.add("host-brandlab", "papan-guest");
+  window.__papanTheme = () => {
+    document.documentElement.setAttribute("data-theme", "dark");
+    document.documentElement.dataset.resolved = "dark";
+  };
+  window.__papanTheme();
+
+  // Brand components show nothing to guests (07-render.js); the chip shows the
+  // brand's name once the server has said which brand this is.
+  const lab = {
+    brandlab: true, guest: true, brand: { id: brandId, name: "", tagline: "", color: "" },
+    dna: { empty: true }, book: { colors: [], fonts: {}, logo: "", voice: "", tone: { do: [], dont: [] }, avoid: [] },
+    campaigns: [], content: [], contentStatuses: [], contentStatusLabels: {}, tasks: [], milestones: [], goals: [],
+    growth: null, sales: null, people: [], objectives: [],
+  };
+  const labListeners = new Set();
+  window.__papanLab = { get: () => lab, save: () => null, onChange: (fn) => { labListeners.add(fn); return () => labListeners.delete(fn); } };
+  window.__papanBrandContext = () => "";
+  window.__papanGo = () => {};
+
+  let resolveReady, closed = false;
+  const ready = new Promise((r) => (resolveReady = r));
+  window.claude = { use: async (name) => ((await ready) || {})[name] || null };
+
+  const ls = {
+    get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+  };
+  const OK = /^[A-Za-z0-9_-]{20,64}$/;
+  let key = ls.get("papan:guest:key");
+  if (!OK.test(key)) {
+    const b = crypto.getRandomValues(new Uint8Array(24));
+    key = btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    ls.set("papan:guest:key", key);
+  }
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const ERR = {
+    "link-off": "Link ini sudah tidak aktif. Minta link baru ke orang yang membagikannya.",
+    "not-found": "Papan ini tidak ditemukan. Mungkin sudah dihapus.",
+    "owner-inactive": "Papan ini sedang tidak bisa dibuka. Hubungi orang yang membagikannya.",
+    "bad-request": "Tulis namamu dulu.",
+    "closed": "Pemilik papan baru saja menutup link ini. Minta link baru kalau masih mau ikut.",
+  };
+  function gate(message) {
+    let el = document.querySelector(".guest-gate");
+    if (!el) { el = document.createElement("div"); el.className = "guest-gate"; document.body.appendChild(el); }
+    const broken = !brandId || !boardId || !OK.test(secret || "");
+    el.innerHTML = `<div class="guest-card" role="dialog" aria-modal="true" aria-labelledby="ggT">
+      <div class="gk">Wepeka Brandlab · Papan</div>
+      <h1 id="ggT">${broken ? "Link papan tidak lengkap" : "Kamu diajak ke sebuah papan"}</h1>
+      <p class="muted">${broken ? "Salin ulang link dari pesan yang kamu terima, lalu buka lagi." : "Tulis namamu supaya yang lain tahu siapa yang sedang ikut mencoret-coret."}</p>
+      ${broken ? "" : `<form id="ggForm" novalidate><label class="lbl" for="ggName">Nama kamu</label><input class="field" id="ggName" maxlength="40" autocomplete="name" value="${esc(ls.get("papan:guest:name"))}"><button class="btn btn-primary" type="submit" id="ggGo">Masuk ke papan</button></form>`}
+      ${message ? `<p class="gerr" role="alert">${esc(message)}</p>` : ""}
+      <p class="gfoot">Tanpa akun. Papan ini milik sebuah brand di Brandlab.</p></div>`;
+    const f = el.querySelector("#ggForm");
+    if (!f) return;
+    const input = el.querySelector("#ggName");
+    setTimeout(() => input.focus(), 50);
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const name = input.value.trim();
+      if (!name) return gate(ERR["bad-request"]);
+      // Shut out mid-session (the link was closed): start the page over and
+      // join straight away with this name.
+      if (closed) { ls.set("papan:guest:name", name); try { sessionStorage.setItem("papan:guest:auto", "1"); } catch {} location.reload(); return; }
+      el.querySelector("#ggGo").disabled = true;
+      el.querySelector("#ggGo").textContent = "Membuka papan…";
+      enter(name).then(() => el.remove(), (err) => gate(ERR[err?.code] || "Gagal tersambung. Periksa internetmu lalu coba lagi."));
+    };
+  }
+
+  async function enter(name) {
+    const res = await fetch("/api/papan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "join", brandId, boardId, t: secret, name, key }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw { code: out.error || "unknown" };
+    ls.set("papan:guest:name", name);
+
+    const V = "12.18.0", sdk = (m) => import(`https://www.gstatic.com/firebasejs/${V}/firebase-${m}.js`);
+    // Local testing on the Firebase emulators: the app's own switch (js/emulator.js).
+    let emu = null;
+    if (["localhost", "127.0.0.1"].includes(location.hostname)) { try { const m = await import("/js/emulator.js"); if (m.IS_EMULATOR) emu = m; } catch {} }
+    const [{ initializeApp }, A, F, D] = await Promise.all([sdk("app"), sdk("auth"), sdk("firestore"), sdk("database")]);
+    const config = emu ? emu.EMULATOR_CONFIG : {
+      apiKey: "AIzaSyDcApVGM0CyxfcTERsrwr7CK07YWlQT_vI",
+      authDomain: "wepeka-ba996.firebaseapp.com",
+      projectId: "wepeka-ba996",
+      storageBucket: "wepeka-ba996.firebasestorage.app",
+      messagingSenderId: "494668744644",
+      appId: "1:494668744644:web:e4bdc9aea34800849f0691",
+    };
+    const app = initializeApp(config, "papan-guest");
+    const auth = A.initializeAuth(app, { persistence: A.inMemoryPersistence });
+    if (emu) A.connectAuthEmulator(auth, emu.EMULATOR_AUTH_URL, { disableWarnings: true });
+    await A.signInWithCustomToken(auth, out.token);
+    const fdb = F.initializeFirestore(app, { experimentalAutoDetectLongPolling: true, localCache: F.memoryLocalCache() });
+    if (emu) F.connectFirestoreEmulator(fdb, emu.EMULATOR_FIRESTORE.host, emu.EMULATOR_FIRESTORE.port);
+    const rdb = D.getDatabase(app, emu ? emu.EMULATOR_DATABASE.url : "https://wepeka-ba996-default-rtdb.asia-southeast1.firebasedatabase.app");
+    if (emu) D.connectDatabaseEmulator(rdb, emu.EMULATOR_DATABASE.host, emu.EMULATOR_DATABASE.port);
+
+    const uid = out.uid, canEdit = out.role === "edit";
+    lab.brand = { id: brandId, name: out.brand?.name || "", tagline: "", color: out.brand?.color || "" };
+    lab.people = Object.values(out.people || {});
+    labListeners.forEach((f) => { try { f(); } catch {} });
+    const chip = document.querySelector(".brand-chip");
+    if (chip) chip.innerHTML = `<span class="bn">${esc(lab.brand.name)}</span><span class="guest-chip">Tamu</span>`;
+    window.__papanCanWrite = () => canEdit;
+
+    // The team turns the link off or makes a new one: this guest is out at
+    // once (the rules refuse the next read). "Lihat saja" ↔ "coret-coret"
+    // takes effect without reloading.
+    const hooks = {
+      denied() {
+        if (closed) return; closed = true;
+        try { auth.signOut(); } catch {}
+        gate(ERR.closed);
+      },
+      share(sh) {
+        const edit = sh?.role === "edit";
+        if (typeof Store === "undefined" || Store.canWrite === edit) return;
+        Store.canWrite = edit;
+        window.__papanCanWrite = () => edit;
+        document.body.classList.toggle("ro", !edit);
+        try { UI.updateBanner(); } catch {}
+        if (typeof toast === "function") toast(edit ? "Kamu sekarang bisa ikut coret-coret" : "Pemilik papan mengubah aksesmu jadi lihat saja");
+      },
+    };
+    resolveReady({
+      db: guestDb(F, fdb, brandId, boardId, out.ownerId, hooks),
+      user: guestUser(F, fdb, brandId, boardId, uid, name, canEdit, out.people || {}),
+      room: guestRoom(D, rdb, brandId, uid),
+      sample: null,
+      downloads: papanDownloads,
+      assets: null,
+    });
+  }
+
+  let auto = false;
+  try { auto = sessionStorage.getItem("papan:guest:auto") === "1"; sessionStorage.removeItem("papan:guest:auto"); } catch {}
+  const start = () => { gate(); if (auto && ls.get("papan:guest:name")) document.querySelector("#ggForm")?.requestSubmit(); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+}
+
+// ---------- guest adapters: js/papan/bridge.js's, for one board ----------
+const papanCodec = (() => {
+  const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  const encode = (v) => (Array.isArray(v) ? v.map((x) => (Array.isArray(x) ? { _a: encode(x) } : encode(x))) : isPlain(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encode(x)])) : v);
+  const decode = (v) => (Array.isArray(v) ? v.map((x) => (isPlain(x) && Object.keys(x).length === 1 && Array.isArray(x._a) ? decode(x._a) : decode(x))) : isPlain(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, decode(x)])) : v);
+  const clean = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
+  return { isPlain, encode, decode, clean };
+})();
+
+function guestDb(F, fdb, brandId, boardId, ownerId, hooks) {
+  const { isPlain, encode, decode, clean } = papanCodec;
+  const base = `brands/${brandId}/`;
+  const STAMPS = ["ownerId", "brandId", "boardId"];
+  const unstamp = (d) => { if (!d) return d; const o = { ...d }; STAMPS.forEach((k) => delete o[k]); return decode(o); };
+  const meta = (m) => ({ fromCache: m.fromCache, hasPendingWrites: m.hasPendingWrites });
+  const snapDoc = (s) => ({ id: s.id, exists: s.exists(), data: () => (s.exists() ? unstamp(s.data()) : undefined), metadata: meta(s.metadata) });
+  const snapQuery = (s) => ({ docs: s.docs.map(snapDoc), size: s.size, empty: s.empty, docChanges: () => s.docChanges().map((c) => ({ type: c.type, doc: snapDoc(c.doc), oldIndex: c.oldIndex, newIndex: c.newIndex })), metadata: meta(s.metadata) });
+  const err = (e) => ({ code: e?.code === "permission-denied" ? "permission_denied" : "unavailable", message: String(e?.message || e) });
+  const onErr = (cb) => (e) => { if (e?.code === "permission-denied") hooks.denied(); cb && cb(err(e)); };
+  function toUpdates(patch, prefix = [], out = []) {
+    for (const [k, v] of Object.entries(patch)) {
+      const p = [...prefix, k];
+      if (isPlain(v) && Object.keys(v).length) toUpdates(v, p, out);
+      else out.push(new F.FieldPath(...p), v === null ? F.deleteField() : encode(v));
+    }
+    return out;
+  }
+  function docRef(path) {
+    const ref = () => F.doc(fdb, base + path);
+    return {
+      id: path.split("/").pop(), path,
+      async get() { try { return snapDoc(await F.getDoc(ref())); } catch (e) { throw err(e); } },
+      async set(data) { try { await F.setDoc(ref(), { ...encode(clean(data) || {}), ownerId, brandId, boardId }); } catch (e) { throw err(e); } },
+      async update(patch) {
+        const p = clean(patch) || {}; STAMPS.forEach((k) => delete p[k]);
+        const args = toUpdates(p); if (!args.length) return;
+        try { await F.updateDoc(ref(), ...args); } catch (e) { throw err(e); }
+      },
+      async delete() { try { await F.deleteDoc(ref()); } catch (e) { throw err(e); } },
+      onSnapshot(next, fail) { return F.onSnapshot(ref(), (s) => next(snapDoc(s)), onErr(fail)); },
+      collection: (sub) => collRef(`${path}/${sub}`),
+    };
+  }
+  function collRef(path, q = {}) {
+    // The board list a guest sees is this one board.
+    if (path === "boards") {
+      const one = (d, type) => ({ docs: d.exists ? [d] : [], size: d.exists ? 1 : 0, empty: !d.exists, docChanges: () => (type ? [{ type, doc: d, oldIndex: -1, newIndex: 0 }] : []), metadata: d.metadata });
+      return {
+        path, doc: (id) => docRef(`boards/${id}`), where: () => collRef(path), orderBy: () => collRef(path), limit: () => collRef(path),
+        async get() { return one(await docRef(`boards/${boardId}`).get(), null); },
+        onSnapshot(next, fail) {
+          let had = false;
+          return docRef(`boards/${boardId}`).onSnapshot((d) => {
+            const type = d.exists ? (had ? "modified" : "added") : had ? "removed" : null; had = d.exists;
+            next(one(d, type));
+            if (d.exists) hooks.share(d.data().share);
+          }, fail);
+        },
+      };
+    }
+    const api = {
+      path,
+      doc: (id) => docRef(`${path}/${id || Math.random().toString(36).slice(2, 12)}`),
+      async add(data) { const d = api.doc(); await d.set(data); return d; },
+      where: () => api,
+      orderBy: (field, dir = "asc") => collRef(path, { ...q, field, dir }),
+      limit: (n) => collRef(path, { ...q, n }),
+      build() {
+        const c = F.collection(fdb, base + path), parts = [];
+        if (q.field) parts.push(F.orderBy(q.field, q.dir));
+        if (q.n) parts.push(F.limit(q.n));
+        return parts.length ? F.query(c, ...parts) : c;
+      },
+      async get() { try { return snapQuery(await F.getDocs(api.build())); } catch (e) { throw err(e); } },
+      onSnapshot(next, fail) { return F.onSnapshot(api.build(), (s) => next(snapQuery(s)), onErr(fail)); },
+    };
+    return api;
+  }
+  return { doc: docRef, collection: (p) => collRef(p), cascadeDelete: true };
+}
+
+function guestUser(F, fdb, brandId, boardId, uid, name, canEdit, people) {
+  const names = new Map();
+  const guestName = (id) => {
+    if (!names.has(id)) names.set(id, F.getDoc(F.doc(fdb, `brands/${brandId}/boards/${boardId}/guests/${id}`)).then((s) => (s.exists() ? String(s.data().name || "") : ""), () => ""));
+    return names.get(id);
+  };
+  return {
+    id: async () => uid,
+    me: async () => ({ id: uid, name, avatarUrl: "", color: null, email: "", isOwner: false, canEdit }),
+    name: async () => name,
+    isOwner: async () => false,
+    canEdit: async () => canEdit,
+    can: async () => canEdit,
+    async profiles(ids) {
+      const out = {};
+      for (const id of [].concat(ids || [])) {
+        const guest = String(id).startsWith("pg-");
+        const n = id === uid ? name : guest ? `${(await guestName(id)) || "Tamu"} (tamu)` : people[id] || "";
+        out[id] = { id, name: n, avatarUrl: "", color: null, email: null, isMe: id === uid, guest };
+      }
+      return out;
+    },
+    search: async () => [],
+  };
+}
+
+function guestRoom(D, rdb, brandId, uid) {
+  const clean = papanCodec.clean;
+  let mine = {}, board = null, peers = Object.freeze([]), offset = 0, connected = false;
+  let nodeRef = null, unBoard = null, unEvents = null, flushT = null;
+  const peerHandlers = new Set(), topicHandlers = new Map(), connHandlers = new Set();
+  D.onValue(D.ref(rdb, ".info/serverTimeOffset"), (s) => (offset = s.val() || 0));
+  D.onValue(D.ref(rdb, ".info/connected"), (s) => {
+    connected = !!s.val(); connHandlers.forEach((f) => f(connected));
+    if (connected && nodeRef) { D.onDisconnect(nodeRef).remove().catch(() => {}); writeNow(); }
+  });
+  const writeNow = () => { flushT = null; if (nodeRef) D.set(nodeRef, { by: uid, p: clean(mine), at: D.serverTimestamp() }).catch(() => {}); };
+  const schedule = () => { if (!flushT) flushT = setTimeout(writeNow, 90); };
+  const emitPeers = (joined, left, updated) => { const c = { peers, joined, left, updated }; peerHandlers.forEach((f) => f(c)); };
+  function switchBoard(b) {
+    if (nodeRef) { D.onDisconnect(nodeRef).cancel().catch(() => {}); D.remove(nodeRef).catch(() => {}); }
+    unBoard && unBoard(); unEvents && unEvents(); unBoard = unEvents = null;
+    const left = peers; peers = Object.freeze([]); board = b; nodeRef = null;
+    if (left.length) emitPeers([], left, []);
+    if (!b) return;
+    nodeRef = D.ref(rdb, `papanLive/${brandId}/${b}/peers/${uid}`);
+    D.onDisconnect(nodeRef).remove().catch(() => {});
+    let prev = new Map();
+    unBoard = D.onValue(D.ref(rdb, `papanLive/${brandId}/${b}/peers`), (s) => {
+      const val = s.val() || {}, list = [], joined = [], updated = [], gone = [];
+      for (const [k, v] of Object.entries(val)) {
+        const old = prev.get(k), pj = JSON.stringify(v.p || {});
+        const peer = old && old._pj === pj ? old : Object.freeze({ peer: k, by: v.by || k, isMe: k === uid, sameTab: k === uid, kind: "viewer", guest: String(k).startsWith("pg-"), presence: Object.freeze(v.p || {}), updatedAt: Date.now(), _pj: pj });
+        list.push(peer); if (!old) joined.push(peer); else if (old !== peer) updated.push(peer);
+      }
+      const cur = new Map(list.map((p) => [p.peer, p]));
+      for (const [k, p] of prev) if (!cur.has(k)) gone.push(p);
+      prev = cur; peers = Object.freeze(list);
+      emitPeers(joined, gone, updated);
+    }, () => {});
+    unEvents = D.onChildAdded(D.query(D.ref(rdb, `papanLive/${brandId}/${b}/events`), D.orderByChild("at"), D.startAt(Date.now() + offset - 1500)), (c) => {
+      const v = c.val(); if (!v) return;
+      const msg = { topic: v.topic, data: v.data, peer: v.by, by: v.by, isMe: v.by === uid, sameTab: v.by === uid, kind: "viewer", guest: String(v.by).startsWith("pg-") };
+      (topicHandlers.get(v.topic) || []).forEach((f) => { try { f(msg); } catch (e) { console.error(e); } });
+    });
+    writeNow();
+  }
+  return {
+    presence(patch) {
+      for (const [k, v] of Object.entries(patch || {})) { if (v === null) delete mine[k]; else mine[k] = v; }
+      if ("b" in patch && (patch.b || null) !== board) switchBoard(patch.b || null); else schedule();
+      return Promise.resolve();
+    },
+    peers: () => peers,
+    onPeers(fn) { peerHandlers.add(fn); setTimeout(() => fn({ peers, joined: peers, left: [], updated: [] }), 0); return () => peerHandlers.delete(fn); },
+    on(topic, fn) { if (!topicHandlers.has(topic)) topicHandlers.set(topic, []); topicHandlers.get(topic).push(fn); return () => { const a = topicHandlers.get(topic); const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); }; },
+    async emit(topic, data) {
+      if (!board) return;
+      const r = D.push(D.ref(rdb, `papanLive/${brandId}/${board}/events`));
+      await D.set(r, { topic, data: clean(data ?? null), by: uid, at: D.serverTimestamp() });
+      setTimeout(() => D.remove(r).catch(() => {}), 20000);
+    },
+    connected: () => connected,
+    refresh() { if (board) switchBoard(board); },
+    onConnection(fn) { connHandlers.add(fn); setTimeout(() => fn(connected), 0); return () => connHandlers.delete(fn); },
+    async canSendToClaudeSession() { return "off"; },
+    close() { switchBoard(null); },
+  };
+}
+
 /* ---- host-brandlab.js ---- */
-// Brandlab host (papan/build.mjs puts this first). The canvas runs in an
+// Brandlab host (papan/build.mjs puts it right after guest.js). The canvas runs in an
 // iframe on #/brand/:id/papan; Brandlab hands it a bridge
 // (js/papan/bridge.js, window.parent.__papanBridge) and this file turns that
 // into the window.claude.use() API the canvas was written against, so the
@@ -12,6 +359,9 @@
   // Brandlab's own chat button sits over the board, so the board's purple
   // "Tanya Brandlab" pill would be a second door to the same chat.
   document.documentElement.classList.add("host-brandlab");
+  // A board's guest link (api/papan.js): someone outside the team, no Brandlab.
+  const tamu = !bridge && new URLSearchParams(location.search).get("tamu");
+  if (tamu) { papanGuestHost(tamu); return; }
   if (!bridge) {
     // Opened on its own (bookmark, new tab): send people to the brand's page.
     document.addEventListener("DOMContentLoaded", () => {
@@ -66,16 +416,6 @@
     limits: async () => ({ maxPromptBytes: 40000 }),
   });
 
-  const downloads = {
-    async save({ filename, data }) {
-      const blob = data instanceof Blob ? data : new Blob([data]);
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-      return { status: "saved" };
-    },
-  };
-
   // The brand's real data for the widgets, and the simple actions on it.
   window.__papanLab = {
     get: () => jsonClone(bridge.lab.get()),
@@ -87,8 +427,11 @@
   window.__papanCanWrite = () => bridge.canWrite();
   // ✦ and the round button open Brandlab's own Tanya Brandlab, with the board.
   window.__papanChat = () => bridge.openChat(() => window.__papanSummary());
+  // The board's guest link, from the Bagikan dialog (10-ui.js guestLinkHTML).
+  window.__papanShare = async (id, opts) => jsonClone(await bridge.share(id, jsonClone(opts)));
+  window.__papanGuestLink = (id, t) => bridge.guestLink(id, t);
 
-  const adapters = { db, user: bridge.user, room: bridge.room || null, sample, downloads, assets: null };
+  const adapters = { db, user: bridge.user, room: bridge.room || null, sample, downloads: papanDownloads, assets: null };
   window.claude = { use: async (name) => adapters[name] || null };
 })();
 
@@ -169,6 +512,9 @@ const pct = (n, d = 1) => (isFinite(n) ? num(n, d) + "%" : "–");
 // "(data contoh)" only in the claude.ai prototype with its made-up brand.
 const EX = () => (window.__papanHost === "brandlab" ? "" : " (data contoh)");
 const BL = () => window.__papanHost === "brandlab";
+// Someone outside the team on the board's guest link (host/guest.js): no brand
+// data, no AI, only this board.
+const GUEST = () => !!window.__papanGuest;
 const LS = {
   key: (k) => "papan:" + (window.__papanNS ? window.__papanNS + ":" : "") + k,
   get(k, d = null) { try { const v = localStorage.getItem(LS.key(k)); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -734,7 +1080,7 @@ const Store = (() => {
   let lastTouch = 0;
   function touchBoard() {
     const now = Date.now();
-    if (now - lastTouch < 30000) return;
+    if (GUEST() || now - lastTouch < 30000) return; // guests can't write the board doc itself
     lastTouch = now;
     updateBoard({ updatedAt: now, updatedBy: me.id });
   }
@@ -1152,10 +1498,13 @@ const R = {
     const L = Store.lab();
     const snap = o.data.mode === "snapshot" && o.data.snap;
     const src = snap ? o.data.snap : W.live ? W.live(o, L) : null;
+    // Guests (GUEST()) don't see the brand's live data; a snapshot the team
+    // froze on the board is part of the board, so that still shows.
+    if (GUEST() && W.live && !snap) return `<div class="card-h" style="--wc:${W.color}"><span class="ic">${ic(W.icon)}</span><b>${esc(W.name)}</b></div><div class="card-b"><p class="muted" style="margin:0">Data brand di komponen ini hanya terlihat oleh tim brand.</p></div>`;
     const modeChip = W.live ? (snap ? `<span class="chip snap" title="Isi dibekukan">Snapshot ${fmtDate(o.data.snapAt)}</span>` : `<span class="chip live" title="Ikut berubah saat data Brandlab berubah">● Live</span>`) : "";
     return `<div class="card-h" style="--wc:${W.color}"><span class="ic">${ic(W.icon)}</span><b>${esc(W.title ? W.title(o, src, L) : W.name)}</b>${modeChip}${W.live && !inBrandlab() ? '<span class="chip ex" title="Brand fiktif untuk prototipe">Contoh</span>' : ""}</div>
       <div class="card-b">${W.body(o, src, L)}</div>
-      ${W.foot !== false ? `<div class="card-f"><button class="btn btn-secondary btn-xs" data-act="widget-detail">${ic("expand")} Detail</button>${W.live ? `<button class="btn btn-ghost btn-xs readonly-hide" data-act="widget-mode">${snap ? ic("refresh") + " Jadikan live" : ic("lock") + " Bekukan"}</button>` : ""}${W.open && inBrandlab() ? `<button class="btn btn-ghost btn-xs" data-act="open-in" data-to="${W.open}"${o.data.kind === "campaign" && src?.id ? ` data-id="${esc(src.id)}"` : ""}>${ic("arrowRight")} Buka</button>` : ""}</div>` : ""}`;
+      ${W.foot !== false && !GUEST() ? `<div class="card-f"><button class="btn btn-secondary btn-xs" data-act="widget-detail">${ic("expand")} Detail</button>${W.live ? `<button class="btn btn-ghost btn-xs readonly-hide" data-act="widget-mode">${snap ? ic("refresh") + " Jadikan live" : ic("lock") + " Bekukan"}</button>` : ""}${W.open && inBrandlab() ? `<button class="btn btn-ghost btn-xs" data-act="open-in" data-to="${W.open}"${o.data.kind === "campaign" && src?.id ? ` data-id="${esc(src.id)}"` : ""}>${ic("arrowRight")} Buka</button>` : ""}</div>` : ""}`;
   },
   doc(o) {
     const r = o.data || {};
@@ -1831,7 +2180,7 @@ const Canvas = (() => {
   function eraseAt(p) {
     const rad = 10 / cam.z;
     for (const o of Store.objects()) {
-      if (o.type !== "pen" || drag.hits.has(o.id) || o.locked) continue;
+      if (o.type !== "pen" || drag.hits.has(o.id) || o.locked || (GUEST() && o.createdBy !== Store.me.id)) continue;
       if (penHit(o, p, rad)) { drag.hits.set(o.id, clone(o)); const el = els.get(o.id); if (el) el.style.opacity = ".15"; }
     }
   }
@@ -2076,7 +2425,7 @@ const Canvas = (() => {
     const o = Store.obj(id);
     if (o) {
       const after = applyEdit(o, part, v);
-      if ((o.type === "text" || (o.type === "sticky" && !(before.text || "").trim())) && !v.trim() && !part.field && !part.cell && part.item == null) { const ch = [{ id, before, after: null }]; Store.commit(ch); History.push(ch, "Hapus"); sel.delete(id); }
+      if ((o.type === "text" || (o.type === "sticky" && !(before.text || "").trim())) && !v.trim() && !part.field && !part.cell && part.item == null && (!GUEST() || o.createdBy === Store.me.id)) { const ch = [{ id, before, after: null }]; Store.commit(ch); History.push(ch, "Hapus"); sel.delete(id); }
       else { Store.commit([{ id, before: o, after }]); if (!deepEqual(before, after)) History.push([{ id, before, after: clone(Store.obj(id)) }], "Edit teks"); }
       const elo = els.get(id); if (elo) elo._key = null;
     }
@@ -2213,8 +2562,9 @@ const Actions = (() => {
   function attachedConnectors(ids) { const s = new Set(ids); return Store.objects().filter((o) => o.type === "connector" && !s.has(o.id) && (s.has(o.data?.from?.id) || s.has(o.data?.to?.id))); }
 
   function remove() {
-    const objs = sel().filter((o) => !o.locked);
-    if (!objs.length) return sel().length && toast("Objek terkunci tidak bisa dihapus");
+    // A guest erases only what they put on the board (firestore.rules agrees).
+    const objs = sel().filter((o) => !o.locked && (!GUEST() || o.createdBy === Store.me.id));
+    if (!objs.length) return sel().length && toast(GUEST() ? "Tamu hanya bisa menghapus coretannya sendiri" : "Objek terkunci tidak bisa dihapus");
     const all = [...objs, ...attachedConnectors(objs.map((o) => o.id))];
     const ch = all.map((o) => ({ id: o.id, before: o, after: null }));
     Store.commit(ch); History.push(ch, "Hapus");
@@ -2454,7 +2804,7 @@ const Actions = (() => {
 const UI = (() => {
   let lastPoint = null, popEl = null, ctxSig = "";
   const AI_COST = '<span class="cost">1 kredit</span>', FREE = '<span class="cost free">gratis</span>';
-  const ITEMS = [
+  const ALL_ITEMS = [
     { sec: "Dasar", k: "sticky", name: "Sticky note", icon: "sticky", cmd: ["sticky", "ide", "catatan"], c: "#ffc94a", run: (p) => Actions.addSticky(p) },
     { sec: "Dasar", k: "text", name: "Teks", icon: "text", cmd: ["teks", "judul"], c: "#a19b92", run: (p) => Actions.addText(p) },
     { sec: "Dasar", k: "shape", name: "Bentuk", icon: "shapes", cmd: ["bentuk", "kotak", "lingkaran"], c: "#7ab8ff", run: (p) => Actions.addShape("rect", p) },
@@ -2481,6 +2831,8 @@ const UI = (() => {
     { sec: "Rapat", k: "timer", name: "Timer rapat", icon: "clock", cmd: ["timer"], c: "#ffa52b", run: () => timerPop($("#timerBtn")) },
     { sec: "Rapat", k: "voting", name: "Mulai voting", icon: "vote", cmd: ["voting", "vote"], c: "#b38cff", run: () => votingPop($("#moreBtn")) },
   ];
+  // Guests draw and write; brand components, AI and meeting tools stay with the team.
+  const ITEMS = GUEST() ? ALL_ITEMS.filter((i) => i.sec === "Dasar" || i.k === "calc" || i.k === "organize") : ALL_ITEMS;
 
   // ---------- popovers ----------
   function closePops() { if (popEl) { popEl.remove(); popEl = null; } $$(".tip").forEach((t) => t.remove()); }
@@ -2605,7 +2957,7 @@ const UI = (() => {
     let h = "";
     if (Collab.followPeer) { const p = Collab.others().find((x) => x.peer === Collab.followPeer); h = `<span>${ic("follow")}</span><span>Mengikuti layar ${esc(p ? Collab.nameOf(p.by || p.presence?.uid, p.presence?.nm) : "")}</span><button class="btn btn-secondary btn-xs" data-b="unfollow">Berhenti</button>`; box.className = "banner glass"; }
     else if (Board.votingActive()) { const left = Board.votesLeft(); h = `<span style="color:var(--violet)">${ic("vote")}</span><span>Voting berjalan · sisa vote kamu <b class="tnum">${left}</b></span>${Store.canWrite ? '<button class="btn btn-secondary btn-xs" data-b="endvote">Selesai voting</button>' : ""}`; box.className = "banner glass violet"; }
-    else if (Canvas.clientView) { h = `<span style="color:var(--bad)">${ic("eye")}</span><span>Tampilan klien: frame & komentar internal disembunyikan</span><button class="btn btn-secondary btn-xs" data-b="client">Keluar</button>`; box.className = "banner glass red"; }
+    else if (Canvas.clientView && !GUEST()) { h = `<span style="color:var(--bad)">${ic("eye")}</span><span>Tampilan klien: frame & komentar internal disembunyikan</span><button class="btn btn-secondary btn-xs" data-b="client">Keluar</button>`; box.className = "banner glass red"; }
     else if (!Store.canWrite) { h = `<span>${ic("eye")}</span><span>Kamu hanya bisa melihat papan ini</span>`; box.className = "banner glass"; }
     box.hidden = !h;
     if (box._h !== h) { box.innerHTML = h; box._h = h; }
@@ -2836,6 +3188,13 @@ const UI = (() => {
   }
   function mainMenu(btn) {
     const theme = document.documentElement.dataset.theme || "system";
+    if (GUEST()) return pop(btn, `<button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
+      <button class="mi" data-pick="keys">${ic("keyboard")} Pintasan keyboard<span class="k"><span class="kbd">?</span></span></button>
+      <button class="mi" data-pick="tour">${ic("help")} Tur singkat</button>`, {
+      onPick: (k) => {
+        if (k === "theme") App.setTheme({ system: "dark", dark: "light", light: "system" }[theme]);
+        if (k === "keys") shortcuts(); if (k === "tour") tour(true);
+      } });
     pop(btn, `<button class="mi" data-pick="history">${ic("history")} Riwayat versi</button>
       <button class="mi" data-pick="recap">${ic("file")} Ringkas rapat</button>
       <button class="mi" data-pick="vote">${ic("vote")} ${Board.votingActive() ? "Selesai voting" : "Mulai voting"}</button>
@@ -2882,12 +3241,36 @@ const UI = (() => {
       <div class="note">${ic("users")}<span>Papan ini milik brand, jadi semua anggota tim brand bisa membukanya: <b>Editor</b> ikut mengubah, <b>Lihat saja</b> hanya membaca. Kursor dan editan teman terlihat langsung.</span></div>
       ${link ? `<div><label class="lbl" for="shLink">Link papan ini (untuk anggota tim)</label><div style="display:flex;gap:8px"><input class="field" id="shLink" readonly value="${esc(link)}"><button class="btn btn-primary" id="shCopy">${ic("copy")} Salin</button></div></div>` : ""}
       <div><label class="lbl">Di papan sekarang (${others.length + 1})</label><div class="vlist"><div class="vi"><span class="av me" style="background:${Collab.colorOf(Store.me.id)};margin:0">${esc(initials(Store.me.name))}</span><div class="t"><b>${esc(Store.me.name || "Kamu")}</b><span>kamu</span></div></div>${others.map((p) => `<div class="vi"><span class="av" style="background:${Collab.colorOf(p.by)};margin:0">${esc(initials(Collab.nameOf(p.by)))}</span><div class="t"><b>${esc(Collab.nameOf(p.by))}</b><span>sedang di papan ini</span></div><button class="btn btn-secondary btn-xs" data-follow="${p.peer}">Ikuti</button></div>`).join("")}</div></div>
+      ${guestLinkHTML()}
       <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" id="shTeam">${ic("users")} Undang anggota tim</button><button class="btn btn-secondary" id="shClient">${ic("eye")} ${Canvas.clientView ? "Keluar tampilan klien" : "Lihat sebagai klien"}</button>${others.length ? `<button class="btn btn-secondary" id="shSummon">${ic("megaphone")} Ajak semua lihat layarku</button>` : ""}</div></div>`, "", { cls: "sm" });
     const cp = $("#shCopy"); if (cp) cp.onclick = () => { const i = $("#shLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link papan disalin"), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } };
     $("#shTeam").onclick = () => { $(".scrim")?.remove(); window.__papanGo?.("team"); };
+    wireGuestLink();
     $("#shClient").onclick = () => { Canvas.clientView = !Canvas.clientView; $(".scrim")?.remove(); updateBanner(); };
     $("#shSummon") && ($("#shSummon").onclick = () => { Collab.summon(); $(".scrim")?.remove(); });
     $$("[data-follow]").forEach((b) => (b.onclick = () => { Collab.follow(b.dataset.follow); $(".scrim")?.remove(); }));
+  }
+  // Guest link (api/papan.js): people outside the team open this one board
+  // with just a name. Owner and editors switch it; it lives on the board doc.
+  function guestLinkHTML() {
+    if (!window.__papanShare) return "";
+    const s = Store.board()?.share || {}, on = !!s.on && !!s.t, can = Store.canWrite;
+    const link = on ? window.__papanGuestLink(Store.S.boardId, s.t) : "";
+    return `<div class="guest-link"><label class="pickrow"><input type="checkbox" id="gOn" ${on ? "checked" : ""} ${can ? "" : "disabled"}><span class="t"><b>Link tamu: siapa pun yang punya link bisa masuk</b><span>Tanpa akun, cukup tulis nama. Tamu hanya membuka papan ini, tidak melihat data brand, dan tidak memakai AI.</span></span></label>
+      ${on ? `<div style="display:flex;gap:8px;margin-top:8px"><select class="field" id="gRole" style="width:auto" ${can ? "" : "disabled"} aria-label="Yang bisa dilakukan tamu"><option value="edit" ${s.role !== "view" ? "selected" : ""}>Bisa coret-coret</option><option value="view" ${s.role === "view" ? "selected" : ""}>Lihat saja</option></select><input class="field" id="gLink" readonly value="${esc(link)}" aria-label="Link tamu"><button class="btn btn-primary" id="gCopy">${ic("copy")} Salin</button></div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Tamu melihat semua isi papan ini, termasuk bagian internal. Simpan yang rahasia di papan lain.${can ? ` <button class="linkbtn" id="gRotate">Buat link baru</button> (link lama langsung tidak bisa dipakai).` : ""}</p>` : ""}</div>`;
+  }
+  function wireGuestLink() {
+    const run = async (opts, done) => {
+      try { await window.__papanShare(Store.S.boardId, opts); toast(done); }
+      catch (e) { toast(e?.code === "owner-inactive" ? "Paket pemilik brand sedang tidak aktif" : e?.code === "not-editor" ? "Hanya pemilik dan editor yang bisa mengatur link tamu" : "Link tamu gagal diubah. Coba lagi."); }
+      $(".scrim")?.remove(); shareDialogBrandlab();
+    };
+    const role = () => $("#gRole")?.value || Store.board()?.share?.role || "edit";
+    $("#gOn") && ($("#gOn").onchange = (e) => run({ on: e.target.checked, role: role() }, e.target.checked ? "Link tamu aktif" : "Link tamu dimatikan"));
+    $("#gRole") && ($("#gRole").onchange = () => run({ on: true, role: role() }, role() === "view" ? "Tamu sekarang hanya bisa melihat" : "Tamu sekarang bisa coret-coret"));
+    $("#gRotate") && ($("#gRotate").onclick = () => run({ on: true, role: role(), rotate: true }, "Link baru dibuat. Link lama tidak bisa dipakai lagi."));
+    $("#gCopy") && ($("#gCopy").onclick = () => { const i = $("#gLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link tamu disalin"), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } });
   }
   function shortcuts() {
     const rows = [["Pilih", "V"], ["Geser kanvas", "H / tahan Spasi"], ["Sticky note", "N"], ["Teks", "T"], ["Bentuk", "S"], ["Garis penghubung", "C"], ["Pena", "P"], ["Penghapus", "E"], ["Frame", "F"], ["Komentar", "M"], ["Perintah cepat", "/"], ["Batal / ulang", "Ctrl Z / Ctrl Shift Z"], ["Duplikat", "Ctrl D"], ["Salin / tempel", "Ctrl C / Ctrl V"], ["Kelompokkan", "Ctrl G"], ["Kunci", "Ctrl L"], ["Hapus", "Del"], ["Geser pelan / cepat", "Panah / Shift + panah"], ["Zoom", "Ctrl + scroll, + / −"], ["Lihat semua", "Shift 1"], ["Zoom 100%", "Shift 0"], ["Zoom ke pilihan", "Shift 2"], ["Sticky baru", "Klik dua kali di kanvas"]];
@@ -2905,17 +3288,18 @@ const UI = (() => {
   function tour(force) {
     if (!force && LS.get("toured")) return;
     LS.set("toured", 1);
+    const steps = TOUR.filter((s) => { const el = $(s.sel); return el && el.getClientRects().length; });
     let i = 0;
     const hole = document.createElement("div"); hole.className = "tour-hole";
     const card = document.createElement("div"); card.className = "tour-card"; card.setAttribute("role", "dialog");
     document.body.append(hole, card);
     const end = () => { hole.remove(); card.remove(); window.removeEventListener("resize", show); };
     function show() {
-      const s = TOUR[i], el = $(s.sel); if (!el) return end();
+      const s = steps[i], el = $(s.sel); if (!el) return end();
       const r = el.getBoundingClientRect(), pad = s.pad ?? 8;
       const box = { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
       Object.assign(hole.style, { left: box.x + "px", top: box.y + "px", width: box.w + "px", height: box.h + "px" });
-      card.innerHTML = `<span class="stt">${i + 1} dari ${TOUR.length}</span><h4>${s.t}</h4><p>${s.d}</p><div class="row"><button class="btn btn-ghost btn-sm" data-t="skip">Lewati</button><button class="btn btn-primary btn-sm" data-t="next">${i === TOUR.length - 1 ? "Mulai" : "Lanjut"}</button></div>`;
+      card.innerHTML = `<span class="stt">${i + 1} dari ${steps.length}</span><h4>${s.t}</h4><p>${s.d}</p><div class="row"><button class="btn btn-ghost btn-sm" data-t="skip">Lewati</button><button class="btn btn-primary btn-sm" data-t="next">${i === steps.length - 1 ? "Mulai" : "Lanjut"}</button></div>`;
       const cw = card.offsetWidth, ch = card.offsetHeight;
       let x = box.x + box.w + 14, y = box.y;
       if (x + cw > innerWidth - 12) { x = box.x; y = box.y + box.h + 14; }
@@ -2923,7 +3307,7 @@ const UI = (() => {
       if (s.pad < 0) { x = innerWidth / 2 - cw / 2; y = innerHeight / 2 - ch / 2; }
       card.style.left = clamp(x, 12, innerWidth - cw - 12) + "px"; card.style.top = clamp(y, 12, innerHeight - ch - 12) + "px";
     }
-    card.addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (!b) return; if (b.dataset.t === "skip" || i === TOUR.length - 1) end(); else { i++; show(); } });
+    card.addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (!b) return; if (b.dataset.t === "skip" || i === steps.length - 1) end(); else { i++; show(); } });
     window.addEventListener("resize", show);
     show();
   }
@@ -2946,7 +3330,7 @@ const UI = (() => {
     Canvas.on((k) => { if (k === "cam") $("#zoomLbl").textContent = Math.round(Canvas.cam.z * 100) + "%"; });
     $("#undoBtn").onclick = () => History.undo();
     $("#redoBtn").onclick = () => History.redo();
-    $("#boardBtn").onclick = (e) => boardMenu(e.currentTarget);
+    $("#boardBtn").onclick = (e) => { if (!GUEST()) boardMenu(e.currentTarget); };
     $("#timerBtn").onclick = (e) => timerPop(e.currentTarget);
     $("#moreBtn").onclick = (e) => mainMenu(e.currentTarget);
     $("#shareBtn").onclick = () => shareDialog();
@@ -2975,7 +3359,7 @@ const UI = (() => {
       <div class="sep"></div><p class="muted" style="font-size:11.5px;margin:4px 10px 6px;max-width:280px">"Gratis" = dihitung dengan aturan, tanpa AI. Tiap alat punya tombol opsional untuk hasil lebih dalam dengan AI (1 kredit).</p>`, {
       side: innerWidth > 760 ? "right" : undefined, onPick: (k) => ({ ideas: () => Panels.ideas(), organize: () => Panels.organize(), recap: () => Panels.recap(), check: () => Panels.consistency(), deck: () => Deck.open() }[k]()) });
   }
-  return { init, ctx, closePops, pop, modal, slash, shortcuts, moreMenu, templates, newBoard, updateTop, tour, previewSVG, timerPop, votingPop, get lastPoint() { return lastPoint; }, AI_COST, FREE };
+  return { init, ctx, closePops, pop, modal, slash, shortcuts, moreMenu, templates, newBoard, updateTop, updateBanner, tour, previewSVG, timerPop, votingPop, get lastPoint() { return lastPoint; }, AI_COST, FREE };
 })();
 
 /* ---- 11-panels.js ---- */
@@ -3002,7 +3386,7 @@ const Panels = (() => {
     if (s.length || !all) return { list: s, fromSel: true };
     return { list: Store.objects().filter((o) => o.type === "sticky" && (o.text || "").trim() && Canvas.visible(o)), fromSel: false };
   };
-  const aiNote = () => (AI.available ? "" : `<div class="note violet">${ic("info")}<span>${window.__papanWeb ? "AI belum tersambung. Muat ulang halaman." : "AI belum aktif di tampilan ini (butuh izin di Claude)."} Versi gratis tetap jalan.</span></div>`);
+  const aiNote = () => (AI.available ? "" : `<div class="note violet">${ic("info")}<span>${GUEST() ? "AI hanya untuk tim brand." : window.__papanWeb ? "AI belum tersambung. Muat ulang halaman." : "AI belum aktif di tampilan ini (butuh izin di Claude)."} Versi gratis tetap jalan.</span></div>`);
 
   // ---------- comments ----------
   function comments(objectId, keep) {
@@ -3041,6 +3425,7 @@ const Panels = (() => {
   // ---------- widget details ----------
   function widget(id) {
     const o = Store.obj(id); if (!o || o.type !== "widget") return;
+    if (GUEST()) return toast("Detail komponen ini hanya untuk tim brand");
     if (BL()) return blWidget(o);
     const kind = o.data.kind, W = WIDGETS[kind], L = Store.lab();
     const live = o.data.mode !== "snapshot";
@@ -3451,7 +3836,7 @@ const Panels = (() => {
 const Versions = (() => {
   let lastAuto = Date.now(), dirty = false;
   Store.on((k, info) => { if (k === "objects" && info?.local) dirty = true; if (k === "board-open") { lastAuto = Date.now(); dirty = false; } });
-  setInterval(() => { if (dirty && Store.canWrite && Date.now() - lastAuto > 10 * 60000) { save("Otomatis", true); } }, 60000);
+  setInterval(() => { if (dirty && Store.canWrite && !GUEST() && Date.now() - lastAuto > 10 * 60000) { save("Otomatis", true); } }, 60000);
   async function save(name, auto) { dirty = false; lastAuto = Date.now(); try { await Store.saveColl("versions", { name, auto, objects: Store.snapshotObjects() }, 30); } catch (e) { console.warn(e); if (!auto) toast("Versi gagal disimpan"); } }
   async function restore(v) {
     await save("Sebelum dipulihkan", true);
@@ -3620,6 +4005,7 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     return c;
   };
   function open(seed) {
+    if (GUEST()) return toast("Tanya Brandlab hanya untuk tim brand");
     if (window.__papanChat) return window.__papanChat(); // Brandlab: its own Tanya Brandlab, with this board
     load();
     if (Canvas.sel.size) scope = "sel";
@@ -4312,6 +4698,7 @@ const App = (() => {
   }
   function showEmpty() {
     const e = $("#empty"); e.hidden = false;
+    if (GUEST()) { e.innerHTML = `<div class="glass" style="border-radius:22px;padding:28px;max-width:460px;width:calc(100% - 32px);box-sizing:border-box;text-align:center"><h2 style="font-family:var(--font-display);font-weight:400;font-size:24px;margin:0 0 8px">Papan ini sudah tidak ada</h2><p class="muted" style="margin:0">Mungkin sudah dihapus oleh pemiliknya.</p></div>`; return; }
     e.innerHTML = `<div class="glass" style="border-radius:22px;padding:28px;max-width:560px;width:calc(100% - 32px);box-sizing:border-box;text-align:center">
       <div class="logo-mark" style="width:52px;height:52px;margin:0 auto 14px;font-size:24px;border-radius:15px;font-family:var(--font-display)">P</div>
       <h2 style="font-family:var(--font-display);font-weight:400;font-size:26px;margin:0 0 8px">Belum ada papan</h2>
@@ -4363,6 +4750,7 @@ const App = (() => {
     me.name = me.name || "Kamu";
     await Store.init({ db, assets, me, canWrite });
     if (!Store.canWrite) document.body.classList.add("ro");
+    if (GUEST()) Canvas.clientView = true; // guests see the board the way a client does
     Collab.init(room, user); AI.init(sample);
     Collab.presence({ uid: Store.me.id, nm: Store.me.name, b: null });
     // first board

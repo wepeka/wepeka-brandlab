@@ -656,6 +656,22 @@ body.ro .readonly-hide{ display:none !important; }
 .fab svg.i{ width:18px; height:18px; }
 .side.open ~ .fab, .side.open + .fab{ }
 .host-brandlab .fab{ display:none; }
+.linkbtn{ background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--accent); text-decoration:underline; cursor:pointer; }
+.guest-link{ display:flex; flex-direction:column; }
+
+/* Guests on a board's guest link (host/guest.js): only this board, no brand data, no AI */
+.papan-guest #shareBtn, .papan-guest #deckBtn, .papan-guest #timerBtn, .papan-guest #aiBtn, .papan-guest .btn-ai, .papan-guest #boardBtn svg.i{ display:none !important; }
+.papan-guest #boardBtn{ cursor:default; }
+.guest-chip{ font-size:11px; font-weight:800; padding:2px 8px; border-radius:var(--r-pill); background:var(--accent-soft); color:var(--accent); }
+.guest-gate{ position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+.guest-card{ width:min(420px, 100%); background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:var(--shadow-lg); padding:26px; }
+.guest-card .gk{ font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); }
+.guest-card h1{ font-family:var(--font-display); font-weight:900; font-size:26px; line-height:1.15; margin:8px 0 8px; }
+.guest-card p{ margin:0; }
+.guest-card form{ display:flex; flex-direction:column; gap:10px; margin-top:18px; }
+.guest-card .btn{ justify-content:center; }
+.guest-card .gerr{ color:var(--bad); font-size:13px; margin-top:12px; }
+.guest-card .gfoot{ font-size:12px; color:var(--faint); margin-top:16px; }
 .as-wrap{ display:flex; flex-direction:column; min-height:100%; }
 .as-msgs{ display:flex; flex-direction:column; gap:12px; flex:1; }
 .as-empty{ text-align:center; padding:28px 10px; color:var(--muted); }

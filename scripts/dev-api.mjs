@@ -97,6 +97,7 @@ globalThis.fetch = async (input, init) => {
 const ROUTES = {
   "/api/ai": "../api/ai.js",
   "/api/team": "../api/team.js",
+  "/api/papan": "../api/papan.js",
   "/api/brands/recount": "../api/brands/recount.js",
 };
 
