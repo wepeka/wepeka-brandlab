@@ -9,19 +9,19 @@ import { accessState } from "./account.js";
 // two equal): how many people an owner may invite, by plan. The owner is
 // not a seat.
 export const TEAM_SEATS = {
-  trial: 1,
-  starter: 1,
+  trial: 3,
+  starter: 3,
   pro: 3,
-  studio: 10,
-  founder: 2,
-  "founder-ultimate": 5,
-  lifetime: 2,
-  builder: 1,
-  "content-os": 1,
-  monthly: 1,
+  studio: 3,
+  founder: 3,
+  "founder-ultimate": 3,
+  lifetime: 3,
+  builder: 3,
+  "content-os": 3,
+  monthly: 3,
   free: 0,
 };
-export const DEFAULT_TEAM_SEATS = 1;
+export const DEFAULT_TEAM_SEATS = 3;
 // The plan's seats plus the extra seats still running (teamSeatSlotsUntil).
 export function teamSeatsFor(account, now = Date.now()) {
   if (!account) return 0;

@@ -6,7 +6,8 @@ import {
   composeInviteEmail, composeCodeEmail, joinNames, CODE_MAX_ATTEMPTS, codeGuardId, guardToday, pausedMembers, CODE_DAY_MS,
   takeMailSlot, teamMailDay, TEAM_MAIL_DAY_TOTAL, TEAM_MAIL_DAY_OWNER,
 } from "../api/_team.js";
-import { TEAM_SEATS, teamSeatsFor, PLANS } from "../api/_plans.js";
+import { TEAM_SEATS, teamSeatsFor, PLANS, ADDONS } from "../api/_plans.js";
+import { TEAM_SEAT_ADDON } from "../js/site-links.js";
 import { firstShareScrub } from "../api/team.js";
 import { TEAM_SEATS as CLIENT_SEATS, teamSeatsFor as clientSeatsFor, effectiveAccess } from "../js/team.js";
 
@@ -69,14 +70,16 @@ describe("seats", () => {
     assert.equal(seatsUsed(brands, invites, { now, exceptInviteId: "i1" }), 2);
   });
   test("seats per plan: the owner is not a seat, every sold plan has a number", () => {
-    assert.equal(teamSeatsFor({ plan: "pro" }), 3);
-    assert.equal(teamSeatsFor({ plan: "studio" }), 10);
-    // Pay-once plans stay small (2026-10-22): one Lifetime isn't a crowd's.
-    assert.equal(teamSeatsFor({ plan: "founder" }), 2);
-    assert.equal(teamSeatsFor({ plan: "founder-ultimate" }), 5);
+    // Every plan starts with 3 (owner's decision, 2026-10-22); more are rented.
+    for (const plan of ["trial", "starter", "pro", "studio", "founder", "founder-ultimate"]) assert.equal(teamSeatsFor({ plan }), 3, plan);
     assert.equal(teamSeatsFor({ plan: "free" }), 0);
     assert.equal(teamSeatsFor(null), 0);
     for (const p of Object.values(PLANS)) assert.ok(Number.isInteger(TEAM_SEATS[p.plan]), p.plan);
+  });
+  test("an extra seat is Rp 15.000 for 30 days, the same price on the page and at checkout", () => {
+    assert.equal(ADDONS["addon-team-seat"].amount, 15000);
+    assert.equal(ADDONS["addon-team-seat-renew"].amount, 15000);
+    assert.equal(TEAM_SEAT_ADDON.price, ADDONS["addon-team-seat"].amount);
   });
   test("extra seats count while they run, on the server and in the app alike", () => {
     const account = { plan: "pro", teamSeatSlotsUntil: [now + DAY, now - 1, now + 2 * DAY] };

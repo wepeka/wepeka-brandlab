@@ -79,12 +79,13 @@ Object.assign(ADDONS, AI_ADDONS);
 export const SUBSCRIPTION_PLANS = ["starter", "pro", "studio"];
 ADDONS["addon-brand-sub"] = { amount: 29000, label: "Brandlab — Tambah 1 brand (30 hari)", addBrandSlotMs: MONTH_MS };
 ADDONS["addon-brand-sub-renew"] = { amount: 29000, label: "Brandlab — Perpanjang 1 slot brand (30 hari)", addBrandSlotMs: MONTH_MS, renew: true };
-// An extra team seat, 30 days, any paid account (Kerja Tim, 2026-10-22):
+// An extra team seat, Rp 15.000 / 30 days, any paid account (Kerja Tim,
+// 2026-10-22; lowered from Rp 29.000 the same day):
 // accounts/{uid}.teamSeatSlotsUntil, same slot list as the brand slots
 // (nextBrandSlots). When one lapses and the team is bigger than its seats,
 // the newest members are paused, not removed (api/team.js reconcileSeats).
-ADDONS["addon-team-seat"] = { amount: 29000, label: "Brandlab — Tambah 1 kursi tim (30 hari)", addTeamSeatMs: MONTH_MS };
-ADDONS["addon-team-seat-renew"] = { amount: 29000, label: "Brandlab — Perpanjang 1 kursi tim (30 hari)", addTeamSeatMs: MONTH_MS, renew: true };
+ADDONS["addon-team-seat"] = { amount: 15000, label: "Brandlab — Tambah 1 kursi tim (30 hari)", addTeamSeatMs: MONTH_MS };
+ADDONS["addon-team-seat-renew"] = { amount: 15000, label: "Brandlab — Perpanjang 1 kursi tim (30 hari)", addTeamSeatMs: MONTH_MS, renew: true };
 
 // The slot list after one monthly purchase. New: reuses a lapsed slot if
 // there is one (so the list never grows with dead dates), else adds one.
@@ -493,25 +494,25 @@ export const LEGACY_PLANS = {
 };
 
 // Kerja Tim: how many people an owner may invite onto their brands, by
-// plan (the owner is not a seat). Set 2026-10-22 (owner's decision): small
-// on pay-once plans, so one Lifetime can't be split among a crowd; anyone
-// needing more rents extra seats (addon-team-seat). The one place to change
-// them; js/team.js mirrors this table for display (tests/team.test.mjs
-// keeps the two equal). Admin = no limit.
+// plan (the owner is not a seat). 2026-10-22 (owner's decision, replacing
+// the per-plan numbers set earlier that day): every plan starts with 3;
+// more are rented at Rp 15.000 / 30 days each (addon-team-seat). The one
+// place to change them; js/team.js mirrors this table for display
+// (tests/team.test.mjs keeps the two equal). Admin = no limit.
 export const TEAM_SEATS = {
-  trial: 1,
-  starter: 1,
+  trial: 3,
+  starter: 3,
   pro: 3,
-  studio: 10,
-  founder: 2,
-  "founder-ultimate": 5,
-  lifetime: 2,
-  builder: 1,
-  "content-os": 1,
-  monthly: 1,
+  studio: 3,
+  founder: 3,
+  "founder-ultimate": 3,
+  lifetime: 3,
+  builder: 3,
+  "content-os": 3,
+  monthly: 3,
   free: 0,
 };
-export const DEFAULT_TEAM_SEATS = 1;
+export const DEFAULT_TEAM_SEATS = 3;
 // The plan's seats plus the extra seats still running
 // (accounts/{uid}.teamSeatSlotsUntil, one end date each — the Midtrans
 // webhook writes them, like brandSlotsUntil).

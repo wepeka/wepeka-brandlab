@@ -5,7 +5,7 @@
 // (openInviteModal) is also opened from a brand's ⋯ menu ("Bagikan").
 // Everything that changes the team goes through /api/team (js/team.js);
 // the brands' members come back through the store's own listeners. Extra
-// seats (Rp 29rb / 30 days) are bought here; a team over its seats has its
+// seats (Rp 15rb / 30 days) are bought here; a team over its seats has its
 // newest members paused (api/team.js reconcileSeats), shown on their row.
 import { listBrands, isOwnBrand, storeUid, getBrand, onChange } from "../store.js";
 import { getCachedAccount, accessState, isAdmin, isReadOnly } from "../account.js";

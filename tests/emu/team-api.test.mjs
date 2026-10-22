@@ -145,46 +145,49 @@ describe("invite → accept", () => {
 });
 
 describe("seats and plan", () => {
-  test("Starter has 1 seat: a pending invite takes it; inviting the same email again replaces the link", async () => {
+  test("every plan has 3 seats: pending invites take them; inviting the same email again replaces the link", async () => {
     await seed({ plan: "starter" });
     const one = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "rina@test.local", role: "editor" });
+    for (const email of ["x1@test.local", "x2@test.local"]) await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email, role: "viewer" });
     const e = await expectError(runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "budi@test.local", role: "editor" }), "seats-full");
-    assert.equal(e.extra.limit, 1);
+    assert.equal(e.extra.limit, 3);
     const again = await runAction(d(), "invite", as("owen"), { brandIds: ["b1", "b2"], email: "rina@test.local", role: "editor" });
     assert.equal((await db.doc(`invites/${one.inviteId}`).get()).data().status, "revoked");
     await runAction(d(), "accept", as("rina"), { token: tokenOf(again.link) });
     // On the team already: sharing another brand with her takes no new seat.
     assert.deepEqual((await db.doc("brands/b2").get()).data().memberIds, ["rina"]);
   });
-  test("a smaller plan pauses the newest members (not removed); an extra seat or a free seat brings them back", async () => {
-    await seed();
+  async function teamOfFour(extra = {}) {
+    await seed({ ownerExtra: { teamSeatSlotsUntil: [clock + DAY], ...extra } });
     await user("dian", "dian@test.local");
-    for (const [uid, email] of [["rina", "rina@test.local"], ["budi", "budi@test.local"], ["dian", "dian@test.local"]]) {
+    await user("eka", "eka@test.local");
+    for (const [uid, email] of [["rina", "rina@test.local"], ["budi", "budi@test.local"], ["dian", "dian@test.local"], ["eka", "eka@test.local"]]) {
       clock += 1000;
       const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email, role: "editor" });
       await runAction(d(), "accept", as(uid), { token: tokenOf(link) });
     }
-    const flags = async () => Object.fromEntries(Object.entries((await db.doc("brands/b1").get()).data().members).map(([uid, m]) => [uid, !!m.seatPaused]));
-    await db.doc("accounts/owen").update({ plan: "starter" });
-    assert.equal((await runAction(d(), "sync", as("owen"), {})).paused, 2);
-    assert.deepEqual(await flags(), { rina: false, budi: true, dian: true });
-    assert.deepEqual(await resolvePayer(db, "dian", "b1"), { error: "seat-paused" });
+  }
+  const flags = async () => Object.fromEntries(Object.entries((await db.doc("brands/b1").get()).data().members).map(([uid, m]) => [uid, !!m.seatPaused]));
+  test("a lapsed extra seat pauses the newest member (not removed); a new seat or a free seat brings them back", async () => {
+    await teamOfFour();
+    await db.doc("accounts/owen").update({ teamSeatSlotsUntil: [clock - 1] });
+    assert.equal((await runAction(d(), "sync", as("owen"), {})).paused, 1);
+    assert.deepEqual(await flags(), { rina: false, budi: false, dian: false, eka: true });
+    assert.deepEqual(await resolvePayer(db, "eka", "b1"), { error: "seat-paused" });
     assert.deepEqual(await resolvePayer(db, "rina", "b1"), { payerUid: "owen", team: true });
-    // Full: no new invites while members are paused.
+    // Full: no new invites while someone is paused.
     await expectError(runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" }), "seats-full");
     await db.doc("accounts/owen").update({ teamSeatSlotsUntil: [clock + DAY] });
     await runAction(d(), "sync", as("owen"), {});
-    assert.deepEqual(await flags(), { rina: false, budi: false, dian: true });
+    assert.equal((await flags()).eka, false);
+    await db.doc("accounts/owen").update({ teamSeatSlotsUntil: [clock - 1] });
+    await runAction(d(), "sync", as("owen"), {});
+    assert.equal((await flags()).eka, true);
     await runAction(d(), "remove", as("owen"), { memberUid: "rina" });
-    assert.deepEqual(await flags(), { budi: false, dian: false });
+    assert.deepEqual(await flags(), { budi: false, dian: false, eka: false });
   });
   test("the daily job pauses a team whose extra seat ran out", async () => {
-    await seed({ plan: "starter", ownerExtra: { teamSeatSlotsUntil: [clock + DAY] } });
-    for (const [uid, email] of [["rina", "rina@test.local"], ["budi", "budi@test.local"]]) {
-      clock += 1000;
-      const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email, role: "editor" });
-      await runAction(d(), "accept", as(uid), { token: tokenOf(link) });
-    }
+    await teamOfFour();
     await db.doc("accounts/owen").update({ teamSeatSlotsUntil: [Date.now() - 1] });
     process.env.CRON_SECRET = "test-cron";
     const { default: cron } = await import("../../api/cron/check-expiry.js");
@@ -194,7 +197,7 @@ describe("seats and plan", () => {
     assert.equal(res.body.seatOwners, 1);
     const members = (await db.doc("brands/b1").get()).data().members;
     assert.equal(members.rina.seatPaused, undefined);
-    assert.equal(members.budi.seatPaused, true);
+    assert.equal(members.eka.seatPaused, true);
   });
   test("an owner whose plan lapsed can't invite, and a pending invite can't be accepted", async () => {
     await seed();
@@ -376,8 +379,8 @@ describe("role, remove, leave", () => {
     assert.equal((await db.doc("brands/b1/people/rina").get()).exists, true);
     assert.deepEqual(await resolvePayer(db, "rina", "b1"), { error: "disabled" });
     assert.deepEqual(await resolvePayer(db, "rina", "b2"), { payerUid: "owen", team: true }, "other brands untouched");
-    // Still a seat: Starter's one seat is taken.
-    await db.doc("accounts/owen").update({ plan: "starter" });
+    // Still a seat: with her and two invites waiting, the 3 seats are full.
+    for (const email of ["x1@test.local", "x2@test.local"]) await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email, role: "viewer" });
     await expectError(runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "budi@test.local", role: "editor" }), "seats-full");
     // The index rebuild keeps it off.
     await runAction(d(), "sync", as("owen"), {});
