@@ -109,6 +109,9 @@ export default async function handler(req, res) {
   if (plan.addBrandSlotMs && !isPaidAccount(account)) {
     return res.status(403).json({ error: "Tambah brand tersedia setelah pilih paket." });
   }
+  if (plan.addTeamSeatMs && !isPaidAccount(account)) {
+    return res.status(403).json({ error: "Tambah kursi tim tersedia setelah pilih paket." });
+  }
   if ((plan.aiCredits || plan.aiUnlimitedMs) && !isPaidAccount(account)) {
     return res.status(403).json({ error: "Kredit AI tambahan tersedia setelah pilih paket." });
   }

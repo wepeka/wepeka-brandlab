@@ -7,7 +7,7 @@
 // combined cross-platform totals copied into `performance`. (The old bulk
 // refresh wrote only the flat `performance`, which organicViews and
 // friends ignore once a per-platform breakdown exists.)
-import { getBrand, listBrands, listContent, updateContent, updateBrand, combinePlatformMetrics } from "./store.js";
+import { getBrand, listBrands, listContent, updateContent, updateBrand, combinePlatformMetrics, isOwnBrand } from "./store.js";
 import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl } from "./instagram.js";
 import { getCachedAccount, isActive, canUseInstagramApi } from "./account.js";
 import { toast } from "./dom.js";
@@ -67,6 +67,9 @@ export async function maybeAutoSyncInstagram() {
   autoSyncStarted = true;
   if (!isActive(getCachedAccount()) || !canUseInstagramApi()) return;
   for (const brand of listBrands()) {
+    // The connection is the owner's: a brand shared with this account is
+    // synced by its owner's app.
+    if (!isOwnBrand(brand)) continue;
     const ig = brand.instagram;
     if (!ig?.accessToken || !ig?.igUserId) continue;
     if (ig.lastAutoSyncAt && Date.now() - ig.lastAutoSyncAt < AUTO_SYNC_INTERVAL_MS) continue;

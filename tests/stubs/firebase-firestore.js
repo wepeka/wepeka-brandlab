@@ -47,6 +47,8 @@ export function persistentLocalCache(settings = {}) {
 export function persistentMultipleTabManager() {
   return { kind: "multiTab" };
 }
+// js/firebase.js calls it only in local emulator mode (js/emulator.js).
+export function connectFirestoreEmulator() {}
 export function memoryLocalCache() {
   return { kind: "memory" };
 }
@@ -166,10 +168,18 @@ function applyUpdate(path, data) {
     err.code = "not-found";
     throw err;
   }
-  const next = { ...__docs.get(path) };
+  const next = JSON.parse(JSON.stringify(__docs.get(path)));
+  // "a.b.c" is a nested field, like the real updateDoc.
   Object.entries(data).forEach(([k, v]) => {
-    if (v && v._delete) delete next[k];
-    else next[k] = resolveValue(next[k], v);
+    const segs = k.split(".");
+    let node = next;
+    for (const seg of segs.slice(0, -1)) {
+      if (!node[seg] || typeof node[seg] !== "object" || Array.isArray(node[seg])) node[seg] = {};
+      node = node[seg];
+    }
+    const last = segs[segs.length - 1];
+    if (v && v._delete) delete node[last];
+    else node[last] = resolveValue(node[last], v);
   });
   __docs.set(path, next);
 }
@@ -278,7 +288,8 @@ function matching(ref) {
   return [...__docs.keys()]
     .filter((p) => p.startsWith(coll.path + "/") && p.split("/").length === depth)
     .map(snapOf)
-    .filter((d) => clauses.every((c) => c.op === "==" && d.data()[c.field] === c.value));
+    .filter((d) => clauses.every((c) => (c.op === "==" && d.data()[c.field] === c.value)
+      || (c.op === "array-contains" && Array.isArray(d.data()[c.field]) && d.data()[c.field].includes(c.value))));
 }
 export async function getDocs(ref) {
   const docs = matching(ref);

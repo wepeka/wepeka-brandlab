@@ -5,11 +5,11 @@
 // results, the same job it always did.
 import { TONE_AXES, toneAxisLabel, toneExampleMessage, VISUAL_DIRECTIONS } from "./brandbook-data.js";
 import { COPY_LENGTHS, COPY_REWRITES, copyFormatRules, formatByKey, goalByKey } from "./knowledge/copy-formats.js";
-import { aiLimitReached, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
+import { aiLimitReached, aiDailyLimit, aiQuotaPeriod, teamAiContext } from "./ai-usage.js";
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
-import { brandVoiceText, listBrandIdeas } from "./store.js";
+import { brandVoiceText, listBrandIdeas, scopeBrandId, getBrand, isOwnBrand, isSeatPaused } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
 import { templateParts, isFactBlank } from "./knowledge/hook-templates.js";
 import { renderScript } from "./script-format.js";
@@ -65,6 +65,13 @@ function proxyError(code, extra = {}) {
       return new AiApiError(t("ai.error.busy"));
     case "readonly":
       return new AiApiError(t("ai.error.readonly"));
+    // Kerja Tim (api/ai.js resolvePayer): the brand owner pays in a shared
+    // brand, so these are about the owner's plan or this person's seat.
+    case "viewer":
+    case "seat-paused":
+    case "owner-inactive":
+    case "member-no-plan":
+      return new AiApiError(t(`team.ai.${code}`));
     case "too-large":
       return new AiApiError(t("ai.error.tooLarge"));
     case "images":
@@ -98,6 +105,14 @@ function proxyError(code, extra = {}) {
 // (stream) — same onText(text, {whole}) contract callModel always offered
 // its callers, so nothing downstream of callModel had to change. A stream
 // that stops before the end also calls onText(fullText, { cut: true }).
+// Kerja Tim: an AI call made in a brand shared with this account is paid
+// from the brand owner's credits — the server checks that this account is
+// really an editor there (api/_aiQuota.js resolvePayer).
+function teamBrandField() {
+  const open = scopeBrandId();
+  const brand = open ? getBrand(open) : null;
+  return brand && !isOwnBrand(brand) ? { teamBrandId: open } : {};
+}
 async function callProxy(system, userPrompt, maxTokens, { temperature, json = false, images = [], stream = false, countUsage = true, feature = "", history = [] } = {}, onText = null) {
   let token;
   try {
@@ -119,7 +134,7 @@ async function callProxy(system, userPrompt, maxTokens, { temperature, json = fa
     res = await fetch("/api/ai", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature, ...(history.length ? { history } : {}) }),
+      body: JSON.stringify({ system, user: userPrompt, maxTokens, temperature, json, stream, images, countUsage, feature, ...(history.length ? { history } : {}), ...teamBrandField() }),
       signal: ctrl.signal,
     });
   } catch {
@@ -252,6 +267,9 @@ export function aiCanSeeImages(ai) {
 // (Claude / Gemini only — DeepSeek refuses them, see aiCanSeeImages).
 async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [], feature = "", history = [] } = {}) {
   if (countUsage && aiLimitReached()) {
+    // In a brand shared with this account: a viewer, or an editor paused
+    // beyond the owner's seats — not a quota this person could top up.
+    if (teamAiContext()?.viewer) throw proxyError(isSeatPaused(scopeBrandId()) ? "seat-paused" : "viewer");
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
     throw quotaOutError(quotaOutKey(limit, period), { limit, period });
@@ -1385,6 +1403,26 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
       .filter((i) => i.text)
       .slice(0, 4),
   };
+}
+
+// Papan (js/papan/bridge.js → the canvas in papan/src): the board's AI
+// buttons — ideas, rewrite, themes, meeting recap wording, brand check,
+// campaign draft, slide polish. The canvas writes the whole request (it knows
+// what is on the board and which shape it needs back) and always shows the
+// answer as choices the owner ticks or edits first; this only adds the brand's
+// writing rules and the one-object wrapper JSON mode needs, so any shape the
+// canvas asked for comes back intact. One charged call per press.
+export async function papanJson(ai, brand, prompt) {
+  const system = [
+    "Kamu Tanya Brandlab yang sedang membantu tim di Papan (whiteboard brand). Ikuti format jawaban yang diminta dengan tepat. Jangan mengarang angka, nama orang, tanggal, atau keputusan yang tidak ada di data.",
+    NATURAL_WRITING_CONTEXT,
+    outputLanguageRule({ brand }),
+    'Respond ONLY with valid JSON, no markdown fences: {"hasil": <the answer in exactly the format the request asks for>}',
+  ].join("\n\n");
+  const raw = await callModel(ai, system, String(prompt || "").slice(0, 40000), 2000, { json: true, feature: "papan" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed || !Object.hasOwn(parsed, "hasil")) throw new AiApiError(t("ai.error.readIdeas"));
+  return parsed.hasil;
 }
 
 // "Rencana" for a Grow Brand campaign (js/views/campaign-detail.js): thinks

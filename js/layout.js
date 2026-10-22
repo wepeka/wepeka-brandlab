@@ -1,5 +1,5 @@
 import { icon } from "./icons.js";
-import { listBrands, getBrand, listOverdueAndDueSoon, onChange } from "./store.js";
+import { listBrands, getBrand, listOverdueAndDueSoon, onChange, isOwnBrand } from "./store.js";
 import { logout } from "./auth.js";
 import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, pickTintForegroundLight, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
@@ -164,6 +164,8 @@ const TABS = [
   // Konten is open from day one — try it first; the Konten page itself
   // asks for Brand DNA to sharpen the results (js/views/content-os.js).
   { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], gated: false },
+  // Papan (whiteboard): brainstorm with the team on the brand's real data.
+  { key: "papan", labelKey: "nav.papan", icon: "papan", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"], gated: false },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -278,7 +280,7 @@ export function shellHTML({ brandId, active }) {
     </header>
     ${brand ? `<nav class="bottom-nav" aria-label="${t("nav.main")}">${tabsHTML}</nav>` : ""}
     ${returnChipHTML()}
-    <main class="view view-enter view-${active} ${active === "content-os" ? "wide" : ""}" id="view-root"></main>
+    <main class="view view-enter view-${active} ${active === "content-os" || active === "papan" ? "wide" : ""}" id="view-root"></main>
   `;
 }
 
@@ -576,8 +578,17 @@ export function wireShell({ brandId }) {
     const menu = openMenu(btn, { top: rect.bottom + 8, left: rect.left });
     if (!menu) return;
     const others = listBrands().filter((b) => b.id !== brandId);
+    const item = (b) => `<button data-go="${escapeHtml(b.id)}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`;
+    // Kerja Tim: brands shared with this account, one group per owner.
+    const owners = new Map();
+    others.filter((b) => !isOwnBrand(b)).forEach((b) => {
+      if (!owners.has(b.ownerId)) owners.set(b.ownerId, { name: b.ownerName || "", brands: [] });
+      owners.get(b.ownerId).brands.push(b);
+    });
+    const label = (text) => `<div class="text-faint" style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:8px 12px 4px;">${escapeHtml(text)}</div>`;
     menu.innerHTML = `
-      ${others.map((b) => `<button data-go="${escapeHtml(b.id)}">${avatarHTML(b, "width:18px;height:18px;border-radius:5px;font-size:9px;flex:none;")}${escapeHtml(b.name)}</button>`).join("")}
+      ${others.filter(isOwnBrand).map(item).join("")}
+      ${[...owners.values()].map((o) => `<div class="menu-divider"></div>${label(t("team.sharedBy", { name: o.name || "—" }))}${o.brands.map(item).join("")}`).join("")}
       ${others.length ? '<div class="menu-divider"></div>' : ""}
       <button data-go="all">${icon("grid", { size: 15 })}${t("nav.allBrands")}</button>
     `;

@@ -22,3 +22,5 @@ export function getAdditionalUserInfo() {
   return null;
 }
 export class GoogleAuthProvider {}
+// js/firebase.js calls it only in local emulator mode (js/emulator.js).
+export function connectAuthEmulator() {}

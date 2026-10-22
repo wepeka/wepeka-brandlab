@@ -3,7 +3,7 @@ import {
   getGlobalAiSettings, updateGlobalAiSettings, deleteLegacyGlobalAiKeys, updateGlobalBrandsBg,
   listBrands, archiveBrand, deleteBrand, listContent,
   exportJSON, prepareExport, importJSON, resetAll, onChange,
-  listTrash, restoreTrashItem, purgeTrashItem, TRASH_DAYS, getBrand, localISODate,
+  listTrash, restoreTrashItem, purgeTrashItem, TRASH_DAYS, getBrand, localISODate, isOwnBrand,
 } from "../store.js";
 import { getMode } from "../mode.js";
 import { backToLastBrandHTML } from "../back-link.js";
@@ -16,13 +16,14 @@ import { confirmDialog } from "../modals.js";
 import { typedConfirmDialog } from "../typed-confirm.js";
 import { openBrandModal } from "./brands.js";
 import { getUserEmail, resetPassword, logout, authErrorMessage } from "../auth.js";
-import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS, brandLimitOf, canCreateBrand } from "../account.js";
+import { getCachedAccount, claimUsername, isReadOnly, isTrial, trialDaysLeft, LIFETIME_PLANS, brandLimitOf, canCreateBrand, ownBrandsOf } from "../account.js";
 import { aiDailyLimit, aiQuotaPeriod, aiUsageToday } from "../ai-usage.js";
 import { canTopUp } from "../ai-topup.js";
 import { t, getLang, setLang } from "../i18n.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { renderRemindersPanel } from "../reminders.js";
+import { renderTeamPanel, openInviteModal } from "./team-panel.js";
 
 // One list for both modes. `pro` panels only show in Pro; the AI panel
 // only exists for the Wepeka admin account (it edits the shared key —
@@ -30,6 +31,8 @@ import { renderRemindersPanel } from "../reminders.js";
 // developer-level and no longer have a UI; the defaults in js/store.js apply.
 const PANELS = [
   { key: "brands", labelKey: "settings.panel.brands" },
+  // Kerja Tim (js/views/team-panel.js): both modes — inviting your team.
+  { key: "team", labelKey: "settings.panel.team" },
   { key: "language", labelKey: "settings.panel.language" },
   { key: "account", labelKey: "settings.panel.account" },
   // Opt-in upload reminders (js/reminders.js) — both modes; all off by default.
@@ -82,6 +85,7 @@ function paint(root, state, refresh) {
   if (state.panel === "platforms") renderListEditor(content, t("settings.panel.platforms"), getSettings().platforms, addPlatform, removePlatform, t("set.platforms.ph"));
   else if (state.panel === "formats") renderListEditor(content, t("settings.panel.formats"), getSettings().formats, addFormat, removeFormat, t("set.formats.ph"));
   else if (state.panel === "brands") renderBrands(content, refresh);
+  else if (state.panel === "team") renderTeamPanel(content, { planName });
   else if (state.panel === "ai") renderAi(content);
   else if (state.panel === "bg") renderBrandsBg(content);
   else if (state.panel === "language") renderLanguage(content);
@@ -148,21 +152,28 @@ function renderBrands(content, refresh) {
   content.innerHTML = `
     <div class="card">
       <h3 style="font-size:16px;margin-bottom:14px;">${t("set.brands.title")}</h3>
-      ${brands.map((b) => `
+      ${brands.map((b) => isOwnBrand(b) ? `
         <div class="list-editor-row">
           ${avatarHTML(b, "flex:none;width:28px;height:28px;border-radius:8px;font-size:12px;margin-right:10px;")}
           <span class="row-label">${escapeHtml(b.name)} ${b.archived ? `<span class="text-faint">${t("set.brands.archived")}</span>` : ""} <span class="text-faint">· ${t("set.brands.contentCount", { count: listContent(b.id, { includeArchived: true }).length })}</span></span>
+          <button class="btn btn-secondary btn-sm" data-share-brand="${b.id}">${icon("users", { size: 13 })}${t("team.share")}</button>
           <button class="icon-btn" data-edit-brand="${b.id}" aria-label="${escapeHtml(t("set.brands.editAria", { name: b.name }))}" style="width:30px;height:30px;">${icon("edit", { size: 14 })}</button>
           <button class="btn btn-secondary btn-sm" data-toggle-archive="${b.id}">${b.archived ? t("set.brands.unarchive") : t("brands.archive")}</button>
           <button class="icon-btn" data-delete-brand="${b.id}" aria-label="${escapeHtml(t("set.brands.deleteAria", { name: b.name }))}" style="width:30px;height:30px;">${icon("trash", { size: 14 })}</button>
         </div>
+      ` : `
+        <div class="list-editor-row">
+          ${avatarHTML(b, "flex:none;width:28px;height:28px;border-radius:8px;font-size:12px;margin-right:10px;")}
+          <span class="row-label">${escapeHtml(b.name)} <span class="text-faint">· ${escapeHtml(t("team.sharedBy", { name: b.ownerName || "—" }))}</span></span>
+        </div>
       `).join("")}
       <div class="flex gap-8" style="margin-top:16px;">
-        <button class="btn btn-primary" id="add-brand">${icon(canCreateBrand(listBrands().length) ? "plus" : "lock", { size: 15 })}${t("brands.add")}</button>
+        <button class="btn btn-primary" id="add-brand">${icon(canCreateBrand(ownBrandsOf(listBrands()).length) ? "plus" : "lock", { size: 15 })}${t("brands.add")}</button>
       </div>
     </div>
   `;
   qs("#add-brand").addEventListener("click", () => openBrandModal({ onSaved: refresh }));
+  qsa("[data-share-brand]").forEach((btn) => btn.addEventListener("click", () => openInviteModal({ brandId: btn.dataset.shareBrand })));
   qsa("[data-edit-brand]").forEach((btn) => btn.addEventListener("click", () => {
     const b = brands.find((x) => x.id === btn.dataset.editBrand);
     openBrandModal({ brand: b, onSaved: refresh });
@@ -468,7 +479,7 @@ function planCardHTML(account) {
       <h3 style="font-size:16px;margin-bottom:14px;">${t("set.plan.title")}</h3>
       <div class="kv"><span class="k">${t("set.plan.name")}</span><span class="v">${escapeHtml(planName(account))}</span></div>
       <div class="kv"><span class="k">${t("set.plan.status")}</span><span class="v">${escapeHtml(planStatus(account))}</span></div>
-      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${listBrands().length} / ${brandLimitOf(account)}</span></div>
+      <div class="kv"><span class="k">${t("set.plan.brands")}</span><span class="v">${ownBrandsOf(listBrands()).length} / ${brandLimitOf(account)}</span></div>
       <div class="kv"><span class="k">AI credit</span><span class="v">${escapeHtml(credits)}</span></div>
       ${account.scheduledPlan?.plan ? `<div class="kv"><span class="k">${t("set.plan.next")}</span><span class="v">${escapeHtml(t("set.plan.nextValue", { name: planName({ plan: account.scheduledPlan.plan, brandLimit: account.scheduledPlan.brandLimit }), date: formatDate(localISODate(new Date(Number(account.scheduledPlan.startsAt)))) }))}</span></div>` : ""}
       ${autoRenewHTML(account)}
@@ -483,6 +494,7 @@ function planCardHTML(account) {
 // each, with the card and a stop button. Stopping keeps the time already paid.
 const AUTO_RENEW_NAME = (entry) => entry.planKey === "ai-unlimited" ? t("pricing.addons.aiUnlimited")
   : entry.planKey === "addon-brand-sub" ? t("pricing.addons.brandSub")
+  : entry.planKey === "addon-team-seat" ? t("team.seatAddon.name")
   : planName({ plan: entry.planKey.replace(/-(monthly|yearly)$/, "") });
 function autoRenewHTML(account) {
   const rows = Object.entries(account.autoRenew || {});

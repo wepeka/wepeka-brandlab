@@ -212,10 +212,16 @@ export function brandLimitOf(account = cachedAccount, now = Date.now()) {
 // app. Nothing is deleted; archiving an older brand frees its place, so the
 // owner picks which ones stay open. Wepeka's own team account is exempt.
 const isActiveBrand = (b) => !b.archived && !b.deletedAt;
+// Kerja Tim: a brand shared with this account belongs to its owner and
+// never counts against this account's own plan.
+export function ownBrandsOf(brands) {
+  const uid = currentUid();
+  return (brands || []).filter((b) => !b?.ownerId || !uid || b.ownerId === uid);
+}
 export function lockedBrandIds(brands, account = cachedAccount, now = Date.now()) {
   if (!account || isAdmin(account?.uid) || isAdmin(currentUid())) return new Set();
   const limit = brandLimitOf(account, now);
-  const active = (brands || []).filter(isActiveBrand)
+  const active = ownBrandsOf(brands).filter(isActiveBrand)
     .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || String(a.id).localeCompare(String(b.id)));
   return new Set(active.slice(limit).map((b) => b.id));
 }
@@ -281,6 +287,11 @@ export function slotEndingSoon(account = cachedAccount, now = Date.now(), within
   const running = (account?.brandSlotsUntil || []).map(Number).filter((ts) => ts > now).sort((a, b) => a - b);
   return running.length && running[0] - now <= withinMs ? running[0] : null;
 }
+// `currentBrandCount`: this account's OWN brands (ownBrandsOf). A team
+// member without a plan of their own makes none (they go to the plans).
 export function canCreateBrand(currentBrandCount) {
+  const state = accessState(cachedAccount);
+  if (cachedAccount && state !== "paid" && state !== "trial") return false;
+  if (!cachedAccount && currentUid()) return false;
   return currentBrandCount < brandLimitOf();
 }

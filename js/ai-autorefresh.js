@@ -15,7 +15,7 @@ import { getCachedAccount, accessState } from "./account.js";
 import { hasAiKey } from "./ai.js";
 import { computeSignals } from "./brand-pulse.js";
 import { isTourDemo } from "./tour-demo.js";
-import { localISODate } from "./store.js";
+import { localISODate, scopeBrandId, getBrand, isOwnBrand } from "./store.js";
 
 // What counts as "something happened": moves in sales, a post taking off
 // or selling, engagement falling, followers jumping.
@@ -44,6 +44,10 @@ export function mayAutoRefresh(advice, ai) {
   if (advice.autoDay === localISODate()) return false;
   if (isTourDemo()) return false;
   if (!hasAiKey(ai || {})) return false;
+  // Never on its own in a brand shared with this account: that spends the
+  // owner's credits without anyone asking (Kerja Tim).
+  const open = scopeBrandId();
+  if (open && !isOwnBrand(getBrand(open))) return false;
   const state = accessState(getCachedAccount());
   return state === "paid" || state === "trial";
 }

@@ -8,9 +8,10 @@
 // firestore.rules / storage.rules (requires a logged-in user), not in
 // hiding this object — safe to commit as-is.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { getAuth, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { IS_EMULATOR, EMULATOR_CONFIG, EMULATOR_AUTH_URL, EMULATOR_FIRESTORE, EMULATOR_DATABASE } from "./emulator.js";
 
-const firebaseConfig = {
+const liveConfig = {
   apiKey: "AIzaSyDcApVGM0CyxfcTERsrwr7CK07YWlQT_vI",
   authDomain: "wepeka-ba996.firebaseapp.com",
   projectId: "wepeka-ba996",
@@ -18,6 +19,8 @@ const firebaseConfig = {
   messagingSenderId: "494668744644",
   appId: "1:494668744644:web:e4bdc9aea34800849f0691",
 };
+// Local emulator only (js/emulator.js): never true on brandlab.wepeka.com.
+const firebaseConfig = IS_EMULATOR ? EMULATOR_CONFIG : liveConfig;
 
 export const app = initializeApp(firebaseConfig);
 // Plain getFirestore() defaults to the WebChannel streaming transport,
@@ -36,6 +39,13 @@ export const app = initializeApp(firebaseConfig);
 // memory on its own if IndexedDB fails later, at first use.
 function createDb(fs) {
   const base = { experimentalAutoDetectLongPolling: true };
+  if (IS_EMULATOR) {
+    // Memory cache: the emulator is wiped between runs, and a cache on disk
+    // would paint the previous run's data.
+    const emu = fs.initializeFirestore(app, { ...base, localCache: fs.memoryLocalCache() });
+    fs.connectFirestoreEmulator(emu, EMULATOR_FIRESTORE.host, EMULATOR_FIRESTORE.port);
+    return emu;
+  }
   if (typeof indexedDB !== "undefined") {
     try {
       return fs.initializeFirestore(app, { ...base, localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) });
@@ -46,6 +56,8 @@ function createDb(fs) {
   return fs.initializeFirestore(app, { ...base, localCache: fs.memoryLocalCache() });
 }
 export const auth = getAuth(app);
+if (IS_EMULATOR) connectAuthEmulator(auth, EMULATOR_AUTH_URL, { disableWarnings: true });
+export { IS_EMULATOR };
 
 // Firestore (~680 KB of SDK) is NOT part of the first download: a logged-out
 // visitor gets the login/pricing screen from Firebase app + auth alone.
@@ -68,6 +80,28 @@ export function loadFirestore() {
     loading.catch(() => { loading = null; });
   }
   return loading;
+}
+
+// Kerja Tim: the Realtime Database carries what moves fast between
+// teammates — who is where, mouse cursors, the "is typing" marks and the
+// Script written together (js/collab/*). Loaded on demand, only for a
+// shared brand (and Papan's cursors, js/papan/bridge.js). A brand nobody
+// else works on never opens a connection. Rules: database.rules.json.
+const LIVE_DATABASE_URL = "https://wepeka-ba996-default-rtdb.asia-southeast1.firebasedatabase.app";
+let rtdb = null;
+let rtdbLoading = null;
+export function loadDatabase() {
+  const url = IS_EMULATOR ? EMULATOR_DATABASE.url : LIVE_DATABASE_URL;
+  if (!url) return Promise.resolve(null);
+  if (!rtdbLoading) {
+    rtdbLoading = import("https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js").then((rd) => {
+      rtdb = rd.getDatabase(app, url);
+      if (IS_EMULATOR) rd.connectDatabaseEmulator(rtdb, EMULATOR_DATABASE.host, EMULATOR_DATABASE.port);
+      return { sdk: rd, db: rtdb };
+    });
+    rtdbLoading.catch(() => { rtdbLoading = null; });
+  }
+  return rtdbLoading;
 }
 
 const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))]);

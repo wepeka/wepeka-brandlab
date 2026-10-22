@@ -1,5 +1,6 @@
 import { backLinkHTML } from "../back-link.js";
-import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles, onChange } from "../store.js";
+import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles, onChange, isSharedBrand } from "../store.js";
+import { merge3 } from "../collab/diff.js";
 import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML, revealStepTop } from "../dom.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, promptDialog, confirmDialog } from "../modals.js";
@@ -218,6 +219,8 @@ export function render(root, { brandId, section }) {
     // Was Tujuan already open when this visit began? (announceTujuanOpen)
     identityAtOpen: identityDone(brand),
   };
+  // What a save is compared to (saveGuidelines): the Book as it opened.
+  state.savedGuidelines = JSON.parse(JSON.stringify(state.answers));
   // Re-read the brand on every repaint: sections saved on this page (tone,
   // logo, copy…) land in the store, and a snapshot taken at open made the
   // Review pages / PDF and the Finish check read the old, emptier brand.
@@ -229,6 +232,20 @@ export function render(root, { brandId, section }) {
   // Every save on this page lands in the store first; the moment one of
   // them completes the identity, say so (Pemula's Tujuan just opened).
   const offGate = onChange(() => { if (root.isConnected) announceTujuanOpen(brandId, state); });
+  // Kerja Tim: in a shared brand a teammate's saved parts of the Book come in
+  // while this page is open — what this page hasn't changed takes theirs.
+  const offTeam = isSharedBrand(brandId) ? onChange(() => {
+    if (!root.isConnected) return;
+    const fresh = getBrand(brandId);
+    if (!fresh) return;
+    const remote = answersFromBrand(fresh);
+    const merged = merge3(state.answers, state.savedGuidelines, remote);
+    state.savedGuidelines = JSON.parse(JSON.stringify(remote));
+    if (JSON.stringify(merged) === JSON.stringify(state.answers)) return;
+    Object.keys(state.answers).forEach((k) => { if (!(k in merged)) delete state.answers[k]; });
+    Object.assign(state.answers, merged);
+    refresh();
+  }) : null;
   // Uploaded files load without blocking the page (js/store.js
   // loadBrandAssets): once they're in, fill them into this page's own
   // answers IN PLACE — the step handlers hold that object, so a photo or
@@ -238,7 +255,10 @@ export function render(root, { brandId, section }) {
     if (root.isConnected && fillGuidelinesFiles(brandId, state.answers)) refresh();
   });
   setPageGuide(() => runSpotlightTour(TOUR_STEPS));
-  return () => offGate();
+  return () => {
+    offGate();
+    offTeam?.();
+  };
 }
 
 // The moment colours + fonts complete the identity (Brand DNA already
@@ -467,8 +487,16 @@ function isStepFilled(stepKey, a, state) {
 // Saves whatever is on screen, tells Beranda the visual basics just landed
 // (that's what unlocks the next journey card there), and goes home. Shared
 // by the per-step button and the one on Review so both behave identically.
+// Kerja Tim: the Book as this page last saved it. In a shared brand only
+// what changed since then is written (js/store.js updateBrand `base`), so a
+// teammate's edit to another part of the Book stays.
+function saveGuidelines(brandId, state) {
+  const next = { ...state.answers };
+  updateBrand(brandId, { brandGuidelines: next }, { base: state.savedGuidelines ? { brandGuidelines: state.savedGuidelines } : null });
+  state.savedGuidelines = JSON.parse(JSON.stringify(next));
+}
 function goHomeFromGuidelines(brandId, state) {
-  updateBrand(brandId, { brandGuidelines: { ...state.answers } });
+  saveGuidelines(brandId, state);
   markVisualBasicsJustDone(brandId);
   trackIdentityIfDone(brandId);
   toast(t("guidelines.finishVisual.done"));
@@ -541,7 +569,7 @@ function wireStep(root, brandId, brand, state, refresh) {
   // Passed in place of the plain `refresh` each wireXStep below already
   // calls after a mutation, so no change was needed inside any of them.
   const commit = () => {
-    updateBrand(brandId, { brandGuidelines: { ...state.answers } });
+    saveGuidelines(brandId, state);
     refresh();
   };
 
@@ -3316,7 +3344,7 @@ function wireReview(root, brandId, brand, state, refresh) {
   // already saved as it's typed; this confirms it and takes the owner to
   // where the next step shows.
   qs("#wiz-save", root).addEventListener("click", () => {
-    updateBrand(brandId, { brandGuidelines: { ...state.answers } });
+    saveGuidelines(brandId, state);
     if (visualBasicsDone(getBrand(brandId))) markVisualBasicsJustDone(brandId);
     trackIdentityIfDone(brandId);
     toast(t("guidelines.bookSaved"));
@@ -3378,7 +3406,7 @@ function wireReview(root, brandId, brand, state, refresh) {
 // page already uses; there's no separate store for this.
 function wireCopyEditor(root, brandId, brand, state, refresh) {
   const a = state.answers;
-  const persist = () => updateBrand(brandId, { brandGuidelines: { ...a } });
+  const persist = () => saveGuidelines(brandId, state);
 
   // ---- Value Proposition: manual editing ----
   // While the pillars still come from Brand DNA, the first edit copies the
@@ -3534,7 +3562,7 @@ function wireBookStylePicker(root, brandId, state, refresh) {
   // The pick (and the photo) persist right away, like the AI copy does —
   // they're presentation choices, not answers someone would want to discard
   // by leaving Review without pressing Save.
-  const persist = () => updateBrand(brandId, { brandGuidelines: { ...a } });
+  const persist = () => saveGuidelines(brandId, state);
   qsa("[data-book-style]", root).forEach((btn) =>
     btn.addEventListener("click", () => {
       if (a.bookStyle === btn.dataset.bookStyle) return;

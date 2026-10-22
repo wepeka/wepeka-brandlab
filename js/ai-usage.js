@@ -5,7 +5,7 @@
 // the owner sees is the live aiUsage/{uid} snapshot (js/store.js
 // getAiUsageDoc(), wired up in initStore()), not a number the browser could
 // edit its way past.
-import { getAiUsageDoc } from "./store.js";
+import { getAiUsageDoc, getTeamAiUsageDoc, scopeBrandId, getBrand, isOwnBrand, brandRole } from "./store.js";
 import { getCachedAccount, isAdmin, isReadOnly, currentUid } from "./account.js";
 
 // Accounts from before per-plan quotas (builder/content/monthly) keep what
@@ -36,10 +36,23 @@ export const TRIAL_AI_PER_DAY = PLAN_QUOTA.trial.limit;
 function planQuota() {
   return PLAN_QUOTA[getCachedAccount()?.plan] || { period: "day", limit: DEFAULT_AI_DAILY_LIMIT };
 }
+// Kerja Tim: on a brand shared with this account the meter is the team's —
+// the owner's counter (aiUsage/{owner}) and the limit api/ai.js stamps on it.
+// { usage, limit, period, viewer } or null on this account's own brands.
+export function teamAiContext() {
+  const open = scopeBrandId();
+  const brand = open ? getBrand(open) : null;
+  if (!brand || isOwnBrand(brand)) return null;
+  const usage = getTeamAiUsageDoc(brand.ownerId);
+  const limit = Number(usage?.quotaLimit);
+  return { usage, limit: Number.isFinite(limit) && limit > 0 ? limit : null, period: usage?.quotaPeriod || "day", viewer: brandRole(brand) !== "editor" };
+}
 
 // "day" | "month" | "total" — which window the limit/usage numbers below
 // refer to ("total" = one pool for the account's entire trial, never reset).
 export function aiQuotaPeriod() {
+  const team = teamAiContext();
+  if (team) return team.period;
   return planQuota().period;
 }
 
@@ -51,6 +64,8 @@ export function aiQuotaPeriod() {
 // so the cap is the admin's to raise (top-up), not the user's. Display only
 // now — api/_aiQuota.js decides the real cap server-side.
 export function aiDailyLimit() {
+  const team = teamAiContext();
+  if (team) return team.viewer ? 0 : team.limit ?? Infinity;
   if (isAdmin(currentUid())) return Infinity;
   const account = getCachedAccount();
   if (isReadOnly(account)) return 0;
@@ -92,7 +107,8 @@ function usageTotal(u) {
 // doc api/ai.js writes when a counted call starts (and gives back when the
 // call fails, so a failed call shows up for a moment, then disappears).
 export function aiUsageToday() {
-  const u = getAiUsageDoc();
+  const team = teamAiContext();
+  const u = team ? team.usage : getAiUsageDoc();
   const period = aiQuotaPeriod();
   if (period === "total") return usageTotal(u);
   return period === "month" ? usageInMonth(u) : usageOn(u);
@@ -103,6 +119,9 @@ export function aiUsageToday() {
 // and top-up credits that never expire, spent only after the plan's own
 // allowance and only when AI Sepuasnya isn't running.
 export function aiExtras() {
+  // The owner's top-ups and AI Sepuasnya are theirs to see; the server
+  // spends them for the team when the plan's allowance runs out.
+  if (teamAiContext()) return { unlimited: false, unlimitedUntil: 0, credits: 0 };
   const account = getCachedAccount();
   if (isAdmin(currentUid()) || isReadOnly(account)) return { unlimited: false, unlimitedUntil: 0, credits: 0 };
   const unlimitedUntil = Number(account?.aiUnlimitedUntil) || 0;
@@ -122,6 +141,10 @@ export function aiUsageRemaining() {
 // Only when the plan AND the extras are empty — the server refuses the
 // call at the same point (api/ai.js).
 export function aiLimitReached() {
+  const team = teamAiContext();
+  // A viewer has no AI in a shared brand; an editor is never stopped here —
+  // the owner may still have top-ups, and the server decides (429 "quota").
+  if (team) return team.viewer;
   return aiUsageRemaining() <= 0;
 }
 export const aiPlanUsedUp = () => aiUsageToday() >= aiDailyLimit();

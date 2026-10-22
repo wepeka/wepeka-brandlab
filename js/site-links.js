@@ -64,6 +64,9 @@ export const AI_UNLIMITED = { key: "aiUnlimited", days: 30, price: 50000, payKey
 // Extra brand slots (api/_plans.js ADDONS): any paid account can rent one
 // for 30 days (renewKey extends the one ending soonest); only pay-once
 // plans can buy them for good — subscribers move to Lifetime first.
+// An extra team seat (Kerja Tim): 30 days, any paid account; renewKey
+// extends the one ending soonest (api/_plans.js addon-team-seat).
+export const TEAM_SEAT_ADDON = { price: 29000, days: 30, payKey: "addon-team-seat", renewKey: "addon-team-seat-renew" };
 export const BRAND_ADDONS = {
   sub: [{ key: "brandSub", n: 1, price: 29000, payKey: "addon-brand-sub", renewKey: "addon-brand-sub-renew", days: 30 }],
   lifetime: [

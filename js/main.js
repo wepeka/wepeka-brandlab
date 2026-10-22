@@ -30,7 +30,7 @@ import { initActivation } from "./activation.js";
 import { initMetaPixel } from "./meta-pixel.js";
 import { trackTrialStart } from "./trial-start.js";
 import { checkPendingOrders } from "./pending-orders.js";
-import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales } from "./store.js";
+import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales, isOwnBrand, isSharedBrand } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { auth, wipeLocalFirestore, claimLocalCache } from "./firebase.js";
@@ -45,6 +45,7 @@ import { showPayLoading, hidePayLoading } from "./pay-loading.js";
 import { WEPEKA_CONNECT_URL } from "./site-links.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
+import { subscribeMemberships, effectiveAccess } from "./team.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -224,6 +225,9 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/([^/]+)\/?$/))) return { view: "goals", brandId: m[1], goalId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/?$/))) return { view: "goals", brandId: m[1] };
+  // Papan (whiteboard): the brand's boards; a board id opens that board.
+  if ((m = h.match(/^\/brand\/([^/]+)\/papan\/([^/]+)\/?$/))) return { view: "papan", brandId: m[1], boardId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/papan\/?$/))) return { view: "papan", brandId: m[1] };
   // The chat's own page. Its old address (under Brainstorm) still works.
   if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/([^/]+)\/?$/))) return { view: "chat", brandId: m[1], threadId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/?$/))) return { view: "chat", brandId: m[1] };
@@ -386,6 +390,11 @@ async function boot(user) {
       renderAuthScreen(document.getElementById("auth-root"));
       return;
     }
+    // A team invite link (Kerja Tim) opened while signed out.
+    if (location.hash.startsWith("#/undangan/")) {
+      renderInviteScreen();
+      return;
+    }
     // Everyone else who is not signed in gets the front page: what Brandlab
     // is, the plans, the guide videos (js/views/landing.js). A browser that
     // has signed in before sees "Masuk ke Lab-mu" as its main button instead
@@ -431,7 +440,28 @@ async function boot(user) {
   // copy straight away (persistent cache) and the server's right after.
   await claimLocalCache(user.uid);
   if (subscribedUid !== user.uid) return; // signed out / switched meanwhile
-  accountUnsub = subscribeAccount(user.uid, (account) => onAccountChange(user, account));
+  // The account and the brands shared with it (Kerja Tim, js/team.js)
+  // decide together what this person may open: both first snapshots are
+  // waited for, then every change of either re-runs onAccountChange.
+  let accountSeen = false;
+  let teamSeen = false;
+  let lastAccount = null;
+  const decide = () => {
+    if (accountSeen && teamSeen && subscribedUid === user.uid) onAccountChange(user, lastAccount);
+  };
+  const stopAccount = subscribeAccount(user.uid, (account) => {
+    accountSeen = true;
+    lastAccount = account;
+    decide();
+  });
+  const stopTeam = subscribeMemberships(user.uid, () => {
+    teamSeen = true;
+    decide();
+  });
+  accountUnsub = () => {
+    stopAccount();
+    stopTeam();
+  };
 }
 
 // Fires once immediately with the current account doc, then again live on
@@ -455,7 +485,16 @@ function onAccountChange(user, account) {
     return;
   }
 
-  const state = accessState(account);
+  // A team invite link wins over everything below (the plans, the app):
+  // signing in in the middle of it lands back on it (js/views/invite.js).
+  if (location.hash.startsWith("#/undangan/")) {
+    endPaidWait();
+    teardownApp();
+    renderInviteScreen();
+    return;
+  }
+  // "member" = no plan of their own, but brands shared with them (Kerja Tim).
+  const state = effectiveAccess(account);
   // Just back from a payment made in another app: a failure is said; a
   // success that the webhook hasn't written yet waits under "setting up"
   // rather than on the plans page (a new buyer has no account for a second
@@ -487,10 +526,10 @@ function onAccountChange(user, account) {
     return;
   }
 
-  // state is "paid" or "trial" — the only two that ever render the app.
+  // state is "paid", "trial" or "member" — the only three that ever render the app.
   if (!storeReady) {
     showLoading();
-    initStore(user.uid).then(async () => {
+    initStore(user.uid, { ownPlan: state !== "member" }).then(async () => {
       // GA4 "start_trial", once per account, the first time a brand-new
       // trial opens the app (js/trial-start.js). Never waited for.
       trackTrialStart();
@@ -618,7 +657,8 @@ let welcomeShown = false;
 // against Firestore rules anyway).
 const pulsedBrands = new Set();
 async function runPulseOnce(brandId) {
-  if (pulsedBrands.has(brandId) || isReadOnly(getCachedAccount())) return;
+  // Own brands only: a shared brand's signals are its owner's to write.
+  if (pulsedBrands.has(brandId) || isReadOnly(getCachedAccount()) || !isOwnBrand(getBrand(brandId))) return;
   pulsedBrands.add(brandId);
   // Signals are written into the brand's log — computed from the server's
   // copy, never from a cache that may be a day old.
@@ -643,18 +683,34 @@ async function runPulseOnce(brandId) {
     ]);
     const ai = getSettings().ai || {};
     const state = accessState(getCachedAccount());
-    await maybeMonthlyLessons(brandId, { ai, summarize: summarizeMonthLessons, allowed: hasAiKey(ai) && (state === "paid" || state === "trial") && !isTourDemo() });
+    await maybeMonthlyLessons(brandId, { ai, summarize: summarizeMonthLessons, allowed: hasAiKey(ai) && (state === "paid" || state === "trial") && !isTourDemo() && isOwnBrand(getBrand(brandId)) });
   } catch (e) {
     console.warn("[monthly lessons] unavailable", e);
   }
 }
 
+// Kerja Tim: the live layer (cursors, typing marks, presence) for a shared
+// brand — loaded on demand, only once a shared brand is open.
+let liveModule = null;
+function syncLiveFor(brandId) {
+  if (brandId && isSharedBrand(brandId)) {
+    import("./collab/live.js").then((m) => { liveModule = m; return m.syncLive(brandId); }).catch((e) => console.warn("live layer unavailable", e));
+  } else liveModule?.stopLive();
+}
+
 async function renderRoute() {
   if (!storeReady) return;
   const token = ++renderToken;
+  syncLiveFor(parseRoute(location.hash).brandId || null);
   if (cleanup) { cleanup(); cleanup = null; }
   clearPageGuide();
 
+  // A team invite link opened from inside the app.
+  if (location.hash.startsWith("#/undangan/")) {
+    delete app.dataset.shellKey;
+    renderInviteScreen();
+    return;
+  }
   // Pricing, reached from inside the app (trial/read-only pill, or an
   // upgrade). The store stays loaded — leaving this hash just rebuilds the
   // shell, no second boot.
@@ -733,7 +789,7 @@ async function renderRoute() {
     await new Promise((r) => setTimeout(r, 110));
     if (token !== renderToken) return;
     updateShellForRoute({ brandId: route.brandId, active: route.view });
-    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "chat" ? "wide" : ""}`;
+    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "chat" || route.view === "papan" ? "wide" : ""}`;
     viewRoot.innerHTML = "";
     void viewRoot.offsetWidth;
     viewRoot.classList.add("view-enter");
@@ -763,6 +819,7 @@ async function renderRoute() {
         guidelines: () => import("./views/brand-guidelines.js"),
         sales: () => import("./views/sales.js"),
         chat: () => import("./views/chat.js"),
+        papan: () => import("./views/papan.js"),
         announcements: () => import("./views/announcements.js"),
         goals: () => import("./views/goal-roadmap.js"),
         "content-os": () => import("./views/content-os.js"),
@@ -802,6 +859,9 @@ async function renderRoute() {
         break;
       case "goals":
         cleanup = view.render(viewRoot, { brandId: route.brandId, goalId: route.goalId || null });
+        break;
+      case "papan":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, boardId: route.boardId || null });
         break;
       case "content-os":
         cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
@@ -1015,4 +1075,30 @@ window.addEventListener("hashchange", () => {
 // Guided/Advanced toggle changes which view "home" resolves to — repaint
 // the current route immediately instead of waiting for the next navigation.
 window.addEventListener("mode:change", () => { if (storeReady) renderRoute(); });
+// Kerja Tim: the invite page (js/views/invite.js), full screen like the
+// login screen, loaded on demand.
+function renderInviteScreen() {
+  app.innerHTML = `<main class="view" id="invite-root" style="padding:0;max-width:none;"></main>`;
+  const token = location.hash.match(/^#\/undangan\/([^/?#]+)/)?.[1];
+  import("./views/invite.js")
+    .then((m) => {
+      const root = document.getElementById("invite-root");
+      if (root && token) m.renderInvite(root, decodeURIComponent(token));
+    })
+    .catch((e) => console.warn("invite page unavailable", e));
+}
+// Joined a team on the invite page: decide again what this person may open.
+window.addEventListener("team:joined", () => {
+  if (!lastUser) return;
+  if (storeReady) renderRoute();
+  else onAccountChange(lastUser, getCachedAccount());
+});
+// Kerja Tim: the owner took this account off a brand (or put it in Trash)
+// while one of its pages is open — say so and leave it.
+window.addEventListener("team:removed", (e) => {
+  const open = parseRoute(location.hash).brandId;
+  if (!open || !e.detail?.brandIds?.includes(open)) return;
+  toast(t("team.removed"), "error");
+  location.hash = "#/";
+});
 onAuthChange((user) => { lastUser = user; setUser(user?.uid); boot(user); });

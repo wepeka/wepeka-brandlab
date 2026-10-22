@@ -20,6 +20,8 @@ import announcements from "./i18n/announcements.js";
 import retention from "./i18n/retention.js";
 import beranda from "./i18n/beranda.js";
 import reminders from "./i18n/reminders.js";
+import team from "./i18n/team.js";
+import papan from "./i18n/papan.js";
 
 const KEY = "wepeka-lang";
 
@@ -653,6 +655,7 @@ const CORE = {
 // Per-area dictionaries (js/i18n/*.js) are merged on top of CORE. Keys are
 // namespaced per area, so nothing should collide — scripts check that.
 const EXTRA = {
+  "papan": papan,
   "brand-guidelines": brand_guidelines,
   "brand-dna-builder": brand_dna_builder,
   "creator-copy": creator_copy,
@@ -670,6 +673,7 @@ const EXTRA = {
   "retention": retention,
   "beranda": beranda,
   "reminders": reminders,
+  "team": team,
 };
 // Production build seam: scripts/build.mjs swaps this exact line for a
 // top-level await that loads ONLY the active language (one chunk per

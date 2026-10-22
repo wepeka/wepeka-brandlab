@@ -56,6 +56,8 @@ describe("auto-renew naming", () => {
     assert.equal(recurringFor("starter-monthly").slot, "plan");
     assert.equal(recurringFor("ai-unlimited").slot, "aiUnlimited");
     assert.match(recurringFor("addon-brand-sub").slot, /^brand_/);
+    assert.match(recurringFor("addon-team-seat").slot, /^seat_/);
+    assert.equal(recurringFor("addon-team-seat-renew"), null);
     assert.equal(recurringFor("founder"), null);
     assert.equal(recurringFor("ai-300"), null);
   });

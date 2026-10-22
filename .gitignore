@@ -4,3 +4,5 @@
 .env.local
 node_modules
 dist
+.emu-data
+*-debug.log
