@@ -79,6 +79,12 @@ Object.assign(ADDONS, AI_ADDONS);
 export const SUBSCRIPTION_PLANS = ["starter", "pro", "studio"];
 ADDONS["addon-brand-sub"] = { amount: 29000, label: "Brandlab — Tambah 1 brand (30 hari)", addBrandSlotMs: MONTH_MS };
 ADDONS["addon-brand-sub-renew"] = { amount: 29000, label: "Brandlab — Perpanjang 1 slot brand (30 hari)", addBrandSlotMs: MONTH_MS, renew: true };
+// An extra team seat, 30 days, any paid account (Kerja Tim, 2026-10-22):
+// accounts/{uid}.teamSeatSlotsUntil, same slot list as the brand slots
+// (nextBrandSlots). When one lapses and the team is bigger than its seats,
+// the newest members are paused, not removed (api/team.js reconcileSeats).
+ADDONS["addon-team-seat"] = { amount: 29000, label: "Brandlab — Tambah 1 kursi tim (30 hari)", addTeamSeatMs: MONTH_MS };
+ADDONS["addon-team-seat-renew"] = { amount: 29000, label: "Brandlab — Perpanjang 1 kursi tim (30 hari)", addTeamSeatMs: MONTH_MS, renew: true };
 
 // The slot list after one monthly purchase. New: reuses a lapsed slot if
 // there is one (so the list never grows with dead dates), else adds one.
@@ -334,7 +340,8 @@ export function renewalChargePatch(account, planKey, now = Date.now()) {
 // the saved card every period. Each charge comes back through the normal,
 // signed payment notification with order_id "<name>-<32 digits>", and
 // midtransSubs/<name> says whose it is and what it renews.
-// What can renew itself: subscriptions, AI Sepuasnya, monthly brand slots.
+// What can renew itself: subscriptions, AI Sepuasnya, monthly brand slots,
+// extra team seats.
 export function recurringFor(planKey) {
   const p = PLANS[planKey];
   // `slot`: the key under accounts/{uid}.autoRenew (letters/digits/_ only,
@@ -342,6 +349,7 @@ export function recurringFor(planKey) {
   if (p?.durationMs) return { interval: p.billing === "yearly" ? 12 : 1, slot: "plan" };
   if (planKey === "ai-unlimited") return { interval: 1, slot: "aiUnlimited" };
   if (planKey === "addon-brand-sub") return { interval: 1, slot: `brand_${Date.now().toString(36)}` };
+  if (planKey === "addon-team-seat") return { interval: 1, slot: `seat_${Date.now().toString(36)}` };
   return null;
 }
 // Midtrans: name ≤ 40 chars of [A-Za-z0-9-_~.]; each charge's order_id is
@@ -485,25 +493,32 @@ export const LEGACY_PLANS = {
 };
 
 // Kerja Tim: how many people an owner may invite onto their brands, by
-// plan (the owner is not a seat). Proposed 2026-10-21, not final — the one
-// place to change them; js/team.js mirrors this table for display
-// (tests/team.test.mjs keeps the two equal). Admin = no limit.
+// plan (the owner is not a seat). Set 2026-10-22 (owner's decision): small
+// on pay-once plans, so one Lifetime can't be split among a crowd; anyone
+// needing more rents extra seats (addon-team-seat). The one place to change
+// them; js/team.js mirrors this table for display (tests/team.test.mjs
+// keeps the two equal). Admin = no limit.
 export const TEAM_SEATS = {
   trial: 1,
   starter: 1,
   pro: 3,
   studio: 10,
-  founder: 3,
-  "founder-ultimate": 10,
-  lifetime: 3,
+  founder: 2,
+  "founder-ultimate": 5,
+  lifetime: 2,
   builder: 1,
   "content-os": 1,
   monthly: 1,
   free: 0,
 };
 export const DEFAULT_TEAM_SEATS = 1;
-export function teamSeatsFor(account) {
+// The plan's seats plus the extra seats still running
+// (accounts/{uid}.teamSeatSlotsUntil, one end date each — the Midtrans
+// webhook writes them, like brandSlotsUntil).
+export function teamSeatsFor(account, now = Date.now()) {
   if (!account) return 0;
   const n = TEAM_SEATS[account.plan];
-  return Number.isInteger(n) ? n : DEFAULT_TEAM_SEATS;
+  const base = Number.isInteger(n) ? n : DEFAULT_TEAM_SEATS;
+  const rented = (account.teamSeatSlotsUntil || []).filter((ts) => Number(ts) > now).length;
+  return base + rented;
 }

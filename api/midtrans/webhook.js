@@ -184,6 +184,14 @@ export default async function handler(req, res) {
       return true;
     }
 
+    // An extra team seat: same slot list as the brand slots, its own field.
+    if (plan.addTeamSeatMs) {
+      const slots = nextBrandSlots(accountSnap.data()?.teamSeatSlotsUntil, now, plan.addTeamSeatMs, { renew: !!plan.renew });
+      tx.set(accountRef, { teamSeatSlotsUntil: slots }, { merge: true });
+      tx.set(paymentRef, { status: "paid", amount: Number(gross_amount), paidAt: now }, { merge: true });
+      return true;
+    }
+
     // A permanent brand slot — its own counter, so a plan purchase or a
     // renewal resetting brandLimit never takes it away.
     if (plan.addBrands) {
@@ -361,6 +369,7 @@ async function syncAutoRenew(db, { uid, planKey, pending, orderId }) {
     if (token) {
       const startAt = rec.slot === "plan" ? Number(account.subscriptionExpiresAt)
         : rec.slot === "aiUnlimited" ? Number(account.aiUnlimitedUntil)
+        : rec.slot.startsWith("seat_") ? Math.max(...(account.teamSeatSlotsUntil || [0]).map(Number))
         : Math.max(...(account.brandSlotsUntil || [0]).map(Number));
       const amount = (PLANS[planKey] || ADDONS[planKey]).amount;
       const name = subscriptionName(uid);
@@ -405,6 +414,8 @@ async function applyRenewalCharge(db, { orderId, name, grossAmount, paid, notifi
       tx.set(accountRef, { aiUnlimitedUntil: Math.max(now, Number(acc.aiUnlimitedUntil) || 0) + addon.aiUnlimitedMs }, { merge: true });
     } else if (addon?.addBrandSlotMs) {
       tx.set(accountRef, { brandSlotsUntil: nextBrandSlots(acc.brandSlotsUntil, now, addon.addBrandSlotMs, { renew: true }) }, { merge: true });
+    } else if (addon?.addTeamSeatMs) {
+      tx.set(accountRef, { teamSeatSlotsUntil: nextBrandSlots(acc.teamSeatSlotsUntil, now, addon.addTeamSeatMs, { renew: true }) }, { merge: true });
     }
     tx.set(paymentRef, { uid: sub.uid, planKey: sub.planKey, plan: plan?.plan || sub.planKey, amount: grossAmount, status: "paid", paidAt: now, createdAt: now, recurring: true, subscriptionName: name });
     return true;

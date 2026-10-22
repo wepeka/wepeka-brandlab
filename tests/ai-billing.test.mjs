@@ -663,6 +663,13 @@ describe("Kerja Tim: one AI pool per team", () => {
   test("a viewer gets no AI there", async () => {
     assert.deepEqual(await resolvePayer(team(), "rina", "b2"), { error: "viewer" });
   });
+  test("an editor paused beyond the owner's seats doesn't spend the owner's credits", async () => {
+    const db = fakeFirestore({
+      "memberships/rina": { ownerIds: ["owen"], brands: { b1: { ownerId: "owen", role: "editor" } } },
+      "brands/b1": { ownerId: "owen", members: { rina: { role: "editor", seatPaused: true } } },
+    });
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { error: "seat-paused" });
+  });
   test("no brand, an unknown brand, or an index the brand no longer agrees with: the caller pays", async () => {
     const db = team();
     assert.deepEqual(await resolvePayer(db, "rina", null), { payerUid: "rina", team: false });

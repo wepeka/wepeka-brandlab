@@ -4,15 +4,19 @@
 // brands shared with them with "Keluar dari tim". The invite dialog
 // (openInviteModal) is also opened from a brand's ⋯ menu ("Bagikan").
 // Everything that changes the team goes through /api/team (js/team.js);
-// the brands' members come back through the store's own listeners.
-import { listBrands, isOwnBrand, storeUid } from "../store.js";
-import { getCachedAccount, accessState, isAdmin } from "../account.js";
-import { teamApi, teamSeatsFor, getMemberships } from "../team.js";
+// the brands' members come back through the store's own listeners. Extra
+// seats (Rp 29rb / 30 days) are bought here; a team over its seats has its
+// newest members paused (api/team.js reconcileSeats), shown on their row.
+import { listBrands, isOwnBrand, storeUid, getBrand } from "../store.js";
+import { getCachedAccount, accessState, isAdmin, isReadOnly } from "../account.js";
+import { teamApi, teamSeatsFor, extraSeatEnds, getMemberships } from "../team.js";
+import { TEAM_SEAT_ADDON } from "../site-links.js";
+import { rp, buyAddon } from "../purchase.js";
 import { auth, db as fdb, loadFirestore } from "../firebase.js";
 import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { t } from "../i18n.js";
+import { t, getLang } from "../i18n.js";
 
 const DAY = 86400000;
 const ROLES = ["editor", "viewer"];
@@ -44,8 +48,9 @@ function teamPeople(brands) {
   const people = new Map();
   for (const b of brands) {
     for (const [uid, m] of Object.entries(b.members || {})) {
-      if (!people.has(uid)) people.set(uid, { uid, name: m.name || m.email || uid, email: m.email || "", brands: [] });
+      if (!people.has(uid)) people.set(uid, { uid, name: m.name || m.email || uid, email: m.email || "", brands: [], paused: false });
       people.get(uid).brands.push({ brand: b, role: m.role });
+      if (m.seatPaused) people.get(uid).paused = true;
     }
   }
   return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -57,6 +62,20 @@ function seatInfo(brands, pending) {
   const used = people.length + new Set(pending.filter((i) => !emails.has(String(i.email).toLowerCase())).map((i) => i.email)).size;
   const limit = isAdmin(storeUid()) ? Infinity : teamSeatsFor(account);
   return { used, limit, left: Math.max(0, limit - used) };
+}
+const shortDate = (ts) => new Date(ts).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "short" });
+// Extra seats: only a paid plan rents them (api/midtrans/create-transaction.js).
+function seatShopHTML(account, seats, paused) {
+  if (isAdmin(storeUid()) || accessState(account) !== "paid" || isReadOnly(account)) return "";
+  const ends = extraSeatEnds(account);
+  const a = TEAM_SEAT_ADDON;
+  return `
+    <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:12px;">
+      <button class="btn btn-secondary btn-sm" id="team-add-seat">${icon("plus", { size: 13 })}${t("team.seatAddon.add", { price: rp(a.price), days: a.days })}</button>
+      ${ends.length ? `<span class="text-faint" style="font-size:12px;">${t("team.seatAddon.running", { n: ends.length, date: shortDate(ends[0]) })}</span>
+      <button class="btn btn-ghost btn-sm" id="team-renew-seat">${t("team.seatAddon.renew")}</button>` : ""}
+    </div>
+    ${paused ? `<p class="hint" style="display:block;margin-top:10px;color:var(--bofu);">${t("team.pausedNote", { n: paused })}</p>` : ""}`;
 }
 const initialOf = (name) => escapeHtml(String(name || "?").trim().charAt(0).toUpperCase() || "?");
 const personDot = (name) => `<div class="avatar" style="flex:none;width:30px;height:30px;border-radius:50%;font-size:12px;">${initialOf(name)}</div>`;
@@ -105,6 +124,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
           <h3 style="font-size:16px;margin-bottom:6px;">${t("team.panel.title")}</h3>
           <p class="text-muted" style="font-size:13px;margin:0;">${t("team.panel.sub")}</p>
           <p style="font-size:13px;margin:10px 0 0;"><b>${Number.isFinite(seats.limit) ? t("team.seats", { used: seats.used, limit: seats.limit, plan: escapeHtml(planName(account)) }) : t("team.seatsUnlimited", { used: seats.used })}</b></p>
+          ${seatShopHTML(account, seats, people.filter((p) => p.paused).length)}
         </div>
         <button class="btn btn-primary" id="team-invite" ${brands.length ? "" : "disabled"}>${icon("plus", { size: 15 })}${t("team.invite")}</button>
       </div>
@@ -118,7 +138,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
       ${people.length ? people.map((p) => `
         <div class="list-editor-row" style="flex-wrap:wrap;">
           ${personDot(p.name)}
-          <span class="row-label">${escapeHtml(p.name)} <span class="text-faint">· ${escapeHtml(p.email)}</span></span>
+          <span class="row-label">${escapeHtml(p.name)} <span class="text-faint">· ${escapeHtml(p.email)}</span>${p.paused ? ` <span class="tag tag-bofu" style="text-transform:none;letter-spacing:0;">${t("team.pausedChip")}</span>` : ""}</span>
           <div class="flex items-center gap-8" style="flex-wrap:wrap;">
             ${p.brands.map(({ brand, role }) => `
               <label class="checkbox-chip" style="padding:6px 10px;gap:6px;white-space:nowrap;">${escapeHtml(brand.name)}
@@ -158,7 +178,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
       ${[...owners.values()].map((o) => `
         <div class="list-editor-row" style="flex-wrap:wrap;">
           ${personDot(o.ownerName)}
-          <span class="row-label">${escapeHtml(t("team.sharedBy", { name: o.ownerName || "—" }))}<br><span class="text-faint" style="font-weight:500;">${o.brands.map((b) => `${escapeHtml(b.name)} · ${roleName(b.role)}`).join(" · ")}</span></span>
+          <span class="row-label">${escapeHtml(t("team.sharedBy", { name: o.ownerName || "—" }))}<br><span class="text-faint" style="font-weight:500;">${o.brands.map((b) => `${escapeHtml(b.name)} · ${getBrand(b.brandId)?.members?.[storeUid()]?.seatPaused ? t("team.pausedShort") : roleName(b.role)}`).join(" · ")}</span></span>
           <button class="btn btn-secondary btn-sm" data-leave="${escapeHtml(o.ownerId)}">${t("team.leave")}</button>
         </div>`).join("")}
     </div>` : ""}
@@ -169,6 +189,19 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
     renderTeamPanel(content, { planName });
   };
   qs("#team-invite", content)?.addEventListener("click", () => openInviteModal({ onDone: () => rerender() }));
+  // After the webhook lands the seat: the server unpauses whoever it frees.
+  const seatBought = async () => {
+    await teamApi("sync").catch(() => {});
+    rerender();
+  };
+  qs("#team-add-seat", content)?.addEventListener("click", () => {
+    const before = teamSeatsFor(getCachedAccount());
+    buyAddon(TEAM_SEAT_ADDON.payKey, { isDone: (acc) => teamSeatsFor(acc) > before, onDone: seatBought });
+  });
+  qs("#team-renew-seat", content)?.addEventListener("click", () => {
+    const before = extraSeatEnds(getCachedAccount())[0] || 0;
+    buyAddon(TEAM_SEAT_ADDON.renewKey, { isDone: (acc) => (Number((acc?.teamSeatSlotsUntil || []).map(Number).sort((a, b) => a - b)[0]) || 0) > before, onDone: seatBought });
+  });
   qsa("[data-role-brand]", content).forEach((sel) => sel.addEventListener("change", async () => {
     try {
       await teamApi("role", { brandId: sel.dataset.roleBrand, memberUid: sel.dataset.roleMember, role: sel.value });

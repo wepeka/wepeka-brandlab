@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, inviteState, seatsUsed, inviteLink,
-  composeInviteEmail, composeCodeEmail, joinNames, CODE_MAX_ATTEMPTS,
+  composeInviteEmail, composeCodeEmail, joinNames, CODE_MAX_ATTEMPTS, codeGuardId, guardToday, pausedMembers, CODE_DAY_MS,
 } from "../api/_team.js";
 import { TEAM_SEATS, teamSeatsFor, PLANS } from "../api/_plans.js";
 import { firstShareScrub } from "../api/team.js";
@@ -69,10 +69,43 @@ describe("seats", () => {
   });
   test("seats per plan: the owner is not a seat, every sold plan has a number", () => {
     assert.equal(teamSeatsFor({ plan: "pro" }), 3);
-    assert.equal(teamSeatsFor({ plan: "founder-ultimate" }), 10);
+    assert.equal(teamSeatsFor({ plan: "studio" }), 10);
+    // Pay-once plans stay small (2026-10-22): one Lifetime isn't a crowd's.
+    assert.equal(teamSeatsFor({ plan: "founder" }), 2);
+    assert.equal(teamSeatsFor({ plan: "founder-ultimate" }), 5);
     assert.equal(teamSeatsFor({ plan: "free" }), 0);
     assert.equal(teamSeatsFor(null), 0);
     for (const p of Object.values(PLANS)) assert.ok(Number.isInteger(TEAM_SEATS[p.plan]), p.plan);
+  });
+  test("extra seats count while they run, on the server and in the app alike", () => {
+    const account = { plan: "pro", teamSeatSlotsUntil: [now + DAY, now - 1, now + 2 * DAY] };
+    assert.equal(teamSeatsFor(account, now), 5);
+    assert.equal(clientSeatsFor(account, now), 5);
+    assert.equal(teamSeatsFor({ plan: "pro", teamSeatSlotsUntil: [now - 1] }, now), 3);
+  });
+  test("over the seats, the newest members are paused — earliest join anywhere wins", () => {
+    const team = [
+      { id: "b1", members: { r: { addedAt: 10 }, d: { addedAt: 30 } } },
+      { id: "b2", members: { s: { addedAt: 20 }, d: { addedAt: 5 } } },
+    ];
+    assert.deepEqual([...pausedMembers(team, 3)], []);
+    assert.deepEqual([...pausedMembers(team, 1)].sort(), ["r", "s"]);
+    assert.deepEqual([...pausedMembers(team, 0)].sort(), ["d", "r", "s"]);
+    assert.deepEqual([...pausedMembers(team, Infinity)], []);
+  });
+});
+
+describe("6-digit code: per email per day (api/_team.js)", () => {
+  test("one guard per email, whatever its case", () => {
+    assert.equal(codeGuardId("Sari@Contoh.id"), codeGuardId("sari@contoh.id"));
+    assert.notEqual(codeGuardId("sari@contoh.id"), codeGuardId("rina@contoh.id"));
+  });
+  test("counts run for a day from the first code, then start over", () => {
+    const now = 1_000_000_000;
+    assert.deepEqual(guardToday(null, now), { windowStart: now, sends: 0, wrong: 0 });
+    const g = { windowStart: now, sends: 3, wrong: 7 };
+    assert.deepEqual(guardToday(g, now + CODE_DAY_MS - 1), g);
+    assert.deepEqual(guardToday(g, now + CODE_DAY_MS), { windowStart: now + CODE_DAY_MS, sends: 0, wrong: 0 });
   });
 });
 

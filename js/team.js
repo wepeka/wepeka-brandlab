@@ -13,19 +13,25 @@ export const TEAM_SEATS = {
   starter: 1,
   pro: 3,
   studio: 10,
-  founder: 3,
-  "founder-ultimate": 10,
-  lifetime: 3,
+  founder: 2,
+  "founder-ultimate": 5,
+  lifetime: 2,
   builder: 1,
   "content-os": 1,
   monthly: 1,
   free: 0,
 };
 export const DEFAULT_TEAM_SEATS = 1;
-export function teamSeatsFor(account) {
+// The plan's seats plus the extra seats still running (teamSeatSlotsUntil).
+export function teamSeatsFor(account, now = Date.now()) {
   if (!account) return 0;
   const n = TEAM_SEATS[account.plan];
-  return Number.isInteger(n) ? n : DEFAULT_TEAM_SEATS;
+  const base = Number.isInteger(n) ? n : DEFAULT_TEAM_SEATS;
+  return base + extraSeatEnds(account, now).length;
+}
+// End dates of the extra seats still running, soonest first.
+export function extraSeatEnds(account, now = Date.now()) {
+  return (account?.teamSeatSlotsUntil || []).map(Number).filter((ts) => ts > now).sort((a, b) => a - b);
 }
 
 let memberships = null;

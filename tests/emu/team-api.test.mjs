@@ -12,6 +12,7 @@ Object.assign(process.env, {
 });
 const { adminDb, adminAuth } = await import("../../api/_firebaseAdmin.js");
 const { runAction, TeamError } = await import("../../api/team.js");
+const { resolvePayer } = await import("../../api/_aiQuota.js");
 const { hashToken } = await import("../../api/_team.js");
 
 const DAY = 86400000;
@@ -31,6 +32,17 @@ async function expectError(promise, code) {
     return e;
   }
   assert.fail(`expected ${code}`);
+}
+
+// Signs in on the Auth emulator's REST API, as the app would: true when
+// this email + password gets in.
+async function canSignIn(email, password) {
+  const res = await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: true }),
+  });
+  return res.ok;
 }
 
 async function wipe() {
@@ -144,12 +156,55 @@ describe("seats and plan", () => {
     // On the team already: sharing another brand with her takes no new seat.
     assert.deepEqual((await db.doc("brands/b2").get()).data().memberIds, ["rina"]);
   });
+  test("a smaller plan pauses the newest members (not removed); an extra seat or a free seat brings them back", async () => {
+    await seed();
+    await user("dian", "dian@test.local");
+    for (const [uid, email] of [["rina", "rina@test.local"], ["budi", "budi@test.local"], ["dian", "dian@test.local"]]) {
+      clock += 1000;
+      const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email, role: "editor" });
+      await runAction(d(), "accept", as(uid), { token: tokenOf(link) });
+    }
+    const flags = async () => Object.fromEntries(Object.entries((await db.doc("brands/b1").get()).data().members).map(([uid, m]) => [uid, !!m.seatPaused]));
+    await db.doc("accounts/owen").update({ plan: "starter" });
+    assert.equal((await runAction(d(), "sync", as("owen"), {})).paused, 2);
+    assert.deepEqual(await flags(), { rina: false, budi: true, dian: true });
+    assert.deepEqual(await resolvePayer(db, "dian", "b1"), { error: "seat-paused" });
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { payerUid: "owen", team: true });
+    // Full: no new invites while members are paused.
+    await expectError(runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" }), "seats-full");
+    await db.doc("accounts/owen").update({ teamSeatSlotsUntil: [clock + DAY] });
+    await runAction(d(), "sync", as("owen"), {});
+    assert.deepEqual(await flags(), { rina: false, budi: false, dian: true });
+    await runAction(d(), "remove", as("owen"), { memberUid: "rina" });
+    assert.deepEqual(await flags(), { budi: false, dian: false });
+  });
+  test("the daily job pauses a team whose extra seat ran out", async () => {
+    await seed({ plan: "starter", ownerExtra: { teamSeatSlotsUntil: [clock + DAY] } });
+    for (const [uid, email] of [["rina", "rina@test.local"], ["budi", "budi@test.local"]]) {
+      clock += 1000;
+      const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email, role: "editor" });
+      await runAction(d(), "accept", as(uid), { token: tokenOf(link) });
+    }
+    await db.doc("accounts/owen").update({ teamSeatSlotsUntil: [Date.now() - 1] });
+    process.env.CRON_SECRET = "test-cron";
+    const { default: cron } = await import("../../api/cron/check-expiry.js");
+    const res = { statusCode: 0, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+    await cron({ headers: { authorization: "Bearer test-cron" }, query: {} }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.seatOwners, 1);
+    const members = (await db.doc("brands/b1").get()).data().members;
+    assert.equal(members.rina.seatPaused, undefined);
+    assert.equal(members.budi.seatPaused, true);
+  });
   test("an owner whose plan lapsed can't invite, and a pending invite can't be accepted", async () => {
     await seed();
     const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "rina@test.local", role: "editor" });
     await db.doc("accounts/owen").update({ subscriptionExpiresAt: clock - 1 });
     await expectError(runAction(d(), "accept", as("rina"), { token: tokenOf(link) }), "owner-inactive");
     await expectError(runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "budi@test.local", role: "editor" }), "owner-inactive");
+    // Nor keep an old invite alive with new links.
+    const pending = (await db.collection("invites").where("ownerId", "==", "owen").get()).docs.find((x) => x.data().status === "pending");
+    await expectError(runAction(d(), "rotate", as("owen"), { inviteId: pending.id }), "owner-inactive");
   });
 });
 
@@ -177,6 +232,69 @@ describe("6-digit code", () => {
     const wrong = code === "000000" ? "111111" : "000000";
     for (let i = 0; i < 5; i++) await expectError(runAction(d(), "code-finish", null, { token: tokenOf(link), code: wrong, password: "rahasia-123" }), "code-wrong");
     await expectError(runAction(d(), "code-finish", null, { token: tokenOf(link), code, password: "rahasia-123" }), "code-locked");
+  });
+  test("an account made ahead of time on someone's email (unverified) is taken over by the code", async () => {
+    await seed();
+    // Someone else registered sari@ first, with a password only they know.
+    await auth.createUser({ uid: "squat", email: "sari@test.local", password: "orang-lain-123", emailVerified: false });
+    // …and tied their own Google account to it as a second way in.
+    await auth.updateUser("squat", { providerToLink: { providerId: "google.com", uid: "g-orang-lain", email: "orang.lain@gmail.com" } });
+    const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" });
+    await runAction(d(), "code-start", null, { token: tokenOf(link) });
+    const code = codeIn(outbox.at(-1));
+    // Her password must be usable before the code is spent on it.
+    await expectError(runAction(d(), "code-finish", null, { token: tokenOf(link), code, password: "123" }), "weak-password");
+    const before = Date.now();
+    const out = await runAction(d(), "code-finish", null, { token: tokenOf(link), code, name: "Sari", password: "rahasia-123" });
+    assert.equal(out.created, true);
+    const sari = await auth.getUser("squat");
+    assert.equal(sari.emailVerified, true);
+    assert.equal(sari.displayName, "Sari");
+    assert.deepEqual(sari.providerData.map((p) => p.providerId), ["password"], "the other Google sign-in is unlinked");
+    assert.ok(new Date(sari.tokensValidAfterTime).getTime() >= before - 1000, "old sign-ins ended");
+    assert.equal(await canSignIn("sari@test.local", "orang-lain-123"), false, "the first password no longer works");
+    assert.equal(await canSignIn("sari@test.local", "rahasia-123"), true);
+    assert.equal((await db.doc("brands/b1").get()).data().members.squat.role, "editor");
+  });
+  test("a verified account is left exactly as it is", async () => {
+    await seed();
+    const { link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "budi@test.local", role: "viewer" });
+    await runAction(d(), "code-start", null, { token: tokenOf(link) });
+    await expectError(runAction(d(), "code-finish", null, { token: tokenOf(link), code: codeIn(outbox.at(-1)), password: "baru-sekali-123" }), "account-exists");
+    assert.equal(await canSignIn("budi@test.local", "brandlab-dev-123"), true);
+    assert.equal(await canSignIn("budi@test.local", "baru-sekali-123"), false);
+  });
+  test("five codes a day to one email, however many new links", async () => {
+    await seed();
+    const { inviteId, link } = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" });
+    for (let i = 0; i < 5; i++) {
+      await runAction(d(), "code-start", null, { token: tokenOf(link) });
+      clock += 61_000;
+    }
+    await expectError(runAction(d(), "code-start", null, { token: tokenOf(link) }), "code-limit");
+    const fresh = await runAction(d(), "rotate", as("owen"), { inviteId });
+    await expectError(runAction(d(), "code-start", null, { token: tokenOf(fresh.link) }), "code-limit");
+    clock += DAY;
+    await runAction(d(), "code-start", null, { token: tokenOf(fresh.link) });
+  });
+  test("ten wrong codes a day for one email: a new link doesn't start the count over", async () => {
+    await seed();
+    const first = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" });
+    const wrongFor = (code) => (code === "000000" ? "111111" : "000000");
+    await runAction(d(), "code-start", null, { token: tokenOf(first.link) });
+    let code = codeIn(outbox.at(-1));
+    for (let i = 0; i < 5; i++) await expectError(runAction(d(), "code-finish", null, { token: tokenOf(first.link), code: wrongFor(code), password: "rahasia-123" }), "code-wrong");
+    const second = await runAction(d(), "rotate", as("owen"), { inviteId: first.inviteId });
+    clock += 61_000;
+    await runAction(d(), "code-start", null, { token: tokenOf(second.link) });
+    code = codeIn(outbox.at(-1));
+    for (let i = 0; i < 5; i++) await expectError(runAction(d(), "code-finish", null, { token: tokenOf(second.link), code: wrongFor(code), password: "rahasia-123" }), "code-wrong");
+    // Even the right code waits for tomorrow now.
+    await expectError(runAction(d(), "code-finish", null, { token: tokenOf(second.link), code, password: "rahasia-123" }), "code-locked-day");
+    clock += DAY;
+    await runAction(d(), "code-start", null, { token: tokenOf(second.link) });
+    const out = await runAction(d(), "code-finish", null, { token: tokenOf(second.link), code: codeIn(outbox.at(-1)), name: "Sari", password: "rahasia-123" });
+    assert.equal(out.created, true);
   });
   test("an unverified account signed in verifies with the code; an existing account is sent to sign in", async () => {
     await seed();

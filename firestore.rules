@@ -145,8 +145,12 @@ service cloud.firestore {
     function canRead(b) {
       return roleIn(b) in ['owner', 'editor', 'viewer'];
     }
+    // An editor beyond the owner's seats (a smaller plan, a lapsed extra
+    // seat) is paused by the server (members.{uid}.seatPaused, api/team.js
+    // reconcileSeats): reads like a viewer until a seat frees up.
     function isEditor(b) {
-      return roleIn(b) == 'editor';
+      return roleIn(b) == 'editor'
+        && b.get('members', {}).get(request.auth.uid, {}).get('seatPaused', false) != true;
     }
     function ownerActive(ownerUid) {
       return activeAcc(get(/databases/$(database)/documents/accounts/$(ownerUid)).data);
@@ -491,6 +495,10 @@ service cloud.firestore {
       allow write: if false;
     }
     match /inviteCodes/{id} {
+      allow read, write: if false;
+    }
+    // Per-email daily count of codes sent and wrong codes typed.
+    match /codeGuards/{id} {
       allow read, write: if false;
     }
 

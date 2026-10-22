@@ -377,5 +377,8 @@ export async function resolvePayer(db, uid, teamBrandId) {
   const member = brand?.members?.[uid];
   if (!brand || brand.ownerId !== entry.ownerId || !member) return { payerUid: uid, team: false };
   if (member.role !== "editor") return { error: "viewer" };
+  // Beyond the owner's seats (a smaller plan, a lapsed extra seat):
+  // looks, but doesn't spend the owner's credits (api/team.js reconcileSeats).
+  if (member.seatPaused) return { error: "seat-paused" };
   return { payerUid: brand.ownerId, team: true };
 }

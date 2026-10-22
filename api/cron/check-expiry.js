@@ -13,6 +13,7 @@
 // the rows it re-reads (already-readonly accounts) are few and cheap.
 import { adminDb } from "../_firebaseAdmin.js";
 import { dueSchedulePatch } from "../_plans.js";
+import { reconcileSeats, teamDeps } from "../team.js";
 
 export default async function handler(req, res) {
   // An unset CRON_SECRET used to leave this endpoint open to anyone who
@@ -42,6 +43,25 @@ export default async function handler(req, res) {
     }
   }
 
+  // Kerja Tim: a smaller plan (just switched above, or lapsed extra seats)
+  // pauses the newest members beyond the seats; a bigger one gives them
+  // back (api/team.js reconcileSeats). Every owner with a team, found
+  // through the members' index.
+  let seatOwners = 0;
+  if (req.query?.dryRun !== "1") {
+    const owners = new Set();
+    (await db.collection("memberships").get()).docs.forEach((doc) => (doc.data().ownerIds || []).forEach((o) => owners.add(o)));
+    const d = teamDeps();
+    for (const ownerId of owners) {
+      try {
+        await reconcileSeats(d, ownerId);
+        seatOwners++;
+      } catch (err) {
+        console.error("[check-expiry] team seats not checked", ownerId, err?.message);
+      }
+    }
+  }
+
   const [lapsedSubs, endedTrials] = await Promise.all([
     accounts.where("subscriptionExpiresAt", "<", now).get(),
     accounts.where("trialEndsAt", "<", now).get(),
@@ -62,7 +82,7 @@ export default async function handler(req, res) {
     if (acc.status === "active" && acc.plan === "trial") toFlip.set(doc.id, doc.ref);
   });
 
-  if (!toFlip.size) return res.status(200).json({ ok: true, flipped: 0, switched });
+  if (!toFlip.size) return res.status(200).json({ ok: true, flipped: 0, switched, seatOwners });
 
   // Dry run: report who would flip without writing anything, so a change to
   // this query can be checked against production data before the next
@@ -79,5 +99,5 @@ export default async function handler(req, res) {
     await batch.commit();
   }
 
-  return res.status(200).json({ ok: true, flipped: refs.length, switched });
+  return res.status(200).json({ ok: true, flipped: refs.length, switched, seatOwners });
 }

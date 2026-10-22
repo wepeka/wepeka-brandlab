@@ -12,16 +12,21 @@
 //   POST {action:"code-start", token}               6-digit code to the invited email (sign-up / unverified email)
 //   POST {action:"code-finish", token, code, name?, password?}
 //        signed in: marks the email verified and accepts;
-//        signed out: creates the account (verified) and accepts — the app then signs in
+//        signed out: creates the account (verified) and accepts — the app then signs in.
+//        An unverified account already on that email is taken over the way
+//        a password reset would (new password, old sign-ins ended); a
+//        verified one is left alone (409 account-exists).
 //   POST {action:"role", brandId, memberUid, role}  owner
 //   POST {action:"remove", memberUid, brandIds?}    owner (all their brands when brandIds is left out)
 //   POST {action:"leave", brandIds?}                a member leaves (all of that owner's… every shared brand when left out)
 //   POST {action:"sync"}                            owner: rebuild the memberships index from the brands
+//                                                    and pause/unpause members against the seats
 //
 // Errors: { error: code } with 400 bad-request/self/weak-password,
 // 401 auth, 403 not-owner/email-mismatch/unverified/code-wrong,
 // 404 not-found, 409 seats-full/already-member/owner-inactive/account-exists,
-// 410 expired/revoked/used/code-expired, 429 too-soon/too-many/code-locked.
+// 410 expired/revoked/used/code-expired, 429 too-soon/too-many/code-locked/
+// code-limit (5 codes a day per email)/code-locked-day (10 wrong a day).
 import { FieldValue, FieldPath } from "firebase-admin/firestore";
 import { adminDb, adminAuth, adminRtdb, requireAuth } from "./_firebaseAdmin.js";
 import { accountCanWrite, isActiveBrand } from "./brands/recount.js";
@@ -30,9 +35,9 @@ import { isAdminUid } from "./_aiQuota.js";
 import { sendEmail } from "./_email.js";
 import { APP_URL } from "./_reminders.js";
 import {
-  ROLES, INVITE_TTL_MS, CODE_TTL_MS, RESEND_GAP_MS, MAX_PENDING_INVITES, TEAM_EMAIL_FROM_DEFAULT,
-  normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, inviteState, seatsUsed, inviteLink,
-  composeInviteEmail, composeCodeEmail,
+  ROLES, INVITE_TTL_MS, CODE_TTL_MS, RESEND_GAP_MS, MAX_PENDING_INVITES, TEAM_EMAIL_FROM_DEFAULT, CODE_DAY_SENDS, CODE_DAY_WRONG,
+  normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, codeGuardId, guardToday, inviteState, seatsUsed,
+  pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail,
 } from "./_team.js";
 
 export class TeamError extends Error {
@@ -84,7 +89,7 @@ export function firstShareScrub(brand) {
   return { secrets: hasSecrets ? secrets : null, personal: hasPersonal ? personal : null, brandPatch };
 }
 
-function deps(req) {
+export function teamDeps(req = {}) {
   return {
     db: adminDb(),
     auth: adminAuth(),
@@ -107,7 +112,7 @@ async function optionalCaller(req) {
 const ownerBrandsQuery = (db, ownerId) => db.collection("brands").where("ownerId", "==", ownerId);
 const ownerInvitesQuery = (db, ownerId) => db.collection("invites").where("ownerId", "==", ownerId);
 const docs = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-const seatLimit = (ownerId, account) => (isAdminUid(ownerId) ? Infinity : teamSeatsFor(account));
+const seatLimit = (ownerId, account, now = Date.now()) => (isAdminUid(ownerId) ? Infinity : teamSeatsFor(account, now));
 const displayNameOf = (user, account) => String(account?.displayName || user?.displayName || (user?.email || "").split("@")[0] || "Pemilik brand").slice(0, 80);
 
 // The Realtime Database's copy of who is on a brand — teams/{brandId} =
@@ -124,11 +129,41 @@ export async function mirrorTeams(d, brandIds) {
       const members = Object.entries(b?.members || {});
       const ref = d.rtdb.ref(`teams/${id}`);
       if (!b || !members.length || b.deletedAt) await ref.remove();
-      else await ref.set({ [b.ownerId]: "owner", ...Object.fromEntries(members.map(([uid, m]) => [uid, m.role === "editor" ? "editor" : "viewer"])) });
+      else await ref.set({ [b.ownerId]: "owner", ...Object.fromEntries(members.map(([uid, m]) => [uid, m.role === "editor" && !m.seatPaused ? "editor" : "viewer"])) });
     } catch (e) {
       console.warn("[team] live team copy not updated", id, e?.message);
     }
   }
+}
+
+// Seats against the team (api/_team.js pausedMembers): sets or clears
+// members.{uid}.seatPaused on the owner's brands where it changed — the
+// rules and resolvePayer treat a paused editor as a viewer — and copies it
+// to the live layer. Run after someone leaves or is removed, by `sync`
+// (the owner's app runs it after buying a seat) and by the daily cron
+// (api/cron/check-expiry.js: a smaller plan, a lapsed extra seat).
+export async function reconcileSeats(d, ownerId) {
+  const now = d.now();
+  const out = await d.db.runTransaction(async (tx) => {
+    const accSnap = await tx.get(d.db.doc(`accounts/${ownerId}`));
+    const account = accSnap.exists ? accSnap.data() : null;
+    const brands = docs(await tx.get(ownerBrandsQuery(d.db, ownerId)));
+    const paused = pausedMembers(brands, seatLimit(ownerId, account, now));
+    const changed = [];
+    for (const b of brands) {
+      const updates = [];
+      for (const [uid, m] of Object.entries(b.members || {})) {
+        const want = paused.has(uid);
+        if (!!m?.seatPaused !== want) updates.push(new FieldPath("members", uid, "seatPaused"), want ? true : FieldValue.delete());
+      }
+      if (!updates.length) continue;
+      tx.update(d.db.doc(`brands/${b.id}`), ...updates);
+      changed.push(b.id);
+    }
+    return { changed, paused: paused.size };
+  });
+  if (out.changed.length) await mirrorTeams(d, out.changed);
+  return out;
 }
 
 // ---------- invite / rotate / revoke ----------
@@ -157,7 +192,7 @@ export async function invite(d, caller, body) {
     // One live invite per email: inviting again replaces the old link.
     const previous = pending.filter((inv) => inv.email === email);
     const onTeam = brands.some((b) => memberEmails(b).includes(email));
-    const limit = seatLimit(caller.uid, account);
+    const limit = seatLimit(caller.uid, account, now);
     const used = seatsUsed(brands, invites.filter((inv) => inv.email !== email), { now });
     if (!onTeam && used + 1 > limit) fail("seats-full", 409, { limit });
     previous.forEach((inv) => tx.update(d.db.doc(`invites/${inv.id}`), { status: "revoked", revokedAt: now }));
@@ -192,6 +227,8 @@ export async function rotate(d, caller, body) {
     const inv = await ownInvite(tx, d, caller, body?.inviteId);
     const state = inviteState(inv, now);
     if (state === "accepted" || state === "revoked") fail(state === "accepted" ? "used" : "revoked", 410);
+    const accSnap = await tx.get(d.db.doc(`accounts/${caller.uid}`));
+    if (!accountCanWrite(accSnap.exists ? accSnap.data() : null, now)) fail("owner-inactive", 409);
     if (body?.send && now - Number(inv.lastSentAt || 0) < RESEND_GAP_MS) fail("too-soon", 429);
     const { id, ...rest } = inv;
     const next = { ...rest, status: "pending", createdAt: now, expiresAt: now + INVITE_TTL_MS, lastSentAt: body?.send ? now : inv.lastSentAt || null };
@@ -253,7 +290,7 @@ export async function accept(d, caller, body) {
     const brands = docs(await tx.get(ownerBrandsQuery(d.db, inv.ownerId)));
     const invites = docs(await tx.get(ownerInvitesQuery(d.db, inv.ownerId)));
     const onTeam = brands.some((b) => b.members?.[caller.uid]);
-    if (!onTeam && seatsUsed(brands, invites, { now, exceptInviteId: id }) + 1 > seatLimit(inv.ownerId, account)) fail("seats-full", 409);
+    if (!onTeam && seatsUsed(brands, invites, { now, exceptInviteId: id }) + 1 > seatLimit(inv.ownerId, account, now)) fail("seats-full", 409);
     const targets = inv.brandIds.map((bid) => brands.find((b) => b.id === bid)).filter((b) => b && isActiveBrand(b));
     if (!targets.length) fail("not-found", 404);
     const name = String(user.displayName || inv.email.split("@")[0]).slice(0, 80);
@@ -286,10 +323,15 @@ export async function codeStart(d, body) {
   const state = inviteState(inv, now);
   if (STATE_ERROR[state]) fail(...STATE_ERROR[state]);
   const ref = d.db.doc(`inviteCodes/${inv.id}`);
+  const guardRef = d.db.doc(`codeGuards/${codeGuardId(inv.email)}`);
   const code = newCode();
   await d.db.runTransaction(async (tx) => {
-    const prev = await tx.get(ref);
+    const [prev, guardSnap] = await Promise.all([tx.get(ref), tx.get(guardRef)]);
     if (prev.exists && now - Number(prev.data().sentAt || 0) < RESEND_GAP_MS) fail("too-soon", 429);
+    // However many links or owners ask: 5 codes a day to one email.
+    const guard = guardToday(guardSnap.exists ? guardSnap.data() : null, now);
+    if (guard.sends >= CODE_DAY_SENDS) fail("code-limit", 429);
+    tx.set(guardRef, { ...guard, sends: guard.sends + 1 });
     tx.set(ref, { hash: hashCode(inv.id, code), expiresAt: now + CODE_TTL_MS, attempts: 0, sentAt: now });
   });
   const sent = await d.send({ to: inv.email, ...composeCodeEmail({ code, ownerName: inv.ownerName, brandNames: inv.brandNames, appUrl: APP_URL }) });
@@ -312,16 +354,26 @@ export async function codeFinish(d, caller, body) {
     }
   }
   const password = String(body?.password || "");
-  if (!caller && !existing && (password.length < 8 || password.length > 128)) fail("weak-password", 400);
+  // A new account — or an unverified one the code will take over — gets
+  // this password, so it must be usable before the code is spent.
+  const settingPassword = !caller && !existing?.emailVerified;
+  if (settingPassword && (password.length < 8 || password.length > 128)) fail("weak-password", 400);
   const ref = d.db.doc(`inviteCodes/${inv.id}`);
+  const guardRef = d.db.doc(`codeGuards/${codeGuardId(inv.email)}`);
   const verdict = await d.db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
+    const [snap, guardSnap] = await Promise.all([tx.get(ref), tx.get(guardRef)]);
+    const guard = guardToday(guardSnap.exists ? guardSnap.data() : null, now);
+    if (guard.wrong >= CODE_DAY_WRONG) return "locked-day";
     const stored = snap.exists ? snap.data() : null;
     const v = codeCheck(stored, inv.id, body?.code, now);
-    if (v === "wrong") tx.update(ref, { attempts: FieldValue.increment(1) });
+    if (v === "wrong") {
+      tx.update(ref, { attempts: FieldValue.increment(1) });
+      tx.set(guardRef, { ...guard, wrong: guard.wrong + 1 });
+    }
     if (v === "ok") tx.delete(ref);
     return v;
   });
+  if (verdict === "locked-day") fail("code-locked-day", 429);
   if (verdict === "locked") fail("code-locked", 429);
   if (verdict === "expired") fail("code-expired", 410);
   if (verdict === "wrong") fail("code-wrong", 403);
@@ -331,12 +383,21 @@ export async function codeFinish(d, caller, body) {
     if (!user.emailVerified) await d.auth.updateUser(caller.uid, { emailVerified: true });
     return { ...(await accept(d, caller, body)), verified: true };
   }
-  if (existing) {
-    // The code proves the email; the person still signs in with their password.
-    if (!existing.emailVerified) await d.auth.updateUser(existing.uid, { emailVerified: true });
-    fail("account-exists", 409, { verified: true });
-  }
+  // A verified account: its owner signs in with it as usual — nothing about
+  // it changes here.
+  if (existing?.emailVerified) fail("account-exists", 409);
   const name = String(body?.name || "").trim().slice(0, 80) || inv.email.split("@")[0];
+  if (existing) {
+    // Unverified: whoever set its password never proved the email; the
+    // code holder just did. Like a password reset: their password, every
+    // other way in unlinked, every old sign-in ended — so an account made
+    // on someone else's email ahead of time can't be kept by its maker.
+    const others = (existing.providerData || []).map((p) => p.providerId).filter((id) => id && id !== "password");
+    await d.auth.updateUser(existing.uid, { password, emailVerified: true, displayName: name, ...(others.length ? { providersToUnlink: others } : {}) });
+    await d.auth.revokeRefreshTokens(existing.uid);
+    const accepted = await accept(d, { uid: existing.uid }, body);
+    return { ...accepted, created: true, email: inv.email };
+  }
   const created = await d.auth.createUser({ email: inv.email, password, displayName: name, emailVerified: true });
   const accepted = await accept(d, { uid: created.uid }, body);
   return { ...accepted, created: true, email: inv.email };
@@ -389,6 +450,8 @@ async function removeMember(d, ownerId, memberUid, brandIds) {
     threads.docs.filter((t) => removed.includes(t.data().brandId)).forEach((t) => batch.delete(t.ref));
     removed.forEach((bid) => batch.delete(d.db.doc(`brands/${bid}/people/${memberUid}`)));
     await batch.commit();
+    // A seat came free: a paused teammate gets it back.
+    await reconcileSeats(d, ownerId);
   }
   return { brandIds: removed };
 }
@@ -430,8 +493,9 @@ export async function sync(d, caller) {
       tx.set(ref, { brands: all, ownerIds: [...new Set(Object.values(all).map((x) => x.ownerId))] });
     });
   }
+  const seats = await reconcileSeats(d, caller.uid);
   await mirrorTeams(d, brands.map((b) => b.id));
-  return { members: byMember.size };
+  return { members: byMember.size, paused: seats.paused };
 }
 
 // ---------- HTTP ----------
@@ -455,7 +519,7 @@ export default async function handler(req, res) {
   if (isGet && action !== "preview") return res.status(405).json({ error: "method" });
   try {
     const caller = await optionalCaller(req);
-    const out = await runAction(deps(req), action, caller, body);
+    const out = await runAction(teamDeps(req), action, caller, body);
     return res.status(200).json({ ok: true, ...out });
   } catch (err) {
     if (err instanceof TeamError) return res.status(err.status).json({ error: err.code, ...err.extra });

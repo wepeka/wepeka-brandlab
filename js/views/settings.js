@@ -494,6 +494,7 @@ function planCardHTML(account) {
 // each, with the card and a stop button. Stopping keeps the time already paid.
 const AUTO_RENEW_NAME = (entry) => entry.planKey === "ai-unlimited" ? t("pricing.addons.aiUnlimited")
   : entry.planKey === "addon-brand-sub" ? t("pricing.addons.brandSub")
+  : entry.planKey === "addon-team-seat" ? t("team.seatAddon.name")
   : planName({ plan: entry.planKey.replace(/-(monthly|yearly)$/, "") });
 function autoRenewHTML(account) {
   const rows = Object.entries(account.autoRenew || {});

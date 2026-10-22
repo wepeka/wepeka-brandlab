@@ -98,6 +98,9 @@ async function main() {
   const guideSeen = { "video:akun-baru": 1, "video:kenalan": 1, "video:tanya-brandlab": 1, "tour:onboarding": 1, "community:welcome": 1 };
   for (const p of Object.values(PEOPLE)) batch.set(db.doc(`settings/${p.uid}`), { experienceMode: "advanced", experienceModeChosen: true, guideSeen });
   batch.set(db.doc(`brandCounts/${owner.uid}`), { count: 1, op: "seed", at: new Date() });
+  // The shared AI switch every account reads (production has it): without
+  // it the app's AI buttons stop before asking the (fake) server.
+  batch.set(db.doc("settings/main"), { ai: { provider: "deepseek", enabled: true } });
 
   if (withMember) {
     const at = Date.now();

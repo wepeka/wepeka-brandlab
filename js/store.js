@@ -536,8 +536,16 @@ export function brandRole(brandOrId) {
   const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
   if (!b) return null;
   if (isOwnBrand(b)) return "owner";
-  const role = b.members?.[ownerUid]?.role;
-  return role === "editor" || role === "viewer" ? role : null;
+  const me = b.members?.[ownerUid];
+  // Paused beyond the owner's seats (api/team.js reconcileSeats): looks
+  // like a viewer until a seat frees up — the rules say the same.
+  if (me?.role === "editor" && me.seatPaused) return "viewer";
+  return me?.role === "editor" || me?.role === "viewer" ? me.role : null;
+}
+// This account is an editor here, paused because the team is over its seats.
+export function isSeatPaused(brandOrId) {
+  const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
+  return !!b && !isOwnBrand(b) && !!b.members?.[ownerUid]?.seatPaused;
 }
 // A brand more than one person works on: shared with this account, or this
 // account's own brand that it has shared with others.
@@ -563,7 +571,7 @@ function writableBrand(brandId) {
   if (Date.now() - viewerNoteAt > 4000) {
     viewerNoteAt = Date.now();
     try {
-      toast(t("team.viewerOnly"), "error");
+      toast(t(isSeatPaused(brandId) ? "team.seatPausedOnly" : "team.viewerOnly"), "error");
     } catch {
       /* no page to show it on (tests, scripts) */
     }

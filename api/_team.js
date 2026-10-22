@@ -9,6 +9,8 @@
 //   invites/{sha256(token)} {ownerId, ownerName, email, brandIds, brandNames, role,
 //                           status, createdAt, expiresAt, lastSentAt, acceptedBy}
 //   inviteCodes/{inviteId} {hash, expiresAt, attempts, sentAt}
+//   codeGuards/{sha256("guard:" + email)} {windowStart, sends, wrong} — per
+//                           email, across every invite and owner
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 export const ROLES = ["editor", "viewer"];
@@ -17,6 +19,11 @@ export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CODE_MAX_ATTEMPTS = 5;
 export const RESEND_GAP_MS = 60 * 1000;
 export const MAX_PENDING_INVITES = 20;
+// Per email per day, whichever invite or owner asks: a new link or a resend
+// starts a fresh 5-try code, but never a fresh day.
+export const CODE_DAY_MS = 24 * 60 * 60 * 1000;
+export const CODE_DAY_SENDS = 5;
+export const CODE_DAY_WRONG = 10;
 export const TEAM_EMAIL_FROM_DEFAULT = "Wepeka Brandlab <akun@wepeka.com>";
 
 export const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/.test(v);
@@ -50,6 +57,15 @@ export function codeCheck(stored, inviteId, code, now = Date.now()) {
   return sameHash(stored.hash, hashCode(inviteId, String(code || "").trim())) ? "ok" : "wrong";
 }
 
+// The day's count for one email (codeGuards/…): starts over 24 hours after
+// its first code.
+export const codeGuardId = (email) => createHash("sha256").update(`guard:${normalizeEmail(email)}`).digest("hex");
+export function guardToday(guard, now = Date.now()) {
+  const start = Number(guard?.windowStart) || 0;
+  if (!(now - start < CODE_DAY_MS)) return { windowStart: now, sends: 0, wrong: 0 };
+  return { windowStart: start, sends: Number(guard.sends) || 0, wrong: Number(guard.wrong) || 0 };
+}
+
 // "pending" | "accepted" | "revoked" | "expired"
 export function inviteState(invite, now = Date.now()) {
   if (!invite) return "missing";
@@ -78,6 +94,23 @@ export function seatsUsed(brands, invites = [], { now = Date.now(), exceptInvite
     if (e && !emails.has(e)) pending.add(e);
   }
   return uids.size + pending.size;
+}
+
+// Seats over the limit (a smaller plan, a lapsed extra seat): the people
+// who joined first keep theirs, the newest beyond the limit are paused —
+// they can still look, but not edit or use the owner's AI, until a seat
+// frees up or is added. Nobody is removed. Returns the paused uids.
+export function pausedMembers(brands, limit) {
+  const firstAt = new Map();
+  for (const b of brands || []) {
+    for (const [uid, m] of Object.entries(b?.members || {})) {
+      const at = Number(m?.addedAt) || 0;
+      if (!firstAt.has(uid) || at < firstAt.get(uid)) firstAt.set(uid, at);
+    }
+  }
+  const order = [...firstAt.entries()].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1)).map(([uid]) => uid);
+  const keep = Number.isFinite(limit) ? Math.max(0, limit) : order.length;
+  return new Set(order.slice(keep));
 }
 
 // The invite link points at the app the owner is using (the live one, or

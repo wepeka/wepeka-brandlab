@@ -110,6 +110,16 @@ describe("brand doc", () => {
 });
 
 describe("content, campaigns, series", () => {
+  test("an editor paused beyond the owner's seats reads like a viewer", async () => {
+    await seedTeam({ brand: { members: { ...members, ed: { ...members.ed, seatPaused: true } } } });
+    const ed = as("ed");
+    await assertSucceeds(getDoc(doc(ed, "brands/b1")));
+    await assertSucceeds(memberQuery(ed, "content"));
+    await assertFails(updateDoc(doc(ed, "content/c1"), { caption: "baru" }));
+    await assertFails(setDoc(doc(ed, "content/c9"), content("c9")));
+    await assertFails(updateDoc(doc(ed, "brands/b1"), { name: "Kopi Baru" }));
+    await assertFails(setDoc(doc(ed, "brainstorms/t9"), { id: "t9", ownerId: "ed", brandId: "b1", messages: [] }));
+  });
   test("an editor creates them stamped with the owner, and updates them", async () => {
     await seedTeam();
     const ed = as("ed");
@@ -221,6 +231,8 @@ describe("server-written team docs", () => {
     await assertFails(getDoc(doc(as("ed"), "invites/h1")));
     await assertFails(setDoc(doc(as("owen"), "invites/h2"), { ownerId: "owen" }));
     await assertFails(getDoc(doc(as("owen"), "inviteCodes/h1")));
+    await assertFails(getDoc(doc(as("owen"), "codeGuards/h1")));
+    await assertFails(setDoc(doc(as("owen"), "codeGuards/h1"), { sends: 0, wrong: 0 }));
   });
   test("aiUsage: members read the owner's counter (one pool); strangers don't", async () => {
     await seedTeam();

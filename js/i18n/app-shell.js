@@ -490,6 +490,7 @@ export default {
   "pricing.f.brands1": { en: "1 brand", id: "1 brand" },
   "pricing.f.brands": { en: "{n} brands", id: "{n} brand" },
   "pricing.f.contentDay": { en: "≈{n} AI pieces of content / day", id: "±{n} konten AI / hari" },
+  "pricing.f.team": { en: "invite {n} teammates", id: "ajak {n} anggota tim" },
   "pricing.f.contentDayForever": { en: "≈{n} AI pieces of content / day, forever", id: "±{n} konten AI / hari, selamanya" },
   "pricing.f.proForever": { en: "{n} brands, AI Consultant, every feature — forever", id: "{n} brand, AI Consultant, semua fitur — selamanya" },
   "pricing.f.upcoming": { en: "Every new feature, no upgrade fee, ever", id: "Semua fitur baru, tanpa biaya upgrade, selamanya" },

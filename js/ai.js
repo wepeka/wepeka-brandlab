@@ -5,11 +5,11 @@
 // results, the same job it always did.
 import { TONE_AXES, toneAxisLabel, toneExampleMessage, VISUAL_DIRECTIONS } from "./brandbook-data.js";
 import { COPY_LENGTHS, COPY_REWRITES, copyFormatRules, formatByKey, goalByKey } from "./knowledge/copy-formats.js";
-import { aiLimitReached, aiDailyLimit, aiQuotaPeriod } from "./ai-usage.js";
+import { aiLimitReached, aiDailyLimit, aiQuotaPeriod, teamAiContext } from "./ai-usage.js";
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
-import { brandVoiceText, listBrandIdeas, scopeBrandId, getBrand, isOwnBrand } from "./store.js";
+import { brandVoiceText, listBrandIdeas, scopeBrandId, getBrand, isOwnBrand, isSeatPaused } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
 import { templateParts, isFactBlank } from "./knowledge/hook-templates.js";
 import { renderScript } from "./script-format.js";
@@ -65,6 +65,13 @@ function proxyError(code, extra = {}) {
       return new AiApiError(t("ai.error.busy"));
     case "readonly":
       return new AiApiError(t("ai.error.readonly"));
+    // Kerja Tim (api/ai.js resolvePayer): the brand owner pays in a shared
+    // brand, so these are about the owner's plan or this person's seat.
+    case "viewer":
+    case "seat-paused":
+    case "owner-inactive":
+    case "member-no-plan":
+      return new AiApiError(t(`team.ai.${code}`));
     case "too-large":
       return new AiApiError(t("ai.error.tooLarge"));
     case "images":
@@ -260,6 +267,9 @@ export function aiCanSeeImages(ai) {
 // (Claude / Gemini only — DeepSeek refuses them, see aiCanSeeImages).
 async function callModel(ai, system, userPrompt, maxTokens = 1024, { countUsage = true, onText = null, temperature, json = false, images = [], feature = "", history = [] } = {}) {
   if (countUsage && aiLimitReached()) {
+    // In a brand shared with this account: a viewer, or an editor paused
+    // beyond the owner's seats — not a quota this person could top up.
+    if (teamAiContext()?.viewer) throw proxyError(isSeatPaused(scopeBrandId()) ? "seat-paused" : "viewer");
     const limit = aiDailyLimit();
     const period = aiQuotaPeriod();
     throw quotaOutError(quotaOutKey(limit, period), { limit, period });
