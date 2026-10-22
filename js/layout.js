@@ -164,6 +164,8 @@ const TABS = [
   // Konten is open from day one — try it first; the Konten page itself
   // asks for Brand DNA to sharpen the results (js/views/content-os.js).
   { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], gated: false },
+  // Papan (whiteboard): brainstorm with the team on the brand's real data.
+  { key: "papan", labelKey: "nav.papan", icon: "papan", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"], gated: false },
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -278,7 +280,7 @@ export function shellHTML({ brandId, active }) {
     </header>
     ${brand ? `<nav class="bottom-nav" aria-label="${t("nav.main")}">${tabsHTML}</nav>` : ""}
     ${returnChipHTML()}
-    <main class="view view-enter view-${active} ${active === "content-os" ? "wide" : ""}" id="view-root"></main>
+    <main class="view view-enter view-${active} ${active === "content-os" || active === "papan" ? "wide" : ""}" id="view-root"></main>
   `;
 }
 

@@ -169,6 +169,12 @@ function setMode(brandId, mode) {
 // Where the chat is drawn right now: the page when it is open, else the
 // floating panel. Only one of them holds the chat's DOM at a time.
 let mountedBrandId = null; // brand of the floating panel
+// Papan (js/views/papan.js) while a board is open: { summary(), place(items) }.
+// The same chat then also reads what's on the board, and an idea gets
+// "Taruh di papan" next to Pakai/Simpan. Never stored with the thread.
+const boardCtx = new Map(); // brandId -> { summary, place }
+export function setChatBoardContext(brandId, ctx) { if (ctx) boardCtx.set(brandId, ctx); else boardCtx.delete(brandId); }
+const placeOn = () => !!boardCtx.get(page ? page.brandId : mountedBrandId)?.place;
 let isOpen = false; // floating panel open
 let page = null; // { el, brandId, wantThread, off }
 let panelOff = null; // small panel's store subscription while open
@@ -588,6 +594,11 @@ function relevantNav(nav, text) {
 // Every engine reads the pulse, so the series days ride along here: the
 // weekly pairing plus which of the next 7 days still lack their episode.
 function pulseNow(brandId) {
+  const board = boardCtx.get(brandId)?.summary?.();
+  const base = pulseNowBase(brandId);
+  return board ? `${base}\n\n${t("papan.chatContext")}:\n${String(board).slice(0, 6000)}` : base;
+}
+function pulseNowBase(brandId) {
   const brand = getBrand(brandId);
   const content = listContent(brandId);
   const pulse = pulseTextFor(brand, { content, campaigns: listCampaigns(brandId), settings: getSettings() });
@@ -626,7 +637,7 @@ function ideaCardHTML(idea, ref, info, full) {
     <div class="cp-idea">
       <div class="cp-idea-title">${esc(idea.title)}</div>
       ${idea.why ? `<div class="cp-idea-why">${esc(idea.why)}</div>` : ""}
-      <div class="cp-idea-actions">${use}${save}</div>
+      <div class="cp-idea-actions">${use}${save}${papanBtnHTML(idea, ref, "idea")}</div>
     </div>`;
 }
 
@@ -671,6 +682,10 @@ function momentCardHTML(m, ref) {
     </div>`;
 }
 
+function papanBtnHTML(item, ref, kind) {
+  if (!placeOn()) return "";
+  return item.placed ? `<span class="bs-done">${icon("check", { size: 12 })} ${t("papan.placed")}</span>` : `<button type="button" class="btn btn-secondary btn-sm" data-chat-papan="${ref}" data-kind="${kind}">${icon("papan", { size: 12 })}${t("papan.place")}</button>`;
+}
 // An idea the owner liked, offered by the AI for the saved list.
 function saveOfferCardHTML(o, ref) {
   let actions;
@@ -682,7 +697,7 @@ function saveOfferCardHTML(o, ref) {
       <div class="cp-moment-tag cp-offer-tag">${icon("bookmark", { size: 11 })}${t("chat.save.pick")}</div>
       <div class="cp-idea-title">${esc(o.title)}</div>
       ${o.why ? `<div class="cp-idea-why">${esc(o.why)}</div>` : ""}
-      <div class="cp-idea-actions">${actions}</div>
+      <div class="cp-idea-actions">${actions}${papanBtnHTML(o, ref, "offer")}</div>
     </div>`;
 }
 
@@ -1885,6 +1900,17 @@ function wire(host, brandId, input, history) {
   });
 
   // An idea the AI offered to keep ([[save:…]]).
+  on("[data-chat-papan]", (btn) => {
+    const { h, j } = refAt(btn.dataset.chatPapan);
+    const item = btn.dataset.kind === "offer" ? h?.saves?.[j] : h?.ideas?.[j];
+    const ctx = boardCtx.get(brandId);
+    if (!item || item.placed || !ctx?.place) return;
+    if (!ctx.place([{ text: item.title, detail: item.why || "" }])) return;
+    item.placed = true;
+    syncThreadBlocks(h);
+    toast(t("papan.placed"));
+    rerender();
+  });
   on("[data-chat-offer-save]", (btn) => {
     const { h, j } = refAt(btn.dataset.chatOfferSave);
     const o = h?.saves?.[j];

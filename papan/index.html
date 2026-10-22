@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Papan · Brandlab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap">
+<link rel="stylesheet" href="app.css?v=79aec279de18">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="logo" aria-label="Brandlab Papan"><span class="logo-mark">B</span><span class="word">Brandlab <small>Papan</small></span></div>
+    <div class="crumb">
+      <button class="board-btn" id="boardBtn" data-popper aria-label="Ganti papan"><span id="boardName">Memuat…</span></button>
+      <span class="brand-chip" title="Brand fiktif untuk prototipe"><span class="bm" id="brandMark" style="background:#3B2418"></span><span class="bn">Kopi Tepian</span><span class="chip ex">contoh</span></span>
+    </div>
+    <span class="spacer"></span>
+    <div class="top-mid"><button class="timer-chip" id="timerBtn" data-popper aria-label="Timer rapat"></button></div>
+    <div class="avatars" id="avatars"></div>
+    <span class="save-state" id="saveState" role="status"><span class="dot"></span><span class="lbl">Menyambung…</span></span>
+    <button class="btn btn-ghost btn-sm hide-sm" id="planBtn"><span>Rencana</span></button>
+    <button class="btn btn-secondary btn-sm" id="shareBtn"><span class="hide-sm">Bagikan</span></button>
+    <button class="btn btn-primary btn-sm" id="deckBtn"><span class="hide-sm">Presentasi</span></button>
+    <button class="icon-btn" id="moreBtn" data-popper aria-label="Menu lainnya"></button>
+  </header>
+  <main class="stage">
+    <div class="vp t-select" id="vp" tabindex="0" aria-label="Kanvas papan">
+      <div class="world" id="world"><div class="layer" id="framesL"></div><svg class="links" id="linksL" aria-hidden="true"></svg><div class="layer" id="objsL"></div></div>
+    </div>
+    <div class="overlay" id="overlay"><div id="selL"></div><div id="cursorsL"></div></div>
+    <div class="ctx glass" id="ctx" hidden></div>
+    <nav class="toolbar glass" id="toolbar" aria-label="Alat"></nav>
+    <div class="zoombar glass" id="zoombar"></div>
+    <div class="helpbtn glass"><button class="icon-btn" id="helpBtn" data-tip="Pintasan keyboard" data-key="?" aria-label="Pintasan keyboard"></button></div>
+    <button class="fab" id="fabAI" aria-label="Tanya Brandlab"></button>
+    <div class="banner glass" id="banner" hidden></div>
+    <aside class="side glass" id="side" aria-hidden="true" aria-label="Panel"></aside>
+    <div id="empty" hidden style="position:absolute;inset:0;display:grid;place-items:center;z-index:15"></div>
+  </main>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="app.js?v=79aec279de18"></script>
+</body>
+</html>

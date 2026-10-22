@@ -1405,6 +1405,26 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
   };
 }
 
+// Papan (js/papan/bridge.js → the canvas in papan/src): the board's AI
+// buttons — ideas, rewrite, themes, meeting recap wording, brand check,
+// campaign draft, slide polish. The canvas writes the whole request (it knows
+// what is on the board and which shape it needs back) and always shows the
+// answer as choices the owner ticks or edits first; this only adds the brand's
+// writing rules and the one-object wrapper JSON mode needs, so any shape the
+// canvas asked for comes back intact. One charged call per press.
+export async function papanJson(ai, brand, prompt) {
+  const system = [
+    "Kamu Tanya Brandlab yang sedang membantu tim di Papan (whiteboard brand). Ikuti format jawaban yang diminta dengan tepat. Jangan mengarang angka, nama orang, tanggal, atau keputusan yang tidak ada di data.",
+    NATURAL_WRITING_CONTEXT,
+    outputLanguageRule({ brand }),
+    'Respond ONLY with valid JSON, no markdown fences: {"hasil": <the answer in exactly the format the request asks for>}',
+  ].join("\n\n");
+  const raw = await callModel(ai, system, String(prompt || "").slice(0, 40000), 2000, { json: true, feature: "papan" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed || !Object.hasOwn(parsed, "hasil")) throw new AiApiError(t("ai.error.readIdeas"));
+  return parsed.hasil;
+}
+
 // "Rencana" for a Grow Brand campaign (js/views/campaign-detail.js): thinks
 // past content — what the community should BE and how to run it, or how
 // this brand should actually sell — plus concrete non-content activities

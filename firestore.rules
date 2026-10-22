@@ -355,6 +355,38 @@ service cloud.firestore {
         && request.resource.data.entries is list;
       allow delete: if isOwner(resource.data) && accountActive();
     }
+    // Papan (whiteboard, js/views/papan.js + js/papan/bridge.js): a brand's
+    // boards and, below each board, its objects / comments / versions /
+    // recaps / decks. Same team model as the brand's other subcollections:
+    // the owner and editors write (stamped with the owner's ownerId), viewers
+    // read. Unlike content, editors also delete: things leave a board all
+    // the time. Objects are free-form canvas shapes, so beyond ids, owner
+    // and brand/board keys only Firestore's 1 MiB doc cap applies.
+    function boardWriter(brandId) {
+      return (isOwner(request.resource.data) && accountActive() && ownsBrandAfter(brandId)) || editorWritesUnder(brandId);
+    }
+    function boardDeleter(brandId) {
+      return (isOwner(resource.data) && accountActive())
+        || (isEditor(brandAt(brandId)) && resource.data.ownerId == brandAt(brandId).ownerId && ownerActive(resource.data.ownerId));
+    }
+    match /brands/{brandId}/boards/{boardId} {
+      allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
+      allow create, update: if boardWriter(brandId)
+        && (resource == null || keepsOwner())
+        && request.resource.data.brandId == brandId
+        && boardId.matches('[A-Za-z0-9_-]{1,64}');
+      allow delete: if boardDeleter(brandId);
+      match /{sub}/{docId} {
+        allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
+        allow create, update: if sub in ['objects', 'comments', 'versions', 'recaps', 'decks']
+          && boardWriter(brandId)
+          && (resource == null || keepsOwner())
+          && request.resource.data.brandId == brandId
+          && request.resource.data.boardId == boardId
+          && docId.matches('[A-Za-z0-9_-]{1,64}');
+        allow delete: if boardDeleter(brandId);
+      }
+    }
     match /content/{id} {
       allow read: if isOwner(resource.data) || memberReads(resource.data);
       allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data);

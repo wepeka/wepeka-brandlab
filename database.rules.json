@@ -33,6 +33,24 @@
           ".validate": "!newData.exists() || (newData.child('text').isString() && newData.child('text').val().length <= 60000)"
         }
       }
+    },
+    "papanLive": {
+      "$brandId": {
+        "$boardId": {
+          ".read": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists()",
+          "peers": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && root.child('teams').child($brandId).child(auth.uid).exists()",
+              ".validate": "!newData.exists() || newData.child('by').val() === auth.uid"
+            }
+          },
+          "events": {
+            "$eid": {
+              ".write": "auth != null && root.child('teams').child($brandId).child(auth.uid).exists() && (!newData.exists() || newData.child('by').val() === auth.uid)"
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -316,6 +316,7 @@ async function main() {
   }
 
   await buildFounderPage();
+  await buildPapanPage();
 
   const gz = async (f) => zlib.gzipSync(await fs.readFile(path.join(DIST_JS, f)), { level: 9 }).length;
   console.log(`i18n: ${i18nReport.keys} keys → js/${i18nChunks.en} (${i18nReport["i18n-en"]} B, ${await gz(i18nChunks.en)} B gzip), js/${i18nChunks.id} (${i18nReport["i18n-id"]} B, ${await gz(i18nChunks.id)} B gzip); only the active one loads`);
@@ -331,6 +332,22 @@ async function main() {
 // paints with the first response, and its images. Served from /founder/,
 // not /js/, so none of it falls under the immutable cache rule; the script
 // still carries a content hash so a deploy never meets a stale copy.
+// Papan (the brand whiteboard, js/views/papan.js frames /papan/index.html):
+// papan/build.mjs already made index.html + app.js + app.css from papan/src
+// and committed them, so this only copies them across. The page loads
+// app.js?v=<hash>, and js/views/papan.js asks for index.html?v=<same hash>
+// (papan/version.js), so a deploy never meets a stale canvas.
+async function buildPapanPage() {
+  const SRC = path.join(ROOT, "papan");
+  const OUT = path.join(DIST, "papan");
+  await fs.mkdir(OUT, { recursive: true });
+  for (const f of ["index.html", "app.js", "app.css"]) await fs.copyFile(path.join(SRC, f), path.join(OUT, f));
+  const { PAPAN_VERSION } = await import(pathToFileURL(path.join(SRC, "version.js")).href);
+  const html = await fs.readFile(path.join(OUT, "index.html"), "utf8");
+  if (!html.includes(`app.js?v=${PAPAN_VERSION}`)) throw new Error("build.mjs: papan/index.html and papan/version.js disagree — run node papan/build.mjs");
+  console.log(`papan/: index.html + app.js (${((await fs.stat(path.join(OUT, "app.js"))).size / 1024).toFixed(1)} KB) + app.css, version ${PAPAN_VERSION}`);
+}
+
 async function buildFounderPage() {
   const SRC = path.join(ROOT, "founder");
   const OUT = path.join(DIST, "founder");

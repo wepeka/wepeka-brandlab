@@ -225,6 +225,9 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/([^/]+)\/?$/))) return { view: "goals", brandId: m[1], goalId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/?$/))) return { view: "goals", brandId: m[1] };
+  // Papan (whiteboard): the brand's boards; a board id opens that board.
+  if ((m = h.match(/^\/brand\/([^/]+)\/papan\/([^/]+)\/?$/))) return { view: "papan", brandId: m[1], boardId: m[2] };
+  if ((m = h.match(/^\/brand\/([^/]+)\/papan\/?$/))) return { view: "papan", brandId: m[1] };
   // The chat's own page. Its old address (under Brainstorm) still works.
   if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/([^/]+)\/?$/))) return { view: "chat", brandId: m[1], threadId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/?$/))) return { view: "chat", brandId: m[1] };
@@ -786,7 +789,7 @@ async function renderRoute() {
     await new Promise((r) => setTimeout(r, 110));
     if (token !== renderToken) return;
     updateShellForRoute({ brandId: route.brandId, active: route.view });
-    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "chat" ? "wide" : ""}`;
+    viewRoot.className = `view view-${route.view} ${route.view === "content-os" || route.view === "chat" || route.view === "papan" ? "wide" : ""}`;
     viewRoot.innerHTML = "";
     void viewRoot.offsetWidth;
     viewRoot.classList.add("view-enter");
@@ -816,6 +819,7 @@ async function renderRoute() {
         guidelines: () => import("./views/brand-guidelines.js"),
         sales: () => import("./views/sales.js"),
         chat: () => import("./views/chat.js"),
+        papan: () => import("./views/papan.js"),
         announcements: () => import("./views/announcements.js"),
         goals: () => import("./views/goal-roadmap.js"),
         "content-os": () => import("./views/content-os.js"),
@@ -855,6 +859,9 @@ async function renderRoute() {
         break;
       case "goals":
         cleanup = view.render(viewRoot, { brandId: route.brandId, goalId: route.goalId || null });
+        break;
+      case "papan":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, boardId: route.boardId || null });
         break;
       case "content-os":
         cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });

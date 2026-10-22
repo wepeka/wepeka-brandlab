@@ -2528,6 +2528,15 @@ async function brandSubDocRefs(brandId) {
     const snap = await getDocs(query(collection(fdb, "brands", brandId, sub), where("ownerId", "==", ownerUid)));
     snap.docs.forEach((d) => refs.push(doc(fdb, "brands", brandId, sub, d.id)));
   }
+  // Papan: each board and everything on it (js/papan/bridge.js).
+  const boards = await getDocs(query(collection(fdb, "brands", brandId, "boards"), where("ownerId", "==", ownerUid)));
+  for (const b of boards.docs) {
+    for (const sub of ["objects", "comments", "versions", "recaps", "decks"]) {
+      const snap = await getDocs(query(collection(fdb, "brands", brandId, "boards", b.id, sub), where("ownerId", "==", ownerUid)));
+      snap.docs.forEach((d) => refs.push(doc(fdb, "brands", brandId, "boards", b.id, sub, d.id)));
+    }
+    refs.push(doc(fdb, "brands", brandId, "boards", b.id));
+  }
   return refs;
 }
 
