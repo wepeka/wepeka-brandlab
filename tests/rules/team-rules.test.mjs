@@ -233,6 +233,8 @@ describe("server-written team docs", () => {
     await assertFails(getDoc(doc(as("owen"), "inviteCodes/h1")));
     await assertFails(getDoc(doc(as("owen"), "codeGuards/h1")));
     await assertFails(setDoc(doc(as("owen"), "codeGuards/h1"), { sends: 0, wrong: 0 }));
+    await assertFails(getDoc(doc(as("owen"), "teamMail/2026-10-22")));
+    await assertFails(setDoc(doc(as("owen"), "teamMail/2026-10-22"), { total: 0 }));
   });
   test("aiUsage: members read the owner's counter (one pool); strangers don't", async () => {
     await seedTeam();

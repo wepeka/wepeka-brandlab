@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, inviteState, seatsUsed, inviteLink,
   composeInviteEmail, composeCodeEmail, joinNames, CODE_MAX_ATTEMPTS, codeGuardId, guardToday, pausedMembers, CODE_DAY_MS,
+  takeMailSlot, teamMailDay, TEAM_MAIL_DAY_TOTAL, TEAM_MAIL_DAY_OWNER,
 } from "../api/_team.js";
 import { TEAM_SEATS, teamSeatsFor, PLANS } from "../api/_plans.js";
 import { firstShareScrub } from "../api/team.js";
@@ -92,6 +93,23 @@ describe("seats", () => {
     assert.deepEqual([...pausedMembers(team, 1)].sort(), ["r", "s"]);
     assert.deepEqual([...pausedMembers(team, 0)].sort(), ["d", "r", "s"]);
     assert.deepEqual([...pausedMembers(team, Infinity)], []);
+  });
+});
+
+describe("team emails per day (api/_team.js)", () => {
+  test("10 per owner and 40 in all, so invites never eat Resend's free 100", () => {
+    assert.equal(TEAM_MAIL_DAY_OWNER, 10);
+    assert.equal(TEAM_MAIL_DAY_TOTAL, 40);
+    let day = null;
+    for (let i = 0; i < 10; i++) day = takeMailSlot(day, "owen");
+    assert.deepEqual(day, { total: 10, byOwner: { owen: 10 } });
+    assert.equal(takeMailSlot(day, "owen"), null);
+    assert.deepEqual(takeMailSlot(day, "zed"), { total: 11, byOwner: { owen: 10, zed: 1 } });
+    assert.equal(takeMailSlot({ total: 40, byOwner: {} }, "new"), null);
+  });
+  test("the day is Indonesia's (WIB)", () => {
+    assert.equal(teamMailDay(Date.UTC(2026, 9, 22, 16, 59)), "2026-10-22");
+    assert.equal(teamMailDay(Date.UTC(2026, 9, 22, 17, 0)), "2026-10-23");
   });
 });
 

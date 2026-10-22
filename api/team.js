@@ -26,7 +26,8 @@
 // 401 auth, 403 not-owner/email-mismatch/unverified/code-wrong,
 // 404 not-found, 409 seats-full/already-member/owner-inactive/account-exists,
 // 410 expired/revoked/used/code-expired, 429 too-soon/too-many/code-locked/
-// code-limit (5 codes a day per email)/code-locked-day (10 wrong a day).
+// code-limit (5 codes a day per email)/code-locked-day (10 wrong a day)/
+// mail-limit (the day's team emails are used up — share the link instead).
 import { FieldValue, FieldPath } from "firebase-admin/firestore";
 import { adminDb, adminAuth, adminRtdb, requireAuth } from "./_firebaseAdmin.js";
 import { accountCanWrite, isActiveBrand } from "./brands/recount.js";
@@ -36,7 +37,7 @@ import { sendEmail } from "./_email.js";
 import { APP_URL } from "./_reminders.js";
 import {
   ROLES, INVITE_TTL_MS, CODE_TTL_MS, RESEND_GAP_MS, MAX_PENDING_INVITES, TEAM_EMAIL_FROM_DEFAULT, CODE_DAY_SENDS, CODE_DAY_WRONG,
-  normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, codeGuardId, guardToday, inviteState, seatsUsed,
+  teamMailDay, takeMailSlot, normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, codeGuardId, guardToday, inviteState, seatsUsed,
   pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail,
 } from "./_team.js";
 
@@ -166,6 +167,19 @@ export async function reconcileSeats(d, ownerId) {
   return out;
 }
 
+// One team email from `ownerId` within the day's allowance (api/_team.js
+// takeMailSlot): true = send it, false = the link goes out another way.
+export async function reserveTeamMail(d, ownerId) {
+  const ref = d.db.doc(`teamMail/${teamMailDay(d.now())}`);
+  return d.db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const next = takeMailSlot(snap.exists ? snap.data() : null, ownerId);
+    if (!next) return false;
+    tx.set(ref, next);
+    return true;
+  });
+}
+
 // ---------- invite / rotate / revoke ----------
 export async function invite(d, caller, body) {
   const brandIds = idList(body?.brandIds);
@@ -205,9 +219,10 @@ export async function invite(d, caller, body) {
     return { record, limit, used: onTeam ? used : used + 1 };
   });
   const link = inviteLink(token, d.origin);
+  const canMail = await reserveTeamMail(d, caller.uid);
   const mail = composeInviteEmail({ ...result.record, link, appUrl: APP_URL });
-  const sent = await d.send({ to: email, ...mail, idempotencyKey: `team-invite-${inviteId}` });
-  return { inviteId, link, emailSent: !!sent?.ok, seats: { used: result.used, limit: Number.isFinite(result.limit) ? result.limit : null } };
+  const sent = canMail ? await d.send({ to: email, ...mail, idempotencyKey: `team-invite-${inviteId}` }) : null;
+  return { inviteId, link, emailSent: !!sent?.ok, ...(canMail ? {} : { mailLimit: true }), seats: { used: result.used, limit: Number.isFinite(result.limit) ? result.limit : null } };
 }
 
 async function ownInvite(tx, d, caller, inviteId) {
@@ -238,11 +253,14 @@ export async function rotate(d, caller, body) {
   });
   const link = inviteLink(token, d.origin);
   let emailSent = false;
+  let mailLimit = false;
   if (body?.send) {
-    const sent = await d.send({ to: record.email, ...composeInviteEmail({ ...record, link, appUrl: APP_URL }), idempotencyKey: `team-invite-${newId}` });
-    emailSent = !!sent?.ok;
+    if (await reserveTeamMail(d, caller.uid)) {
+      const sent = await d.send({ to: record.email, ...composeInviteEmail({ ...record, link, appUrl: APP_URL }), idempotencyKey: `team-invite-${newId}` });
+      emailSent = !!sent?.ok;
+    } else mailLimit = true;
   }
-  return { inviteId: newId, link, emailSent };
+  return { inviteId: newId, link, emailSent, ...(mailLimit ? { mailLimit } : {}) };
 }
 
 export async function revoke(d, caller, body) {
@@ -334,6 +352,8 @@ export async function codeStart(d, body) {
     tx.set(guardRef, { ...guard, sends: guard.sends + 1 });
     tx.set(ref, { hash: hashCode(inv.id, code), expiresAt: now + CODE_TTL_MS, attempts: 0, sentAt: now });
   });
+  // Counted against the inviting owner's team emails for the day.
+  if (!(await reserveTeamMail(d, inv.ownerId))) fail("mail-limit", 429);
   const sent = await d.send({ to: inv.email, ...composeCodeEmail({ code, ownerName: inv.ownerName, brandNames: inv.brandNames, appUrl: APP_URL }) });
   return { emailMasked: maskEmail(inv.email), emailSent: !!sent?.ok };
 }

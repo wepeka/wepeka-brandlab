@@ -529,8 +529,12 @@ service cloud.firestore {
     match /inviteCodes/{id} {
       allow read, write: if false;
     }
-    // Per-email daily count of codes sent and wrong codes typed.
+    // Per-email daily count of codes sent and wrong codes typed, and the
+    // day's count of team emails (api/team.js reserveTeamMail).
     match /codeGuards/{id} {
+      allow read, write: if false;
+    }
+    match /teamMail/{day} {
       allow read, write: if false;
     }
 

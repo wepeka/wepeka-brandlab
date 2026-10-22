@@ -296,6 +296,25 @@ describe("6-digit code", () => {
     const out = await runAction(d(), "code-finish", null, { token: tokenOf(second.link), code: codeIn(outbox.at(-1)), name: "Sari", password: "rahasia-123" });
     assert.equal(out.created, true);
   });
+  test("ten team emails a day per owner: past that the invite is still made, its link shared instead", async () => {
+    await seed();
+    for (let i = 0; i < 10; i++) {
+      const out = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" });
+      assert.equal(out.emailSent, true);
+    }
+    const sentBefore = outbox.length;
+    const late = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "sari@test.local", role: "editor" });
+    assert.equal(late.emailSent, false);
+    assert.equal(late.mailLimit, true);
+    assert.match(late.link, /#\/undangan\//);
+    clock += 61_000;
+    const resend = await runAction(d(), "rotate", as("owen"), { inviteId: late.inviteId, send: true });
+    assert.equal(resend.mailLimit, true);
+    await expectError(runAction(d(), "code-start", null, { token: tokenOf(resend.link) }), "mail-limit");
+    assert.equal(outbox.length, sentBefore, "nothing more went out");
+    clock += DAY;
+    assert.equal((await runAction(d(), "rotate", as("owen"), { inviteId: resend.inviteId, send: true })).emailSent, true);
+  });
   test("an unverified account signed in verifies with the code; an existing account is sent to sign in", async () => {
     await seed();
     const a = await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "unv@test.local", role: "viewer" });

@@ -252,8 +252,8 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
   }));
   qsa("[data-resend]", content).forEach((btn) => btn.addEventListener("click", async () => {
     try {
-      await teamApi("rotate", { inviteId: btn.dataset.resend, send: true });
-      toast(t("team.resent"));
+      const out = await teamApi("rotate", { inviteId: btn.dataset.resend, send: true });
+      toast(t(out.mailLimit ? "team.mailLimit" : "team.resent"), out.mailLimit ? "error" : undefined);
     } catch (e) {
       toast(teamError(e), "error");
     }
@@ -351,7 +351,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
       const names = brands.filter((b) => brandIds.includes(b.id)).map((b) => b.name);
       body.innerHTML = `
         <h3 style="font-size:17px;margin:0 0 6px;">${icon("check", { size: 17 })} ${escapeHtml(t("team.inviteModal.sent", { email }))}</h3>
-        <p class="text-muted" style="font-size:13.5px;margin:0 0 14px;">${out.emailSent ? t("team.inviteModal.sentSub") : t("team.inviteModal.notSent")}</p>
+        <p class="text-muted" style="font-size:13.5px;margin:0 0 14px;">${out.emailSent ? t("team.inviteModal.sentSub") : t(out.mailLimit ? "team.mailLimit" : "team.inviteModal.notSent")}</p>
         <input class="input" id="inv-link" readonly value="${escapeHtml(out.link)}" />
         <div class="flex gap-8" style="margin-top:10px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" id="inv-copy">${icon("copy", { size: 13 })}${t("team.copyLink")}</button>

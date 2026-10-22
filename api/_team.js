@@ -11,6 +11,7 @@
 //   inviteCodes/{inviteId} {hash, expiresAt, attempts, sentAt}
 //   codeGuards/{sha256("guard:" + email)} {windowStart, sends, wrong} — per
 //                           email, across every invite and owner
+//   teamMail/{YYYY-MM-DD WIB} {total, byOwner {uid: n}} — team emails sent that day
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 export const ROLES = ["editor", "viewer"];
@@ -24,6 +25,21 @@ export const MAX_PENDING_INVITES = 20;
 export const CODE_DAY_MS = 24 * 60 * 60 * 1000;
 export const CODE_DAY_SENDS = 5;
 export const CODE_DAY_WRONG = 10;
+// Team emails (invites, resends, codes) share Resend's free 100 a day with
+// sign-in mails, invoices and reminders: at most 40 a day for every team
+// together and 10 per owner, so they can never use up the rest. Past that
+// an invite is still made — its link goes out by WhatsApp instead.
+export const TEAM_MAIL_DAY_TOTAL = 40;
+export const TEAM_MAIL_DAY_OWNER = 10;
+export const teamMailDay = (now = Date.now()) => new Date(now + 7 * 3600_000).toISOString().slice(0, 10);
+// The day's counter after one more email from `ownerId`, or null when a
+// limit is reached.
+export function takeMailSlot(day, ownerId, { total = TEAM_MAIL_DAY_TOTAL, perOwner = TEAM_MAIL_DAY_OWNER } = {}) {
+  const sent = Number(day?.total) || 0;
+  const mine = Number(day?.byOwner?.[ownerId]) || 0;
+  if (sent >= total || mine >= perOwner) return null;
+  return { total: sent + 1, byOwner: { ...(day?.byOwner || {}), [ownerId]: mine + 1 } };
+}
 export const TEAM_EMAIL_FROM_DEFAULT = "Wepeka Brandlab <akun@wepeka.com>";
 
 export const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/.test(v);
