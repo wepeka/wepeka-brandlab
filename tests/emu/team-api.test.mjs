@@ -365,6 +365,42 @@ describe("role, remove, leave", () => {
     assert.equal((await db.doc("memberships/rina").get()).exists, false);
     assert.deepEqual((await db.doc("brands/b2").get()).data().memberIds, []);
   });
+  test("access off: off the brand for now, still on the team with a seat; on: back as before", async () => {
+    await teamOfTwo();
+    await runAction(d(), "access", as("owen"), { brandId: "b1", memberUid: "rina", enabled: false });
+    let b1 = (await db.doc("brands/b1").get()).data();
+    assert.deepEqual(b1.memberIds, []);
+    assert.equal(b1.members.rina.disabled, true);
+    assert.equal((await db.doc("memberships/rina").get()).data().brands.b1.disabled, true);
+    assert.equal((await db.doc("brainstorms/t-rina").get()).exists, true, "her chats stay");
+    assert.equal((await db.doc("brands/b1/people/rina").get()).exists, true);
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { error: "disabled" });
+    assert.deepEqual(await resolvePayer(db, "rina", "b2"), { payerUid: "owen", team: true }, "other brands untouched");
+    // Still a seat: Starter's one seat is taken.
+    await db.doc("accounts/owen").update({ plan: "starter" });
+    await expectError(runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "budi@test.local", role: "editor" }), "seats-full");
+    // The index rebuild keeps it off.
+    await runAction(d(), "sync", as("owen"), {});
+    assert.equal((await db.doc("memberships/rina").get()).data().brands.b1.disabled, true);
+    await expectError(runAction(d(), "access", as("rina"), { brandId: "b1", memberUid: "rina", enabled: true }), "not-owner");
+    await runAction(d(), "access", as("owen"), { brandId: "b1", memberUid: "rina", enabled: true });
+    b1 = (await db.doc("brands/b1").get()).data();
+    assert.deepEqual(b1.memberIds, ["rina"]);
+    assert.equal(b1.members.rina.disabled, undefined);
+    assert.equal((await db.doc("memberships/rina").get()).data().brands.b1.disabled, undefined);
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { payerUid: "owen", team: true });
+  });
+  test("someone whose access is off can still be removed, and can leave", async () => {
+    await teamOfTwo();
+    await runAction(d(), "access", as("owen"), { brandId: "b1", memberUid: "rina", enabled: false });
+    await runAction(d(), "remove", as("owen"), { memberUid: "rina", brandIds: ["b1"] });
+    assert.equal((await db.doc("brands/b1").get()).data().members.rina, undefined);
+    assert.deepEqual(Object.keys((await db.doc("memberships/rina").get()).data().brands), ["b2"]);
+    await runAction(d(), "access", as("owen"), { brandId: "b2", memberUid: "rina", enabled: false });
+    await runAction(d(), "leave", as("rina"), {});
+    assert.equal((await db.doc("brands/b2").get()).data().members.rina, undefined);
+    assert.equal((await db.doc("memberships/rina").get()).exists, false);
+  });
   test("sync rebuilds the index from the brands", async () => {
     await teamOfTwo();
     await db.doc("memberships/rina").delete();

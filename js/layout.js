@@ -7,7 +7,7 @@ import { getMode, toggleMode } from "./mode.js";
 import { t, getLang } from "./i18n.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
-import { getCachedAccount, isTrial, isReadOnly, isLifetime, trialDaysLeft, TRIAL_DAYS } from "./account.js";
+import { getCachedAccount, isTrial, isReadOnly, isLifetime, trialDaysLeft, TRIAL_DAYS, accessState } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod, aiExtras } from "./ai-usage.js";
 import { identityDone, identityGate, identityGateCopy } from "./brand-progress.js";
 import { startAnnouncements, onAnnouncements, unreadCount, listAnnouncements, announcementsSeenAt, isAnnouncementAdmin } from "./announcements.js";
@@ -195,23 +195,50 @@ function notifPanelHTML({ overdue, dueToday, dueSoon }) {
   `;
 }
 
-function bellHTML() {
-  const { overdue } = listOverdueAndDueSoon();
-  return `
-    <button class="icon-btn ${overdue.length ? "has-overdue" : ""}" id="notif-bell-btn" data-tour="notif-bell" title="${t("topbar.notifications")}" aria-label="${t("topbar.notifications")}" aria-haspopup="menu" aria-expanded="false">
-      ${icon("bell", { size: 17 })}
-      ${overdue.length ? `<span class="notif-badge">${overdue.length > 9 ? "9+" : overdue.length}</span>` : ""}
-    </button>`;
+// Kerja Tim, Docs-style: person+ next to "Update" opens "Bagikan" for the
+// open brand (js/views/team-panel.js openShareDialog) — the owner invites
+// and switches access; a teammate sees who's there. Outside a brand it's
+// for owners with a plan (they pick the brand in the dialog).
+function shareBtnHTML(brand) {
+  const ownPlan = ["paid", "trial"].includes(accessState(getCachedAccount()));
+  const show = brand ? (!isOwnBrand(brand) || ownPlan) : ownPlan && listBrands().some(isOwnBrand);
+  if (!show) return "";
+  return `<button class="icon-btn share-btn" id="share-btn" data-tour="share" title="${t("share.topbar")}" aria-label="${t("share.topbar")}">${icon("userPlus", { size: 18 })}</button>`;
 }
 
-// "Update" — the Pengumuman page (js/views/announcements.js), with a count
-// of what's new since this account last opened it.
+// "Update" — one button for both what used to be two (2026-10-22, owner's
+// ask): the Wepeka team's announcements (js/views/announcements.js) and,
+// in Pro, the content reminders the bell held (overdue / today / soon).
+// Its number is unread announcements + overdue pieces; it opens a panel
+// with the newest announcements ("Lihat semua" → the Pengumuman page) and
+// the reminders under them.
+const remindersOn = () => modeConfig().bell;
+function updatesCount() {
+  return unreadCount() + (remindersOn() ? listOverdueAndDueSoon().overdue.length : 0);
+}
 function updatesBtnHTML(active) {
-  const n = unreadCount();
-  return `<a class="icon-btn updates-btn ${active === "announcements" ? "is-active" : ""}" id="updates-btn" href="#/updates" data-tour="updates" title="${t("ann.topbarTitle")}" aria-label="${t("ann.topbarTitle")}">
-      ${icon("megaphone", { size: 17 })}<span class="updates-label">${t("ann.topbar")}</span>
+  const n = updatesCount();
+  const overdue = remindersOn() && listOverdueAndDueSoon().overdue.length > 0;
+  return `<button type="button" class="icon-btn updates-btn ${active === "announcements" ? "is-active" : ""} ${overdue ? "has-overdue" : ""}" id="updates-btn" data-tour="updates" title="${t("ann.topbarTitle")}" aria-label="${t("ann.topbarTitle")}" aria-haspopup="menu" aria-expanded="false">
+      ${icon("bell", { size: 17 })}<span class="updates-label">${t("ann.topbar")}</span>
       <span class="notif-badge updates-badge" ${n ? "" : "hidden"}>${n > 9 ? "9+" : n || ""}</span>
-    </a>`;
+    </button>`;
+}
+function updatesPanelHTML() {
+  const seen = announcementsSeenAt();
+  const recent = listAnnouncements().slice(0, 3);
+  const date = (ms) => (ms ? new Date(ms).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "short" }) : "");
+  return `
+    <div class="notif-section-head notif-head-row"><span>${t("ann.panel.title")}</span><a href="#/updates" data-updates-all>${t("ann.panel.seeAll")}</a></div>
+    ${recent.length ? recent.map((a) => `
+      <button type="button" class="notif-row ${(a.createdAt || 0) > seen ? "is-new" : ""}" data-updates-all>
+        <span class="notif-ann-icon">${icon("megaphone", { size: 14 })}</span>
+        <div class="ti">
+          <div class="t">${escapeHtml(a.title || t("ann.topbar"))}</div>
+          <div class="m">${escapeHtml(date(a.createdAt))}${(a.createdAt || 0) > seen ? ` · <b class="notif-new">${t("ann.panel.new")}</b>` : ""}</div>
+        </div>
+      </button>`).join("") : `<div class="notif-empty notif-empty-sm">${t("ann.panel.none")}</div>`}
+    ${remindersOn() ? `<div class="notif-divider"></div><div class="notif-section-head">${t("ann.panel.reminders")}</div>${notifPanelHTML(listOverdueAndDueSoon())}` : ""}`;
 }
 
 // One listener for the whole session: keeps the badge current, and says
@@ -224,7 +251,7 @@ function wireAnnouncements() {
   if (annWired) return;
   annWired = true;
   onAnnouncements(() => {
-    const n = unreadCount();
+    const n = updatesCount();
     const badge = qs("#updates-btn .updates-badge");
     if (badge) { badge.hidden = !n; badge.textContent = n > 9 ? "9+" : n ? String(n) : ""; }
     const dot = qs("#app-menu-btn .app-menu-badge");
@@ -272,7 +299,7 @@ export function shellHTML({ brandId, active }) {
       ${brand ? `<nav class="tabs" aria-label="${t("nav.main")}">${tabsHTML}</nav>` : ""}
       <div class="topbar-right">
         ${planBadgeHTML()}
-        ${modeConfig().bell ? bellHTML() : ""}
+        ${shareBtnHTML(brand)}
         ${updatesBtnHTML(active)}
         ${waTopbarHTML()}
         <button class="icon-btn" id="app-menu-btn" title="${t("topbar.menu")}" aria-label="${t("topbar.menu")}" aria-haspopup="menu" aria-expanded="false" data-tour="settings">${icon("dots", { size: 18 })}<span class="notif-badge app-menu-badge" ${unreadCount() ? "" : "hidden"}></span></button>
@@ -556,13 +583,23 @@ export function wireShell({ brandId }) {
     });
   });
 
-  const bellBtn = qs("#notif-bell-btn");
-  bellBtn?.addEventListener("click", (e) => {
+  qs("#share-btn")?.addEventListener("click", () => {
+    import("./views/team-panel.js").then((m) => m.openShareDialog({ brandId: brandId || null })).catch((e) => console.warn("[share] unavailable", e));
+  });
+
+  const updatesBtn = qs("#updates-btn");
+  updatesBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
-    const panel = menuBelow(bellBtn, { className: "notif-panel", width: 360 });
+    const panel = menuBelow(updatesBtn, { className: "notif-panel", width: 380 });
     if (!panel) return;
-    panel.innerHTML = notifPanelHTML(listOverdueAndDueSoon());
+    panel.innerHTML = updatesPanelHTML();
     panel.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-updates-all]")) {
+        ev.preventDefault();
+        location.hash = "#/updates";
+        closeMenu();
+        return;
+      }
       const target = ev.target.closest("[data-go]");
       if (!target) return;
       location.hash = `#/brand/${target.dataset.go}`;

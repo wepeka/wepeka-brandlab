@@ -45,7 +45,7 @@ import { showPayLoading, hidePayLoading } from "./pay-loading.js";
 import { WEPEKA_CONNECT_URL } from "./site-links.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
-import { subscribeMemberships, effectiveAccess } from "./team.js";
+import { subscribeMemberships, effectiveAccess, getMemberships } from "./team.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -1130,7 +1130,8 @@ window.addEventListener("team:joined", () => {
 window.addEventListener("team:removed", (e) => {
   const open = parseRoute(location.hash).brandId;
   if (!open || !e.detail?.brandIds?.includes(open)) return;
-  toast(t("team.removed"), "error");
+  // Access turned off (still on the team) or taken off the brand altogether.
+  toast(t(getMemberships()?.brands?.[open]?.disabled ? "team.access.removedToast" : "team.removed"), "error");
   location.hash = "#/";
 });
 onAuthChange((user) => { lastUser = user; setUser(user?.uid); boot(user); });

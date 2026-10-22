@@ -68,6 +68,7 @@ function proxyError(code, extra = {}) {
     // Kerja Tim (api/ai.js resolvePayer): the brand owner pays in a shared
     // brand, so these are about the owner's plan or this person's seat.
     case "viewer":
+    case "disabled":
     case "seat-paused":
     case "owner-inactive":
     case "member-no-plan":

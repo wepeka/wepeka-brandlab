@@ -45,6 +45,7 @@ export default {
   "tour.onb.chat.title": { en: "Ask Brandlab", id: "Tanya Brandlab" },
   "tour.onb.chat.body": { en: "This round button is always in the corner. Ask about your brand, ask for content ideas, or tell it what happened today — the AI already knows your brand. Open it full screen to see every conversation and your saved ideas.", id: "Tombol bulat ini selalu ada di pojok. Tanya soal brand, minta ide konten, atau cerita kejadian hari ini — AI-nya sudah kenal brand kamu. Bisa dibuka layar penuh untuk lihat semua obrolan dan ide tersimpan." },
   "tour.onb.updates.title": { en: "Updates", id: "Update" },
+  "tour.onb.updates.bodyPro": { en: "Announcements from the Wepeka team, plus your overdue and almost-due content from every brand, in one place. A number means something needs a look.", id: "Pengumuman dari tim Wepeka, plus konten yang lewat jadwal atau hampir jatuh tempo dari semua brand, di satu tempat. Kalau ada angka, berarti ada yang perlu kamu lihat." },
   "tour.onb.updates.body": { en: "Announcements from the Wepeka team: new features, fixes and news. A number means there's something you haven't read.", id: "Pengumuman dari tim Wepeka: fitur baru, perbaikan, dan kabar terbaru. Kalau ada angka, berarti ada yang belum kamu baca." },
   "tour.onb.notif.title": { en: "Notifications", id: "Notifikasi" },
   "tour.onb.notif.body": { en: "Overdue and almost-due content from all your brands shows up here.", id: "Konten yang lewat jadwal atau hampir jatuh tempo dari semua brand muncul di sini." },

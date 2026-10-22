@@ -110,6 +110,20 @@ describe("brand doc", () => {
 });
 
 describe("content, campaigns, series", () => {
+  test("a member whose access is off reads and writes nothing in that brand", async () => {
+    await seedTeam({ brand: { members: { ...members, ed: { ...members.ed, disabled: true } }, memberIds: ["vi"] } });
+    const ed = as("ed");
+    await assertFails(getDoc(doc(ed, "brands/b1")));
+    await assertFails(memberQuery(ed, "content"));
+    await assertFails(getDoc(doc(ed, "content/c1")));
+    await assertFails(updateDoc(doc(ed, "content/c1"), { caption: "baru" }));
+    await assertFails(setDoc(doc(ed, "content/c9"), content("c9")));
+    // Even if memberIds still named them, the flag alone keeps everything but the brand doc shut.
+    await seed((db) => updateDoc(doc(db, "brands/b1"), { memberIds: ["ed", "vi"] }));
+    await assertFails(memberQuery(ed, "content"));
+    await assertFails(updateDoc(doc(ed, "brands/b1"), { name: "x" }));
+    await assertSucceeds(memberQuery(as("vi"), "content"));
+  });
   test("an editor paused beyond the owner's seats reads like a viewer", async () => {
     await seedTeam({ brand: { members: { ...members, ed: { ...members.ed, seatPaused: true } } } });
     const ed = as("ed");

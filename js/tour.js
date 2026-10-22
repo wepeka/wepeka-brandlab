@@ -771,16 +771,10 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       body: t("tour.onb.chat.body"),
     },
     {
-      // Pro only — Pemula has no bell. Skipped at once instead of waiting.
-      selector: '[data-tour="notif-bell"]',
-      showIf: () => visible('[data-tour="notif-bell"]'),
-      title: t("tour.onb.notif.title"),
-      body: t("tour.onb.notif.body"),
-    },
-    {
+      // One button for announcements and (Pro) content reminders.
       selector: '[data-tour="updates"]',
       title: t("tour.onb.updates.title"),
-      body: t("tour.onb.updates.body"),
+      body: t(getMode() === "guided" ? "tour.onb.updates.body" : "tour.onb.updates.bodyPro"),
     },
     {
       selector: '[data-tour="settings"]',
@@ -798,10 +792,6 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       body: t("tour.onb.finish.body"),
     }
   );
-  // Pemula has no bell at all: leave its step out of the count from the start.
-  const bellAt = getMode() === "guided" ? steps.findIndex((st) => st.selector === '[data-tour="notif-bell"]') : -1;
-  if (bellAt >= 0) steps.splice(bellAt, 1);
-
   runSpotlightTour(steps, {
     keepOnNavigate: true,
     onFinish: () => { document.body.classList.remove("tour-show-chat"); markTourDone(); },

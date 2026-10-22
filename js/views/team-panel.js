@@ -7,7 +7,7 @@
 // the brands' members come back through the store's own listeners. Extra
 // seats (Rp 29rb / 30 days) are bought here; a team over its seats has its
 // newest members paused (api/team.js reconcileSeats), shown on their row.
-import { listBrands, isOwnBrand, storeUid, getBrand } from "../store.js";
+import { listBrands, isOwnBrand, storeUid, getBrand, onChange } from "../store.js";
 import { getCachedAccount, accessState, isAdmin, isReadOnly } from "../account.js";
 import { teamApi, teamSeatsFor, extraSeatEnds, getMemberships } from "../team.js";
 import { TEAM_SEAT_ADDON } from "../site-links.js";
@@ -49,7 +49,7 @@ function teamPeople(brands) {
   for (const b of brands) {
     for (const [uid, m] of Object.entries(b.members || {})) {
       if (!people.has(uid)) people.set(uid, { uid, name: m.name || m.email || uid, email: m.email || "", brands: [], paused: false });
-      people.get(uid).brands.push({ brand: b, role: m.role });
+      people.get(uid).brands.push({ brand: b, role: m.role, off: !!m.disabled });
       if (m.seatPaused) people.get(uid).paused = true;
     }
   }
@@ -140,8 +140,8 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
           ${personDot(p.name)}
           <span class="row-label">${escapeHtml(p.name)} <span class="text-faint">· ${escapeHtml(p.email)}</span>${p.paused ? ` <span class="tag tag-bofu" style="text-transform:none;letter-spacing:0;">${t("team.pausedChip")}</span>` : ""}</span>
           <div class="flex items-center gap-8" style="flex-wrap:wrap;">
-            ${p.brands.map(({ brand, role }) => `
-              <label class="checkbox-chip" style="padding:6px 10px;gap:6px;white-space:nowrap;">${escapeHtml(brand.name)}
+            ${p.brands.map(({ brand, role, off }) => `
+              <label class="checkbox-chip ${off ? "is-access-off" : ""}" style="padding:6px 10px;gap:6px;white-space:nowrap;" ${off ? `title="${escapeHtml(t("share.accessOff"))}"` : ""}>${off ? icon("lock", { size: 12 }) : ""}${escapeHtml(brand.name)}
                 <select class="select" data-role-brand="${escapeHtml(brand.id)}" data-role-member="${escapeHtml(p.uid)}" style="border:0;background:transparent;padding:0 2px;font-weight:700;color:inherit;" aria-label="${escapeHtml(t("team.inviteModal.role"))}">
                   ${ROLES.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${roleName(r)}</option>`).join("")}
                 </select>
@@ -375,5 +375,243 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
     e.preventDefault();
     send();
   });
+  return overlay;
+}
+
+// ---------- "Bagikan" (Docs-style, one brand) ----------
+// The topbar's person+ button and a brand's ⋯ menu. The owner adds someone
+// by email with a role (the invite link comes straight back to copy or
+// send over WhatsApp) and sees everyone with access: role, an access
+// switch (off = can't open this brand; stays on the list, keeps the seat,
+// chats and work — api/team.js setAccess) and Keluarkan; invites still
+// waiting, with their link. A teammate sees who's there and nothing to
+// change. With no brand open, the owner picks one of their brands first.
+const personRow = (name, sub, right = "", extra = "") => `
+  <li class="share-row ${extra}">
+    ${personDot(name)}
+    <div class="share-who"><b>${escapeHtml(name)}</b>${sub ? `<small>${sub}</small>` : ""}</div>
+    <div class="share-actions">${right}</div>
+  </li>`;
+const switchHTML = (on, uid, name) => `<button type="button" class="team-switch" role="switch" aria-checked="${on}" data-access="${escapeHtml(uid)}" aria-label="${escapeHtml(t("share.switchLabel", { name }))}" title="${escapeHtml(t(on ? "share.switchOn" : "share.switchOff"))}"><i></i></button>`;
+
+export async function openShareDialog({ brandId = null } = {}) {
+  const own = () => ownSharedBrands().filter((b) => !b.archived);
+  let current = brandId || own()[0]?.id || null;
+  let result = null; // the invite just made: { email, link, emailSent, mailLimit }
+  const overlay = openModal({
+    title: t("team.share"),
+    width: "min(580px,94vw)",
+    bodyHTML: `<div id="share-body"></div>`,
+    footHTML: `
+      <button class="btn btn-secondary btn-sm" id="share-copy-brand">${icon("link", { size: 14 })}${t("share.copyBrand")}</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary" data-share-done>${t("share.done")}</button>`,
+  });
+  const body = qs("#share-body", overlay);
+  qs("[data-share-done]", overlay).addEventListener("click", () => closeOverlay(overlay));
+  qs("#share-copy-brand", overlay).addEventListener("click", async () => {
+    if (!current) return;
+    try {
+      await navigator.clipboard.writeText(`${location.origin}/#/brand/${current}`);
+      toast(t("share.brandCopied"));
+    } catch {
+      window.prompt(t("share.copyBrand"), `${location.origin}/#/brand/${current}`);
+    }
+  });
+
+  const paint = async (force = false) => {
+    if (!overlay.isConnected) return;
+    const brand = current ? getBrand(current) : null;
+    const title = qs(".modal h2", overlay);
+    if (!brand) {
+      title.textContent = t("team.share");
+      body.innerHTML = `<p class="text-muted" style="margin:0;">${t("team.noPlan")}</p>`;
+      return;
+    }
+    const mine = isOwnBrand(brand);
+    title.textContent = t(mine ? "share.title" : "share.titleMember", { name: brand.name });
+    const members = Object.entries(brand.members || {}).sort((a, b) => (Number(a[1]?.addedAt) || 0) - (Number(b[1]?.addedAt) || 0));
+    const me = storeUid();
+    const ownerName = brand.ownerName || (mine ? getCachedAccount()?.displayName || auth.currentUser?.displayName || "" : "") || t("team.role.owner");
+    if (!mine) {
+      body.innerHTML = `
+        <ul class="share-list">
+          ${personRow(ownerName, t("team.role.owner"))}
+          ${members.filter(([, m]) => !m?.disabled).map(([uid, m]) => personRow(m.name || m.email || uid, `${escapeHtml(m.email || "")}${uid === me ? ` · ${t("share.you")}` : ""}`, `<span class="text-faint" style="font-size:12.5px;font-weight:700;">${roleName(m.role)}</span>`)).join("")}
+        </ul>
+        <p class="hint" style="display:block;margin-top:12px;">${t("share.memberNote")}</p>`;
+      return;
+    }
+    const list = await loadInvites(force);
+    const pending = pendingOf(list).filter((i) => (i.brandIds || []).includes(current));
+    const seats = seatInfo(ownSharedBrands(), pendingOf(list));
+    const now = Date.now();
+    const brands = own();
+    body.innerHTML = `
+      ${!brandId && brands.length > 1 ? `
+        <div class="field" style="margin-bottom:12px;">
+          <label for="share-brand">${t("share.pickBrand")}</label>
+          <select class="select" id="share-brand">${brands.map((b) => `<option value="${escapeHtml(b.id)}" ${b.id === current ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("")}</select>
+        </div>` : ""}
+      <form class="share-add" id="share-add" novalidate>
+        <input class="input" id="share-email" type="email" autocomplete="off" placeholder="${escapeHtml(t("share.addPlaceholder"))}" aria-label="${escapeHtml(t("share.addPlaceholder"))}" />
+        <select class="select" id="share-role" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${ROLES.map((r) => `<option value="${r}">${roleName(r)}</option>`).join("")}</select>
+        <button class="btn btn-primary" id="share-invite" type="submit">${t("share.invite")}</button>
+      </form>
+      <div class="auth-error" id="share-error" style="display:none;margin-top:8px;"></div>
+      ${result ? `
+        <div class="share-result">
+          <p style="margin:0 0 8px;font-weight:700;">${icon("check", { size: 15 })} ${escapeHtml(t("share.invited", { email: result.email }))}</p>
+          <p class="text-muted" style="font-size:13px;margin:0 0 10px;">${result.emailSent ? t("team.inviteModal.sentSub") : t(result.mailLimit ? "team.mailLimit" : "team.inviteModal.notSent")}</p>
+          <div class="flex gap-8" style="flex-wrap:wrap;">
+            <input class="input" readonly value="${escapeHtml(result.link)}" style="flex:1;min-width:200px;" />
+            <button class="btn btn-secondary btn-sm" id="share-result-copy" type="button">${icon("copy", { size: 13 })}${t("team.copyLink")}</button>
+            <button class="btn btn-secondary btn-sm" id="share-result-wa" type="button">${icon("send", { size: 13 })}${t("team.sendWa")}</button>
+          </div>
+        </div>` : ""}
+      <div class="share-section">${t("share.people")}</div>
+      <ul class="share-list">
+        ${personRow(ownerName, `${t("share.you")}`, `<span class="text-faint" style="font-size:12.5px;font-weight:700;">${t("team.role.owner")}</span>`)}
+        ${members.map(([uid, m]) => {
+          const name = m.name || m.email || uid;
+          const off = !!m.disabled;
+          const sub = `${escapeHtml(m.email || "")}${off ? ` · <span class="share-off-note">${t("share.accessOff")}</span>` : m.seatPaused ? ` · <span class="share-off-note">${t("team.pausedChip")}</span>` : ""}`;
+          return personRow(name, sub, `
+            <select class="select share-role" data-role-member="${escapeHtml(uid)}" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${ROLES.map((r) => `<option value="${r}" ${r === m.role ? "selected" : ""}>${roleName(r)}</option>`).join("")}</select>
+            ${switchHTML(!off, uid, name)}
+            <button class="icon-btn" data-remove-here="${escapeHtml(uid)}" data-name="${escapeHtml(name)}" title="${escapeHtml(t("team.remove"))}" aria-label="${escapeHtml(t("team.remove"))}">${icon("x", { size: 15 })}</button>`, off ? "is-off" : "");
+        }).join("")}
+        ${pending.map((i) => {
+          const days = Math.ceil((Number(i.expiresAt) - now) / DAY);
+          const left = days > 0 ? t("team.pending.daysLeft", { n: days }) : t("team.pending.expired");
+          return personRow(i.email, escapeHtml(t("share.pending", { role: roleName(i.role), left })), `
+            <button class="btn btn-secondary btn-sm" data-share-link="${i.id}" title="${escapeHtml(t("team.newLink.hint"))}">${icon("copy", { size: 13 })}${t("team.copyLink")}</button>
+            <button class="btn btn-secondary btn-sm" data-share-wa="${i.id}" title="${escapeHtml(t("team.newLink.hint"))}">${icon("send", { size: 13 })}WA</button>
+            <button class="icon-btn" data-share-revoke="${i.id}" title="${escapeHtml(t("team.revoke"))}" aria-label="${escapeHtml(t("team.revoke"))}">${icon("x", { size: 15 })}</button>`, "is-pending");
+        }).join("")}
+      </ul>
+      <p class="hint" style="display:block;margin-top:12px;">
+        ${Number.isFinite(seats.limit) ? t("share.seats", { used: seats.used, limit: seats.limit }) : t("team.seatsUnlimited", { used: seats.used })}
+        · <a href="#/settings/team" data-share-team style="color:var(--accent);font-weight:700;">${t("share.manageTeam")}</a>
+      </p>`;
+    wire(brand);
+  };
+
+  const err = (msg) => {
+    const el = qs("#share-error", overlay);
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.display = msg ? "" : "none";
+  };
+  const wire = (brand) => {
+    qs("#share-brand", overlay)?.addEventListener("change", (e) => {
+      current = e.target.value;
+      result = null;
+      paint();
+    });
+    qs("[data-share-team]", overlay)?.addEventListener("click", () => closeOverlay(overlay));
+    qs("#share-add", overlay)?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = qs("#share-email", overlay).value.trim();
+      if (!email) return err(t("team.err.bad-request"));
+      const btn = qs("#share-invite", overlay);
+      btn.disabled = true;
+      err("");
+      try {
+        const out = await teamApi("invite", { email, brandIds: [current], role: qs("#share-role", overlay).value });
+        result = { email, link: out.link, emailSent: out.emailSent, mailLimit: out.mailLimit };
+        await paint(true);
+      } catch (ex) {
+        btn.disabled = false;
+        err(teamError(ex));
+      }
+    });
+    qs("#share-result-copy", overlay)?.addEventListener("click", () => copy(result.link));
+    qs("#share-result-wa", overlay)?.addEventListener("click", () => waShare(result.link, [brand.name]));
+    qsa("[data-role-member]", overlay).forEach((sel) => sel.addEventListener("change", async () => {
+      try {
+        await teamApi("role", { brandId: current, memberUid: sel.dataset.roleMember, role: sel.value });
+        toast(t("team.roleChanged"));
+      } catch (ex) {
+        toast(teamError(ex), "error");
+        paint();
+      }
+    }));
+    qsa("[data-access]", overlay).forEach((sw) => sw.addEventListener("click", async () => {
+      const uid = sw.dataset.access;
+      const name = brand.members?.[uid]?.name || "";
+      const enabled = sw.getAttribute("aria-checked") !== "true";
+      sw.setAttribute("aria-checked", String(enabled));
+      sw.disabled = true;
+      try {
+        await teamApi("access", { brandId: current, memberUid: uid, enabled });
+        toast(t(enabled ? "share.turnedOn" : "share.turnedOff", { name }));
+      } catch (ex) {
+        sw.setAttribute("aria-checked", String(!enabled));
+        toast(teamError(ex), "error");
+      }
+      sw.disabled = false;
+    }));
+    qsa("[data-remove-here]", overlay).forEach((btn) => btn.addEventListener("click", async () => {
+      const name = btn.dataset.name;
+      const ok = await confirmDialog({
+        title: t("share.removeHere.title", { name: escapeHtml(name), brand: escapeHtml(brand.name) }),
+        message: t("share.removeHere.message", { name: escapeHtml(name), brand: escapeHtml(brand.name) }),
+        confirmLabel: t("team.remove"),
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await teamApi("remove", { memberUid: btn.dataset.removeHere, brandIds: [current] });
+        toast(t("team.removed.done", { name }));
+      } catch (ex) {
+        toast(teamError(ex), "error");
+      }
+    }));
+    const inviteById = (id) => (invites.list || []).find((i) => i.id === id);
+    qsa("[data-share-link]", overlay).forEach((btn) => btn.addEventListener("click", async () => {
+      try {
+        const out = await teamApi("rotate", { inviteId: btn.dataset.shareLink });
+        await copy(out.link);
+      } catch (ex) {
+        toast(teamError(ex), "error");
+      }
+      paint(true);
+    }));
+    qsa("[data-share-wa]", overlay).forEach((btn) => btn.addEventListener("click", async () => {
+      const inv = inviteById(btn.dataset.shareWa);
+      const win = window.open("about:blank", "_blank");
+      if (win) win.opener = null;
+      try {
+        const out = await teamApi("rotate", { inviteId: btn.dataset.shareWa });
+        const text = t("team.wa.message", { brands: (inv?.brandNames || [brand.name]).join(", "), link: out.link });
+        if (win) win.location = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        else waShare(out.link, inv?.brandNames || [brand.name]);
+      } catch (ex) {
+        win?.close();
+        toast(teamError(ex), "error");
+      }
+      paint(true);
+    }));
+    qsa("[data-share-revoke]", overlay).forEach((btn) => btn.addEventListener("click", async () => {
+      try {
+        await teamApi("revoke", { inviteId: btn.dataset.shareRevoke });
+        toast(t("team.revoked"));
+      } catch (ex) {
+        toast(teamError(ex), "error");
+      }
+      paint(true);
+    }));
+  };
+
+  // Members come back through the store's own brand listener: repaint the
+  // list while the dialog is open (not while someone types an email).
+  const stop = onChange(() => {
+    if (!overlay.isConnected) return stop();
+    if (document.activeElement?.id === "share-email" && qs("#share-email", overlay)?.value) return;
+    paint();
+  });
+  await paint();
+  qs("#share-email", overlay)?.focus();
   return overlay;
 }

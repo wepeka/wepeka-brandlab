@@ -17,6 +17,8 @@
 //        a password reset would (new password, old sign-ins ended); a
 //        verified one is left alone (409 account-exists).
 //   POST {action:"role", brandId, memberUid, role}  owner
+//   POST {action:"access", brandId, memberUid, enabled}  owner: a member's access to one brand on/off
+//        (off = can't open it, stays on the list and keeps their seat, chats and work)
 //   POST {action:"remove", memberUid, brandIds?}    owner (all their brands when brandIds is left out)
 //   POST {action:"leave", brandIds?}                a member leaves (all of that owner's… every shared brand when left out)
 //   POST {action:"sync"}                            owner: rebuild the memberships index from the brands
@@ -130,7 +132,7 @@ export async function mirrorTeams(d, brandIds) {
       const members = Object.entries(b?.members || {});
       const ref = d.rtdb.ref(`teams/${id}`);
       if (!b || !members.length || b.deletedAt) await ref.remove();
-      else await ref.set({ [b.ownerId]: "owner", ...Object.fromEntries(members.map(([uid, m]) => [uid, m.role === "editor" && !m.seatPaused ? "editor" : "viewer"])) });
+      else await ref.set({ [b.ownerId]: "owner", ...Object.fromEntries(members.filter(([, m]) => !m?.disabled).map(([uid, m]) => [uid, m.role === "editor" && !m.seatPaused ? "editor" : "viewer"])) });
     } catch (e) {
       console.warn("[team] live team copy not updated", id, e?.message);
     }
@@ -324,7 +326,8 @@ export async function accept(d, caller, body) {
       const updates = [new FieldPath("members", caller.uid), memberEntry, "memberIds", FieldValue.arrayUnion(caller.uid), "ownerName", inv.ownerName];
       for (const [k, v] of Object.entries(scrub?.brandPatch || {})) updates.push(k, v);
       tx.update(ref, ...updates);
-      membershipBrands[b.id] = { ownerId: inv.ownerId, role: inv.role, brandName: String(b.name || "").slice(0, 80), ownerName: inv.ownerName };
+      // Invited again after their access was turned off: back on.
+      membershipBrands[b.id] = { ownerId: inv.ownerId, role: inv.role, brandName: String(b.name || "").slice(0, 80), ownerName: inv.ownerName, disabled: FieldValue.delete() };
     }
     tx.set(d.db.doc(`memberships/${caller.uid}`), { ownerIds: FieldValue.arrayUnion(inv.ownerId), brands: membershipBrands }, { merge: true });
     tx.update(d.db.doc(`invites/${id}`), { status: "accepted", acceptedBy: caller.uid, acceptedAt: now });
@@ -441,13 +444,47 @@ export async function changeRole(d, caller, body) {
   return {};
 }
 
+// Docs-style access switch for one person on one brand (owner only). Off:
+// they stay on the team list and keep their seat, chats and work, but
+// can't open the brand — out of memberIds (their brand query, the brand
+// doc's read rule, the live layer's team copy), members.{uid}.disabled
+// for every other rule, and their memberships entry flagged so their
+// brand list says why. On: everything back as it was.
+export async function setAccess(d, caller, body) {
+  const { brandId, memberUid } = body || {};
+  if (!idOk(brandId) || !idOk(memberUid) || typeof body?.enabled !== "boolean") fail("bad-request", 400);
+  const enabled = body.enabled;
+  await d.db.runTransaction(async (tx) => {
+    const ref = d.db.doc(`brands/${brandId}`);
+    const mRef = d.db.doc(`memberships/${memberUid}`);
+    const [snap, mSnap] = await Promise.all([tx.get(ref), tx.get(mRef)]);
+    if (!snap.exists) fail("not-found", 404);
+    const b = snap.data();
+    if (b.ownerId !== caller.uid) fail("not-owner", 403);
+    const m = b.members?.[memberUid];
+    if (!m) fail("not-found", 404);
+    tx.update(ref, new FieldPath("members", memberUid, "disabled"), enabled ? FieldValue.delete() : true,
+      "memberIds", enabled ? FieldValue.arrayUnion(memberUid) : FieldValue.arrayRemove(memberUid));
+    const entry = { ownerId: b.ownerId, role: m.role, brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "", ...(enabled ? {} : { disabled: true }) };
+    const brands = { ...(mSnap.exists ? mSnap.data().brands || {} : {}), [brandId]: entry };
+    tx.set(mRef, { brands, ownerIds: [...new Set(Object.values(brands).map((x) => x.ownerId))] });
+  });
+  await mirrorTeams(d, [brandId]);
+  if (!enabled && d.rtdb) {
+    await Promise.all([d.rtdb.ref(`presence/${brandId}/${memberUid}`).remove(), d.rtdb.ref(`cursors/${brandId}/${memberUid}`).remove()]).catch(() => {});
+  }
+  return { enabled };
+}
+
 // Takes `memberUid` off `ownerId`'s brands (all of them, or `brandIds`),
 // fixes the index, then deletes what was theirs alone in those brands:
 // their chat threads and their people/ doc.
 async function removeMember(d, ownerId, memberUid, brandIds) {
   const removed = await d.db.runTransaction(async (tx) => {
-    const snap = await tx.get(ownerBrandsQuery(d.db, ownerId).where("memberIds", "array-contains", memberUid));
-    const brands = docs(snap).filter((b) => !brandIds || brandIds.includes(b.id));
+    // By the members map, not memberIds: someone whose access is off isn't
+    // in memberIds but is still on the team.
+    const snap = await tx.get(ownerBrandsQuery(d.db, ownerId));
+    const brands = docs(snap).filter((b) => b.members?.[memberUid] && (!brandIds || brandIds.includes(b.id)));
     const mRef = d.db.doc(`memberships/${memberUid}`);
     const mSnap = await tx.get(mRef);
     for (const b of brands) {
@@ -501,7 +538,7 @@ export async function sync(d, caller) {
   for (const b of brands) {
     for (const [uid, m] of Object.entries(b.members || {})) {
       if (!byMember.has(uid)) byMember.set(uid, {});
-      byMember.get(uid)[b.id] = { ownerId: caller.uid, role: m.role, brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "" };
+      byMember.get(uid)[b.id] = { ownerId: caller.uid, role: m.role, brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "", ...(m.disabled ? { disabled: true } : {}) };
     }
   }
   for (const [uid, own] of byMember) {
@@ -519,7 +556,7 @@ export async function sync(d, caller) {
 }
 
 // ---------- HTTP ----------
-const SIGNED_IN = { invite, rotate, revoke, accept, role: changeRole, remove, leave, sync };
+const SIGNED_IN = { invite, rotate, revoke, accept, role: changeRole, access: setAccess, remove, leave, sync };
 
 export async function runAction(d, action, caller, body) {
   if (action === "preview") return preview(d, body);

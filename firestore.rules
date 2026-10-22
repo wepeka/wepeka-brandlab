@@ -137,9 +137,12 @@ service cloud.firestore {
     function brandAfter(id) {
       return getAfter(brandPath(id)).data;
     }
+    // A member whose access the owner turned off (members.{uid}.disabled,
+    // api/team.js setAccess) has no role there until it's turned back on.
     function roleIn(b) {
       return request.auth == null ? ''
         : b.ownerId == request.auth.uid ? 'owner'
+        : b.get('members', {}).get(request.auth.uid, {}).get('disabled', false) == true ? ''
         : b.get('members', {}).get(request.auth.uid, {}).get('role', '');
     }
     function canRead(b) {

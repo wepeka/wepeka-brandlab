@@ -376,6 +376,8 @@ export async function resolvePayer(db, uid, teamBrandId) {
   const brand = b.exists ? b.data() : null;
   const member = brand?.members?.[uid];
   if (!brand || brand.ownerId !== entry.ownerId || !member) return { payerUid: uid, team: false };
+  // The owner turned this person's access to the brand off (api/team.js setAccess).
+  if (member.disabled || entry.disabled) return { error: "disabled" };
   if (member.role !== "editor") return { error: "viewer" };
   // Beyond the owner's seats (a smaller plan, a lapsed extra seat):
   // looks, but doesn't spend the owner's credits (api/team.js reconcileSeats).

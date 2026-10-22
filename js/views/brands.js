@@ -2,8 +2,8 @@ import {
   listBrands, createBrand, updateBrand, archiveBrand, deleteBrand, listContent, updateContent, TRASH_DAYS, isOwnBrand, brandRole,
 } from "../store.js";
 import { getCachedAccount, accessState } from "../account.js";
-import { teamApi } from "../team.js";
-import { openInviteModal } from "./team-panel.js";
+import { teamApi, getMemberships } from "../team.js";
+import { openShareDialog } from "./team-panel.js";
 import { icon } from "../icons.js";
 import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles, wireClickableCards } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
@@ -36,16 +36,30 @@ export function render(root, { next = null } = {}) {
   return () => { window.removeEventListener("account:change", refresh); unmountBg(); }; // no store subscription needed — actions here re-render locally
 }
 
-// Brands shared with this account, one group per owner (Kerja Tim).
+// Brands shared with this account, one group per owner (Kerja Tim). `off`:
+// brands whose owner turned this account's access off — only the
+// memberships index still names them (the brand doc is out of reach).
 function sharedGroups(brands) {
   const groups = new Map();
+  const group = (ownerId, ownerName) => {
+    if (!groups.has(ownerId)) groups.set(ownerId, { ownerName: ownerName || "", brands: [], off: [] });
+    return groups.get(ownerId);
+  };
   for (const b of brands) {
     if (isOwnBrand(b)) continue;
-    if (!groups.has(b.ownerId)) groups.set(b.ownerId, { ownerName: b.ownerName || "", brands: [] });
-    groups.get(b.ownerId).brands.push(b);
+    group(b.ownerId, b.ownerName).brands.push(b);
+  }
+  for (const [brandId, m] of Object.entries(getMemberships()?.brands || {})) {
+    if (m?.disabled) group(m.ownerId, m.ownerName).off.push({ id: brandId, name: m.brandName || "", ownerName: m.ownerName || "" });
   }
   return [...groups.values()];
 }
+const offTile = (o) => `
+  <div class="brand-tile is-off" title="${escapeText(t("team.access.offTile", { name: o.ownerName || "—" }))}">
+    <div class="brand-tile-avatar"><div class="avatar" style="width:100%;height:100%;border-radius:inherit;">${icon("lock", { size: 24 })}</div></div>
+    <h3>${escapeText(o.name)}</h3>
+    <div class="meta">${escapeText(t("team.access.offTile", { name: o.ownerName || "—" }))}</div>
+  </div>`;
 
 function paint(root, refresh, next = null) {
   const all = listBrands();
@@ -58,7 +72,7 @@ function paint(root, refresh, next = null) {
   // a brand-new account used to land on. Pemula gets the journey framing;
   // Pro gets the same card with a tour link. #add-brand keeps its id so
   // the onboarding tour (js/tour.js) still finds it.
-  if (!all.length) {
+  if (!all.length && !groups.length) {
     root.innerHTML = `
       <section class="card journey-hero guided-first-brand" id="journey-hero">
         <div class="journey-hero-eyebrow"><span class="journey-hero-step">${guided ? t("brands.first.stepGuided") : t("brands.first.stepPro")}</span><span class="journey-hero-time">${icon("clock", { size: 12 })}${t("brands.first.time")}</span></div>
@@ -98,9 +112,10 @@ function paint(root, refresh, next = null) {
       </button>
     </div>`}
     ${groups.map((g) => `
-      <div class="section-title"><h2>${escapeText(t("team.sharedBy", { name: g.ownerName || "—" }))}</h2><span class="text-faint" style="font-size:12.5px;font-weight:700;">${t("team.sharedCount", { n: g.brands.length })}</span></div>
+      <div class="section-title"><h2>${escapeText(t("team.sharedBy", { name: g.ownerName || "—" }))}</h2><span class="text-faint" style="font-size:12.5px;font-weight:700;">${t("team.sharedCount", { n: g.brands.length + g.off.length })}</span></div>
       <div class="brand-grid brand-grid--picker brand-grid--shared">
         ${g.brands.map((b) => brandCard(b, false)).join("")}
+        ${g.off.map(offTile).join("")}
       </div>
     `).join("")}
     ${memberOnly ? `<p class="hint" style="display:block;margin-top:24px;">${t("team.memberCreateBrand")} <a href="#/pricing" style="color:var(--accent);font-weight:700;">${t("team.seePlans")}</a></p>` : ""}
@@ -119,14 +134,14 @@ function paint(root, refresh, next = null) {
     openBrandModal({ onSaved: refresh });
   });
 
-  qsa(".brand-tile:not(.brand-tile-add)").forEach((card) => {
+  qsa(".brand-tile:not(.brand-tile-add):not(.is-off)").forEach((card) => {
     card.addEventListener("click", (e) => {
       if (dragState.wasDragged) return;
       if (e.target.closest("[data-menu-toggle]") || e.target.closest(".menu")) return;
       location.hash = `#/brand/${card.dataset.id}${next ? `/${next}` : ""}`;
     });
   });
-  wireClickableCards(root, ".brand-tile:not(.brand-tile-add)", { role: "link" });
+  wireClickableCards(root, ".brand-tile:not(.brand-tile-add):not(.is-off)", { role: "link" });
 
   qsa("[data-menu-toggle]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -152,7 +167,7 @@ function paint(root, refresh, next = null) {
         closeMenu();
         const brand = all.find((b) => b.id === id);
         if (act === "share") {
-          openInviteModal({ brandId: id });
+          openShareDialog({ brandId: id });
         } else if (act === "leave") {
           const ok = await confirmDialog({
             title: t("team.leave.title", { name: escapeText(brand.ownerName || "") }),
