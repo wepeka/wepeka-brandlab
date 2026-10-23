@@ -2,8 +2,9 @@
 // the transaction glue in api/_seats.js against a tiny in-memory Firestore.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { PLANS, HOLD_MS, holdKeyFor, seatsTaken, reserveSeat, convertSeat, releaseSeat, seatFields } from "../api/_plans.js";
+import { PLANS, HOLD_MS, SEAT_CHECKOUT_MINUTES, SEAT_HOLD_MARGIN_MINUTES, holdKeyFor, seatsTaken, reserveSeat, convertSeat, releaseSeat, seatFields } from "../api/_plans.js";
 import { holdSeat, releaseHold } from "../api/_seats.js";
 import { seatsTakenOf, holdKeyOf } from "../js/views/pricing.js";
 
@@ -75,6 +76,43 @@ describe("seat holds: the math", () => {
   test("writes replace the slot's holds map whole", () => {
     assert.deepEqual(seatFields(F, { sold: 3, holds: {} }).update, { [`holds.${F}`]: {}, [F]: 3 });
     assert.deepEqual(seatFields(F, { holds: { a: 1 } }).set, { holds: { [F]: { a: 1 } } });
+  });
+});
+
+describe("seat holds: the pay window", () => {
+  const MIN = 60 * 1000;
+  test("1 hour to pay (owner, 2026-10-23); the hold outlives it by 15 minutes", () => {
+    assert.equal(SEAT_CHECKOUT_MINUTES, 60);
+    assert.equal(SEAT_HOLD_MARGIN_MINUTES, 15);
+    assert.equal(HOLD_MS, 75 * MIN);
+    assert.ok(HOLD_MS > SEAT_CHECKOUT_MINUTES * MIN, "a hold can never end before its order stops being payable");
+  });
+  test("the checkout asks Midtrans for exactly that window", () => {
+    const src = readFileSync(new URL("../api/midtrans/create-transaction.js", import.meta.url), "utf8");
+    assert.match(src, /plan\.slot \? \{ expiry: \{ unit: "minutes", duration: SEAT_CHECKOUT_MINUTES \} \}/);
+    assert.match(src, /const payBy = plan\.slot \? Date\.now\(\) \+ SEAT_CHECKOUT_MINUTES \* 60 \* 1000 : null;/);
+    assert.match(src, /\.\.\.\(hold \? \{ hold, payBy \} : \{\}\)/);
+  });
+  test("a held wave-1 seat keeps the wave closed for the whole window, then frees it", () => {
+    const first = reserveSeat({ [F]: 14 }, F, "a", founder, now);
+    assert.equal(first.price, 499000);
+    const doc = { [F]: 14, holds: { [F]: first.holds } };
+    // Just before the order stops being payable, the seat is still taken:
+    // the next buyer pays the second wave, so the held order can't settle
+    // at a wave price somebody else also got.
+    const late = now + SEAT_CHECKOUT_MINUTES * MIN - 1;
+    assert.equal(reserveSeat(doc, F, "b", founder, late).price, 599000);
+    // In the margin for a late notification: still held.
+    assert.equal(seatsTaken(doc, F, now + HOLD_MS - 1), 15);
+    // After the hold: back on sale at the first wave.
+    assert.equal(seatsTaken(doc, F, now + HOLD_MS), 14);
+    assert.equal(reserveSeat(doc, F, "b", founder, now + HOLD_MS).price, 499000);
+  });
+  test("the last seat stays held for the whole window", () => {
+    const first = reserveSeat({ [F]: 49 }, F, "a", founder, now);
+    const doc = { [F]: 49, holds: { [F]: first.holds } };
+    assert.equal(reserveSeat(doc, F, "b", founder, now + SEAT_CHECKOUT_MINUTES * MIN), null);
+    assert.ok(reserveSeat(doc, F, "b", founder, now + HOLD_MS));
   });
 });
 

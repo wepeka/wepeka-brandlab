@@ -1,13 +1,15 @@
 // The emails Brandlab sends about itself — the invoice after a payment
-// (api/midtrans/webhook.js) and an announcement mailed to
-// every active account (api/announcements/notify.js). Both carry the same
-// community links as the app (js/community.js): the WhatsApp group and the
-// two Instagram accounts. Everything here is pure (no Firestore, no fetch),
+// and the reminder for a Founder / Agency checkout left unpaid
+// (api/midtrans/webhook.js), and an announcement mailed to
+// every active account (api/announcements/notify.js). The invoice and the
+// announcement carry the same community links as the app
+// (js/community.js): the WhatsApp group and the two Instagram accounts.
+// Everything here is pure (no Firestore, no fetch),
 // so it is tested directly; api/_email.js does the sending.
 import { APP_URL } from "./_reminders.js";
 import { isLifetimePlan } from "./_plans.js";
 import { isAdminUid } from "./_aiQuota.js";
-import { paidAtLabel } from "./_invoice.js";
+import { paidAtLabel, wibClock } from "./_invoice.js";
 
 // Brandlab's own WhatsApp groups (owner, 2026-10-13 — until then this
 // pointed at Wepeka Community's group, wepeka.com/gabung, by mistake):
@@ -35,6 +37,11 @@ export const SUPPORT_WA_NUMBER = "6285196627609";
 export const TERMS_URL = "https://www.wepeka.com/syarat-ketentuan";
 export const PRIVACY_URL = "https://www.wepeka.com/kebijakan-privasi";
 export const REFUND_URL = `${TERMS_URL}#refund`;
+// A plan's buy link: sign in on wepeka.com if needed, then the plans page
+// opens that plan's checkout by itself (js/buy-intent.js). Same as
+// js/site-links.js buyUrl, kept equal by tests/community.test.mjs.
+export const WEPEKA_CONNECT_URL = "https://www.wepeka.com/brandlab/connect";
+export const buyUrl = (planKey) => `${WEPEKA_CONNECT_URL}?to=pricing&plan=${encodeURIComponent(planKey)}`;
 export const instagramUrl = (handle) => `https://www.instagram.com/${String(handle).replace(/^@/, "")}`;
 
 const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -167,6 +174,40 @@ ${communityHTML({ lifetime: isPlan && lifetime })}
     issuer, ...(ref ? [ref] : []), "",
     `Buka Brandlab: ${appUrl}`, "", communityText({ lifetime: isPlan && lifetime }), "", help, "",
     `Syarat & Ketentuan: ${TERMS_URL}`, `Kebijakan refund: ${REFUND_URL}`, `Kebijakan Privasi: ${PRIVACY_URL}`,
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// A Founder / Agency checkout that picked a way to pay but isn't paid yet
+// (api/_payReminder.js): until when the seat stays held, and the way back to
+// the plan's checkout. Short, "kamu", and no payment provider's name — the
+// buyer knows which bank or app they chose. `deadline` (ms) is when the
+// order stops being payable (minutes cut, never rounded up); `sendAt` is
+// when the email lands, so a deadline within the next two hours reads as a
+// clock time and roughly how long is left — "sampai pukul 11.39 WIB,
+// sekitar 25 menit lagi" (rounded down to 5) — and a later one as a date.
+// → { subject, html, text }.
+export function composePayReminderEmail({ name = "", label = "", amount = 0, deadline = Date.now(), sendAt = null, planKey = "" } = {}) {
+  const hi = firstName(name) ? `Hai ${firstName(name)},` : "Hai,";
+  const what = String(label || "").replace(/^Brandlab\s+/, "") || "Brandlab";
+  const left = sendAt ? Math.floor((Number(deadline) - Number(sendAt)) / 60000) : null;
+  const until = left != null && left >= 5 && left <= 120
+    ? `pukul ${wibClock(deadline)} WIB, sekitar ${Math.floor(left / 5) * 5} menit lagi`
+    : paidAtLabel(deadline);
+  const finishUrl = buyUrl(planKey);
+  const subject = `Kursi ${what} kamu masih kami tahan`;
+  const lead = `Pembayaran ${what}${Number(amount) > 0 ? ` (${rupiah(amount)})` : ""} kamu belum selesai. Kursimu masih kami tahan sampai ${until}. Lewat dari itu, kursinya kami lepas untuk pembeli lain.`;
+  const code = "Sudah dapat nomor virtual account atau kode bayar? Bayar ke situ saja, nggak perlu pesan ulang.";
+  const cta = "Selesaikan pembayaran";
+  const html = shell(`<p style="margin:0 0 12px;">${esc(hi)}</p>
+<p style="margin:0 0 12px;">${esc(lead)}</p>
+<p style="margin:0 0 18px;color:#444;font-size:14px;">${esc(code)}</p>
+<p style="margin:0;"><a href="${esc(finishUrl)}" style="${BUTTON}background:#111;color:#fff;">${esc(cta)}</a></p>
+<p style="margin:18px 0 0;color:#888;font-size:12px;">Sudah bayar? Abaikan email ini. Ada kendala? <a href="https://wa.me/${SUPPORT_WA_NUMBER}" style="color:#888;">WhatsApp tim Wepeka</a>.</p>`);
+  const text = [
+    hi, "", lead, "", code, "",
+    `${cta}: ${finishUrl}`, "",
+    `Sudah bayar? Abaikan email ini. Ada kendala? WhatsApp tim Wepeka: https://wa.me/${SUPPORT_WA_NUMBER}`,
   ].join("\n");
   return { subject, html, text };
 }

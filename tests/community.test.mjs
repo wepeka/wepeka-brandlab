@@ -30,6 +30,8 @@ describe("community links", () => {
     assert.equal(client.TERMS_URL, server.TERMS_URL);
     assert.equal(client.PRIVACY_URL, server.PRIVACY_URL);
     assert.equal(client.REFUND_URL, server.REFUND_URL);
+    assert.equal(client.WEPEKA_CONNECT_URL, server.WEPEKA_CONNECT_URL);
+    for (const plan of ["founder", "founder-ultimate", "pro-monthly"]) assert.equal(client.buyUrl(plan), server.buyUrl(plan));
     assert.equal(client.TERMS_URL, "https://www.wepeka.com/syarat-ketentuan");
     assert.equal(client.PRIVACY_URL, "https://www.wepeka.com/kebijakan-privasi");
     assert.match(client.BRANDLAB_WA_GROUP_URL, /^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]+$/);

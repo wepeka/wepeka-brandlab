@@ -17,7 +17,10 @@ const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s
 // `idempotencyKey` (Resend keeps it 24 h) makes a retried cron send the
 // same day's email only once even if our own lastSentDate write was lost.
 // `from` overrides RESEND_FROM for one email (same verified domain).
-export async function sendEmail({ to, subject, html, text, idempotencyKey, from }, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
+// `scheduledAt` (ms): Resend holds the email and sends it then (up to 30
+// days ahead) — a reminder needs no cron of ours; cancelScheduledEmail
+// takes it back.
+export async function sendEmail({ to, subject, html, text, idempotencyKey, from, scheduledAt }, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
   if (!emailConfigured(env)) return { ok: false, skipped: true };
   if (!looksLikeEmail(to)) return { ok: false, error: "bad-address" };
   try {
@@ -28,12 +31,34 @@ export async function sendEmail({ to, subject, html, text, idempotencyKey, from 
         "Content-Type": "application/json",
         ...(idempotencyKey ? { "Idempotency-Key": String(idempotencyKey).slice(0, 256) } : {}),
       },
-      body: JSON.stringify({ from: String(from || env.RESEND_FROM).trim(), to: [to], subject: String(subject || "").slice(0, 200), html, text }),
+      body: JSON.stringify({
+        from: String(from || env.RESEND_FROM).trim(), to: [to], subject: String(subject || "").slice(0, 200), html, text,
+        ...(Number(scheduledAt) > 0 ? { scheduled_at: new Date(Number(scheduledAt)).toISOString() } : {}),
+      }),
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) return { ok: false, status: res.status, error: data?.message || data?.name || `HTTP ${res.status}` };
     return { ok: true, id: data?.id || null };
+  } catch (err) {
+    return { ok: false, error: err?.message || "network" };
+  }
+}
+
+// Takes back an email sent with `scheduledAt` that hasn't gone out yet.
+// → { ok } | { ok: false, skipped?, status?, error? }. Never throws.
+export async function cancelScheduledEmail(id, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
+  if (!emailConfigured(env)) return { ok: false, skipped: true };
+  if (!/^[A-Za-z0-9-]{1,100}$/.test(String(id || ""))) return { ok: false, error: "bad-id" };
+  try {
+    const res = await fetchImpl(`${RESEND_URL}/${id}/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${String(env.RESEND_API_KEY).trim()}`, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) return { ok: true };
+    const data = await res.json().catch(() => null);
+    return { ok: false, status: res.status, error: data?.message || data?.name || `HTTP ${res.status}` };
   } catch (err) {
     return { ok: false, error: err?.message || "network" };
   }

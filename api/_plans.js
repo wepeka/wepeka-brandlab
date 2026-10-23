@@ -419,8 +419,17 @@ export const SLOTS_DOC = "meta/founderSlots";
 // hash — the doc is public): reopening the checkout refreshes it instead of
 // taking a second seat. Remaining = cap − sold − live holds, which is what
 // js/views/pricing.js shows (and wepeka.com's landing should, too).
+// One hour to pay (owner, 2026-10-23, after three buyers who had picked a
+// payment method let it lapse at minute 61): a longer window would also
+// keep every abandoned checkout's seat off sale for that long. Instead the
+// buyer gets one reminder email (api/_payReminder.js), and a checkout
+// closed without picking a way to pay frees its seat right away
+// (api/_seatRelease.js). The hold always outlives the window by the
+// margin, so an order can never settle after its seat — or its price
+// wave — went back on sale.
 export const SEAT_CHECKOUT_MINUTES = 60;
-export const HOLD_MS = (SEAT_CHECKOUT_MINUTES + 15) * 60 * 1000;
+export const SEAT_HOLD_MARGIN_MINUTES = 15;
+export const HOLD_MS = (SEAT_CHECKOUT_MINUTES + SEAT_HOLD_MARGIN_MINUTES) * 60 * 1000;
 
 export const holdKeyFor = (uid) => createHash("sha256").update(`brandlab-seat:${uid}`).digest("hex").slice(0, 16);
 

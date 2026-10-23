@@ -12,12 +12,13 @@ import { releaseHold, writeSeats } from "../_seats.js";
 import { RECURRING_ON, transactionStatus, createSubscription, disableSubscription } from "../_midtrans.js";
 import { sendMetaEvent } from "../_meta.js";
 import { MIDTRANS_IS_PRODUCTION, paymentsOpenFor, isSettled, notificationAction } from "../_payments.js";
-import { sendEmail, emailConfigured } from "../_email.js";
+import { sendEmail, emailConfigured, cancelScheduledEmail } from "../_email.js";
 import { composePaidEmail } from "../_community.js";
 import { invoiceNumber, paymentMethodLabel } from "../_invoice.js";
 import { ownerEmails, composeSaleNote } from "../_ownerNotify.js";
 import { ADMIN_UIDS } from "../_aiQuota.js";
 import { normalizeReminders, deliverPush, deadEntries, webPushSender } from "../_reminders.js";
+import { schedulePayReminder, cancelPayReminder } from "../_payReminder.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -88,6 +89,7 @@ export default async function handler(req, res) {
     // Founder/Agency seat it held goes back on sale right away.
     await paymentRef.set({ status: transaction_status, closedAt: Date.now() }, { merge: true });
     await releaseHold(db, pending.hold);
+    await dropPayReminder(paymentRef, pending, order_id);
     return res.status(200).json({ ok: true, ignored: transaction_status });
   }
   if (action === "flag") {
@@ -108,6 +110,18 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, flagged: transaction_status });
   }
   if (action === "duplicate") return res.status(200).json({ ok: true, duplicate: true });
+  // A Founder / Agency buyer picked a way to pay (a virtual account, a QR
+  // code) and hasn't paid yet: one reminder email, about 30 minutes from
+  // now (api/_payReminder.js). Awaited — Vercel may freeze the function
+  // after the response — but never fails the notification.
+  if (action === "ignore" && transaction_status === "pending" && pending.hold && emailConfigured()) {
+    const reminder = await schedulePayReminder({
+      db, paymentRef, orderId: order_id, payment: pending, notification: body,
+      recipient: () => buyerContact(pending), send: sendEmail, cancel: cancelScheduledEmail,
+    }).catch((err) => ({ error: err?.message || "failed" }));
+    if (reminder.error) console.error("Midtrans webhook: pay reminder not scheduled", order_id, reminder.error);
+    return res.status(200).json({ ok: true, ignored: transaction_status, reminder: reminder.scheduled ? "scheduled" : reminder.skipped || "failed" });
+  }
   if (action !== "grant") return res.status(200).json({ ok: true, ignored: transaction_status });
 
   const { uid, planKey } = pending;
@@ -119,6 +133,7 @@ export default async function handler(req, res) {
     if (!paymentsOpenFor(uid, buyer)) {
       await paymentRef.set({ status: "void-sandbox", closedAt: Date.now() }, { merge: true });
       await releaseHold(db, pending.hold);
+      await dropPayReminder(paymentRef, pending, order_id);
       console.warn("Midtrans webhook: sandbox payment from a non-tester voided", order_id);
       return res.status(200).json({ ok: true, ignored: "sandbox" });
     }
@@ -250,6 +265,8 @@ export default async function handler(req, res) {
     await syncAutoRenew(db, { uid, planKey, pending, orderId: order_id }).catch((err) => console.error("Midtrans webhook: auto-renew setup failed", order_id, err?.message));
   }
   if (firstTime) {
+    // Paid: the "finish your payment" reminder, if one is waiting, never goes out.
+    await dropPayReminder(paymentRef, pending, order_id);
     // Meta Purchase, once per order (retries have firstTime false). Same
     // event id as the browser pixel in js/views/pricing.js payPlan. Awaited
     // (Vercel may freeze the function after the response) but never throws.
@@ -283,6 +300,29 @@ export default async function handler(req, res) {
     await Promise.all([invoice, note]);
   }
   return res.status(200).json({ ok: true, duplicate: !firstTime });
+}
+
+// Cancels an order's waiting pay reminder (api/_payReminder.js) once it was
+// paid or closed. Read fresh, not from the notification's first read: a
+// `pending` notification handled a moment earlier may have just written the
+// reminder's id. Only a held seat's order can have one. Never throws.
+async function dropPayReminder(paymentRef, pending, orderId) {
+  if (!pending.hold) return;
+  try {
+    const current = (await paymentRef.get()).data();
+    await cancelPayReminder({ paymentRef, payment: current, cancel: cancelScheduledEmail });
+  } catch (err) {
+    console.error("Midtrans webhook: pay reminder cancel failed", orderId, err?.message);
+  }
+}
+
+// Who a pay reminder goes to: the sign-in a first purchase recorded, else
+// the account's own copy, else Firebase Auth.
+async function buyerContact(pending) {
+  if (pending.newAccount?.email) return { email: pending.newAccount.email, name: pending.newAccount.displayName || "" };
+  const account = (await adminDb().doc(`accounts/${pending.uid}`).get()).data() || {};
+  const user = account.email && account.displayName ? null : await getAuth(getApps()[0]).getUser(pending.uid).catch(() => null);
+  return { email: String(account.email || user?.email || "").trim(), name: account.displayName || user?.displayName || "" };
 }
 
 // A community code on the order (payments/{orderId}.promo, written by

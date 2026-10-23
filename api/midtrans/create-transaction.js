@@ -196,6 +196,10 @@ export default async function handler(req, res) {
   // timestamp (~9 chars) stays well under it. (The old "brandlab-…-<ms>"
   // form was 51 and Midtrans refused every transaction.)
   const orderId = `bl-${uid}-${Date.now().toString(36)}`;
+  // When a capped seat's order stops being payable: Midtrans counts the
+  // window from the token it is about to make, so this (taken just before)
+  // is never later than its own deadline. The reminder email quotes it.
+  const payBy = plan.slot ? Date.now() + SEAT_CHECKOUT_MINUTES * 60 * 1000 : null;
   try {
     const midtransRes = await requestSnapToken({
       url: SNAP_API_URL,
@@ -242,8 +246,9 @@ export default async function handler(req, res) {
       ...(promoApplied ? { promo: { ...promoApplied, listPrice: price } } : {}), ...(quote.forfeit ? { forfeit: quote.forfeit } : {}), ...(quote.startsAt ? { startsAt: quote.startsAt } : {}), ...(recurring ? { recurring: true } : {}),
       ...(quote.lifetimeUpgrade ? { lifetimeUpgrade: true } : {}),
       // The seat this checkout holds (api/_seats.js): the webhook converts
-      // it, an expired/cancelled order gives it back.
-      ...(hold ? { hold } : {}),
+      // it, an expired/cancelled order gives it back. `payBy`: the end of
+      // the pay window, for the reminder email (api/_payReminder.js).
+      ...(hold ? { hold, payBy } : {}),
       // No account yet: who the webhook creates it for (api/_plans.js
       // newAccountFields), read off the verified sign-in above.
       ...(firstPurchase ? { newAccount: buyer } : {}),

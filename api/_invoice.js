@@ -14,12 +14,13 @@ export function invoiceNumber(orderId, paidAt = Date.now()) {
   return `INV-${day}-${tail}`;
 }
 
+// "11.37" (WIB; the minutes are cut, never rounded up)
+export const wibClock = (ms = Date.now()) => new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(ms)).replace(":", ".");
+
 // "13 Oktober 2026, 11.37 WIB"
 export function paidAtLabel(paidAt = Date.now()) {
-  const d = new Date(paidAt);
-  const date = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, day: "numeric", month: "long", year: "numeric" }).format(d);
-  const time = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, hour: "2-digit", minute: "2-digit", hour12: false }).format(d).replace(":", ".");
-  return `${date}, ${time} WIB`;
+  const date = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, day: "numeric", month: "long", year: "numeric" }).format(new Date(paidAt));
+  return `${date}, ${wibClock(paidAt)} WIB`;
 }
 
 const BANKS = { bca: "BCA", bni: "BNI", bri: "BRI", mandiri: "Mandiri", permata: "Permata", cimb: "CIMB Niaga", bsi: "BSI", danamon: "Danamon", seabank: "SeaBank", mega: "Mega", maybank: "Maybank" };
