@@ -49,6 +49,16 @@ describe("community code (api/_promo.js)", () => {
     assert.doesNotMatch(html, /QRIS/i);
   });
 
+  test("Founders are guided over chat, never promised a 1-on-1 session (owner 2026-10-24)", async () => {
+    const { t } = await import("../js/i18n.js");
+    const texts = {
+      page: await readFile(path.join(ROOT, "founder/index.html"), "utf8"),
+      email: Object.values(composePaidEmail({ name: "Rani", label: "Brandlab Founder Lifetime", amount: 499000, orderId: "bl-1", isPlan: true, lifetime: true })).join(" "),
+      app: ["community.guideNote", "circle.review.body", "circle.teaser.reviewBody"].map((k) => t(k)).join(" "),
+    };
+    for (const [where, text] of Object.entries(texts)) assert.doesNotMatch(text, /1-on-1|one-on-one|video call|call singkat|short call|sesi kenalan/i, where);
+  });
+
   test("no code is written in anything shipped to the browser", async () => {
     const shipped = ["js", "founder", "css", "assets", "index.html"];
     const hits = [];

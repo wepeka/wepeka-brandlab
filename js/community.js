@@ -102,9 +102,9 @@ function loadLifetimeGroup(overlay) {
   });
 }
 
-// A Lifetime account is guided by the Wepeka team until Brandlab runs: a
-// 1-on-1 intro, Brand DNA + Brand Book checked, the first goal and week
-// planned (the promise on /founder, owner 2026-10-18). It starts with a
+// A Lifetime account is guided by the Wepeka team until Brandlab runs, over
+// chat: Brand DNA + Brand Book checked, the first goal and week planned (the
+// promise on /founder, owner 2026-10-18; no 1-on-1 sessions, owner 2026-10-24). It starts with a
 // WhatsApp chat to the team, so this door comes first.
 const guideDoorHTML = () => `
   ${doorHTML({ id: "guide", cls: "community-wa community-guide", href: `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent(t("community.guideText"))}`, glyph: WA_ICON, todo: t("community.guide"), did: t("community.guided"), bubble: t("community.bubble.guide"), attrs: 'data-community="guide"' })}
