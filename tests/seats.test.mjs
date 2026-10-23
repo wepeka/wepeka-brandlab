@@ -91,7 +91,7 @@ describe("seat holds: the pay window", () => {
     const src = readFileSync(new URL("../api/midtrans/create-transaction.js", import.meta.url), "utf8");
     assert.match(src, /plan\.slot \? \{ expiry: \{ unit: "minutes", duration: SEAT_CHECKOUT_MINUTES \} \}/);
     assert.match(src, /const payBy = plan\.slot \? Date\.now\(\) \+ SEAT_CHECKOUT_MINUTES \* 60 \* 1000 : null;/);
-    assert.match(src, /\.\.\.\(hold \? \{ hold, payBy \} : \{\}\)/);
+    assert.match(src, /\.\.\.\(hold \? \{ hold, payBy, /);
   });
   test("a held wave-1 seat keeps the wave closed for the whole window, then frees it", () => {
     const first = reserveSeat({ [F]: 14 }, F, "a", founder, now);

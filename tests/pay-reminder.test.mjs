@@ -244,9 +244,10 @@ describe("Resend: a scheduled send and its cancel", () => {
 
 describe("wired into the webhook", () => {
   const webhook = readFileSync(new URL("../api/midtrans/webhook.js", import.meta.url), "utf8");
-  test("a `pending` notification for a held seat schedules it (email on), before the not-a-payment exit", () => {
-    const branch = webhook.indexOf('if (action === "ignore" && transaction_status === "pending" && pending.hold && emailConfigured()) {');
-    assert.ok(branch > 0);
+  test("a `pending` notification for a held seat's open order schedules it (email on), before the not-a-payment exit", () => {
+    const outer = webhook.indexOf('if (action === "ignore" && pending.hold && pending.status === "pending") {');
+    const branch = webhook.indexOf('if (transaction_status === "pending" && emailConfigured()) {', outer);
+    assert.ok(outer > 0 && branch > outer);
     assert.ok(branch < webhook.indexOf('if (action !== "grant") return'));
     assert.match(webhook.slice(branch, branch + 600), /schedulePayReminder\(\{\n\s+db, paymentRef, orderId: order_id, payment: pending, notification: body,\n\s+recipient: \(\) => buyerContact\(pending\), send: sendEmail, cancel: cancelScheduledEmail,/);
   });

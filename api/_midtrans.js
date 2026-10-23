@@ -1,9 +1,13 @@
-// Server-side calls to Midtrans beyond Snap: transaction status (to read the
-// saved card token after the first payment) and the Subscription API (auto-
-// renew). The leading underscore keeps Vercel from exposing this as a route.
+// Server-side calls to Midtrans beyond opening Snap: transaction status (to
+// read the saved card token after the first payment; whether an order has a
+// transaction at all), cancelling an unused Snap checkout, and the
+// Subscription API (auto-renew). The leading underscore keeps Vercel from
+// exposing this as a route.
 const SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 const PROD = process.env.MIDTRANS_IS_PRODUCTION === "true";
 const API = PROD ? "https://api.midtrans.com" : "https://api.sandbox.midtrans.com";
+const SNAP = PROD ? "https://app.midtrans.com" : "https://app.sandbox.midtrans.com";
+const basicAuth = (key) => "Basic " + Buffer.from(`${key}:`).toString("base64");
 
 // Auto-renew is off until Midtrans has enabled recurring on the merchant
 // account (production) — set MIDTRANS_RECURRING=true in Vercel after that.
@@ -15,7 +19,7 @@ async function call(method, path, body) {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      Authorization: "Basic " + Buffer.from(`${SERVER_KEY}:`).toString("base64"),
+      Authorization: basicAuth(SERVER_KEY),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -28,6 +32,47 @@ async function call(method, path, body) {
 }
 
 export const transactionStatus = (orderId) => call("GET", `/v2/${encodeURIComponent(orderId)}/status`);
+
+// Whether Midtrans has a transaction for an order: "none" (the buyer never
+// picked a way to pay — Midtrans answers 404 "Transaction doesn't exist"),
+// its transaction_status ("pending", "settlement", …), or null when it
+// couldn't tell. Never throws.
+export async function orderTransaction(orderId, { serverKey = SERVER_KEY, fetchImpl = globalThis.fetch } = {}) {
+  if (!serverKey || !orderId) return null;
+  try {
+    const res = await fetchImpl(`${API}/v2/${encodeURIComponent(orderId)}/status`, {
+      headers: { Accept: "application/json", Authorization: basicAuth(serverKey) },
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 404 || String(data?.status_code) === "404") return "none";
+    return res.ok && data?.transaction_status ? String(data.transaction_status) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Ends a Snap checkout before its window does, so its token can't start a
+// payment any more. Midtrans refuses ("Transaction is on progress") once
+// the buyer has picked a way to pay. → { ok } (`already`: it was cancelled
+// before) | { ok: false, error }. Never throws.
+export async function cancelSnapToken(token, { serverKey = SERVER_KEY, fetchImpl = globalThis.fetch } = {}) {
+  if (!serverKey || !/^[A-Za-z0-9-]{8,100}$/.test(String(token || ""))) return { ok: false, error: "no-token" };
+  try {
+    const res = await fetchImpl(`${SNAP}/snap/v1/transactions/${token}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: basicAuth(serverKey) },
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.canceled_at) return { ok: true };
+    const reason = [data?.error_messages, data?.status_message, data?.message].flat().filter(Boolean).join("; ") || `HTTP ${res.status}`;
+    if (/already cancel/i.test(reason)) return { ok: true, already: true };
+    return { ok: false, error: reason };
+  } catch (err) {
+    return { ok: false, error: err?.message || "network" };
+  }
+}
 
 // "YYYY-MM-DD HH:MM:SS +0700" in Jakarta time, the format Midtrans wants.
 export function midtransTime(ms) {

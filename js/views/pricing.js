@@ -202,8 +202,13 @@ export async function payPlan(planKey, uid, { onSuccess, successToast = true } =
       onPending: () => { answered = true; toast(t("pricing.pay.pending")); showPendingHelp("snap"); },
       onError: () => toast(t("pricing.pay.error"), "error"),
       // Closed without paying, often because the buyer's bank isn't in the
-      // list: say which way is left.
-      onClose: () => { if (!answered) showBankHelp(label); },
+      // list: say which way is left. A Founder / Agency seat it held goes
+      // back on sale now (the server keeps it if a way to pay was picked).
+      onClose: () => {
+        if (answered) return;
+        if (SEAT_PLAN_KEYS.includes(planKey)) releaseSeat(orderId);
+        showBankHelp(label);
+      },
     });
     snapOpening = true;
     hidePayLoadingWhenSnapShows();
@@ -216,6 +221,25 @@ export async function payPlan(planKey, uid, { onSuccess, successToast = true } =
     payStarting = false;
     if (!snapOpening) hidePayLoading();
   }
+}
+
+// A capped plan's checkout closed without picking a way to pay frees its
+// seat right away instead of when its hold runs out (api/midtrans/
+// release-seat.js — the server checks it is this account's order and that
+// Midtrans has no transaction for it). Fire and forget: should it fail,
+// the hold simply runs out.
+const SEAT_PLAN_KEYS = ["founder", "founder-ultimate"];
+async function releaseSeat(orderId) {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return;
+    await fetch("/api/midtrans/release-seat", {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ orderId }),
+    });
+  } catch { /* the hold runs out on its own */ }
 }
 
 // Plans replace each other, never stack (api/_plans.js switchQuote): an

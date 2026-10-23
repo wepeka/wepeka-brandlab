@@ -248,7 +248,11 @@ export default async function handler(req, res) {
       // The seat this checkout holds (api/_seats.js): the webhook converts
       // it, an expired/cancelled order gives it back. `payBy`: the end of
       // the pay window, for the reminder email (api/_payReminder.js).
-      ...(hold ? { hold, payBy } : {}),
+      // `snapToken` (this collection is server-only): a checkout closed
+      // without picking a way to pay is cancelled with it before its seat
+      // is freed (api/_seatRelease.js), which restores `holdPrevious` — the
+      // account's older hold this one replaced — if that is still live.
+      ...(hold ? { hold, payBy, snapToken: data.token, ...(previousHold ? { holdPrevious: previousHold } : {}) } : {}),
       // No account yet: who the webhook creates it for (api/_plans.js
       // newAccountFields), read off the verified sign-in above.
       ...(firstPurchase ? { newAccount: buyer } : {}),

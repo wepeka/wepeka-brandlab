@@ -19,6 +19,7 @@ import { ownerEmails, composeSaleNote } from "../_ownerNotify.js";
 import { ADMIN_UIDS } from "../_aiQuota.js";
 import { normalizeReminders, deliverPush, deadEntries, webPushSender } from "../_reminders.js";
 import { schedulePayReminder, cancelPayReminder } from "../_payReminder.js";
+import { markTransaction } from "../_seatRelease.js";
 
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY;
 
@@ -110,17 +111,25 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, flagged: transaction_status });
   }
   if (action === "duplicate") return res.status(200).json({ ok: true, duplicate: true });
-  // A Founder / Agency buyer picked a way to pay (a virtual account, a QR
-  // code) and hasn't paid yet: one reminder email, about 30 minutes from
-  // now (api/_payReminder.js). Awaited — Vercel may freeze the function
-  // after the response — but never fails the notification.
-  if (action === "ignore" && transaction_status === "pending" && pending.hold && emailConfigured()) {
-    const reminder = await schedulePayReminder({
-      db, paymentRef, orderId: order_id, payment: pending, notification: body,
-      recipient: () => buyerContact(pending), send: sendEmail, cancel: cancelScheduledEmail,
-    }).catch((err) => ({ error: err?.message || "failed" }));
-    if (reminder.error) console.error("Midtrans webhook: pay reminder not scheduled", order_id, reminder.error);
-    return res.status(200).json({ ok: true, ignored: transaction_status, reminder: reminder.scheduled ? "scheduled" : reminder.skipped || "failed" });
+  // Midtrans has a transaction for a held seat's open order (a virtual
+  // account, a QR code, a card under review): it can still be paid, so its
+  // seat stays held — closing the checkout no longer frees it
+  // (api/_seatRelease.js). Not caught: should this write fail, Midtrans
+  // retries the notification.
+  if (action === "ignore" && pending.hold && pending.status === "pending") {
+    await markTransaction(db, paymentRef);
+    // The buyer picked a way to pay and hasn't paid yet: one reminder email
+    // before the hour is up (api/_payReminder.js). Awaited — Vercel may
+    // freeze the function after the response — but never fails the
+    // notification.
+    if (transaction_status === "pending" && emailConfigured()) {
+      const reminder = await schedulePayReminder({
+        db, paymentRef, orderId: order_id, payment: pending, notification: body,
+        recipient: () => buyerContact(pending), send: sendEmail, cancel: cancelScheduledEmail,
+      }).catch((err) => ({ error: err?.message || "failed" }));
+      if (reminder.error) console.error("Midtrans webhook: pay reminder not scheduled", order_id, reminder.error);
+      return res.status(200).json({ ok: true, ignored: transaction_status, reminder: reminder.scheduled ? "scheduled" : reminder.skipped || "failed" });
+    }
   }
   if (action !== "grant") return res.status(200).json({ ok: true, ignored: transaction_status });
 
@@ -169,7 +178,9 @@ export default async function handler(req, res) {
   const counterRef = pending.newAccount ? db.doc(ACCOUNT_COUNTER_DOC) : null;
   const firstTime = await db.runTransaction(async (tx) => {
     const [freshPaymentSnap, accountSnap, slotsSnap, counterSnap] = await Promise.all([tx.get(paymentRef), tx.get(accountRef), slotsRef ? tx.get(slotsRef) : null, counterRef ? tx.get(counterRef) : null]);
-    if (!freshPaymentSnap.exists || freshPaymentSnap.data().status !== "pending") return false;
+    // Open, or closed by the buyer's own checkout close (api/_payments.js
+    // notificationAction: money on it is still granted).
+    if (!freshPaymentSnap.exists || !["pending", "abandoned"].includes(freshPaymentSnap.data().status)) return false;
 
     // A Brand Book art style only joins the account's owned list.
     if (plan.bookStyle) {

@@ -106,6 +106,10 @@ const CLOSES = ["expire", "cancel", "deny", "failure"];
 // unpaid order that will never be paid), "flag" (paid, then reversed — or
 // money landing on an order already closed), or "ignore" (still pending /
 // under review, out-of-order noise, sandbox voids).
+// "abandoned" = a checkout closed without picking a way to pay, whose seat
+// was freed (api/_seatRelease.js) only after Midtrans said it had no
+// transaction and the token was cancelled. Money on it can only come from a
+// race that check lost, so it is granted like an open order, not flagged.
 export function notificationAction(payment, transactionStatus, fraudStatus) {
   const status = payment?.status;
   const settled = isSettled(transactionStatus, fraudStatus);
@@ -113,6 +117,7 @@ export function notificationAction(payment, transactionStatus, fraudStatus) {
     if (settled) return "grant";
     return CLOSES.includes(transactionStatus) ? "close" : "ignore";
   }
+  if (status === "abandoned") return settled ? "grant" : "ignore";
   if (status === "void-sandbox") return "ignore";
   if (status === "paid" || payment?.paidAt) {
     // Paid (or already reversed once — a partial refund turning into a full
