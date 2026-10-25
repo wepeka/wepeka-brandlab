@@ -6,6 +6,7 @@ import { createBridge } from "../papan/bridge.js";
 import { getBrand } from "../store.js";
 import { openConsultantPanel, setChatBoardContext } from "../consultant-panel.js";
 import { escapeHtml } from "../dom.js";
+import { PAPAN_GUIDE } from "../papan/guide.js";
 import { t } from "../i18n.js";
 
 // Bumped with every papan/build.mjs run (written into papan/version.js), so a
@@ -19,12 +20,19 @@ export function render(root, { brandId, boardId = null }) {
   let frame = null, bridge = null, dead = false;
   const host = root.querySelector(".papan-host");
 
+  // What the chat reads while the Papan is open: the board (cut short) and
+  // the guide to the Papan's tools, so "pakai apa?" gets real button names.
+  const withGuide = (fn) => () => {
+    let board = "";
+    try { board = String(fn() || ""); } catch { board = ""; }
+    return `${board ? board.slice(0, 4200) : "Sedang di halaman Semua papan (belum ada papan yang dibuka)."}\n\n${PAPAN_GUIDE}`;
+  };
   // Whatever the board shows when the chat opens: the board travels with the
   // question (consultant-panel's board context) and "Taruh di papan" on a
   // chat idea lands on this board.
   const openChat = (summaryFn) => {
     setChatBoardContext(brandId, {
-      summary: () => { try { return summaryFn ? summaryFn() : ""; } catch { return ""; } },
+      summary: withGuide(() => (summaryFn ? summaryFn() : "")),
       place: (items) => { try { return frame?.contentWindow?.__papanPlace?.(items) || 0; } catch { return 0; } },
     });
     openConsultantPanel({ engine: "brainstorm" });
@@ -36,7 +44,7 @@ export function render(root, { brandId, boardId = null }) {
     if (location.hash !== want) history.replaceState(null, "", want);
     // keep the chat's board context (and its "Taruh di papan") pointed at this board
     setChatBoardContext(brandId, {
-      summary: () => { try { return frame?.contentWindow?.__papanSummary?.() || ""; } catch { return ""; } },
+      summary: withGuide(() => (id ? frame?.contentWindow?.__papanSummary?.() || "" : "")),
       place: (items) => { try { return frame?.contentWindow?.__papanPlace?.(items) || 0; } catch { return 0; } },
     });
   };

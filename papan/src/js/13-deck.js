@@ -30,19 +30,36 @@ const Deck = (() => {
     lab: () => ({ name: "Brandlab gelap", bg: "#131211", fg: "#f6f4f1", dark: "#0c0b0a", light: "#f6f4f1", acc: "#ffa52b", acc2: "#ffc94a", card: "#1f1d1a", disp: "Grift Black", body: "JUST Sans" }),
   };
   const T = () => THEMES[theme]();
-  const LAYOUTS = { cover: "Sampul", agenda: "Agenda", summary: "Ringkasan", statement: "Pernyataan", bullets: "Poin", ideas: "Kartu ide", two: "Dua kolom", mood: "Moodboard", stats: "Angka & grafik", timeline: "Linimasa", table: "Tabel", campaign: "Campaign", identity: "Identitas brand", closing: "Penutup" };
+  const LAYOUTS = { cover: "Sampul", agenda: "Agenda", summary: "Ringkasan", points: "Inti & poin", statement: "Pernyataan", bullets: "Poin", ideas: "Kartu ide", two: "Dua kolom", mood: "Moodboard", stats: "Angka & grafik", timeline: "Linimasa", table: "Tabel", campaign: "Campaign", identity: "Identitas brand", links: "Referensi & video", closing: "Penutup" };
 
   // ---------- build from the board ----------
   function frameContents(f) { return Store.objects().filter((o) => o.type !== "frame" && o.type !== "connector" && Rules.inside(o, f)); }
-  function build(opts) {
+  const shortUrl = (u) => String(u || "").replace(/^https?:\/\/(www\.)?/, "").slice(0, 60);
+  const framesOf = (ids) => Store.objects().filter((o) => o.type === "frame" && ids.includes(o.id)).sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
+  // What the AI reads to write the recap slides (12-ai.js deckRecap): per frame
+  // its notes with votes and marks, tables, checklists and links.
+  function recapInput(ids) {
+    const parts = framesOf(ids).map((f) => {
+      const items = frameContents(f);
+      const notes = items.filter((o) => ["sticky", "shape", "text"].includes(o.type) && (o.text || "").trim()).sort((a, c) => Board.votesFor(c).count - Board.votesFor(a).count || a.y - c.y)
+        .slice(0, 40).map((o) => `${o.text.replace(/\s+/g, " ").slice(0, 220)}${Board.votesFor(o).count ? ` (${Board.votesFor(o).count} vote)` : ""}${{ keputusan: " [Keputusan]", pertanyaan: " [Pertanyaan]", terpilih: " [Terpilih]" }[o.tag] || ""}`);
+      const tabel = items.filter((o) => o.type === "table").slice(0, 2).map((t) => (t.data?.rows || []).slice(0, 6).map((r) => r.slice(0, 4).join(" | ")).join("\n"));
+      const checklist = items.filter((o) => o.type === "checklist").flatMap((c) => (c.data?.items || []).filter((i) => i.t).map((i) => (i.done ? "[selesai] " : "") + i.t)).slice(0, 15);
+      return { id: f.id, judul: (f.text || "").replace(/^\d+\s*·\s*/, ""), catatan: notes, tabel, checklist, link: Exporter.linksOf(items).map((l) => `${l.kind}: ${l.title}`) };
+    });
+    let json = JSON.stringify(parts);
+    while (json.length > 26000 && parts.some((p) => p.catatan.length > 8)) { for (const p of parts) p.catatan = p.catatan.slice(0, Math.max(8, Math.floor(p.catatan.length * 0.7))); json = JSON.stringify(parts); }
+    return parts;
+  }
+  function build(opts, ai = null) {
     const L = Store.lab(), b = Store.board() || {};
     const name = (b.name || "Papan").replace(/^Contoh · /, "");
-    const frames = Store.objects().filter((o) => o.type === "frame" && opts.frames.includes(o.id)).sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
+    const frames = framesOf(opts.frames);
     const out = [];
     out.push({ layout: "cover", kicker: "Hasil rapat tim", title: name, subtitle: `${L.brand.name} · ${fmtDate(Date.now(), false)}` });
     if (frames.length > 2) out.push({ layout: "agenda", title: "Yang kita bahas", bullets: frames.map((f) => f.text.replace(/^\d+\s*·\s*/, "")) });
-    if (opts.recap) { const r = Rules.recap(); out.push({ layout: "summary", title: "Ringkasan", body: r.ringkasan, bullets: r.keputusan.length ? r.keputusan : r.topik.slice(0, 4), side: r.keputusan.length ? "Keputusan" : "Topik" }); }
-    for (const f of frames) out.push(...slidesForFrame(f));
+    if (opts.recap) { const r = Rules.recap(); out.push({ layout: "summary", title: "Ringkasan", body: ai?.ringkasan || r.ringkasan, bullets: r.keputusan.length ? r.keputusan : r.topik.slice(0, 4), side: r.keputusan.length ? "Keputusan" : "Topik" }); }
+    for (const f of frames) out.push(...slidesForFrame(f, ai?.byId.get(f.id)));
     if (opts.voted) {
       const top = Store.objects().filter((o) => o.type === "sticky" && (Board.votesFor(o).count || o.tag === "terpilih")).sort((a, c) => Board.votesFor(c).count - Board.votesFor(a).count).slice(0, 4);
       if (top.length) out.push({ layout: "ideas", title: "Ide terpilih", items: top.map((o) => ({ title: o.text, votes: Board.votesFor(o).count, color: o.color })) });
@@ -51,12 +68,14 @@ const Deck = (() => {
     if (opts.actions) {
       const r = Rules.recap();
       if (r.aksi.length) out.push({ layout: "timeline", title: "Rencana aksi", rows: r.aksi.slice(0, 6).map((a) => ({ label: a.tugas, date: a.deadline || "–", owner: a.pic || "Belum ada PIC" })) });
-      out.push({ layout: "bullets", title: "Langkah berikutnya", bullets: r.langkah });
+      out.push({ layout: "bullets", title: "Langkah berikutnya", bullets: ai?.langkah?.length ? ai.langkah : r.langkah });
     }
+    // Every link and video on the board, clickable in the PPTX and the PDF.
+    if (opts.links) { const ls = Exporter.linksOf(); for (let i = 0; i < ls.length; i += 6) out.push({ layout: "links", title: i ? "Referensi & video (lanjutan)" : "Referensi & video", links: ls.slice(i, i + 6) }); }
     out.push({ layout: "closing", title: "Terima kasih", subtitle: L.brand.tagline });
     return out.map((s) => ({ id: uid("s"), ...s }));
   }
-  function slidesForFrame(f) {
+  function slidesForFrame(f, sum) {
     const title = f.text.replace(/^\d+\s*·\s*/, "");
     const items = frameContents(f);
     const stickies = items.filter((o) => (o.type === "sticky" || o.type === "shape") && (o.text || "").trim()).sort((a, c) => Board.votesFor(c).count - Board.votesFor(a).count || a.y - c.y || a.x - c.x);
@@ -66,6 +85,17 @@ const Deck = (() => {
     const widgets = items.filter((o) => o.type === "widget");
     const texts = items.filter((o) => o.type === "text" && (o.text || "").trim()).sort((a, c) => (c.fs || 18) - (a.fs || 18));
     const out = [];
+    // AI recap of this frame: its takeaway and merged points first, then the
+    // frame's pictures, tables, checklists and Brandlab data as they are.
+    if (sum && (sum.inti || sum.poin.length)) {
+      out.push({ layout: "points", title: sum.judul || title, big: sum.inti, bullets: sum.poin, links: Exporter.linksOf(items).slice(0, 4) });
+      const imgs = media.filter((o) => o.type === "image");
+      if (imgs.length >= 2) out.push({ layout: "mood", title: `${sum.judul || title}: visual`, tiles: imgs.slice(0, 6).map((o) => ({ kind: "img", src: o.data.src })), note: "" });
+      for (const t of tables) out.push({ layout: "table", title: t.text || title, rows: (t.data.rows || []).slice(0, 8).map((r) => r.slice(0, 5)) });
+      for (const c of checks) out.push({ layout: "bullets", title: c.text || title, bullets: (c.data.items || []).filter((i) => i.t).map((i) => (i.done ? "✓ " : "") + i.t) });
+      for (const w of widgets) { const s2 = widgetSlide(w, title); if (s2) out.push(s2); }
+      return out;
+    }
     if (media.length >= 2 || (media.length && stickies.length < 2)) {
       const sw = items.filter((o) => o.type === "shape" && o.data?.solid).map((o) => ({ kind: "swatch", hex: o.color, label: o.text }));
       out.push({ layout: "mood", title, tiles: [...media.map((o) => o.type === "image" ? { kind: "img", src: o.data.src } : { kind: "link", title: o.data.title, sub: o.data.kind === "link" ? o.data.domain : o.data.kind === "youtube" ? "Video YouTube" : o.data.kind === "tiktok" ? "Video TikTok" : "Instagram", url: o.data.url }), ...sw].slice(0, 6), note: texts[0]?.text || "" });
@@ -107,8 +137,10 @@ const Deck = (() => {
       case "agenda": case "bullets": inner = `${E("title", tx(s.title), "h2")}<ul class="bl">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul>`; break;
       case "summary": inner = `${E("title", tx(s.title), "h2")}<div class="two"><div>${E("body", tx(s.body), "div", "")}</div><div class="col"><h3>${tx(s.side)}</h3><ul class="bl">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul></div></div>`; break;
       case "ideas": { const n2 = (s.items || []).length; inner = `${E("title", tx(s.title), "h2")}<div class="ideas n${Math.min(n2, 6)}">${(s.items || []).map((it, i) => `<div class="idea">${it.tag ? `<span class="itag">${tx(it.tag)}</span>` : ""}${E(`items.${i}.title`, tx(it.title), "div", "it")}${it.votes ? `<span class="iv">${it.votes} vote</span>` : ""}</div>`).join("")}</div>`; break; }
+      case "points": inner = `${E("title", tx(s.title), "h2")}${s.big ? E("big", tx(s.big), "div", "pbig") : ""}<ul class="bl${(s.bullets || []).length > 3 ? " cols" : ""}">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul>${(s.links || []).length ? `<div class="lchips">${s.links.map((l) => `<span class="lchip" data-url="${esc(l.url)}">${tx(l.kind)}: ${tx(l.title)}</span>`).join("")}</div>` : ""}`; break;
+      case "links": inner = `${E("title", tx(s.title), "h2")}<div class="refs">${(s.links || []).map((l, i) => `<div class="ref" data-url="${esc(l.url)}"><span class="rk">${tx(l.kind)}</span>${E(`links.${i}.title`, tx(l.title), "b")}<span class="ru">${tx(shortUrl(l.url))}</span></div>`).join("")}</div>`; break;
       case "two": inner = `${E("title", tx(s.title), "h2")}<div class="two"><div class="col"><ul class="bl">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul></div><div class="col">${E("body", tx(s.body))}</div></div>`; break;
-      case "mood": inner = `${E("title", tx(s.title), "h2")}<div class="mood">${(s.tiles || []).map((m) => m.kind === "img" ? `<div class="mi"><img src="${esc(m.src)}" alt=""></div>` : m.kind === "swatch" ? `<div class="mi sw" style="background:${esc(m.hex)};color:${readableOn(m.hex)}">${tx(m.label)}</div>` : `<div class="mi lnk"><b>${tx(m.title)}</b><span>${tx(m.sub)}</span></div>`).join("")}</div>`; break;
+      case "mood": inner = `${E("title", tx(s.title), "h2")}<div class="mood">${(s.tiles || []).map((m) => m.kind === "img" ? `<div class="mi"><img src="${esc(m.src)}" alt=""></div>` : m.kind === "swatch" ? `<div class="mi sw" style="background:${esc(m.hex)};color:${readableOn(m.hex)}">${tx(m.label)}</div>` : `<div class="mi lnk"${m.url ? ` data-url="${esc(m.url)}"` : ""}><b>${tx(m.title)}</b><span>${tx(m.sub)}</span></div>`).join("")}</div>`; break;
       case "stats": { const max = s.chart ? Math.max(...s.chart.values) : 1, min = s.chart ? Math.min(...s.chart.values) * 0.9 : 0; inner = `${E("title", tx(s.title), "h2")}<div class="stats">${(s.stats || []).map((x) => `<div><b>${tx(x.v)}</b><span>${tx(x.l)}</span></div>`).join("")}</div>${s.chart ? `<div class="chart">${s.chart.values.map((v, i) => `<div class="cb"><em>${num(v, 1)}</em><i style="height:${((v - min) / (max - min || 1)) * 150 + 20}px;opacity:${i === s.chart.values.length - 1 ? 1 : 0.55}"></i><span>${tx(s.chart.labels[i])}</span></div>`).join("")}</div>` : ""}`; break; }
       case "timeline": inner = `${E("title", tx(s.title), "h2")}<div class="tline">${(s.rows || []).map((r, i) => `<div class="tr">${E(`rows.${i}.date`, tx(r.date), "span", "d")}${E(`rows.${i}.label`, tx(r.label), "b")}${E(`rows.${i}.owner`, tx(r.owner), "span", "o")}</div>`).join("")}</div>`; break;
       case "table": inner = `${E("title", tx(s.title), "h2")}<table class="st">${(s.rows || []).map((r, ri) => `<tr>${r.map((c, ci) => `<td data-f="rows.${ri}.${ci}">${tx(c)}</td>`).join("")}</tr>`).join("")}</table>`; break;
@@ -133,6 +165,7 @@ const Deck = (() => {
   function pick() {
     const frames = Store.objects().filter((o) => o.type === "frame" && Canvas.visible(o)).sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
     const hasVotes = Store.objects().some((o) => Board.votesFor(o).count || o.tag === "terpilih");
+    const nLinks = Exporter.linksOf().length;
     root.innerHTML = `<div class="deck-top"><h2>Jadikan presentasi</h2><span style="flex:1"></span><button class="btn btn-ghost" data-d="close">${ic("x")}<span class="lbl">Tutup</span></button></div>
       <div class="deck-pick"><h3>Pilih isi slide</h3><p class="muted" style="margin:0 0 18px">Tiap frame jadi slide dengan tata letak yang cocok dengan isinya: kartu ide, moodboard, tabel, angka, atau linimasa. Bukan screenshot papan.</p>
       <div class="stack">${frames.length ? frames.map((f) => `<label class="pickrow"><input type="checkbox" data-fr="${f.id}" checked><span class="t"><b>${esc(f.text)}</b><span>${frameContents(f).length} objek</span></span></label>`).join("") : `<div class="note">${ic("info")}<span>Papan ini belum punya frame. Kelompokkan isi papan dengan Frame (F) supaya tiap bagian jadi slide.</span></div>`}
@@ -141,16 +174,25 @@ const Deck = (() => {
       <label class="pickrow${hasVotes ? "" : " off"}"><input type="checkbox" id="dVoted" ${hasVotes ? "checked" : "disabled"}><span class="t"><b>Ide terpilih</b><span>${hasVotes ? "Dari hasil voting" : "Belum ada voting di papan ini"}</span></span></label>
       <label class="pickrow"><input type="checkbox" id="dIdent"><span class="t"><b>Identitas brand</b><span>Warna, font, positioning dari Brand Book</span></span></label>
       <label class="pickrow"><input type="checkbox" id="dAct" checked><span class="t"><b>Rencana aksi & langkah berikutnya</b><span>Dari checklist dan tugas papan ini</span></span></label>
+      <label class="pickrow${nLinks ? "" : " off"}"><input type="checkbox" id="dLinks" ${nLinks ? "checked" : "disabled"}><span class="t"><b>Referensi & video</b><span>${nLinks ? `${nLinks} link/video dari papan, bisa diklik di PPTX dan PDF` : "Belum ada link atau video di papan ini"}</span></span></label>
       <div class="add-sec">Gaya</div><div class="seg" id="dTheme"><button data-v="brand" class="${theme === "brand" ? "on" : ""}">${esc(THEMES.brand().name)}</button><button data-v="lab" class="${theme === "lab" ? "on" : ""}">Brandlab gelap</button></div>
-      <label class="pickrow" style="margin-top:6px"><input type="checkbox" id="dAI" ${AI.available ? "" : "disabled"}><span class="t"><b>Rapikan teks slide dengan AI ${UI.AI_COST}</b><span>${AI.available ? "Judul lebih tajam, poin lebih singkat. Tidak menambah fakta." : "AI belum aktif di tampilan ini"}</span></span></label>
+      <label class="pickrow" style="margin-top:6px"><input type="checkbox" id="dAI" ${AI.available ? "checked" : "disabled"}><span class="t"><b>Rangkum tiap bagian dengan AI ${UI.AI_COST}</b><span>${AI.available ? "Tiap frame jadi satu slide berisi kesimpulan + 3–5 poin rangkuman, bukan salinan semua sticky. Hanya dari isi papan, tidak menambah fakta." : "AI belum aktif di tampilan ini. Tanpa AI, tiap catatan ditampilkan apa adanya."}</span></span></label>
       <button class="btn btn-primary" data-d="build" style="margin-top:8px;padding:13px">${ic("slides")} Buat slide</button></div></div>`;
     root.querySelector("#dTheme").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; theme = b.dataset.v; root.querySelectorAll("#dTheme button").forEach((x) => x.classList.toggle("on", x === b)); };
     root.onclick = async (e) => {
       const d = e.target.closest("[data-d]")?.dataset.d;
       if (d === "close") close();
       if (d === "build") {
-        slides = build({ frames: $$("[data-fr]", root).filter((x) => x.checked).map((x) => x.dataset.fr), recap: $("#dRecap").checked, voted: $("#dVoted").checked, identity: $("#dIdent").checked, actions: $("#dAct").checked });
-        if ($("#dAI").checked) { e.target.closest("button").innerHTML = '<span class="spinner"></span> Merapikan teks…'; const p = await AI.polishDeck(slides); if (p) slides = p; }
+        const opts = { frames: $$("[data-fr]", root).filter((x) => x.checked).map((x) => x.dataset.fr), recap: $("#dRecap").checked, voted: $("#dVoted").checked, identity: $("#dIdent").checked, actions: $("#dAct").checked, links: $("#dLinks").checked };
+        let ai = null;
+        if ($("#dAI").checked && opts.frames.length) {
+          const btn = e.target.closest("button"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> AI merangkum tiap bagian…';
+          const r = Rules.recap();
+          ai = await AI.deckRecap(recapInput(opts.frames), { name: (Store.board()?.name || "").replace(/^Contoh · /, ""), keputusan: r.keputusan, tugas: r.aksi.map((a) => a.tugas) });
+          if (!ai) toast("AI belum berhasil merangkum. Slide dibuat dari isi papan apa adanya.");
+          if (!root) return;
+        }
+        slides = build(opts, ai);
         idx = 0; persist(); editor();
       }
     };
@@ -199,7 +241,9 @@ const Deck = (() => {
   function convertLayout(s, lay) {
     const texts = [s.title, s.big, s.body, ...(s.bullets || []), ...(s.items || []).map((x) => x.title), ...(s.rows || []).map((r) => (Array.isArray(r) ? r.join(" · ") : r.label))].filter(Boolean);
     const n = { id: s.id, layout: lay, title: s.title || texts[0] || "Judul" };
-    if (["bullets", "agenda", "summary", "two"].includes(lay)) n.bullets = s.bullets || (s.items || []).map((x) => x.title) || texts.slice(1, 6);
+    if (["bullets", "agenda", "summary", "two", "points"].includes(lay)) n.bullets = s.bullets || (s.items || []).map((x) => x.title) || texts.slice(1, 6);
+    if (lay === "points") { n.big = s.big || s.body || ""; n.links = s.links || []; }
+    if (lay === "links") n.links = s.links || Exporter.linksOf().slice(0, 6);
     if (lay === "summary" || lay === "two") { n.body = s.body || s.big || ""; n.side = s.side || "Poin"; }
     if (lay === "ideas") n.items = s.items || (s.bullets || texts.slice(1, 7)).map((t) => ({ title: t }));
     if (lay === "statement") { n.big = s.big || texts[1] || s.title; n.body = s.body || ""; }
@@ -286,6 +330,10 @@ const Deck = (() => {
           case "closing": sl.addText(s.title || "", { x: X(88), y: X(250), w: X(1000), h: X(150), fontFace: t.disp, fontSize: 66, color: fg }); sl.addText(s.subtitle || "", { x: X(88), y: X(410), w: X(900), h: X(50), fontFace: t.body, fontSize: 20, color: fg }); break;
           case "statement": sl.addText(s.title || "", { x: X(88), y: X(150), w: X(1000), h: X(40), fontFace: t.body, fontSize: 14, bold: true, color: H(t.acc), charSpacing: 4 }); sl.addText(s.big || "", { x: X(88), y: X(200), w: X(1050), h: X(260), fontFace: t.disp, fontSize: 36, color: fg, valign: "top", fit: "shrink" }); if (s.body) sl.addText(s.body, { x: X(88), y: X(480), w: X(950), h: X(120), fontFace: t.body, fontSize: 17, color: fg, valign: "top", fit: "shrink" }); break;
           case "agenda": case "bullets": title(s.title); bullets(s.bullets); break;
+          case "points": { title(s.title); let y = 168; if (s.big) { sl.addShape(P.ShapeType.roundRect, { x: X(88), y: X(y), w: X(1104), h: X(104), fill: { color: H(t.card) }, line: { color: H(t.acc), width: 1 }, rectRadius: 0.12 }); sl.addText(s.big, { x: X(112), y: X(y + 6), w: X(1060), h: X(92), fontFace: t.body, fontSize: 19, bold: true, color: fg, valign: "middle", fit: "shrink" }); y += 128; }
+            bullets(s.bullets, y, 1104); (s.links || []).forEach((l, i) => sl.addText(`${l.kind}: ${l.title}`, { x: X(88 + i * 276), y: X(606), w: X(264), h: X(34), fontFace: t.body, fontSize: 10, bold: true, color: fg, fill: { color: H(t.card) }, align: "center", valign: "middle", fit: "shrink", hyperlink: { url: l.url } })); break; }
+          case "links": title(s.title); (s.links || []).forEach((l, i) => { const cx = 88 + (i % 2) * 562, cy = 182 + Math.floor(i / 2) * 150; sl.addShape(P.ShapeType.roundRect, { x: X(cx), y: X(cy), w: X(542), h: X(134), fill: { color: H(t.card) }, line: { color: H(t.card) }, rectRadius: 0.12 });
+            sl.addText([{ text: String(l.kind).toUpperCase(), options: { fontSize: 10, bold: true, color: H(t.acc), breakLine: true } }, { text: l.title || l.url, options: { fontSize: 15, bold: true, color: fg, breakLine: true, hyperlink: { url: l.url } } }, { text: shortUrl(l.url), options: { fontSize: 10, color: fg, hyperlink: { url: l.url } } }], { x: X(cx + 20), y: X(cy + 12), w: X(502), h: X(110), fontFace: t.body, valign: "top", fit: "shrink" }); }); break;
           case "summary": case "two": title(s.title); sl.addText(s.body || "", { x: X(88), y: X(190), w: X(520), h: X(440), fontFace: t.body, fontSize: 18, color: fg, valign: "top", fit: "shrink" }); if (s.side) sl.addText(s.side.toUpperCase(), { x: X(660), y: X(190), w: X(530), h: X(30), fontFace: t.body, fontSize: 13, bold: true, color: H(t.acc), charSpacing: 3 }); bullets(s.bullets, 230, 530, 660); break;
           case "ideas": { title(s.title); const it = s.items || [], cols = it.length <= 2 ? it.length : it.length === 4 ? 2 : 3, rows = Math.ceil(it.length / cols), gw = 1104, gh = 440, cw = (gw - (cols - 1) * 22) / cols, ch = Math.min(200, (gh - (rows - 1) * 22) / rows);
             it.forEach((x, i) => { const cx = 88 + (i % cols) * (cw + 22), cy = 190 + Math.floor(i / cols) * (ch + 22); sl.addShape(P.ShapeType.roundRect, { x: X(cx), y: X(cy), w: X(cw), h: X(ch), fill: { color: H(t.card) }, line: { color: H(t.card) }, rectRadius: 0.15 }); sl.addText((x.tag ? x.tag.toUpperCase() + "\n" : "") + x.title, { x: X(cx + 18), y: X(cy + 14), w: X(cw - 36), h: X(ch - 28), fontFace: t.body, fontSize: 16, bold: true, color: fg, valign: "top", fit: "shrink" }); if (x.votes) sl.addText(`${x.votes} vote`, { x: X(cx + cw - 110), y: X(cy - 14), w: X(96), h: X(28), fontFace: t.body, fontSize: 11, bold: true, color: H(t.dark), fill: { color: H(t.acc) }, align: "center", rectRadius: 0.2 }); }); break; }
@@ -321,6 +369,9 @@ const Deck = (() => {
         const c = await window.html2canvas(host.firstElementChild, { scale: 1.5, useCORS: true, backgroundColor: null, logging: false, width: 1280, height: 720 });
         if (i) pdf.addPage([1280, 720], "landscape");
         pdf.addImage(c.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, 1280, 720);
+        // links and videos stay clickable on top of the slide picture
+        const box = host.firstElementChild.getBoundingClientRect();
+        host.querySelectorAll("[data-url]").forEach((el) => { const r = el.getBoundingClientRect(), u = safeUrl(el.dataset.url); if (u && r.width) pdf.link(r.left - box.left, r.top - box.top, r.width, r.height, { url: u.href }); });
       }
       host.remove();
       await save(fileBase() + ".pdf", pdf.output("blob"));

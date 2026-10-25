@@ -128,8 +128,34 @@ const Store = (() => {
     }
   }
   function closeBoardSubs() { ["objects", "comments"].forEach((k) => { if (subs[k]) { try { subs[k](); } catch {} delete subs[k]; } }); }
+  // Back to the Papan home (14-home.js): no board open, no listeners on its objects.
+  function closeBoard() {
+    if (!S.boardId) return;
+    if (mode === "local" && S.loaded) saveLocalNow();
+    saveThumb(true);
+    closeBoardSubs();
+    S.boardId = null; S.objects.clear(); S.comments.clear(); S.loaded = false;
+    emit("board-close");
+  }
+  // A small drawing of the board for its card on the home (UI.previewSVG):
+  // frames first, then the biggest things, so a busy board stays a few KB.
+  let lastThumb = 0, thumbDirty = false;
+  function boardThumb() {
+    const all = [...S.objects.values()].filter((o) => o.type !== "connector" && o.type !== "pen" && !o.internal);
+    const pick = [...all.filter((o) => o.type === "frame"), ...all.filter((o) => o.type !== "frame").sort((a, b) => b.w * b.h - a.w * a.h)].slice(0, 140);
+    try { return typeof UI !== "undefined" ? UI.previewSVG(pick) : ""; } catch { return ""; }
+  }
+  function saveThumb(force) {
+    const now = Date.now();
+    // never for a board that is gone: updateBoard would write it back
+    if (!S.boardId || !S.boards.get(S.boardId)?.createdAt || !S.loaded || GUEST() || !canWrite || !thumbDirty || (!force && now - lastThumb < 120000)) return;
+    lastThumb = now; thumbDirty = false;
+    const t = boardThumb();
+    if (t.length < 60000) updateBoard({ thumb: t, count: S.objects.size });
+  }
   function openBoard(id) {
     if (S.boardId === id && S.loaded) return;
+    if (S.boardId && S.boardId !== id) saveThumb(true);
     if (mode === "local" && S.boardId && S.loaded) saveLocalNow(); // flush before the board switches under the debounce
     closeBoardSubs();
     S.boardId = id; S.objects.clear(); S.comments.clear(); S.loaded = false;
@@ -169,9 +195,11 @@ const Store = (() => {
   let lastTouch = 0;
   function touchBoard() {
     const now = Date.now();
+    thumbDirty = true;
     if (GUEST() || now - lastTouch < 30000) return; // guests can't write the board doc itself
     lastTouch = now;
     updateBoard({ updatedAt: now, updatedBy: me.id });
+    saveThumb(false);
   }
   function commit(changes) {
     const ids = new Set();
@@ -231,7 +259,9 @@ const Store = (() => {
     const bid = id || uid("b");
     if (mode === "local" && S.boardId && S.loaded) saveLocalNow();
     const n = Date.now();
-    const meta = { id: bid, name, kind, createdAt: n, createdBy: me.id, updatedAt: n, updatedBy: me.id, voting: { active: false, round: 0, per: 3 }, ...extra };
+    let thumb = "";
+    if (objects.length) try { thumb = UI.previewSVG(objects.filter((o) => o.type !== "connector" && o.type !== "pen").slice(0, 140)); } catch {}
+    const meta = { id: bid, name, kind, createdAt: n, createdBy: me.id, updatedAt: n, updatedBy: me.id, voting: { active: false, round: 0, per: 3 }, ...(thumb && thumb.length < 60000 ? { thumb } : {}), ...extra };
     S.boards.set(bid, meta);
     write(`boards/${bid}`, "set", meta);
     emit("boards");
@@ -339,6 +369,11 @@ const Store = (() => {
     }
     return it;
   }
+  // One saved notulen of any board (the home opens it without opening the board).
+  async function getRecap(bid, id) {
+    if (mode === "db") { try { const d = await db.doc(`boards/${bid}/recaps/${id}`).get(); return d.exists ? { ...d.data(), id } : null; } catch { return null; } }
+    return LS.get(`recaps:${bid}`, []).find((x) => x.id === id) || null;
+  }
   async function deleteFrom(name, id) {
     if (mode === "db") await db.doc(`boards/${S.boardId}/${name}/${id}`).delete().catch(() => {});
     else LS.set(`${name}:${S.boardId}`, LS.get(`${name}:${S.boardId}`, []).filter((x) => x.id !== id));
@@ -364,10 +399,10 @@ const Store = (() => {
   const blobToDataURL = (b) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });
 
   return {
-    S, me, on: (fn) => handlers.add(fn), emit, init, openBoard, boards, board, updateBoard, createBoard, deleteBoard,
+    S, me, on: (fn) => handlers.add(fn), emit, init, openBoard, closeBoard, saveThumb, boards, board, updateBoard, createBoard, deleteBoard,
     obj: (id) => S.objects.get(id), objects: () => [...S.objects.values()], commit, patchObj, newObject, nextZ,
     comments: () => [...S.comments.values()], addComment, updateComment, deleteComment,
-    lab, labSave, labDoc, snapshotObjects, listColl, saveColl, deleteFrom, getDeck, saveDeck, uploadImage,
+    lab, labSave, labDoc, snapshotObjects, listColl, saveColl, deleteFrom, getRecap, getDeck, saveDeck, uploadImage,
     get mode() { return mode; }, get canWrite() { return canWrite; }, set canWrite(v) { canWrite = v; }, get hasAssets() { return !!assets; },
   };
 })();

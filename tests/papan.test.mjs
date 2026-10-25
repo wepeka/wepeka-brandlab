@@ -19,6 +19,11 @@ test("the built canvas matches papan/version.js and loads no inline script", () 
   assert.match(html, new RegExp(`app\\.js\\?v=${ver}`));
   assert.equal([...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>/g)].length, 0, "Brandlab's CSP blocks inline scripts");
 });
+test("the canvas links its CSS and JS by absolute path (PDF captures copy the page elsewhere)", () => {
+  const html = readFileSync(new URL("../papan/index.html", import.meta.url), "utf8");
+  assert.match(html, /<link rel="stylesheet" href="\/papan\/app\.css\?v=/);
+  assert.match(html, /<script src="\/papan\/app\.js\?v=/);
+});
 test("the canvas page may be framed by Brandlab only", () => {
   const v = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
   const papan = v.headers.find((h) => h.source === "/papan/(.*)");

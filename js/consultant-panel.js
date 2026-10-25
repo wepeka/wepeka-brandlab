@@ -596,7 +596,7 @@ function relevantNav(nav, text) {
 function pulseNow(brandId) {
   const board = boardCtx.get(brandId)?.summary?.();
   const base = pulseNowBase(brandId);
-  return board ? `${base}\n\n${t("papan.chatContext")}:\n${String(board).slice(0, 6000)}` : base;
+  return board ? `${base}\n\n${t("papan.chatContext")}:\n${String(board).slice(0, 7500)}` : base;
 }
 function pulseNowBase(brandId) {
   const brand = getBrand(brandId);

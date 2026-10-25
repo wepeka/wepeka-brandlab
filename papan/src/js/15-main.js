@@ -20,6 +20,7 @@ const App = (() => {
     $("#zoombar").innerHTML = `<button class="icon-btn readonly-hide" id="undoBtn" data-tip="Batal" data-key="Ctrl Z" aria-label="Batal">${ic("undo")}</button><button class="icon-btn readonly-hide" id="redoBtn" data-tip="Ulangi" data-key="Ctrl Shift Z" aria-label="Ulangi">${ic("redo")}</button><span class="sep readonly-hide"></span><button class="icon-btn" id="zoomOut" data-tip="Perkecil" data-key="−" aria-label="Perkecil">${ic("minus")}</button><button class="zl tnum" id="zoomLbl" data-tip="Zoom 100%" data-key="Shift 0">100%</button><button class="icon-btn" id="zoomIn" data-tip="Perbesar" data-key="+" aria-label="Perbesar">${ic("plus")}</button><button class="icon-btn" id="zoomFit" data-tip="Lihat semua" data-key="Shift 1" aria-label="Lihat semua">${ic("fit")}</button>`;
     $("#helpBtn").innerHTML = ic("keyboard");
     $("#boardBtn").insertAdjacentHTML("beforeend", ic("chevronDown"));
+    if (BL() && !GUEST()) $("#homeBtn").innerHTML = ic("grid"); else $("#homeBtn")?.remove();
     $("#brandMark").innerHTML = MARK_SVG("#F3E6D3", "#E2683C");
     $("#shareBtn").insertAdjacentHTML("afterbegin", ic("users"));
     $("#deckBtn").insertAdjacentHTML("afterbegin", ic("slides"));
@@ -95,6 +96,14 @@ const App = (() => {
     Store.on((k, info) => {
       if (k === "boards" && !opened && Store.S.boardsLoaded) {
         opened = true;
+        // Brandlab team: the Papan tab opens the home (14-home.js); a board's
+        // own address (#/brand/:id/papan/:boardId) opens that board.
+        if (BL() && !GUEST()) {
+          const want = window.__papanBridge?.boardId;
+          if (want && Store.boards().some((b) => b.id === want)) Store.openBoard(want);
+          else Home.open();
+          return;
+        }
         const list = Store.boards(), last = LS.get("lastBoard");
         const pick = list.find((b) => b.id === last) || (BL() ? null : list.find((b) => b.kind === "example")) || list[0];
         if (pick) Store.openBoard(pick.id);
@@ -102,9 +111,11 @@ const App = (() => {
         else showEmpty();
       }
       if (k === "boards" && opened && Store.S.boardId && !Store.boards().some((b) => b.id === Store.S.boardId)) {
+        if (BL() && !GUEST()) { toast("Papan ini dihapus"); Home.open(); return; }
         const next = Store.boards()[0]; if (next) { toast("Papan ini dihapus oleh anggota lain"); Store.openBoard(next.id); } else showEmpty();
       }
-      if (k === "board-open") { hideEmpty(); Collab.presence({ b: info.id, sel: [], edit: null }); UI.updateTop(); try { window.__papanBridge?.boardChanged(info.id); } catch {} }
+      if (k === "board-open") { hideEmpty(); Home.close(); Collab.presence({ b: info.id, sel: [], edit: null }); UI.updateTop(); try { window.__papanBridge?.boardChanged(info.id); } catch {} }
+      if (k === "board-close") { Collab.presence({ b: null, sel: [], edit: null }); try { window.__papanBridge?.boardChanged(null); } catch {} }
       if (k === "objects" && info?.first) { setTimeout(() => { readableFit(); setTimeout(() => UI.tour(), 500); }, 30); }
     });
     if (Store.S.boardsLoaded && !opened) Store.emit("boards");

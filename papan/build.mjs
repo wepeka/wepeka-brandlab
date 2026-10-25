@@ -9,6 +9,9 @@
 // The canvas source is the same code as the claude.ai prototype; only the host
 // file differs (src/host/host-brandlab.js wires it to js/papan/bridge.js).
 // Brandlab's CSP allows no inline script, so app.js is a separate file.
+// Both are linked by absolute path: html2canvas (board and deck PDFs) copies
+// the page into a blank frame whose base is Brandlab's root, where a
+// relative app.css would not resolve and every capture came out unstyled.
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -45,11 +48,11 @@ async function main() {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap">
-<link rel="stylesheet" href="app.css?v=${hash}">
+<link rel="stylesheet" href="/papan/app.css?v=${hash}">
 </head>
 <body>
 ${(await read("body.html")).trim()}
-<script src="app.js?v=${hash}"></script>
+<script src="/papan/app.js?v=${hash}"></script>
 </body>
 </html>
 `;

@@ -196,7 +196,7 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     }, 60);
     return out.length;
   }
-  window.__papanSummary = () => `Papan "${(Store.board()?.name || "").replace(/^Contoh · /, "")}"\n${boardContext(false, true)}`;
+  window.__papanSummary = () => (Store.board() ? `Papan "${(Store.board()?.name || "").replace(/^Contoh · /, "")}"\n${boardContext(false, true)}` : "");
   window.__papanPlace = place;
   return { open, send, place };
 })();

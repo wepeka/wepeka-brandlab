@@ -31,6 +31,8 @@ const ICON = {
   book: `<path d="M4 19.5V5.5A2.5 2.5 0 016.5 3H20v15.5H6.5A2.5 2.5 0 004 21z"/><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>`,
   target: `<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.9" fill="currentColor"/>`,
   layers: `<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17l9 5 9-5"/>`,
+  folder: `<path d="M3 7.5A2.5 2.5 0 015.5 5h3.6l2 2.2h7.4A2.5 2.5 0 0121 9.7v7.8a2.5 2.5 0 01-2.5 2.5h-13A2.5 2.5 0 013 17.5z"/>`,
+  home: `<path d="M4 11l8-6.5 8 6.5"/><path d="M6 9.5V19h12V9.5"/>`,
   download: `<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>`,
   info: `<circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/>`,
   help: `<circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.8 2.8 0 015.4.9c0 1.8-2.4 2.1-2.6 3.6"/><path d="M12 17v.01"/>`,

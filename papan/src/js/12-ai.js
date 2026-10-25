@@ -74,20 +74,28 @@ Kata yang dihindari: ${b.avoid.join(", ")}`;
       if (!r || typeof r !== "object") return null;
       return { name: String(r.name || ""), objective: String(r.objective || ""), audience: String(r.audience || ""), strategy: String(r.strategy || ""), channels: Array.isArray(r.channels) ? r.channels.map(String) : [] };
     },
-    async polishDeck(slides) {
-      const slim = slides.map((s, i) => ({ i, title: s.title, subtitle: s.subtitle, bullets: s.bullets, items: (s.items || []).map((x) => x.title), body: s.body }));
-      const r = await ask(`Rapikan teks slide presentasi berikut: judul lebih tajam (maks 7 kata), poin lebih singkat (maks 12 kata). Jangan menambah fakta, angka, nama, atau tanggal baru. Jumlah poin dan item tetap sama.\n${JSON.stringify(slim)}\nBalas HANYA JSON array dengan bentuk yang sama.`);
-      if (!Array.isArray(r)) return null;
-      return slides.map((s, i) => {
-        const x = r.find((y) => Number(y.i) === i); if (!x) return s;
-        const n = clone(s);
-        if (x.title) n.title = String(x.title);
-        if (x.subtitle && s.subtitle) n.subtitle = String(x.subtitle);
-        if (Array.isArray(x.bullets) && s.bullets) n.bullets = s.bullets.map((b, j) => String(x.bullets[j] || b));
-        if (Array.isArray(x.items) && s.items) n.items = s.items.map((it, j) => ({ ...it, title: String(x.items[j] || it.title) }));
-        if (x.body && s.body) n.body = String(x.body);
-        return n;
-      });
+    // The deck as a real recap: per frame a takeaway + 3–5 points that merge
+    // the notes (not a copy of every sticky), plus the meeting's summary and
+    // next steps. Grounded in the board only. `parts` from Deck.recapInput().
+    async deckRecap(parts, extra) {
+      const r = await ask(`${brandContext()}\n\nKamu menyusun presentasi HASIL RAPAT dari isi papan tim di bawah. Pembaca presentasi tidak ikut rapat, jadi tiap slide harus langsung menjelaskan apa hasilnya.
+
+Untuk TIAP bagian (frame) tulis:
+- "judul": maks 7 kata, boleh memakai judul aslinya,
+- "inti": 1 kalimat utuh (maks 24 kata) berisi kesimpulan bagian itu, bukan daftar,
+- "poin": 3–5 poin (maks 14 kata per poin) yang MERANGKUM catatan: gabungkan catatan yang mirip, dahulukan yang paling banyak vote atau bertanda Keputusan. Jangan menyalin semua catatan satu per satu.
+Lalu "ringkasan": 2–3 kalimat untuk seluruh rapat, dan "langkah": 2–4 langkah berikutnya yang memang tersirat dari papan.
+
+ATURAN KERAS: hanya dari isi papan. Jangan menambah angka, nama orang, tanggal, merek, atau keputusan yang tidak ada. Kalau sebuah bagian hampir kosong, tulis inti yang jujur (misalnya "Bagian ini belum diisi banyak.") dan poin boleh kosong. ${RULE}
+
+Isi papan:
+${JSON.stringify({ papan: extra?.name || "", keputusan: extra?.keputusan || [], tugas: extra?.tugas || [], bagian: parts })}
+
+Balas HANYA JSON: {"bagian": [{"id": "…", "judul": "…", "inti": "…", "poin": ["…"]}], "ringkasan": "…", "langkah": ["…"]}`);
+      if (!r || typeof r !== "object" || !Array.isArray(r.bagian)) return r == null ? null : (toast("Format jawaban AI tidak sesuai"), null);
+      const byId = new Map();
+      for (const b of r.bagian) if (b && b.id) byId.set(String(b.id), { judul: String(b.judul || "").slice(0, 90), inti: String(b.inti || "").slice(0, 240), poin: (Array.isArray(b.poin) ? b.poin : []).map(String).filter(Boolean).slice(0, 5).map((x) => x.slice(0, 160)) });
+      return { byId, ringkasan: String(r.ringkasan || "").slice(0, 600), langkah: (Array.isArray(r.langkah) ? r.langkah : []).map(String).filter(Boolean).slice(0, 4) };
     },
   };
 })();

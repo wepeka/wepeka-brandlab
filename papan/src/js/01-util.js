@@ -67,6 +67,12 @@ function timeAgo(ts) {
   if (s < 86400) return `${Math.round(s / 3600)} jam lalu`;
   return fmtDate(ts);
 }
+// "45 mnt", "1 j 20 mnt" for a meeting's length.
+function durLabel(ms) { const m = Math.round((ms || 0) / 60000); if (!ms || m < 1) return ms ? "< 1 mnt" : "–"; return m < 60 ? `${m} mnt` : `${Math.floor(m / 60)} j${m % 60 ? ` ${m % 60} mnt` : ""}`; }
+// How much one brand may keep, so the shared database stays small: boards per
+// brand and pictures per board (pictures are stored inside the board's data).
+// A host can set window.__papanLimits; Brandlab uses these.
+const LIMITS = { boards: 20, images: 30, ...(window.__papanLimits || {}) };
 const rupiah = (n) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
 const num = (n, d = 0) => (isFinite(n) ? Number(n).toLocaleString("id-ID", { maximumFractionDigits: d, minimumFractionDigits: 0 }) : "–");
 const pct = (n, d = 1) => (isFinite(n) ? num(n, d) + "%" : "–");

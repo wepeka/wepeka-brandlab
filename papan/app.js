@@ -593,6 +593,12 @@ function timeAgo(ts) {
   if (s < 86400) return `${Math.round(s / 3600)} jam lalu`;
   return fmtDate(ts);
 }
+// "45 mnt", "1 j 20 mnt" for a meeting's length.
+function durLabel(ms) { const m = Math.round((ms || 0) / 60000); if (!ms || m < 1) return ms ? "< 1 mnt" : "–"; return m < 60 ? `${m} mnt` : `${Math.floor(m / 60)} j${m % 60 ? ` ${m % 60} mnt` : ""}`; }
+// How much one brand may keep, so the shared database stays small: boards per
+// brand and pictures per board (pictures are stored inside the board's data).
+// A host can set window.__papanLimits; Brandlab uses these.
+const LIMITS = { boards: 20, images: 30, ...(window.__papanLimits || {}) };
 const rupiah = (n) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
 const num = (n, d = 0) => (isFinite(n) ? Number(n).toLocaleString("id-ID", { maximumFractionDigits: d, minimumFractionDigits: 0 }) : "–");
 const pct = (n, d = 1) => (isFinite(n) ? num(n, d) + "%" : "–");
@@ -713,6 +719,8 @@ const ICON = {
   book: `<path d="M4 19.5V5.5A2.5 2.5 0 016.5 3H20v15.5H6.5A2.5 2.5 0 004 21z"/><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>`,
   target: `<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.9" fill="currentColor"/>`,
   layers: `<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17l9 5 9-5"/>`,
+  folder: `<path d="M3 7.5A2.5 2.5 0 015.5 5h3.6l2 2.2h7.4A2.5 2.5 0 0121 9.7v7.8a2.5 2.5 0 01-2.5 2.5h-13A2.5 2.5 0 013 17.5z"/>`,
+  home: `<path d="M4 11l8-6.5 8 6.5"/><path d="M6 9.5V19h12V9.5"/>`,
   download: `<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>`,
   info: `<circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/>`,
   help: `<circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.8 2.8 0 015.4.9c0 1.8-2.4 2.1-2.6 3.6"/><path d="M12 17v.01"/>`,
@@ -1132,8 +1140,34 @@ const Store = (() => {
     }
   }
   function closeBoardSubs() { ["objects", "comments"].forEach((k) => { if (subs[k]) { try { subs[k](); } catch {} delete subs[k]; } }); }
+  // Back to the Papan home (14-home.js): no board open, no listeners on its objects.
+  function closeBoard() {
+    if (!S.boardId) return;
+    if (mode === "local" && S.loaded) saveLocalNow();
+    saveThumb(true);
+    closeBoardSubs();
+    S.boardId = null; S.objects.clear(); S.comments.clear(); S.loaded = false;
+    emit("board-close");
+  }
+  // A small drawing of the board for its card on the home (UI.previewSVG):
+  // frames first, then the biggest things, so a busy board stays a few KB.
+  let lastThumb = 0, thumbDirty = false;
+  function boardThumb() {
+    const all = [...S.objects.values()].filter((o) => o.type !== "connector" && o.type !== "pen" && !o.internal);
+    const pick = [...all.filter((o) => o.type === "frame"), ...all.filter((o) => o.type !== "frame").sort((a, b) => b.w * b.h - a.w * a.h)].slice(0, 140);
+    try { return typeof UI !== "undefined" ? UI.previewSVG(pick) : ""; } catch { return ""; }
+  }
+  function saveThumb(force) {
+    const now = Date.now();
+    // never for a board that is gone: updateBoard would write it back
+    if (!S.boardId || !S.boards.get(S.boardId)?.createdAt || !S.loaded || GUEST() || !canWrite || !thumbDirty || (!force && now - lastThumb < 120000)) return;
+    lastThumb = now; thumbDirty = false;
+    const t = boardThumb();
+    if (t.length < 60000) updateBoard({ thumb: t, count: S.objects.size });
+  }
   function openBoard(id) {
     if (S.boardId === id && S.loaded) return;
+    if (S.boardId && S.boardId !== id) saveThumb(true);
     if (mode === "local" && S.boardId && S.loaded) saveLocalNow(); // flush before the board switches under the debounce
     closeBoardSubs();
     S.boardId = id; S.objects.clear(); S.comments.clear(); S.loaded = false;
@@ -1173,9 +1207,11 @@ const Store = (() => {
   let lastTouch = 0;
   function touchBoard() {
     const now = Date.now();
+    thumbDirty = true;
     if (GUEST() || now - lastTouch < 30000) return; // guests can't write the board doc itself
     lastTouch = now;
     updateBoard({ updatedAt: now, updatedBy: me.id });
+    saveThumb(false);
   }
   function commit(changes) {
     const ids = new Set();
@@ -1235,7 +1271,9 @@ const Store = (() => {
     const bid = id || uid("b");
     if (mode === "local" && S.boardId && S.loaded) saveLocalNow();
     const n = Date.now();
-    const meta = { id: bid, name, kind, createdAt: n, createdBy: me.id, updatedAt: n, updatedBy: me.id, voting: { active: false, round: 0, per: 3 }, ...extra };
+    let thumb = "";
+    if (objects.length) try { thumb = UI.previewSVG(objects.filter((o) => o.type !== "connector" && o.type !== "pen").slice(0, 140)); } catch {}
+    const meta = { id: bid, name, kind, createdAt: n, createdBy: me.id, updatedAt: n, updatedBy: me.id, voting: { active: false, round: 0, per: 3 }, ...(thumb && thumb.length < 60000 ? { thumb } : {}), ...extra };
     S.boards.set(bid, meta);
     write(`boards/${bid}`, "set", meta);
     emit("boards");
@@ -1343,6 +1381,11 @@ const Store = (() => {
     }
     return it;
   }
+  // One saved notulen of any board (the home opens it without opening the board).
+  async function getRecap(bid, id) {
+    if (mode === "db") { try { const d = await db.doc(`boards/${bid}/recaps/${id}`).get(); return d.exists ? { ...d.data(), id } : null; } catch { return null; } }
+    return LS.get(`recaps:${bid}`, []).find((x) => x.id === id) || null;
+  }
   async function deleteFrom(name, id) {
     if (mode === "db") await db.doc(`boards/${S.boardId}/${name}/${id}`).delete().catch(() => {});
     else LS.set(`${name}:${S.boardId}`, LS.get(`${name}:${S.boardId}`, []).filter((x) => x.id !== id));
@@ -1368,10 +1411,10 @@ const Store = (() => {
   const blobToDataURL = (b) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(b); });
 
   return {
-    S, me, on: (fn) => handlers.add(fn), emit, init, openBoard, boards, board, updateBoard, createBoard, deleteBoard,
+    S, me, on: (fn) => handlers.add(fn), emit, init, openBoard, closeBoard, saveThumb, boards, board, updateBoard, createBoard, deleteBoard,
     obj: (id) => S.objects.get(id), objects: () => [...S.objects.values()], commit, patchObj, newObject, nextZ,
     comments: () => [...S.comments.values()], addComment, updateComment, deleteComment,
-    lab, labSave, labDoc, snapshotObjects, listColl, saveColl, deleteFrom, getDeck, saveDeck, uploadImage,
+    lab, labSave, labDoc, snapshotObjects, listColl, saveColl, deleteFrom, getRecap, getDeck, saveDeck, uploadImage,
     get mode() { return mode; }, get canWrite() { return canWrite; }, set canWrite(v) { canWrite = v; }, get hasAssets() { return !!assets; },
   };
 })();
@@ -2709,6 +2752,8 @@ const Flags = (() => {
 // Board-level state (voting, timer) and every action on objects.
 const Board = (() => {
   const b = () => Store.board() || {};
+  // The first timer of a meeting marks its start (kept until the notulen is saved).
+  const meetingStart = () => (b().meeting?.startedAt ? {} : { meeting: { startedAt: Date.now(), ranMs: 0 } });
   const round = () => b().voting?.round || 0;
   function votesFor(o) {
     const r = round(); if (!r) return { count: 0, mine: false };
@@ -2738,11 +2783,28 @@ const Board = (() => {
     // Meeting timer, seen by everyone: a countdown ("down") or a stopwatch ("up").
     timer() { return b().timer || null; },
     timerMs(t = b().timer) { if (!t) return 0; if (t.mode === "up") return t.running ? Date.now() - t.startedAt : t.elapsed || 0; return t.running ? Math.max(0, t.endsAt - Date.now()) : t.remaining || 0; },
-    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { mode: "down", dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id } }); Board.addPresent(); },
-    startStopwatch() { Store.updateBoard({ timer: { mode: "up", startedAt: Date.now(), elapsed: 0, running: true, by: Store.me.id } }); Board.addPresent(); },
+    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { mode: "down", dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id }, ...meetingStart() }); Board.addPresent(); },
+    startStopwatch() { Store.updateBoard({ timer: { mode: "up", startedAt: Date.now(), elapsed: 0, running: true, by: Store.me.id }, ...meetingStart() }); Board.addPresent(); },
+    // The meeting on this board: when it started (the first timer), how long
+    // the timers ran, who was there. "Selesai rapat" closes it into a notulen.
+    meeting() {
+      const m = b().meeting || {}, t = b().timer, now = Date.now();
+      let ran = m.ranMs || 0;
+      if (t) ran += t.mode === "up" ? (t.running ? now - t.startedAt : t.elapsed || 0) : Math.max(0, (t.dur || 0) - (t.running ? Math.max(0, t.endsAt - now) : t.remaining ?? t.dur ?? 0));
+      return { startedAt: m.startedAt || null, endedAt: t ? null : m.endedAt || null, durationMs: ran, people: Board.attendees().map((p) => p.name) };
+    },
+    endMeeting() {
+      if (!Store.canWrite || GUEST()) return Board.meeting();
+      Board.addPresent();
+      const m = Board.meeting(), now = Date.now();
+      const out = { startedAt: m.startedAt || now - m.durationMs, endedAt: now, ranMs: m.durationMs };
+      Store.updateBoard({ timer: null, meeting: out });
+      return { startedAt: out.startedAt, endedAt: now, durationMs: m.durationMs, people: m.people };
+    },
     pauseTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: false, elapsed: Date.now() - t.startedAt } : { running: false, remaining: Math.max(0, t.endsAt - Date.now()) } }); },
     resumeTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: true, startedAt: Date.now() - (t.elapsed || 0) } : { running: true, endsAt: Date.now() + (t.remaining || 0) } }); },
-    resetTimer() { Store.updateBoard({ timer: null }); },
+    // A timer cleared mid-meeting keeps the minutes it ran.
+    resetTimer() { const m = Board.meeting(); Store.updateBoard({ timer: null, ...(m.startedAt ? { meeting: { ranMs: m.durationMs } } : {}) }); },
     // Meeting attendees: everyone on the board while a timer runs is added on
     // its own (by a team member's screen: guests can't write the board), and
     // anyone can be added by name. They go into the meeting recap.
@@ -2756,7 +2818,7 @@ const Board = (() => {
     },
     addAttendee(name) { const n = String(name || "").trim().slice(0, 60); if (n) Store.updateBoard({ meeting: { people: { [uid("p")]: n } } }); },
     removeAttendee(id) { Store.updateBoard({ meeting: { people: { [id]: null } } }); },
-    clearAttendees() { Store.updateBoard({ meeting: null }); },
+    clearAttendees() { Store.updateBoard({ meeting: { people: null } }); },
   };
 })();
 
@@ -2986,6 +3048,8 @@ const Actions = (() => {
     for (const f of files) {
       const pos = { x: p.x + i * 40, y: p.y + i * 40 }; i++;
       if (f.type.startsWith("image/")) {
+        // pictures live inside the board's data: a cap per board keeps the database small
+        if (Store.objects().filter((o) => o.type === "image").length >= LIMITS.images) { toast(`Papan ini sudah berisi ${LIMITS.images} gambar (batas per papan). Hapus gambar lama atau pakai papan lain.`, { ms: 6000 }); break; }
         const t = toast(`Mengunggah ${f.name}…`, { ms: 20000 });
         try {
           const big = await compress(f, 1600, 0.82);
@@ -3214,6 +3278,7 @@ const UI = (() => {
       <div class="row" style="align-items:center"><input class="field" id="tmin" type="number" min="1" max="240" placeholder="Menit" style="width:90px"><button class="btn btn-primary btn-sm" data-pick="custom">Mulai</button></div>`
         : `<div class="row"><button class="btn btn-primary btn-sm" data-pick="sw">${ic("stopwatch")} ${t?.mode === "up" ? "Mulai dari nol" : "Mulai stopwatch"}</button></div>`}
       ${t ? `<div class="sep"></div>${t.running ? `<button class="mi" data-pick="pause">${ic("pause")} Jeda</button>` : `<button class="mi" data-pick="resume">${ic("play")} Lanjutkan</button>`}<button class="mi" data-pick="reset">${ic("x")} Hapus timer</button>` : ""}
+      ${(t || Store.board()?.meeting?.startedAt) && can && !GUEST() ? `<div class="sep"></div><button class="mi" data-pick="end" style="font-weight:800">${ic("file")} Selesai rapat & tulis notulen<span class="k faint" style="font-size:11px">${esc(durLabel(Board.meeting().durationMs))}</span></button>` : ""}
       <div class="sep"></div>
       <div class="mh">Peserta rapat (${people.length})</div>
       <div class="chips" style="padding:0 10px 8px;max-width:300px">${people.map((p) => `<span class="chip">${esc(p.name)}${can && !GUEST() ? ` <button class="chip-x" data-pick="rm:${esc(p.id)}" aria-label="Hapus ${esc(p.name)}">×</button>` : ""}</span>`).join("") || '<span class="faint" style="font-size:12px">Belum ada. Yang membuka papan saat timer berjalan tercatat otomatis.</span>'}</div>
@@ -3225,6 +3290,7 @@ const UI = (() => {
         if (k === "custom") { const v = +$("#tmin").value; if (!v) { toast("Isi jumlah menit dulu"); return true; } Board.startTimer(clamp(v, 1, 240)); }
         if (k === "sw") Board.startStopwatch();
         if (k === "pause") Board.pauseTimer(); if (k === "resume") Board.resumeTimer(); if (k === "reset") Board.resetTimer();
+        if (k === "end") { const m = Board.endMeeting(); setTimeout(() => Panels.recap(m), 60); toast(`Rapat selesai: ${durLabel(m.durationMs)}, ${m.people.length} peserta. Periksa notulennya lalu simpan.`); return; }
         const again = () => { setTimeout(() => timerPop(anchor), 60); return true; };
         if (k === "addp") { const n = $("#tpName").value.trim(); if (!n) { toast("Tulis namanya dulu"); return true; } Board.addAttendee(n); return again(); }
         if (k.startsWith("rm:")) { Board.removeAttendee(k.slice(3)); return again(); }
@@ -3487,6 +3553,7 @@ const UI = (() => {
   }
   async function newBoard(name, objs) {
     if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan di sini");
+    if (!Home.canAddBoard()) return;
     const map = new Map(objs.map((o) => [o.id, uid("o")]));
     const list = objs.map((o, i) => { const n = clone(o); n.id = map.get(o.id); if (n.type === "connector") for (const k of ["from", "to"]) { if (n.data[k].id) n.data[k].id = map.get(n.data[k].id); } n.z = i + 1; return Store.newObject(n); });
     await Store.createBoard({ name, objects: list, kind: "template" });
@@ -3495,13 +3562,14 @@ const UI = (() => {
   function boardMenu(btn) {
     const list = Store.boards();
     const cur = Store.board();
-    pop(btn, `<div class="boards-list">${cur && Store.canWrite ? `<div class="row" style="padding:6px"><input class="field" id="bname" value="${esc(cur.name)}" aria-label="Nama papan"></div>` : ""}<div class="mh">Papan brand ini</div>${list.map((b) => `<button class="mi${b.id === Store.S.boardId ? " act" : ""}" data-pick="open:${b.id}">${ic("layers")}<span class="bn">${esc(b.name)}</span><span class="k faint" style="font-size:11px">${timeAgo(b.updatedAt || b.createdAt)}</span></button>`).join("") || '<p class="muted" style="padding:6px 10px;margin:0">Belum ada papan.</p>'}
+    pop(btn, `<div class="boards-list">${cur && Store.canWrite ? `<div class="row" style="padding:6px"><input class="field" id="bname" value="${esc(cur.name)}" aria-label="Nama papan"></div>` : ""}${BL() ? `<button class="mi" data-pick="home">${ic("grid")} Semua papan & folder</button><div class="sep"></div>` : ""}<div class="mh">Papan brand ini</div>${list.map((b) => `<button class="mi${b.id === Store.S.boardId ? " act" : ""}" data-pick="open:${b.id}">${ic("layers")}<span class="bn">${esc(b.name)}</span><span class="k faint" style="font-size:11px">${timeAgo(b.updatedAt || b.createdAt)}</span></button>`).join("") || '<p class="muted" style="padding:6px 10px;margin:0">Belum ada papan.</p>'}
       ${Store.canWrite ? `<div class="sep"></div><button class="mi" data-pick="new">${ic("plus")} Papan baru</button>${cur ? `<button class="mi" data-pick="del" style="color:var(--bad)">${ic("trash")} Hapus papan ini</button>` : ""}` : ""}</div>`, {
       onPick: (k, b) => {
         if (k.startsWith("open:")) { Board.open(k.slice(5)); return; }
-        if (k === "new") { templates("new"); return; }
+        if (k === "home") { Home.open(); return; }
+        if (k === "new") { if (Home.canAddBoard()) templates("new"); return; }
         if (k === "del") {
-          if (b.dataset.sure) { const id = Store.S.boardId; const next = Store.boards().find((x) => x.id !== id); Store.deleteBoard(id); if (next) Board.open(next.id); else App.showEmpty(); toast("Papan dihapus"); return; }
+          if (b.dataset.sure) { const id = Store.S.boardId; const next = Store.boards().find((x) => x.id !== id); if (BL()) Home.open(); Store.deleteBoard(id); if (!BL()) { if (next) Board.open(next.id); else App.showEmpty(); } toast("Papan dihapus"); return; }
           b.dataset.sure = "1"; b.innerHTML = `${ic("trash")} Yakin? Klik lagi untuk menghapus semua isinya`; return true;
         }
       } });
@@ -3513,14 +3581,17 @@ const UI = (() => {
     if (GUEST()) return pop(btn, `<button class="mi" data-pick="rename">${ic("edit")} Ganti nama (${esc(Store.me.name)})</button>
       <button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
       <button class="mi" data-pick="keys">${ic("keyboard")} Pintasan keyboard<span class="k"><span class="kbd">?</span></span></button>
+      <button class="mi" data-pick="pdf">${ic("download")} Unduh papan (PDF)</button>
       <button class="mi" data-pick="tour">${ic("help")} Tur singkat</button>`, {
       onPick: (k) => {
         if (k === "rename") setTimeout(renameGuest, 0);
+        if (k === "pdf") Exporter.boardPDF();
         if (k === "theme") App.setTheme({ system: "dark", dark: "light", light: "system" }[theme]);
         if (k === "keys") shortcuts(); if (k === "tour") tour(true);
       } });
-    pop(btn, `<button class="mi" data-pick="history">${ic("history")} Riwayat versi</button>
-      <button class="mi" data-pick="recap">${ic("file")} Ringkas rapat</button>
+    pop(btn, `${BL() ? `<button class="mi" data-pick="home">${ic("grid")} Semua papan</button><div class="sep"></div>` : ""}<button class="mi" data-pick="recap">${ic("file")} Notulen rapat</button>
+      <button class="mi" data-pick="pdf">${ic("download")} Unduh papan (PDF)</button>
+      <button class="mi" data-pick="history">${ic("history")} Riwayat versi</button>
       <button class="mi" data-pick="vote">${ic("vote")} ${Board.votingActive() ? "Selesai voting" : "Mulai voting"}</button>
       <button class="mi" data-pick="results">${ic("chart")} Hasil voting</button>
       <button class="mi" data-pick="approvals">${ic("approve")} Persetujuan klien</button>
@@ -3533,6 +3604,7 @@ const UI = (() => {
       ${BL() ? "" : `<button class="mi" data-pick="plan">${ic("map")} Rencana fitur & biaya</button>`}${window.__papanSignOut ? `<div class="sep"></div><button class="mi" data-pick="logout">${ic("arrowRight")} Keluar (${esc(Store.me.email || Store.me.name)})</button>` : ""}`, {
       onPick: (k) => {
         if (k === "history") Panels.history(); if (k === "recap") Panels.recap();
+        if (k === "home") Home.open(); if (k === "pdf") Exporter.boardPDF();
         if (k === "vote") { if (Board.votingActive()) Board.endVoting(); else setTimeout(() => votingPop($("#moreBtn")), 0); }
         if (k === "results") Panels.votes(); if (k === "approvals") Panels.approvals();
         if (k === "client") { Canvas.clientView = !Canvas.clientView; updateBanner(); Panels.refresh(); }
@@ -3685,6 +3757,7 @@ const UI = (() => {
     $("#undoBtn").onclick = () => History.undo();
     $("#redoBtn").onclick = () => History.redo();
     $("#boardBtn").onclick = (e) => { if (!GUEST()) boardMenu(e.currentTarget); };
+    $("#homeBtn") && ($("#homeBtn").onclick = () => Home.open());
     $("#timerBtn").onclick = (e) => timerPop(e.currentTarget);
     $("#moreBtn").onclick = (e) => mainMenu(e.currentTarget);
     $("#shareBtn").onclick = () => shareDialog();
@@ -3930,11 +4003,26 @@ const Panels = (() => {
   }
 
   // ---------- meeting recap ----------
-  function recap() {
+  // Notulen: the meeting (title, when, how long, who) + what the board says
+  // happened. `ended` = the meeting "Selesai rapat" just closed (Board.endMeeting).
+  function recap(ended) {
     let r = Rules.recap();
-    if (!r.peserta?.length) r.peserta = Board.attendees().map((p) => p.name);
+    const mt = ended && ended.endedAt ? { ...ended } : Board.meeting();
+    if (!r.peserta?.length) r.peserta = mt.people?.length ? [...mt.people] : Board.attendees().map((p) => p.name);
+    r.links = Exporter.linksOf();
+    let title = (Store.board()?.name || "Rapat").replace(/^Contoh · /, "");
+    // the automatic summary counts decisions and tasks: keep its numbers right
+    // when rows are added or removed here (a summary someone rewrote stays)
+    let autoSum = r.ringkasan;
+    const fixSum = () => { if (r.ringkasan !== autoSum) return; r.ringkasan = r.ringkasan.replace(/\d+ keputusan/, `${(r.keputusan || []).filter((x) => String(x).trim()).length} keputusan`).replace(/\d+ tugas(?: yang belum selesai)?/, `${(r.aksi || []).filter((x) => x.tugas?.trim()).length} tugas`); autoSum = r.ringkasan; };
+    let minutes = mt.durationMs ? Math.max(1, Math.round(mt.durationMs / 60000)) : "";
+    const meetingOut = () => ({ title, startedAt: mt.startedAt || (minutes ? Date.now() - minutes * 60000 : Date.now()), endedAt: mt.endedAt || Date.now(), durationMs: minutes ? minutes * 60000 : 0, people: (r.peserta || []).map((x) => String(x).trim()).filter(Boolean) });
     const SECS = [["ringkasan", "Gambaran rapat", true], ["peserta", "Peserta rapat"], ["topik", "Topik yang dibahas"], ["ide", "Ide utama"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"]];
     const draw = () => {
+      $("#rcMeet").innerHTML = `<div class="rc-meet"><div><label class="lbl" for="rcTitle">Judul rapat</label><input class="field" id="rcTitle" maxlength="90" value="${esc(title)}"></div>
+        <div class="rc-meet-row"><div><label class="lbl">Waktu</label><div class="rc-val">${esc(mt.startedAt ? fmtDate(mt.startedAt) : fmtDate(Date.now()))}</div></div><div><label class="lbl" for="rcMin">Durasi (menit)</label><input class="field" id="rcMin" type="number" min="1" max="600" value="${esc(minutes)}" placeholder="isi" style="width:96px"></div><div><label class="lbl">Peserta</label><div class="rc-val">${(r.peserta || []).filter((x) => String(x).trim()).length} orang</div></div></div>
+        ${mt.startedAt ? "" : `<p class="faint" style="font-size:11.5px;margin:6px 0 0">Tips: jalankan Timer saat rapat dimulai, supaya durasi dan peserta tercatat otomatis.</p>`}</div>`;
+      $("#rcLinks").innerHTML = r.links.length ? `<div class="recap-sec"><h5>Link & video <small>ikut di notulen dan PDF</small></h5><div class="editlist">${r.links.map((l, i) => `<div class="er"><span class="rc-link">${ic(l.kind.startsWith("Video") ? "video" : "link")}<span><b>${esc(l.title)}</b><small>${esc(l.kind)}</small></span></span><button class="icon-btn x" data-dellink="${i}" aria-label="Hapus dari notulen">${ic("x")}</button></div>`).join("")}</div></div>` : "";
       $("#rcBody").innerHTML = SECS.map(([k, label, single]) => {
         if (single) return `<div class="recap-sec"><h5>${label}</h5><textarea class="field" data-k="${k}" rows="3">${esc(r[k] || "")}</textarea></div>`;
         const arr = r[k] || [];
@@ -3944,26 +4032,40 @@ const Panels = (() => {
       }).join("");
     };
     const read = () => {
+      title = ($("#rcTitle")?.value || "").trim() || title;
+      minutes = +($("#rcMin")?.value || 0) || "";
       $$("#rcBody [data-k]").forEach((el) => { const k = el.dataset.k; if (el.dataset.i == null) r[k] = el.value; else if (k === "aksi") r.aksi[+el.dataset.i].tugas = el.value; else r[k][+el.dataset.i] = el.value; });
       $$("#rcBody [data-pic]").forEach((el) => (r.aksi[+el.dataset.pic].pic = el.value.trim()));
       $$("#rcBody [data-dl]").forEach((el) => (r.aksi[+el.dataset.dl].deadline = el.value.trim()));
+      fixSum();
     };
-    open("recap", null, { title: "Ringkasan rapat", icon: "file", body: `<div class="stack"><p class="lead">Disusun dari isi papan: frame, tanda Keputusan/Pertanyaan, vote, checklist, dan komentar. Periksa dan ubah dulu sebelum disimpan.</p>${aiNote()}<div id="rcBody" class="stack"></div><div id="rcPast"></div></div>`,
-      foot: `<button class="btn btn-primary" id="rcSave">Simpan</button><button class="btn btn-secondary" id="rcPin">Tempel di papan</button>${BL() && Store.lab().goals?.length > 1 ? `<select class="field" id="rcGoal" style="width:auto;max-width:160px" aria-label="Tujuan untuk tugas">${Store.lab().goals.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("")}</select>` : ""}<button class="btn btn-secondary" id="rcTasks">Jadikan tugas</button><button class="btn btn-ai" id="rcAI" ${AI.available ? "" : "disabled"}>${ic("sparkle")} Rapikan bahasa ${UI.AI_COST}</button>`,
+    open("recap", null, { title: "Notulen rapat", icon: "file", body: `<div class="stack"><p class="lead">Disusun dari isi papan: frame, tanda Keputusan/Pertanyaan, vote, checklist, komentar, dan link video. Periksa dan ubah dulu, lalu simpan: notulen muncul di halaman Semua papan.</p>${aiNote()}<div id="rcMeet"></div><div id="rcBody" class="stack"></div><div id="rcLinks"></div><div id="rcPast"></div></div>`,
+      foot: `<button class="btn btn-primary" id="rcSave">Simpan notulen</button><button class="btn btn-secondary" id="rcPdf">${ic("download")} PDF</button><button class="btn btn-secondary" id="rcPin">Tempel di papan</button>${BL() && Store.lab().goals?.length > 1 ? `<select class="field" id="rcGoal" style="width:auto;max-width:160px" aria-label="Tujuan untuk tugas">${Store.lab().goals.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("")}</select>` : ""}<button class="btn btn-secondary" id="rcTasks">Jadikan tugas</button><button class="btn btn-ai" id="rcAI" ${AI.available ? "" : "disabled"}>${ic("sparkle")} Rapikan bahasa ${UI.AI_COST}</button>`,
       async wire(s) {
         draw();
         s.addEventListener("click", (e) => {
-          const d = e.target.closest("[data-del]"), a = e.target.closest("[data-addrow]");
+          const d = e.target.closest("[data-del]"), a = e.target.closest("[data-addrow]"), dl = e.target.closest("[data-dellink]");
+          if (dl) { read(); r.links.splice(+dl.dataset.dellink, 1); draw(); return; }
           if (d) { read(); const [k, i] = d.dataset.del.split(":"); r[k].splice(+i, 1); draw(); }
           if (a) { read(); const k = a.dataset.addrow; (r[k] = r[k] || []).push(k === "aksi" ? { tugas: "", pic: "", deadline: "" } : ""); draw(); }
         });
         $("#rcAI").onclick = async () => { read(); const box = $("#rcBody"); const keep = box.innerHTML; box.innerHTML = busyHTML("Merapikan bahasa ringkasan…"); const res = await AI.recap(r); if (res) { r = res; toast("Bahasanya dirapikan. Keputusan, PIC, dan tenggat tidak ditambah."); } draw(); void keep; };
-        $("#rcSave").onclick = async () => { read(); if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini"); await Store.saveColl("recaps", { recap: clone(r) }, 20); toast("Ringkasan tersimpan di papan ini"); past(); };
+        $("#rcSave").onclick = async () => {
+          read(); if (!Store.canWrite || GUEST()) return toast("Kamu hanya bisa melihat papan ini");
+          const m = meetingOut();
+          const it = await Store.saveColl("recaps", { recap: clone(r), meeting: m }, 20);
+          // the home lists meetings from the board doc, so it never reads every notulen
+          const row = { id: it.id, at: m.startedAt, title: m.title, durationMs: m.durationMs, people: m.people.slice(0, 20), decisions: (r.keputusan || []).length, tasks: (r.aksi || []).length };
+          const list = [row, ...(Store.board()?.meetings || []).filter((x) => x.id !== it.id)].slice(0, 20);
+          Store.updateBoard({ meetings: list, meeting: null });
+          toast("Notulen tersimpan. Lihat juga di halaman Semua papan."); past();
+        };
+        $("#rcPdf").onclick = () => { read(); Exporter.notulenPDF(clone(r), meetingOut(), Store.board()?.name || "", $("#rcPdf")); };
         $("#rcPin").onclick = () => { read(); const o = Store.newObject({ type: "doc", x: 0, y: 0, w: 420, h: 520, text: "Ringkasan rapat", data: { ...clone(r), at: Date.now() } }); const c = Canvas.centerWorld(); o.x = Math.round(c.x - 210); o.y = Math.round(c.y - 260); Canvas.add([o], { select: true }); };
         $("#rcTasks").onclick = () => {
           read(); const picks = $$("#rcBody [data-tk]").filter((x) => x.checked).map((x) => r.aksi[+x.dataset.tk]).filter((x) => x.tugas.trim());
           if (!picks.length) return toast("Centang tugas yang mau dibuat dulu");
-          if (BL()) { const L = Store.lab(); if (!L.goals?.length) return toast("Tugas di Brandlab menempel ke sebuah Tujuan. Buat Tujuan dulu.", { action: "Buka Tujuan", onAction: () => window.__papanGo?.("goals") }); const gid = $("#rcGoal")?.value || L.goals[0].id; for (const t of picks) Store.labSave("tasks", { goalId: gid, title: t.tugas.trim(), due: Rules.parseDate(t.deadline) || "" }); return toast(`${picks.length} tugas dibuat di Tujuan “${L.goals.find((g) => g.id === gid)?.name || ""}”`); }
+          if (BL()) { const L = Store.lab(); if (!L.goals?.length) return toast("Tugas di Brandlab menempel ke sebuah Tujuan. Buat Tujuan dulu.", { action: "Buka Tujuan", onAction: () => window.__papanGo?.("goals") }); const gid = $("#rcGoal")?.value || L.goals[0].id; for (const t of picks) Store.labSave("tasks", { goalId: gid, title: t.tugas.trim(), due: Rules.parseDate(t.deadline) || "", boardId: Store.S.boardId }); return toast(`${picks.length} tugas dibuat di Tujuan “${L.goals.find((g) => g.id === gid)?.name || ""}”`); }
           if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
           for (const t of picks) Store.labSave("tasks", { id: uid("t"), title: t.tugas.trim(), owner: t.pic || "", due: Rules.parseDate(t.deadline) || "", done: false, priority: "sedang", source: { boardId: Store.S.boardId, objectIds: t.ids || [] } });
           toast(`${picks.length} tugas dibuat di Brandlab${EX()}`);
@@ -3973,7 +4075,7 @@ const Panels = (() => {
           const list = await Store.listColl("recaps", 10);
           const el = $("#rcPast"); if (!el) return;
           el.innerHTML = list.length ? `<div class="mh" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:6px 0">Tersimpan</div>${list.map((x) => `<div class="ver"><div class="t"><b>${fmtDate(x.at)}</b><span>oleh ${esc(Collab.nameOf(x.by))} · ${(x.recap?.keputusan || []).length} keputusan, ${(x.recap?.aksi || []).length} tugas</span></div><button class="btn btn-ghost btn-xs" data-open="${x.id}">Buka</button></div>`).join("")}` : "";
-          el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { const x = list.find((y) => y.id === b.dataset.open); r = clone(x.recap); draw(); toast("Ringkasan lama dibuka"); }));
+          el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { const x = list.find((y) => y.id === b.dataset.open); r = clone(x.recap); r.links = r.links || []; if (x.meeting) { Object.assign(mt, x.meeting); title = x.meeting.title || title; minutes = x.meeting.durationMs ? Math.round(x.meeting.durationMs / 60000) : ""; } draw(); toast("Notulen lama dibuka"); }));
         }
       } });
   }
@@ -4145,7 +4247,7 @@ const Panels = (() => {
         $("#tkGo", s).onclick = () => {
           if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
           const gid = $("#tkG", s).value; let n = 0;
-          s.querySelectorAll(".task-card").forEach((c) => { const r = rows[+c.dataset.i]; const t = { goalId: gid }; c.querySelectorAll("[data-k]").forEach((i) => (t[i.dataset.k] = i.value)); const res = Store.labSave("tasks", t); if (res?.id) { n++; linkNotes([r.o], "task", res.id, "Jadikan tugas"); } });
+          s.querySelectorAll(".task-card").forEach((c) => { const r = rows[+c.dataset.i]; const t = { goalId: gid, boardId: Store.S.boardId }; c.querySelectorAll("[data-k]").forEach((i) => (t[i.dataset.k] = i.value)); const res = Store.labSave("tasks", t); if (res?.id) { n++; linkNotes([r.o], "task", res.id, "Jadikan tugas"); } });
           close(); toast(`${n} tugas masuk Tujuan “${L.goals.find((g) => g.id === gid)?.name || ""}”. Catatan aslinya tetap di papan.`, { action: "Buka Tujuan", onAction: () => window.__papanGo?.("tasks", gid) });
         };
       } });
@@ -4414,7 +4516,7 @@ Balas HANYA JSON: {"balasan": "teks jawaban, boleh baris baru dan '- ' untuk poi
     }, 60);
     return out.length;
   }
-  window.__papanSummary = () => `Papan "${(Store.board()?.name || "").replace(/^Contoh · /, "")}"\n${boardContext(false, true)}`;
+  window.__papanSummary = () => (Store.board() ? `Papan "${(Store.board()?.name || "").replace(/^Contoh · /, "")}"\n${boardContext(false, true)}` : "");
   window.__papanPlace = place;
   return { open, send, place };
 })();
@@ -4496,20 +4598,28 @@ Kata yang dihindari: ${b.avoid.join(", ")}`;
       if (!r || typeof r !== "object") return null;
       return { name: String(r.name || ""), objective: String(r.objective || ""), audience: String(r.audience || ""), strategy: String(r.strategy || ""), channels: Array.isArray(r.channels) ? r.channels.map(String) : [] };
     },
-    async polishDeck(slides) {
-      const slim = slides.map((s, i) => ({ i, title: s.title, subtitle: s.subtitle, bullets: s.bullets, items: (s.items || []).map((x) => x.title), body: s.body }));
-      const r = await ask(`Rapikan teks slide presentasi berikut: judul lebih tajam (maks 7 kata), poin lebih singkat (maks 12 kata). Jangan menambah fakta, angka, nama, atau tanggal baru. Jumlah poin dan item tetap sama.\n${JSON.stringify(slim)}\nBalas HANYA JSON array dengan bentuk yang sama.`);
-      if (!Array.isArray(r)) return null;
-      return slides.map((s, i) => {
-        const x = r.find((y) => Number(y.i) === i); if (!x) return s;
-        const n = clone(s);
-        if (x.title) n.title = String(x.title);
-        if (x.subtitle && s.subtitle) n.subtitle = String(x.subtitle);
-        if (Array.isArray(x.bullets) && s.bullets) n.bullets = s.bullets.map((b, j) => String(x.bullets[j] || b));
-        if (Array.isArray(x.items) && s.items) n.items = s.items.map((it, j) => ({ ...it, title: String(x.items[j] || it.title) }));
-        if (x.body && s.body) n.body = String(x.body);
-        return n;
-      });
+    // The deck as a real recap: per frame a takeaway + 3–5 points that merge
+    // the notes (not a copy of every sticky), plus the meeting's summary and
+    // next steps. Grounded in the board only. `parts` from Deck.recapInput().
+    async deckRecap(parts, extra) {
+      const r = await ask(`${brandContext()}\n\nKamu menyusun presentasi HASIL RAPAT dari isi papan tim di bawah. Pembaca presentasi tidak ikut rapat, jadi tiap slide harus langsung menjelaskan apa hasilnya.
+
+Untuk TIAP bagian (frame) tulis:
+- "judul": maks 7 kata, boleh memakai judul aslinya,
+- "inti": 1 kalimat utuh (maks 24 kata) berisi kesimpulan bagian itu, bukan daftar,
+- "poin": 3–5 poin (maks 14 kata per poin) yang MERANGKUM catatan: gabungkan catatan yang mirip, dahulukan yang paling banyak vote atau bertanda Keputusan. Jangan menyalin semua catatan satu per satu.
+Lalu "ringkasan": 2–3 kalimat untuk seluruh rapat, dan "langkah": 2–4 langkah berikutnya yang memang tersirat dari papan.
+
+ATURAN KERAS: hanya dari isi papan. Jangan menambah angka, nama orang, tanggal, merek, atau keputusan yang tidak ada. Kalau sebuah bagian hampir kosong, tulis inti yang jujur (misalnya "Bagian ini belum diisi banyak.") dan poin boleh kosong. ${RULE}
+
+Isi papan:
+${JSON.stringify({ papan: extra?.name || "", keputusan: extra?.keputusan || [], tugas: extra?.tugas || [], bagian: parts })}
+
+Balas HANYA JSON: {"bagian": [{"id": "…", "judul": "…", "inti": "…", "poin": ["…"]}], "ringkasan": "…", "langkah": ["…"]}`);
+      if (!r || typeof r !== "object" || !Array.isArray(r.bagian)) return r == null ? null : (toast("Format jawaban AI tidak sesuai"), null);
+      const byId = new Map();
+      for (const b of r.bagian) if (b && b.id) byId.set(String(b.id), { judul: String(b.judul || "").slice(0, 90), inti: String(b.inti || "").slice(0, 240), poin: (Array.isArray(b.poin) ? b.poin : []).map(String).filter(Boolean).slice(0, 5).map((x) => x.slice(0, 160)) });
+      return { byId, ringkasan: String(r.ringkasan || "").slice(0, 600), langkah: (Array.isArray(r.langkah) ? r.langkah : []).map(String).filter(Boolean).slice(0, 4) };
     },
   };
 })();
@@ -4700,19 +4810,36 @@ const Deck = (() => {
     lab: () => ({ name: "Brandlab gelap", bg: "#131211", fg: "#f6f4f1", dark: "#0c0b0a", light: "#f6f4f1", acc: "#ffa52b", acc2: "#ffc94a", card: "#1f1d1a", disp: "Grift Black", body: "JUST Sans" }),
   };
   const T = () => THEMES[theme]();
-  const LAYOUTS = { cover: "Sampul", agenda: "Agenda", summary: "Ringkasan", statement: "Pernyataan", bullets: "Poin", ideas: "Kartu ide", two: "Dua kolom", mood: "Moodboard", stats: "Angka & grafik", timeline: "Linimasa", table: "Tabel", campaign: "Campaign", identity: "Identitas brand", closing: "Penutup" };
+  const LAYOUTS = { cover: "Sampul", agenda: "Agenda", summary: "Ringkasan", points: "Inti & poin", statement: "Pernyataan", bullets: "Poin", ideas: "Kartu ide", two: "Dua kolom", mood: "Moodboard", stats: "Angka & grafik", timeline: "Linimasa", table: "Tabel", campaign: "Campaign", identity: "Identitas brand", links: "Referensi & video", closing: "Penutup" };
 
   // ---------- build from the board ----------
   function frameContents(f) { return Store.objects().filter((o) => o.type !== "frame" && o.type !== "connector" && Rules.inside(o, f)); }
-  function build(opts) {
+  const shortUrl = (u) => String(u || "").replace(/^https?:\/\/(www\.)?/, "").slice(0, 60);
+  const framesOf = (ids) => Store.objects().filter((o) => o.type === "frame" && ids.includes(o.id)).sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
+  // What the AI reads to write the recap slides (12-ai.js deckRecap): per frame
+  // its notes with votes and marks, tables, checklists and links.
+  function recapInput(ids) {
+    const parts = framesOf(ids).map((f) => {
+      const items = frameContents(f);
+      const notes = items.filter((o) => ["sticky", "shape", "text"].includes(o.type) && (o.text || "").trim()).sort((a, c) => Board.votesFor(c).count - Board.votesFor(a).count || a.y - c.y)
+        .slice(0, 40).map((o) => `${o.text.replace(/\s+/g, " ").slice(0, 220)}${Board.votesFor(o).count ? ` (${Board.votesFor(o).count} vote)` : ""}${{ keputusan: " [Keputusan]", pertanyaan: " [Pertanyaan]", terpilih: " [Terpilih]" }[o.tag] || ""}`);
+      const tabel = items.filter((o) => o.type === "table").slice(0, 2).map((t) => (t.data?.rows || []).slice(0, 6).map((r) => r.slice(0, 4).join(" | ")).join("\n"));
+      const checklist = items.filter((o) => o.type === "checklist").flatMap((c) => (c.data?.items || []).filter((i) => i.t).map((i) => (i.done ? "[selesai] " : "") + i.t)).slice(0, 15);
+      return { id: f.id, judul: (f.text || "").replace(/^\d+\s*·\s*/, ""), catatan: notes, tabel, checklist, link: Exporter.linksOf(items).map((l) => `${l.kind}: ${l.title}`) };
+    });
+    let json = JSON.stringify(parts);
+    while (json.length > 26000 && parts.some((p) => p.catatan.length > 8)) { for (const p of parts) p.catatan = p.catatan.slice(0, Math.max(8, Math.floor(p.catatan.length * 0.7))); json = JSON.stringify(parts); }
+    return parts;
+  }
+  function build(opts, ai = null) {
     const L = Store.lab(), b = Store.board() || {};
     const name = (b.name || "Papan").replace(/^Contoh · /, "");
-    const frames = Store.objects().filter((o) => o.type === "frame" && opts.frames.includes(o.id)).sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
+    const frames = framesOf(opts.frames);
     const out = [];
     out.push({ layout: "cover", kicker: "Hasil rapat tim", title: name, subtitle: `${L.brand.name} · ${fmtDate(Date.now(), false)}` });
     if (frames.length > 2) out.push({ layout: "agenda", title: "Yang kita bahas", bullets: frames.map((f) => f.text.replace(/^\d+\s*·\s*/, "")) });
-    if (opts.recap) { const r = Rules.recap(); out.push({ layout: "summary", title: "Ringkasan", body: r.ringkasan, bullets: r.keputusan.length ? r.keputusan : r.topik.slice(0, 4), side: r.keputusan.length ? "Keputusan" : "Topik" }); }
-    for (const f of frames) out.push(...slidesForFrame(f));
+    if (opts.recap) { const r = Rules.recap(); out.push({ layout: "summary", title: "Ringkasan", body: ai?.ringkasan || r.ringkasan, bullets: r.keputusan.length ? r.keputusan : r.topik.slice(0, 4), side: r.keputusan.length ? "Keputusan" : "Topik" }); }
+    for (const f of frames) out.push(...slidesForFrame(f, ai?.byId.get(f.id)));
     if (opts.voted) {
       const top = Store.objects().filter((o) => o.type === "sticky" && (Board.votesFor(o).count || o.tag === "terpilih")).sort((a, c) => Board.votesFor(c).count - Board.votesFor(a).count).slice(0, 4);
       if (top.length) out.push({ layout: "ideas", title: "Ide terpilih", items: top.map((o) => ({ title: o.text, votes: Board.votesFor(o).count, color: o.color })) });
@@ -4721,12 +4848,14 @@ const Deck = (() => {
     if (opts.actions) {
       const r = Rules.recap();
       if (r.aksi.length) out.push({ layout: "timeline", title: "Rencana aksi", rows: r.aksi.slice(0, 6).map((a) => ({ label: a.tugas, date: a.deadline || "–", owner: a.pic || "Belum ada PIC" })) });
-      out.push({ layout: "bullets", title: "Langkah berikutnya", bullets: r.langkah });
+      out.push({ layout: "bullets", title: "Langkah berikutnya", bullets: ai?.langkah?.length ? ai.langkah : r.langkah });
     }
+    // Every link and video on the board, clickable in the PPTX and the PDF.
+    if (opts.links) { const ls = Exporter.linksOf(); for (let i = 0; i < ls.length; i += 6) out.push({ layout: "links", title: i ? "Referensi & video (lanjutan)" : "Referensi & video", links: ls.slice(i, i + 6) }); }
     out.push({ layout: "closing", title: "Terima kasih", subtitle: L.brand.tagline });
     return out.map((s) => ({ id: uid("s"), ...s }));
   }
-  function slidesForFrame(f) {
+  function slidesForFrame(f, sum) {
     const title = f.text.replace(/^\d+\s*·\s*/, "");
     const items = frameContents(f);
     const stickies = items.filter((o) => (o.type === "sticky" || o.type === "shape") && (o.text || "").trim()).sort((a, c) => Board.votesFor(c).count - Board.votesFor(a).count || a.y - c.y || a.x - c.x);
@@ -4736,6 +4865,17 @@ const Deck = (() => {
     const widgets = items.filter((o) => o.type === "widget");
     const texts = items.filter((o) => o.type === "text" && (o.text || "").trim()).sort((a, c) => (c.fs || 18) - (a.fs || 18));
     const out = [];
+    // AI recap of this frame: its takeaway and merged points first, then the
+    // frame's pictures, tables, checklists and Brandlab data as they are.
+    if (sum && (sum.inti || sum.poin.length)) {
+      out.push({ layout: "points", title: sum.judul || title, big: sum.inti, bullets: sum.poin, links: Exporter.linksOf(items).slice(0, 4) });
+      const imgs = media.filter((o) => o.type === "image");
+      if (imgs.length >= 2) out.push({ layout: "mood", title: `${sum.judul || title}: visual`, tiles: imgs.slice(0, 6).map((o) => ({ kind: "img", src: o.data.src })), note: "" });
+      for (const t of tables) out.push({ layout: "table", title: t.text || title, rows: (t.data.rows || []).slice(0, 8).map((r) => r.slice(0, 5)) });
+      for (const c of checks) out.push({ layout: "bullets", title: c.text || title, bullets: (c.data.items || []).filter((i) => i.t).map((i) => (i.done ? "✓ " : "") + i.t) });
+      for (const w of widgets) { const s2 = widgetSlide(w, title); if (s2) out.push(s2); }
+      return out;
+    }
     if (media.length >= 2 || (media.length && stickies.length < 2)) {
       const sw = items.filter((o) => o.type === "shape" && o.data?.solid).map((o) => ({ kind: "swatch", hex: o.color, label: o.text }));
       out.push({ layout: "mood", title, tiles: [...media.map((o) => o.type === "image" ? { kind: "img", src: o.data.src } : { kind: "link", title: o.data.title, sub: o.data.kind === "link" ? o.data.domain : o.data.kind === "youtube" ? "Video YouTube" : o.data.kind === "tiktok" ? "Video TikTok" : "Instagram", url: o.data.url }), ...sw].slice(0, 6), note: texts[0]?.text || "" });
@@ -4777,8 +4917,10 @@ const Deck = (() => {
       case "agenda": case "bullets": inner = `${E("title", tx(s.title), "h2")}<ul class="bl">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul>`; break;
       case "summary": inner = `${E("title", tx(s.title), "h2")}<div class="two"><div>${E("body", tx(s.body), "div", "")}</div><div class="col"><h3>${tx(s.side)}</h3><ul class="bl">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul></div></div>`; break;
       case "ideas": { const n2 = (s.items || []).length; inner = `${E("title", tx(s.title), "h2")}<div class="ideas n${Math.min(n2, 6)}">${(s.items || []).map((it, i) => `<div class="idea">${it.tag ? `<span class="itag">${tx(it.tag)}</span>` : ""}${E(`items.${i}.title`, tx(it.title), "div", "it")}${it.votes ? `<span class="iv">${it.votes} vote</span>` : ""}</div>`).join("")}</div>`; break; }
+      case "points": inner = `${E("title", tx(s.title), "h2")}${s.big ? E("big", tx(s.big), "div", "pbig") : ""}<ul class="bl${(s.bullets || []).length > 3 ? " cols" : ""}">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul>${(s.links || []).length ? `<div class="lchips">${s.links.map((l) => `<span class="lchip" data-url="${esc(l.url)}">${tx(l.kind)}: ${tx(l.title)}</span>`).join("")}</div>` : ""}`; break;
+      case "links": inner = `${E("title", tx(s.title), "h2")}<div class="refs">${(s.links || []).map((l, i) => `<div class="ref" data-url="${esc(l.url)}"><span class="rk">${tx(l.kind)}</span>${E(`links.${i}.title`, tx(l.title), "b")}<span class="ru">${tx(shortUrl(l.url))}</span></div>`).join("")}</div>`; break;
       case "two": inner = `${E("title", tx(s.title), "h2")}<div class="two"><div class="col"><ul class="bl">${(s.bullets || []).map((b, i) => E("bullets." + i, tx(b), "li")).join("")}</ul></div><div class="col">${E("body", tx(s.body))}</div></div>`; break;
-      case "mood": inner = `${E("title", tx(s.title), "h2")}<div class="mood">${(s.tiles || []).map((m) => m.kind === "img" ? `<div class="mi"><img src="${esc(m.src)}" alt=""></div>` : m.kind === "swatch" ? `<div class="mi sw" style="background:${esc(m.hex)};color:${readableOn(m.hex)}">${tx(m.label)}</div>` : `<div class="mi lnk"><b>${tx(m.title)}</b><span>${tx(m.sub)}</span></div>`).join("")}</div>`; break;
+      case "mood": inner = `${E("title", tx(s.title), "h2")}<div class="mood">${(s.tiles || []).map((m) => m.kind === "img" ? `<div class="mi"><img src="${esc(m.src)}" alt=""></div>` : m.kind === "swatch" ? `<div class="mi sw" style="background:${esc(m.hex)};color:${readableOn(m.hex)}">${tx(m.label)}</div>` : `<div class="mi lnk"${m.url ? ` data-url="${esc(m.url)}"` : ""}><b>${tx(m.title)}</b><span>${tx(m.sub)}</span></div>`).join("")}</div>`; break;
       case "stats": { const max = s.chart ? Math.max(...s.chart.values) : 1, min = s.chart ? Math.min(...s.chart.values) * 0.9 : 0; inner = `${E("title", tx(s.title), "h2")}<div class="stats">${(s.stats || []).map((x) => `<div><b>${tx(x.v)}</b><span>${tx(x.l)}</span></div>`).join("")}</div>${s.chart ? `<div class="chart">${s.chart.values.map((v, i) => `<div class="cb"><em>${num(v, 1)}</em><i style="height:${((v - min) / (max - min || 1)) * 150 + 20}px;opacity:${i === s.chart.values.length - 1 ? 1 : 0.55}"></i><span>${tx(s.chart.labels[i])}</span></div>`).join("")}</div>` : ""}`; break; }
       case "timeline": inner = `${E("title", tx(s.title), "h2")}<div class="tline">${(s.rows || []).map((r, i) => `<div class="tr">${E(`rows.${i}.date`, tx(r.date), "span", "d")}${E(`rows.${i}.label`, tx(r.label), "b")}${E(`rows.${i}.owner`, tx(r.owner), "span", "o")}</div>`).join("")}</div>`; break;
       case "table": inner = `${E("title", tx(s.title), "h2")}<table class="st">${(s.rows || []).map((r, ri) => `<tr>${r.map((c, ci) => `<td data-f="rows.${ri}.${ci}">${tx(c)}</td>`).join("")}</tr>`).join("")}</table>`; break;
@@ -4803,6 +4945,7 @@ const Deck = (() => {
   function pick() {
     const frames = Store.objects().filter((o) => o.type === "frame" && Canvas.visible(o)).sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
     const hasVotes = Store.objects().some((o) => Board.votesFor(o).count || o.tag === "terpilih");
+    const nLinks = Exporter.linksOf().length;
     root.innerHTML = `<div class="deck-top"><h2>Jadikan presentasi</h2><span style="flex:1"></span><button class="btn btn-ghost" data-d="close">${ic("x")}<span class="lbl">Tutup</span></button></div>
       <div class="deck-pick"><h3>Pilih isi slide</h3><p class="muted" style="margin:0 0 18px">Tiap frame jadi slide dengan tata letak yang cocok dengan isinya: kartu ide, moodboard, tabel, angka, atau linimasa. Bukan screenshot papan.</p>
       <div class="stack">${frames.length ? frames.map((f) => `<label class="pickrow"><input type="checkbox" data-fr="${f.id}" checked><span class="t"><b>${esc(f.text)}</b><span>${frameContents(f).length} objek</span></span></label>`).join("") : `<div class="note">${ic("info")}<span>Papan ini belum punya frame. Kelompokkan isi papan dengan Frame (F) supaya tiap bagian jadi slide.</span></div>`}
@@ -4811,16 +4954,25 @@ const Deck = (() => {
       <label class="pickrow${hasVotes ? "" : " off"}"><input type="checkbox" id="dVoted" ${hasVotes ? "checked" : "disabled"}><span class="t"><b>Ide terpilih</b><span>${hasVotes ? "Dari hasil voting" : "Belum ada voting di papan ini"}</span></span></label>
       <label class="pickrow"><input type="checkbox" id="dIdent"><span class="t"><b>Identitas brand</b><span>Warna, font, positioning dari Brand Book</span></span></label>
       <label class="pickrow"><input type="checkbox" id="dAct" checked><span class="t"><b>Rencana aksi & langkah berikutnya</b><span>Dari checklist dan tugas papan ini</span></span></label>
+      <label class="pickrow${nLinks ? "" : " off"}"><input type="checkbox" id="dLinks" ${nLinks ? "checked" : "disabled"}><span class="t"><b>Referensi & video</b><span>${nLinks ? `${nLinks} link/video dari papan, bisa diklik di PPTX dan PDF` : "Belum ada link atau video di papan ini"}</span></span></label>
       <div class="add-sec">Gaya</div><div class="seg" id="dTheme"><button data-v="brand" class="${theme === "brand" ? "on" : ""}">${esc(THEMES.brand().name)}</button><button data-v="lab" class="${theme === "lab" ? "on" : ""}">Brandlab gelap</button></div>
-      <label class="pickrow" style="margin-top:6px"><input type="checkbox" id="dAI" ${AI.available ? "" : "disabled"}><span class="t"><b>Rapikan teks slide dengan AI ${UI.AI_COST}</b><span>${AI.available ? "Judul lebih tajam, poin lebih singkat. Tidak menambah fakta." : "AI belum aktif di tampilan ini"}</span></span></label>
+      <label class="pickrow" style="margin-top:6px"><input type="checkbox" id="dAI" ${AI.available ? "checked" : "disabled"}><span class="t"><b>Rangkum tiap bagian dengan AI ${UI.AI_COST}</b><span>${AI.available ? "Tiap frame jadi satu slide berisi kesimpulan + 3–5 poin rangkuman, bukan salinan semua sticky. Hanya dari isi papan, tidak menambah fakta." : "AI belum aktif di tampilan ini. Tanpa AI, tiap catatan ditampilkan apa adanya."}</span></span></label>
       <button class="btn btn-primary" data-d="build" style="margin-top:8px;padding:13px">${ic("slides")} Buat slide</button></div></div>`;
     root.querySelector("#dTheme").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; theme = b.dataset.v; root.querySelectorAll("#dTheme button").forEach((x) => x.classList.toggle("on", x === b)); };
     root.onclick = async (e) => {
       const d = e.target.closest("[data-d]")?.dataset.d;
       if (d === "close") close();
       if (d === "build") {
-        slides = build({ frames: $$("[data-fr]", root).filter((x) => x.checked).map((x) => x.dataset.fr), recap: $("#dRecap").checked, voted: $("#dVoted").checked, identity: $("#dIdent").checked, actions: $("#dAct").checked });
-        if ($("#dAI").checked) { e.target.closest("button").innerHTML = '<span class="spinner"></span> Merapikan teks…'; const p = await AI.polishDeck(slides); if (p) slides = p; }
+        const opts = { frames: $$("[data-fr]", root).filter((x) => x.checked).map((x) => x.dataset.fr), recap: $("#dRecap").checked, voted: $("#dVoted").checked, identity: $("#dIdent").checked, actions: $("#dAct").checked, links: $("#dLinks").checked };
+        let ai = null;
+        if ($("#dAI").checked && opts.frames.length) {
+          const btn = e.target.closest("button"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> AI merangkum tiap bagian…';
+          const r = Rules.recap();
+          ai = await AI.deckRecap(recapInput(opts.frames), { name: (Store.board()?.name || "").replace(/^Contoh · /, ""), keputusan: r.keputusan, tugas: r.aksi.map((a) => a.tugas) });
+          if (!ai) toast("AI belum berhasil merangkum. Slide dibuat dari isi papan apa adanya.");
+          if (!root) return;
+        }
+        slides = build(opts, ai);
         idx = 0; persist(); editor();
       }
     };
@@ -4869,7 +5021,9 @@ const Deck = (() => {
   function convertLayout(s, lay) {
     const texts = [s.title, s.big, s.body, ...(s.bullets || []), ...(s.items || []).map((x) => x.title), ...(s.rows || []).map((r) => (Array.isArray(r) ? r.join(" · ") : r.label))].filter(Boolean);
     const n = { id: s.id, layout: lay, title: s.title || texts[0] || "Judul" };
-    if (["bullets", "agenda", "summary", "two"].includes(lay)) n.bullets = s.bullets || (s.items || []).map((x) => x.title) || texts.slice(1, 6);
+    if (["bullets", "agenda", "summary", "two", "points"].includes(lay)) n.bullets = s.bullets || (s.items || []).map((x) => x.title) || texts.slice(1, 6);
+    if (lay === "points") { n.big = s.big || s.body || ""; n.links = s.links || []; }
+    if (lay === "links") n.links = s.links || Exporter.linksOf().slice(0, 6);
     if (lay === "summary" || lay === "two") { n.body = s.body || s.big || ""; n.side = s.side || "Poin"; }
     if (lay === "ideas") n.items = s.items || (s.bullets || texts.slice(1, 7)).map((t) => ({ title: t }));
     if (lay === "statement") { n.big = s.big || texts[1] || s.title; n.body = s.body || ""; }
@@ -4956,6 +5110,10 @@ const Deck = (() => {
           case "closing": sl.addText(s.title || "", { x: X(88), y: X(250), w: X(1000), h: X(150), fontFace: t.disp, fontSize: 66, color: fg }); sl.addText(s.subtitle || "", { x: X(88), y: X(410), w: X(900), h: X(50), fontFace: t.body, fontSize: 20, color: fg }); break;
           case "statement": sl.addText(s.title || "", { x: X(88), y: X(150), w: X(1000), h: X(40), fontFace: t.body, fontSize: 14, bold: true, color: H(t.acc), charSpacing: 4 }); sl.addText(s.big || "", { x: X(88), y: X(200), w: X(1050), h: X(260), fontFace: t.disp, fontSize: 36, color: fg, valign: "top", fit: "shrink" }); if (s.body) sl.addText(s.body, { x: X(88), y: X(480), w: X(950), h: X(120), fontFace: t.body, fontSize: 17, color: fg, valign: "top", fit: "shrink" }); break;
           case "agenda": case "bullets": title(s.title); bullets(s.bullets); break;
+          case "points": { title(s.title); let y = 168; if (s.big) { sl.addShape(P.ShapeType.roundRect, { x: X(88), y: X(y), w: X(1104), h: X(104), fill: { color: H(t.card) }, line: { color: H(t.acc), width: 1 }, rectRadius: 0.12 }); sl.addText(s.big, { x: X(112), y: X(y + 6), w: X(1060), h: X(92), fontFace: t.body, fontSize: 19, bold: true, color: fg, valign: "middle", fit: "shrink" }); y += 128; }
+            bullets(s.bullets, y, 1104); (s.links || []).forEach((l, i) => sl.addText(`${l.kind}: ${l.title}`, { x: X(88 + i * 276), y: X(606), w: X(264), h: X(34), fontFace: t.body, fontSize: 10, bold: true, color: fg, fill: { color: H(t.card) }, align: "center", valign: "middle", fit: "shrink", hyperlink: { url: l.url } })); break; }
+          case "links": title(s.title); (s.links || []).forEach((l, i) => { const cx = 88 + (i % 2) * 562, cy = 182 + Math.floor(i / 2) * 150; sl.addShape(P.ShapeType.roundRect, { x: X(cx), y: X(cy), w: X(542), h: X(134), fill: { color: H(t.card) }, line: { color: H(t.card) }, rectRadius: 0.12 });
+            sl.addText([{ text: String(l.kind).toUpperCase(), options: { fontSize: 10, bold: true, color: H(t.acc), breakLine: true } }, { text: l.title || l.url, options: { fontSize: 15, bold: true, color: fg, breakLine: true, hyperlink: { url: l.url } } }, { text: shortUrl(l.url), options: { fontSize: 10, color: fg, hyperlink: { url: l.url } } }], { x: X(cx + 20), y: X(cy + 12), w: X(502), h: X(110), fontFace: t.body, valign: "top", fit: "shrink" }); }); break;
           case "summary": case "two": title(s.title); sl.addText(s.body || "", { x: X(88), y: X(190), w: X(520), h: X(440), fontFace: t.body, fontSize: 18, color: fg, valign: "top", fit: "shrink" }); if (s.side) sl.addText(s.side.toUpperCase(), { x: X(660), y: X(190), w: X(530), h: X(30), fontFace: t.body, fontSize: 13, bold: true, color: H(t.acc), charSpacing: 3 }); bullets(s.bullets, 230, 530, 660); break;
           case "ideas": { title(s.title); const it = s.items || [], cols = it.length <= 2 ? it.length : it.length === 4 ? 2 : 3, rows = Math.ceil(it.length / cols), gw = 1104, gh = 440, cw = (gw - (cols - 1) * 22) / cols, ch = Math.min(200, (gh - (rows - 1) * 22) / rows);
             it.forEach((x, i) => { const cx = 88 + (i % cols) * (cw + 22), cy = 190 + Math.floor(i / cols) * (ch + 22); sl.addShape(P.ShapeType.roundRect, { x: X(cx), y: X(cy), w: X(cw), h: X(ch), fill: { color: H(t.card) }, line: { color: H(t.card) }, rectRadius: 0.15 }); sl.addText((x.tag ? x.tag.toUpperCase() + "\n" : "") + x.title, { x: X(cx + 18), y: X(cy + 14), w: X(cw - 36), h: X(ch - 28), fontFace: t.body, fontSize: 16, bold: true, color: fg, valign: "top", fit: "shrink" }); if (x.votes) sl.addText(`${x.votes} vote`, { x: X(cx + cw - 110), y: X(cy - 14), w: X(96), h: X(28), fontFace: t.body, fontSize: 11, bold: true, color: H(t.dark), fill: { color: H(t.acc) }, align: "center", rectRadius: 0.2 }); }); break; }
@@ -4991,6 +5149,9 @@ const Deck = (() => {
         const c = await window.html2canvas(host.firstElementChild, { scale: 1.5, useCORS: true, backgroundColor: null, logging: false, width: 1280, height: 720 });
         if (i) pdf.addPage([1280, 720], "landscape");
         pdf.addImage(c.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, 1280, 720);
+        // links and videos stay clickable on top of the slide picture
+        const box = host.firstElementChild.getBoundingClientRect();
+        host.querySelectorAll("[data-url]").forEach((el) => { const r = el.getBoundingClientRect(), u = safeUrl(el.dataset.url); if (u && r.width) pdf.link(r.left - box.left, r.top - box.top, r.width, r.height, { url: u.href }); });
       }
       host.remove();
       await save(fileBase() + ".pdf", pdf.output("blob"));
@@ -4999,6 +5160,336 @@ const Deck = (() => {
   }
   window.addEventListener("resize", () => { if (root && $("#dStage", root)) { drawStage(); drawThumbs(); } });
   return { open, close, get slides() { return slides; } };
+})();
+
+/* ---- 14-export.js ---- */
+// Downloads that aren't slides: the board itself as a PDF (the whole board,
+// then one page per frame, then its links and videos) and a meeting's notulen
+// as a plain-text PDF. Same libraries as the deck's PDF (13-deck.js).
+const Exporter = (() => {
+  const JSPDF = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+  const H2C = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+  async function save(filename, blob) {
+    let dl = null;
+    try { dl = await window.claude?.use?.("downloads"); } catch { dl = null; }
+    if (!dl) return toast("Unduhan tidak tersedia di tampilan ini");
+    try { await dl.save({ filename, data: blob }); toast(`${filename} siap`); }
+    catch (e) { if (e?.code !== "cancelled" && e?.code !== "declined") toast("Unduhan dibatalkan atau gagal"); }
+  }
+  const slug = (s, d) => (String(s || "").replace(/^Contoh · /, "").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 60) || d);
+  // jsPDF's built-in fonts only know Latin-1 (plus curly quotes): drop emoji and the like.
+  const pdfText = (s) => String(s ?? "").replace(/[–—]/g, "-").replace(/[^\u0000-ÿ‘’“”•…]/g, "").replace(/\s+\n/g, "\n").trim();
+  const busy = (btn) => { if (!btn) return () => {}; const old = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; return () => { btn.innerHTML = old; btn.disabled = false; }; };
+
+  // Every link and video on the board (or inside one frame), for the PDF's last page and the deck.
+  function linksOf(objs = Store.objects()) {
+    const out = [], seen = new Set();
+    for (const o of objs) {
+      if (o.type !== "embed" || !o.data?.url || seen.has(o.data.url) || !Canvas.visible(o)) continue;
+      seen.add(o.data.url);
+      const kind = { youtube: "Video YouTube", tiktok: "Video TikTok", instagram: "Instagram" }[o.data.kind] || o.data.domain || "Link";
+      out.push({ title: o.data.title || o.text || o.data.url, kind, url: o.data.url });
+    }
+    return out;
+  }
+
+  // ---------- the board ----------
+  async function boardPDF(btn) {
+    const b = Store.board();
+    if (!b || !Store.S.loaded) return toast("Buka papan dulu");
+    if (!Store.objects().length) return toast("Papan ini masih kosong");
+    const done = busy(btn);
+    const t = toast("Menyiapkan PDF papan…", { ms: 60000 });
+    const vp = $("#vp"), links = $("#linksL"), cam = { ...Canvas.cam };
+    const keep = { bg: vp.style.backgroundImage, l: links.getAttribute("style") || "", vb: links.getAttribute("viewBox") };
+    try {
+      await loadScript(H2C); await loadScript(JSPDF); await document.fonts.ready;
+      Canvas.deselect();
+      // The connector layer is a 1px SVG that overflows; give it the board's real size while capturing.
+      const real = Store.objects().filter((o) => o.type !== "connector" && Canvas.visible(o));
+      let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      for (const o of real) { x1 = Math.min(x1, o.x); y1 = Math.min(y1, o.y - 40); x2 = Math.max(x2, o.x + o.w); y2 = Math.max(y2, o.y + (o.h || 200)); }
+      links.setAttribute("viewBox", `${x1 - 200} ${y1 - 200} ${x2 - x1 + 400} ${y2 - y1 + 400}`);
+      links.style.left = x1 - 200 + "px"; links.style.top = y1 - 200 + "px"; links.style.width = x2 - x1 + 400 + "px"; links.style.height = y2 - y1 + 400 + "px";
+      vp.style.backgroundImage = "none";
+      const bg = getComputedStyle(vp).backgroundColor;
+      const r = vp.getBoundingClientRect(), scale = clamp(2400 / Math.max(r.width, 1), 1.5, 3);
+      const shot = async (ids) => {
+        Canvas.fit(ids, false);
+        await sleep(260);
+        const c = await window.html2canvas(vp, { scale, backgroundColor: bg, useCORS: true, logging: false, ignoreElements: (el) => el.tagName === "IFRAME" });
+        return c;
+      };
+      const frames = real.filter((o) => o.type === "frame").sort((a, c) => Math.round(a.y / 300) - Math.round(c.y / 300) || a.x - c.x);
+      const pages = [{ title: b.name, c: await shot(null) }];
+      for (const f of frames) pages.push({ title: (f.text || "Frame").replace(/^\d+\s*·\s*/, ""), c: await shot([f.id]) });
+      const pdf = new window.jspdf.jsPDF({ orientation: "landscape", unit: "px", format: [pages[0].c.width, pages[0].c.height], hotfixes: ["px_scaling"] });
+      const brand = Store.lab()?.brand?.name || "";
+      pages.forEach((p, i) => {
+        const W = p.c.width, Hh = p.c.height;
+        if (i) pdf.addPage([W, Hh], W >= Hh ? "landscape" : "portrait");
+        pdf.addImage(p.c.toDataURL("image/jpeg", 0.88), "JPEG", 0, 0, W, Hh);
+        const fs = Math.round(W / 90);
+        const alpha = (a) => { if (pdf.GState && pdf.setGState) pdf.setGState(new pdf.GState({ opacity: a })); };
+        pdf.setFillColor(0, 0, 0); alpha(0.55); pdf.rect(0, Hh - fs * 2.6, W, fs * 2.6, "F"); alpha(1);
+        pdf.setTextColor(255, 255, 255); pdf.setFontSize(fs);
+        pdf.text(pdfText(`${i ? p.title + " · " : ""}${b.name}${brand ? " · " + brand : ""}`), fs * 1.4, Hh - fs * 0.95);
+        pdf.text(`${i + 1} / ${pages.length + (linksOf().length ? 1 : 0)}`, W - fs * 1.4, Hh - fs * 0.95, { align: "right" });
+      });
+      const ls = linksOf();
+      if (ls.length) {
+        const W = pages[0].c.width, Hh = pages[0].c.height, fs = Math.round(W / 70), m = fs * 3;
+        pdf.addPage([W, Hh], "landscape");
+        pdf.setTextColor(30, 26, 20); pdf.setFontSize(fs * 1.6); pdf.text("Link & video di papan ini", m, m + fs);
+        let y = m + fs * 3.4;
+        for (const l of ls) {
+          if (y > Hh - m) { pdf.addPage([W, Hh], "landscape"); y = m; }
+          pdf.setFontSize(fs); pdf.setTextColor(30, 26, 20); pdf.text(pdfText(`${l.kind}: ${l.title}`).slice(0, 120), m, y);
+          pdf.setFontSize(fs * 0.8); pdf.setTextColor(180, 83, 10); pdf.textWithLink(l.url.slice(0, 140), m, y + fs * 1.2, { url: safeUrl(l.url)?.href || "" });
+          y += fs * 3;
+        }
+      }
+      await save(slug(b.name, "papan") + ".pdf", pdf.output("blob"));
+    } catch (e) { console.error(e); toast("PDF papan gagal dibuat: " + (e.message || "coba lagi")); }
+    finally {
+      vp.style.backgroundImage = keep.bg;
+      links.setAttribute("style", keep.l);
+      if (keep.vb == null) links.removeAttribute("viewBox"); else links.setAttribute("viewBox", keep.vb);
+      Object.assign(Canvas.cam, cam); Canvas.applyCam(); Canvas.scheduleRender();
+      t.remove?.(); done();
+    }
+  }
+
+  // ---------- notulen ----------
+  const SECS = [["topik", "Topik yang dibahas"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["ide", "Ide utama"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"], ["links", "Link & video"]];
+  function metaLine(m) {
+    const when = m.startedAt || m.at;
+    const end = m.endedAt ? new Date(m.endedAt) : null;
+    return [when ? fmtDate(when) + (end ? `–${String(end.getHours()).padStart(2, "0")}.${String(end.getMinutes()).padStart(2, "0")}` : "") : "", m.durationMs ? `durasi ${durLabel(m.durationMs)}` : "", m.people?.length ? `${m.people.length} peserta` : ""].filter(Boolean).join(" · ");
+  }
+  function notulenHTML(r, m, boardName) {
+    const list = (k) => {
+      const a = r[k] || [];
+      if (!a.length) return "";
+      if (k === "aksi") return `<table class="nt-tasks"><tr><th>Tugas</th><th>PIC</th><th>Tenggat</th></tr>${a.map((x) => `<tr><td>${esc(x.tugas)}</td><td>${esc(x.pic || "–")}</td><td>${esc(x.deadline || "–")}</td></tr>`).join("")}</table>`;
+      if (k === "links") return `<ul>${a.map((l) => `<li>${esc(l.kind)}: <a href="${esc(safeUrl(l.url)?.href || "#")}" target="_blank" rel="noopener">${esc(l.title)}</a></li>`).join("")}</ul>`;
+      return `<ul>${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+    };
+    return `<div class="notulen"><div class="nt-head"><b>${esc(m.title || boardName || "Rapat")}</b><span>${esc(metaLine(m))}</span></div>
+      ${m.people?.length ? `<h5>Peserta</h5><p>${esc(m.people.join(", "))}</p>` : ""}
+      ${r.ringkasan ? `<h5>Gambaran rapat</h5><p>${esc(r.ringkasan)}</p>` : ""}
+      ${SECS.map(([k, label]) => { const h = list(k); return h ? `<h5>${label}</h5>${h}` : ""; }).join("")}</div>`;
+  }
+  async function notulenPDF(r, m, boardName, btn) {
+    const done = busy(btn);
+    try {
+      await loadScript(JSPDF);
+      const pdf = new window.jspdf.jsPDF({ unit: "pt", format: "a4" });
+      const W = pdf.internal.pageSize.getWidth(), Hh = pdf.internal.pageSize.getHeight(), M = 50, TW = W - M * 2;
+      let y = M;
+      const room = (h) => { if (y + h > Hh - M) { pdf.addPage(); y = M; } };
+      const para = (txt, size = 11, color = [40, 36, 30], bold = false) => {
+        pdf.setFont("helvetica", bold ? "bold" : "normal"); pdf.setFontSize(size); pdf.setTextColor(...color);
+        for (const line of pdf.splitTextToSize(pdfText(txt), TW)) { room(size * 1.45); pdf.text(line, M, y); y += size * 1.45; }
+      };
+      const head = (txt) => { y += 10; room(34); pdf.setDrawColor(230, 222, 208); pdf.line(M, y - 4, W - M, y - 4); y += 12; para(txt, 12.5, [180, 83, 10], true); y += 2; };
+      const bullets = (arr) => { for (const x of arr) { pdf.setFont("helvetica", "normal"); pdf.setFontSize(11); const lines = pdf.splitTextToSize(pdfText(x), TW - 14); room(lines.length * 16); pdf.setTextColor(40, 36, 30); pdf.text("•", M, y); lines.forEach((l, i) => pdf.text(l, M + 14, y + i * 16)); y += lines.length * 16 + 3; } };
+      const brand = Store.lab()?.brand?.name || "";
+      para("NOTULEN RAPAT", 10, [180, 83, 10], true); y += 2;
+      para(m.title || boardName || "Rapat", 22, [25, 22, 18], true);
+      para([boardName && m.title !== boardName ? `Papan: ${boardName}` : "", brand].filter(Boolean).join(" · "), 10.5, [110, 100, 90]);
+      para(metaLine(m), 10.5, [110, 100, 90]);
+      if (m.people?.length) { head("Peserta"); para(m.people.join(", ")); }
+      if (r.ringkasan) { head("Gambaran rapat"); para(r.ringkasan); }
+      for (const [k, label] of SECS) {
+        const a = r[k] || []; if (!a.length) continue;
+        head(label);
+        if (k === "aksi") bullets(a.map((x) => `${x.tugas}${x.pic ? ` — PIC: ${x.pic}` : ""}${x.deadline ? ` — tenggat: ${x.deadline}` : ""}`));
+        else if (k === "links") for (const l of a) { room(32); para(`${l.kind}: ${l.title}`, 11); pdf.setFontSize(9.5); pdf.setTextColor(180, 83, 10); pdf.textWithLink(String(l.url).slice(0, 110), M, y, { url: safeUrl(l.url)?.href || "" }); y += 16; }
+        else bullets(a);
+      }
+      const n = pdf.getNumberOfPages();
+      for (let i = 1; i <= n; i++) { pdf.setPage(i); pdf.setFontSize(8.5); pdf.setTextColor(150, 140, 128); pdf.text(pdfText(`Dibuat di Brandlab Papan · ${i}/${n}`), W - M, Hh - 24, { align: "right" }); }
+      const day = new Date(m.startedAt || m.at || Date.now());
+      await save(`notulen-${slug(m.title || boardName, "rapat")}-${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}.pdf`, pdf.output("blob"));
+    } catch (e) { console.error(e); toast("PDF notulen gagal dibuat: " + (e.message || "coba lagi")); }
+    done();
+  }
+  return { boardPDF, notulenHTML, notulenPDF, linksOf, pdfText };
+})();
+
+/* ---- 14-home.js ---- */
+// Papan home (Brandlab, team only): what opens when the Papan tab is clicked.
+// Every board of the brand in folders (board.folder), the meetings held on
+// them with their notulen (board.meetings, written when a notulen is saved —
+// 11-panels.js recap), the tasks that came out of them, and how much of the
+// brand's board space is used (LIMITS). Only board docs are read here; a
+// notulen's full text is fetched when it is opened.
+const Home = (() => {
+  let el = null, folder = "all", unsub = null;
+  const isOpen = () => !!el && !el.hidden;
+  const can = () => Store.canWrite && !GUEST();
+  const boardsIn = (f) => Store.boards().filter((b) => (f === "all" ? true : f === "" ? !b.folder : b.folder === f));
+  const folders = () => [...new Set(Store.boards().map((b) => b.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id"));
+
+  function open() {
+    Store.closeBoard();
+    UI.closePops(); $(".scrim")?.remove(); Panels.close?.();
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "home"; el.id = "home";
+      document.body.appendChild(el);
+      el.addEventListener("click", onClick);
+    }
+    el.hidden = false;
+    document.body.classList.add("on-home");
+    if (!unsub) unsub = Store.on((k) => { if (isOpen() && (k === "boards" || k === "lab")) render(); });
+    render();
+  }
+  function close() {
+    if (!el) return;
+    el.hidden = true;
+    document.body.classList.remove("on-home");
+  }
+  function openBoard(id) { close(); Store.openBoard(id); }
+
+  // ---------- render ----------
+  function quotaHTML() {
+    const n = Store.boards().length, max = LIMITS.boards, full = n >= max;
+    return `<div class="home-quota${full ? " full" : n >= max - 2 ? " near" : ""}" role="status"><div class="hq-bar"><i style="width:${Math.min(100, (n / max) * 100)}%"></i></div><span><b>${n} dari ${max} papan</b> dipakai di brand ini · tiap papan maks. ${LIMITS.images} gambar${full ? ". Hapus papan lama supaya bisa bikin yang baru." : ""}</span></div>`;
+  }
+  function cardHTML(b) {
+    const meets = (b.meetings || []).length;
+    const info = [`diubah ${timeAgo(b.updatedAt || b.createdAt)}`, meets ? `${meets} rapat` : ""].filter(Boolean).join(" · ");
+    return `<article class="hcard" data-open="${esc(b.id)}" tabindex="0" aria-label="Buka papan ${esc(b.name)}">
+      <div class="pv">${b.thumb || `<span class="pv-empty">${ic("layers")}</span>`}</div>
+      <div class="tx"><b>${esc(b.name || "Papan tanpa judul")}</b><span>${esc(info)}</span>
+      <div class="chips">${b.folder ? `<span class="chip">${ic("folder")} ${esc(b.folder)}</span>` : ""}${b.share?.on ? `<span class="chip live">${ic("link")} Link aktif</span>` : ""}</div></div>
+      <button class="icon-btn hc-more" data-more="${esc(b.id)}" data-popper aria-label="Pilihan untuk ${esc(b.name)}">${ic("dots")}</button></article>`;
+  }
+  function meetingsHTML() {
+    const all = [];
+    for (const b of Store.boards()) for (const m of b.meetings || []) all.push({ ...m, boardId: b.id, boardName: b.name });
+    all.sort((a, c) => (c.at || 0) - (a.at || 0));
+    const rows = all.slice(0, 8).map((m) => `<button class="hrow" data-meet="${esc(m.boardId)}:${esc(m.id)}">
+      <span class="hr-date"><b>${esc(fmtDate(m.at, false))}</b><small>${esc(fmtDate(m.at).split(", ")[1] || "")}</small></span>
+      <span class="hr-main"><b>${esc(m.title || m.boardName || "Rapat")}</b><small>${esc([durLabel(m.durationMs), m.people?.length ? `${m.people.length} orang` : "", m.decisions ? `${m.decisions} keputusan` : "", m.tasks ? `${m.tasks} tugas` : ""].filter((x) => x && x !== "–").join(" · "))}</small>
+      ${m.people?.length ? `<small class="hr-people">${esc(m.people.slice(0, 6).join(", "))}${m.people.length > 6 ? ` +${m.people.length - 6}` : ""}</small>` : ""}</span>${ic("chevronDown", "i hr-go")}</button>`).join("");
+    return `<section class="hside"><h3>${ic("clock")} Rapat & notulen</h3>${rows || `<p class="muted hs-empty">Belum ada notulen. Di papan, jalankan Timer saat rapat, lalu klik <b>Selesai rapat</b>: peserta, durasi, keputusan, dan tugas tersimpan di sini.</p>`}</section>`;
+  }
+  function tasksHTML() {
+    const names = new Map(Store.boards().map((b) => [b.id, b.name]));
+    const list = (Store.lab().tasks || []).filter((t) => t.board && names.has(t.board));
+    const open = list.filter((t) => !t.done).sort((a, c) => String(a.due || "9999").localeCompare(String(c.due || "9999")));
+    const done = list.filter((t) => t.done).length;
+    const rows = open.slice(0, 8).map((t) => `<div class="htask"><input type="checkbox" data-task="${esc(t.id)}" aria-label="Tandai selesai: ${esc(t.title)}" ${can() ? "" : "disabled"}><span class="ht-main"><b>${esc(t.title)}</b><small>${esc([t.due ? `tenggat ${fmtDay(t.due)}` : "", t.goal ? `Tujuan: ${t.goal}` : ""].filter(Boolean).join(" · "))}</small><button class="linkbtn" data-open="${esc(t.board)}">${esc(names.get(t.board))}</button></span></div>`).join("");
+    return `<section class="hside"><h3>${ic("task")} Tugas dari papan${open.length ? ` <span class="chip">${open.length}</span>` : ""}</h3>${rows || `<p class="muted hs-empty">${done ? `Semua ${done} tugas dari papan sudah selesai.` : "Belum ada tugas. Di notulen rapat, centang tugasnya lalu klik <b>Jadikan tugas</b>: tugas masuk ke Tujuan dan muncul di sini."}</p>`}
+      ${BL() ? `<button class="linkbtn hs-more" data-go="goals">Lihat semua tugas di Tujuan</button>` : ""}</section>`;
+  }
+  function render() {
+    if (!el) return;
+    const all = Store.boards(), fs = folders();
+    if (folder !== "all" && folder !== "" && !fs.includes(folder)) folder = "all";
+    const list = boardsIn(folder);
+    const brand = Store.lab()?.brand?.name || "";
+    const chip = (k, label, n) => `<button class="fchip${folder === k ? " on" : ""}" data-folder="${esc(k)}">${k && k !== "all" ? ic("folder") : ""}${esc(label)} <small>${n}</small></button>`;
+    el.innerHTML = `<div class="home-in">
+      <header class="home-h"><div><div class="home-k">Papan${brand ? ` · ${esc(brand)}` : ""}</div><h1>Semua papan</h1></div><span class="spacer"></span>
+        ${window.__papanChat ? `<button class="btn btn-ai" data-act="ask">${ic("sparkle")} <span class="hide-sm">Tanya Brandlab</span></button>` : ""}
+        ${can() ? `<button class="btn btn-primary" data-act="new">${ic("plus")} Papan baru</button>` : ""}</header>
+      ${quotaHTML()}
+      <div class="home-cols"><div class="home-main">
+        ${all.length ? `<div class="home-folders" role="tablist" aria-label="Folder">${chip("all", "Semua", all.length)}${fs.map((f) => chip(f, f, boardsIn(f).length)).join("")}${fs.length ? chip("", "Tanpa folder", boardsIn("").length) : ""}${can() ? `<button class="fchip add" data-act="folder">${ic("plus")} Folder baru</button>` : ""}</div>` : ""}
+        ${list.length ? `<div class="home-cards">${list.map(cardHTML).join("")}</div>`
+          : all.length ? `<p class="muted" style="margin:24px 4px">Folder ini masih kosong. Pindahkan papan ke sini lewat tombol ⋯ di kartunya.</p>`
+          : `<div class="home-empty">${ic("layers")}<h2>Belum ada papan</h2><p class="muted">Papan untuk brainstorming dan rapat bareng tim: catatan, gambar, video, data brand, sampai notulen dan presentasi.</p>${can() ? `<button class="btn btn-primary" data-act="new">${ic("plus")} Papan baru</button>` : ""}</div>`}
+      </div><aside class="home-side">${meetingsHTML()}${tasksHTML()}</aside></div></div>`;
+  }
+
+  // ---------- actions ----------
+  function onClick(e) {
+    const t = e.target.closest("[data-act], [data-folder], [data-more], [data-open], [data-meet], [data-task], [data-go]");
+    if (!t || !el.contains(t)) return;
+    if (t.dataset.task != null) { const id = t.dataset.task; Store.labSave("tasks", { id, done: t.checked }); toast(t.checked ? "Tugas selesai" : "Tugas dibuka lagi"); return; }
+    if (t.dataset.more) { e.stopPropagation(); return cardMenu(t, t.dataset.more); }
+    if (t.dataset.folder != null) { folder = t.dataset.folder; render(); return; }
+    if (t.dataset.meet) { const [b, m] = t.dataset.meet.split(":"); return notulen(b, m); }
+    if (t.dataset.go) return window.__papanGo?.(t.dataset.go);
+    if (t.dataset.open) return openBoard(t.dataset.open);
+    const a = t.dataset.act;
+    if (a === "new") { if (!canAddBoard()) return; return UI.templates("new"); }
+    if (a === "folder") return folderDialog();
+    if (a === "ask") return window.__papanChat?.();
+  }
+  function canAddBoard() {
+    if (Store.boards().length < LIMITS.boards) return true;
+    toast(`Batas ${LIMITS.boards} papan per brand sudah tercapai. Hapus papan yang sudah tidak dipakai dulu.`, { ms: 6000 });
+    return false;
+  }
+  function cardMenu(btn, id) {
+    const b = Store.boards().find((x) => x.id === id); if (!b) return;
+    const fs = folders().filter((f) => f !== b.folder);
+    UI.pop(btn, `<button class="mi" data-pick="open">${ic("arrowRight")} Buka</button>
+      ${can() ? `<button class="mi" data-pick="rename">${ic("edit")} Ganti nama</button>
+      <div class="sep"></div><div class="mh">Pindah ke folder</div>
+      ${fs.map((f) => `<button class="mi" data-pick="mv:${esc(f)}">${ic("folder")} ${esc(f)}</button>`).join("")}
+      <button class="mi" data-pick="mvnew">${ic("plus")} Folder baru…</button>
+      ${b.folder ? `<button class="mi" data-pick="mvout">${ic("x")} Keluarkan dari “${esc(b.folder)}”</button>` : ""}
+      <div class="sep"></div><button class="mi" data-pick="del" style="color:var(--bad)">${ic("trash")} Hapus papan</button>` : ""}`, {
+      onPick: (k, item) => {
+        if (k === "open") return openBoard(id);
+        if (k === "rename") { setTimeout(() => renameDialog(b), 0); return; }
+        if (k.startsWith("mv:")) { Store.updateBoard({ folder: k.slice(3) }, id); toast(`Dipindah ke “${k.slice(3)}”`); return; }
+        if (k === "mvout") { Store.updateBoard({ folder: null }, id); toast("Dikeluarkan dari folder"); return; }
+        if (k === "mvnew") { setTimeout(() => folderDialog(id), 0); return; }
+        if (k === "del") {
+          if (item.dataset.sure) { Store.deleteBoard(id); toast("Papan dihapus"); return; }
+          item.dataset.sure = "1"; item.innerHTML = `${ic("trash")} Yakin? Klik lagi untuk menghapus semua isinya`; return true;
+        }
+      } });
+  }
+  function renameDialog(b) {
+    const s = UI.modal("Ganti nama papan", `<label class="lbl" for="hmName">Nama papan</label><input class="field" id="hmName" maxlength="80" value="${esc(b.name || "")}">`, `<button class="btn btn-ghost" data-x>Batal</button><button class="btn btn-primary" id="hmNameGo">Simpan</button>`, { cls: "sm" });
+    const go = () => { const v = $("#hmName").value.trim(); if (!v) return toast("Tulis namanya dulu"); Store.updateBoard({ name: v }, b.id); s.remove(); };
+    s.querySelector("[data-x]").onclick = () => s.remove();
+    $("#hmNameGo").onclick = go; $("#hmName").onkeydown = (e) => { if (e.key === "Enter") go(); };
+    setTimeout(() => $("#hmName")?.select(), 30);
+  }
+  // A folder is just a name on boards: make one by choosing which boards go in.
+  function folderDialog(preset) {
+    const list = Store.boards();
+    const s = UI.modal("Folder baru", `<div class="stack"><div><label class="lbl" for="hmFolder">Nama folder (misalnya nama proyek atau campaign)</label><input class="field" id="hmFolder" maxlength="40" placeholder="Campaign Ramadan"></div>
+      <div><label class="lbl">Papan yang masuk folder ini</label><div class="stack" style="gap:6px;max-height:300px;overflow:auto">${list.map((b) => `<label class="pickrow"><input type="checkbox" data-pb="${esc(b.id)}" ${b.id === preset ? "checked" : ""}><span class="t"><b>${esc(b.name)}</b><span>${b.folder ? `Sekarang di “${esc(b.folder)}”` : "Belum di folder"}</span></span></label>`).join("")}</div></div></div>`,
+      `<button class="btn btn-ghost" data-x>Batal</button><button class="btn btn-primary" id="hmFolderGo">Buat folder</button>`, { cls: "sm" });
+    s.querySelector("[data-x]").onclick = () => s.remove();
+    $("#hmFolderGo").onclick = () => {
+      const name = $("#hmFolder").value.replace(/\s+/g, " ").trim();
+      const ids = $$("[data-pb]", s).filter((x) => x.checked).map((x) => x.dataset.pb);
+      if (!name) return toast("Tulis nama foldernya dulu");
+      if (!ids.length) return toast("Centang minimal satu papan untuk folder ini");
+      for (const id of ids) Store.updateBoard({ folder: name }, id);
+      s.remove(); folder = name; render();
+      toast(`Folder “${name}” dibuat dengan ${ids.length} papan`);
+    };
+    setTimeout(() => $("#hmFolder")?.focus(), 30);
+  }
+
+  // ---------- notulen ----------
+  async function notulen(boardId, meetingId) {
+    const b = Store.boards().find((x) => x.id === boardId);
+    const meta = (b?.meetings || []).find((m) => m.id === meetingId) || {};
+    const s = UI.modal("Notulen rapat", `<div id="hmNot">${'<div class="thinking"><span class="spinner"></span>Memuat notulen…</div>'}</div>`, `<button class="btn btn-secondary" id="hmNotOpen">${ic("arrowRight")} Buka papan</button><button class="btn btn-primary" id="hmNotPdf" disabled>${ic("download")} Unduh PDF</button>`);
+    $("#hmNotOpen").onclick = () => { s.remove(); openBoard(boardId); };
+    const doc = await Store.getRecap(boardId, meetingId);
+    if (!s.isConnected) return;
+    if (!doc) { $("#hmNot").innerHTML = `<p class="muted">Notulen ini tidak ditemukan. Mungkin sudah dihapus.</p>`; return; }
+    const r = doc.recap || {}, m = { ...meta, ...(doc.meeting || {}) };
+    $("#hmNot").innerHTML = Exporter.notulenHTML(r, m, b?.name || "");
+    $("#hmNotPdf").disabled = false;
+    $("#hmNotPdf").onclick = () => Exporter.notulenPDF(r, m, b?.name || "", $("#hmNotPdf"));
+  }
+
+  return { open, close, get isOpen() { return isOpen(); }, canAddBoard, openBoard, render };
 })();
 
 /* ---- 15-main.js ---- */
@@ -5024,6 +5515,7 @@ const App = (() => {
     $("#zoombar").innerHTML = `<button class="icon-btn readonly-hide" id="undoBtn" data-tip="Batal" data-key="Ctrl Z" aria-label="Batal">${ic("undo")}</button><button class="icon-btn readonly-hide" id="redoBtn" data-tip="Ulangi" data-key="Ctrl Shift Z" aria-label="Ulangi">${ic("redo")}</button><span class="sep readonly-hide"></span><button class="icon-btn" id="zoomOut" data-tip="Perkecil" data-key="−" aria-label="Perkecil">${ic("minus")}</button><button class="zl tnum" id="zoomLbl" data-tip="Zoom 100%" data-key="Shift 0">100%</button><button class="icon-btn" id="zoomIn" data-tip="Perbesar" data-key="+" aria-label="Perbesar">${ic("plus")}</button><button class="icon-btn" id="zoomFit" data-tip="Lihat semua" data-key="Shift 1" aria-label="Lihat semua">${ic("fit")}</button>`;
     $("#helpBtn").innerHTML = ic("keyboard");
     $("#boardBtn").insertAdjacentHTML("beforeend", ic("chevronDown"));
+    if (BL() && !GUEST()) $("#homeBtn").innerHTML = ic("grid"); else $("#homeBtn")?.remove();
     $("#brandMark").innerHTML = MARK_SVG("#F3E6D3", "#E2683C");
     $("#shareBtn").insertAdjacentHTML("afterbegin", ic("users"));
     $("#deckBtn").insertAdjacentHTML("afterbegin", ic("slides"));
@@ -5099,6 +5591,14 @@ const App = (() => {
     Store.on((k, info) => {
       if (k === "boards" && !opened && Store.S.boardsLoaded) {
         opened = true;
+        // Brandlab team: the Papan tab opens the home (14-home.js); a board's
+        // own address (#/brand/:id/papan/:boardId) opens that board.
+        if (BL() && !GUEST()) {
+          const want = window.__papanBridge?.boardId;
+          if (want && Store.boards().some((b) => b.id === want)) Store.openBoard(want);
+          else Home.open();
+          return;
+        }
         const list = Store.boards(), last = LS.get("lastBoard");
         const pick = list.find((b) => b.id === last) || (BL() ? null : list.find((b) => b.kind === "example")) || list[0];
         if (pick) Store.openBoard(pick.id);
@@ -5106,9 +5606,11 @@ const App = (() => {
         else showEmpty();
       }
       if (k === "boards" && opened && Store.S.boardId && !Store.boards().some((b) => b.id === Store.S.boardId)) {
+        if (BL() && !GUEST()) { toast("Papan ini dihapus"); Home.open(); return; }
         const next = Store.boards()[0]; if (next) { toast("Papan ini dihapus oleh anggota lain"); Store.openBoard(next.id); } else showEmpty();
       }
-      if (k === "board-open") { hideEmpty(); Collab.presence({ b: info.id, sel: [], edit: null }); UI.updateTop(); try { window.__papanBridge?.boardChanged(info.id); } catch {} }
+      if (k === "board-open") { hideEmpty(); Home.close(); Collab.presence({ b: info.id, sel: [], edit: null }); UI.updateTop(); try { window.__papanBridge?.boardChanged(info.id); } catch {} }
+      if (k === "board-close") { Collab.presence({ b: null, sel: [], edit: null }); try { window.__papanBridge?.boardChanged(null); } catch {} }
       if (k === "objects" && info?.first) { setTimeout(() => { readableFit(); setTimeout(() => UI.tour(), 500); }, 30); }
     });
     if (Store.S.boardsLoaded && !opened) Store.emit("boards");

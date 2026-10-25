@@ -153,6 +153,7 @@ const UI = (() => {
       <div class="row" style="align-items:center"><input class="field" id="tmin" type="number" min="1" max="240" placeholder="Menit" style="width:90px"><button class="btn btn-primary btn-sm" data-pick="custom">Mulai</button></div>`
         : `<div class="row"><button class="btn btn-primary btn-sm" data-pick="sw">${ic("stopwatch")} ${t?.mode === "up" ? "Mulai dari nol" : "Mulai stopwatch"}</button></div>`}
       ${t ? `<div class="sep"></div>${t.running ? `<button class="mi" data-pick="pause">${ic("pause")} Jeda</button>` : `<button class="mi" data-pick="resume">${ic("play")} Lanjutkan</button>`}<button class="mi" data-pick="reset">${ic("x")} Hapus timer</button>` : ""}
+      ${(t || Store.board()?.meeting?.startedAt) && can && !GUEST() ? `<div class="sep"></div><button class="mi" data-pick="end" style="font-weight:800">${ic("file")} Selesai rapat & tulis notulen<span class="k faint" style="font-size:11px">${esc(durLabel(Board.meeting().durationMs))}</span></button>` : ""}
       <div class="sep"></div>
       <div class="mh">Peserta rapat (${people.length})</div>
       <div class="chips" style="padding:0 10px 8px;max-width:300px">${people.map((p) => `<span class="chip">${esc(p.name)}${can && !GUEST() ? ` <button class="chip-x" data-pick="rm:${esc(p.id)}" aria-label="Hapus ${esc(p.name)}">×</button>` : ""}</span>`).join("") || '<span class="faint" style="font-size:12px">Belum ada. Yang membuka papan saat timer berjalan tercatat otomatis.</span>'}</div>
@@ -164,6 +165,7 @@ const UI = (() => {
         if (k === "custom") { const v = +$("#tmin").value; if (!v) { toast("Isi jumlah menit dulu"); return true; } Board.startTimer(clamp(v, 1, 240)); }
         if (k === "sw") Board.startStopwatch();
         if (k === "pause") Board.pauseTimer(); if (k === "resume") Board.resumeTimer(); if (k === "reset") Board.resetTimer();
+        if (k === "end") { const m = Board.endMeeting(); setTimeout(() => Panels.recap(m), 60); toast(`Rapat selesai: ${durLabel(m.durationMs)}, ${m.people.length} peserta. Periksa notulennya lalu simpan.`); return; }
         const again = () => { setTimeout(() => timerPop(anchor), 60); return true; };
         if (k === "addp") { const n = $("#tpName").value.trim(); if (!n) { toast("Tulis namanya dulu"); return true; } Board.addAttendee(n); return again(); }
         if (k.startsWith("rm:")) { Board.removeAttendee(k.slice(3)); return again(); }
@@ -426,6 +428,7 @@ const UI = (() => {
   }
   async function newBoard(name, objs) {
     if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan di sini");
+    if (!Home.canAddBoard()) return;
     const map = new Map(objs.map((o) => [o.id, uid("o")]));
     const list = objs.map((o, i) => { const n = clone(o); n.id = map.get(o.id); if (n.type === "connector") for (const k of ["from", "to"]) { if (n.data[k].id) n.data[k].id = map.get(n.data[k].id); } n.z = i + 1; return Store.newObject(n); });
     await Store.createBoard({ name, objects: list, kind: "template" });
@@ -434,13 +437,14 @@ const UI = (() => {
   function boardMenu(btn) {
     const list = Store.boards();
     const cur = Store.board();
-    pop(btn, `<div class="boards-list">${cur && Store.canWrite ? `<div class="row" style="padding:6px"><input class="field" id="bname" value="${esc(cur.name)}" aria-label="Nama papan"></div>` : ""}<div class="mh">Papan brand ini</div>${list.map((b) => `<button class="mi${b.id === Store.S.boardId ? " act" : ""}" data-pick="open:${b.id}">${ic("layers")}<span class="bn">${esc(b.name)}</span><span class="k faint" style="font-size:11px">${timeAgo(b.updatedAt || b.createdAt)}</span></button>`).join("") || '<p class="muted" style="padding:6px 10px;margin:0">Belum ada papan.</p>'}
+    pop(btn, `<div class="boards-list">${cur && Store.canWrite ? `<div class="row" style="padding:6px"><input class="field" id="bname" value="${esc(cur.name)}" aria-label="Nama papan"></div>` : ""}${BL() ? `<button class="mi" data-pick="home">${ic("grid")} Semua papan & folder</button><div class="sep"></div>` : ""}<div class="mh">Papan brand ini</div>${list.map((b) => `<button class="mi${b.id === Store.S.boardId ? " act" : ""}" data-pick="open:${b.id}">${ic("layers")}<span class="bn">${esc(b.name)}</span><span class="k faint" style="font-size:11px">${timeAgo(b.updatedAt || b.createdAt)}</span></button>`).join("") || '<p class="muted" style="padding:6px 10px;margin:0">Belum ada papan.</p>'}
       ${Store.canWrite ? `<div class="sep"></div><button class="mi" data-pick="new">${ic("plus")} Papan baru</button>${cur ? `<button class="mi" data-pick="del" style="color:var(--bad)">${ic("trash")} Hapus papan ini</button>` : ""}` : ""}</div>`, {
       onPick: (k, b) => {
         if (k.startsWith("open:")) { Board.open(k.slice(5)); return; }
-        if (k === "new") { templates("new"); return; }
+        if (k === "home") { Home.open(); return; }
+        if (k === "new") { if (Home.canAddBoard()) templates("new"); return; }
         if (k === "del") {
-          if (b.dataset.sure) { const id = Store.S.boardId; const next = Store.boards().find((x) => x.id !== id); Store.deleteBoard(id); if (next) Board.open(next.id); else App.showEmpty(); toast("Papan dihapus"); return; }
+          if (b.dataset.sure) { const id = Store.S.boardId; const next = Store.boards().find((x) => x.id !== id); if (BL()) Home.open(); Store.deleteBoard(id); if (!BL()) { if (next) Board.open(next.id); else App.showEmpty(); } toast("Papan dihapus"); return; }
           b.dataset.sure = "1"; b.innerHTML = `${ic("trash")} Yakin? Klik lagi untuk menghapus semua isinya`; return true;
         }
       } });
@@ -452,14 +456,17 @@ const UI = (() => {
     if (GUEST()) return pop(btn, `<button class="mi" data-pick="rename">${ic("edit")} Ganti nama (${esc(Store.me.name)})</button>
       <button class="mi" data-pick="theme">${ic(theme === "light" ? "moon" : "sun")} Tema: ${{ system: "ikut perangkat", dark: "gelap", light: "terang" }[theme]}</button>
       <button class="mi" data-pick="keys">${ic("keyboard")} Pintasan keyboard<span class="k"><span class="kbd">?</span></span></button>
+      <button class="mi" data-pick="pdf">${ic("download")} Unduh papan (PDF)</button>
       <button class="mi" data-pick="tour">${ic("help")} Tur singkat</button>`, {
       onPick: (k) => {
         if (k === "rename") setTimeout(renameGuest, 0);
+        if (k === "pdf") Exporter.boardPDF();
         if (k === "theme") App.setTheme({ system: "dark", dark: "light", light: "system" }[theme]);
         if (k === "keys") shortcuts(); if (k === "tour") tour(true);
       } });
-    pop(btn, `<button class="mi" data-pick="history">${ic("history")} Riwayat versi</button>
-      <button class="mi" data-pick="recap">${ic("file")} Ringkas rapat</button>
+    pop(btn, `${BL() ? `<button class="mi" data-pick="home">${ic("grid")} Semua papan</button><div class="sep"></div>` : ""}<button class="mi" data-pick="recap">${ic("file")} Notulen rapat</button>
+      <button class="mi" data-pick="pdf">${ic("download")} Unduh papan (PDF)</button>
+      <button class="mi" data-pick="history">${ic("history")} Riwayat versi</button>
       <button class="mi" data-pick="vote">${ic("vote")} ${Board.votingActive() ? "Selesai voting" : "Mulai voting"}</button>
       <button class="mi" data-pick="results">${ic("chart")} Hasil voting</button>
       <button class="mi" data-pick="approvals">${ic("approve")} Persetujuan klien</button>
@@ -472,6 +479,7 @@ const UI = (() => {
       ${BL() ? "" : `<button class="mi" data-pick="plan">${ic("map")} Rencana fitur & biaya</button>`}${window.__papanSignOut ? `<div class="sep"></div><button class="mi" data-pick="logout">${ic("arrowRight")} Keluar (${esc(Store.me.email || Store.me.name)})</button>` : ""}`, {
       onPick: (k) => {
         if (k === "history") Panels.history(); if (k === "recap") Panels.recap();
+        if (k === "home") Home.open(); if (k === "pdf") Exporter.boardPDF();
         if (k === "vote") { if (Board.votingActive()) Board.endVoting(); else setTimeout(() => votingPop($("#moreBtn")), 0); }
         if (k === "results") Panels.votes(); if (k === "approvals") Panels.approvals();
         if (k === "client") { Canvas.clientView = !Canvas.clientView; updateBanner(); Panels.refresh(); }
@@ -624,6 +632,7 @@ const UI = (() => {
     $("#undoBtn").onclick = () => History.undo();
     $("#redoBtn").onclick = () => History.redo();
     $("#boardBtn").onclick = (e) => { if (!GUEST()) boardMenu(e.currentTarget); };
+    $("#homeBtn") && ($("#homeBtn").onclick = () => Home.open());
     $("#timerBtn").onclick = (e) => timerPop(e.currentTarget);
     $("#moreBtn").onclick = (e) => mainMenu(e.currentTarget);
     $("#shareBtn").onclick = () => shareDialog();

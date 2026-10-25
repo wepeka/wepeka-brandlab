@@ -1,6 +1,8 @@
 // Board-level state (voting, timer) and every action on objects.
 const Board = (() => {
   const b = () => Store.board() || {};
+  // The first timer of a meeting marks its start (kept until the notulen is saved).
+  const meetingStart = () => (b().meeting?.startedAt ? {} : { meeting: { startedAt: Date.now(), ranMs: 0 } });
   const round = () => b().voting?.round || 0;
   function votesFor(o) {
     const r = round(); if (!r) return { count: 0, mine: false };
@@ -30,11 +32,28 @@ const Board = (() => {
     // Meeting timer, seen by everyone: a countdown ("down") or a stopwatch ("up").
     timer() { return b().timer || null; },
     timerMs(t = b().timer) { if (!t) return 0; if (t.mode === "up") return t.running ? Date.now() - t.startedAt : t.elapsed || 0; return t.running ? Math.max(0, t.endsAt - Date.now()) : t.remaining || 0; },
-    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { mode: "down", dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id } }); Board.addPresent(); },
-    startStopwatch() { Store.updateBoard({ timer: { mode: "up", startedAt: Date.now(), elapsed: 0, running: true, by: Store.me.id } }); Board.addPresent(); },
+    startTimer(min) { const ms = min * 60000; Store.updateBoard({ timer: { mode: "down", dur: ms, endsAt: Date.now() + ms, running: true, remaining: ms, by: Store.me.id }, ...meetingStart() }); Board.addPresent(); },
+    startStopwatch() { Store.updateBoard({ timer: { mode: "up", startedAt: Date.now(), elapsed: 0, running: true, by: Store.me.id }, ...meetingStart() }); Board.addPresent(); },
+    // The meeting on this board: when it started (the first timer), how long
+    // the timers ran, who was there. "Selesai rapat" closes it into a notulen.
+    meeting() {
+      const m = b().meeting || {}, t = b().timer, now = Date.now();
+      let ran = m.ranMs || 0;
+      if (t) ran += t.mode === "up" ? (t.running ? now - t.startedAt : t.elapsed || 0) : Math.max(0, (t.dur || 0) - (t.running ? Math.max(0, t.endsAt - now) : t.remaining ?? t.dur ?? 0));
+      return { startedAt: m.startedAt || null, endedAt: t ? null : m.endedAt || null, durationMs: ran, people: Board.attendees().map((p) => p.name) };
+    },
+    endMeeting() {
+      if (!Store.canWrite || GUEST()) return Board.meeting();
+      Board.addPresent();
+      const m = Board.meeting(), now = Date.now();
+      const out = { startedAt: m.startedAt || now - m.durationMs, endedAt: now, ranMs: m.durationMs };
+      Store.updateBoard({ timer: null, meeting: out });
+      return { startedAt: out.startedAt, endedAt: now, durationMs: m.durationMs, people: m.people };
+    },
     pauseTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: false, elapsed: Date.now() - t.startedAt } : { running: false, remaining: Math.max(0, t.endsAt - Date.now()) } }); },
     resumeTimer() { const t = b().timer; if (!t) return; Store.updateBoard({ timer: t.mode === "up" ? { running: true, startedAt: Date.now() - (t.elapsed || 0) } : { running: true, endsAt: Date.now() + (t.remaining || 0) } }); },
-    resetTimer() { Store.updateBoard({ timer: null }); },
+    // A timer cleared mid-meeting keeps the minutes it ran.
+    resetTimer() { const m = Board.meeting(); Store.updateBoard({ timer: null, ...(m.startedAt ? { meeting: { ranMs: m.durationMs } } : {}) }); },
     // Meeting attendees: everyone on the board while a timer runs is added on
     // its own (by a team member's screen: guests can't write the board), and
     // anyone can be added by name. They go into the meeting recap.
@@ -48,7 +67,7 @@ const Board = (() => {
     },
     addAttendee(name) { const n = String(name || "").trim().slice(0, 60); if (n) Store.updateBoard({ meeting: { people: { [uid("p")]: n } } }); },
     removeAttendee(id) { Store.updateBoard({ meeting: { people: { [id]: null } } }); },
-    clearAttendees() { Store.updateBoard({ meeting: null }); },
+    clearAttendees() { Store.updateBoard({ meeting: { people: null } }); },
   };
 })();
 
@@ -278,6 +297,8 @@ const Actions = (() => {
     for (const f of files) {
       const pos = { x: p.x + i * 40, y: p.y + i * 40 }; i++;
       if (f.type.startsWith("image/")) {
+        // pictures live inside the board's data: a cap per board keeps the database small
+        if (Store.objects().filter((o) => o.type === "image").length >= LIMITS.images) { toast(`Papan ini sudah berisi ${LIMITS.images} gambar (batas per papan). Hapus gambar lama atau pakai papan lain.`, { ms: 6000 }); break; }
         const t = toast(`Mengunggah ${f.name}…`, { ms: 20000 });
         try {
           const big = await compress(f, 1600, 0.82);

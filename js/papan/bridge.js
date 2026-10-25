@@ -285,7 +285,7 @@ function labData(brandId) {
   } catch { sales = null; }
   const tasks = [], milestones = [];
   for (const goal of goals) {
-    (goal.tasks || []).forEach((t) => tasks.push({ id: `${goal.id}:${t.id}`, title: t.label, due: t.dueDate || "", done: !!t.done, owner: "", priority: "sedang", goal: goal.name || goal.title || "" }));
+    (goal.tasks || []).forEach((t) => tasks.push({ id: `${goal.id}:${t.id}`, title: t.label, due: t.dueDate || "", done: !!t.done, owner: "", priority: "sedang", goal: goal.name || goal.title || "", board: t.fromBoard || "" }));
     try {
       const items = goalItems(goal, today);
       if (items.length) milestones.push({ id: goal.id, title: goal.name || goal.title || "Tujuan", due: goal.targetDate || "", progress: Math.round((items.filter((i) => i.state === "done").length / items.length) * 100) });
@@ -337,7 +337,8 @@ function makeLab(brandId) {
         const goal = listGoals(brandId).find((x) => x.id === goalId);
         if (!goal) return null;
         if (taskId) { updateGoal(brandId, goalId, { tasks: (goal.tasks || []).map((t) => (t.id === taskId ? { ...t, ...("done" in item ? { done: !!item.done } : {}), ...(item.title ? { label: item.title } : {}), ...(item.due !== undefined ? { dueDate: item.due || "" } : {}) } : t)) }); return { id: item.id }; }
-        const t = { id: Math.random().toString(36).slice(2, 10), laneId: "community", label: String(item.title || "Tugas").slice(0, 200), dueDate: item.due || "", done: false };
+        // fromBoard: the board it came from, for the Papan home's task list
+        const t = { id: Math.random().toString(36).slice(2, 10), laneId: "community", label: String(item.title || "Tugas").slice(0, 200), dueDate: item.due || "", done: false, ...(/^[A-Za-z0-9_-]{1,64}$/.test(item.boardId || "") ? { fromBoard: item.boardId } : {}) };
         updateGoal(brandId, goalId, { tasks: [...(goal.tasks || []), t] });
         return { id: `${goalId}:${t.id}` };
       }

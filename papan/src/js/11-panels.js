@@ -211,11 +211,26 @@ const Panels = (() => {
   }
 
   // ---------- meeting recap ----------
-  function recap() {
+  // Notulen: the meeting (title, when, how long, who) + what the board says
+  // happened. `ended` = the meeting "Selesai rapat" just closed (Board.endMeeting).
+  function recap(ended) {
     let r = Rules.recap();
-    if (!r.peserta?.length) r.peserta = Board.attendees().map((p) => p.name);
+    const mt = ended && ended.endedAt ? { ...ended } : Board.meeting();
+    if (!r.peserta?.length) r.peserta = mt.people?.length ? [...mt.people] : Board.attendees().map((p) => p.name);
+    r.links = Exporter.linksOf();
+    let title = (Store.board()?.name || "Rapat").replace(/^Contoh · /, "");
+    // the automatic summary counts decisions and tasks: keep its numbers right
+    // when rows are added or removed here (a summary someone rewrote stays)
+    let autoSum = r.ringkasan;
+    const fixSum = () => { if (r.ringkasan !== autoSum) return; r.ringkasan = r.ringkasan.replace(/\d+ keputusan/, `${(r.keputusan || []).filter((x) => String(x).trim()).length} keputusan`).replace(/\d+ tugas(?: yang belum selesai)?/, `${(r.aksi || []).filter((x) => x.tugas?.trim()).length} tugas`); autoSum = r.ringkasan; };
+    let minutes = mt.durationMs ? Math.max(1, Math.round(mt.durationMs / 60000)) : "";
+    const meetingOut = () => ({ title, startedAt: mt.startedAt || (minutes ? Date.now() - minutes * 60000 : Date.now()), endedAt: mt.endedAt || Date.now(), durationMs: minutes ? minutes * 60000 : 0, people: (r.peserta || []).map((x) => String(x).trim()).filter(Boolean) });
     const SECS = [["ringkasan", "Gambaran rapat", true], ["peserta", "Peserta rapat"], ["topik", "Topik yang dibahas"], ["ide", "Ide utama"], ["keputusan", "Keputusan"], ["terpilih", "Ide terpilih (dari voting)"], ["pertanyaan", "Pertanyaan terbuka"], ["aksi", "Tugas"], ["langkah", "Langkah berikutnya"]];
     const draw = () => {
+      $("#rcMeet").innerHTML = `<div class="rc-meet"><div><label class="lbl" for="rcTitle">Judul rapat</label><input class="field" id="rcTitle" maxlength="90" value="${esc(title)}"></div>
+        <div class="rc-meet-row"><div><label class="lbl">Waktu</label><div class="rc-val">${esc(mt.startedAt ? fmtDate(mt.startedAt) : fmtDate(Date.now()))}</div></div><div><label class="lbl" for="rcMin">Durasi (menit)</label><input class="field" id="rcMin" type="number" min="1" max="600" value="${esc(minutes)}" placeholder="isi" style="width:96px"></div><div><label class="lbl">Peserta</label><div class="rc-val">${(r.peserta || []).filter((x) => String(x).trim()).length} orang</div></div></div>
+        ${mt.startedAt ? "" : `<p class="faint" style="font-size:11.5px;margin:6px 0 0">Tips: jalankan Timer saat rapat dimulai, supaya durasi dan peserta tercatat otomatis.</p>`}</div>`;
+      $("#rcLinks").innerHTML = r.links.length ? `<div class="recap-sec"><h5>Link & video <small>ikut di notulen dan PDF</small></h5><div class="editlist">${r.links.map((l, i) => `<div class="er"><span class="rc-link">${ic(l.kind.startsWith("Video") ? "video" : "link")}<span><b>${esc(l.title)}</b><small>${esc(l.kind)}</small></span></span><button class="icon-btn x" data-dellink="${i}" aria-label="Hapus dari notulen">${ic("x")}</button></div>`).join("")}</div></div>` : "";
       $("#rcBody").innerHTML = SECS.map(([k, label, single]) => {
         if (single) return `<div class="recap-sec"><h5>${label}</h5><textarea class="field" data-k="${k}" rows="3">${esc(r[k] || "")}</textarea></div>`;
         const arr = r[k] || [];
@@ -225,26 +240,40 @@ const Panels = (() => {
       }).join("");
     };
     const read = () => {
+      title = ($("#rcTitle")?.value || "").trim() || title;
+      minutes = +($("#rcMin")?.value || 0) || "";
       $$("#rcBody [data-k]").forEach((el) => { const k = el.dataset.k; if (el.dataset.i == null) r[k] = el.value; else if (k === "aksi") r.aksi[+el.dataset.i].tugas = el.value; else r[k][+el.dataset.i] = el.value; });
       $$("#rcBody [data-pic]").forEach((el) => (r.aksi[+el.dataset.pic].pic = el.value.trim()));
       $$("#rcBody [data-dl]").forEach((el) => (r.aksi[+el.dataset.dl].deadline = el.value.trim()));
+      fixSum();
     };
-    open("recap", null, { title: "Ringkasan rapat", icon: "file", body: `<div class="stack"><p class="lead">Disusun dari isi papan: frame, tanda Keputusan/Pertanyaan, vote, checklist, dan komentar. Periksa dan ubah dulu sebelum disimpan.</p>${aiNote()}<div id="rcBody" class="stack"></div><div id="rcPast"></div></div>`,
-      foot: `<button class="btn btn-primary" id="rcSave">Simpan</button><button class="btn btn-secondary" id="rcPin">Tempel di papan</button>${BL() && Store.lab().goals?.length > 1 ? `<select class="field" id="rcGoal" style="width:auto;max-width:160px" aria-label="Tujuan untuk tugas">${Store.lab().goals.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("")}</select>` : ""}<button class="btn btn-secondary" id="rcTasks">Jadikan tugas</button><button class="btn btn-ai" id="rcAI" ${AI.available ? "" : "disabled"}>${ic("sparkle")} Rapikan bahasa ${UI.AI_COST}</button>`,
+    open("recap", null, { title: "Notulen rapat", icon: "file", body: `<div class="stack"><p class="lead">Disusun dari isi papan: frame, tanda Keputusan/Pertanyaan, vote, checklist, komentar, dan link video. Periksa dan ubah dulu, lalu simpan: notulen muncul di halaman Semua papan.</p>${aiNote()}<div id="rcMeet"></div><div id="rcBody" class="stack"></div><div id="rcLinks"></div><div id="rcPast"></div></div>`,
+      foot: `<button class="btn btn-primary" id="rcSave">Simpan notulen</button><button class="btn btn-secondary" id="rcPdf">${ic("download")} PDF</button><button class="btn btn-secondary" id="rcPin">Tempel di papan</button>${BL() && Store.lab().goals?.length > 1 ? `<select class="field" id="rcGoal" style="width:auto;max-width:160px" aria-label="Tujuan untuk tugas">${Store.lab().goals.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("")}</select>` : ""}<button class="btn btn-secondary" id="rcTasks">Jadikan tugas</button><button class="btn btn-ai" id="rcAI" ${AI.available ? "" : "disabled"}>${ic("sparkle")} Rapikan bahasa ${UI.AI_COST}</button>`,
       async wire(s) {
         draw();
         s.addEventListener("click", (e) => {
-          const d = e.target.closest("[data-del]"), a = e.target.closest("[data-addrow]");
+          const d = e.target.closest("[data-del]"), a = e.target.closest("[data-addrow]"), dl = e.target.closest("[data-dellink]");
+          if (dl) { read(); r.links.splice(+dl.dataset.dellink, 1); draw(); return; }
           if (d) { read(); const [k, i] = d.dataset.del.split(":"); r[k].splice(+i, 1); draw(); }
           if (a) { read(); const k = a.dataset.addrow; (r[k] = r[k] || []).push(k === "aksi" ? { tugas: "", pic: "", deadline: "" } : ""); draw(); }
         });
         $("#rcAI").onclick = async () => { read(); const box = $("#rcBody"); const keep = box.innerHTML; box.innerHTML = busyHTML("Merapikan bahasa ringkasan…"); const res = await AI.recap(r); if (res) { r = res; toast("Bahasanya dirapikan. Keputusan, PIC, dan tenggat tidak ditambah."); } draw(); void keep; };
-        $("#rcSave").onclick = async () => { read(); if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini"); await Store.saveColl("recaps", { recap: clone(r) }, 20); toast("Ringkasan tersimpan di papan ini"); past(); };
+        $("#rcSave").onclick = async () => {
+          read(); if (!Store.canWrite || GUEST()) return toast("Kamu hanya bisa melihat papan ini");
+          const m = meetingOut();
+          const it = await Store.saveColl("recaps", { recap: clone(r), meeting: m }, 20);
+          // the home lists meetings from the board doc, so it never reads every notulen
+          const row = { id: it.id, at: m.startedAt, title: m.title, durationMs: m.durationMs, people: m.people.slice(0, 20), decisions: (r.keputusan || []).length, tasks: (r.aksi || []).length };
+          const list = [row, ...(Store.board()?.meetings || []).filter((x) => x.id !== it.id)].slice(0, 20);
+          Store.updateBoard({ meetings: list, meeting: null });
+          toast("Notulen tersimpan. Lihat juga di halaman Semua papan."); past();
+        };
+        $("#rcPdf").onclick = () => { read(); Exporter.notulenPDF(clone(r), meetingOut(), Store.board()?.name || "", $("#rcPdf")); };
         $("#rcPin").onclick = () => { read(); const o = Store.newObject({ type: "doc", x: 0, y: 0, w: 420, h: 520, text: "Ringkasan rapat", data: { ...clone(r), at: Date.now() } }); const c = Canvas.centerWorld(); o.x = Math.round(c.x - 210); o.y = Math.round(c.y - 260); Canvas.add([o], { select: true }); };
         $("#rcTasks").onclick = () => {
           read(); const picks = $$("#rcBody [data-tk]").filter((x) => x.checked).map((x) => r.aksi[+x.dataset.tk]).filter((x) => x.tugas.trim());
           if (!picks.length) return toast("Centang tugas yang mau dibuat dulu");
-          if (BL()) { const L = Store.lab(); if (!L.goals?.length) return toast("Tugas di Brandlab menempel ke sebuah Tujuan. Buat Tujuan dulu.", { action: "Buka Tujuan", onAction: () => window.__papanGo?.("goals") }); const gid = $("#rcGoal")?.value || L.goals[0].id; for (const t of picks) Store.labSave("tasks", { goalId: gid, title: t.tugas.trim(), due: Rules.parseDate(t.deadline) || "" }); return toast(`${picks.length} tugas dibuat di Tujuan “${L.goals.find((g) => g.id === gid)?.name || ""}”`); }
+          if (BL()) { const L = Store.lab(); if (!L.goals?.length) return toast("Tugas di Brandlab menempel ke sebuah Tujuan. Buat Tujuan dulu.", { action: "Buka Tujuan", onAction: () => window.__papanGo?.("goals") }); const gid = $("#rcGoal")?.value || L.goals[0].id; for (const t of picks) Store.labSave("tasks", { goalId: gid, title: t.tugas.trim(), due: Rules.parseDate(t.deadline) || "", boardId: Store.S.boardId }); return toast(`${picks.length} tugas dibuat di Tujuan “${L.goals.find((g) => g.id === gid)?.name || ""}”`); }
           if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
           for (const t of picks) Store.labSave("tasks", { id: uid("t"), title: t.tugas.trim(), owner: t.pic || "", due: Rules.parseDate(t.deadline) || "", done: false, priority: "sedang", source: { boardId: Store.S.boardId, objectIds: t.ids || [] } });
           toast(`${picks.length} tugas dibuat di Brandlab${EX()}`);
@@ -254,7 +283,7 @@ const Panels = (() => {
           const list = await Store.listColl("recaps", 10);
           const el = $("#rcPast"); if (!el) return;
           el.innerHTML = list.length ? `<div class="mh" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:6px 0">Tersimpan</div>${list.map((x) => `<div class="ver"><div class="t"><b>${fmtDate(x.at)}</b><span>oleh ${esc(Collab.nameOf(x.by))} · ${(x.recap?.keputusan || []).length} keputusan, ${(x.recap?.aksi || []).length} tugas</span></div><button class="btn btn-ghost btn-xs" data-open="${x.id}">Buka</button></div>`).join("")}` : "";
-          el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { const x = list.find((y) => y.id === b.dataset.open); r = clone(x.recap); draw(); toast("Ringkasan lama dibuka"); }));
+          el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { const x = list.find((y) => y.id === b.dataset.open); r = clone(x.recap); r.links = r.links || []; if (x.meeting) { Object.assign(mt, x.meeting); title = x.meeting.title || title; minutes = x.meeting.durationMs ? Math.round(x.meeting.durationMs / 60000) : ""; } draw(); toast("Notulen lama dibuka"); }));
         }
       } });
   }
@@ -426,7 +455,7 @@ const Panels = (() => {
         $("#tkGo", s).onclick = () => {
           if (!Store.canWrite) return toast("Kamu hanya bisa melihat papan ini");
           const gid = $("#tkG", s).value; let n = 0;
-          s.querySelectorAll(".task-card").forEach((c) => { const r = rows[+c.dataset.i]; const t = { goalId: gid }; c.querySelectorAll("[data-k]").forEach((i) => (t[i.dataset.k] = i.value)); const res = Store.labSave("tasks", t); if (res?.id) { n++; linkNotes([r.o], "task", res.id, "Jadikan tugas"); } });
+          s.querySelectorAll(".task-card").forEach((c) => { const r = rows[+c.dataset.i]; const t = { goalId: gid, boardId: Store.S.boardId }; c.querySelectorAll("[data-k]").forEach((i) => (t[i.dataset.k] = i.value)); const res = Store.labSave("tasks", t); if (res?.id) { n++; linkNotes([r.o], "task", res.id, "Jadikan tugas"); } });
           close(); toast(`${n} tugas masuk Tujuan “${L.goals.find((g) => g.id === gid)?.name || ""}”. Catatan aslinya tetap di papan.`, { action: "Buka Tujuan", onAction: () => window.__papanGo?.("tasks", gid) });
         };
       } });
