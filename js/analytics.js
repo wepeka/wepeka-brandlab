@@ -31,11 +31,11 @@ function load() {
 }
 
 // "#/brand/abc123/content?x=1" → "/app/brand/content". Ids (anything with a
-// digit and 8+ chars) and query strings are dropped so no uid/brand id or
-// token ever reaches GA.
+// digit and 8+ chars, or 20+ chars — a board's guest key may be all letters)
+// and query strings are dropped so no uid/brand id or token ever reaches GA.
 export function routePath(hash) {
   const route = String(hash || "").replace(/^#\/?/, "").split("?")[0];
-  const parts = route.split("/").filter((p) => p && /^[a-z-]+$/i.test(p) && !(p.length >= 8 && /\d/.test(p)));
+  const parts = route.split("/").filter((p) => p && /^[a-z-]+$/i.test(p) && !(p.length >= 8 && /\d/.test(p)) && p.length < 20);
   return "/app" + (parts.length ? "/" + parts.join("/") : "");
 }
 

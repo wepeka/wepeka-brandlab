@@ -225,7 +225,9 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/tools\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/([^/]+)\/?$/))) return { view: "goals", brandId: m[1], goalId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/goals\/?$/))) return { view: "goals", brandId: m[1] };
-  // Papan (whiteboard): the brand's boards; a board id opens that board.
+  // Papan (whiteboard): the brand's boards; a board id opens that board. A
+  // shared board's address also carries its guest key (papanGuestUrl).
+  if ((m = h.match(PAPAN_KEY_ROUTE))) return { view: "papan", brandId: m[1], boardId: m[2], boardKey: m[3] };
   if ((m = h.match(/^\/brand\/([^/]+)\/papan\/([^/]+)\/?$/))) return { view: "papan", brandId: m[1], boardId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/papan\/?$/))) return { view: "papan", brandId: m[1] };
   // The chat's own page. Its old address (under Brainstorm) still works.
@@ -239,6 +241,17 @@ function parseRoute(hash) {
   // Shortcut for announcements and WhatsApp posts (see route()).
   if (h === "/papan") return { view: "papan-go" };
   return { view: "brands" };
+}
+
+// A board whose link is on keeps its guest key in the address
+// (#/brand/:id/papan/:boardId/:key, js/views/papan.js), so whatever address
+// the team copies opens for anyone: someone who can't open the brand here
+// (signed out, no plan, not on the team) gets the board's guest page
+// instead (/papan/?tamu=…, papan/src/host/guest.js) — no sign-in.
+const PAPAN_KEY_ROUTE = /^\/brand\/([A-Za-z0-9_-]{1,64})\/papan\/([A-Za-z0-9_-]{1,64})\/([A-Za-z0-9_-]{20,64})\/?$/;
+function papanGuestUrl(hash) {
+  const m = String(hash || "").replace(/^#/, "").match(PAPAN_KEY_ROUTE);
+  return m ? `/papan/?tamu=${encodeURIComponent(`${m[1]}.${m[2]}.${m[3]}`)}` : null;
 }
 
 // The brand opened last on this device, for the "#/papan" shortcut.
@@ -402,6 +415,12 @@ async function boot(user) {
       renderInviteScreen();
       return;
     }
+    // A shared board's address: straight onto the board as a guest.
+    const papanGuest = papanGuestUrl(location.hash);
+    if (papanGuest) {
+      location.replace(papanGuest);
+      return;
+    }
     // Everyone else who is not signed in gets the front page: what Brandlab
     // is, the plans, the guide videos (js/views/landing.js). A browser that
     // has signed in before sees "Masuk ke Lab-mu" as its main button instead
@@ -483,6 +502,14 @@ function onAccountChange(user, account) {
   // the webhook's write: GA4 gets its "purchase" then, or on the next boot
   // (js/pending-orders.js). Nothing happens unless an order is remembered.
   checkPendingOrders(user.uid);
+
+  // A shared board's address, opened on an account that can't open the app
+  // at all (no plan, lapsed, switched off): the board as a guest instead.
+  const papanGuest = papanGuestUrl(location.hash);
+  if (papanGuest && (isDeactivated(account) || ["none", "expired"].includes(effectiveAccess(account)))) {
+    location.replace(papanGuest);
+    return;
+  }
 
   if (isDeactivated(account)) {
     endPaidWait();
@@ -777,6 +804,9 @@ async function renderRoute() {
   }
 
   if (route.brandId && !getBrand(route.brandId)) {
+    // Not on this brand's team: a shared board opens as a guest.
+    const papanGuest = route.boardKey && papanGuestUrl(location.hash);
+    if (papanGuest) { location.replace(papanGuest); return; }
     location.hash = "#/";
     return;
   }

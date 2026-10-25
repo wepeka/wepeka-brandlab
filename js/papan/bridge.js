@@ -373,7 +373,7 @@ export async function createBridge({ brandId, boardId, onBoard, openChat }) {
       const map = { dna: `#/brand/${brandId}/dna`, brandbook: `#/brand/${brandId}/guidelines`, campaign: id ? `#/brand/${brandId}/campaigns/${id}` : `#/brand/${brandId}/campaigns`, content: id ? `#/brand/${brandId}/content/list/${id}` : `#/brand/${brandId}/content/calendar`, tasks: id ? `#/brand/${brandId}/goals/${id}` : `#/brand/${brandId}/goals`, goals: `#/brand/${brandId}/goals`, team: "#/settings/team", sales: `#/brand/${brandId}/sales`, growth: `#/brand/${brandId}` };
       if (map[target]) location.hash = map[target];
     },
-    boardChanged(id) { bridge.boardId = id; onBoard && onBoard(id); },
+    boardChanged(id) { bridge.boardId = id; onBoard && onBoard(id, keyOf(id)); watchBoard(id); },
     // The board's guest link (api/papan.js): {on, role: "edit"|"view", rotate}.
     async share(id, opts = {}) {
       const token = await auth.currentUser?.getIdToken();
@@ -389,7 +389,38 @@ export async function createBridge({ brandId, boardId, onBoard, openChat }) {
     },
     guestLink: (id, t) => `${location.origin}/papan/?tamu=${encodeURIComponent(`${brandId}.${id}.${t}`)}`,
     openChat(summaryFn) { openChat && openChat(summaryFn); },
-    close() { room?.close(); lab.close(); },
+    close() { boardUn?.(); boardUn = null; room?.close(); lab.close(); },
   };
+
+  // The open board's link. Boards are open to anyone with the link by
+  // default: the first time the owner or an editor opens a board that never
+  // had one, it's switched on ("Bisa coret-coret"); Bagikan turns it off or
+  // makes a new one. While it's on, the address carries its key (onBoard →
+  // js/views/papan.js), so a copied address works like the Bagikan link.
+  const keys = new Map(), asked = new Set();
+  let boardUn = null;
+  function keyOf(id) { return keys.get(id) || null; }
+  function watchBoard(id) {
+    boardUn?.(); boardUn = null;
+    if (!id) return;
+    loadFirestore().then((fs) => {
+      if (bridge.boardId !== id || boardUn) return;
+      boardUn = fs.onSnapshot(fs.doc(liveDb, `brands/${brandId}/boards/${id}`), { includeMetadataChanges: true }, (s) => {
+        const sh = s.exists() ? s.data().share || null : null;
+        const key = sh?.on && sh?.t ? sh.t : null;
+        if (keys.get(id) !== key) {
+          keys.set(id, key);
+          if (bridge.boardId === id) onBoard && onBoard(id, key);
+        }
+        // Only on the server's copy: a board made a moment ago may not be
+        // there yet, and the server refuses to share what it can't find.
+        if (s.exists() && !sh && !s.metadata.fromCache && !s.metadata.hasPendingWrites && canEditBrand(brandId) && !asked.has(id)) {
+          asked.add(id);
+          bridge.share(id, { on: true, role: "edit" }).catch(() => {});
+        }
+      }, () => {});
+    }).catch(() => {});
+  }
+  if (boardId) watchBoard(boardId);
   return bridge;
 }

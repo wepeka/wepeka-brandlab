@@ -3,9 +3,9 @@
 // Guest host (papan/build.mjs puts it before host-brandlab.js, which calls
 // papanGuestHost when /papan/ is opened on its own with ?tamu=…).
 //
-// A board's guest link is /papan/?tamu=<brandId>.<boardId>.<secret>
-// (api/papan.js, "Link tamu" in the board's Bagikan dialog). The guest types a
-// name, the server hands back a sign-in for this one board, and this file
+// A board's link is /papan/?tamu=<brandId>.<boardId>.<secret>
+// (api/papan.js, "Link papan" in the board's Bagikan dialog). The guest goes
+// straight in, the server hands back a sign-in for this one board, and this file
 // gives the canvas the same window.claude.use() adapters js/papan/bridge.js
 // gives the team, minus what guests don't get: brand data, AI, other boards.
 // It keeps its own Firebase app ("papan-guest", in-memory sign-in) so a
@@ -110,12 +110,9 @@ function papanGuestHost(param) {
     return out;
   };
 
-  // Straight in: the name this browser used before, else the server's "Tamu N".
-  async function enter(name) {
-    const first = !ls.get("papan:guest:name");
-    const out = await join(name);
-    ls.set("papan:guest:name", out.name);
-
+  // The Firebase SDK and config, loaded once for both checks below.
+  let firebase = null;
+  const loadFirebase = () => (firebase ||= (async () => {
     const V = "12.18.0", sdk = (m) => import(`https://www.gstatic.com/firebasejs/${V}/firebase-${m}.js`);
     // Local testing on the Firebase emulators: the app's own switch (js/emulator.js).
     let emu = null;
@@ -129,6 +126,38 @@ function papanGuestHost(param) {
       messagingSenderId: "494668744644",
       appId: "1:494668744644:web:e4bdc9aea34800849f0691",
     };
+    return { initializeApp, A, F, D, config, emu };
+  })());
+  const within = (ms, p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
+
+  // Someone on the brand's team who is signed in to Brandlab in this browser
+  // (the owner trying their own link, a teammate) opens the board in
+  // Brandlab as themselves instead of as a guest. Reads Brandlab's own
+  // sign-in (the default app, same storage), never changes it; anything
+  // unclear — signed out, not on the team, slow — means guest.
+  async function teamMember() {
+    try {
+      const { initializeApp, A, F, config, emu } = await loadFirebase();
+      const app = initializeApp(config);
+      const auth = A.initializeAuth(app, { persistence: [A.indexedDBLocalPersistence, A.browserLocalPersistence] });
+      if (emu) A.connectAuthEmulator(auth, emu.EMULATOR_AUTH_URL, { disableWarnings: true });
+      await within(4000, auth.authStateReady());
+      const u = auth.currentUser;
+      if (!u) return false;
+      const fdb = F.initializeFirestore(app, { experimentalAutoDetectLongPolling: true, localCache: F.memoryLocalCache() });
+      if (emu) F.connectFirestoreEmulator(fdb, emu.EMULATOR_FIRESTORE.host, emu.EMULATOR_FIRESTORE.port);
+      const b = await within(5000, F.getDoc(F.doc(fdb, "brands", brandId)));
+      return b.exists() && (b.data().ownerId === u.uid || !!b.data().members?.[u.uid]);
+    } catch {
+      return false;
+    }
+  }
+
+  // Straight in: the name this browser used before, else the server's "Tamu N".
+  async function enter(name) {
+    const first = !ls.get("papan:guest:name");
+    const [out, { initializeApp, A, F, D, config, emu }] = await Promise.all([join(name), loadFirebase()]);
+    ls.set("papan:guest:name", out.name);
     const app = initializeApp(config, "papan-guest");
     const auth = A.initializeAuth(app, { persistence: A.inMemoryPersistence });
     if (emu) A.connectAuthEmulator(auth, emu.EMULATOR_AUTH_URL, { disableWarnings: true });
@@ -185,7 +214,10 @@ function papanGuestHost(param) {
 
   const start = () => {
     if (!brandId || !boardId || !OK.test(secret || "")) return gate();
-    enter(ls.get("papan:guest:name")).catch((err) => gate(ERR[err?.code] || "Gagal tersambung. Periksa internetmu lalu coba lagi."));
+    teamMember().then((team) => {
+      if (team) { location.replace(`/#/brand/${encodeURIComponent(brandId)}/papan/${encodeURIComponent(boardId)}`); return; }
+      return enter(ls.get("papan:guest:name"));
+    }).catch((err) => gate(ERR[err?.code] || "Gagal tersambung. Periksa internetmu lalu coba lagi."));
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
@@ -3527,17 +3559,12 @@ const UI = (() => {
   }
   function shareDialogBrandlab() {
     const others = Collab.others();
-    let link = "";
-    try { link = `${window.parent.location.origin}/#/brand/${window.__papanNS}/papan/${Store.S.boardId}`; } catch { link = ""; }
-    modal("Bagikan papan", `<div class="stack">
-      <div class="note">${ic("users")}<span>Papan ini milik brand, jadi semua anggota tim brand bisa membukanya: <b>Editor</b> ikut mengubah, <b>Lihat saja</b> hanya membaca. Kursor dan editan teman terlihat langsung.</span></div>
-      ${link ? `<div><label class="lbl" for="shLink">Link papan ini (untuk anggota tim)</label><div style="display:flex;gap:8px"><input class="field" id="shLink" readonly value="${esc(link)}"><button class="btn btn-primary" id="shCopy">${ic("copy")} Salin</button></div></div>` : ""}
-      <div><label class="lbl">Di papan sekarang (${others.length + 1})</label><div class="vlist"><div class="vi"><span class="av me" style="background:${Collab.colorOf(Store.me.id)};margin:0">${esc(initials(Store.me.name))}</span><div class="t"><b>${esc(Store.me.name || "Kamu")}</b><span>kamu</span></div></div>${others.map((p) => `<div class="vi"><span class="av" style="background:${Collab.colorOf(p.by)};margin:0">${esc(initials(Collab.nameOf(p.by)))}</span><div class="t"><b>${esc(Collab.nameOf(p.by))}</b><span>sedang di papan ini</span></div><button class="btn btn-secondary btn-xs" data-follow="${p.peer}">Ikuti</button></div>`).join("")}</div></div>
+    const dlg = modal("Bagikan papan", `<div class="stack">
       ${guestLinkHTML()}
+      <div><label class="lbl">Di papan sekarang (${others.length + 1})</label><div class="vlist"><div class="vi"><span class="av me" style="background:${Collab.colorOf(Store.me.id)};margin:0">${esc(initials(Store.me.name))}</span><div class="t"><b>${esc(Store.me.name || "Kamu")}</b><span>kamu</span></div></div>${others.map((p) => `<div class="vi"><span class="av" style="background:${Collab.colorOf(p.by)};margin:0">${esc(initials(Collab.nameOf(p.by)))}</span><div class="t"><b>${esc(Collab.nameOf(p.by))}</b><span>sedang di papan ini</span></div><button class="btn btn-secondary btn-xs" data-follow="${p.peer}">Ikuti</button></div>`).join("")}</div></div>
       <div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" id="shTeam">${ic("users")} Undang anggota tim</button><button class="btn btn-secondary" id="shClient">${ic("eye")} ${Canvas.clientView ? "Keluar tampilan klien" : "Lihat sebagai klien"}</button>${others.length ? `<button class="btn btn-secondary" id="shSummon">${ic("megaphone")} Ajak semua lihat layarku</button>` : ""}</div></div>`, "", { cls: "sm" });
-    const cp = $("#shCopy"); if (cp) cp.onclick = () => { const i = $("#shLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link papan disalin"), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } };
     $("#shTeam").onclick = () => { $(".scrim")?.remove(); window.__papanGo?.("team"); };
-    wireGuestLink();
+    wireGuestLink(dlg);
     $("#shClient").onclick = () => { Canvas.clientView = !Canvas.clientView; $(".scrim")?.remove(); updateBanner(); };
     $("#shSummon") && ($("#shSummon").onclick = () => { Collab.summon(); $(".scrim")?.remove(); });
     $$("[data-follow]").forEach((b) => (b.onclick = () => { Collab.follow(b.dataset.follow); $(".scrim")?.remove(); }));
@@ -3554,27 +3581,50 @@ const UI = (() => {
     $("#gName").onkeydown = (e) => { if (e.key === "Enter") go(); };
     setTimeout(() => $("#gName")?.select(), 30);
   }
-  // Guest link (api/papan.js): people outside the team open this one board
-  // with just a name. Owner and editors switch it; it lives on the board doc.
+  // The board's link (api/papan.js): whoever opens it goes straight onto this
+  // board, no account and no invite; a team member who is signed in lands in
+  // Brandlab as themselves (guest.js). On by default (js/papan/bridge.js), so
+  // the dialog leads with it; owner and editors switch it, it lives on the
+  // board doc.
+  const linkTried = new Set();
   function guestLinkHTML() {
     if (!window.__papanShare) return "";
     const s = Store.board()?.share || {}, on = !!s.on && !!s.t, can = Store.canWrite;
-    const link = on ? window.__papanGuestLink(Store.S.boardId, s.t) : "";
-    return `<div class="guest-link"><label class="pickrow"><input type="checkbox" id="gOn" ${on ? "checked" : ""} ${can ? "" : "disabled"}><span class="t"><b>Link tamu: siapa pun yang punya link bisa masuk</b><span>Tanpa akun: tamu langsung masuk dan bisa ganti nama sendiri. Tamu hanya membuka papan ini dan tidak melihat data brand. AI papan untuk tamu memakai kreditmu, maksimal 10 jawaban per tamu per hari.</span></span></label>
-      ${on ? `<div style="display:flex;gap:8px;margin-top:8px"><select class="field" id="gRole" style="width:auto" ${can ? "" : "disabled"} aria-label="Yang bisa dilakukan tamu"><option value="edit" ${s.role !== "view" ? "selected" : ""}>Bisa coret-coret</option><option value="view" ${s.role === "view" ? "selected" : ""}>Lihat saja</option></select><input class="field" id="gLink" readonly value="${esc(link)}" aria-label="Link tamu"><button class="btn btn-primary" id="gCopy">${ic("copy")} Salin</button></div>
-      <p class="muted" style="font-size:12px;margin:6px 0 0">Tamu melihat semua isi papan ini, termasuk bagian internal. Simpan yang rahasia di papan lain.${can ? ` <button class="linkbtn" id="gRotate">Buat link baru</button> (link lama langsung tidak bisa dipakai).` : ""}</p>` : ""}</div>`;
+    const head = `<label class="lbl" for="gLink">Link papan</label>`;
+    if (!on) {
+      return `<div class="guest-link">${head}${!s.t && can && !linkTried.has(Store.S.boardId) ? `<p class="muted" style="font-size:13px;margin:0">Menyiapkan link…</p>`
+        : !s.t && can ? `<p class="muted" style="font-size:13px;margin:0 0 8px">Link papan belum bisa dibuat.</p><div><button class="btn btn-primary" id="gOn">${ic("link")} Coba lagi</button></div>`
+        : can ? `<p class="muted" style="font-size:13px;margin:0 0 8px">Link papan sedang mati, jadi orang di luar tim tidak bisa masuk. Nyalakan supaya siapa pun yang kamu kirimi link bisa langsung masuk tanpa login.</p><div><button class="btn btn-primary" id="gOn">${ic("link")} Nyalakan link</button></div>`
+        : `<p class="muted" style="font-size:13px;margin:0">Link papan sedang mati. Minta pemilik atau editor brand menyalakannya lewat Bagikan.</p>`}</div>`;
+    }
+    const link = window.__papanGuestLink(Store.S.boardId, s.t);
+    return `<div class="guest-link">${head}
+      <p class="muted" style="font-size:13px;margin:0 0 8px">Kirim ke siapa saja. Yang membuka link ini langsung masuk ke papan, tanpa login dan tanpa diundang.</p>
+      <div style="display:flex;gap:8px"><input class="field" id="gLink" readonly value="${esc(link)}" aria-label="Link papan"><button class="btn btn-primary" id="gCopy" style="flex:none">${ic("copy")} Salin link</button></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><label for="gRole" style="font-size:12.5px;color:var(--muted)">Yang membuka link</label><select class="field" id="gRole" style="width:auto" ${can ? "" : "disabled"}><option value="edit" ${s.role !== "view" ? "selected" : ""}>Bisa coret-coret</option><option value="view" ${s.role === "view" ? "selected" : ""}>Lihat saja</option></select></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Tamu tidak melihat data brand, tapi melihat semua isi papan ini. AI untuk tamu memakai kreditmu (maks. 10 jawaban per tamu per hari). Anggota tim yang sudah login masuk dengan akunnya sendiri.${can ? ` <button class="linkbtn" id="gRotate">Buat link baru</button> · <button class="linkbtn" id="gOff">Matikan link</button>` : ""}</p></div>`;
   }
-  function wireGuestLink() {
+  function wireGuestLink(dlg) {
+    const id = Store.S.boardId;
     const run = async (opts, done) => {
-      try { await window.__papanShare(Store.S.boardId, opts); toast(done); }
-      catch (e) { toast(e?.code === "owner-inactive" ? "Paket pemilik brand sedang tidak aktif" : e?.code === "not-editor" ? "Hanya pemilik dan editor yang bisa mengatur link tamu" : "Link tamu gagal diubah. Coba lagi."); }
-      $(".scrim")?.remove(); shareDialogBrandlab();
+      try {
+        const sh = await window.__papanShare(id, opts);
+        // The board doc's snapshot may land after the answer: show it now.
+        const b = Store.S.boards.get(id); if (b && sh) b.share = { ...(b.share || {}), ...sh };
+        if (done) toast(done);
+      } catch (e) { toast(e?.code === "owner-inactive" ? "Paket pemilik brand sedang tidak aktif, jadi link papan belum bisa dipakai" : e?.code === "not-editor" ? "Hanya pemilik dan editor yang bisa mengatur link papan" : "Link papan gagal diubah. Coba lagi."); }
+      if (dlg.isConnected && Store.S.boardId === id) { dlg.remove(); shareDialogBrandlab(); }
     };
     const role = () => $("#gRole")?.value || Store.board()?.share?.role || "edit";
-    $("#gOn") && ($("#gOn").onchange = (e) => run({ on: e.target.checked, role: role() }, e.target.checked ? "Link tamu aktif" : "Link tamu dimatikan"));
-    $("#gRole") && ($("#gRole").onchange = () => run({ on: true, role: role() }, role() === "view" ? "Tamu sekarang hanya bisa melihat" : "Tamu sekarang bisa coret-coret"));
+    const s = Store.board()?.share || {};
+    // A board that never had a link (the bridge switches it on too): make it
+    // now, once; a refusal shows "Coba lagi" instead of trying in a loop.
+    if (!s.t && Store.canWrite && !linkTried.has(id)) { linkTried.add(id); run({ on: true, role: "edit" }, null); }
+    $("#gOn") && ($("#gOn").onclick = (e) => { e.target.disabled = true; run({ on: true, role: role() }, "Link papan aktif. Tinggal salin dan kirim."); });
+    $("#gOff") && ($("#gOff").onclick = () => run({ on: false, role: role() }, "Link papan dimatikan. Yang membuka link tidak bisa masuk lagi."));
+    $("#gRole") && ($("#gRole").onchange = () => run({ on: true, role: role() }, role() === "view" ? "Yang membuka link sekarang hanya bisa melihat" : "Yang membuka link sekarang bisa coret-coret"));
     $("#gRotate") && ($("#gRotate").onclick = () => run({ on: true, role: role(), rotate: true }, "Link baru dibuat. Link lama tidak bisa dipakai lagi."));
-    $("#gCopy") && ($("#gCopy").onclick = () => { const i = $("#gLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link tamu disalin"), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } });
+    $("#gCopy") && ($("#gCopy").onclick = () => { const i = $("#gLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link papan disalin. Kirim ke siapa saja."), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } });
   }
   function shortcuts() {
     const rows = [["Pilih", "V"], ["Geser kanvas", "H / tahan Spasi"], ["Sticky note", "N"], ["Teks", "T"], ["Bentuk", "S"], ["Garis penghubung", "C"], ["Pena", "P"], ["Penghapus", "E"], ["Frame", "F"], ["Komentar", "M"], ["Perintah cepat", "/"], ["Batal / ulang", "Ctrl Z / Ctrl Shift Z"], ["Duplikat", "Ctrl D"], ["Salin / tempel", "Ctrl C / Ctrl V"], ["Kelompokkan", "Ctrl G"], ["Kunci", "Ctrl L"], ["Hapus", "Del"], ["Geser pelan / cepat", "Panah / Shift + panah"], ["Zoom", "Ctrl + scroll, + / −"], ["Lihat semua", "Shift 1"], ["Zoom 100%", "Shift 0"], ["Zoom ke pilihan", "Shift 2"], ["Sticky baru", "Klik dua kali di kanvas"]];

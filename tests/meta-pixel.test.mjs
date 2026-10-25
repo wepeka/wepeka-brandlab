@@ -25,6 +25,21 @@ describe("Meta Pixel helper", () => {
       if (realFbq) window.fbq = realFbq;
     }
   });
+  test("a shared board's guest key in the address never reaches Meta", () => {
+    const realFbq = window.fbq, realHash = location.hash, sent = [];
+    window.fbq = (...a) => sent.push(a);
+    try {
+      location.hash = "#/brand/brandA1/papan/boardB2/abcdefghijklmnopqrstuvwx";
+      metaTrack("PageView");
+      assert.equal(sent.length, 0);
+      location.hash = "#/brand/brandA1/papan/boardB2";
+      metaTrack("PageView");
+      assert.equal(sent.length, 1);
+    } finally {
+      location.hash = realHash;
+      if (realFbq) window.fbq = realFbq; else delete window.fbq;
+    }
+  });
   test("a browser twin is only sent inside Meta's 48-hour matching window", () => {
     const now = Date.parse("2026-10-12T03:00:00Z");
     assert.equal(withinMetaDedup(now - META_DEDUP_MS + 1000, now), true);

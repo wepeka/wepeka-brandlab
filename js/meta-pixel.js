@@ -13,9 +13,10 @@
 const META_PIXEL_ID = "1728923398221206";
 
 const isOn = () => !!META_PIXEL_ID && /(^|\.)wepeka\.com$/.test(location.hostname);
-// The Wepeka hand-off carries a sign-in token in the fragment (#/sso?t=…)
-// and the pixel reports the full page URL — never fire while it's there.
-const tokenInUrl = () => location.hash.startsWith("#/sso");
+// The Wepeka hand-off carries a sign-in token in the fragment (#/sso?t=…),
+// a shared board its guest key (#/brand/:id/papan/:boardId/:key, js/main.js),
+// and the pixel reports the full page URL — never fire while one is there.
+const tokenInUrl = () => location.hash.startsWith("#/sso") || /^#\/brand\/[^/]+\/papan\/[^/]+\/[^/]{20,}/.test(location.hash);
 
 let loaded = false;
 function load() {
@@ -24,6 +25,10 @@ function load() {
   /* eslint-disable */
   !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,"script","https://connect.facebook.net/en_US/fbevents.js");
   /* eslint-enable */
+  // PageViews come from pageView() below only: the pixel's own history
+  // tracking would report addresses views rewrite in place (replaceState),
+  // a board's guest key among them.
+  window.fbq.disablePushState = true;
   window.fbq("init", META_PIXEL_ID);
 }
 

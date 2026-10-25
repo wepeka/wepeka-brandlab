@@ -29,8 +29,10 @@ export function render(root, { brandId, boardId = null }) {
     });
     openConsultantPanel({ engine: "brainstorm" });
   };
-  const onBoard = (id) => {
-    const want = `#/brand/${brandId}/papan${id ? "/" + id : ""}`;
+  // key = the board's guest key while its link is on: kept in the address so
+  // a copied address opens for anyone, signed in or not (js/main.js).
+  const onBoard = (id, key = null) => {
+    const want = `#/brand/${brandId}/papan${id ? "/" + id : ""}${id && key ? "/" + key : ""}`;
     if (location.hash !== want) history.replaceState(null, "", want);
     // keep the chat's board context (and its "Taruh di papan") pointed at this board
     setChatBoardContext(brandId, {
