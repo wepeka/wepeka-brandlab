@@ -243,15 +243,17 @@ function parseRoute(hash) {
   return { view: "brands" };
 }
 
-// A board whose link is on keeps its guest key in the address
-// (#/brand/:id/papan/:boardId/:key, js/views/papan.js), so whatever address
-// the team copies opens for anyone: someone who can't open the brand here
-// (signed out, no plan, not on the team) gets the board's guest page
-// instead (/papan/?tamu=…, papan/src/host/guest.js) — no sign-in.
+// A board's address opens for anyone (the owner sends it, whoever opens it is
+// on the board): someone who can't open the brand here — signed out, no plan,
+// not on the team — gets the board's guest page instead (/papan/?tamu=…,
+// papan/src/host/guest.js), no sign-in. api/papan.js refuses only a board
+// whose link the team switched off. Older addresses carry a key after the
+// board id; it is kept for them and no longer needed.
 const PAPAN_KEY_ROUTE = /^\/brand\/([A-Za-z0-9_-]{1,64})\/papan\/([A-Za-z0-9_-]{1,64})\/([A-Za-z0-9_-]{20,64})\/?$/;
+const PAPAN_BOARD_ROUTE = /^\/brand\/([A-Za-z0-9_-]{1,64})\/papan\/([A-Za-z0-9_-]{1,64})(?:\/([A-Za-z0-9_-]{20,64}))?\/?$/;
 function papanGuestUrl(hash) {
-  const m = String(hash || "").replace(/^#/, "").match(PAPAN_KEY_ROUTE);
-  return m ? `/papan/?tamu=${encodeURIComponent(`${m[1]}.${m[2]}.${m[3]}`)}` : null;
+  const m = String(hash || "").replace(/^#/, "").match(PAPAN_BOARD_ROUTE);
+  return m ? `/papan/?tamu=${encodeURIComponent(`${m[1]}.${m[2]}`)}` : null;
 }
 
 // The brand opened last on this device, for the "#/papan" shortcut.
@@ -415,7 +417,7 @@ async function boot(user) {
       renderInviteScreen();
       return;
     }
-    // A shared board's address: straight onto the board as a guest.
+    // A board's address: straight onto the board as a guest.
     const papanGuest = papanGuestUrl(location.hash);
     if (papanGuest) {
       location.replace(papanGuest);
@@ -503,7 +505,7 @@ function onAccountChange(user, account) {
   // (js/pending-orders.js). Nothing happens unless an order is remembered.
   checkPendingOrders(user.uid);
 
-  // A shared board's address, opened on an account that can't open the app
+  // A board's address, opened on an account that can't open the app
   // at all (no plan, lapsed, switched off): the board as a guest instead.
   const papanGuest = papanGuestUrl(location.hash);
   if (papanGuest && (isDeactivated(account) || ["none", "expired"].includes(effectiveAccess(account)))) {
@@ -804,8 +806,8 @@ async function renderRoute() {
   }
 
   if (route.brandId && !getBrand(route.brandId)) {
-    // Not on this brand's team: a shared board opens as a guest.
-    const papanGuest = route.boardKey && papanGuestUrl(location.hash);
+    // Not on this brand's team: the board opens as a guest.
+    const papanGuest = route.view === "papan" && route.boardId && papanGuestUrl(location.hash);
     if (papanGuest) { location.replace(papanGuest); return; }
     location.hash = "#/";
     return;

@@ -14,9 +14,9 @@ const META_PIXEL_ID = "1728923398221206";
 
 const isOn = () => !!META_PIXEL_ID && /(^|\.)wepeka\.com$/.test(location.hostname);
 // The Wepeka hand-off carries a sign-in token in the fragment (#/sso?t=…),
-// a shared board its guest key (#/brand/:id/papan/:boardId/:key, js/main.js),
-// and the pixel reports the full page URL — never fire while one is there.
-const tokenInUrl = () => location.hash.startsWith("#/sso") || /^#\/brand\/[^/]+\/papan\/[^/]+\/[^/]{20,}/.test(location.hash);
+// and a board's address lets anyone onto the board (#/brand/:id/papan/:boardId,
+// js/main.js); the pixel reports the full page URL — never fire on either.
+const tokenInUrl = () => location.hash.startsWith("#/sso") || /^#\/brand\/[^/]+\/papan\/[^/?#]+/.test(location.hash);
 
 let loaded = false;
 function load() {

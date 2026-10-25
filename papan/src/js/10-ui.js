@@ -549,7 +549,7 @@ const UI = (() => {
       <p class="muted" style="font-size:13px;margin:0 0 8px">Kirim ke siapa saja. Yang membuka link ini langsung masuk ke papan, tanpa login dan tanpa diundang.</p>
       <div style="display:flex;gap:8px"><input class="field" id="gLink" readonly value="${esc(link)}" aria-label="Link papan"><button class="btn btn-primary" id="gCopy" style="flex:none">${ic("copy")} Salin link</button></div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><label for="gRole" style="font-size:12.5px;color:var(--muted)">Yang membuka link</label><select class="field" id="gRole" style="width:auto" ${can ? "" : "disabled"}><option value="edit" ${s.role !== "view" ? "selected" : ""}>Bisa coret-coret</option><option value="view" ${s.role === "view" ? "selected" : ""}>Lihat saja</option></select></div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Tamu tidak melihat data brand, tapi melihat semua isi papan ini. AI untuk tamu memakai kreditmu (maks. 10 jawaban per tamu per hari). Anggota tim yang sudah login masuk dengan akunnya sendiri.${can ? ` <button class="linkbtn" id="gRotate">Buat link baru</button> · <button class="linkbtn" id="gOff">Matikan link</button>` : ""}</p></div>`;
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Tamu tidak melihat data brand, tapi melihat semua isi papan ini. AI untuk tamu memakai kreditmu (maks. 10 jawaban per tamu per hari). Anggota tim yang sudah login masuk dengan akunnya sendiri. Alamat papan di browser juga bisa dikirim.${can ? ` <button class="linkbtn" id="gOff">Matikan link</button>` : ""}</p></div>`;
   }
   function wireGuestLink(dlg) {
     const id = Store.S.boardId;
@@ -568,9 +568,8 @@ const UI = (() => {
     // now, once; a refusal shows "Coba lagi" instead of trying in a loop.
     if (!s.t && Store.canWrite && !linkTried.has(id)) { linkTried.add(id); run({ on: true, role: "edit" }, null); }
     $("#gOn") && ($("#gOn").onclick = (e) => { e.target.disabled = true; run({ on: true, role: role() }, "Link papan aktif. Tinggal salin dan kirim."); });
-    $("#gOff") && ($("#gOff").onclick = () => run({ on: false, role: role() }, "Link papan dimatikan. Yang membuka link tidak bisa masuk lagi."));
+    $("#gOff") && ($("#gOff").onclick = () => run({ on: false, role: role() }, "Link papan dimatikan. Orang di luar tim tidak bisa masuk sampai dinyalakan lagi."));
     $("#gRole") && ($("#gRole").onchange = () => run({ on: true, role: role() }, role() === "view" ? "Yang membuka link sekarang hanya bisa melihat" : "Yang membuka link sekarang bisa coret-coret"));
-    $("#gRotate") && ($("#gRotate").onclick = () => run({ on: true, role: role(), rotate: true }, "Link baru dibuat. Link lama tidak bisa dipakai lagi."));
     $("#gCopy") && ($("#gCopy").onclick = () => { const i = $("#gLink"); try { navigator.clipboard.writeText(i.value).then(() => toast("Link papan disalin. Kirim ke siapa saja."), () => { i.select(); toast("Tekan Ctrl/⌘ C untuk menyalin"); }); } catch { i.select(); } });
   }
   function shortcuts() {

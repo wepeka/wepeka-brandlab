@@ -25,14 +25,16 @@ describe("Meta Pixel helper", () => {
       if (realFbq) window.fbq = realFbq;
     }
   });
-  test("a shared board's guest key in the address never reaches Meta", () => {
+  test("a board's address (anyone with it gets on the board) never reaches Meta", () => {
     const realFbq = window.fbq, realHash = location.hash, sent = [];
     window.fbq = (...a) => sent.push(a);
     try {
       location.hash = "#/brand/brandA1/papan/boardB2/abcdefghijklmnopqrstuvwx";
       metaTrack("PageView");
-      assert.equal(sent.length, 0);
       location.hash = "#/brand/brandA1/papan/boardB2";
+      metaTrack("PageView");
+      assert.equal(sent.length, 0);
+      location.hash = "#/brand/brandA1/papan";
       metaTrack("PageView");
       assert.equal(sent.length, 1);
     } finally {

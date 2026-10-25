@@ -1,7 +1,8 @@
 // Guest host (papan/build.mjs puts it before host-brandlab.js, which calls
 // papanGuestHost when /papan/ is opened on its own with ?tamu=…).
 //
-// A board's link is /papan/?tamu=<brandId>.<boardId>.<secret>
+// A board's link is /papan/?tamu=<brandId>.<boardId> (older links add .<secret>;
+// the address alone is enough, api/papan.js join)
 // (api/papan.js, "Link papan" in the board's Bagikan dialog). The guest goes
 // straight in, the server hands back a sign-in for this one board, and this file
 // gives the canvas the same window.claude.use() adapters js/papan/bridge.js
@@ -53,7 +54,7 @@ function papanGuestHost(param) {
     get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
     set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
   };
-  const OK = /^[A-Za-z0-9_-]{20,64}$/;
+  const OK = /^[A-Za-z0-9_-]{20,64}$/, ID = /^[A-Za-z0-9_-]{1,64}$/;
   let key = ls.get("papan:guest:key");
   if (!OK.test(key)) {
     const b = crypto.getRandomValues(new Uint8Array(24));
@@ -74,7 +75,7 @@ function papanGuestHost(param) {
   function gate(message) {
     let el = document.querySelector(".guest-gate");
     if (!el) { el = document.createElement("div"); el.className = "guest-gate"; document.body.appendChild(el); }
-    const broken = !brandId || !boardId || !OK.test(secret || "");
+    const broken = !ID.test(brandId || "") || !ID.test(boardId || "") || (!!secret && !OK.test(secret));
     el.innerHTML = `<div class="guest-card" role="dialog" aria-modal="true" aria-labelledby="ggT">
       <div class="gk">Wepeka Brandlab · Papan</div>
       <h1 id="ggT">${broken ? "Link papan tidak lengkap" : "Kamu diajak ke sebuah papan"}</h1>
@@ -101,7 +102,7 @@ function papanGuestHost(param) {
     const res = await fetch("/api/papan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "join", brandId, boardId, t: secret, name, key }),
+      body: JSON.stringify({ action: "join", brandId, boardId, ...(secret && OK.test(secret) ? { t: secret } : {}), name, key }),
     });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw { code: out.error || "unknown" };
@@ -211,7 +212,7 @@ function papanGuestHost(param) {
   }
 
   const start = () => {
-    if (!brandId || !boardId || !OK.test(secret || "")) return gate();
+    if (!ID.test(brandId || "") || !ID.test(boardId || "") || (secret && !OK.test(secret))) return gate();
     teamMember().then((team) => {
       if (team) { location.replace(`/#/brand/${encodeURIComponent(brandId)}/papan/${encodeURIComponent(boardId)}`); return; }
       return enter(ls.get("papan:guest:name"));

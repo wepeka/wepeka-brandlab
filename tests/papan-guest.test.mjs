@@ -91,16 +91,29 @@ describe("api/papan share + join", () => {
     await expectErr(runPapan(d, "share", { uid: "zed" }, { brandId: "b1", boardId: "k1", on: true }), "not-editor");
     await expectErr(runPapan(d, "share", null, { brandId: "b1", boardId: "k1", on: true }), "auth");
   });
-  test("a switched-off, wrong or replaced link is refused", async () => {
+  test("the board's address is enough: an old or missing key still gets in, a switched-off link does not", async () => {
     const d = fakeDeps(seed());
     const first = (await runPapan(d, "share", { uid: "owen" }, { brandId: "b1", boardId: "k1", on: true })).share.t;
     const second = (await runPapan(d, "share", { uid: "owen" }, { brandId: "b1", boardId: "k1", on: true, rotate: true })).share.t;
     assert.notEqual(first, second);
-    await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t: first, name: "Sari", key: KEY }), "link-off");
-    await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t: "x".repeat(24), name: "Sari", key: KEY }), "link-off");
+    for (const t of [first, undefined, "x".repeat(24)]) {
+      const out = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t, name: "Sari", key: KEY });
+      assert.equal(out.token, `token-for-${out.uid}`);
+    }
+    assert.ok(d.tokens.every((x) => x.claims.papan.t === second), "the token always carries the board's current secret");
     await runPapan(d, "share", { uid: "owen" }, { brandId: "b1", boardId: "k1", on: false });
-    await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "k1", t: second, name: "Sari", key: KEY }), "link-off");
+    await expectErr(runPapan(d, "join", null, { brandId: "b1", boardId: "k1", name: "Sari", key: KEY }), "link-off");
     assert.equal(d.rt.get("papanShare/b1/k1").on, false);
+  });
+  test("a board nobody shared yet opens for its first guest and stays open", async () => {
+    const d = fakeDeps(seed());
+    const out = await runPapan(d, "join", null, { brandId: "b1", boardId: "k1", key: KEY });
+    const sh = d.docs.get("brands/b1/boards/k1").share;
+    assert.equal(sh.on, true);
+    assert.equal(sh.role, "edit");
+    assert.equal(out.role, "edit");
+    assert.deepEqual(d.rt.get("papanShare/b1/k1"), { on: true, role: "edit", t: sh.t, owner: "owen" });
+    assert.equal(d.tokens[0].claims.papan.t, sh.t);
   });
   test("the link keeps its secret when only the role changes", async () => {
     const d = fakeDeps(seed());

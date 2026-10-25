@@ -4,14 +4,18 @@
 //   POST {action:"share", brandId, boardId, on, role, rotate?}   owner or editor
 //        → { share: {on, role, t} }. Turns the board's guest link on or off,
 //          sets what guests may do ("edit" = coret-coret, "view" = lihat saja);
-//          rotate makes a new link and the old one stops working at once.
-//   POST {action:"join", brandId, boardId, t, name?, key}        no sign-in
+//          rotate makes a new secret (guests in now are sent out once).
+//   POST {action:"join", brandId, boardId, t?, name?, key}       no sign-in
 //        → { token, uid, name, role, ownerId, board, brand, people }: a
 //          Firebase custom token for a guest uid (pg-…, from the browser's own
 //          random key) whose "papan" claim names this brand, board and link
 //          secret. No name = straight in as "Tamu N" (or the name this browser
 //          had before); joining again with a name renames the guest.
 //
+// Anyone with the board's address gets in (the owner's ask: send the link,
+// whoever opens it is on the board, no account, no invite) unless the team
+// switched the link off. A board nobody ever shared is open from its first
+// guest on. The address is enough: `t` from an older link is ignored.
 // The secret lives on the board doc (share.t, which the team can read) and in
 // the Realtime Database at papanShare/{brandId}/{boardId} (server-only), and
 // firestore.rules / database.rules.json compare the guest's claim with it on
@@ -95,10 +99,16 @@ export async function share(d, caller, body) {
 
 export async function join(d, body) {
   const { brandId, boardId, t, key } = body;
-  if (!SECRET.test(String(t || "")) || !SECRET.test(String(key || ""))) fail("bad-request", 400);
+  if ((t && !SECRET.test(String(t))) || !SECRET.test(String(key || ""))) fail("bad-request", 400);
   const { brand, board, boardRef } = await loadBoard(d, brandId, boardId);
-  const s = board.share || {};
-  if (!s.on || !sameSecret(s.t, t)) fail("link-off", 410);
+  let s = board.share || null;
+  // never shared: open by default, so a plain board link works for anyone
+  if (!s || !s.t) {
+    s = { on: true, role: "edit", t: newLinkSecret() };
+    await boardRef.update({ share: { ...s, by: "guest", at: d.now() } });
+    if (d.rtdb) await d.rtdb.ref(`papanShare/${brandId}/${boardId}`).set({ ...s, owner: brand.ownerId });
+  }
+  if (!s.on) fail("link-off", 410);
   const role = s.role === "view" ? "view" : "edit";
   const uid = guestUid(key);
   // Names the team sees next to what the guest made (js/papan/bridge.js profiles).
