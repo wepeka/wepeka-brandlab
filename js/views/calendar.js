@@ -21,6 +21,8 @@ import { openWeekPlanMenu, openSeriesEpisodeChat } from "../consultant-panel.js"
 import { seriesDays, missingEpisodes } from "../week-plan.js";
 import { mountAiReport } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
+import { createArtSVG } from "../create-art.js";
+import { stageColor, stepOfStatus } from "../stage-colors.js";
 
 // Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
 // episode, date -> series. Only the rest of the visible range from today.
@@ -51,6 +53,43 @@ function startOfWeek(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDa
 
 const FUNNEL_COLOR = { TOFU: "var(--tofu)", MOFU: "var(--mofu)", BOFU: "var(--bofu)" };
 const GOAL_LANE_COLOR = { event: "var(--accent)", audience: "var(--track-social)", community: "var(--track-community)", rhythm: "var(--text-faint)" };
+
+// ---- How a piece looks on the calendar (2026-10-27, "lebih menarik dan easy
+// dilihat di mobile maupun desktop") ----
+// A piece wears its step's colour (js/stage-colors.js — the same as in
+// Creator), so a glance says how far along each day is. Pemula reads the
+// step names (Ide, Script…); Pro keeps the status names and the funnel dot.
+const guidedNow = () => getMode() === "guided";
+// Phones: the month is a grid of dots with the picked day's pieces below it.
+const compactNow = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+const stageLabel = (c) => (guidedNow() ? t(`cw.step.${stepOfStatus(c.status)}`) : STATUS_LABELS[c.status] || c.status);
+const dateOf = (c) => c.scheduleDate || c.publishedDate;
+const isSlotItem = (c) => !!c.fromGoal && c.status === "idea";
+const longDay = (dateISO) => new Date(`${dateISO}T00:00:00`).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { weekday: "long" });
+
+// One piece as a card (the week planner, a phone's picked day).
+function pieceCardHTML(c, campaignById, state) {
+  const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
+  const meta = [c.platform, c.format, campaign ? campaignDisplayName(campaign.name) : ""].filter(Boolean).map(escapeHtml).join(" · ");
+  const done = c.status === "published";
+  return `
+    <div class="calx-card ${done ? "is-done" : ""} ${isSlotItem(c) ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" data-id="${escapeHtml(c.id)}" draggable="${done ? "false" : "true"}" style="--stage:${stageColor(c.status)};">
+      <span class="calx-card-bar" aria-hidden="true"></span>
+      <span class="calx-card-main">
+        <span class="calx-card-title">${done ? icon("check", { size: 13 }) : ""}${escapeHtml(c.title || t("common.untitled"))}</span>
+        ${meta ? `<span class="calx-card-meta">${c.platform ? platformIcon(c.platform) : ""}${meta}</span>` : ""}
+      </span>
+      <span class="calx-stage">${escapeHtml(stageLabel(c))}</span>
+    </div>`;
+}
+const deadlineCardHTML = (d, brandId) =>
+  `<a class="calx-card is-deadline ${d.state === "overdue" ? "is-overdue" : ""}" href="${d.kind === "milestone" ? `#/brand/${brandId}/campaigns/${d.campaignId}` : `#/brand/${brandId}/goals/${d.goalId}`}">
+    <span class="calx-card-bar" aria-hidden="true"></span>
+    <span class="calx-card-main"><span class="calx-card-title">${icon("target", { size: 13 })}${escapeHtml(d.label)}</span></span>
+    <span class="calx-stage">${t("roadmap.cal.deadline")}</span>
+  </a>`;
+// Up to three dots in step colours (a phone's month grid, the week strip).
+const dotsHTML = (list) => `<span class="calx-dots" aria-hidden="true">${list.slice(0, 3).map((c) => `<i style="background:${stageColor(c.status)}"></i>`).join("")}${list.length > 3 ? `<b>+${list.length - 3}</b>` : ""}</span>`;
 
 // Roadmap ke Tujuan (js/goal-progress.js): dated deadlines (checklist
 // milestones + goal tasks) of every live goal, by date. Content slots need no
@@ -619,20 +658,36 @@ function paint(root, brandId, state, refresh) {
   const deadlines = goalDeadlines(brandId);
   const goalWeek = goalWeekSummary(brandId);
 
+  const guided = guidedNow();
+  const actions = `
+      <div class="flex gap-8 cal-head-actions">
+        <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
+        <button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>
+        ${guided
+          ? `<button type="button" class="cl-cta" id="new-content"><span>${t("calendar.newContentBtn")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>`
+          : `<button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>`}
+      </div>`;
+  // Pemula: one compact head — the calendar's picture, its name, one line.
   root.innerHTML = `
+    ${guided ? `
+    <div class="calx-head">
+      <div class="calx-head-title">
+        <span class="calx-head-art cl-pic">${createArtSVG("calendar")}</span>
+        <div class="calx-head-text">
+          <div class="calx-head-row"><h1>${t("contentOs.tab.calendar")}</h1><span class="calx-head-help">${helpButtonHTML("calendar")}${guideVideoButtonHTML("calendar")}</span></div>
+          <p class="calx-head-what">${t("calendar.whatGuided")}</p>
+        </div>
+      </div>
+      ${actions}
+    </div>` : `
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("calendar.eyebrow")}${helpButtonHTML("calendar")}${guideVideoButtonHTML("calendar")}</div>
         <h1>${t("contentOs.tab.calendar")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
-        ${getMode() === "guided" ? `<p class="page-what">${t("calendar.whatGuided")}</p>` : ""}
       </div>
-      <div class="flex gap-8 cal-head-actions">
-        <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
-        <button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>
-        <button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>
-      </div>
-    </div>
+      ${actions}
+    </div>`}
     <div class="cal-head">
       <div class="cal-nav">
         <button class="icon-btn" id="cal-prev" aria-label="${t("calendar.prevPeriod")}">${icon("chevronLeft", { size: 16 })}</button>
@@ -709,9 +764,9 @@ function paint(root, brandId, state, refresh) {
   });
   qs("#cancel-placing")?.addEventListener("click", () => { state.placingId = null; refresh(); });
   wireContentBank(root, brandId, state, refresh);
-  qs("#cal-prev").addEventListener("click", () => { step(state, -1); paint(root, brandId, state, refresh); });
-  qs("#cal-next").addEventListener("click", () => { step(state, 1); paint(root, brandId, state, refresh); });
-  qs("#cal-today").addEventListener("click", () => { state.cursor = new Date(); paint(root, brandId, state, refresh); });
+  qs("#cal-prev").addEventListener("click", () => { step(state, -1); state.selDate = null; paint(root, brandId, state, refresh); });
+  qs("#cal-next").addEventListener("click", () => { step(state, 1); state.selDate = null; paint(root, brandId, state, refresh); });
+  qs("#cal-today").addEventListener("click", () => { state.cursor = new Date(); state.selDate = null; paint(root, brandId, state, refresh); });
   qsa("[data-view]").forEach((btn) => btn.addEventListener("click", () => { state.view = btn.dataset.view; paint(root, brandId, state, refresh); }));
 
   const body = qs("#cal-body");
@@ -745,6 +800,7 @@ function step(state, dir) {
 }
 
 function renderMonth(body, brandId, state, items, campaigns, campaignById, refresh, deadlines = new Map()) {
+  if (compactNow()) return renderMonthCompact(body, brandId, state, items, campaigns, campaignById, refresh, deadlines);
   const d = state.cursor;
   const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
   const gridStart = startOfWeek(firstOfMonth);
@@ -776,13 +832,16 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
         ${dlShown.map((d) => `<div class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}" title="${escapeHtml(`${t("roadmap.cal.deadline")}: ${d.label}`)}">${escapeHtml(d.label)}</div>`).join("")}
         ${shown.map((c) => {
           const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
-          const itemTitle = campaign ? `${c.title} · ${campaignDisplayName(campaign.name)}` : c.title;
-          const isSlot = !!c.fromGoal && c.status === "idea";
+          const itemTitle = [c.title, stageLabel(c), campaign ? campaignDisplayName(campaign.name) : ""].filter(Boolean).join(" · ");
+          const isSlot = isSlotItem(c);
+          const done = c.status === "published";
+          // The chip wears its step's colour; Pro also keeps the funnel dot
+          // and the campaign mark.
           return `
-          <div class="cal-item ${isSlot ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="${c.status === "published" ? "false" : "true"}" data-id="${c.id}" title="${escapeHtml(isSlot ? `${itemTitle} — ${t("roadmap.cal.slot")}` : itemTitle)}">
-            <span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>
-            ${campaign ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaignDisplayName(campaign.name))}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
-            ${escapeHtml(c.title || t("common.untitled"))}
+          <div class="cal-item calx-chip ${isSlot ? "is-slot" : ""} ${done ? "is-done" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" draggable="${done ? "false" : "true"}" data-id="${c.id}" title="${escapeHtml(isSlot ? `${itemTitle} — ${t("roadmap.cal.slot")}` : itemTitle)}" style="--stage:${stageColor(c.status)};">
+            ${guidedNow() ? "" : `<span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>`}
+            ${campaign && !guidedNow() ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaignDisplayName(campaign.name))}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
+            <span class="calx-chip-t">${done ? icon("check", { size: 11 }) : ""}${escapeHtml(c.title || t("common.untitled"))}</span>
           </div>`;
         }).join("")}
         ${ghost ? seriesGhostHTML(iso(day), ghost, { short: true }) : ""}
@@ -805,6 +864,93 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
   // what a click does (the handlers above). Past days only answer "can't
   // schedule in the past", so they're left out of the tab order.
   wireClickableCards(body, ".cal-item, .cal-cell:not(.is-past)");
+}
+
+// Phones: a 7-column grid only has room for dots, so each date shows up to
+// three in its pieces' step colours, and the picked date (today, at first)
+// lists its pieces underneath — the way a phone's own calendar reads.
+function renderMonthCompact(body, brandId, state, items, campaigns, campaignById, refresh, deadlines = new Map()) {
+  const d = state.cursor;
+  const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  const gridStart = startOfWeek(firstOfMonth);
+  const todayISO = localISODate();
+  const monthKey = iso(firstOfMonth).slice(0, 7);
+  if (!state.selDate || state.selDate.slice(0, 7) !== monthKey) state.selDate = todayISO.slice(0, 7) === monthKey ? todayISO : iso(firstOfMonth);
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridStart.getDate() + 41);
+  const ghosts = missingEpisodeMap(brandId, iso(gridStart), iso(gridEnd));
+  const eventDays = eventDayMarkers(campaigns);
+  const byDate = new Map();
+  items.forEach((c) => { const k = dateOf(c); byDate.set(k, [...(byDate.get(k) || []), c]); });
+
+  let cells = "";
+  for (let i = 0; i < 42; i++) {
+    const day = new Date(gridStart);
+    day.setDate(gridStart.getDate() + i);
+    const key = iso(day);
+    const outside = day.getMonth() !== d.getMonth();
+    const list = byDate.get(key) || [];
+    const holiday = holidayForDate(key);
+    cells += `
+      <div class="cal-cell calx-mini-cell ${outside ? "outside" : ""} ${key === todayISO ? "today" : ""} ${key < todayISO ? "is-past" : ""} ${key === state.selDate ? "is-selected" : ""} ${holiday ? "holiday" : ""} ${eventDays.get(key) ? "event-day" : ""}" data-date="${key}" aria-label="${escapeHtml([formatCellDate(key), holiday?.label, list.length ? t("cal.x.count", { n: list.length }) : ""].filter(Boolean).join(" · "))}">
+        <span class="cal-date">${day.getDate()}</span>
+        ${list.length || (deadlines.get(key) || []).length || ghosts.get(key) ? dotsHTML(list.length ? list : [{ status: "idea" }]) : ""}
+      </div>`;
+  }
+  const sel = state.selDate;
+  const holiday = holidayForDate(sel);
+  const dayItems = byDate.get(sel) || [];
+  const dayDeadlines = deadlines.get(sel) || [];
+  const ghost = ghosts.get(sel);
+  body.innerHTML = `
+    <div class="cal-grid calx-mini">
+      ${dow().map((dw) => `<div class="cal-dow">${dw}</div>`).join("")}
+      ${cells}
+    </div>
+    <section class="calx-day calx-daypanel ${sel === todayISO ? "is-today" : ""}" data-date="${sel}">
+      <div class="calx-day-head">
+        <span class="calx-day-name">${escapeHtml(longDay(sel))}</span>
+        <span class="calx-day-num">${escapeHtml(formatCellDate(sel).split(", ").pop())}</span>
+        ${sel === todayISO ? `<span class="calx-today-chip">${t("calendar.today")}</span>` : ""}
+        ${holiday ? `<span class="calx-holiday">${escapeHtml(holiday.label)}</span>` : ""}
+      </div>
+      <div class="calx-day-items">
+        ${dayDeadlines.map((x) => deadlineCardHTML(x, brandId)).join("")}
+        ${dayItems.map((c) => pieceCardHTML(c, campaignById, state)).join("")}
+        ${ghost ? seriesGhostHTML(sel, ghost) : ""}
+        ${sel >= todayISO ? `<button type="button" class="calx-add" data-add-date="${sel}">${icon("plus", { size: 14 })}${t("cal.x.add")}</button>` : !dayItems.length && !dayDeadlines.length ? `<p class="calx-empty">${t("cal.x.emptyPast")}</p>` : ""}
+      </div>
+    </section>`;
+
+  qsa(".calx-mini-cell", body).forEach((cell) => cell.addEventListener("click", () => {
+    if (state.placingId) {
+      if (cell.dataset.date < localISODate()) { toast(t("calendar.pastDate"), "error"); return; }
+      const id = state.placingId;
+      state.placingId = null;
+      assignToDate(brandId, id, cell.dataset.date);
+      refresh();
+      return;
+    }
+    state.selDate = cell.dataset.date;
+    renderMonthCompact(body, brandId, state, items, campaigns, campaignById, refresh, deadlines);
+  }));
+  wireClickableCards(body, ".calx-mini-cell");
+  wirePieceCards(body, brandId, refresh);
+  wireSeriesGhosts(body);
+}
+
+// The pieces' cards (week planner, a phone's picked day): tap = edit or take
+// off the calendar; "+ Tambah" = put a piece on that day or start a new one.
+function wirePieceCards(body, brandId, refresh) {
+  qsa(".calx-card[data-id]", body).forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh });
+  }));
+  wireClickableCards(body, ".calx-card[data-id]");
+  qsa("[data-add-date]", body).forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openDateBankMenu(btn, { brandId, dateISO: btn.dataset.addDate, refresh });
+  }));
 }
 
 // A thin Gantt-lite strip above the month grid — one row per active
@@ -869,62 +1015,93 @@ function eventDayMarkers(campaigns) {
   return map;
 }
 
+// The week as a planner: a strip of its seven days on top (dots in step
+// colours, a tap jumps to that day), then each day with its pieces as cards —
+// the date once per day instead of once per piece, empty days included, each
+// coming day with "+ Tambah". Pieces drag between days on a desktop, and a
+// piece being placed from the Bank lands on the day tapped.
 function renderAgenda(body, brandId, state, items, campaignById, refresh, deadlines = new Map()) {
-  const d = state.cursor;
-  let rangeStart, rangeEnd;
-  if (state.view === "week") { rangeStart = startOfWeek(d); rangeEnd = new Date(rangeStart); rangeEnd.setDate(rangeEnd.getDate() + 6); }
-  else { rangeStart = new Date(d); rangeEnd = new Date(d); }
-  rangeStart.setHours(0,0,0,0); rangeEnd.setHours(23,59,59,999);
+  const start = startOfWeek(state.cursor);
+  const todayISO = localISODate();
+  const days = Array.from({ length: 7 }, (_, i) => { const x = new Date(start); x.setDate(start.getDate() + i); return iso(x); });
+  const ghosts = missingEpisodeMap(brandId, days[0], days[6]);
+  const byDate = new Map();
+  items.forEach((c) => { const k = dateOf(c); if (k >= days[0] && k <= days[6]) byDate.set(k, [...(byDate.get(k) || []), c]); });
 
-  const filtered = items
-    .filter((c) => {
-      const dt = new Date(c.scheduleDate || c.publishedDate);
-      return dt >= rangeStart && dt <= rangeEnd;
-    })
-    .sort((a, b) => (a.scheduleDate || a.publishedDate).localeCompare(b.scheduleDate || b.publishedDate));
+  const strip = days.map((k) => {
+    const dt = new Date(`${k}T00:00:00`);
+    const list = byDate.get(k) || [];
+    return `<button type="button" class="calx-strip-day ${k === todayISO ? "is-today" : ""} ${k < todayISO ? "is-past" : ""}" data-jump="${k}" aria-label="${escapeHtml(formatCellDate(k))}">
+        <span class="calx-strip-dow">${dow()[dt.getDay()]}</span>
+        <span class="calx-strip-num">${dt.getDate()}</span>
+        ${list.length ? dotsHTML(list) : `<span class="calx-dots"></span>`}
+      </button>`;
+  }).join("");
 
-  const dlRows = [...deadlines.entries()]
-    .filter(([date]) => { const dt = new Date(`${date}T00:00:00`); return dt >= rangeStart && dt <= rangeEnd; })
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .flatMap(([date, list]) => list.map((d) => {
-      const dt = new Date(`${date}T00:00:00`);
-      return `<a class="agenda-row" href="${d.kind === "milestone" ? `#/brand/${brandId}/campaigns/${d.campaignId}` : `#/brand/${brandId}/goals/${d.goalId}`}">
-        <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0, 3)}</div></div>
-        <div class="ti" style="flex:1;min-width:0;"><div class="t" style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.label)}</div></div>
-        <span class="cal-deadline ${d.state === "overdue" ? "is-overdue" : ""}">${t("roadmap.cal.deadline")}</span></a>`;
-    }));
-  // Content and empty series days share one date order.
-  const ghostRows = [...missingEpisodeMap(brandId, iso(rangeStart), iso(rangeEnd))].map(([date, series]) => {
-    const dt = new Date(`${date}T00:00:00`);
-    return { date, html: `<div class="agenda-row agenda-ghost">
-        <div class="agenda-date"><div class="d">${dt.getDate()}</div><div class="m">${months()[dt.getMonth()].slice(0, 3)}</div></div>
-        <div class="ti" style="flex:1;min-width:0;">${seriesGhostHTML(date, series)}</div></div>` };
-  });
-  const dayRows = [...filtered.map((c) => ({ date: c.scheduleDate || c.publishedDate, html: agendaRow(c, campaignById) })), ...ghostRows]
-    .sort((a, b) => a.date.localeCompare(b.date));
-  body.innerHTML = dayRows.length || dlRows.length
-    ? `<div class="agenda-list">${dlRows.join("")}${dayRows.map((r) => r.html).join("")}</div>`
-    : `<div class="empty-state card" style="margin:0;">
-         <div class="icon-wrap">${icon("calendar", { size: 20 })}</div>
-         <h3>${t("calendar.agendaEmpty", { view: t(`calendar.view.${state.view}`).toLowerCase() })}</h3>
-         <p>${t("calendar.agendaEmptyBody")}</p>
-         <button type="button" class="btn btn-primary btn-sm" id="agenda-empty-new">${icon("plus", { size: 14 })}${t("calendar.createNewContent")}</button>
-       </div>`;
+  const sections = days.map((k) => {
+    const list = (byDate.get(k) || []).sort((a, b) => (a.status === "published") - (b.status === "published"));
+    const dl = deadlines.get(k) || [];
+    const ghost = ghosts.get(k);
+    const holiday = holidayForDate(k);
+    const past = k < todayISO;
+    const empty = !list.length && !dl.length && !ghost;
+    return `
+      <section class="calx-day ${k === todayISO ? "is-today" : ""} ${past ? "is-past" : ""} ${empty ? "is-empty" : ""}" id="calx-day-${k}" data-date="${k}">
+        <div class="calx-day-head">
+          <span class="calx-day-name">${escapeHtml(longDay(k))}</span>
+          <span class="calx-day-num">${escapeHtml(formatCellDate(k).split(", ").pop())}</span>
+          ${k === todayISO ? `<span class="calx-today-chip">${t("calendar.today")}</span>` : ""}
+          ${holiday ? `<span class="calx-holiday">${escapeHtml(holiday.label)}</span>` : ""}
+          ${list.length ? `<span class="calx-day-count">${t("cal.x.count", { n: list.length })}</span>` : ""}
+        </div>
+        <div class="calx-day-items">
+          ${dl.map((x) => deadlineCardHTML(x, brandId)).join("")}
+          ${list.map((c) => pieceCardHTML(c, campaignById, state)).join("")}
+          ${ghost ? seriesGhostHTML(k, ghost) : ""}
+          ${past ? (empty ? `<p class="calx-empty">${t("cal.x.emptyPast")}</p>` : "") : `<button type="button" class="calx-add" data-add-date="${k}">${icon("plus", { size: 14 })}${t("cal.x.add")}</button>`}
+        </div>
+      </section>`;
+  }).join("");
 
-  qsa("[data-id]", body).forEach((el) => {
-    el.addEventListener("click", () => openCalItemMenu(el, { brandId, contentId: el.dataset.id, refresh }));
-  });
-  wireClickableCards(body, ".agenda-row[data-id]");
+  body.innerHTML = `
+    <div class="calx-strip" role="group" aria-label="${escapeHtml(periodLabel(state))}">${strip}</div>
+    <div class="calx-week">${sections}</div>`;
+
+  qsa("[data-jump]", body).forEach((btn) => btn.addEventListener("click", () => {
+    const sec = qs(`#calx-day-${btn.dataset.jump}`, body);
+    if (!sec) return;
+    sec.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    sec.classList.remove("is-flash"); void sec.offsetWidth; sec.classList.add("is-flash");
+  }));
+  wirePieceCards(body, brandId, refresh);
   wireSeriesGhosts(body);
-  qs("#agenda-empty-new", body)?.addEventListener("click", () => {
-    // The first day of this range that isn't over yet — the range's own
-    // first day is usually already past (a week starts on Sunday), and a
-    // piece born with a past date never shows in this list: it went straight
-    // to "Lewat jadwal" in the Bank while this empty state stayed put. A
-    // range that is wholly in the past presets no date at all.
-    const today = localISODate();
-    const first = iso(rangeStart) >= today ? iso(rangeStart) : today <= iso(rangeEnd) ? today : "";
-    openContentEditor({ brandId, stay: true, defaults: { scheduleDate: first, status: "idea" }, onSaved: refresh });
+
+  // Drag a piece to another day (desktop), or tap a day while placing one
+  // from the Bank. Past days never take one.
+  const page = body.closest(".cal-layout")?.parentElement || body;
+  qsa(".calx-card[draggable=true]", body).forEach((el) => {
+    el.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", el.dataset.id); e.dataTransfer.effectAllowed = "move"; page.classList.add("is-cal-dragging"); });
+    el.addEventListener("dragend", () => page.classList.remove("is-cal-dragging"));
+  });
+  qsa(".calx-day", body).forEach((sec) => {
+    const isPast = () => sec.dataset.date < localISODate();
+    sec.addEventListener("dragover", (e) => { if (isPast()) return; e.preventDefault(); sec.classList.add("drag-over"); });
+    sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) sec.classList.remove("drag-over"); });
+    sec.addEventListener("drop", (e) => {
+      e.preventDefault();
+      sec.classList.remove("drag-over");
+      page.classList.remove("is-cal-dragging");
+      const id = e.dataTransfer.getData("text/plain");
+      if (id) assignToDate(brandId, id, sec.dataset.date);
+    });
+    sec.addEventListener("click", (e) => {
+      if (!state.placingId || e.target.closest(".calx-card, .calx-add, .cal-series-ghost")) return;
+      if (isPast()) { toast(t("calendar.pastDate"), "error"); return; }
+      const id = state.placingId;
+      state.placingId = null;
+      assignToDate(brandId, id, sec.dataset.date);
+      refresh();
+    });
   });
 }
 

@@ -32,6 +32,7 @@ import { wireMic } from "../voice-input.js";
 import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
+import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -2128,11 +2129,7 @@ function draftingPanel(c, campaigns, series = []) {
 // Pro keeps the classic layout.
 // ============================================================================
 
-const STEP_KEYS = ["idea", "script", "shoot", "edit", "upload", "done"];
-const STEP_COLOR = { idea: "#FFC83D", script: "#3B9BFF", shoot: "#FF9F3D", edit: "#A974FF", upload: "#36D27F", done: "#E9E2D6" };
-// The second hue of each step's gradient (the selected piece's card).
-const STEP_COLOR2 = { idea: "#FF8A3D", script: "#4F55F5", shoot: "#FF4F4F", edit: "#E04FD8", upload: "#0FA3A3", done: "#C9BFAE" };
-const STATUS_STEP = { idea: "idea", draft: "script", production: "shoot", editing: "edit", scheduled: "upload", published: "done", archived: "done" };
+// Step colours are shared with the Kalender (js/stage-colors.js).
 export const currentStep = (c) => STATUS_STEP[c?.status] || "idea";
 const isPhone = () => !!window.matchMedia?.("(max-width: 860px)").matches;
 // Room for the chat column beside the piece.
