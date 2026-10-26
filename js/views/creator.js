@@ -1,7 +1,7 @@
 import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, updateSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
-import { escapeHtml, formatDate, formatNumber, toast, qs, qsa, wireClickableCards } from "../dom.js";
+import { escapeHtml, formatDate, formatNumber, toast, qs, qsa, wireClickableCards, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { consumeNavContext, go } from "../nav-context.js";
@@ -25,11 +25,12 @@ import { getMode } from "../mode.js";
 import { t, campaignDisplayName } from "../i18n.js";
 import { funnelFieldHTML, wireFunnelField, statusLabel, funnelShort } from "../funnel-field.js";
 import { setPageGuide } from "../section-guide.js";
-import { openWeekPlanMenu, openScriptChat } from "../consultant-panel.js";
+import { openWeekPlanMenu, openScriptChat, openContentChat, dockChat, undockChat } from "../consultant-panel.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
 import { wireMic } from "../voice-input.js";
 import { openHookTemplatePicker } from "../hook-template-picker.js";
+import { appCharacterSVG } from "../app-characters.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -168,6 +169,8 @@ function scriptPreviewHTML(text, targetSec = null) {
 // version — just the prompt box (pre-filled from that field) and Generate,
 // skipping funnel/duration/goal/article. The results (hooks + script +
 // caption, each with a Use button) are identical either way.
+// opts.simple (Pemula): the prompt and the length only — the kinds of hook
+// and the flow of the script stay on their automatic choice (Campur, Auto).
 function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
   const ai = getSettings().ai || { provider: "anthropic" };
   const hasKey = hasAiKey(ai);
@@ -192,7 +195,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
     if (!ready) return;
     setTimeout(() => closeOverlay(overlay), 1400);
   }
-  const prefill = opts.prompt ?? (lite ? content[lite] || content.idea || "" : content.idea || "");
+  // Pemula's piece may only have its working title yet: that's the brief.
+  const prefill = opts.prompt ?? (lite ? content[lite] || content.idea || "" : content.idea || (opts.simple ? content.title || "" : ""));
   // What the writer reads besides the brand facts: the newest moments in
   // brand memory (js/brand-pulse.js buildPulseText keeps at most 8 entries).
   const memoryCount = Math.min(savedMoments(brand).length, 8);
@@ -224,8 +228,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
         </div>
         <input class="input" id="ai-duration-custom" aria-label="${t("cr.ai.durationCustomAria")}" style="margin-top:8px;${state.duration === "Custom" ? "" : "display:none;"}" placeholder="${t("cr.ai.durationPh")}" />
       </div>`}
-      <div id="hook-type-wrap">${hookTypePickerHTML(state.funnel, state.hookTypes, state.showAllHooks)}</div>
-      ${structurePickerHTML(state.funnel, state.structure)}`
+      ${opts.simple ? "" : `<div id="hook-type-wrap">${hookTypePickerHTML(state.funnel, state.hookTypes, state.showAllHooks)}</div>
+      ${structurePickerHTML(state.funnel, state.structure)}`}`
       }
 
       <button type="button" class="btn btn-primary btn-block" id="ai-generate">${icon("bot", { size: 14 })}${t("cr.ai.generate")}</button>
@@ -666,7 +670,11 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
 // otherwise this list only shows what's still in progress, sorted so the
 // most time-sensitive piece is first.
 export function render(root, { brandId, initialContentId }) {
-  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set(), revealEditor: !!initialContentId };
+  // Pemula's workspace adds: `viewStep` (an earlier step opened to look
+  // back at), `phoneOpen` (phone: the piece instead of the list),
+  // `folders` (folders opened/closed by hand), `arrive` (play the
+  // "just opened" motion once) and `dockOff` (the chat column closed by ✕).
+  const state = { selectedId: initialContentId || null, collapsedGroups: new Set(), expandedGroups: new Set(), revealEditor: !!initialContentId, viewStep: null, phoneOpen: !!initialContentId, folders: new Map(), arrive: !!initialContentId, dockOff: false, lastStep: null };
   // Konten Baru → the same content drawer every other screen uses; the
   // new piece is then selected here, opening straight on its drafting panel.
   state.startNewContent = (defaults = {}) =>
@@ -679,6 +687,10 @@ export function render(root, { brandId, initialContentId }) {
         if (newest) {
           state.selectedId = newest.id;
           state.revealEditor = true;
+          state.viewStep = null;
+          state.phoneOpen = true;
+          state.arrive = true;
+          state.folders.clear();
         }
         refresh();
       },
@@ -692,6 +704,9 @@ export function render(root, { brandId, initialContentId }) {
     if (ctx.contentId) {
       state.selectedId = ctx.contentId;
       state.revealEditor = true;
+      state.viewStep = null;
+      state.phoneOpen = true;
+      state.arrive = true;
     }
     if (ctx.intent === "new-content") setTimeout(() => state.startNewContent(ctx.defaults || {}), 0);
     // Coming from a Brainstorm idea ("Buatkan script"): open the AI writer.
@@ -739,11 +754,33 @@ export function render(root, { brandId, initialContentId }) {
   document.addEventListener("touchend", onTouchEnd, { passive: true });
   document.addEventListener("touchcancel", onTouchEnd, { passive: true });
 
+  // Pemula: the docked chat column follows its slot on the page, and ✕ on
+  // it keeps it closed until "Buka chat".
+  const onUndocked = () => { state.dockOff = true; paintNow(); };
+  // Crossing the width where the chat fits beside the piece redraws it.
+  let viewportQueued = false;
+  const onViewport = () => {
+    if (viewportQueued) return;
+    viewportQueued = true;
+    requestAnimationFrame(() => {
+      viewportQueued = false;
+      if (getMode() === "guided" && state.wasWide !== undefined && isWideDock() !== state.wasWide) paintNow();
+      else placeDock(root);
+    });
+  };
+  window.addEventListener("chat:undocked", onUndocked);
+  window.addEventListener("resize", onViewport);
+  window.addEventListener("scroll", onViewport, { passive: true });
+
   refresh();
   const unsubscribe = onChange(refresh);
   // Once per mount — paint() runs again on every db:change.
   startCreatorGuideOnMount(brandId);
   return () => {
+    window.removeEventListener("chat:undocked", onUndocked);
+    window.removeEventListener("resize", onViewport);
+    window.removeEventListener("scroll", onViewport);
+    undockChat();
     unsubscribe();
     document.removeEventListener("nav:context", onNavContext);
     document.removeEventListener("touchstart", onTouchStart);
@@ -775,8 +812,30 @@ function paint(root, brandId, state, refresh) {
   }
   const selected = state.selectedId ? getContent(state.selectedId) : null;
   const groupBy = sidebarGroupBy(series);
+  // Pemula: the list as folders + the piece as steps (simpleLayoutHTML).
+  const guided = getMode() === "guided";
+  if (guided && selected) {
+    const cur = currentStep(selected);
+    if (state.viewStep && STEP_KEYS.indexOf(state.viewStep) >= STEP_KEYS.indexOf(cur)) state.viewStep = null;
+    state.stepChanged = state.stepChanged || (state.lastStep !== null && state.lastStep !== `${selected.id}:${cur}`);
+    state.lastStep = `${selected.id}:${cur}`;
+  }
 
-  root.innerHTML = `
+  // Pemula: a store change that changes nothing on this page (the chat
+  // beside it saving a message, a sync) leaves the page as it is — the
+  // motion that's playing, the scroll, what's being typed.
+  if (guided) {
+    const html = simpleLayoutHTML({ brand, brandId, all, items, campaigns, series, selected, groupBy, state });
+    const stable = html.replace(/ is-arriving| is-stepping| is-entering/g, "");
+    if (stable === state.lastHTML && root.querySelector(".cw-layout")) {
+      state.arrive = false;
+      state.stepChanged = false;
+      syncDock(root, state, selected);
+      return;
+    }
+    state.lastHTML = stable;
+    root.innerHTML = html;
+  } else root.innerHTML = `
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${t("cr.eyebrowGuided")}${helpButtonHTML("creator")}${guideVideoButtonHTML("creator")}</div>
@@ -812,13 +871,24 @@ function paint(root, brandId, state, refresh) {
   wireHelpButtons(root);
   setPageGuide(() => startCreatorGuide(brandId));
 
-  qs("#new-content").addEventListener("click", () => state.startNewContent());
-  qs("#cr-week-plan").addEventListener("click", (e) => openWeekPlanMenu(e.currentTarget, brandId));
+  qs("#new-content")?.addEventListener("click", () => state.startNewContent());
+  qs("#cr-week-plan")?.addEventListener("click", (e) => openWeekPlanMenu(e.currentTarget, brandId));
   const emptyNewBtn = qs("#new-content-empty");
   if (emptyNewBtn) emptyNewBtn.addEventListener("click", () => state.startNewContent());
 
   qsa("[data-select]", root).forEach((row) => {
     row.addEventListener("click", () => {
+      if (guided) {
+        // A piece opens big, on the step it is at; on a phone it takes the
+        // screen (the list comes back with "Semua konten").
+        const same = state.selectedId === row.dataset.select;
+        state.selectedId = row.dataset.select;
+        state.phoneOpen = true;
+        if (!same) { state.viewStep = null; state.arrive = true; state.folders.clear(); }
+        paint(root, brandId, state, refresh);
+        if (isPhone()) window.scrollTo({ top: 0 });
+        return;
+      }
       state.selectedId = row.dataset.select;
       paint(root, brandId, state, refresh);
       revealOnPhone(qs(".creator-main", root));
@@ -826,6 +896,12 @@ function paint(root, brandId, state, refresh) {
   });
   wireClickableCards(root, "[data-select]");
   qs("[data-back-to-list]", root)?.addEventListener("click", () => {
+    if (guided) {
+      state.phoneOpen = false;
+      paint(root, brandId, state, refresh);
+      window.scrollTo({ top: 0 });
+      return;
+    }
     const list = qs(".creator-sidebar-list", root);
     const active = qs(".creator-item.active", root);
     // The list scrolls on its own; bring the open piece into its view too.
@@ -835,7 +911,8 @@ function paint(root, brandId, state, refresh) {
   });
   if (state.revealEditor && selected) {
     state.revealEditor = false;
-    requestAnimationFrame(() => revealOnPhone(qs(".creator-main", root), { instant: true }));
+    if (guided) { if (isPhone()) window.scrollTo({ top: 0 }); }
+    else requestAnimationFrame(() => revealOnPhone(qs(".creator-main", root), { instant: true }));
   }
 
   qsa("[data-delete-content]", root).forEach((btn) => {
@@ -883,6 +960,7 @@ function paint(root, brandId, state, refresh) {
     });
   });
 
+  if (guided) wireSimple(root, brandId, state, refresh, selected);
   if (!selected) return;
 
   const pdfBtn = qs("#download-script-pdf", root);
@@ -1198,7 +1276,7 @@ function paint(root, brandId, state, refresh) {
         if (!scriptEl) refresh();
       }
       flashSaved();
-    }, null, opts);
+    }, null, { ...opts, simple: guided });
   };
 
   const aiBtn = qs("#ai-generate-all", root);
@@ -1261,7 +1339,8 @@ function paint(root, brandId, state, refresh) {
         }
         flashSaved();
       },
-      field
+      field,
+      { simple: guided }
     );
   }
   const quickScriptBtn = qs("#ai-quick-script", root);
@@ -2023,4 +2102,473 @@ function draftingPanel(c, campaigns, series = []) {
       ${stageProgressHTML(c)}
     </div>
   `;
+}
+
+// ============================================================================
+// Pemula: Creator as folders + one piece taken a step at a time
+// (owner's asks, 2026-10-26: "terlalu ribet").
+//
+//   • The list is folders (Minggu / Tahap / Seri, as before). The folder
+//     with the open piece is open and the piece in it is a big colour card;
+//     every other piece is one slim line and every other folder is closed —
+//     so which one is open is obvious at a glance.
+//   • The piece is five steps — Ide → Script → Syuting → Edit → Upload —
+//     one screen each, with one big button to the next. A done step can be
+//     opened again to look back (and edit); its status doesn't move back.
+//   • Ide and Script have Tanya Brandlab docked beside them on a wide
+//     screen (js/consultant-panel.js dockChat): the talk about this piece's
+//     idea, then its script. The AI offers; the owner taps what goes in.
+//
+// Every field keeps the id the classic panel uses (#f-title, #f-idea,
+// #f-script…), so the saving and the AI buttons above work unchanged.
+// Pro keeps the classic layout.
+// ============================================================================
+
+const STEP_KEYS = ["idea", "script", "shoot", "edit", "upload", "done"];
+const STEP_COLOR = { idea: "#FFC83D", script: "#3B9BFF", shoot: "#FF8A3D", edit: "#A974FF", upload: "#36D27F", done: "#E9E2D6" };
+const STATUS_STEP = { idea: "idea", draft: "script", production: "shoot", editing: "edit", scheduled: "upload", published: "done", archived: "done" };
+export const currentStep = (c) => STATUS_STEP[c?.status] || "idea";
+const isPhone = () => !!window.matchMedia?.("(max-width: 860px)").matches;
+// Room for the chat column beside the piece.
+const isWideDock = () => !!window.matchMedia?.("(min-width: 1180px)").matches;
+// A carousel or a photo is designed, not shot.
+const isDesigned = (c) => isCarouselContent(c) || /static|post|foto|photo|image/i.test(c?.format || "");
+const stepLabel = (key, c) => (key === "shoot" && isDesigned(c) ? t("cw.step.design") : t(`cw.step.${key}`));
+const wantsDock = (step) => step === "idea" || step === "script";
+
+const FOLDER_COLOR = {
+  overdue: "#FF6B5B", this: "#3B9BFF", next: "#36D27F", later: "#A974FF", none: "#B9AFA2", other: "#B9AFA2",
+  drafting: "#FFC83D", execution: "#FF8A3D", editing: "#A974FF", scheduled: "#36D27F",
+};
+
+function shortWhen(c) {
+  if (!c.scheduleDate || isDone(c)) return "";
+  const today = localISODate();
+  if (c.scheduleDate < today) return `<span class="cw-when is-late">${t("cw.late")}</span>`;
+  if (c.scheduleDate === today) return `<span class="cw-when is-today">${t("nw.when.today")}</span>`;
+  const d = new Date(`${c.scheduleDate}T00:00:00`).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { day: "numeric", month: "short" });
+  return `<span class="cw-when">${escapeHtml(d)}</span>`;
+}
+
+function stepBarsHTML(c) {
+  const cur = STEP_KEYS.indexOf(currentStep(c));
+  return `<span class="cw-bars" aria-hidden="true">${STEP_KEYS.slice(0, 5).map((k, i) => `<i class="${i < cur ? "is-done" : i === cur ? "is-current" : ""}"></i>`).join("")}</span>`;
+}
+
+function bigItemHTML(c, arrive) {
+  const step = currentStep(c);
+  const n = Math.min(STEP_KEYS.indexOf(step) + 1, 5);
+  const meta = [c.platform, c.format].filter(Boolean).map(escapeHtml).join(" · ");
+  return `
+    <div class="cw-item is-selected${arrive ? " is-arriving" : ""}" data-select="${c.id}" aria-current="true" style="--stage:${STEP_COLOR[step]};">
+      <div class="cw-item-top"><span class="cw-item-stage">${step === "done" ? t("cw.step.done") : `${stepLabel(step, c)} · ${n}/5`}</span>${shortWhen(c)}</div>
+      <div class="cw-item-title">${escapeHtml(c.title || t("common.untitled"))}</div>
+      ${stepBarsHTML(c)}
+      ${meta ? `<div class="cw-item-meta">${meta}</div>` : ""}
+    </div>`;
+}
+
+function smallItemHTML(c) {
+  return `
+    <div class="cw-item" data-select="${c.id}" style="--stage:${STEP_COLOR[currentStep(c)]};" title="${escapeHtml(stepLabel(currentStep(c), c))}">
+      <span class="cw-item-dot" aria-hidden="true"></span>
+      <span class="cw-item-name">${escapeHtml(c.title || t("common.untitled"))}</span>
+      ${shortWhen(c)}
+    </div>`;
+}
+
+function foldersHTML(items, selectedId, state, by, series) {
+  return sidebarGroups(items, by, series)
+    .filter((g) => g.items.length)
+    .map((g, i) => {
+      const key = `${by}:${g.key}`;
+      const hasSel = g.items.some((c) => c.id === selectedId);
+      const open = state.folders.has(key) ? state.folders.get(key) : hasSel;
+      const expanded = state.expandedGroups.has(key);
+      let shown = g.items;
+      if (!expanded && g.items.length > GROUP_PREVIEW) {
+        shown = g.items.slice(0, GROUP_PREVIEW);
+        const sel = g.items.find((c) => c.id === selectedId);
+        if (sel && !shown.includes(sel)) shown = [...shown.slice(0, GROUP_PREVIEW - 1), sel];
+      }
+      const more = g.items.length > GROUP_PREVIEW
+        ? `<button type="button" class="cw-folder-more" data-expand-group="${key}">${expanded ? t("cr.group.showLess") : t("cr.group.showMore", { n: g.items.length - shown.length })}</button>`
+        : "";
+      const color = FOLDER_COLOR[g.key] || (g.key.startsWith("s-") ? "#E4B37E" : "#B9AFA2");
+      return `
+      <section class="cw-folder${open ? " is-open" : ""}${hasSel ? " has-selected" : ""}" style="--fold:${color};--i:${i};">
+        <button type="button" class="cw-folder-tab" data-toggle-folder="${key}" aria-expanded="${open}">
+          <span class="cw-folder-dot" aria-hidden="true"></span>
+          <span class="cw-folder-name">${g.label}</span>
+          <span class="cw-folder-count">${g.items.length}</span>
+          ${icon("chevronDown", { size: 14, className: "cw-folder-chev" })}
+        </button>
+        <div class="cw-folder-body"><div class="cw-folder-inner">
+          ${shown.map((c) => (c.id === selectedId ? bigItemHTML(c, state.arrive) : smallItemHTML(c))).join("")}
+          ${more}
+        </div></div>
+      </section>`;
+    })
+    .join("");
+}
+
+function stepperHTML(c, step, state) {
+  const cur = STEP_KEYS.indexOf(currentStep(c));
+  return `<ol class="cw-steps" aria-label="${escapeHtml(t("cw.steps.aria"))}">${STEP_KEYS.slice(0, 5).map((k, i) => {
+    const cls = i < cur ? "is-done" : i === cur ? "is-current" : "is-next";
+    const viewing = k === step;
+    // Done steps open to look back; the current one brings you back to it.
+    const clickable = i < cur || (i === cur && !!state.viewStep);
+    return `<li class="cw-step ${cls}${viewing ? " is-viewing" : ""}" style="--sc:${STEP_COLOR[k]};">
+        <button type="button" ${clickable ? `data-view-step="${k}"` : "disabled"} ${viewing ? `aria-current="step"` : ""}>
+          <span class="cw-step-dot">${i < cur ? icon("check", { size: 12 }) : i + 1}</span><span class="cw-step-name">${stepLabel(k, c)}</span>
+        </button>
+      </li>`;
+  }).join("")}</ol>`;
+}
+
+function metaRowHTML(c, step) {
+  const settings = getSettings();
+  const opt = (v, cur) => `<option value="${escapeHtml(v)}" ${v === cur ? "selected" : ""}>${escapeHtml(v)}</option>`;
+  const showDate = step !== "upload" && c.status !== "published";
+  return `
+    <div class="cw-meta">
+      <label class="cw-pill" title="${escapeHtml(t("contentEditor.format.label"))}">${icon("layers", { size: 13 })}
+        <select id="f-format" aria-label="${escapeHtml(t("contentEditor.format.label"))}">${c.format ? "" : `<option value="">—</option>`}${withCurrent(settings.formats || [], c.format).map((v) => opt(v, c.format)).join("")}</select>
+      </label>
+      <label class="cw-pill" title="${escapeHtml(t("contentEditor.platform.label"))}">${platformIcon(c.platform || "")}
+        <select id="f-platform" aria-label="${escapeHtml(t("contentEditor.platform.label"))}">${c.platform ? "" : `<option value="">—</option>`}${withCurrent(settings.platforms || [], c.platform).map((v) => opt(v, c.platform)).join("")}</select>
+      </label>
+      ${showDate ? `<label class="cw-pill cw-pill-date${c.scheduleDate && c.scheduleDate < localISODate() ? " is-late" : ""}" title="${escapeHtml(t("contentEditor.scheduleDate.label"))}">${icon("calendar", { size: 13 })}
+        <span>${c.scheduleDate ? escapeHtml(formatDate(c.scheduleDate)) : t("cw.when.none")}</span>
+        <input type="date" id="f-schedule" value="${c.scheduleDate || ""}" min="${localISODate()}" aria-label="${escapeHtml(t("contentEditor.scheduleDate.label"))}" />
+      </label>` : ""}
+    </div>`;
+}
+
+function nextBtnHTML(id, label, nextStep, { check = false } = {}) {
+  return `<div class="cw-next-row"><button type="button" class="cw-next" id="${id}" style="--next:${STEP_COLOR[nextStep]};"><span>${label}</span><span class="cw-next-dot">${icon(check ? "check" : "arrowRight", { size: 16 })}</span></button></div>`;
+}
+
+// No chat column (a narrow window, or ✕ closed it): one card that opens it.
+function chatInviteHTML(kind, docked) {
+  if (docked) return "";
+  const script = kind === "script";
+  const id = script && !isWideDock() ? "ai-discuss" : "cw-chat-open";
+  return `
+    <div class="cw-chat-invite">
+      <span class="cw-chat-icon">${icon("chat", { size: 18 })}</span>
+      <div class="cw-chat-text"><b>${t(script ? "cw.script.discussTitle" : "cw.idea.chatTitle")}</b><span>${t(script ? "cw.script.discussBody" : "cw.idea.chatBody")}</span></div>
+      <button type="button" class="btn btn-secondary btn-sm" id="${id}">${icon("chat", { size: 13 })}${t("cw.chat.open")}</button>
+    </div>`;
+}
+
+function ideaStepHTML(c, { campaigns, series, review, docked }) {
+  return `
+    <div class="cw-field">
+      <label class="cw-label" for="f-idea">${t("cw.idea.label")}</label>
+      <textarea class="textarea cw-idea" id="f-idea" placeholder="${escapeHtml(t("cw.idea.ph"))}">${escapeHtml(c.idea || "")}</textarea>
+    </div>
+    <div id="funnel-goal-wrap" class="cw-goal">${funnelGoalFieldHTML(c)}</div>
+    ${campaigns.length ? campaignFieldHTML(c, campaigns) : ""}
+    ${seriesFieldHTML(c, series)}
+    <details class="cw-more" ${c.reference || c.notes || c.cta ? "open" : ""}>
+      <summary>${icon("chevronDown", { size: 13 })}${t("cw.more")}</summary>
+      <div class="field">
+        <label for="f-reference">${t("cr.f.reference")}</label>
+        <input class="input" id="f-reference" value="${escapeHtml(c.reference)}" placeholder="${t("cr.f.referencePh")}" />
+      </div>
+      <div class="field">
+        <label for="f-cta">${t("cr.f.cta")}</label>
+        <input class="input" id="f-cta" value="${escapeHtml(c.cta)}" placeholder="${t("cr.f.ctaPh")}" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label for="f-notes">${t("cr.f.notes")}</label>
+        <textarea class="textarea" id="f-notes" style="min-height:60px;">${escapeHtml(c.notes || "")}</textarea>
+      </div>
+    </details>
+    ${chatInviteHTML("idea", docked)}
+    ${review ? "" : nextBtnHTML("cw-to-script", t("cw.idea.next"), "script")}`;
+}
+
+function captionFieldHTML(c) {
+  return `
+    <div class="field cw-caption">
+      <div class="creator-field-head">
+        <label for="f-caption" style="margin-bottom:0;">${t("cr.f.caption")}</label>
+        <div class="flex items-center gap-6">
+          <button type="button" class="chip-icon-btn" id="copy-caption-ready" aria-label="${t("cr.copyCaption")}" title="${t("cr.copyCaption")}">${icon("copy", { size: 15 })}</button>
+          <button type="button" class="ai-field-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
+        </div>
+      </div>
+      <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
+    </div>`;
+}
+
+function scriptStepHTML(c, { review, docked }) {
+  const carousel = isCarouselContent(c);
+  const empty = carousel ? !parseSlides(c.script).length : !(c.script || "").trim();
+  return `
+    ${empty ? `
+    <div class="cw-ai-card">
+      <span class="cw-ai-art">${appCharacterSVG("content-os")}</span>
+      <div class="cw-ai-text"><b>${t("cw.script.aiTitle")}</b><span>${t("cw.script.aiBody")}</span></div>
+      <button type="button" class="btn btn-primary" id="ai-generate-all">${icon("bot", { size: 15 })}${t("cw.script.aiBtn")}</button>
+    </div>` : ""}
+    ${carousel ? slidesFieldHTML(c) : scriptFieldHTML(c)}
+    <details class="cw-more" ${(c.caption || "").trim() ? "open" : ""}>
+      <summary>${icon("chevronDown", { size: 13 })}${t("cw.caption.later")}</summary>
+      ${captionFieldHTML(c)}
+    </details>
+    ${chatInviteHTML("script", docked)}
+    ${review ? "" : nextBtnHTML("cw-to-shoot", carousel ? t("cw.slides.next") : t("cw.script.next"), "shoot")}`;
+}
+
+function shootStepHTML(c, { review }) {
+  const designed = isDesigned(c);
+  return `
+    ${designed ? "" : `<button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>`}
+    ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
+    ${review ? "" : nextBtnHTML("mark-shot-big", designed ? t("cw.doneDesign") : t("cr.doneShooting"), "edit", { check: true })}`;
+}
+
+// The two free editing apps (same words as the classic panel), as two
+// flat colour blocks.
+function editAppsSimpleHTML() {
+  const colors = { capcut: "#FFC83D", edits: "#FF6FAE" };
+  return `
+    <p class="cw-lead"><b>${t("cr.editApps.title")}</b> ${t("cr.editApps.body")}</p>
+    <div class="cw-apps">
+      ${EDIT_APPS.map((app) => `
+      <div class="cw-app" style="--app:${colors[app]};">
+        <b>${t(`cr.editApps.${app}.name`)}</b>
+        <span>${t(`cr.editApps.${app}.desc`)}</span>
+        <a class="cw-app-go" href="https://www.youtube.com/results?search_query=${encodeURIComponent(t(`cr.editApps.${app}.query`))}" target="_blank" rel="noopener">${icon("play", { size: 12 })}${t("cr.editApps.watch")}</a>
+      </div>`).join("")}
+    </div>
+    <p class="cw-hint">${icon("bulb", { size: 13 })}<span>${t("cr.editApps.hint")}</span></p>`;
+}
+
+function editStepHTML(c, { review }) {
+  return `
+    ${editAppsSimpleHTML()}
+    ${review ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
+}
+
+function uploadStepHTML(c, { review }) {
+  const up = c.uploadedPlatforms || {};
+  return `
+    ${c.thumbnail ? `<img class="thumb-preview" src="${c.thumbnail}" alt="" />` : ""}
+    ${captionFieldHTML(c)}
+    <div class="row-2">
+      <div class="field">
+        <label for="f-schedule">${t("contentEditor.scheduleDate.label")}</label>
+        <input class="input" type="date" id="f-schedule" value="${c.scheduleDate || ""}" min="${localISODate()}" />
+      </div>
+      <div class="field">
+        <label>${t("cr.uploadedWhere")}</label>
+        <div class="flex gap-8" style="flex-wrap:wrap;">
+          ${uploadPlatformOptions(c).map((p) => `<label class="checkbox-chip"><input type="checkbox" data-uploaded="${escapeHtml(p.id)}" ${up[p.id] ? "checked" : ""} />${platformIcon(p.id)}${escapeHtml(p.name)}</label>`).join("")}
+        </div>
+      </div>
+    </div>
+    ${review ? "" : `${nextBtnHTML("mark-uploaded-done", t("cw.upload.next"), "done", { check: true })}<p class="text-faint cw-foot-hint">${t("cw.upload.hint")}</p>`}`;
+}
+
+function workspaceHTML(c, step, { campaigns, series, state, docked }) {
+  const review = !!state.viewStep;
+  const ctx = { campaigns, series, review, docked };
+  const body = step === "idea" ? ideaStepHTML(c, ctx)
+    : step === "script" ? scriptStepHTML(c, ctx)
+    : step === "shoot" ? shootStepHTML(c, ctx)
+    : step === "edit" ? editStepHTML(c, ctx)
+    : step === "upload" ? uploadStepHTML(c, ctx)
+    : publishedCardHTML(c);
+  const cur = currentStep(c);
+  return `
+    <div class="cw-work${state.arrive ? " is-arriving" : ""}${state.stepChanged ? " is-stepping" : ""}" data-step="${step}" style="--step:${STEP_COLOR[step]};">
+      <div class="cw-topbar">
+        <button type="button" class="cw-back-list" data-back-to-list>${icon("chevronLeft", { size: 15 })}${t("cw.list.back")}</button>
+        ${stepperHTML(c, step, state)}
+        <div class="cw-tools">
+          <span class="save-indicator" id="save-indicator">${t("cr.saved")}</span>
+          <button type="button" class="icon-btn" id="cw-menu" aria-label="${escapeHtml(t("cw.menu"))}" title="${escapeHtml(t("cw.menu"))}">${icon("dots", { size: 16 })}</button>
+        </div>
+      </div>
+      <div class="cw-card">
+        <textarea class="cw-title" id="f-title" rows="1" maxlength="160" placeholder="${escapeHtml(t("cw.titlePh"))}" aria-label="${escapeHtml(t("cw.titleAria"))}">${escapeHtml(c.title || "")}</textarea>
+        ${metaRowHTML(c, step)}
+        ${review ? `<div class="cw-review">${icon("info", { size: 14 })}<span>${t("cw.review", { step: stepLabel(step, c) })}</span><button type="button" class="btn btn-secondary btn-sm" id="cw-review-back">${t("cw.review.back", { step: stepLabel(cur, c) })}${icon("arrowRight", { size: 13 })}</button></div>` : ""}
+        <div class="cw-body">${body}</div>
+      </div>
+    </div>`;
+}
+
+function simpleEmptyHTML() {
+  return `
+    <div class="cw-empty">
+      <span class="cw-empty-art">${appCharacterSVG("cos-creator")}</span>
+      <h2>${t("cr.empty.title")}</h2>
+      <p>${t("cr.empty.body")}</p>
+      <button type="button" class="cl-cta" id="new-content-empty"><span>${t("cl.new")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>
+    </div>`;
+}
+
+function simpleLayoutHTML({ brandId, all, items, campaigns, series, selected, groupBy, state }) {
+  const step = selected ? state.viewStep || currentStep(selected) : null;
+  state.wasWide = isWideDock();
+  const docked = !!selected && wantsDock(step) && !state.dockOff && state.wasWide;
+  const phoneOpen = state.phoneOpen || !items.length;
+  return `
+    <div class="cw-head">
+      <div class="cw-head-title"><span class="cw-head-art">${appCharacterSVG("cos-creator")}</span><h1>${t("contentOs.tab.creator")}</h1></div>
+      <div class="cw-head-actions">
+        ${guideVideoButtonHTML("creator")}
+        <button type="button" class="btn btn-secondary cw-week" id="cr-week-plan">${icon("sparkle", { size: 15 })}<span>${t("chat.week.button")}</span><span class="btn-cost">${t("chat.week.cost")}</span></button>
+        <button type="button" class="cl-cta" id="new-content"><span>${t("cl.new")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>
+      </div>
+    </div>
+    <div class="cw-layout${docked ? " has-dock" : ""}${phoneOpen ? " is-phone-open" : ""}" data-brand="${escapeHtml(brandId)}">
+      <aside class="cw-side">
+        ${items.length ? groupByToggleHTML(groupBy, series.length > 0) : ""}
+        <div class="cw-folders">${items.length ? foldersHTML(items, selected?.id, state, groupBy, series) : `<div class="cw-side-empty">${t(all.length ? "cr.sidebarEmpty" : "cr.sidebarEmptyFirst")}</div>`}</div>
+      </aside>
+      <section class="cw-main">${selected ? workspaceHTML(selected, step, { campaigns, series, state, docked }) : simpleEmptyHTML()}</section>
+      ${docked ? `<div class="cw-dock-slot" data-kind="${step}" aria-hidden="true"></div>` : ""}
+    </div>`;
+}
+
+// The docked chat is the app's one chat panel (it lives in <body>, outside
+// this page, so a repaint here never touches what's being typed in it);
+// this keeps it lined up with its slot in the layout.
+function placeDock(root) {
+  const panel = document.getElementById("consultant-panel");
+  const slot = root?.querySelector?.(".cw-dock-slot");
+  if (!panel || !slot || !panel.classList.contains("is-ws-docked")) return;
+  const bar = document.querySelector(".topbar");
+  const barPos = bar ? getComputedStyle(bar).position : "";
+  const minTop = (barPos === "sticky" || barPos === "fixed" ? bar.getBoundingClientRect().bottom : 0) + 12;
+  root.style.setProperty("--cw-top", `${Math.round(minTop)}px`);
+  const r = slot.getBoundingClientRect();
+  const top = Math.max(r.top, minTop);
+  const bottom = Math.min(r.bottom, window.innerHeight - 12);
+  Object.assign(panel.style, { top: `${Math.round(top)}px`, left: `${Math.round(r.left)}px`, width: `${Math.round(r.width)}px`, height: `${Math.round(Math.max(260, bottom - top))}px` });
+}
+
+function syncDock(root, state, selected) {
+  const slot = qs(".cw-dock-slot", root);
+  if (!slot || !selected) { undockChat(); return; }
+  const contentId = selected.id;
+  const ok = slot.dataset.kind === "script"
+    ? dockChat({
+      contentId,
+      kind: "script",
+      title: selected.title || "",
+      getCurrent: () => ({ ...(getContent(contentId) || selected), script: qs("#f-script", root)?.value ?? getContent(contentId)?.script ?? "" }),
+      // The Biasa box, the Pro cards and the slides show it on the repaint
+      // the save triggers.
+      applyRevision: (target, text) => {
+        const el = qs(target === "caption" ? "#f-caption" : "#f-script", root);
+        if (el) el.value = text;
+        updateContent(contentId, { [target]: text });
+      },
+    })
+    : dockChat({ contentId, kind: "idea" });
+  if (ok) requestAnimationFrame(() => placeDock(root));
+}
+
+function openStageMenu(root, brandId, state, selected, btn) {
+  const r = btn.getBoundingClientRect();
+  const menu = openMenu(btn, { top: r.bottom + 6, left: Math.max(8, r.right - 240) });
+  if (!menu) return;
+  const deletable = selected.status === "idea" || selected.status === "draft";
+  menu.innerHTML = `
+    ${isCarouselContent(selected) ? "" : `<button type="button" data-cw-act="pdf">${icon("download", { size: 15 })}${t("cr.pdf.download")}</button>`}
+    <button type="button" data-cw-act="stage">${icon("layers", { size: 15 })}${t("cw.menu.stage")}</button>
+    ${deletable ? `<button type="button" data-cw-act="delete">${icon("trash", { size: 15 })}${t("common.delete")}</button>` : ""}`;
+  menu.addEventListener("click", async (e) => {
+    const act = e.target.closest("[data-cw-act]")?.dataset.cwAct;
+    if (!act) return;
+    closeMenu();
+    const brand = getBrand(brandId);
+    if (act === "pdf") {
+      openScriptPdfPreview({ ...selected, title: qs("#f-title", root)?.value ?? selected.title, idea: qs("#f-idea", root)?.value ?? selected.idea, script: qs("#f-script", root)?.value ?? selected.script }, brand);
+    } else if (act === "stage") {
+      const overlay = openModal({
+        title: t("cw.stage.title"),
+        bodyHTML: `<div class="cw-stage-pick">${STEP_KEYS.map((k) => `<button type="button" class="cw-stage-opt${currentStep(selected) === k ? " is-on" : ""}" data-to-step="${k}" style="--sc:${STEP_COLOR[k]};"><span class="cw-step-dot">${STEP_KEYS.indexOf(k) + 1}</span>${stepLabel(k, selected)}</button>`).join("")}</div>`,
+      });
+      overlay.querySelectorAll("[data-to-step]").forEach((b) => b.addEventListener("click", () => {
+        const status = Object.keys(STATUS_STEP).find((s) => STATUS_STEP[s] === b.dataset.toStep);
+        closeOverlay(overlay);
+        if (!status || status === selected.status) return;
+        updateContent(selected.id, { status, ...(status === "published" && !selected.publishedDate ? { publishedDate: localISODate() } : {}) });
+        state.viewStep = null;
+      }));
+    } else if (act === "delete") {
+      const ok = await confirmDialog({
+        title: t("cr.delete.title", { title: escapeHtml(selected.title || t("common.untitled")) }),
+        message: t("delete.toTrash.contentMessage", { days: TRASH_DAYS }),
+        confirmLabel: t("delete.toTrash.confirm"),
+        danger: true,
+      });
+      if (!ok) return;
+      deleteContent(selected.id);
+      state.selectedId = null;
+      state.phoneOpen = false;
+      toast(t("delete.toTrash.contentDone"));
+    }
+  });
+}
+
+function wireSimple(root, brandId, state, refresh, selected) {
+  const repaint = () => paint(root, brandId, state, refresh);
+  // The motion that says "this one just opened" plays once.
+  state.arrive = false;
+  state.stepChanged = false;
+
+  qsa("[data-toggle-folder]", root).forEach((btn) => btn.addEventListener("click", () => {
+    const key = btn.dataset.toggleFolder;
+    state.folders.set(key, btn.getAttribute("aria-expanded") !== "true");
+    const folder = btn.closest(".cw-folder");
+    // Open/close in place first so it animates, then settle the state.
+    folder?.classList.toggle("is-open");
+    btn.setAttribute("aria-expanded", String(folder?.classList.contains("is-open")));
+  }));
+
+  if (!selected) { undockChat(); return; }
+
+  qsa("[data-view-step]", root).forEach((btn) => btn.addEventListener("click", () => {
+    state.viewStep = btn.dataset.viewStep === currentStep(selected) ? null : btn.dataset.viewStep;
+    state.stepChanged = true;
+    repaint();
+  }));
+  qs("#cw-review-back", root)?.addEventListener("click", () => { state.viewStep = null; state.stepChanged = true; repaint(); });
+  qs("#cw-to-script", root)?.addEventListener("click", () => {
+    updateContent(selected.id, { status: "draft" });
+  });
+  qs("#cw-to-shoot", root)?.addEventListener("click", () => {
+    updateContent(selected.id, { status: "production" });
+    notify(t("cr.notify.toShooting"), t("cr.notify.toShootingBody", { title: selected.title || t("common.untitled") }));
+  });
+  qs("#cw-menu", root)?.addEventListener("click", (e) => openStageMenu(root, brandId, state, selected, e.currentTarget));
+  qs("#cw-chat-open", root)?.addEventListener("click", () => {
+    if (isWideDock()) { state.dockOff = false; repaint(); return; }
+    openContentChat({ contentId: selected.id });
+  });
+  // The date pill: the whole pill opens the date picker.
+  const datePill = qs(".cw-pill-date input", root);
+  datePill?.addEventListener("click", () => { try { datePill.showPicker?.(); } catch { /* not allowed here */ } });
+  // The title wraps instead of running off; Enter finishes it (one line).
+  const autoFit = (el, min) => {
+    if (!el) return;
+    const fit = () => { el.style.height = "auto"; el.style.height = `${Math.max(min, el.scrollHeight + 2)}px`; };
+    fit();
+    el.addEventListener("input", fit);
+  };
+  const titleEl = qs("#f-title", root);
+  autoFit(titleEl, 0);
+  titleEl?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); titleEl.blur(); } });
+  autoFit(qs("#f-idea", root), 120);
+  syncDock(root, state, selected);
 }

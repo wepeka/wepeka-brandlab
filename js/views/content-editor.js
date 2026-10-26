@@ -8,6 +8,7 @@ import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { funnelFieldHTML, wireFunnelField, setFunnelFieldValue, statusLabel } from "../funnel-field.js";
 import { aiReportButtonHTML } from "../ai-report.js";
+import { openNewContentWizard } from "./new-content-wizard.js";
 
 // The "Konten baru" drawer: what a new piece IS (title, idea, platform,
 // campaign, goal) and WHEN it goes out. Only the title is required.
@@ -17,11 +18,15 @@ import { aiReportButtonHTML } from "../ai-report.js";
 // stamped the first platform/format onto pieces whose own weren't in the
 // list. `stay`: keep the current screen after creating (Calendar, Creator);
 // everyone else lands in Creator on the new piece.
+// Pemula gets two short steps instead (js/views/new-content-wizard.js), with
+// the same promise.
 export function openContentEditor({ brandId, contentId = null, defaults = {}, onSaved, stay = false }) {
   if (contentId) {
     location.hash = `#/brand/${brandId}/content/creator/${contentId}`;
     return null;
   }
+  // Pemula: two short steps instead of this form (js/views/new-content-wizard.js).
+  if (getMode() === "guided") return openNewContentWizard({ brandId, defaults, onSaved, stay });
   const settings = getSettings();
   const existing = contentId ? getContent(contentId) : null;
   const draft = existing

@@ -1,5 +1,6 @@
-// One friendly character per app (js/apps.js), drawn as flat shapes — no
-// outlines, no gradients — so a beginner recognises an app by its little
+// One friendly character per app (js/apps.js) — and, inside Create, one per
+// part of it (cos-*) and per kind of piece (fmt-*) — drawn as flat shapes —
+// no outlines, no gradients — so a beginner recognises an app by its little
 // figure before reading its name (owner's references, 2026-10-26: bold
 // flat colour blocks with cute shape-characters). Every face is the same
 // two eyes and a small open smile; `mood: "sleep"` closes the eyes for an
@@ -66,6 +67,83 @@ const DRAW = {
       <rect x="58" y="12" width="44" height="18" rx="4" fill="#fff" opacity=".75"/>
       ${face(80, 74, { mood })}
     </g>`,
+
+  // ---- Inside Create (js/views/content-os.js): one figure per part. ----
+  // Creator: a little video camera with two film reels on top.
+  "cos-creator": (mood) => `
+    <circle cx="48" cy="40" r="20" fill="#ff8fb1"/><circle cx="48" cy="40" r="6" fill="${INK}"/>
+    <circle cx="92" cy="40" r="20" fill="#ff8fb1"/><circle cx="92" cy="40" r="6" fill="${INK}"/>
+    <path d="M114 78 L146 60 Q152 57 152 64 L152 116 Q152 123 146 120 L114 102 Z" fill="#ffd23f"/>
+    <rect x="16" y="56" width="104" height="80" rx="24" fill="#fff6e8"/>
+    ${face(68, 92, { mood })}`,
+  // Kalender: a page off the wall calendar, rings on top.
+  "cos-calendar": (mood) => `
+    <rect x="22" y="30" width="116" height="112" rx="22" fill="#fff6e8"/>
+    <path d="M22 52 Q22 30 44 30 L116 30 Q138 30 138 52 L138 62 L22 62 Z" fill="#ff5a4d"/>
+    <rect x="48" y="16" width="13" height="30" rx="6.5" fill="${INK}"/>
+    <rect x="99" y="16" width="13" height="30" rx="6.5" fill="${INK}"/>
+    ${face(80, 98, { mood })}`,
+  // Daftar Konten: a clipboard holding the list.
+  "cos-list": (mood) => `
+    <rect x="26" y="26" width="108" height="124" rx="20" fill="#fff6e8"/>
+    <rect x="56" y="14" width="48" height="26" rx="11" fill="${INK}"/>
+    <rect x="48" y="112" width="64" height="9" rx="4.5" fill="${INK}" opacity=".14"/>
+    <rect x="48" y="128" width="42" height="9" rx="4.5" fill="${INK}" opacity=".14"/>
+    ${face(80, 72, { mood })}`,
+  // Tulisan Cepat: a speech bubble with a lightning sticker — copy, fast.
+  "cos-copy": (mood) => `
+    <path d="M50 30 L114 30 Q146 30 146 62 L146 86 Q146 118 114 118 L66 118 L34 146 L42 114 Q14 106 14 80 L14 62 Q14 30 50 30 Z" fill="#fff6e8"/>
+    <path d="M128 4 L106 40 L122 40 L112 66 L144 26 L127 26 L138 4 Z" fill="#ffd23f"/>
+    ${face(78, 72, { mood })}`,
+  // Seri: a caterpillar — episodes following one another.
+  "cos-series": (mood) => `
+    <ellipse cx="38" cy="140" rx="7" ry="5" fill="${INK}"/><ellipse cx="72" cy="140" rx="7" ry="5" fill="${INK}"/><ellipse cx="108" cy="140" rx="7" ry="5" fill="${INK}"/>
+    <circle cx="30" cy="114" r="24" fill="#ffe0b0"/>
+    <circle cx="62" cy="106" r="28" fill="#fff6e8"/>
+    <rect x="98" y="22" width="6" height="34" rx="3" fill="${INK}" transform="rotate(-18 101 39)"/>
+    <rect x="128" y="24" width="6" height="34" rx="3" fill="${INK}" transform="rotate(18 131 41)"/>
+    <circle cx="96" cy="22" r="7" fill="#ff8fb1"/><circle cx="136" cy="24" r="7" fill="#ff8fb1"/>
+    <circle cx="112" cy="86" r="38" fill="#ffe0b0"/>
+    ${face(112, 84, { mood, scale: 0.9 })}`,
+
+  // ---- New content: what kind of piece (js/views/new-content-wizard.js). ----
+  // Video pendek: a phone standing up.
+  "fmt-video": (mood) => `
+    <rect x="42" y="10" width="76" height="142" rx="20" fill="${INK}"/>
+    <rect x="50" y="22" width="60" height="118" rx="12" fill="#fff6e8"/>
+    <rect x="68" y="14" width="24" height="5" rx="2.5" fill="#fff6e8" opacity=".35"/>
+    ${face(80, 76, { mood, scale: 0.85 })}
+    <path d="M73 106 L73 124 L89 115 Z" fill="${INK}" opacity=".18"/>`,
+  // Carousel: three slides fanned out.
+  "fmt-carousel": (mood) => `
+    <rect x="26" y="34" width="78" height="104" rx="16" fill="#fff" opacity=".45" transform="rotate(-14 65 86)"/>
+    <rect x="40" y="30" width="78" height="104" rx="16" fill="#ffe8c4" transform="rotate(-4 79 82)"/>
+    <rect x="54" y="28" width="78" height="104" rx="16" fill="#fff6e8" transform="rotate(8 93 80)"/>
+    <g transform="rotate(8 93 80)">${face(93, 76, { mood, scale: 0.85 })}</g>`,
+  // Story: a face in its story ring, with the + badge.
+  "fmt-story": (mood) => `
+    <circle cx="80" cy="80" r="64" fill="#ff8fb1"/>
+    <circle cx="80" cy="80" r="50" fill="#fff6e8"/>
+    ${face(80, 76, { mood })}
+    <circle cx="126" cy="126" r="20" fill="${INK}"/>
+    <rect x="117" y="123" width="18" height="6" rx="3" fill="#fff"/><rect x="123" y="117" width="6" height="18" rx="3" fill="#fff"/>`,
+  // Foto: a polaroid with a little sun.
+  "fmt-photo": (mood) => `
+    <g transform="rotate(6 80 80)">
+      <rect x="24" y="18" width="112" height="128" rx="12" fill="#fff6e8"/>
+      <rect x="36" y="30" width="88" height="80" rx="6" fill="#8fd3ff"/>
+      <circle cx="106" cy="50" r="11" fill="#ffd23f"/>
+      <path d="M36 110 L36 96 Q62 76 88 96 Q104 86 124 98 L124 110 Z" fill="#30d97d"/>
+      ${face(76, 66, { mood, scale: 0.8 })}
+    </g>`,
+  // Video panjang: a television on its stand.
+  "fmt-long": (mood) => `
+    <rect x="70" y="118" width="20" height="22" fill="${INK}"/>
+    <rect x="46" y="136" width="68" height="12" rx="6" fill="${INK}"/>
+    <rect x="12" y="30" width="136" height="94" rx="20" fill="#fff6e8"/>
+    <rect x="58" y="10" width="6" height="26" rx="3" fill="${INK}" transform="rotate(-24 61 23)"/>
+    <rect x="96" y="10" width="6" height="26" rx="3" fill="${INK}" transform="rotate(24 99 23)"/>
+    ${face(80, 74, { mood })}`,
 };
 
 export function appCharacterSVG(appKey, { mood = "happy", className = "" } = {}) {
