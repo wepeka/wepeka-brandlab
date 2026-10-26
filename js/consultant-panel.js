@@ -964,7 +964,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   // Otomatis steers the saving: under fresh idea cards, one line says what
   // keeping one does.
   const guideHTML = auto && isLast && ideas.some((x) => !x.saved && !x.contentId)
-    ? `<p class="cp-guide">${icon("bookmark", { size: 12 })}${t("chat.guide.ideas")}</p>`
+    ? `<p class="cp-guide">${icon("bookmark", { size: 12 })}${info.content ? t("cw.chat.guideHere") : t("chat.guide.ideas")}</p>`
     : "";
   // Follow-ups only under the newest answer — older chips would re-ask
   // questions the conversation has already moved past.

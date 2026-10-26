@@ -111,6 +111,7 @@ export default {
   "cw.chat.starter.sharpen": { en: "Make my idea sharper", id: "Tajamkan ideku biar lebih menarik" },
   "cw.chat.starter.angle": { en: "What angle would make people stop scrolling?", id: "Sudut pandang apa yang bikin orang berhenti scroll?" },
   "cw.chat.scriptPh": { en: "Ask for a change, e.g. make it 20 seconds", id: "Minta perubahan, misal: pendekin jadi 20 detik" },
+  "cw.chat.guideHere": { en: "Like one? Tap Use in this piece — it goes into the piece you're working on.", id: "Suka salah satunya? Tekan Pakai di konten ini — idenya masuk ke konten yang lagi kamu garap." },
   "cw.chat.useScript": { en: "Use in this piece", id: "Pakai di konten ini" },
   "cw.chat.usedScript": { en: "The script is in this piece now.", id: "Script masuk ke konten ini." },
   "cw.chat.replace.title": { en: "Replace the script?", id: "Ganti script yang ada?" },
