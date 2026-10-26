@@ -7,7 +7,7 @@ import {
 } from "../store.js";
 import { icon, platformIcon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
-import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr, wireClickableCards } from "../dom.js";
+import { toast, formatNumber, linesToList, listToLines, qs, qsa, openMenu, closeMenu, escapeHtml as escapeText, escapeHtml as escapeAttr, escapeHtml as esc, wireClickableCards } from "../dom.js";
 import { hasAiKey } from "../ai.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
@@ -16,7 +16,9 @@ import { startCampaignListGuide, startCampaignListGuideOnMount, startCampaignDet
 import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { DEMO_TOAST } from "../tour-demo.js";
-import { campaignStages, activeStageIndex, campaignHeadline, TRACK_ICON } from "../campaign-metrics.js";
+import { campaignStages, activeStageIndex, campaignHeadline, readStage, TRACK_ICON } from "../campaign-metrics.js";
+import { goalKind, goalTodo, runningGoalsOfKind } from "../goal-todo.js";
+import { goalArtSVG, GOAL_KINDS } from "../goal-art.js";
 import { crossCampaignInsights } from "../cross-campaign.js";
 import { nextActions } from "../next-action.js";
 import { paintDetail } from "./campaign-detail.js";
@@ -126,7 +128,188 @@ function paint(root, brandId, campaignId, state, refresh) {
     paintDetail(root, brandId, brand, campaign, state, refresh, { openEdit: () => editCampaign(brandId, campaign, refresh) });
     return;
   }
-  paintList(root, brandId, brand, refresh);
+  // Pemula: four colour cards, one per kind of goal (below). Pro keeps the
+  // grouped list with its menus, statuses and the Grow Brand insight.
+  if (getMode() === "guided") paintGoalsLanding(root, brandId, brand, state, refresh);
+  else paintList(root, brandId, brand, refresh);
+}
+
+// ---------- Pemula: the four kinds as colour cards ----------
+// Owner, 2026-10-27: "biar jelas ada sosmed growth, community, dan sales,
+// lalu event" — My Goals opens on four cards in the Beranda/Create language
+// (two-hue gradient, a big solid picture the card crops, dark ink words, a
+// glow + light under the mouse). Each card names its kind, says in one line
+// how it's going, and lists its running goals as slips with their number.
+// A card with no goal starts that kind's own flow — still an explicit pick,
+// it is the card the owner tapped; "Tujuan baru" asks which of the four.
+const SOCIAL_PLATFORM_KEYS = ["instagram", "tiktok", "facebook", "youtube", "other"];
+const kindStyle = (k) => `--cat:${k.color};--cat2:${k.color2};`;
+
+// The one number a running goal is chasing, for its slip and its card.
+function goalSlip(brandId, campaign, ctxBase) {
+  const kind = goalKind(campaign);
+  const ctx = { ...ctxBase, campaign };
+  const stages = campaignStages(campaign);
+  const idx = activeStageIndex(campaign, stages, ctx.content);
+  const stage = stages[idx];
+  const href = `#/brand/${brandId}/campaigns/${campaign.id}`;
+  if (kind === "event") {
+    const date = campaign.eventPlan?.eventDate || campaign.endDate || "";
+    const days = date ? daysBetween(localISODate(), date) : null;
+    const read = stage ? readStage(stage, ctx) : { met: 0, total: 0 };
+    return {
+      href, kind, days,
+      title: campaignDisplayName(campaign.name) || t("camp.untitled"),
+      when: days === null ? "" : days > 1 ? t("camp.kind.daysLeft", { n: days }) : days === 1 ? t("camp.kind.tomorrow") : days === 0 ? t("camp.kind.today") : t("camp.kind.past"),
+      value: date ? formatEventDate(date) : "",
+      meta: stage ? stage.name : "",
+      pct: read.total ? read.met / read.total : 0,
+    };
+  }
+  const head = stage ? campaignHeadline(campaign, stages, idx, ctx) : null;
+  const r = head?.reading;
+  const title = kind === "social"
+    ? t(`goal.launch.platform.${SOCIAL_PLATFORM_KEYS.includes(campaign.goalPlan?.platform) ? campaign.goalPlan.platform : "instagram"}`)
+    : stage ? stage.name : campaignDisplayName(campaign.name);
+  return {
+    href, kind, title,
+    meta: stage?.kind === "level" ? t("camp.levelOf", { n: idx + 1, total: stages.length }) : "",
+    value: r && r.target && !r.isCheck ? `${formatNumber(r.current)} / ${formatNumber(r.target)}` : "",
+    unit: r && r.target && !r.isCheck ? r.unit || "" : "",
+    pct: r ? Math.min(1, r.pct || 0) : 0,
+  };
+}
+
+function goalsLandingHTML(brandId, brand, { animate }) {
+  const campaigns = listCampaigns(brandId);
+  const content = listContent(brandId);
+  const settings = getSettings();
+  const ctxBase = { brand, content, settings };
+  const goals = listGoals(brandId);
+  // An event plan made but not put on the calendar yet: it holds Pemula's
+  // "one plan at a time", so it shows on the Event card, opening the plan.
+  const draftPlans = goals.filter((g) => ["draft", "installing", "partial"].includes(g.status) && !campaigns.some((c) => c.goalId === g.id));
+  const cards = GOAL_KINDS.map((k, i) => {
+    const running = runningGoalsOfKind(campaigns, k.key);
+    const slips = running.map((c) => goalSlip(brandId, c, ctxBase));
+    const drafts = k.key === "event" ? draftPlans.map((g) => ({ href: `#/brand/${brandId}/goals/${g.id}`, title: g.name || t("roadmap.defaultName"), meta: t("gl.slip.notInstalled"), value: "", pct: 0, draft: true })) : [];
+    const all = [...slips, ...drafts];
+    // One status line: an Event counts down; the others say what's waiting.
+    let status = { text: t("gl.st.none"), tone: "" };
+    if (all.length) {
+      const todo = running.reduce((n, c) => n + goalTodo({ brand, campaign: c, content, settings, goal: c.goalId ? getGoal(brandId, c.goalId) : null }).items.length, 0);
+      const soonest = slips.filter((x) => x.days !== null && x.days !== undefined && x.days >= 0).sort((a, b) => a.days - b.days)[0];
+      if (k.key === "event" && soonest) status = { text: soonest.when, tone: soonest.days <= 7 ? "warn" : "" };
+      else if (drafts.length && !slips.length) status = { text: t("gl.st.draft"), tone: "" };
+      else status = todo ? { text: t("gl.st.todo", { n: todo }), tone: "" } : { text: t("gl.st.noTodo"), tone: "" };
+    }
+    // Pemula runs one event plan at a time (goal-roadmap.js openGoalWizard).
+    const canStart = !all.length;
+    const label = t(`gl.kind.${k.key}`);
+    const hit = all.length === 1
+      ? `<a class="gl-hit" href="${all[0].href}" data-open-campaign aria-label="${esc(`${label}: ${all[0].title}`)}"></a>`
+      : canStart ? `<button type="button" class="gl-hit" data-gl-start="${k.key}" aria-label="${esc(t("gl.start.aria", { kind: label }))}"></button>` : "";
+    const slipHTML = (x, j) => `
+      <a class="gl-slip${x.draft ? " is-draft" : ""}" href="${x.href}" style="--s:${j};" ${all.length > 1 ? "data-open-campaign" : 'tabindex="-1"'}>
+        <span class="gl-slip-top"><span class="gl-slip-title">${esc(x.title)}</span>${x.value ? `<span class="gl-slip-value">${esc(x.value)}${x.unit ? ` <small>${esc(x.unit)}</small>` : ""}</span>` : ""}</span>
+        ${x.meta || x.pct ? `<span class="gl-slip-meta">${x.meta ? `<span>${esc(x.meta)}</span>` : ""}${x.draft ? "" : `<span class="gl-slip-bar"><span style="width:${Math.round((x.pct || 0) * 100)}%"></span></span>`}</span>` : ""}
+      </a>`;
+    return `
+      <div class="gl-card${all.length ? "" : " is-empty"}" data-kind="${k.key}" style="${kindStyle(k)}--i:${i};">
+        ${hit}
+        <span class="gl-pill">${label}</span>
+        <span class="gl-sub">${t(`gl.kind.${k.key}.sub`)}</span>
+        <span class="gl-status${status.tone ? ` is-${status.tone}` : ""}">${esc(status.text)}</span>
+        ${all.length ? `<span class="gl-slips">${all.map(slipHTML).join("")}</span>` : `<span class="gl-start" aria-hidden="true">${t("gl.start")}<span class="gl-start-dot">${icon("plus", { size: 14 })}</span></span>`}
+        ${k.key === "sales" && running.length ? `<a class="gl-chip" href="#/brand/${brandId}/sales">${icon("money", { size: 13 })}${t("gl.sales.log")}</a>` : ""}
+        <span class="gl-art gl-pic" aria-hidden="true">${goalArtSVG(k.key)}</span>
+        ${all.length === 1 ? `<span class="gl-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>` : ""}
+      </div>`;
+  }).join("");
+  // Finished goals and older campaigns that are none of the four kinds: one
+  // quiet row each under the cards, so nothing the owner made disappears.
+  const others = campaigns.filter((c) => !["archived"].includes(c.status) && (c.status === "completed" || goalKind(c) === "other"));
+  const othersHTML = others.length
+    ? `<section class="gl-others"><h2>${t("gl.others")}</h2>${others.map((c) => `<a class="gl-other" href="#/brand/${brandId}/campaigns/${c.id}"><span>${esc(campaignDisplayName(c.name) || t("camp.untitled"))}</span><small>${esc(c.status === "completed" ? t("gl.other.done") : CAMPAIGN_OBJECTIVE_LABELS[c.objective] || t("camp.kind.campaign"))}</small>${icon("arrowRight", { size: 13 })}</a>`).join("")}</section>`
+    : "";
+  return `
+    <div class="gl${animate ? " is-entering" : ""}">
+      <div class="gl-head">
+        <div>
+          <h1 class="gl-title">${t("app.goals.name")}</h1>
+          <p class="gl-lead">${t("gl.lead")}</p>
+        </div>
+        <div class="gl-head-actions">
+          ${guideVideoButtonHTML("campaigns")}
+          <button type="button" class="cl-cta gl-cta" id="new-campaign"><span>${t("gl.new")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>
+        </div>
+      </div>
+      <nav class="gl-grid" aria-label="${esc(t("app.goals.name"))}">${cards}</nav>
+      ${othersHTML}
+    </div>`;
+}
+
+function paintGoalsLanding(root, brandId, brand, state, refresh) {
+  const html = goalsLandingHTML(brandId, brand, { animate: !state.landingShown });
+  // Nothing on the cards changed: leave them (and their motion) alone.
+  const stable = html.replace(" is-entering", "");
+  if (state.landingShown && stable === state.landingHTML && root.querySelector(".gl")) return;
+  state.landingShown = true;
+  state.landingHTML = stable;
+  root.innerHTML = html;
+  wireHelpButtons(root);
+  setPageGuide(() => startCampaignListGuide(brandId));
+  qs("#new-campaign", root)?.addEventListener("click", () => openGoalKindPicker({ brandId, onSaved: refresh }));
+  qsa("[data-gl-start]", root).forEach((b) => b.addEventListener("click", () => startGoalOfKind({ brandId, kind: b.dataset.glStart, onSaved: refresh })));
+  // A soft light follows the mouse over a card (like Beranda and Create).
+  qsa(".gl-card", root).forEach((card) => card.addEventListener("pointermove", (e) => {
+    const r = card.getBoundingClientRect();
+    card.style.setProperty("--mx", `${Math.round(e.clientX - r.left)}px`);
+    card.style.setProperty("--my", `${Math.round(e.clientY - r.top)}px`);
+  }));
+}
+
+// Which kinds can still start one more: Sosmed once per platform, Community
+// and Sales once, and Pemula one event plan at a time.
+function kindAvailability(brandId) {
+  const campaigns = listCampaigns(brandId);
+  const social = runningGoalsOfKind(campaigns, "social");
+  const taken = new Set(social.map((c) => c.goalPlan?.platform || "instagram"));
+  const eventBusy = listGoals(brandId).some((g) => g.status !== "completed") && getMode() === "guided";
+  return {
+    social: ["instagram", "tiktok", "facebook", "other"].some((p) => !taken.has(p)),
+    community: !runningGoalsOfKind(campaigns, "community").length,
+    sales: !runningGoalsOfKind(campaigns, "sales").length,
+    event: !eventBusy,
+  };
+}
+
+function startGoalOfKind({ brandId, kind, onSaved }) {
+  if (kind === "event") openEventGoalWizard({ brandId });
+  else openGoalWizard({ brandId, brand: getBrand(brandId), onSaved, only: kind });
+}
+
+// "Tujuan baru" (Pemula): which of the four — the same cards, small.
+function openGoalKindPicker({ brandId, onSaved }) {
+  const free = kindAvailability(brandId);
+  const overlay = openModal({
+    title: t("gl.new"),
+    bodyHTML: `
+      <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("gl.pick.lead")}</p>
+      <div class="gl-pick">
+        ${GOAL_KINDS.map((k, i) => `
+          <button type="button" class="gl-tile" data-quick-template="${k.key}" style="${kindStyle(k)}--i:${i};" ${free[k.key] ? "" : "disabled"}>
+            <span class="gl-tile-name">${t(`gl.kind.${k.key}`)}</span>
+            <span class="gl-tile-sub">${free[k.key] ? t(`gl.kind.${k.key}.sub`) : t("gl.pick.taken")}</span>
+            <span class="gl-tile-art gl-pic" aria-hidden="true">${goalArtSVG(k.key)}</span>
+          </button>`).join("")}
+      </div>`,
+  });
+  qsa("[data-quick-template]", overlay).forEach((b) => b.addEventListener("click", () => {
+    if (b.disabled) return;
+    closeOverlay(overlay);
+    startGoalOfKind({ brandId, kind: b.dataset.quickTemplate, onSaved });
+  }));
 }
 
 // ---------- List view ----------

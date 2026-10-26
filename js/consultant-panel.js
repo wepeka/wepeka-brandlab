@@ -54,7 +54,7 @@ import {
   getCampaign, updateCampaign, getContent, updateContent, getSeries, listSeries, findSeriesByNameInText, getGoal, listGoals, formatEventDate, phaseNameLabel, onChange,
   ER_SCALE, chatSessionsOf, setChatSessions, companionStateOf, setCompanionState, scriptThreadId,
 } from "./store.js";
-import { eventCampaignFor, openEventPhases, addEventMilestone } from "./goal-actions.js";
+import { eventCampaignFor, openEventPhases, addEventMilestone, addGoalTask, goalTaskPlaces } from "./goal-actions.js";
 import { aiLimitReached, aiQuotaPeriod } from "./ai-usage.js";
 import { isAdmin, currentUid, getCachedAccount, isReadOnly } from "./account.js";
 import { confirmDialog, openModal, closeOverlay } from "./modals.js";
@@ -627,8 +627,19 @@ function ideaCardHTML(idea, ref, info, full) {
   if (idea.contentId) use = `<a class="btn btn-primary btn-sm" href="#/brand/__BRAND__/content/creator/${esc(idea.contentId)}">${icon("check", { size: 12 })}${t("bs.idea.openDraft")}</a>`;
   else if (idea.usedHere) use = `<span class="bs-done">${icon("check", { size: 12 })} ${t("bs.idea.usedHere")}</span>`;
   else if (info.content) use = `<button type="button" class="btn btn-primary btn-sm" data-chat-idea-use="${ref}">${icon("check", { size: 12 })}${t("bs.idea.useHere")}</button>`;
+  // A conversation about one goal (My Goals' "Kasih ide"): the owner points
+  // the idea at that goal — a piece of content, or a step to do (an Event's
+  // phase / the level it's on) — or keeps it. Nothing until they tap.
+  else if (info.campaign) use = idea.tasked
+    ? `<span class="bs-done">${icon("check", { size: 12 })} ${esc(t("gl.chat.tasked", { where: idea.taskWhere || "" }))}</span>`
+    : `<button type="button" class="btn btn-primary btn-sm" data-chat-idea-draft="${ref}">${icon("plus", { size: 12 })}${t("gl.idea.toContent")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-idea-task="${ref}">${icon("check", { size: 12 })}${t("gl.idea.toTask")}</button>`;
   else use = `<button type="button" class="btn btn-primary btn-sm" data-chat-idea-draft="${ref}">${icon("check", { size: 12 })}${t("bs.idea.use")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-idea-script="${ref}" title="${esc(t("bs.idea.scriptTitle"))}">${icon("bot", { size: 12 })}${t("bs.idea.script")}</button>`;
-  const save = idea.saved
+  // In a goal's conversation an idea that became content or a task is
+  // already on that goal's list — keeping it as well would list it twice.
+  const pointed = !!info.campaign && !info.content && (idea.tasked || idea.contentId);
+  const save = pointed
+    ? ""
+    : idea.saved
     ? full
       ? `<button type="button" class="bs-done bs-see-saved" data-chat-see-saved>${icon("check", { size: 12 })} ${t("bs.idea.savedSee")}</button>`
       : `<span class="bs-done">${icon("check", { size: 12 })} ${t("bs.idea.saved")}</span>`
@@ -964,7 +975,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   // Otomatis steers the saving: under fresh idea cards, one line says what
   // keeping one does.
   const guideHTML = auto && isLast && ideas.some((x) => !x.saved && !x.contentId)
-    ? `<p class="cp-guide">${icon("bookmark", { size: 12 })}${info.content ? t("cw.chat.guideHere") : t("chat.guide.ideas")}</p>`
+    ? `<p class="cp-guide">${icon("bookmark", { size: 12 })}${info.content ? t("cw.chat.guideHere") : info.campaign ? t("gl.chat.guide") : t("chat.guide.ideas")}</p>`
     : "";
   // Follow-ups only under the newest answer — older chips would re-ask
   // questions the conversation has already moved past.
@@ -1797,6 +1808,35 @@ function wire(host, brandId, input, history) {
     syncThreadBlocks(h);
     toast(t("bs.idea.usedToast"));
     rerender();
+  });
+  on("[data-chat-idea-task]", (btn) => {
+    const { h, j } = refAt(btn.dataset.chatIdeaTask);
+    const idea = h?.ideas?.[j];
+    const camp = chatScopeInfo(brandId).campaign;
+    if (!idea || idea.tasked || !camp) return;
+    const put = (phaseId) => {
+      const res = addGoalTask(camp.id, { title: idea.title, why: idea.why || "", phaseId });
+      if (!res.ok) { toast(t("bs.failed"), "error"); return; }
+      idea.tasked = true;
+      idea.taskWhere = phaseNameLabel(res.where || "");
+      syncThreadBlocks(h);
+      toast(t("gl.task.toast", { where: idea.taskWhere }));
+      rerender();
+    };
+    // An Event: the owner picks the phase (never guessed). A Grow Brand
+    // goal: the level it is on.
+    const places = goalTaskPlaces(camp);
+    if (places.length < 2) { put(places[0]?.id || null); return; }
+    const r = btn.getBoundingClientRect();
+    const menu = openMenu(btn, { className: "cp-menu", top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 250) });
+    if (!menu) return;
+    menu.innerHTML = `<div class="cp-menu-head">${esc(t("gl.task.phase"))}</div>${places.map((p) => `<button type="button" data-task-phase="${esc(p.id)}">${icon("calendar", { size: 14 })}<span>${esc(phaseNameLabel(p.name))} <small class="text-faint">${esc(formatEventDate(p.dateFrom))}–${esc(formatEventDate(p.dateTo))}</small></span></button>`).join("")}`;
+    menu.addEventListener("click", (e) => {
+      const pick = e.target.closest("[data-task-phase]");
+      if (!pick) return;
+      closeMenu();
+      put(pick.dataset.taskPhase);
+    });
   });
   on("[data-chat-idea-save]", (btn) => {
     const { h, j } = refAt(btn.dataset.chatIdeaSave);
@@ -3214,6 +3254,16 @@ export function openSeriesEpisodeChat({ seriesId, date }) {
   episodeDate.set(series.id, date);
   applyChatContext(brandId, { seriesId: series.id }, { render: false });
   openConsultantPanel({ engine: "brainstorm", send: true, bsMode: "ideas", seed: t("series.missingEpisodeSeed", { name: series.name, date: formatDate(date) }) });
+}
+
+// My Goals' "Kasih ide": a fresh conversation about that goal (its stage
+// riding along), asking for three ideas right away — the one chat, small
+// panel, so the goal's list stays behind it and fills as the owner picks.
+export function openGoalIdeasChat({ campaignId, stageId = null, seed = "" }) {
+  const brandId = page ? page.brandId : mountedBrandId;
+  if (!brandId || !campaignId || pending) return;
+  applyChatContext(brandId, { campaignId, stageId }, { render: false });
+  openConsultantPanel({ engine: "brainstorm", send: true, bsMode: "ideas", seed });
 }
 
 // The button itself, wherever it appears (Calendar, Creator): with no

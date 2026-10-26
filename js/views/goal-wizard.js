@@ -45,7 +45,11 @@ const onlyDigits = (v) => String(v ?? "").replace(/[^\d]/g, "");
 const toNum = (v) => (onlyDigits(v) === "" ? null : Number(onlyDigits(v)));
 const newProduct = () => ({ id: `p-${Math.random().toString(36).slice(2, 8)}`, name: "", price: null, sold: null, target: null, cost: null });
 
-export function openGoalWizard({ brandId, brand, onSaved }) {
+// `only` ("social" | "community" | "sales"): the owner already picked the
+// kind (My Goals' four cards, Pemula) — the flow opens straight on that one
+// track's questions instead of the tick-which screen. Still an explicit pick:
+// it is the card they tapped.
+export function openGoalWizard({ brandId, brand, onSaved, only = null }) {
   const running = listCampaigns(brandId).filter((c) => c.goalPlan?.version === 3 && !["archived", "completed"].includes(c.status));
   // Social Media Growth is the one track that can run more than once at a
   // time — one per platform (Instagram + TikTok side by side, say). Every
@@ -104,6 +108,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     created: [],
     order: [],
     stepIdx: 0,
+    only: ["social", "community", "sales"].includes(only) ? only : null,
     platform: initialPlatform, followers: insightsFollowersFor(initialPlatform), followersTarget: null, uploadsPerWeek: cadenceUploads || 3,
     months: 12,
     hasExisting: null, members: null, membersTarget: null, platformWhere: new Set(),
@@ -112,7 +117,17 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     agreed: false, error: "",
     name: "",
   };
-  const overlay = openModal({ title: t("goal.launch.title"), wide: true, bodyHTML: `<div class="ev-wizard goal-wizard"></div>` });
+  if (state.only) {
+    const taken = state.only === "social" ? !socialAvailable : state.only === "community" ? !!communityRunning : !!salesRunning;
+    if (taken) {
+      toast(t("gl.pick.running"));
+      return;
+    }
+    state.selected = { social: state.only === "social", community: state.only === "community", sales: state.only === "sales" };
+    state.order = [state.only, "preview"];
+    state.phase = "wizard";
+  }
+  const overlay = openModal({ title: state.only ? t("gl.new") : t("goal.launch.title"), wide: true, bodyHTML: `<div class="ev-wizard goal-wizard"></div>` });
   const root = qs(".goal-wizard", overlay);
   const stepKind = () => state.order[state.stepIdx];
   // Sales can be skipped mid-flow ("I don't sell anything yet") — but only
@@ -123,7 +138,7 @@ export function openGoalWizard({ brandId, brand, onSaved }) {
     <div class="copy-steps">
       ${state.order.map((_, n) => `<span class="copy-step-dot ${n === state.stepIdx ? "is-current" : n < state.stepIdx ? "is-done" : ""}"></span>`).join("")}
       <span class="copy-step-label">${t("goal.launch.step", { n: state.stepIdx + 1, total: state.order.length })}</span>
-      <button type="button" class="btn btn-ghost btn-sm copy-back" data-goal-back>${icon("chevronLeft", { size: 13 })}${t("common.back")}</button>
+      ${state.only && state.stepIdx === 0 ? "" : `<button type="button" class="btn btn-ghost btn-sm copy-back" data-goal-back>${icon("chevronLeft", { size: 13 })}${t("common.back")}</button>`}
     </div>`;
   const numberField = (id, label, value, { hint = "", placeholder = "0" } = {}) => `
     <div class="field">
