@@ -727,22 +727,22 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       selector: '[data-tour="tab-home"]',
       showIf: () => !!brandBase() || listBrands().length > 0,
       title: t("tour.onb.home.title"),
-      body: t("tour.onb.home.body"),
+      body: t(getMode() === "guided" ? "tour.onb.home.bodyApps" : "tour.onb.home.body"),
     },
     {
       selector: ['[data-app="builder"]', '[data-tour="tab-builder"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
       waitTimeout: 6000,
-      // Named like the tab it opens (nav.brand), not the old "Brand Builder".
-      title: t("nav.brand"),
+      // Named like the app it opens (js/apps.js), not the old "Brand Builder".
+      title: t("app.brand.name"),
       body: t("tour.onb.builder.body"),
     },
     {
       selector: ['[data-app="campaigns"]', '[data-tour="tab-campaigns"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
-      title: t("tour.onb.campaigns.title"),
+      title: t("app.goals.name"),
       // Pemula keeps this tab locked until the identity is done — say so
       // while the lock is on screen, rather than leave it unexplained.
       body: () => t("tour.onb.campaigns.body") + (visible("[data-locked-tab], [data-locked-step]") ? ` ${t("tour.onb.campaigns.locked")}` : ""),
@@ -751,8 +751,22 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       selector: ['[data-app="content-os"]', '[data-tour="tab-content-os"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       beforeStep: goBrandHome,
-      title: t("cnt.os.tour.title"),
+      title: t("app.create.name"),
       body: t("tour.onb.contentOs.body"),
+    },
+    {
+      selector: ['[data-app="report"]', '[data-tour="tab-report"]'],
+      showIf: () => !!brandBase() || listBrands().length > 0,
+      beforeStep: goBrandHome,
+      title: t("app.report.name"),
+      body: t("tour.onb.report.body"),
+    },
+    {
+      selector: ['[data-app="papan"]', '[data-tour="tab-papan"]'],
+      showIf: () => !!brandBase() || listBrands().length > 0,
+      beforeStep: goBrandHome,
+      title: t("app.board.name"),
+      body: t("tour.onb.board.body"),
     },
     {
       // The two pills next to the page title — how every later question

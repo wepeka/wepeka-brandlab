@@ -16,6 +16,7 @@ import { rememberLastBrand } from "./back-link.js";
 import { brandTintColor } from "./brand-tint.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { waTopbarHTML, wireWaTopbar } from "./community.js";
+import { APPS } from "./apps.js";
 
 // consultant-panel.js (142 KB) drags in ai.js (133 KB) — by far the heaviest
 // chunk in the app, and the whole reason the logged-out login/pricing
@@ -134,7 +135,7 @@ function unlockTabsIfDone(brandId) {
     a.removeAttribute("data-locked-tab");
     a.setAttribute("href", tab.path(brand.id));
     a.setAttribute("title", label);
-    a.innerHTML = `${icon(tab.icon, { size: 16 })}${label}`;
+    a.innerHTML = `${icon(tab.icon, { size: 16 })}<span class="tab-label">${label}</span>`;
   });
   return true;
 }
@@ -153,19 +154,16 @@ const MODE_CONFIG = {
 };
 const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 
-// One tab row for both modes. `matches` = which route views light a tab up
-// (Brand DNA / Guidelines live under Brand; the Sales Tracker and goal
-// roadmap light up Tujuan; Copy Studio is a sub-tab of Konten). The chat's
-// own page (#/brand/:id/chat) belongs to no tab. The Tools tab was removed on 22 Sep 2026 — four tabs, no drawer.
+// One tab row for both modes: Beranda, then the five apps (js/apps.js —
+// the same list the Beranda launcher shows as big icons, so a tab and its
+// icon always carry the same name, symbol and colour). `matches` = which
+// route views light a tab up (Brand DNA / Brand Book live under My Brand; the
+// Sales Tracker and goal roadmap under My Goals; Copy Studio is a sub-tab of
+// Create). The chat's own page (#/brand/:id/chat) belongs to no tab.
+// Pemula keeps My Goals locked until the identity is done (`gated`).
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
-  { key: "builder", labelKey: "nav.brand", icon: "target", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"] },
-  { key: "campaigns", labelKey: "nav.campaigns", icon: "bulb", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales"], gated: true },
-  // Konten is open from day one — try it first; the Konten page itself
-  // asks for Brand DNA to sharpen the results (js/views/content-os.js).
-  { key: "content-os", labelKey: "nav.content", icon: "layers", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], gated: false },
-  // Papan (whiteboard): brainstorm with the team on the brand's real data.
-  { key: "papan", labelKey: "nav.papan", icon: "papan", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"], gated: false },
+  ...APPS.map((a) => ({ key: a.key, labelKey: a.labelKey, icon: a.icon, color: a.color, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -276,7 +274,7 @@ export function shellHTML({ brandId, active }) {
     ? TABS.map((tab) => {
         const locked = lock && tab.gated;
         const label = t(tab.labelKey);
-        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" ${tab.matches.includes(active) ? `aria-current="page"` : ""} href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}">${icon(locked ? "lock" : tab.icon, { size: 16 })}${label}</a>`;
+        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" ${tab.matches.includes(active) ? `aria-current="page"` : ""} href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" aria-label="${escapeHtml(label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}"${tab.color ? ` style="--app:${tab.color}"` : ""}>${icon(locked ? "lock" : tab.icon, { size: 16 })}<span class="tab-label">${label}</span></a>`;
       }).join("")
     : "";
 

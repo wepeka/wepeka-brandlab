@@ -97,7 +97,7 @@ function paintHub(root, brand) {
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${helpButtonHTML("brand-builder-hub")}${guideVideoButtonHTML("brand-builder-hub")}</div>
-        <h1>${t("builder.hub.title")}</h1>
+        <h1>${t("app.brand.name")}</h1>
         <p class="page-head-brand">${escapeHtml(brand.name)}</p>
         <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:640px;">${t("builder.hub.sub")}</p>
       </div>

@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 process.env.TZ = "Asia/Jakarta";
 
 globalThis.window.scrollTo ??= () => {};
+// Pro's analytics block reads the route (js/views/brand-home-analytics.js).
+globalThis.location ??= { hash: "#/", href: "http://localhost/", pathname: "/" };
 globalThis.sessionStorage ??= new globalThis.localStorage.constructor();
 globalThis.fetch = async () => {
   throw new Error("no network in tests");
@@ -198,10 +200,11 @@ describe("app tint follows the Brand Book", () => {
 });
 
 describe("Beranda renders the new shape", () => {
-  test("Hari ini, recap, Minggu ini, Konten terbaru and Lainnya — one block each", async () => {
+  test("Pro: Hari ini, recap, Minggu ini, Konten terbaru and Lainnya — one block each", async () => {
     const store = await import("../js/store.js");
     const { render } = await import("../js/views/home.js");
     await store.initStore("test-uid-beranda");
+    store.updateSettings({ experienceMode: "advanced", experienceModeChosen: true });
     const b = store.createBrand({
       name: "Kopi Senja",
       brandDNA: { targetAudience: "Pekerja kantoran", problemSolved: "Ngantuk siang", differentiation: "Biji lokal", mission: "1) Pesan 2) Antar 3) Nikmati", callToAction: "Pesan sekarang", successOutcome: "Segar lagi", failureOutcome: "Lemas", tagline: "" },
@@ -228,5 +231,46 @@ describe("Beranda renders the new shape", () => {
     // "Jadwal besok" sits in Minggu ini only, never also in Konten terbaru.
     const besok = store.listContent(b.id).find((c) => c.title === "Jadwal besok");
     assert.equal(html.split(`data-open-content="${besok.id}"`).length - 1, 1);
+    store.updateSettings({ experienceMode: "guided" });
+  });
+
+  // Pemula (2026-10-26, "terlalu ribet dan banyak fitur"): a home screen of
+  // five app icons plus ONE step for today — no dashboard widgets.
+  const root = () => ({ innerHTML: "", isConnected: true, querySelector: () => null, querySelectorAll: () => [], classList: { contains: () => false } });
+  test("Pemula: the five apps and today's step, nothing else", async () => {
+    const store = await import("../js/store.js");
+    const { render } = await import("../js/views/home.js");
+    const { APPS } = await import("../js/apps.js");
+    await store.initStore("test-uid-launcher");
+    store.updateSettings({ experienceMode: "guided", experienceModeChosen: true });
+    const b = store.createBrand({ name: "Kopi Pagi" });
+    const r = root();
+    render(r, { brandId: b.id })?.();
+    const html = r.innerHTML;
+    assert.deepEqual(APPS.map((a) => a.key), ["builder", "campaigns", "content-os", "report", "papan"]);
+    for (const a of APPS) assert.ok(html.includes(`data-app="${a.key}"`), a.key);
+    assert.ok(html.includes('id="journey-hero"'), "today's step");
+    assert.ok(!html.includes('id="home-week"') && !html.includes("home-more") && !html.includes("recent-strip"), "no dashboard widgets");
+    // Identity not done: My Brand is where to start, My Goals waits for it.
+    assert.match(html, /class="lh-card is-current"[^>]*data-app="builder"/);
+    assert.match(html, /class="lh-card is-locked"[^>]*data-locked-step[^>]*data-app="campaigns"/);
+    assert.match(html, new RegExp(`class="lh-cta" href="#/brand/${b.id}/dna`), "the step's button opens Brand DNA");
+  });
+  test("Pemula: once the identity is done the goal is next and My Goals opens", async () => {
+    const store = await import("../js/store.js");
+    const { render } = await import("../js/views/home.js");
+    await store.initStore("test-uid-launcher-2");
+    store.updateSettings({ experienceMode: "guided", experienceModeChosen: true });
+    const b = store.createBrand({
+      name: "Kopi Pagi",
+      brandDNA: { targetAudience: "Pekerja kantoran", problemSolved: "Antre lama", differentiation: "2 menit", mission: "1) Pesan 2) Ambil 3) Ngantor", callToAction: "Pesan sekarang", successOutcome: "Pagi tenang", failureOutcome: "Telat", tagline: "Kopi tanpa antre" },
+      brandGuidelines: { colors: { primary: "#c7773b" }, fonts: { primary: "Poppins", secondary: "Inter" } },
+    });
+    const r = root();
+    render(r, { brandId: b.id })?.();
+    const html = r.innerHTML;
+    assert.match(html, /class="lh-card is-current"[^>]*data-app="campaigns"/);
+    assert.ok(!html.includes("lh-card is-locked"));
+    assert.ok(html.includes(`href="#/brand/${b.id}/campaigns"`));
   });
 });

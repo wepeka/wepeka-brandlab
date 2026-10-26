@@ -60,7 +60,7 @@ describe("identityGateCopy: the lock says exactly what's left (Indonesian)", () 
   test("DNA done → 'Tinggal Brand Book', button goes there", () => {
     const copy = identityGateCopy(identityGate(brandWith({ dna: DNA_DONE })), t);
     assert.match(copy.message, /^Tinggal Brand Book/);
-    assert.match(copy.message, /Tujuan/);
+    assert.match(copy.message, /My Goals/);
     assert.equal(copy.action, "Ke Brand Book");
   });
   test("only fonts left names the fonts in the Brand Book", () => {

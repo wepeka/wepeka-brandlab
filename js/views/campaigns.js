@@ -158,7 +158,7 @@ function paintList(root, brandId, brand, refresh) {
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${helpButtonHTML("campaigns")}${guideVideoButtonHTML("campaigns")}</div>
-        <h1>${t("camp.list.eyebrow")}</h1>
+        <h1>${t("app.goals.name")}</h1>
         <p class="page-head-brand">${escapeText(brand.name)}</p>
       </div>
       <button class="btn btn-primary" id="new-campaign">${icon("plus", { size: 16 })}${t("camp.newCampaign")}</button>

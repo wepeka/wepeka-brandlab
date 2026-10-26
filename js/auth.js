@@ -45,6 +45,12 @@ export function onAuthChange(fn) {
 export function getUserEmail() {
   return auth.currentUser?.email || "";
 }
+// "Rani" for a greeting: the first word of the display name, else the
+// email's name part (same rule as the welcome bumper in main.js).
+export function getUserFirstName() {
+  const u = auth.currentUser;
+  return (u?.displayName || u?.email?.split("@")[0] || "").trim().split(/\s+/)[0] || "";
+}
 export async function login(email, password) {
   await signInWithEmailAndPassword(auth, email, password);
   gaEvent("login", { method: "email" });

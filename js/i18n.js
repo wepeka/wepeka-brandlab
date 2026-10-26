@@ -22,6 +22,7 @@ import beranda from "./i18n/beranda.js";
 import reminders from "./i18n/reminders.js";
 import team from "./i18n/team.js";
 import papan from "./i18n/papan.js";
+import apps from "./i18n/apps.js";
 
 const KEY = "wepeka-lang";
 
@@ -674,6 +675,7 @@ const EXTRA = {
   "beranda": beranda,
   "reminders": reminders,
   "team": team,
+  "apps": apps,
 };
 // Production build seam: scripts/build.mjs swaps this exact line for a
 // top-level await that loads ONLY the active language (one chunk per

@@ -14,12 +14,15 @@ import { go } from "../nav-context.js";
 import { statusLabel } from "../funnel-field.js";
 import { brandTodayAction } from "../next-action.js";
 import { getMode } from "../mode.js";
-import { t, campaignDisplayName } from "../i18n.js";
+import { t, campaignDisplayName, getLang } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analytics.js";
 import { openReportModal, reportDue, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
-import { guideVideoButtonHTML } from "../guide-videos.js";
+import { guideVideoButtonHTML, videoRefForGuide, canShowVideo, guideVideosReady } from "../guide-videos.js";
+import { APPS, appByKey } from "../apps.js";
+import { appCharacterSVG } from "../app-characters.js";
+import { getUserFirstName } from "../auth.js";
 import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
 import { openConsultantPanel, openWeekPlan } from "../consultant-panel.js";
@@ -500,6 +503,11 @@ function paint(root, brandId, state, refresh) {
   const recaps = finishedCampaignRecaps({ brand, campaigns, content, now });
   const newlyDoneSteps = detectNewlyDoneSteps(brandId, journey.steps);
   if (newlyDoneSteps.length) toast(t(`beginner.step.${newlyDoneSteps[0]}.celebrate`));
+  // Pemula: the app launcher instead of the dashboard (bottom of this file).
+  if (guided) {
+    paintLauncher(root, { brandId, brand, campaigns, content, journey, top, now, recaps, identityJustDone, refresh });
+    return;
+  }
   // The week plan reads Brand DNA (who, what problem, what changes) and
   // spends one AI credit, so it's offered once there's something to read.
   const dna = brand.brandDNA || {};
@@ -949,12 +957,19 @@ function identityHeroHTML(brandId, brand) {
   `;
 }
 
-function todayHeroHTML(brandId, brand, campaigns, content, top) {
+// What Hari ini asks for, as data — the Pro hero (todayHeroHTML) and the
+// Pemula launcher's step card (launcherTodayHTML) both read it.
+function todayModel(brandId, brand, campaigns, content, top) {
   let title, why, href, cta;
   let inPlace = false;
-  let secondary = "";
+  let planHref = "";
+  // Which app the step happens in, and the page whose guide video shows how
+  // (the launcher lights that app up and offers the video).
+  let app = "content-os";
+  let guide = "creator";
   if (top) {
     const a = top.action;
+    ({ app, guide } = TODAY_APP[a.cta?.type] || { app: "campaigns", guide: "campaign-detail" });
     title = a.label;
     why = a.why;
     const route = todayRoute(brandId, top.campaign, a);
@@ -963,13 +978,15 @@ function todayHeroHTML(brandId, brand, campaigns, content, top) {
     inPlace = !!route.inPlace;
     // The one quiet link: the plan this step belongs to (the whole picture),
     // unless the button already goes there.
-    const planHref = top.campaign ? `#/brand/${brandId}/campaigns/${top.campaign.id}` : "";
-    if (planHref && href !== planHref) secondary = `<a class="link journey-hero-secondary" href="${planHref}">${t("beranda.today.seePlan")}</a>`;
+    const plan = top.campaign ? `#/brand/${brandId}/campaigns/${top.campaign.id}` : "";
+    if (plan && href !== plan) planHref = plan;
   } else if (!campaigns.length) {
     title = t("beginner.step.campaign.title");
     why = t("beginner.step.campaign.desc");
     cta = t("beginner.step.campaign.cta");
     href = `#/brand/${brandId}/campaigns`;
+    app = "campaigns";
+    guide = "campaigns";
   } else if (!brand.brandGuidelines?.logo?.dataUrl) {
     // No campaign action right now — offer the next visual section one at
     // a time. Logo first: business cards and social templates need it.
@@ -977,6 +994,8 @@ function todayHeroHTML(brandId, brand, campaigns, content, top) {
     why = t("beginner.today.logo.why");
     cta = t("beginner.today.logo.cta");
     href = `#/brand/${brandId}/guidelines/logo`;
+    app = "builder";
+    guide = "brand-guidelines";
   } else {
     title = t("beginner.today.fallbackTitle");
     // What the brand's own numbers say (a posting gap and what it cost last
@@ -985,11 +1004,29 @@ function todayHeroHTML(brandId, brand, campaigns, content, top) {
     cta = t("beginner.step.content.ctaWrite");
     href = `#/brand/${brandId}/content/creator`;
   }
-  const button = cta && inPlace
-    ? `<button type="button" class="btn btn-primary journey-hero-cta" data-today-cta>${esc(cta)}${icon("arrowRight", { size: 15 })}</button>`
+  return { title, why, href, cta, inPlace, planHref, app, guide };
+}
+// next-action.js CTA type → the app it happens in + its guide video's page.
+const TODAY_APP = {
+  creator: { app: "content-os", guide: "creator" },
+  "new-content": { app: "content-os", guide: "creator" },
+  calendar: { app: "content-os", guide: "calendar" },
+  performance: { app: "content-os", guide: "konten-dashboard" },
+};
+
+function todayButtonHTML({ cta, href, inPlace }, cls = "journey-hero-cta") {
+  return cta && inPlace
+    ? `<button type="button" class="btn btn-primary ${cls}" data-today-cta>${esc(cta)}${icon("arrowRight", { size: 15 })}</button>`
     : cta && href
-      ? `<a class="btn btn-primary journey-hero-cta" href="${href}">${esc(cta)}${icon("arrowRight", { size: 15 })}</a>`
+      ? `<a class="btn btn-primary ${cls}" href="${href}">${esc(cta)}${icon("arrowRight", { size: 15 })}</a>`
       : "";
+}
+
+function todayHeroHTML(brandId, brand, campaigns, content, top) {
+  const m = todayModel(brandId, brand, campaigns, content, top);
+  const { title, why } = m;
+  const secondary = m.planHref ? `<a class="link journey-hero-secondary" href="${m.planHref}">${t("beranda.today.seePlan")}</a>` : "";
+  const button = todayButtonHTML(m);
   return `
     <section class="card glass-card journey-hero journey-hero-today" id="journey-hero">
       <div class="journey-hero-eyebrow"><span class="journey-hero-step">${t("beginner.today.eyebrow")}</span>${top?.campaign ? `<span class="journey-hero-time">${icon("bulb", { size: 12 })}${esc(campaignDisplayName(top.campaign.name) || "Campaign")}</span>` : ""}</div>
@@ -1161,4 +1198,250 @@ function weekPathHTML(brandId, content, top, now) {
       </div>
       <ol class="home-path-steps" style="--n:${WEEK_STAGES.length}">${items}</ol>
     </nav>`;
+}
+
+// ---- Pemula: the app launcher ------------------------------------------------
+// A user found Beranda "terlalu ribet dan banyak fitur" (2026-10-26). Pemula's
+// Beranda is now a phone-like home screen: a greeting, ONE step for today
+// (with its video and the steps around it), and the five apps as big icons
+// (js/apps.js). Everything the old dashboard showed still has a home: the
+// week's schedule in Create, the report in Report, the goal's plan in My
+// Goals. Pro keeps the full dashboard (paint() above).
+
+function launcherGreetKey(hour) {
+  if (hour >= 4 && hour <= 10) return "lh.greet.morning";
+  if (hour >= 11 && hour <= 14) return "lh.greet.midday";
+  if (hour >= 15 && hour <= 17) return "lh.greet.afternoon";
+  return "lh.greet.evening";
+}
+
+const hasVideoFor = (guideKey) => {
+  const ref = guideKey ? videoRefForGuide(guideKey) : null;
+  return !!(ref && canShowVideo(ref.video));
+};
+
+// The step card's content: identity first (Brand DNA, then Brand Book), then
+// whatever Hari ini asks for (js/next-action.js via todayModel).
+function launcherStep({ brandId, brand, campaigns, content, journey, top }) {
+  const total = journey.steps.length;
+  if (!journey.identityDone) {
+    const dnaDone = brandDnaDone(brand);
+    const dna = brandDnaCompleteness(brand.brandDNA);
+    const book = { filled: ["color", "typography"].filter((k) => guidelineSectionDone(k, brand)).length, total: 2 };
+    return {
+      chip: t("beginner.hero.step", { n: 1, total }),
+      time: t("beginner.minutes", { n: 15 }),
+      title: t("home.identity.title"),
+      why: t("lh.identity.desc"),
+      model: { cta: !dnaDone ? (dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart")) : t("home.identity.ctaBook"), href: dnaDone ? `#/brand/${brandId}/guidelines/color` : dnaHref(brandId, brand) },
+      app: "builder",
+      guide: dnaDone ? "brand-guidelines" : "brand-dna",
+      parts: [
+        { label: t("home.identity.dna"), value: dnaDone ? "✓" : `${dna.filled}/${dna.total}`, done: dnaDone },
+        { label: t("home.identity.bookBasics"), value: visualBasicsDone(brand) ? "✓" : `${book.filled}/${book.total}`, done: visualBasicsDone(brand) },
+      ],
+      next: t("lh.next.campaign"),
+    };
+  }
+  const m = todayModel(brandId, brand, campaigns, content, top);
+  const basics = journey.currentIndex !== -1;
+  return {
+    chip: basics ? t("beginner.hero.step", { n: journey.currentIndex + 1, total }) : t("lh.today.title"),
+    time: top?.campaign ? campaignDisplayName(top.campaign.name) || "" : "",
+    title: m.title,
+    why: m.why,
+    model: m,
+    app: m.app,
+    guide: m.guide,
+    parts: [],
+    next: basics ? (journey.currentIndex === 1 ? t("lh.next.content") : t("lh.next.routine")) : "",
+  };
+}
+
+// The steps as one chunky progress bar — a segment per step, its name under
+// it: the three basic steps while one is open, the weekly round after that.
+function launcherProgressHTML({ brandId, content, journey, top, now }) {
+  const basics = journey.currentIndex !== -1 || !journey.identityDone;
+  let items;
+  if (basics) {
+    items = journey.steps.map((s, i) => {
+      const locked = s.key === "campaign" && !journey.identityDone;
+      const state = s.done ? "done" : locked ? "locked" : i === journey.currentIndex ? "current" : "next";
+      return { state, label: t(`lh.step.${s.key}`), href: s.done ? s.editHref : locked ? "" : s.href, locked };
+    });
+  } else {
+    const counts = weekStageCounts(content, now);
+    const here = weekStageFor(top?.action?.id, counts);
+    const ready = content.find((c) => c.status === "scheduled");
+    items = WEEK_STAGES.map((st) => ({
+      state: st.key === here ? "current" : "next",
+      label: t(`home.path.week.${st.key}`),
+      note: counts[st.key] ? t(`home.path.week.${st.key}.n`, { n: counts[st.key] }) : t(`home.path.week.${st.key}.none`),
+      href: st.key === "publish" && ready ? `#/brand/${brandId}/content/creator/${ready.id}` : st.href(brandId),
+    }));
+  }
+  const li = items.map((it) => {
+    const inner = `<span class="lh-prog-bar"></span><span class="lh-prog-label">${it.locked ? icon("lock", { size: 11 }) : ""}${esc(it.label)}${it.note ? `<small>${esc(it.note)}</small>` : ""}</span>`;
+    return `<li class="lh-prog-step is-${it.state}">${it.href ? `<a href="${it.href}">${inner}</a>` : `<span${it.locked ? ` data-locked-step role="button" tabindex="0"` : ""}>${inner}</span>`}</li>`;
+  }).join("");
+  const done = journey.steps.filter((s) => s.done).length;
+  return `
+    <div class="lh-prog-title">${basics ? esc(t("lh.progress.basics", { done, total: journey.steps.length })) : esc(t("lh.routine"))}</div>
+    <ol class="lh-prog" style="--n:${items.length}">${li}</ol>`;
+}
+
+function launcherTodayHTML(ctx, step) {
+  const app = appByKey(step.app) || APPS[0];
+  const m = step.model;
+  const arrow = `<span class="lh-cta-dot">${icon("arrowRight", { size: 15 })}</span>`;
+  const cta = m.cta && m.inPlace
+    ? `<button type="button" class="lh-cta" data-today-cta>${esc(m.cta)}${arrow}</button>`
+    : m.cta && m.href ? `<a class="lh-cta" href="${m.href}">${esc(m.cta)}${arrow}</a>` : "";
+  const video = hasVideoFor(step.guide)
+    ? `<button type="button" class="lh-video" data-guide-video-btn="${esc(step.guide)}"><span class="lh-video-dot">${icon("play", { size: 12 })}</span>${t("lh.video")}</button>`
+    : "";
+  return `
+    <section class="lh-today" id="journey-hero" style="--app:${app.color}">
+      <span class="lh-today-art">${appCharacterSVG(app.key)}</span>
+      <div class="lh-today-pills">
+        <span class="lh-pill is-strong">${esc(step.chip)}</span>
+        ${step.time ? `<span class="lh-pill">${esc(step.time)}</span>` : ""}
+      </div>
+      <h2>${esc(step.title)}</h2>
+      <p class="lh-today-why">${esc(step.why)}</p>
+      ${step.parts.length ? `<div class="lh-parts">${step.parts.map((x) => `<span class="lh-part${x.done ? " is-done" : ""}">${esc(x.label)} <b>${esc(x.value)}</b></span>`).join("")}</div>` : ""}
+      <div class="lh-today-actions">
+        ${cta}
+        ${video}
+        ${m.planHref ? `<a class="lh-plan-link" href="${m.planHref}">${t("beranda.today.seePlan")}</a>` : ""}
+      </div>
+      <div class="lh-today-foot">
+        ${launcherProgressHTML(ctx)}
+        ${step.next ? `<p class="lh-next">${esc(step.next)}</p>` : ""}
+      </div>
+    </section>`;
+}
+
+// One line under each app: where the brand stands in it.
+function appStatus(app, { brand, campaigns, content, journey, locked, reportIsDue, now }) {
+  if (locked) return { text: t("lh.lockedNote"), tone: "locked" };
+  if (app.key === "builder") {
+    if (journey.identityDone) return { text: t("lh.status.brandDone"), tone: "good" };
+    return { text: t("lh.status.brandProgress", { done: (brandDnaDone(brand) ? 1 : 0) + (visualBasicsDone(brand) ? 1 : 0) }), tone: "" };
+  }
+  if (app.key === "campaigns") {
+    const running = campaigns.filter((c) => ["planning", "active", undefined, ""].includes(c.status)).length;
+    return running ? { text: t("lh.status.goalsActive", { n: running }), tone: "good" } : { text: t("lh.status.goalsNone"), tone: "" };
+  }
+  if (app.key === "content-os") {
+    const live = content.filter((c) => c.status !== "archived");
+    const wip = live.filter((c) => ["idea", "draft", "production", "editing", "scheduled"].includes(c.status)).length;
+    const published = live.filter((c) => c.status === "published").length;
+    if (wip) return { text: t("lh.status.createWip", { n: wip }), tone: "" };
+    if (published) return { text: t("lh.status.createLive", { n: published }), tone: "good" };
+    return { text: t("lh.status.createNone"), tone: "" };
+  }
+  if (app.key === "report") {
+    const weekAgo = localISODate(new Date(now.getTime() - 6 * 86400000));
+    const week = content.filter((c) => c.status === "published" && (c.publishedDate || "") >= weekAgo).length;
+    if (reportIsDue) return { text: t("lh.status.reportReady"), tone: "good" };
+    if (week) return { text: t("lh.status.reportWeek", { n: week }), tone: "" };
+    return { text: t("lh.status.reportNone"), tone: "" };
+  }
+  return { text: t("lh.status.boardNone"), tone: "" };
+}
+
+// An app: a flat block of its colour, its name, one line, where it stands,
+// and its character peeking in from the corner.
+function appCardHTML(app, { brandId, status, current, locked, hereLabel }) {
+  const name = t(app.labelKey);
+  const attrs = locked ? `href="#" data-locked-step` : `href="${app.path(brandId)}"`;
+  return `
+    <a class="lh-card${current ? " is-current" : ""}${locked ? " is-locked" : ""}" ${attrs} style="--app:${app.color}" data-app="${app.key}" aria-label="${esc(`${name} — ${t(app.subKey)}`)}">
+      <span class="lh-card-name">${esc(name)}</span>
+      <span class="lh-card-sub">${esc(t(app.subKey))}</span>
+      <span class="lh-card-status${status.tone ? ` is-${status.tone}` : ""}">${locked ? icon("lock", { size: 12 }) : status.tone === "good" ? icon("check", { size: 12 }) : ""}${esc(status.text)}</span>
+      ${current ? `<span class="lh-card-here">${esc(hereLabel)}</span>` : `<span class="lh-card-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>`}
+      <span class="lh-card-art">${appCharacterSVG(app.key, { mood: locked ? "sleep" : "happy" })}</span>
+    </a>`;
+}
+
+function launcherHTML(ctx) {
+  const { brand, brandId, now, journey, notices, recapHTML } = ctx;
+  const step = launcherStep(ctx);
+  const lockGoals = !journey.identityDone;
+  const hereLabel = t(journey.currentIndex !== -1 || !journey.identityDone ? "lh.here" : "lh.hereToday");
+  const cards = APPS.map((app) => {
+    const locked = !!app.gated && lockGoals;
+    return appCardHTML(app, { brandId, status: appStatus(app, { ...ctx, locked }), current: app.key === step.app && !locked, locked, hereLabel });
+  }).join("");
+  const logo = brand.brandGuidelines?.logo?.dataUrl || brand.avatar || "";
+  const date = now.toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { weekday: "long", day: "numeric", month: "long" });
+  const name = getUserFirstName();
+  return `
+    <div class="lh">
+      <header class="lh-head">
+        <div class="lh-hello">
+          <p class="lh-date">${esc(date)}</p>
+          <h1>${t(launcherGreetKey(now.getHours()))}${name ? `, ${esc(name)}` : ""} 👋</h1>
+          <p class="lh-brandline">
+            ${isImageUrl(logo) ? `<img class="lh-logo is-image" src="${esc(logo)}" alt="" />` : `<span class="lh-logo">${esc(initials(brand.name))}</span>`}
+            <b>${esc(brand.name)}</b><span>· ${t("lh.lead")}</span>
+          </p>
+        </div>
+        <div class="page-eyebrow lh-help">${guideVideoButtonHTML("home")}</div>
+      </header>
+      ${notices.length ? `<div class="home-notices">${notices.join("")}</div>` : ""}
+      <div class="lh-bento" id="lh-apps">
+        ${launcherTodayHTML(ctx, step)}
+        ${cards}
+      </div>
+      ${recapHTML}
+    </div>`;
+}
+
+const LAUNCHER_TOUR = [
+  { selector: "#journey-hero", title: t("lh.tour.today.title"), body: t("lh.tour.today.body") },
+  { selector: ".lh-card", title: t("lh.tour.apps.title"), body: t("lh.tour.apps.body") },
+  { selector: "#consultant-fab", title: t("beginner.tour.ai.title"), body: t("beginner.tour.ai.body") },
+];
+
+// The guide-video list arrives after the first paint: the launcher repaints
+// once when it's known, so "Tonton caranya" shows without a reload.
+let videosKnown = false;
+
+function paintLauncher(root, ctx) {
+  const { brandId, brand, content, recaps, top, identityJustDone, refresh } = ctx;
+  const notices = [trialReminderHTML(), lowCreditNoteHTML()].filter(Boolean);
+  const recapHTML = recaps[0] ? `<div class="home-b-recap">${recapCardHTML(recaps[0], { brandId })}</div>` : "";
+  root.innerHTML = launcherHTML({ ...ctx, notices, recapHTML, reportIsDue: reportDue(brand, content) });
+
+  wireHelpButtons(root);
+  wireRecapCard(root, { brandId, refresh });
+  import("../founder-circle.js").then((m) => m.mountCircleNotice(root)).catch(() => {});
+  setPageGuide(() => runSpotlightTour(LAUNCHER_TOUR));
+
+  qs("[data-today-cta]", root)?.addEventListener("click", () => { if (top) runTodayAction(top, { brandId, brand, content, refresh }); });
+  const dropEmptyNotices = () => { const box = qs(".home-notices", root); if (box && !box.children.length) box.remove(); };
+  qs("[data-trial-dismiss]", root)?.addEventListener("click", () => {
+    dismissTrialReminder();
+    qs(".trial-remind", root)?.remove();
+    dropEmptyNotices();
+  });
+  wireLowCreditNote(root);
+  qs("[data-ai-low-close]", root)?.addEventListener("click", () => setTimeout(dropEmptyNotices, 0));
+  // My Goals before the identity is done: says what's missing, with a
+  // button to it (same dialog as the locked tab).
+  qsa("[data-locked-step]", root).forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      import("../layout.js").then((m) => m.explainIdentityGate(brandId)).catch(() => toast(t("home.next.lockedToast")));
+    });
+  });
+  wireClickableCards(root, "span[data-locked-step]");
+  if (identityJustDone) {
+    const hero = qs("#journey-hero", root);
+    if (hero) showCalloutBubble(hero, t("beginner.callout.builderDone"));
+  }
+  if (!videosKnown) guideVideosReady.then(() => { if (!videosKnown) { videosKnown = true; if (root.isConnected) refresh(); } }).catch(() => { videosKnown = true; });
 }

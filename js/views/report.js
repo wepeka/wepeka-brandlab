@@ -626,11 +626,37 @@ async function downloadReportPdf(brand, start, end, blocks) {
   }
 }
 
-// ---------- The modal: pick the period, see it, download ----------
+// ---------- Pick the period, see it, download ----------
+// One panel, two homes: the modal (Minggu ini's link in Pro, the weekly
+// nudge) and the Report app's own page (js/views/report-page.js). Both are
+// the same markup — the picker, the AI strip, the sheet, Bagikan + PDF —
+// wired by wireReportPanel.
+
+const reportBodyHTML = () => `<div id="rp-picker"></div><div class="rp-ai-strip" id="rp-ai" hidden></div><div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`;
+const reportActionsHTML = () => `
+      <button class="btn btn-secondary" id="report-share">${icon("link", { size: 14 })}${t("rep.share")}</button>
+      <button class="btn btn-primary" id="report-download">${icon("download", { size: 14 })}${t("rep.downloadPdf")}</button>`;
 
 export function openReportModal(brandId, { range = "week" } = {}) {
+  if (!getBrand(brandId)) return;
+  const overlay = openModal({ title: t("rep.title"), wide: true, bodyHTML: reportBodyHTML(), footHTML: reportActionsHTML() });
+  wireReportPanel(overlay, brandId, { range });
+  return overlay;
+}
+
+// The Report page: the same panel laid out on the page, with the actions
+// above the sheet instead of in a modal footer.
+export function renderReportPanel(root, brandId, { range = "week" } = {}) {
+  if (!getBrand(brandId)) return;
+  root.innerHTML = `
+    <div class="rpage-bar"><div id="rp-picker"></div><div class="rpage-actions">${reportActionsHTML()}</div></div>
+    <div class="rp-ai-strip" id="rp-ai" hidden></div>
+    <div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`;
+  wireReportPanel(root, brandId, { range });
+}
+
+function wireReportPanel(root, brandId, { range = "week" } = {}) {
   const brand = getBrand(brandId);
-  if (!brand) return;
   const st = { key: range, ...(rangeFor(range) || rangeFor("week")), busy: false, aiBusy: false, aiError: "" };
   // Advice made in this sitting, per period + numbers (switching periods
   // back and forth keeps it); the latest one is also kept on the brand.
@@ -642,15 +668,8 @@ export function openReportModal(brandId, { range = "week" } = {}) {
       ${["week", "month", "overall", "custom"].map((k) => `<button type="button" data-range="${k}" class="${st.key === k ? "active" : ""}" aria-pressed="${st.key === k}">${t(`rep.range.${k}`)}</button>`).join("")}
     </div>
     ${st.key === "custom" ? `<div class="row-2" style="margin-top:10px;"><div class="field" style="margin-bottom:0;"><label>${t("rep.range.start")}</label><input class="input" type="date" id="rp-start" value="${st.start}" /></div><div class="field" style="margin-bottom:0;"><label>${t("rep.range.end")}</label><input class="input" type="date" id="rp-end" value="${st.end}" /></div></div>` : ""}`;
+  qs("#rp-picker", root).innerHTML = pickerHTML();
 
-  const overlay = openModal({
-    title: t("rep.title"),
-    wide: true,
-    bodyHTML: `<div id="rp-picker">${pickerHTML()}</div><div class="rp-ai-strip" id="rp-ai" hidden></div><div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`,
-    footHTML: `
-      <button class="btn btn-secondary" id="report-share">${icon("link", { size: 14 })}${t("rep.share")}</button>
-      <button class="btn btn-primary" id="report-download">${icon("download", { size: 14 })}${t("rep.downloadPdf")}</button>`,
-  });
   let current = null;
   let advice = null;
   let sig = "";
@@ -666,7 +685,7 @@ export function openReportModal(brandId, { range = "week" } = {}) {
     return made.get(sig) || (saved && saved.sig === sig && saved.actions?.length ? saved : null);
   };
   const paintAi = () => {
-    const box = qs("#rp-ai", overlay);
+    const box = qs("#rp-ai", root);
     box.hidden = !aiOn();
     if (box.hidden) return;
     const hasPosts = current?.data.publishedCount || current?.data.sales.count;
@@ -684,17 +703,17 @@ export function openReportModal(brandId, { range = "week" } = {}) {
       </div>`;
     if (advice && !st.aiBusy) {
       const text = [advice.summary, ...(advice.working || []), ...advice.actions.map((a, i) => `${i + 1}. ${a.title} — ${a.why} ${a.how}`)].filter(Boolean).join("\n");
-      mountAiReport(qs("#rp-ai-actions", overlay), { feature: "report-advice", output: text, prompt: snapshot, label: false });
+      mountAiReport(qs("#rp-ai-actions", root), { feature: "report-advice", output: text, prompt: snapshot, label: false });
     }
-    qs("#rp-ai-go", overlay)?.addEventListener("click", async () => {
+    qs("#rp-ai-go", root)?.addEventListener("click", async () => {
       await makeAdvice().catch(() => {});
-      qs("#report-sheet .rp2-ai", overlay)?.closest(".rp-block")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      qs("#report-sheet .rp2-ai", root)?.closest(".rp-block")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
   const paint = () => {
     advice = adviceFor();
     current = reportBlocks(getBrand(brandId), st.start, st.end, advice);
-    qs("#report-sheet", overlay).innerHTML = sheetHTML(getBrand(brandId), current.blocks);
+    qs("#report-sheet", root).innerHTML = sheetHTML(getBrand(brandId), current.blocks);
     paintAi();
   };
   // One AI call (1 credit) for this period's numbers. Throws on failure,
@@ -718,25 +737,25 @@ export function openReportModal(brandId, { range = "week" } = {}) {
       throw e;
     } finally {
       st.aiBusy = false;
-      if (overlay.isConnected) paint();
+      if (root.isConnected) paint();
     }
   }
   const wirePicker = () => {
-    qsa("[data-range]", overlay).forEach((b) => b.addEventListener("click", () => {
+    qsa("[data-range]", root).forEach((b) => b.addEventListener("click", () => {
       st.key = b.dataset.range;
       if (st.key !== "custom") Object.assign(st, rangeFor(st.key));
-      qs("#rp-picker", overlay).innerHTML = pickerHTML();
+      qs("#rp-picker", root).innerHTML = pickerHTML();
       wirePicker();
       paint();
     }));
-    const onDate = () => { st.start = qs("#rp-start", overlay)?.value || st.start; st.end = qs("#rp-end", overlay)?.value || st.end; paint(); };
-    qs("#rp-start", overlay)?.addEventListener("change", onDate);
-    qs("#rp-end", overlay)?.addEventListener("change", onDate);
+    const onDate = () => { st.start = qs("#rp-start", root)?.value || st.start; st.end = qs("#rp-end", root)?.value || st.end; paint(); };
+    qs("#rp-start", root)?.addEventListener("change", onDate);
+    qs("#rp-end", root)?.addEventListener("change", onDate);
   };
   wirePicker();
   paint();
 
-  const dl = qs("#report-download", overlay);
+  const dl = qs("#report-download", root);
   dl.addEventListener("click", async () => {
     if (st.busy || st.aiBusy) return;
     st.busy = true;
@@ -766,7 +785,7 @@ export function openReportModal(brandId, { range = "week" } = {}) {
     dl.disabled = false;
     dl.innerHTML = `${icon("download", { size: 14 })}${t("rep.downloadPdf")}`;
   });
-  qs("#report-share", overlay).addEventListener("click", async () => {
+  qs("#report-share", root).addEventListener("click", async () => {
     const summary = reportSummaryText(getBrand(brandId), st.start, st.end, current.data, advice);
     if (navigator.share) {
       try { await navigator.share({ title: t("rep.shareTitle", { brand: brand.name }), text: summary }); } catch { /* cancelled */ }
@@ -776,7 +795,6 @@ export function openReportModal(brandId, { range = "week" } = {}) {
       toast(t("rep.shareUnsupported"), "error");
     }
   });
-  return overlay;
 }
 
 // ---------- Weekly reminder (Home) ----------

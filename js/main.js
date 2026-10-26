@@ -218,6 +218,8 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/([^/]+)\/?$/))) return { view: "guidelines", brandId: m[1], section: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/guidelines\/?$/))) return { view: "guidelines", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/sales\/?$/))) return { view: "sales", brandId: m[1] };
+  // Report (one of the five apps, js/apps.js): the brand report + its PDF.
+  if ((m = h.match(/^\/brand\/([^/]+)\/report\/?$/))) return { view: "report", brandId: m[1] };
   // Pre-22 Sep 2026 addresses: Copy Studio moved under Konten and the Tools
   // hub is gone (its other two doors, Sales Tracker and Brainstorm, kept
   // their own routes under Tujuan).
@@ -879,6 +881,7 @@ async function renderRoute() {
         campaigns: () => import("./views/campaigns.js"),
         guidelines: () => import("./views/brand-guidelines.js"),
         sales: () => import("./views/sales.js"),
+        report: () => import("./views/report-page.js"),
         chat: () => import("./views/chat.js"),
         papan: () => import("./views/papan.js"),
         announcements: () => import("./views/announcements.js"),
@@ -913,6 +916,9 @@ async function renderRoute() {
         cleanup = view.render(viewRoot, { brandId: route.brandId, section: route.section });
         break;
       case "sales":
+        cleanup = view.render(viewRoot, { brandId: route.brandId });
+        break;
+      case "report":
         cleanup = view.render(viewRoot, { brandId: route.brandId });
         break;
       case "chat":
