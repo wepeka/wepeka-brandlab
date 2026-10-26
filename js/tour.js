@@ -724,7 +724,9 @@ export function startOnboardingTour({ firstRun = false } = {}) {
       body: t("tour.onb.switch.body"),
     },
     {
-      selector: '[data-tour="tab-home"]',
+      // Pemula's Beranda hides the tab row (its app cards are the way in),
+      // so the step points at the page's greeting there.
+      selector: ["#view-root .lh-head", '[data-tour="tab-home"]'],
       showIf: () => !!brandBase() || listBrands().length > 0,
       title: t("tour.onb.home.title"),
       body: t(getMode() === "guided" ? "tour.onb.home.bodyApps" : "tour.onb.home.body"),

@@ -2471,7 +2471,7 @@ export function openScriptChat({ contentId, title = "", getCurrent = null, apply
   loadThread(brandId, threadId);
   togglePanel(brandId, true, { focus: true });
   // Opened from inside a dialog (Creator's AI writer): sit above it.
-  qs("#consultant-panel")?.classList.toggle("is-above-modal", !!document.querySelector(".overlay"));
+  qs("#consultant-panel")?.classList.toggle("is-above-modal", !!document.querySelector(".overlay:not(.is-leaving)"));
   qs("#consultant-panel")?.classList.toggle("is-docked", docked);
   document.body.classList.toggle("script-focus-docked", docked);
 }
@@ -3225,7 +3225,7 @@ function wireDocument() {
   });
   docKeydown = (e) => {
     if (e.key !== "Escape") return;
-    if (document.querySelector(".overlay, .tp-overlay, .tour-overlay")) return;
+    if (document.querySelector(".overlay:not(.is-leaving), .tp-overlay, .tour-overlay")) return;
     if (page && ideasFocus) { e.preventDefault(); ideasFocus = false; renderPanel(page.brandId); return; }
     if (isOpen && mountedBrandId) { e.preventDefault(); togglePanel(mountedBrandId, false); }
   };

@@ -21,7 +21,7 @@ import { openReportModal, reportDue, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML, videoRefForGuide, canShowVideo, guideVideosReady } from "../guide-videos.js";
 import { APPS, appByKey } from "../apps.js";
-import { appCharacterSVG } from "../app-characters.js";
+import { appIconSVG } from "../app-icons.js";
 import { getUserFirstName } from "../auth.js";
 import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
@@ -1302,7 +1302,7 @@ function launcherTodayHTML(ctx, step) {
     : "";
   return `
     <section class="lh-today" id="journey-hero" style="--app:${app.color}">
-      <span class="lh-today-art">${appCharacterSVG(app.key)}</span>
+      <span class="lh-today-art" aria-hidden="true">${appIconSVG(app.key)}</span>
       <div class="lh-today-pills">
         <span class="lh-pill is-strong">${esc(step.chip)}</span>
         ${step.time ? `<span class="lh-pill">${esc(step.time)}</span>` : ""}
@@ -1351,8 +1351,10 @@ function appStatus(app, { brand, campaigns, content, journey, locked, reportIsDu
   return { text: t("lh.status.boardNone"), tone: "" };
 }
 
-// An app: a flat block of its colour, its name, one line, where it stands,
-// and its character peeking in from the corner.
+// An app: a block in its own colour gradient, its name, one line, where it
+// stands, and its solid vector picture in the corner (js/app-icons.js;
+// owner, 2026-10-26: no mascots, gradients, a glow and movement under the
+// mouse, the picture fully opaque).
 function appCardHTML(app, { brandId, status, current, locked, hereLabel }) {
   const name = t(app.labelKey);
   const attrs = locked ? `href="#" data-locked-step` : `href="${app.path(brandId)}"`;
@@ -1362,7 +1364,7 @@ function appCardHTML(app, { brandId, status, current, locked, hereLabel }) {
       <span class="lh-card-sub">${esc(t(app.subKey))}</span>
       <span class="lh-card-status${status.tone ? ` is-${status.tone}` : ""}">${locked ? icon("lock", { size: 12 }) : status.tone === "good" ? icon("check", { size: 12 }) : ""}${esc(status.text)}</span>
       ${current ? `<span class="lh-card-here">${esc(hereLabel)}</span>` : `<span class="lh-card-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>`}
-      <span class="lh-card-art">${appCharacterSVG(app.key, { mood: locked ? "sleep" : "happy" })}</span>
+      <span class="lh-card-art" aria-hidden="true">${appIconSVG(app.key)}</span>
     </a>`;
 }
 
@@ -1382,12 +1384,12 @@ function launcherHTML(ctx) {
     <div class="lh">
       <header class="lh-head">
         <div class="lh-hello">
-          <p class="lh-date">${esc(date)}</p>
-          <h1>${t(launcherGreetKey(now.getHours()))}${name ? `, ${esc(name)}` : ""} 👋</h1>
-          <p class="lh-brandline">
-            ${isImageUrl(logo) ? `<img class="lh-logo is-image" src="${esc(logo)}" alt="" />` : `<span class="lh-logo">${esc(initials(brand.name))}</span>`}
-            <b>${esc(brand.name)}</b><span>· ${t("lh.lead")}</span>
-          </p>
+          ${isImageUrl(logo) ? `<span class="lh-avatar is-image"><img src="${esc(logo)}" alt="${esc(brand.name)}" /></span>` : `<span class="lh-avatar" aria-hidden="true">${esc(initials(brand.name))}</span>`}
+          <div class="lh-hello-text">
+            <p class="lh-date">${esc(date)}</p>
+            <h1>${t(launcherGreetKey(now.getHours()))}${name ? `, ${esc(name)}` : ""} 👋</h1>
+            <p class="lh-brandline"><b>${esc(brand.name)}</b><span>· ${t("lh.lead")}</span></p>
+          </div>
         </div>
         <div class="page-eyebrow lh-help">${guideVideoButtonHTML("home")}</div>
       </header>
@@ -1439,6 +1441,14 @@ function paintLauncher(root, ctx) {
     });
   });
   wireClickableCards(root, "span[data-locked-step]");
+  // The light on a block follows the mouse (--mx/--my, css .lh-card::before).
+  qs(".lh-bento", root)?.addEventListener("pointermove", (e) => {
+    const block = e.target.closest?.(".lh-card, .lh-today");
+    if (!block) return;
+    const r = block.getBoundingClientRect();
+    block.style.setProperty("--mx", `${Math.round(e.clientX - r.left)}px`);
+    block.style.setProperty("--my", `${Math.round(e.clientY - r.top)}px`);
+  });
   if (identityJustDone) {
     const hero = qs("#journey-hero", root);
     if (hero) showCalloutBubble(hero, t("beginner.callout.builderDone"));

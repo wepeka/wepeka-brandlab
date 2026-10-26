@@ -189,6 +189,7 @@ async function tellPaidSignedOut() {
   }
 }
 let cleanup = null;
+let arrivingTimer = null;
 
 function parseRoute(hash) {
   let h = (hash || "").replace(/^#/, "") || "/";
@@ -863,6 +864,11 @@ async function renderRoute() {
     viewRoot = document.getElementById("view-root");
   }
   window.scrollTo(0, 0);
+  // The new page's blocks come in one after another (css .is-arriving) —
+  // only on arrival: a repaint later (a save, a snapshot) doesn't replay it.
+  viewRoot.classList.add("is-arriving");
+  clearTimeout(arrivingTimer);
+  arrivingTimer = setTimeout(() => document.getElementById("view-root")?.classList.remove("is-arriving"), 1200);
 
   // A view's chunk (dynamic import) or its own render() can both fail — most
   // often a stale service-worker/browser cache asking for a chunk from a

@@ -218,7 +218,10 @@ export function toast(message, type = "success") {
   const isError = type === "error";
   if (isError) el.setAttribute("role", "alert");
   root.appendChild(el);
-  setTimeout(() => el.remove(), isError ? 6000 : 3200);
+  setTimeout(() => {
+    el.classList.add("is-leaving");
+    setTimeout(() => el.remove(), 220);
+  }, isError ? 6000 : 3200);
 }
 
 // Full-screen black "welcome" bumper, shown once right after someone lands

@@ -808,7 +808,7 @@ export function pageVideoDue(guideKey, { account = getCachedAccount(), seen = pa
 const pageGuideKey = () => document.querySelector("#view-root [data-page-help]")?.dataset.pageHelp || null;
 // Something else has the screen: a modal or sheet, the greeting, the
 // congratulations page after a payment.
-const screenTaken = () => !!document.querySelector(".overlay, .brandlab-bumper, #mode-root, .pay-thanks");
+const screenTaken = () => !!document.querySelector(".overlay:not(.is-leaving), .brandlab-bumper, #mode-root, .pay-thanks");
 const tourRunning = () => document.body.classList.contains("tour-active");
 
 // Called by js/main.js each time a page has painted. Waits for a free

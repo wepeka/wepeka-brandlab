@@ -6712,23 +6712,101 @@ div.home-path-step{ cursor:pointer; }
 .notif-empty-sm{ padding:10px 12px; }
 
 /* =========================================================================
+   Motion pass (owner, 2026-10-26: "animasi UI nya kadang masih terlalu
+   kaku"). Springy easing everywhere, things leave as gently as they come,
+   a page's blocks arrive one after another, buttons give under the finger,
+   and the active tab slides instead of jumping. Everything here stops
+   under prefers-reduced-motion.
+   ========================================================================= */
+:root{ --ease-out: cubic-bezier(.22,1,.36,1); --ease-spring: cubic-bezier(.34,1.56,.64,1); }
+
+/* Dialogs and drawers: the backdrop fades in; on close a stand-in copy
+   (js/modals.js playCloseAnimation) shrinks and fades away. */
+@keyframes overlay-fade-in{ from{ background-color: rgba(6,5,4,0); backdrop-filter: blur(0); } }
+@keyframes overlay-fade-out{ to{ opacity:0; } }
+@keyframes modal-out{ to{ opacity:0; transform: translateY(8px) scale(.96); } }
+@keyframes drawer-in{ from{ transform: translateX(40px); opacity:0; } to{ transform:none; opacity:1; } }
+@keyframes drawer-out{ to{ transform: translateX(48px); opacity:0; } }
+.overlay{ animation: overlay-fade-in .22s ease-out both; }
+.modal{ animation: pop .34s var(--ease-spring); }
+.drawer{ animation: drawer-in .34s var(--ease-out); }
+.overlay.is-leaving{ pointer-events:none; animation: overlay-fade-out .22s ease-in forwards; }
+.overlay.is-leaving .modal{ animation: modal-out .2s ease-in forwards; }
+.overlay.is-leaving .drawer{ animation: drawer-out .22s ease-in forwards; }
+
+/* Toasts slide back down as they go. */
+@keyframes toast-out{ to{ opacity:0; transform: translateY(10px) scale(.97); } }
+.toast{ animation: toastIn .3s var(--ease-spring); }
+.toast.is-leaving{ animation: toast-out .2s ease-in forwards; }
+
+/* A page's blocks arrive one after another (main.js .is-arriving, only
+   right after navigating). */
+@keyframes block-in{ from{ opacity:0; transform: translateY(14px) scale(.985); } to{ opacity:1; transform:none; } }
+main.view.is-arriving > *:not(.lh), main.view.is-arriving .lh-bento > *, main.view.is-arriving .lh > *:not(.lh-bento){ animation: block-in .5s var(--ease-out) both; }
+main.view.is-arriving > :nth-child(2), main.view.is-arriving .lh > :nth-child(2), main.view.is-arriving .lh-bento > :nth-child(1){ animation-delay:.05s; }
+main.view.is-arriving > :nth-child(3), main.view.is-arriving .lh-bento > :nth-child(2){ animation-delay:.1s; }
+main.view.is-arriving > :nth-child(4), main.view.is-arriving .lh-bento > :nth-child(3){ animation-delay:.15s; }
+main.view.is-arriving > :nth-child(5), main.view.is-arriving .lh-bento > :nth-child(4){ animation-delay:.2s; }
+main.view.is-arriving > :nth-child(n+6), main.view.is-arriving .lh-bento > :nth-child(5){ animation-delay:.25s; }
+main.view.is-arriving .lh-bento > :nth-child(n+6){ animation-delay:.3s; }
+
+/* Buttons give a little under the finger, then spring back. */
+.btn{ transition: transform .25s var(--ease-spring), background .15s, color .15s, border-color .15s, box-shadow .2s; }
+.btn:active:not(:disabled){ transform: scale(.96); transition-duration:.08s; }
+.icon-btn{ transition: transform .25s var(--ease-spring), background .15s, color .15s; }
+.icon-btn:active{ transform: scale(.9); transition-duration:.08s; }
+.chip-select button{ transition: background .2s, color .2s, border-color .2s, transform .25s var(--ease-spring); }
+.chip-select button:active{ transform: scale(.95); transition-duration:.08s; }
+.tab svg{ transition: transform .35s var(--ease-spring); }
+.tab:hover svg{ transform: translateY(-1px) rotate(-6deg) scale(1.08); }
+.tab.active svg{ transform:none; }
+
+/* The active tab's pill slides to the new tab (js/layout.js
+   updateShellForRoute, View Transitions); the page itself has its own
+   fade, so the root snapshot doesn't animate. */
+.topbar .tabs .tab.active{ view-transition-name: active-tab; }
+.bottom-nav .tab.active{ view-transition-name: active-tab-bottom; }
+::view-transition-old(root), ::view-transition-new(root){ animation:none; }
+::view-transition-group(active-tab), ::view-transition-group(active-tab-bottom){ animation-duration:.32s; animation-timing-function: var(--ease-out); }
+
+/* Folds open with their content easing in. */
+details[open] > :not(summary){ animation: reveal-up .28s var(--ease-out) both; }
+
+/* Menus pop with a little spring. */
+.menu{ animation: menu-pop-in .2s var(--ease-spring); }
+
+@media (prefers-reduced-motion: reduce){
+  .overlay, .modal, .drawer, .toast, .overlay.is-leaving, .overlay.is-leaving .modal, .overlay.is-leaving .drawer, .toast.is-leaving,
+  main.view.is-arriving > *, main.view.is-arriving .lh-bento > *, main.view.is-arriving .lh > *, details[open] > :not(summary), .menu{ animation:none; }
+  .btn:active:not(:disabled), .icon-btn:active, .chip-select button:active, .tab:hover svg{ transform:none; }
+  ::view-transition-group(active-tab), ::view-transition-group(active-tab-bottom){ animation:none; }
+}
+
+/* =========================================================================
    Pemula Beranda — the app launcher (js/views/home.js launcherHTML). Owner's
    asks, 2026-10-26: "kaya aplikasi", then "friendly, menarik, tapi simple
-   banget dan gampang dicerna" with flat bento references. So: flat blocks of
-   colour (no glass, no glow, no gradients), one character per app
-   (js/app-characters.js), chunky display type, very few words. Each app's
-   colour is --app (js/apps.js). Text on the blocks is always dark ink.
+   banget dan gampang dicerna" (bento references), then "bentuknya gradasi,
+   gak mau ada maskot, saat mouse diarahkan tetap ada efek glow dan
+   geraknya". So: each block is a gradient of its app's colour (--app,
+   js/apps.js) with the app's icon large and faint in the corner, chunky
+   display type, very few words, dark ink text; under the mouse a block
+   lifts, glows in its colour, and a soft light follows the cursor.
    ========================================================================= */
 .lh{ --ink:#1b1a17; --cream:#fff6e8; max-width: 1180px; margin: 0 auto; }
 
-.lh-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin: 0 0 22px; }
+.lh-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin: 0 0 24px; }
+.lh-hello{ display:flex; align-items:center; gap:18px; min-width:0; }
+.lh-hello-text{ min-width:0; }
+.lh-avatar{ flex:none; width:76px; height:76px; border-radius:50%; overflow:hidden; display:grid; place-items:center;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--brand-tint) 70%, #fff), var(--brand-tint)); color: var(--brand-tint-text);
+  font-family: var(--font-display); font-size:30px;
+  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px color-mix(in srgb, var(--brand-tint) 75%, transparent), 0 14px 32px -12px color-mix(in srgb, var(--brand-tint) 70%, transparent); }
+.lh-avatar.is-image{ background:#fff; }
+.lh-avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
 .lh-date{ margin:0 0 4px; font-size:13px; font-weight:700; color: var(--text-muted); text-transform:capitalize; }
 .lh-hello h1{ margin:0; font-size:36px; line-height:1.05; letter-spacing:-.01em; }
 .lh-brandline{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:10px 0 0; font-size:14px; color: var(--text-muted); }
 .lh-brandline b{ color: var(--text); }
-.lh-logo{ flex:none; width:26px; height:26px; border-radius:8px; display:inline-grid; place-items:center; object-fit:cover;
-  background: var(--brand-tint); color: var(--brand-tint-text); font-family: var(--font-display); font-size:12px; }
-.lh-logo.is-image{ background: var(--surface); }
 .lh-help{ margin:0; flex:none; display:flex; align-items:center; gap:6px; flex-wrap:nowrap; }
 .lh .home-notices{ margin-bottom:16px; }
 
@@ -6745,10 +6823,20 @@ div.home-path-step{ cursor:pointer; }
 
 /* An app block. */
 .lh-card{ position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:flex-start;
-  min-height:206px; padding:22px 22px 20px; border-radius:30px; background: var(--app); color: var(--ink); text-decoration:none;
-  -webkit-tap-highlight-color: transparent; transition: transform .22s cubic-bezier(.2,.8,.2,1.35); }
-.lh-card:hover{ transform: translateY(-4px); }
-.lh-card:active{ transform: scale(.98); }
+  min-height:206px; padding:22px 22px 20px; border-radius:30px; color: var(--ink); text-decoration:none;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--app) 58%, #fff) 0%, var(--app) 50%, color-mix(in srgb, var(--app) 76%, #000) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 12px 30px -20px color-mix(in srgb, var(--app) 85%, transparent);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .4s cubic-bezier(.2,.8,.2,1.15), box-shadow .4s ease; }
+/* The light that follows the mouse (--mx/--my from home.js). */
+.lh-card::before, .lh-today::before{ content:""; position:absolute; inset:0; z-index:0; pointer-events:none; border-radius:inherit; opacity:0;
+  background: radial-gradient(280px circle at var(--mx, 70%) var(--my, 10%), rgba(255,255,255,.42), transparent 62%);
+  transition: opacity .35s ease; }
+.lh-card:hover::before, .lh-today:hover::before{ opacity:1; }
+.lh-card:hover{ transform: translateY(-7px) scale(1.012);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 0 1px color-mix(in srgb, var(--app) 55%, transparent),
+    0 26px 50px -18px color-mix(in srgb, var(--app) 80%, transparent), 0 0 38px -4px color-mix(in srgb, var(--app) 60%, transparent); }
+.lh-card:active{ transform: translateY(-2px) scale(.985); transition-duration:.12s; }
 .lh-card:focus-visible{ outline:3px solid var(--text); outline-offset:3px; }
 .lh-card-name{ position:relative; z-index:1; font-family: var(--font-display); font-size:27px; line-height:1; letter-spacing:-.01em; }
 .lh-card-sub{ position:relative; z-index:1; max-width:62%; margin-top:8px; font-size:13.5px; font-weight:600; line-height:1.35; color: rgba(27,26,23,.72); }
@@ -6758,27 +6846,42 @@ div.home-path-step{ cursor:pointer; }
 .lh-card-go{ width:38px; height:38px; border-radius:50%; transition: transform .2s ease; }
 .lh-card:hover .lh-card-go{ transform: rotate(-35deg); }
 .lh-card-here{ padding:8px 13px; border-radius:999px; font-size:12px; font-weight:800; }
-.lh-card-art{ position:absolute; z-index:0; right:-18px; bottom:-26px; width:172px; height:172px; transition: transform .3s cubic-bezier(.2,.8,.2,1.45); }
-.lh-card-art svg{ width:100%; height:100%; display:block; }
-.lh-card:hover .lh-card-art{ transform: translateY(-6px) rotate(-6deg); }
-.lh-card.is-current .lh-card-art{ animation: lh-bob 2.8s ease-in-out infinite; }
-@keyframes lh-bob{ 0%,100%{ transform: translateY(0) rotate(0); } 50%{ transform: translateY(-9px) rotate(-5deg); } }
-.lh-card.is-locked{ background: color-mix(in srgb, var(--app) 40%, #cfc8bd); }
+.lh-card-art{ position:absolute; z-index:0; right:18px; bottom:16px; width:96px; height:96px;
+  filter: drop-shadow(0 10px 14px color-mix(in srgb, var(--app) 60%, #000 25%));
+  transform: rotate(-8deg); transition: transform .5s cubic-bezier(.2,.8,.2,1.4); }
+.lh-card-art svg{ width:100%; height:100%; display:block; overflow:visible; }
+.lh-card:hover .lh-card-art{ transform: rotate(4deg) scale(1.12) translateY(-6px); }
+/* Where today's step happens: a slow glow, breathing. */
+.lh-card.is-current{ animation: lh-glow 2.8s ease-in-out infinite; }
+@keyframes lh-glow{ 0%,100%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 0 0 color-mix(in srgb, var(--app) 0%, transparent), 0 12px 30px -20px color-mix(in srgb, var(--app) 85%, transparent); }
+  50%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 0 4px color-mix(in srgb, var(--app) 35%, transparent), 0 0 36px -2px color-mix(in srgb, var(--app) 55%, transparent); } }
+.lh-card.is-current:hover{ animation:none; }
+@keyframes lh-bob{ 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-6px); } }
+.lh-card.is-locked{ background: linear-gradient(140deg, color-mix(in srgb, var(--app) 30%, #e6e1d8) 0%, color-mix(in srgb, var(--app) 38%, #c9c2b6) 100%); }
 .lh-card.is-locked .lh-card-go{ background: rgba(27,26,23,.55); }
 /* Board: one wide, short block across the bottom. */
 .lh-card[data-app="papan"]{ min-height:112px; flex-direction:row; align-items:center; gap:18px; padding:20px 24px; }
 .lh-card[data-app="papan"] .lh-card-sub{ max-width:none; margin:0; }
 .lh-card[data-app="papan"] .lh-card-status{ margin:0; }
 .lh-card[data-app="papan"] .lh-card-go{ top:50%; right:24px; margin-top:-19px; }
-.lh-card[data-app="papan"] .lh-card-art{ right:92px; bottom:-40px; width:150px; height:150px; }
+.lh-card[data-app="papan"] .lh-card-art{ right:96px; bottom:auto; top:50%; margin-top:-36px; width:72px; height:72px; }
 
 /* Today's step: a warm cream block, the step's own character up top. */
 .lh-today{ position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:flex-start;
-  padding:26px 26px 22px; border-radius:30px; background: var(--cream); color: var(--ink); }
-:root[data-theme="light"] .lh-today{ background:#fff; box-shadow: 0 1px 0 rgba(27,26,23,.04), 0 18px 40px -24px rgba(27,26,23,.25); }
-.lh-today-art{ position:absolute; z-index:-1; top:20px; right:20px; width:124px; height:124px; border-radius:50%; background: var(--app); display:grid; place-items:center; }
-.lh-today-art svg{ width:84%; height:84%; display:block; animation: lh-bob 3.2s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce){ .lh-card.is-current .lh-card-art, .lh-today-art svg{ animation:none; } }
+  padding:26px 26px 22px; border-radius:30px; color: var(--ink);
+  background: linear-gradient(155deg, #fffaf3 0%, var(--cream) 48%, color-mix(in srgb, var(--app) 26%, var(--cream)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+  transition: transform .4s cubic-bezier(.2,.8,.2,1.15), box-shadow .4s ease; }
+.lh-today > *{ position:relative; z-index:1; }
+.lh-today:hover{ transform: translateY(-4px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 26px 50px -22px color-mix(in srgb, var(--app) 70%, transparent), 0 0 36px -8px color-mix(in srgb, var(--app) 50%, transparent); }
+:root[data-theme="light"] .lh-today{ background: linear-gradient(155deg, #ffffff 0%, #fffaf3 50%, color-mix(in srgb, var(--app) 20%, #fff) 100%); box-shadow: 0 1px 0 rgba(27,26,23,.04), 0 18px 40px -24px rgba(27,26,23,.25); }
+.lh-today > .lh-today-art{ position:absolute; z-index:0; top:22px; right:22px; width:112px; height:112px; border-radius:50%; display:grid; place-items:center; color:#fff;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--app) 60%, #fff) 0%, var(--app) 55%, color-mix(in srgb, var(--app) 76%, #000) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 14px 30px -12px color-mix(in srgb, var(--app) 80%, transparent);
+  animation: lh-bob 3.4s ease-in-out infinite; }
+.lh-today-art svg{ width:58px; height:58px; filter: drop-shadow(0 4px 6px rgba(0,0,0,.18)); }
+@media (prefers-reduced-motion: reduce){ .lh-card.is-current, .lh-today > .lh-today-art{ animation:none; } .lh-card:hover, .lh-today:hover{ transform:none; } }
 .lh-today-pills{ display:flex; flex-wrap:wrap; gap:6px; padding-right:140px; }
 .lh-pill{ display:inline-flex; align-items:center; gap:5px; padding:6px 12px; border-radius:999px; background: rgba(27,26,23,.07); font-size:12px; font-weight:800; }
 .lh-pill.is-strong{ background: var(--ink); color:#fff; }
@@ -6792,7 +6895,9 @@ div.home-path-step{ cursor:pointer; }
 .lh-cta, .lh-video{ display:inline-flex; align-items:center; gap:10px; min-height:52px; border-radius:999px; font-size:15px; font-weight:800; text-decoration:none; cursor:pointer; font-family:inherit; transition: transform .15s ease; }
 .lh-cta{ padding: 0 8px 0 22px; border:0; background: var(--ink); color:#fff; }
 .lh-cta:hover, .lh-video:hover{ transform: translateY(-2px); }
-.lh-cta-dot, .lh-video-dot{ display:grid; place-items:center; border-radius:50%; background: var(--app); color: var(--ink); }
+.lh-cta-dot, .lh-video-dot{ display:grid; place-items:center; border-radius:50%; background: linear-gradient(140deg, color-mix(in srgb, var(--app) 60%, #fff), var(--app)); color: var(--ink); transition: transform .3s cubic-bezier(.2,.8,.2,1.4); }
+.lh-cta:hover .lh-cta-dot{ transform: translateX(3px) rotate(-30deg); }
+.lh-video:hover .lh-video-dot{ transform: scale(1.12); }
 .lh-cta-dot{ width:38px; height:38px; }
 .lh-video{ padding: 0 18px 0 8px; border:2px solid rgba(27,26,23,.14); background:transparent; color: var(--ink); }
 .lh-video-dot{ width:34px; height:34px; }
@@ -6804,7 +6909,7 @@ div.home-path-step{ cursor:pointer; }
 .lh-prog-bar{ display:block; height:12px; border-radius:999px; background: rgba(27,26,23,.09); transition: transform .15s ease; }
 .lh-prog-step > a:hover .lh-prog-bar{ transform: scaleY(1.25); }
 .lh-prog-step.is-done .lh-prog-bar{ background: var(--ink); }
-.lh-prog-step.is-current .lh-prog-bar{ background: var(--app); }
+.lh-prog-step.is-current .lh-prog-bar{ background: linear-gradient(90deg, color-mix(in srgb, var(--app) 60%, #fff), var(--app)); }
 .lh-prog-label{ display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:8px; font-size:12.5px; font-weight:800; }
 .lh-prog-label small{ flex-basis:100%; font-size:11.5px; font-weight:600; color: rgba(27,26,23,.55); }
 .lh-prog-step.is-next .lh-prog-label, .lh-prog-step.is-locked .lh-prog-label{ color: rgba(27,26,23,.48); }
@@ -6816,13 +6921,16 @@ div.home-path-step{ cursor:pointer; }
 }
 @media (max-width: 720px){
   .lh-head{ margin-bottom:16px; }
+  .lh-hello{ gap:12px; align-items:flex-start; }
+  .lh-avatar{ width:52px; height:52px; font-size:21px; margin-top:4px; }
   .lh-hello h1{ font-size:27px; }
   .lh-brandline{ font-size:13px; margin-top:8px; }
   .lh-brandline > span{ display:none; }
   .lh-head .lh-help .page-help-btn span{ display:none; }
   .lh-bento{ gap:12px; }
   .lh-today{ padding:20px 18px 18px; border-radius:26px; }
-  .lh-today-art{ width:86px; height:86px; top:16px; right:16px; }
+  .lh-today > .lh-today-art{ width:72px; height:72px; top:16px; right:16px; }
+  .lh-today-art svg{ width:38px; height:38px; }
   .lh-today-pills{ padding-right:96px; }
   .lh-today h2{ padding-right:84px; font-size:26px; margin-top:12px; }
   .lh-today-why{ font-size:13.5px; margin-top:10px; }
@@ -6841,11 +6949,29 @@ div.home-path-step{ cursor:pointer; }
   .lh-card-status{ margin-top:10px; max-width:100%; white-space:normal; padding:5px 9px; font-size:11px; line-height:1.25; }
   .lh-card-go{ width:32px; height:32px; top:14px; right:14px; }
   .lh-card-here{ position:relative; top:auto; right:auto; margin-top:auto; padding:6px 10px; font-size:11px; }
-  .lh-card-art{ width:96px; height:96px; right:-14px; bottom:-18px; }
+  .lh-card-art{ width:58px; height:58px; right:12px; bottom:12px; }
   .lh-card[data-app="papan"]{ min-height:96px; padding:16px 18px; }
-  .lh-card[data-app="papan"] .lh-card-art{ right:54px; width:104px; height:104px; bottom:-30px; }
+  .lh-card[data-app="papan"] .lh-card-art{ right:62px; width:52px; height:52px; margin-top:-26px; }
   .lh-card[data-app="papan"] .lh-card-go{ right:16px; margin-top:-16px; }
 }
+
+/* On the launcher the five app cards ARE the navigation: the tab row (and
+   the phone's bottom bar) would only repeat them (owner, 2026-10-26:
+   "toolbar di atas redundant, hapus waktu di homepage, muncul waktu ada di
+   dalam apps"). They come back, sliding in, inside any app. */
+body:has(#view-root .lh) .topbar .tabs, body:has(#view-root .lh) .bottom-nav{ display:none; }
+@keyframes tabs-in{ from{ opacity:0; transform: translateY(-6px); } to{ opacity:1; transform:none; } }
+@keyframes bottom-nav-in{ from{ transform: translateY(100%); } to{ transform:none; } }
+.topbar .tabs{ animation: tabs-in .35s var(--ease-out, ease-out); }
+@media (max-width: 720px){
+  .bottom-nav{ animation: bottom-nav-in .35s var(--ease-out, ease-out); }
+  body:has(#view-root .lh) main.view{ padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  body:has(#view-root .lh) .consultant-fab{ bottom: calc(16px + env(safe-area-inset-bottom)); }
+  body:has(#view-root .lh) .consultant-fab-hint{ bottom: calc(22px + env(safe-area-inset-bottom)); }
+  body:has(#view-root .lh) .notes-fab{ bottom: calc(20px + env(safe-area-inset-bottom)); }
+  body:has(#view-root .lh) .toast-root{ bottom: calc(84px + env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce){ .topbar .tabs, .bottom-nav{ animation:none; } }
 
 /* The tab row wears each app's colour on its icon. Six tabs now (Beranda +
    five apps): on a wide screen Beranda is its grid icon alone — it is the
