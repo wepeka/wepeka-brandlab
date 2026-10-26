@@ -11,6 +11,7 @@ import { listCampaigns, getCampaign, getSettings } from "../store.js";
 import { hasAiKey } from "../ai.js";
 import { qs } from "../dom.js";
 import { t } from "../i18n.js";
+import { getMode } from "../mode.js";
 import {
   adaptForAccount,
   markTourSeen,
@@ -25,7 +26,70 @@ const has = (sel) => () => !!qs(sel);
 
 // ---------- C1 · Bikin campaign (list) ----------
 
+// The wizards a new goal opens — the same in both modes.
+function wizardSteps(goToDetail) {
+  return [
+    // 3a — Grow Brand: tick the tracks, answer a few numbers, launch.
+    // (The old templates' terms sheet, level calibration and name prompt
+    // are gone; so are the steps that pointed at them.)
+    {
+      selector: ".goal-wizard",
+      showIf: has(".goal-wizard"),
+      beforeStep: goToDetail,
+      title: t("guide.camp.wizard.title"),
+      body: t("guide.camp.wizard.body"),
+      interactive: { type: "until", predicate: () => !has(".goal-wizard")() },
+      hint: t("guide.camp.wizard.hint"),
+      write: true,
+    },
+    // 3b — Event: name, date and size, then a draft plan to install.
+    {
+      selector: ".rg-wizard",
+      showIf: has(".rg-wizard"),
+      title: t("guide.camp.eventWizard.title"),
+      body: t("guide.camp.eventWizard.body"),
+      interactive: { type: "until", predicate: () => !has(".rg-wizard")() },
+      hint: t("guide.camp.eventWizard.hint"),
+      write: true,
+    },
+  ];
+}
+
+// Pemula's My Goals (js/views/campaigns.js goalsLandingHTML): the four kind
+// cards, "Tujuan baru", and — when something is running — a goal to open
+// (the tour carries on inside it). Every step points at something on screen:
+// a card, the pill, a goal's slip; never the cards' invisible tap layer.
+function buildGoalsLandingSteps() {
+  const goToDetail = () => setPendingTour("campaign-detail");
+  const goal = qs(".gl-slip:not(.is-draft)") ? [".gl-slip:not(.is-draft)", "a.gl-hit[data-open-campaign]"] : qs(".gl-other") ? [".gl-other"] : null;
+  const kinds = {
+    selector: ".gl-card",
+    title: t("gl.tour.kinds.title"),
+    body: t("gl.tour.kinds.body"),
+  };
+  if (goal) {
+    return adaptForAccount([
+      kinds,
+      { selector: "#new-campaign", title: t("gl.tour.new.title"), body: t("gl.tour.newInfo.body") },
+      {
+        selector: goal,
+        beforeStep: goToDetail,
+        title: t("gl.tour.open.title"),
+        body: t("gl.tour.open.body"),
+        interactive: { type: "clickAny" },
+      },
+    ]);
+  }
+  return adaptForAccount([
+    kinds,
+    { selector: "#new-campaign", title: t("gl.tour.new.title"), body: t("gl.tour.new.body"), interactive: { type: "click" } },
+    { selector: ".gl-pick [data-quick-template]:not([disabled])", title: t("gl.tour.pick.title"), body: t("gl.tour.pick.body"), interactive: { type: "clickAny" } },
+    ...wizardSteps(goToDetail),
+  ]);
+}
+
 export function buildCampaignListSteps({ brandId }) {
+  if (getMode() === "guided" && qs(".gl")) return buildGoalsLandingSteps();
   const campaigns = listCampaigns(brandId);
   const goToDetail = () => setPendingTour("campaign-detail");
 
@@ -56,29 +120,7 @@ export function buildCampaignListSteps({ brandId }) {
       body: t("guide.camp.template.body"),
       interactive: { type: "clickAny" },
     },
-    // 3a — Grow Brand: tick the tracks, answer a few numbers, launch.
-    // (The old templates' terms sheet, level calibration and name prompt
-    // are gone; so are the steps that pointed at them.)
-    {
-      selector: ".goal-wizard",
-      showIf: has(".goal-wizard"),
-      beforeStep: goToDetail,
-      title: t("guide.camp.wizard.title"),
-      body: t("guide.camp.wizard.body"),
-      interactive: { type: "until", predicate: () => !has(".goal-wizard")() },
-      hint: t("guide.camp.wizard.hint"),
-      write: true,
-    },
-    // 3b — Event: name, date and size, then a draft plan to install.
-    {
-      selector: ".rg-wizard",
-      showIf: has(".rg-wizard"),
-      title: t("guide.camp.eventWizard.title"),
-      body: t("guide.camp.eventWizard.body"),
-      interactive: { type: "until", predicate: () => !has(".rg-wizard")() },
-      hint: t("guide.camp.eventWizard.hint"),
-      write: true,
-    },
+    ...wizardSteps(goToDetail),
   ]);
 }
 
@@ -130,10 +172,17 @@ function buildDetailSteps(campaign) {
         : t("guide.camp.stages.phase.body"),
     },
     {
-      selector: "#cd-milestones .cd-row:nth-child(1), #cd-milestones .gd-tile:nth-child(1), .gd .gt",
-      showIf: has("#cd-milestones .cd-row, #cd-milestones .gd-tile, .gd .gt"),
+      selector: "#cd-milestones .cd-row:nth-child(1), #cd-milestones .gd-tile:nth-child(1)",
+      showIf: has("#cd-milestones .cd-row, #cd-milestones .gd-tile"),
       title: t("guide.camp.milestones.title"),
       body: t("guide.camp.milestones.body"),
+    },
+    // A level's tree (both modes): tap a branch for its target.
+    {
+      selector: ".gt-scroll",
+      showIf: has(".gt"),
+      title: t("gl.tour.tree.title"),
+      body: t("gl.tour.tree.body"),
     },
     {
       selector: "#cd-manual-all",
@@ -143,7 +192,9 @@ function buildDetailSteps(campaign) {
     },
     // Pemula's goal page: the to-do, and "Kasih ide" (the chat about this goal).
     {
-      selector: "#gd-todo",
+      // The list's first row (or its empty note) — the whole list can be
+      // taller than the screen, and a spotlight that big hides under the tip.
+      selector: ["#gd-todo .gd-row", "#gd-todo .gd-todo-empty", "#gd-todo .gd-sec-head"],
       showIf: has(".gd #gd-todo"),
       title: t("gl.tour.todo.title"),
       body: t("gl.tour.todo.body"),
