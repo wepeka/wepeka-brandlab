@@ -1,14 +1,15 @@
-import { getBrand, listContent, listSeries, onChange, localISODate } from "../store.js";
+import { getBrand, listContent, listSeries, onChange, localISODate, STATUS_LABELS } from "../store.js";
 import { brandDnaCompleteness, brandDnaDone } from "../brand-progress.js";
 import { icon } from "../icons.js";
 import { escapeHtml } from "../dom.js";
+import { statusLabel } from "../funnel-field.js";
 import * as contentListView from "./content-list.js";
 import * as creatorView from "./creator.js";
 import * as calendarView from "./calendar.js";
 import * as copyStudioView from "./copy-studio.js";
 import * as seriesView from "./series.js";
 import { openContentEditor } from "./content-editor.js";
-import { t } from "../i18n.js";
+import { t, getLang } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
@@ -103,6 +104,41 @@ function cardStatus(key, brandId) {
   return { text: t("cl.st.copy") };
 }
 
+// What's inside each card, shown when it opens under the mouse — like
+// pulling a file out of the drawer (owner, 2026-10-27: "dia bakal mbuka jadi
+// lebih besar kaya kertas arsipan"): a few real pieces as paper slips.
+const PEEK_MAX = 3;
+const STEP_OF = { idea: "idea", draft: "script", production: "shoot", editing: "edit", scheduled: "upload" };
+function peekItems(key, brandId) {
+  const content = listContent(brandId);
+  const today = localISODate();
+  const untitled = (c) => c.title || t("common.untitled");
+  if (key === "creator") {
+    return content.filter(isOpenPiece)
+      .sort((a, b) => (a.scheduleDate || "9999").localeCompare(b.scheduleDate || "9999"))
+      .slice(0, PEEK_MAX)
+      .map((c) => ({ title: untitled(c), meta: t(`cw.step.${STEP_OF[c.status] || "idea"}`), warn: !!(c.scheduleDate && c.scheduleDate < today) }));
+  }
+  if (key === "calendar") {
+    const end = addDays(today, 6);
+    const loc = getLang() === "en" ? "en-US" : "id-ID";
+    return content.filter((c) => c.scheduleDate && c.scheduleDate >= today && c.scheduleDate <= end)
+      .sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate))
+      .slice(0, PEEK_MAX)
+      .map((c) => ({ title: untitled(c), meta: c.scheduleDate === today ? t("nw.when.today") : new Date(`${c.scheduleDate}T00:00:00`).toLocaleDateString(loc, { weekday: "short", day: "numeric" }) }));
+  }
+  if (key === "list") return content.slice(0, PEEK_MAX).map((c) => ({ title: untitled(c), meta: statusLabel(c.status, STATUS_LABELS) }));
+  if (key === "series") return listSeries(brandId).slice(0, PEEK_MAX).map((s) => ({ title: s.name || t("common.untitled"), meta: "" }));
+  return t("cl.peek.copyItems").split(" · ").map((title) => ({ title, meta: "", chip: true }));
+}
+
+function peekHTML(key, brandId) {
+  const items = peekItems(key, brandId);
+  if (!items.length) return `<span class="cl-peek" aria-hidden="true"><span class="cl-slip is-empty">${escapeHtml(t(key === "series" ? "cl.peek.seriesNone" : "cl.peek.empty"))}</span></span>`;
+  if (items[0].chip) return `<span class="cl-peek is-chips" aria-hidden="true">${items.map((x) => `<span class="cl-slip">${escapeHtml(x.title)}</span>`).join("")}</span>`;
+  return `<span class="cl-peek" aria-hidden="true">${items.map((x, i) => `<span class="cl-slip${x.warn ? " is-warn" : ""}" style="--s:${i};"><span class="cl-slip-title">${escapeHtml(x.title)}</span>${x.meta ? `<span class="cl-slip-meta">${escapeHtml(x.meta)}</span>` : ""}</span>`).join("")}</span>`;
+}
+
 function landingHTML(brandId, brand, { animate }) {
   const cards = SUB_TABS.map((tab, i) => {
     const st = cardStatus(tab.key, brandId);
@@ -111,6 +147,7 @@ function landingHTML(brandId, brand, { animate }) {
         <span class="cl-pill">${t(tab.labelKey)}</span>
         <span class="cl-sub">${t(`cl.cat.${tab.key}.sub`)}</span>
         <span class="cl-status${st.warn ? " is-warn" : ""}">${escapeHtml(st.text)}</span>
+        ${peekHTML(tab.key, brandId)}
         <span class="cl-art cl-pic">${createArtSVG(tab.key)}</span>
         <span class="cl-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>
       </a>`;

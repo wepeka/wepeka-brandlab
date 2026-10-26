@@ -7127,6 +7127,28 @@ body:has(#view-root .lh) .topbar .tabs, body:has(#view-root .lh) .bottom-nav{ di
 .cl-card:hover .cl-art{ transform: rotate(-2deg) scale(1.06) translate(-10px,-12px); }
 .cl-go{ position:absolute; z-index:1; top:22px; right:24px; display:grid; place-items:center; width:42px; height:42px; border-radius:50%; background: var(--ink); color:#fff; transition: transform .45s var(--ease-spring); }
 .cl-card:hover .cl-go{ transform: rotate(-45deg) scale(1.12); }
+/* Under the mouse a card opens like a file pulled out of the drawer
+   (owner, 2026-10-27: "mbuka jadi lebih besar kaya kertas arsipan"): it grows
+   taller, the cards below make room, and what's inside shows as paper slips. */
+.cl-peek{ position:relative; z-index:1; display:flex; flex-direction:column; gap:6px; width:min(54%, 430px);
+  max-height:0; opacity:0; overflow:hidden; margin-top:-10px; transform: translateY(10px);
+  transition: max-height .55s var(--ease-out), opacity .3s ease, transform .55s var(--ease-spring), margin-top .55s var(--ease-out); }
+.cl-peek.is-chips{ flex-direction:row; flex-wrap:wrap; }
+.cl-slip{ display:flex; align-items:center; gap:10px; min-height:34px; padding:7px 12px; border-radius:12px;
+  background: rgba(255,255,255,.78); box-shadow: 0 1px 0 rgba(27,26,23,.08), 0 6px 14px -10px rgba(27,26,23,.45);
+  font-size:12.5px; font-weight:800; color: var(--ink); transform: rotate(calc((var(--s, 0) - 1) * .6deg)); }
+.cl-peek.is-chips .cl-slip{ min-height:30px; padding:5px 12px; border-radius:999px; transform:none; }
+.cl-slip-title{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cl-slip-meta{ flex:none; padding:2px 8px; border-radius:999px; background: rgba(27,26,23,.08); font-size:11px; }
+.cl-slip.is-warn .cl-slip-meta{ background: var(--ink); color:#fff; }
+.cl-slip.is-empty{ color: rgba(27,26,23,.62); font-weight:700; }
+@media (hover: hover) and (pointer: fine){
+  .cl-card{ transition: transform .45s cubic-bezier(.2,.8,.2,1.25), box-shadow .45s ease, background-position .8s var(--ease-out), min-height .55s var(--ease-out); }
+  .cl-card:hover, .cl-card:focus-visible{ min-height:298px; transform: translateY(-6px); }
+  .cl-card:last-child:hover, .cl-card:last-child:focus-visible{ min-height:262px; }
+  .cl-card:hover .cl-peek, .cl-card:focus-visible .cl-peek{ max-height:140px; opacity:1; margin-top:4px; transform:none; transition-delay:.06s; }
+  .cl-card:hover .cl-slip:nth-child(2){ transition-delay:.1s; }
+}
 .cl.is-entering .cl-card{ animation: cl-card-in .6s var(--ease-out) both; animation-delay: calc(var(--i) * 70ms); }
 .cl.is-entering .cl-art svg{ animation: cl-art-in .8s var(--ease-spring) both; animation-delay: calc(var(--i) * 70ms + 160ms); }
 @keyframes cl-card-in{ from{ opacity:0; transform: translateY(46px); } to{ opacity:1; transform:none; } }
@@ -7425,6 +7447,7 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
   .cl-art{ right:-6px; top:auto; bottom:-10px; width:124px; height:124px; }
   .cl-card:last-child .cl-art{ bottom:-22px; }
   .cl-go{ display:none; }
+  .cl-peek{ width: calc(100% - 92px); }
   .cw-head-title h1{ font-size:28px; }
   .cw-head-art{ width:44px; height:44px; border-radius:15px; }
   .cw-head-art svg{ width:36px; height:36px; }

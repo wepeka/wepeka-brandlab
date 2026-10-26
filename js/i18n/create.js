@@ -22,6 +22,9 @@ export default {
   "cl.st.seriesN": { en: "{n} series", id: "{n} seri" },
   "cl.st.seriesNone": { en: "No series yet", id: "Belum ada seri" },
   "cl.continue": { en: "Continue", id: "Lanjutkan" },
+  "cl.peek.empty": { en: "Nothing here yet — start with New content", id: "Belum ada — mulai dari Konten baru" },
+  "cl.peek.seriesNone": { en: "Make your first series here", id: "Bikin seri pertamamu di sini" },
+  "cl.peek.copyItems": { en: "Caption · Bio · Ad copy · WhatsApp message", id: "Caption · Bio · Teks iklan · Pesan WA" },
 
   "nw.title1": { en: "What are you making?", id: "Mau bikin apa?" },
   "nw.title2": { en: "What's it about?", id: "Idenya tentang apa?" },
