@@ -64,7 +64,35 @@ function deactivateOverlayA11y(overlay) {
 
 export function closeOverlay(el) {
   deactivateOverlayA11y(el);
+  playCloseAnimation(el);
   el.remove();
+}
+
+// A dialog used to vanish in one frame. The real one still leaves at once
+// (every caller relies on that: ids, isConnected checks, "is a modal up?"),
+// and a look-alike copy — no ids, inert, its videos swapped for blank boxes
+// so nothing reloads — plays the way out and removes itself.
+const reduceMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+function playCloseAnimation(el) {
+  try {
+    if (!el?.isConnected || !el.classList?.contains("overlay") || reduceMotion()) return;
+    const heavy = [...el.querySelectorAll("iframe, video, audio, canvas")].map((n) => n.getBoundingClientRect());
+    const ghost = el.cloneNode(true);
+    ghost.classList.add("is-leaving");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.inert = true;
+    ghost.removeAttribute("id");
+    ghost.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
+    ghost.querySelectorAll("iframe, video, audio, canvas").forEach((n, i) => {
+      const box = document.createElement("div");
+      box.style.cssText = `width:${heavy[i]?.width || 0}px;height:${heavy[i]?.height || 0}px;background:#000;border-radius:inherit;`;
+      n.replaceWith(box);
+    });
+    el.after(ghost);
+    setTimeout(() => ghost.remove(), 240);
+  } catch {
+    /* no animation — the dialog is closed either way */
+  }
 }
 
 export function openModal({ title, bodyHTML, footHTML = "", onMount, wide = false, width }) {

@@ -2,12 +2,12 @@
 // (js/views/new-content-wizard.js) turns a kind of piece + where it goes out
 // into the account's own format names, and the words typed into a working
 // title + idea. Plus: every new string has both languages, and the new
-// characters draw.
+// pictures draw.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 const { formatForKind, kindOfFormat, titleAndIdea } = await import("../js/views/new-content-wizard.js");
-const { appCharacterSVG } = await import("../js/app-characters.js");
+const { createArtSVG } = await import("../js/create-art.js");
 const create = (await import("../js/i18n/create.js")).default;
 
 const FORMATS = ["Reels", "Short Video", "Carousel", "Story", "Long Video", "Static Post"].map((name) => ({ name }));
@@ -65,11 +65,12 @@ describe("Create for Pemula: strings and characters", () => {
       assert.ok(v.en && v.id, `${key} needs en + id`);
     }
   });
-  test("the five parts of Create and the five kinds each have a character", () => {
-    for (const key of ["cos-creator", "cos-calendar", "cos-list", "cos-copy", "cos-series", "fmt-video", "fmt-carousel", "fmt-photo", "fmt-story", "fmt-long"]) {
-      const svg = appCharacterSVG(key);
-      assert.match(svg, /^<svg[^>]*viewBox="0 0 160 160"/, key);
-      assert.ok(!/stroke=|Gradient/.test(svg), `${key} stays flat: no strokes, no gradients`);
+  test("the five parts of Create and the five kinds each have a picture in the card's colours", () => {
+    for (const key of ["creator", "calendar", "list", "copy", "series", "video", "carousel", "photo", "story", "long"]) {
+      const svg = createArtSVG(key);
+      assert.match(svg, /^<svg[^>]*viewBox="0 0 120 120"/, key);
+      assert.ok(/class="i-main/.test(svg) && /class="i-ink/.test(svg), `${key} uses the tint + shade`);
+      assert.ok(!/fill="#|stroke=/.test(svg), `${key} takes its colours from the card (CSS), none of its own`);
     }
   });
 });

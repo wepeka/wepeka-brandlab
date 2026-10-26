@@ -30,7 +30,8 @@ import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-g
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
 import { wireMic } from "../voice-input.js";
 import { openHookTemplatePicker } from "../hook-template-picker.js";
-import { appCharacterSVG } from "../app-characters.js";
+import { createArtSVG } from "../create-art.js";
+import { appIconSVG } from "../app-icons.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -771,6 +772,8 @@ export function render(root, { brandId, initialContentId }) {
   window.addEventListener("chat:undocked", onUndocked);
   window.addEventListener("resize", onViewport);
   window.addEventListener("scroll", onViewport, { passive: true });
+  // The page slides in when it opens: line the chat up again once it lands.
+  root.addEventListener("animationend", onViewport);
 
   refresh();
   const unsubscribe = onChange(refresh);
@@ -780,6 +783,7 @@ export function render(root, { brandId, initialContentId }) {
     window.removeEventListener("chat:undocked", onUndocked);
     window.removeEventListener("resize", onViewport);
     window.removeEventListener("scroll", onViewport);
+    root.removeEventListener("animationend", onViewport);
     undockChat();
     unsubscribe();
     document.removeEventListener("nav:context", onNavContext);
@@ -2125,7 +2129,9 @@ function draftingPanel(c, campaigns, series = []) {
 // ============================================================================
 
 const STEP_KEYS = ["idea", "script", "shoot", "edit", "upload", "done"];
-const STEP_COLOR = { idea: "#FFC83D", script: "#3B9BFF", shoot: "#FF8A3D", edit: "#A974FF", upload: "#36D27F", done: "#E9E2D6" };
+const STEP_COLOR = { idea: "#FFC83D", script: "#3B9BFF", shoot: "#FF9F3D", edit: "#A974FF", upload: "#36D27F", done: "#E9E2D6" };
+// The second hue of each step's gradient (the selected piece's card).
+const STEP_COLOR2 = { idea: "#FF8A3D", script: "#4F55F5", shoot: "#FF4F4F", edit: "#E04FD8", upload: "#0FA3A3", done: "#C9BFAE" };
 const STATUS_STEP = { idea: "idea", draft: "script", production: "shoot", editing: "edit", scheduled: "upload", published: "done", archived: "done" };
 export const currentStep = (c) => STATUS_STEP[c?.status] || "idea";
 const isPhone = () => !!window.matchMedia?.("(max-width: 860px)").matches;
@@ -2160,7 +2166,7 @@ function bigItemHTML(c, arrive) {
   const n = Math.min(STEP_KEYS.indexOf(step) + 1, 5);
   const meta = [c.platform, c.format].filter(Boolean).map(escapeHtml).join(" · ");
   return `
-    <div class="cw-item is-selected${arrive ? " is-arriving" : ""}" data-select="${c.id}" aria-current="true" style="--stage:${STEP_COLOR[step]};">
+    <div class="cw-item is-selected${arrive ? " is-arriving" : ""}" data-select="${c.id}" aria-current="true" style="--stage:${STEP_COLOR[step]};--stage2:${STEP_COLOR2[step]};">
       <div class="cw-item-top"><span class="cw-item-stage">${step === "done" ? t("cw.step.done") : `${stepLabel(step, c)} · ${n}/5`}</span>${shortWhen(c)}</div>
       <div class="cw-item-title">${escapeHtml(c.title || t("common.untitled"))}</div>
       ${stepBarsHTML(c)}
@@ -2311,7 +2317,7 @@ function scriptStepHTML(c, { review, docked }) {
   return `
     ${empty ? `
     <div class="cw-ai-card">
-      <span class="cw-ai-art">${appCharacterSVG("content-os")}</span>
+      <span class="cw-ai-art">${appIconSVG("content-os")}</span>
       <div class="cw-ai-text"><b>${t("cw.script.aiTitle")}</b><span>${t("cw.script.aiBody")}</span></div>
       <button type="button" class="btn btn-primary" id="ai-generate-all">${icon("bot", { size: 15 })}${t("cw.script.aiBtn")}</button>
     </div>` : ""}
@@ -2407,7 +2413,7 @@ function workspaceHTML(c, step, { campaigns, series, state, docked }) {
 function simpleEmptyHTML() {
   return `
     <div class="cw-empty">
-      <span class="cw-empty-art">${appCharacterSVG("cos-creator")}</span>
+      <span class="cw-empty-art">${createArtSVG("creator")}</span>
       <h2>${t("cr.empty.title")}</h2>
       <p>${t("cr.empty.body")}</p>
       <button type="button" class="cl-cta" id="new-content-empty"><span>${t("cl.new")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>
@@ -2421,7 +2427,7 @@ function simpleLayoutHTML({ brandId, all, items, campaigns, series, selected, gr
   const phoneOpen = state.phoneOpen || !items.length;
   return `
     <div class="cw-head">
-      <div class="cw-head-title"><span class="cw-head-art">${appCharacterSVG("cos-creator")}</span><h1>${t("contentOs.tab.creator")}</h1></div>
+      <div class="cw-head-title"><span class="cw-head-art">${createArtSVG("creator")}</span><h1>${t("contentOs.tab.creator")}</h1></div>
       <div class="cw-head-actions">
         ${guideVideoButtonHTML("creator")}
         <button type="button" class="btn btn-secondary cw-week" id="cr-week-plan">${icon("sparkle", { size: 15 })}<span>${t("chat.week.button")}</span><span class="btn-cost">${t("chat.week.cost")}</span></button>

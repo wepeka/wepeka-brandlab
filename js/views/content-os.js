@@ -14,7 +14,7 @@ import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
-import { appCharacterSVG } from "../app-characters.js";
+import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
 
 // Umbrella for the content side: Creator, the calendar, the content list
@@ -26,15 +26,16 @@ import { weekStart, addDays } from "../goal-roadmap.js";
 //
 // Pemula (owner's ask, 2026-10-26: "kaya aplikasi", reference = a stack of
 // colour category cards): opening Create shows the five as colour cards,
-// each with its own colour and character (js/app-characters.js), instead
-// of landing in Creator under a row of tabs. Inside one, a round back
+// each with its own two-hue gradient and picture (js/create-art.js, the
+// Beranda launcher's style: no mascots), instead of landing in Creator
+// under a row of tabs. Inside one, a round back
 // button returns to the cards. Pro keeps the tab row and opens on Creator.
 const SUB_TABS = [
-  { key: "creator", labelKey: "contentOs.tab.creator", color: "#3B9BFF", path: (id) => `#/brand/${id}/content/creator` },
-  { key: "calendar", labelKey: "contentOs.tab.calendar", color: "#36D27F", path: (id) => `#/brand/${id}/content/calendar` },
-  { key: "list", labelKey: "contentOs.tab.list", color: "#FF8A3D", path: (id) => `#/brand/${id}/content/list` },
-  { key: "copy", labelKey: "contentOs.tab.copy", color: "#FF6FAE", path: (id) => `#/brand/${id}/content/copy` },
-  { key: "series", labelKey: "contentOs.tab.series", color: "#E4B37E", path: (id) => `#/brand/${id}/content/series` },
+  { key: "creator", labelKey: "contentOs.tab.creator", color: "#3B9BFF", color2: "#4F55F5", path: (id) => `#/brand/${id}/content/creator` },
+  { key: "calendar", labelKey: "contentOs.tab.calendar", color: "#36D27F", color2: "#0FA3A3", path: (id) => `#/brand/${id}/content/calendar` },
+  { key: "list", labelKey: "contentOs.tab.list", color: "#FF9F3D", color2: "#FF4F4F", path: (id) => `#/brand/${id}/content/list` },
+  { key: "copy", labelKey: "contentOs.tab.copy", color: "#FF6FAE", color2: "#B65CF0", path: (id) => `#/brand/${id}/content/copy` },
+  { key: "series", labelKey: "contentOs.tab.series", color: "#F2C46D", color2: "#D9822B", path: (id) => `#/brand/${id}/content/series` },
 ];
 
 // The Konten tab bar. (The chat, which used to sit here as "Brainstorm",
@@ -53,9 +54,9 @@ export function contentTabsHTML(brandId, activeSub) {
 // colour and character, back to the cards. The page's own title follows.
 function backPillHTML(brandId, activeSub) {
   const tab = SUB_TABS.find((x) => x.key === activeSub) || SUB_TABS[0];
-  return `<a class="cl-backpill" href="#/brand/${brandId}/content" style="--cat:${tab.color};" aria-label="${escapeHtml(t("cl.back"))}">
+  return `<a class="cl-backpill" href="#/brand/${brandId}/content" style="--cat:${tab.color};--cat2:${tab.color2};" aria-label="${escapeHtml(t("cl.back"))}">
       ${icon("chevronLeft", { size: 16 })}
-      <span class="cl-backpill-art">${appCharacterSVG(`cos-${tab.key}`)}</span>
+      <span class="cl-backpill-art cl-pic">${createArtSVG(tab.key)}</span>
       <span>${t("app.create.name")}</span>
     </a>`;
 }
@@ -106,11 +107,11 @@ function landingHTML(brandId, brand, { animate }) {
   const cards = SUB_TABS.map((tab, i) => {
     const st = cardStatus(tab.key, brandId);
     return `
-      <a class="cl-card" data-cat="${tab.key}" href="${tab.path(brandId)}" style="--cat:${tab.color};--i:${i};">
+      <a class="cl-card" data-cat="${tab.key}" href="${tab.path(brandId)}" style="--cat:${tab.color};--cat2:${tab.color2};--i:${i};">
         <span class="cl-pill">${t(tab.labelKey)}</span>
         <span class="cl-sub">${t(`cl.cat.${tab.key}.sub`)}</span>
         <span class="cl-status${st.warn ? " is-warn" : ""}">${escapeHtml(st.text)}</span>
-        <span class="cl-art">${appCharacterSVG(`cos-${tab.key}`)}</span>
+        <span class="cl-art cl-pic">${createArtSVG(tab.key)}</span>
         <span class="cl-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>
       </a>`;
   }).join("");
@@ -146,6 +147,12 @@ function renderLanding(root, brandId) {
     first = false;
     wireHelpButtons(root);
     root.querySelector("#cl-new")?.addEventListener("click", () => openContentEditor({ brandId, onSaved: () => {} }));
+    // A soft light follows the mouse over a card (like the Beranda cards).
+    root.querySelectorAll(".cl-card").forEach((card) => card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--mx", `${Math.round(e.clientX - r.left)}px`);
+      card.style.setProperty("--my", `${Math.round(e.clientY - r.top)}px`);
+    }));
   };
   paint();
   setPageGuide(null);

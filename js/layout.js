@@ -313,13 +313,30 @@ export function shellHTML({ brandId, active }) {
 // main.js renderRoute): re-point the active tab and refresh the
 // "← Kembali ke ..." chip without touching the rest of the topbar.
 export function updateShellForRoute({ active }) {
-  qsa(".topbar .tabs .tab, .bottom-nav .tab").forEach((a) => {
+  const moveTabs = () => qsa(".topbar .tabs .tab, .bottom-nav .tab").forEach((a) => {
     const tab = TABS.find((x) => x.key === a.dataset.tabKey);
     const on = !!tab?.matches.includes(active);
     a.classList.toggle("active", on);
     if (on) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   });
+  // The coloured pill slides from the old tab to the new one instead of
+  // jumping (css: view-transition-name on .tab.active). Browsers without
+  // View Transitions, or with reduced motion, just switch.
+  const tabChanges = qsa(".topbar .tabs .tab, .bottom-nav .tab").some((a) => a.classList.contains("active") !== !!TABS.find((x) => x.key === a.dataset.tabKey)?.matches.includes(active));
+  if (tabChanges && typeof document.startViewTransition === "function" && document.visibilityState === "visible" && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    // A transition that never gets a frame (tab hidden mid-way) must not
+    // leave the old tab lit: the switch happens anyway after 400ms.
+    let moved = false;
+    const once = () => { if (!moved) { moved = true; moveTabs(); } };
+    try {
+      // A skipped transition (another navigation, the tab hidden) rejects
+      // these promises; that's expected, not an error worth logging.
+      const vt = document.startViewTransition(once);
+      [vt?.ready, vt?.finished, vt?.updateCallbackDone].forEach((p) => p?.catch?.(() => {}));
+    } catch { once(); }
+    setTimeout(once, 400);
+  } else moveTabs();
   const oldChip = qs(".nav-return");
   const html = returnChipHTML();
   if (oldChip) oldChip.remove();

@@ -1,8 +1,8 @@
 // "Konten baru" for Pemula — two short steps instead of the long drawer
 // (owner's ask, 2026-10-26: "jangan satu form panjang, maksimal 2 langkah").
 //
-//   1. Mau bikin apa?   — a colour card per kind of piece (its own little
-//                         character), and where it goes out.
+//   1. Mau bikin apa?   — a colour card per kind of piece (its own picture,
+//                         js/create-art.js), and where it goes out.
 //   2. Idenya apa?      — the idea in the owner's own words (or nothing:
 //                         it gets found with the AI next), when it goes out,
 //                         and the campaign it is for, if there is one.
@@ -16,7 +16,7 @@ import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, toast } from "../dom.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { t, campaignDisplayName } from "../i18n.js";
-import { appCharacterSVG } from "../app-characters.js";
+import { createArtSVG } from "../create-art.js";
 import { activeCampaignsFor } from "../week-plan.js";
 import { addDays } from "../goal-roadmap.js";
 
@@ -24,11 +24,11 @@ import { addDays } from "../goal-roadmap.js";
 // (Pengaturan → Format can rename or remove them). `pick` = the format names
 // to store, best first; a short video on TikTok/YouTube is a "Short Video".
 const KINDS = [
-  { key: "video", art: "fmt-video", color: "#FF6FAE", match: /reel|short/i },
-  { key: "carousel", art: "fmt-carousel", color: "#FFC83D", match: /carousel/i },
-  { key: "photo", art: "fmt-photo", color: "#36D27F", match: /static|post|foto|photo|image/i },
-  { key: "story", art: "fmt-story", color: "#A974FF", match: /story/i },
-  { key: "long", art: "fmt-long", color: "#FF8A3D", match: /long|panjang/i },
+  { key: "video", color: "#FF6FAE", color2: "#FF7A45", match: /reel|short/i },
+  { key: "carousel", color: "#FFC83D", color2: "#FF8A3D", match: /carousel/i },
+  { key: "photo", color: "#36D27F", color2: "#0FA3A3", match: /static|post|foto|photo|image/i },
+  { key: "story", color: "#A974FF", color2: "#E04FD8", match: /story/i },
+  { key: "long", color: "#FF9F3D", color2: "#FF4F4F", match: /long|panjang/i },
 ];
 
 // Which of this account's formats a kind stands for on a platform.
@@ -71,8 +71,8 @@ function step1HTML(s, kinds, platforms, extraFormats) {
   return `
     <div class="nw-tiles" role="radiogroup" aria-label="${escapeHtml(t("nw.title1"))}">
       ${kinds.map((k, i) => `
-        <button type="button" class="nw-tile${s.kind === k.key ? " is-on" : ""}" role="radio" aria-checked="${s.kind === k.key}" data-kind="${k.key}" style="--tile:${k.color};--i:${i};">
-          <span class="nw-tile-art">${appCharacterSVG(k.art)}</span>
+        <button type="button" class="nw-tile${s.kind === k.key ? " is-on" : ""}" role="radio" aria-checked="${s.kind === k.key}" data-kind="${k.key}" style="--tile:${k.color};--tile2:${k.color2};--i:${i};">
+          <span class="nw-tile-art">${createArtSVG(k.key)}</span>
           <span class="nw-tile-name">${t(`nw.fmt.${k.key}`)}</span>
           <span class="nw-tile-sub">${t(`nw.fmt.${k.key}.sub`)}</span>
           <span class="nw-tile-check" aria-hidden="true">${icon("check", { size: 14 })}</span>
