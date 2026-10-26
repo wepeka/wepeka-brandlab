@@ -8,6 +8,10 @@ import { qs } from "../dom.js";
 import { t } from "../i18n.js";
 import { adaptForAccount, markTourSeen, showTourRecap, startGuideOnMount } from "./common.js";
 
+// A phone shows the month as dots: tapping a date picks it, and its "Tambah"
+// below opens the same choice a date click opens on a desktop.
+const compact = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+
 const tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 
 // Same set the Content Bank lists (no date yet), minus published pieces,
@@ -75,7 +79,24 @@ export function buildCalendarSteps({ brandId }) {
     },
     // 4 — click a date → the Bank menu for that day
     {
+      selector: [".calx-daypanel .calx-add", ".calx-mini-cell.today"],
+      showIf: compact,
+      beforeStep: async () => {
+        await ensureMonthView();
+        if (!qs(".calx-daypanel .calx-add")) {
+          qs("#cal-today")?.click();
+          await tick();
+        }
+      },
+      title: t("guide.cal.clickDate.title"),
+      body: t("guide.cal.clickDateMobile.body"),
+      interactive: { type: "until", predicate: () => !!qs(".date-bank-menu") },
+      hint: t("guide.cal.clickDateMobile.hint"),
+      skippable: true,
+    },
+    {
       selector: [".cal-cell.today", ".cal-cell:not(.outside)"],
+      showIf: () => !compact(),
       beforeStep: async () => {
         await ensureMonthView();
         if (!qs(".cal-cell.today")) {

@@ -12,7 +12,7 @@ import { openContentEditor } from "./content-editor.js";
 import { t, getLang } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { setPageGuide } from "../section-guide.js";
-import { runSpotlightTour } from "../tour.js";
+import { startCreateLandingGuide, startContentListGuide } from "../guides/create-guides.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { createArtSVG } from "../create-art.js";
@@ -68,12 +68,6 @@ function dnaHintHTML(brandId, brand) {
   if (brandDnaDone(brand)) return "";
   const dna = brandDnaCompleteness(brand.brandDNA);
   return `<a class="dna-hint" href="#/brand/${brandId}/dna">${icon("target", { size: 13 })}<span>${t("onb.dna.hint", { filled: dna.filled, total: dna.total })}</span><b>${dna.filled ? t("home.identity.ctaContinue") : t("home.identity.ctaStart")}${icon("arrowRight", { size: 12 })}</b></a>`;
-}
-
-// One-step orientation to the tab bar itself, offered from the topbar "?"
-// on the Daftar tab (Creator and Kalender register their own guides).
-function tourSteps() {
-  return [{ selector: ".cos-tabs", title: t("cnt.os.tour.title"), body: t("cnt.os.tour.body") }];
 }
 
 // ---- Pemula: the five cards -------------------------------------------------
@@ -192,7 +186,7 @@ function renderLanding(root, brandId) {
     }));
   };
   paint();
-  setPageGuide(null);
+  setPageGuide(() => startCreateLandingGuide());
   const off = onChange(paint);
   return () => off();
 }
@@ -229,8 +223,8 @@ export function render(root, { brandId, sub, contentId }) {
 
   let cleanup;
   if (activeSub === "list") {
-    // Pemula has no tab row for this one-step tour to point at.
-    setPageGuide(guided ? null : () => runSpotlightTour(tourSteps()));
+    // Its own tour: the views, search, filter, a row, the numbers button.
+    setPageGuide(() => startContentListGuide());
     cleanup = contentListView.render(mount, { brandId });
     if (contentId) openContentEditor({ brandId, contentId, onSaved: () => {} });
   } else if (activeSub === "calendar") {
