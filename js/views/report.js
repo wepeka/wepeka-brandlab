@@ -28,7 +28,7 @@ import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
 
 const DAY = 86400000;
-const OVERALL_START = "2000-01-01";
+export const OVERALL_START = "2000-01-01";
 export const REPORT_EVERY_DAYS = 7;
 const A4_W = 794; // px at 96dpi
 const A4_H = 1123;
@@ -42,13 +42,13 @@ const shownRecapKeys = (d) => RECAP_KEYS.filter((k) => k !== "reposts" || d.reca
 const iso = (d) => localISODate(d);
 const rp = (n) => `Rp ${formatNumber(Math.round(n || 0))}`;
 
-function rangeFor(key, today = new Date()) {
+export function rangeFor(key, today = new Date()) {
   if (key === "week") return { start: iso(new Date(today.getTime() - 6 * DAY)), end: iso(today) };
   if (key === "month") return { start: iso(new Date(today.getFullYear(), today.getMonth(), 1)), end: iso(new Date(today.getFullYear(), today.getMonth() + 1, 0)) };
   if (key === "overall") return { start: OVERALL_START, end: iso(today) };
   return null;
 }
-const rangeLabel = (start, end) => (start === OVERALL_START ? t("rep.range.overall") : `${formatDate(start)} – ${formatDate(end)}`);
+export const rangeLabel = (start, end) => (start === OVERALL_START ? t("rep.range.overall") : `${formatDate(start)} – ${formatDate(end)}`);
 
 // ---------- The numbers ----------
 
@@ -206,7 +206,7 @@ const clip = (s, n) => {
 const accentOf = (brand) => (/^#[0-9a-f]{6}$/i.test(brand?.color || "") ? brand.color : BRANDLAB_ORANGE);
 
 // The period before, same length — what the big numbers compare against.
-function previousRange(start, end) {
+export function previousRange(start, end) {
   if (start === OVERALL_START) return null;
   const s = new Date(start + "T12:00:00");
   const e = new Date(end + "T12:00:00");
@@ -234,7 +234,7 @@ function deltaChip(now, before, { points = false } = {}) {
 const secHead = (n, title, sub = "") => `
   <div class="rp2-sec"><span class="rp2-sec-n">${String(n).padStart(2, "0")}</span><div><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ""}</div><span class="rp2-sec-line"></span></div>`;
 const bar = (value, max, color) => `<span class="rp2-bar"><span style="width:${max ? Math.max(3, Math.round((value / max) * 100)) : 0}%;background:${color}"></span></span>`;
-function shortNum(n) {
+export function shortNum(n) {
   const v = Number(n) || 0;
   if (v >= 1000000) return `${(v / 1000000).toFixed(1).replace(/\.0$/, "").replace(".", ",")}jt`;
   if (v >= 10000) return `${Math.round(v / 1000)}rb`;
@@ -548,6 +548,30 @@ export function adviceSig(text, lang = getLang()) {
   return (h >>> 0).toString(36);
 }
 
+// The period's "Saran AI", shared by the panel below and the Report page:
+// the snapshot the AI reads, its fingerprint, and the saved advice made for
+// exactly these numbers (null when there is none yet).
+export function reportAdviceState(brandId, start, end) {
+  const b = getBrand(brandId);
+  const d = computeReportData(b, start, end);
+  const prevR = previousRange(start, end);
+  const snapshot = reportSnapshotText(b, start, end, d, prevR ? computeReportData(b, prevR.start, prevR.end) : null, prevR);
+  const sig = adviceSig(snapshot);
+  const saved = b.reportAdvice;
+  return { snapshot, sig, advice: saved && saved.sig === sig && saved.actions?.length ? saved : null };
+}
+// One AI call (1 credit) for one period's numbers; kept on the brand so
+// the page, the modal and the PDF all show the same advice.
+export async function requestReportAdvice(brandId, { start, end, snapshot, sig }) {
+  const b = getBrand(brandId);
+  const campaigns = listCampaigns(brandId);
+  const pulseText = pulseTextFor(b, { content: listContent(brandId), campaigns, settings: getSettings() });
+  const out = await suggestReportActions(getSettings().ai || {}, { brand: b, snapshotText: snapshot, campaigns, pulseText });
+  const saved = { ...out, start, end, sig, at: Date.now() };
+  updateBrand(brandId, { reportAdvice: saved });
+  return saved;
+}
+
 // The footer every page carries: the mark, the brand, the page number.
 const footerHTML = (brand, page, total) => `
   <div class="rp2-foot">
@@ -627,37 +651,29 @@ async function downloadReportPdf(brand, start, end, blocks) {
 }
 
 // ---------- Pick the period, see it, download ----------
-// One panel, two homes: the modal (Minggu ini's link in Pro, the weekly
-// nudge) and the Report app's own page (js/views/report-page.js). Both are
-// the same markup — the picker, the AI strip, the sheet, Bagikan + PDF —
-// wired by wireReportPanel.
+// The PDF panel, in a modal: the picker, the AI strip, the A4 sheet,
+// Bagikan + PDF. Opened from Minggu ini's link in Pro, the weekly nudge,
+// and the Report app's "Download report" button (js/views/report-page.js,
+// which shows the same numbers as a page and the sheet only on demand).
 
 const reportBodyHTML = () => `<div id="rp-picker"></div><div class="rp-ai-strip" id="rp-ai" hidden></div><div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`;
 const reportActionsHTML = () => `
       <button class="btn btn-secondary" id="report-share">${icon("link", { size: 14 })}${t("rep.share")}</button>
       <button class="btn btn-primary" id="report-download">${icon("download", { size: 14 })}${t("rep.downloadPdf")}</button>`;
 
-export function openReportModal(brandId, { range = "week" } = {}) {
+// `start`/`end`: the dates of a custom period (range "custom"), so the
+// Report page's own period opens as is.
+export function openReportModal(brandId, { range = "week", start = null, end = null } = {}) {
   if (!getBrand(brandId)) return;
   const overlay = openModal({ title: t("rep.title"), wide: true, bodyHTML: reportBodyHTML(), footHTML: reportActionsHTML() });
-  wireReportPanel(overlay, brandId, { range });
+  wireReportPanel(overlay, brandId, { range, start, end });
   return overlay;
 }
 
-// The Report page: the same panel laid out on the page, with the actions
-// above the sheet instead of in a modal footer.
-export function renderReportPanel(root, brandId, { range = "week" } = {}) {
-  if (!getBrand(brandId)) return;
-  root.innerHTML = `
-    <div class="rpage-bar"><div id="rp-picker"></div><div class="rpage-actions">${reportActionsHTML()}</div></div>
-    <div class="rp-ai-strip" id="rp-ai" hidden></div>
-    <div class="report-preview-wrap" style="margin-top:14px;"><div class="report-sheet rp2" id="report-sheet"></div></div>`;
-  wireReportPanel(root, brandId, { range });
-}
-
-function wireReportPanel(root, brandId, { range = "week" } = {}) {
+function wireReportPanel(root, brandId, { range = "week", start = null, end = null } = {}) {
   const brand = getBrand(brandId);
-  const st = { key: range, ...(rangeFor(range) || rangeFor("week")), busy: false, aiBusy: false, aiError: "" };
+  const dates = range === "custom" && start && end ? { start, end } : rangeFor(range) || rangeFor("week");
+  const st = { key: range, ...dates, busy: false, aiBusy: false, aiError: "" };
   // Advice made in this sitting, per period + numbers (switching periods
   // back and forth keeps it); the latest one is also kept on the brand.
   const made = new Map();
@@ -676,13 +692,10 @@ function wireReportPanel(root, brandId, { range = "week" } = {}) {
   let snapshot = "";
   // The numbers decide which advice fits: one made for exactly these.
   const adviceFor = () => {
-    const b = getBrand(brandId);
-    const d = computeReportData(b, st.start, st.end);
-    const prevR = previousRange(st.start, st.end);
-    snapshot = reportSnapshotText(b, st.start, st.end, d, prevR ? computeReportData(b, prevR.start, prevR.end) : null, prevR);
-    sig = adviceSig(snapshot);
-    const saved = b.reportAdvice;
-    return made.get(sig) || (saved && saved.sig === sig && saved.actions?.length ? saved : null);
+    const now = reportAdviceState(brandId, st.start, st.end);
+    snapshot = now.snapshot;
+    sig = now.sig;
+    return made.get(sig) || now.advice;
   };
   const paintAi = () => {
     const box = qs("#rp-ai", root);
@@ -724,14 +737,9 @@ function wireReportPanel(root, brandId, { range = "week" } = {}) {
     st.aiError = "";
     paintAi();
     try {
-      const b = getBrand(brandId);
-      const campaigns = listCampaigns(brandId);
-      const pulseText = pulseTextFor(b, { content: listContent(brandId), campaigns, settings: getSettings() });
       const forSig = sig;
-      const out = await suggestReportActions(getSettings().ai || {}, { brand: b, snapshotText: snapshot, campaigns, pulseText });
-      const saved = { ...out, start: st.start, end: st.end, sig: forSig, at: Date.now() };
+      const saved = await requestReportAdvice(brandId, { start: st.start, end: st.end, snapshot, sig: forSig });
       made.set(forSig, saved);
-      updateBrand(brandId, { reportAdvice: saved });
     } catch (e) {
       st.aiError = e instanceof AiApiError ? e.message : t("rep3.aiErr");
       throw e;
