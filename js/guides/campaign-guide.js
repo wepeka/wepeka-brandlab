@@ -93,6 +93,7 @@ function brainstormSteps() {
     // 7
     {
       selector: "#cd-brainstorm",
+      showIf: has("#cd-brainstorm"),
       title: t("guide.camp.brainstorm.title"),
       body: t("guide.camp.brainstorm.body"),
       skippable: true,
@@ -107,8 +108,8 @@ function buildDetailSteps(campaign) {
   const isLadder = !!campaign.missions?.length;
   return [
     {
-      selector: ".cd-headline",
-      showIf: has(".cd-headline"),
+      selector: ".cd-headline, .gd-hero",
+      showIf: has(".cd-headline, .gd-hero"),
       title: t("guide.camp.headline.title"),
       body: t("guide.camp.headline.body"),
     },
@@ -129,8 +130,8 @@ function buildDetailSteps(campaign) {
         : t("guide.camp.stages.phase.body"),
     },
     {
-      selector: "#cd-milestones .cd-row:nth-child(1)",
-      showIf: has("#cd-milestones .cd-row"),
+      selector: "#cd-milestones .cd-row:nth-child(1), #cd-milestones .gd-tile:nth-child(1)",
+      showIf: has("#cd-milestones .cd-row, #cd-milestones .gd-tile"),
       title: t("guide.camp.milestones.title"),
       body: t("guide.camp.milestones.body"),
     },
@@ -139,6 +140,20 @@ function buildDetailSteps(campaign) {
       showIf: has("#cd-manual-all"),
       title: t("guide.camp.manualAll.title"),
       body: t("guide.camp.manualAll.body"),
+    },
+    // Pemula's goal page: the to-do, and "Kasih ide" (the chat about this goal).
+    {
+      selector: "#gd-todo",
+      showIf: has(".gd #gd-todo"),
+      title: t("gl.tour.todo.title"),
+      body: t("gl.tour.todo.body"),
+    },
+    {
+      selector: "#gd-ideas",
+      showIf: has("#gd-ideas"),
+      title: t("gl.tour.ideas.title"),
+      body: t("gl.tour.ideas.body"),
+      skippable: true,
     },
     ...brainstormSteps(),
     {

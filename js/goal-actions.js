@@ -11,7 +11,7 @@
 //     in `installed` (and still existing) are skipped.
 import {
   getBrand, getGoal, updateGoal, listContent, listCampaigns, getCampaign, getContent, createCampaign, updateCampaign, createContent, updateContent, deleteContent,
-  getSettings, localISODate, eventScaleFor, CAMPAIGN_PHASE_TEMPLATE, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES,
+  getSettings, localISODate, eventScaleFor, CAMPAIGN_PHASE_TEMPLATE, CAMPAIGN_OBJECTIVE_DEFAULT_OPTIONAL_PHASES, missionText,
 } from "./store.js";
 import { buildSocialGrowthPlan, placeStartSocialLevel } from "./goal-plan.js";
 import { planRoadmap, diffPlans } from "./goal-roadmap.js";
@@ -330,4 +330,38 @@ function addDaysISO(dateStr, days) {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + days);
   return localISODate(d);
+}
+
+// "Jadikan tugas" — an idea the owner points at a goal as a step to do, from
+// the chat's idea card or the goal's own list (owner, 2026-10-27: an idea
+// "di tunjuk mau ke konten atau event"). An Event takes it into the phase the
+// owner picked (addEventMilestone above); a Grow Brand goal takes it as an
+// optional tick in the level it is on now — optional, so a step the owner
+// added never holds the level back. → { ok, milestone, where }
+export function addGoalTask(campaignId, { title, why = "", phaseId = null }) {
+  const camp = getCampaign(campaignId);
+  const label = String(title || "").trim().slice(0, 120);
+  if (!camp || !label) return { ok: false };
+  if (camp.eventPlan?.phases?.length) {
+    const res = addEventMilestone(camp.id, { title: label, why, phaseId });
+    return res.ok ? { ok: true, milestone: res.milestone, where: res.phase.name } : { ok: false };
+  }
+  const missions = camp.missions || [];
+  if (!missions.length) return { ok: false };
+  const open = missions.findIndex((m) => !m.completedAt);
+  const at = open === -1 ? missions.length - 1 : open;
+  const level = missions[at];
+  const milestone = {
+    id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, kind: "check", metric: "manual.check", label, description: String(why || "").trim().slice(0, 300),
+    unit: "", target: null, highlight: false, custom: true, fromIdea: true, required: false, notApplicable: false, category: "IMPACT",
+  };
+  updateCampaign(camp.id, { missions: missions.map((m, i) => (i === at ? { ...m, milestones: [...(m.milestones || []), milestone] } : m)) });
+  return { ok: true, milestone, where: missionText(level).name || "" };
+}
+
+// The places a task for this goal can go, for the owner to pick from: an
+// Event's phases that aren't over (with their dates), nothing for a Grow
+// Brand goal (its task goes to the level it is on).
+export function goalTaskPlaces(campaign) {
+  return campaign?.eventPlan ? openEventPhases(campaign) : [];
 }

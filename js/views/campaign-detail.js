@@ -10,7 +10,7 @@ import {
   getBrand, getGoal, updateGoal, listContent, listCampaigns, getSettings, updateCampaign, createContent, deleteCampaign, completeCampaignStage, setCampaignManualMetric, planIdeasNote,
   formatEventDate, daysBetween, localISODate, EVENT_ROLES, EVENT_SCALE_TIERS, campaignContentPool,
   CAMPAIGN_OBJECTIVE_LABELS, CAMPAIGN_STATUS_LABELS, STATUS_LABELS, missionProgressionNote, TRASH_DAYS,
-  listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea, campaignContentPlatform,
+  listBrandIdeas, addBrandIdea, updateBrandIdea, removeBrandIdea, campaignContentPlatform, phaseNameLabel,
 } from "../store.js";
 import { campaignStages, activeStageIndex, readStage, readMilestone, campaignHeadline, ladderAdvanceState, campaignActivities, PIPELINE, ageLabel, stageStartedAt, poolFor, PER_POST_METRICS, windowPlanKey, TRACK_ICON, campaignPendingEngagement, campaignPlatform, autoSourceNote } from "../campaign-metrics.js";
 import { getTracker, productStats, trackerTotals, eventSalesStats, campaignSalesStats, contentSalesStats } from "../sales-tracker.js";
@@ -38,6 +38,11 @@ import { STATUS_LABELS_GUIDED, funnelShort } from "../funnel-field.js";
 import { t, campaignDisplayName } from "../i18n.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
+import { goalTodo, goalKind } from "../goal-todo.js";
+import { goalArtSVG, goalKindByKey } from "../goal-art.js";
+import { addGoalTask, goalTaskPlaces } from "../goal-actions.js";
+import { draftFromIdea } from "../idea-draft.js";
+import { openGoalIdeasChat } from "../consultant-panel.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
 import { aiReportButtonHTML } from "../ai-report.js";
 
@@ -111,18 +116,17 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   const tabs = proTabList(campaign, stages);
   const tab = guided ? "target" : tabs.includes(state.proTab) ? state.proTab : "target";
 
-  // Pemula layout (user ask, 2026-09-25: "too many buttons"): headline
-  // number → level strip → milestones → one Brainstorm card. Everything
-  // else on this page (next-step card, idea bubbles, sales widgets, AI
-  // plan, pace/rules, activity pipeline + content buttons) is Pro-only.
-  // Milestone rows keep their own action (Isi Insights / Catat / Bikin
-  // konten), so a beginner still has exactly one way to move each target.
-  root.innerHTML = `
+  // Pemula has its own page (guidedPageHTML below, owner 2026-10-27): the
+  // goal's number, its other numbers as tiles, "Yang perlu dikerjakan" and
+  // "Kasih ide". The template after it is Pro's.
+  const goal = goalForCampaign(brandId, campaign);
+  const todo = goalTodo({ brand, campaign, content, settings: ctx.settings, goal });
+  root.innerHTML = guided ? guidedPageHTML({ brandId, campaign, stages, autoIndex, state, stageRead, ctx, todo, goal }) : `
     <div class="page-head">
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("camp.detail.allCampaigns"))}${helpButtonHTML("campaign-detail")}${guideVideoButtonHTML("campaign-detail")}</div>
         <h1>${esc(campaignDisplayName(campaign.name) || t("camp.untitled"))}</h1>
-        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, guided)}</p>
+        <p class="page-sub cd-sub">${subLineHTML(campaign, stages, state.stageIndex, false)}</p>
       </div>
       <div class="cd-head-actions" style="flex:none;">
         <button class="icon-btn" id="cd-more" aria-label="${t("camp.detail.more")}" style="width:36px;height:36px;">${icon("dots", { size: 16 })}</button>
@@ -130,46 +134,37 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
     </div>
     ${eventTabsHTML(brandId, goalForCampaign(brandId, campaign), campaign.id)}
 
-    ${guided ? guidedIntroHTML() : ""}
     ${state.celebrateIndex !== undefined && state.celebrateIndex !== null && stages[state.celebrateIndex]?.state === "completed" ? celebrateHTML(stages[state.celebrateIndex], stages[state.celebrateIndex + 1]) : ""}
     ${headline ? headlineHTML(headline, stageRead, stage) : ""}
-    ${guided ? "" : pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions })}
-    ${guided ? "" : proToolbarHTML(campaign)}
-    ${guided ? "" : proTabsHTML(campaign, stages, acts, tab, brandId)}
+    ${pulseHTML({ campaign, stage, stages, stageRead, ctx, acts, actions })}
+    ${proToolbarHTML(campaign)}
+    ${proTabsHTML(campaign, stages, acts, tab, brandId)}
     ${tab === "ideas" ? ideasWidgetHTML(campaign, state, brandId) : ""}
     ${tab === "plan" ? planRoadmapHTML(campaign, stages, ctx) : ""}
-    ${tab === "activity" ? `${pendingEngagementHTML(campaignPendingEngagement(campaign, ctx))}${salesWidgetHTML(brandId, campaign, brand)}${eventSalesWidgetHTML(brandId, campaign, brand)}${sourceSalesHTML(brandId, campaign, brand)}${activitiesHTML(acts, brandId, guided)}` : ""}
+    ${tab === "activity" ? `${todoSectionHTML({ campaign, todo, state, guided: false })}${pendingEngagementHTML(campaignPendingEngagement(campaign, ctx))}${salesWidgetHTML(brandId, campaign, brand)}${eventSalesWidgetHTML(brandId, campaign, brand)}${sourceSalesHTML(brandId, campaign, brand)}${activitiesHTML(acts, brandId, false)}` : ""}
     ${tab !== "target" ? "" : `
     ${isLadder ? levelGateHTML(campaign, stage, stageRead, ctx) : ""}
     ${stageNavHTML(stages, state.stageIndex, acts, content, campaign)}
 
-    ${guided ? `<div class="section-title" style="margin-top:20px;"><h2>${t("camp.guided.msTitle")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.guided.msSub")}</span></div>` : ""}
     <div class="mission-panel cd-panel">
       <div class="mission-panel-head">
         <div>
           <div class="page-eyebrow">${stageEyebrow(stage, stages.length)}</div>
           <h3 style="margin:2px 0 4px;">${esc(stage?.name || "")}</h3>
           ${stage?.description ? `<p class="text-muted" style="font-size:13px;margin:0;">${esc(stage.description)}</p>` : ""}
-          ${guided && isLadder ? `<p class="text-faint" style="font-size:12px;margin:6px 0 0;">${t("camp.guided.levelHint")}</p>` : ""}
           ${stage?.mergedFrom?.length ? `<p class="text-faint" style="font-size:12px;margin:4px 0 0;">${esc(t("camp.detail.mergedHere", { names: stage.mergedFrom.join(" + ") }))}</p>` : ""}
         </div>
         <div class="cd-stage-progress-col">
           <div class="cd-stage-progress">${isLadder && stageRead.requiredTotal ? t("camp.detail.stageProgressRequired", { met: stageRead.requiredMet, total: stageRead.requiredTotal }) : stageRead.total ? t("camp.detail.stageProgress", { met: stageRead.met, total: stageRead.total }) : ""}</div>
-          ${!guided && stage ? `<button type="button" class="btn btn-ghost btn-sm" id="cd-add-milestone">${icon("plus", { size: 13 })}${t("camp.detail.addMilestone")}</button>` : ""}
+          ${stage ? `<button type="button" class="btn btn-ghost btn-sm" id="cd-add-milestone">${icon("plus", { size: 13 })}${t("camp.detail.addMilestone")}</button>` : ""}
         </div>
       </div>
-      ${
-        // Pemula: the milestone list IS the page (see the guided layout
-        // note above), so it's always open — the rules/pace/disclaimer
-        // paragraphs stay Pro-only. Pro unchanged.
-        `${isLadder ? missionTreeHTML(stage, stageRead.readings) : ""}
-         ${milestoneListHTML(stageRead.readings, stage, guided)}
-         ${guided ? "" : ladderRulesHTML(campaign, stage, guided)}`
-      }
+      ${isLadder ? missionTreeHTML(stage, stageRead.readings) : ""}
+      ${milestoneListHTML(stageRead.readings, stage, false)}
+      ${ladderRulesHTML(campaign, stage, false)}
     </div>
 
-    ${!guided && (campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead, ctx) : ""}
-    ${guided ? brainstormCardHTML(campaign, state, brandId) : ""}`}
+    ${(campaign.goalPlan?.version === 2 || campaign.goalPlan?.version === 3) && isLadder ? growBrandStatusHTML(campaign, stage, stageRead, ctx) : ""}`}
   `;
 
   setPageGuide(() => startCampaignDetailGuide(brandId, campaign.id));
@@ -278,7 +273,331 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       if (c) openQuickFillModal({ c, onSaved: refresh });
     })
   );
+  wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh, ctxLabel, state, todo, goal });
   autoRefreshPlan(root, { brand, campaign, stages, state, refresh });
+}
+
+// ---------- Pemula: one goal = performance, the to-do, "Kasih ide" ----------
+// Owner, 2026-10-27: "Goals sesimpel sekarang untuk tracking performa",
+// plus ideas for what to make, each one pointed at a piece of content or a
+// task, "jadi pas orang mau ngerjain tinggal buka goalsnya dan liat listnya".
+// So the page is three things, top to bottom:
+//   1. the hero — the one number (an Event: the countdown), its bar, and
+//      "Kasih ide", in the card colour of its kind (js/goal-art.js);
+//   2. Performa — the other numbers of the level/phase as tiles, each with
+//      its one button (same handlers as Pro's rows: data-cd-ms-*);
+//   3. Yang perlu dikerjakan — js/goal-todo.js: content still being made,
+//      steps to tick, kept ideas waiting to become one of the two.
+// "Kasih ide" opens THE chat (js/consultant-panel.js) about this goal; its
+// idea cards offer Jadikan konten / Jadikan tugas / Simpan, and nothing is
+// made until the owner taps one.
+const STEP_OF_STATUS = { idea: "idea", draft: "script", production: "shoot", editing: "edit", scheduled: "upload", published: "done" };
+const FORMAT_ICON = (format) => (/carousel/i.test(format || "") ? "layers" : /story/i.test(format || "") ? "clock" : /static|post|foto|photo/i.test(format || "") ? "image" : "play");
+const TODO_SHOWN = 8;
+
+function kindOf(campaign) {
+  const key = goalKind(campaign);
+  return { key, ...(goalKindByKey(key) || { color: "#30D97D", color2: "#0FA3A3" }) };
+}
+const kindVars = (k) => `--cat:${k.color};--cat2:${k.color2};`;
+
+function kindLabelHTML(campaign, kind) {
+  if (kind.key === "social") {
+    const p = campaign.goalPlan?.platform || "instagram";
+    return `${t("gl.kind.social")} · ${esc(t(`goal.launch.platform.${["instagram", "tiktok", "facebook", "youtube", "other"].includes(p) ? p : "instagram"}`))}`;
+  }
+  if (kind.key === "event") {
+    const date = campaign.eventPlan?.eventDate || campaign.endDate || "";
+    return `${t("gl.kind.event")}${date ? ` · ${esc(formatEventDate(date))}` : ""}`;
+  }
+  if (kind.key === "other") return esc(CAMPAIGN_OBJECTIVE_LABELS[campaign.objective] || t("camp.kind.campaign"));
+  return t(`gl.kind.${kind.key}`);
+}
+
+function guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind }) {
+  const stage = stages[autoIndex];
+  const read = stage ? readStage(stage, ctx) : { readings: [], met: 0, total: 0 };
+  let big;
+  let pct;
+  let foot;
+  let extra = "";
+  if (kind.key === "event" && campaign.eventPlan) {
+    const days = daysBetween(localISODate(), campaign.eventPlan.eventDate);
+    big = `${days > 1 ? esc(t("camp.kind.daysLeft", { n: days })) : days === 1 ? t("camp.kind.tomorrow") : days === 0 ? t("camp.kind.today") : t("camp.kind.past")}`;
+    pct = read.total ? read.met / read.total : 0;
+    foot = stage ? `${esc(t("gl.hero.phase", { n: autoIndex + 1, total: stages.length, name: stage.name }))} · ${esc(stage.dateLabel || "")} · ${esc(t("gl.hero.met", { met: read.met, total: read.total }))}` : "";
+  } else {
+    const head = stage ? campaignHeadline(campaign, stages, autoIndex, ctx) : null;
+    const r = head?.reading;
+    const hasTarget = !!r && !!r.target && !r.isCheck;
+    big = hasTarget
+      ? `${formatNumber(r.current)} <span class="gd-big-of">/ ${formatNumber(r.target)} ${esc(r.unit || "")}</span>`
+      : `${read.met} <span class="gd-big-of">/ ${read.total} ${t("gl.hero.targets")}</span>`;
+    pct = hasTarget ? Math.min(1, r.pct || 0) : read.total ? read.met / read.total : 0;
+    const left = hasTarget ? (r.current < r.target ? esc(t("camp.detail.remaining", { count: formatNumber(r.target - r.current), unit: r.unit })) : t("camp.detail.targetReached")) : "";
+    const src = r?.auto
+      ? `${esc(r.sourceLabel)}${r.updatedAt ? ` · <span class="${r.stale ? "cd-stale" : ""}">${esc(ageLabel(r.updatedAt))}</span>` : ""}`
+      : r ? t("camp.m.home.manual") : "";
+    foot = [hasTarget ? `${Math.round(pct * 100)}%` : "", left, src].filter(Boolean).join(" · ");
+    if (r?.home === "insights") extra = `<button type="button" class="gd-mini" data-cd-insights>${icon("refresh", { size: 12 })}${r.logged ? t("camp.m.update") : t("camp.m.fillInsights")}</button>`;
+    if (head) big = `<span class="gd-big-label">${esc(head.milestone.label)}</span>${big}`;
+  }
+  const levelChip = stage?.kind === "level" ? `<span class="gd-chip">${esc(t("camp.levelOf", { n: autoIndex + 1, total: stages.length }))} · ${esc(stage.name)}</span>` : "";
+  // Why the level isn't moving on yet, in one line (Pro's card, levelGateHTML,
+  // lists the steps — here they are right below, in the to-do).
+  let gate = "";
+  if (stage?.kind === "level" && stage.state === "current") {
+    const adv = ladderAdvanceState(campaign, stage, ctx);
+    const open = read.readings.filter((r) => r.milestone.required !== false && !r.milestone.notApplicable && !r.met).length;
+    if (adv.targetsMet && !adv.ready) gate = t("camp.gate.waitTitle", { weeks: adv.weeksLeft });
+    else if (!adv.targetsMet && open) gate = t("gl.hero.gate", { n: open });
+  }
+  return `
+    <section class="gd-hero" id="gd-hero">
+      <span class="gd-kind">${kindLabelHTML(campaign, kind)}</span>
+      <h1 class="gd-name" title="${esc(campaignDisplayName(campaign.name) || "")}">${esc(campaignDisplayName(campaign.name) || t("camp.untitled"))}</h1>
+      ${levelChip}
+      <div class="gd-big">${big}</div>
+      <div class="gd-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct * 100)}"><span style="width:${Math.round(pct * 100)}%"></span></div>
+      <div class="gd-foot"><span>${foot}</span>${extra}</div>
+      ${gate ? `<div class="gd-gate">${icon("lock", { size: 12 })}<span>${esc(gate)}</span></div>` : ""}
+      <div class="gd-hero-actions">
+        <button type="button" class="cl-cta gd-ideas-btn" id="gd-ideas" data-gd-ideas><span>${t("gl.ideas.btn")}</span><span class="cl-cta-dot">${icon("bulb", { size: 17 })}</span></button>
+      </div>
+      <span class="gd-art gl-pic" aria-hidden="true">${goalArtSVG(kind.key === "other" ? "social" : kind.key)}</span>
+    </section>`;
+}
+
+// One tile per number of the level/phase on view. Index = the reading's
+// index in stageRead.readings, so Pro's row handlers (data-cd-ms-*) work.
+function perfTileHTML(r, i, stage) {
+  const m = r.milestone;
+  const locked = stage.kind === "level" && stage.state === "locked";
+  const value = r.isCheck
+    ? `<span class="gd-tile-num is-word">${r.met ? t("camp.detail.done") : t("camp.detail.notYet")}</span>`
+    : `<span class="gd-tile-num">${formatNumber(r.current)}${r.target ? `<small> / ${formatNumber(r.target)}${r.unit && r.unit !== "Rp" ? ` ${esc(r.unit)}` : ""}</small>` : r.unit && r.unit !== "Rp" ? `<small> ${esc(r.unit)}</small>` : ""}</span>`;
+  const src = r.auto
+    ? r.updatedAt ? `<span class="${r.stale ? "cd-stale" : ""}">${esc(ageLabel(r.updatedAt))}</span>` : r.home === "insights" ? `<span class="cd-stale">${t("camp.m.notLogged")}</span>` : t("gl.tile.auto")
+    : r.updatedAt ? esc(ageLabel(r.updatedAt)) : t("gl.tile.manual");
+  const isIdentity = m.key === "concept" && m.track === "community";
+  const posts = !locked && PER_POST_METRICS.includes(m.metric) ? `<button type="button" class="gd-mini" data-cd-ms-posts="${i}">${t("camp.posts.button")}</button>` : "";
+  const label = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : r.action?.label;
+  const act = posts || (!locked && ((r.action && r.action.type !== "info") || isIdentity) ? `<button type="button" class="gd-mini" data-cd-ms-action="${i}">${esc(label)}</button>` : "");
+  const del = !locked && stage.kind === "window" ? `<button type="button" class="gd-tile-del" data-cd-ms-del="${i}" aria-label="${t("roadmap.ms.remove")}" title="${t("roadmap.ms.remove")}">${icon("x", { size: 12 })}</button>` : "";
+  return `
+    <div class="gd-tile is-${r.met ? "met" : r.pct > 0 ? "going" : "zero"}" data-milestone-index="${i}">
+      ${del}
+      <span class="gd-tile-label">${esc(m.label)}</span>
+      ${value}
+      <span class="gd-tile-bar"><span style="width:${Math.round((r.met ? 1 : Math.min(1, r.pct || 0)) * 100)}%"></span></span>
+      <span class="gd-tile-foot"><span class="gd-tile-src">${src}</span>${act}</span>
+    </div>`;
+}
+
+function perfSectionHTML({ campaign, stages, state, stageRead, autoIndex, ctx }) {
+  const stage = stages[state.stageIndex];
+  if (!stage) return "";
+  // The current level / an open phase: its ticks live in the to-do below.
+  const ticksInTodo = (stage.kind === "level" && stage.state === "current") || (stage.kind === "window" && stage.state !== "past");
+  const headId = stage.kind !== "window" && state.stageIndex === autoIndex ? campaignHeadline(campaign, stages, autoIndex, ctx)?.milestone.id : null;
+  const list = stageRead.readings
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !r.milestone.notApplicable && !r.milestone.delegatedTo && !(ticksInTodo && r.isCheck) && r.milestone.id !== headId);
+  const req = list.filter(({ r }) => r.milestone.required !== false);
+  const opt = list.filter(({ r }) => r.milestone.required === false);
+  const ticks = ticksInTodo ? stageRead.readings.filter((r) => r.isCheck && !r.milestone.notApplicable && !r.milestone.delegatedTo).length : 0;
+  const owners = [...new Map(stageRead.readings.filter((r) => r.milestone.delegatedTo).map((r) => [r.milestone.delegatedTo.id, r.milestone.delegatedTo])).values()];
+  const manualCount = stageRead.readings.filter((r) => !r.auto && !r.isCheck && !r.milestone.notApplicable && !r.milestone.delegatedTo).length;
+  const tile = ({ r, i }) => perfTileHTML(r, i, stage);
+  return `
+    <section class="gd-sec" id="gd-perf">
+      <div class="gd-sec-head"><h2>${t("gl.perf.title")}</h2>${stage.kind === "level" && stage.state === "locked" ? `<span class="gd-sec-note">${icon("lock", { size: 12 })}${t("camp.detail.locked")}</span>` : ""}</div>
+      ${stageNavHTML(stages, state.stageIndex, campaignActivities(campaign, ctx.content), ctx.content, campaign)}
+      ${list.length ? `<div class="gd-tiles" id="cd-milestones">${req.map(tile).join("")}</div>` : `<p class="gd-empty-line">${t(ticks ? "gl.perf.onlyTicks" : "gl.perf.none")}</p>`}
+      ${opt.length ? `<details class="gd-more"><summary>${t("camp.detail.optionalCount", { count: opt.length })}</summary><div class="gd-tiles">${opt.map(tile).join("")}</div></details>` : ""}
+      ${owners.map((o) => `<a class="cd-delegated" href="#" data-cd-delegated="${o.id}">${icon("link", { size: 13 })}<span>${esc(t("camp.detail.delegated", { count: stageRead.readings.filter((r) => r.milestone.delegatedTo?.id === o.id).length, name: o.name }))}</span>${icon("arrowRight", { size: 13 })}</a>`).join("")}
+      <div class="gd-perf-foot">
+        ${ticks ? `<span class="gd-sec-note">${icon("check", { size: 12 })}${t("gl.perf.ticksBelow", { n: ticks })}</span>` : "<span></span>"}
+        ${manualCount && !(stage.kind === "level" && stage.state === "locked") ? `<button type="button" class="gd-mini is-solid" id="cd-manual-all">${icon("edit", { size: 12 })}${t("gl.perf.log", { n: manualCount })}</button>` : ""}
+      </div>
+    </section>`;
+}
+
+function todoRowHTML(x, { done = false } = {}) {
+  const meta = [];
+  if (x.kind === "content") {
+    meta.push(t(`cw.step.${STEP_OF_STATUS[x.status] || "idea"}`));
+    if (x.date) meta.push(x.late ? t("gl.todo.late", { date: formatEventDate(x.date) }) : formatEventDate(x.date));
+    return `
+      <button type="button" class="gd-row is-content${x.late ? " is-late" : ""}${done ? " is-done" : ""}" data-cd-open-content="${x.id}">
+        <span class="gd-row-mark">${icon(FORMAT_ICON(x.format), { size: 14 })}</span>
+        <span class="gd-row-main"><b>${esc(x.label || t("common.untitled"))}</b><small>${esc(meta.join(" · "))}</small></span>
+        <span class="gd-row-go">${icon("arrowRight", { size: 14 })}</span>
+      </button>`;
+  }
+  if (x.stageName && x.stageKind === "window") meta.push(x.stageName);
+  if (x.date) meta.push(x.late ? t("gl.todo.late", { date: formatEventDate(x.date) }) : formatEventDate(x.date));
+  if (x.optional) meta.push(t("camp.optional").replace(/[()]/g, ""));
+  const canDel = !done && x.kind === "task" && (x.stageKind === "window" || x.custom);
+  return `
+    <div class="gd-row is-task${x.late ? " is-late" : ""}${done ? " is-done" : ""}">
+      <button type="button" class="gd-check${done ? " is-on" : ""}" data-gd-tick="${esc(x.id)}" aria-pressed="${done}" aria-label="${esc(done ? t("gl.todo.untick", { name: x.label }) : t("gl.todo.tick", { name: x.label }))}">${icon("check", { size: 13 })}</button>
+      <span class="gd-row-main"><b>${esc(x.label)}</b>${meta.length ? `<small>${esc(meta.join(" · "))}</small>` : ""}</span>
+      ${canDel ? `<button type="button" class="gd-row-x" data-gd-del="${esc(x.id)}" aria-label="${t("roadmap.ms.remove")}" title="${t("roadmap.ms.remove")}">${icon("x", { size: 12 })}</button>` : ""}
+    </div>`;
+}
+
+function ideaRowHTML(idea) {
+  return `
+    <div class="gd-row is-idea">
+      <span class="gd-row-mark">${icon("bulb", { size: 14 })}</span>
+      <span class="gd-row-main"><b>${esc(idea.text)}</b>${idea.description ? `<small>${esc(idea.description)}</small>` : ""}</span>
+      <span class="gd-row-acts">
+        <button type="button" class="gd-mini is-solid" data-gd-idea-content="${idea.id}">${icon("plus", { size: 12 })}${t("gl.idea.toContent")}</button>
+        <button type="button" class="gd-mini" data-gd-idea-task="${idea.id}">${icon("check", { size: 12 })}${t("gl.idea.toTask")}</button>
+        <button type="button" class="gd-row-x" data-idea-remove="${idea.id}" aria-label="${t("common.delete")}">${icon("x", { size: 12 })}</button>
+      </span>
+    </div>`;
+}
+
+// Both modes: Pemula's middle section, Pro's top of the Aktivitas tab.
+function todoSectionHTML({ campaign, todo, state, guided }) {
+  const { items, ideas, done } = todo;
+  const all = state.todoAll || items.length <= TODO_SHOWN + 2;
+  const shown = all ? items : items.slice(0, TODO_SHOWN);
+  const empty = !items.length && !ideas.length;
+  return `
+    <section class="gd-sec gd-todo${guided ? "" : " is-pro"}" id="gd-todo">
+      <div class="gd-sec-head"><h2>${t("gl.todo.title")}${items.length ? ` <span class="gd-count">${items.length}</span>` : ""}</h2></div>
+      ${empty ? `
+        <div class="gd-todo-empty">
+          <b>${t(done.length ? "gl.todo.allDone" : "gl.todo.emptyTitle")}</b>
+          <p>${t("gl.todo.emptyBody")}</p>
+        </div>` : ""}
+      ${shown.length ? `<div class="gd-list">${shown.map((x) => todoRowHTML(x)).join("")}</div>` : ""}
+      ${!all ? `<button type="button" class="gd-more-btn" data-gd-all>${t("gl.todo.all", { n: items.length })}${icon("chevronDown", { size: 13 })}</button>` : ""}
+      ${ideas.length ? `
+        <div class="gd-ideas-group">
+          <div class="gd-group-head">${icon("bookmark", { size: 13 })}<b>${t("gl.todo.ideasTitle")}</b><span>${t("gl.todo.ideasSub")}</span></div>
+          <div class="gd-list">${ideas.map(ideaRowHTML).join("")}</div>
+        </div>` : ""}
+      <div class="gd-todo-foot">
+        <button type="button" class="gd-add" data-gd-add="content">${icon("plus", { size: 13 })}${t("gl.todo.addContent")}</button>
+        <button type="button" class="gd-add" data-gd-add="task">${icon("plus", { size: 13 })}${t("gl.todo.addTask")}</button>
+        <button type="button" class="gd-add is-ideas" data-gd-ideas>${icon("bulb", { size: 13 })}${t("gl.ideas.btn")}</button>
+      </div>
+      ${done.length ? `<details class="gd-done"><summary>${t("gl.todo.done", { n: done.length })}</summary><div class="gd-list">${done.slice(0, 12).map((x) => todoRowHTML(x, { done: true })).join("")}</div></details>` : ""}
+    </section>`;
+}
+
+function guidedPageHTML({ brandId, campaign, stages, autoIndex, state, stageRead, ctx, todo, goal }) {
+  const kind = kindOf(campaign);
+  const celebrate = state.celebrateIndex !== undefined && state.celebrateIndex !== null && stages[state.celebrateIndex]?.state === "completed" ? celebrateHTML(stages[state.celebrateIndex], stages[state.celebrateIndex + 1]) : "";
+  return `
+    <div class="gd" style="${kindVars(kind)}">
+      <div class="gd-top">
+        <a class="cl-backpill gd-back" href="#/brand/${brandId}/campaigns" aria-label="${esc(t("camp.detail.allCampaigns"))}">
+          ${icon("chevronLeft", { size: 16 })}
+          <span class="cl-backpill-art gl-pic">${goalArtSVG(kind.key === "other" ? "social" : kind.key)}</span>
+          <span>${t("app.goals.name")}</span>
+        </a>
+        <span class="gd-top-help">${guideVideoButtonHTML("campaign-detail")}</span>
+        <button class="icon-btn" id="cd-more" aria-label="${t("camp.detail.more")}" style="width:36px;height:36px;">${icon("dots", { size: 16 })}</button>
+      </div>
+      ${eventTabsHTML(brandId, goal, campaign.id)}
+      ${guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind })}
+      ${celebrate}
+      ${perfSectionHTML({ campaign, stages, state, stageRead, autoIndex, ctx })}
+      ${todoSectionHTML({ campaign, todo, state, guided: true })}
+    </div>`;
+}
+
+// The to-do's own buttons, and "Kasih ide" (hero + list foot), both modes.
+function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh, ctxLabel, state, todo, goal }) {
+  const find = (id) => [...todo.items, ...todo.done].find((x) => x.id === id);
+  const stageOf = (x) => stages.find((s) => s.id === x.stageId) || stage;
+  qsa("[data-gd-ideas]", root).forEach((b) => b.addEventListener("click", () => {
+    if (isTourDemo()) return toast(DEMO_TOAST);
+    const live = stages[activeStageIndex(campaign, stages, ctx.content)] || stage;
+    openGoalIdeasChat({
+      campaignId: campaign.id, stageId: live?.id || null,
+      seed: t(campaign.eventPlan ? "gl.ideas.seedEvent" : "gl.ideas.seed", { name: campaignDisplayName(campaign.name) || "", stage: live?.name || "" }),
+    });
+  }));
+  qs("[data-gd-all]", root)?.addEventListener("click", () => { state.todoAll = true; refresh(); });
+  qsa("[data-gd-tick]", root).forEach((b) => b.addEventListener("click", () => {
+    const x = find(b.dataset.gdTick);
+    if (!x) return;
+    if (x.kind === "goalTask") {
+      const g = getGoal(brandId, x.goalId);
+      if (!g) return;
+      updateGoal(brandId, g.id, { tasks: (g.tasks || []).map((tk) => (tk.id === x.taskId ? { ...tk, done: !tk.done } : tk)) });
+      toast(t(x.done ? "camp.detail.unticked" : "camp.detail.ticked"));
+      refresh();
+      return;
+    }
+    runAction({ type: "manual", milestoneId: x.milestoneId }, { brandId, brand, campaign, stage: stageOf(x), stages, ctx, refresh, ctxLabel });
+  }));
+  qsa("[data-gd-del]", root).forEach((b) => b.addEventListener("click", async () => {
+    const x = find(b.dataset.gdDel);
+    if (!x || x.kind !== "task") return;
+    const ok = await confirmDialog({ title: t("camp.detail.deleteMilestoneTitle"), message: t("camp.detail.deleteMilestoneMsg", { name: esc(x.label) }), confirmLabel: t("common.delete"), danger: true });
+    if (!ok) return;
+    patchMilestone(campaign, stageOf(x), x.milestoneId, null);
+    refresh();
+  }));
+  qsa("[data-gd-add]", root).forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.gdAdd === "content") runAction({ type: "new-content" }, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel });
+    else openGoalTaskDialog({ campaign, onDone: refresh });
+  }));
+  qsa("[data-gd-idea-content]", root).forEach((b) => b.addEventListener("click", () => {
+    const idea = todo.ideas.find((i) => i.id === b.dataset.gdIdeaContent);
+    if (!idea) return;
+    draftFromIdea(brandId, idea, { campaignId: campaign.id });
+    toast(t("gl.idea.contentToast", { title: idea.text }));
+    refresh();
+  }));
+  qsa("[data-gd-idea-task]", root).forEach((b) => b.addEventListener("click", () => {
+    const idea = todo.ideas.find((i) => i.id === b.dataset.gdIdeaTask);
+    if (!idea) return;
+    openGoalTaskDialog({ campaign, title: idea.text, why: idea.description || "", onDone: (res) => {
+      updateBrandIdea(brandId, idea.id, { status: "tasked", taskId: res.milestone.id });
+      refresh();
+    } });
+  }));
+}
+
+// "+ Tugas" and an idea's "Jadikan tugas": the step's words, and — for an
+// Event — which phase it belongs to, picked by the owner (never guessed).
+function openGoalTaskDialog({ campaign, title = "", why = "", onDone = () => {} }) {
+  const places = goalTaskPlaces(campaign);
+  const overlay = openModal({
+    title: t("gl.task.title"),
+    bodyHTML: `
+      <div class="field"><label for="gd-task-name">${t("gl.task.name")}</label><input class="input" id="gd-task-name" maxlength="120" autocomplete="off" value="${esc(title)}" placeholder="${esc(t(campaign.eventPlan ? "gl.task.phEvent" : "gl.task.ph"))}" /></div>
+      ${places.length ? `<div class="field" style="margin-bottom:0;"><label id="gd-task-phase-label">${t("gl.task.phase")}</label>
+        <div class="chip-select gd-phase-pick" id="gd-task-phase" role="radiogroup" aria-labelledby="gd-task-phase-label">${places.map((p, i) => `<button type="button" role="radio" data-phase="${esc(p.id)}" class="${i === 0 ? "active" : ""}" aria-checked="${i === 0}">${esc(phaseNameLabel(p.name))}<small>${esc(formatEventDate(p.dateFrom))}–${esc(formatEventDate(p.dateTo))}</small></button>`).join("")}</div></div>` : `<p class="hint" style="margin:0;">${icon("info", { size: 12 })}<span>${t("gl.task.levelNote")}</span></p>`}`,
+    footHTML: `<button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button><button class="btn btn-primary" data-save>${icon("check", { size: 14 })}${t("gl.task.add")}</button>`,
+    onMount: (el) => setTimeout(() => el.querySelector("#gd-task-name")?.focus(), 30),
+  });
+  let phaseId = places[0]?.id || null;
+  qsa("[data-phase]", overlay).forEach((b) => b.addEventListener("click", () => {
+    phaseId = b.dataset.phase;
+    qsa("[data-phase]", overlay).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
+  }));
+  overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
+  const save = () => {
+    const input = overlay.querySelector("#gd-task-name");
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    const res = addGoalTask(campaign.id, { title: name, why, phaseId });
+    if (!res.ok) { toast(t("bs.failed"), "error"); return; }
+    closeOverlay(overlay);
+    toast(t("gl.task.toast", { where: phaseNameLabel(res.where || "") }));
+    onDone(res);
+  };
+  overlay.querySelector("[data-save]").addEventListener("click", save);
+  overlay.querySelector("#gd-task-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
 }
 
 // ---------- Blocks ----------
@@ -1138,10 +1457,6 @@ function ladderRulesHTML(campaign, stage, guided) {
   return `<details class="cd-rules guided-rules"><summary>${t("camp.detail.rules")}</summary>${rules.map((r) => `<p>${esc(r)}</p>`).join("")}</details>`;
 }
 
-// Pemula's one door out of this page: the Brainstorm partner scoped to
-// this campaign (same chat as Pro's "Diskusi dulu" / "Brainstorm konten"
-// buttons — js/views/chat.js is one component, this is just the entry).
-// Keeps #cd-brainstorm so the campaign tour step still finds it.
 // ---------- Pro: Pulse strip, toolbar, tabs ----------
 // Weekly published count for the campaign's content pool over the last
 // `weeks` weeks (oldest → this week). Week buckets end today, so the last
@@ -1243,48 +1558,6 @@ function proTabsHTML(campaign, stages, acts, current, brandId) {
   return `
     <div class="segmented cd-tabs" role="tablist">
       ${proTabList(campaign, stages).map((k) => `<button type="button" role="tab" aria-selected="${k === current}" class="${k === current ? "active" : ""}" data-cd-tab="${k}">${t(`camp.tabs.${k}`)}${count[k] ? `<span class="cd-tab-count">${count[k]}</span>` : ""}</button>`).join("")}
-    </div>`;
-}
-
-// The card also lists the ideas kept for this campaign (the ideas inbox,
-// brand.ideas[] filtered to this campaign's id — what "Simpan" in that
-// chat writes, see js/consultant-panel.js saveIdeaScoped), so the loop
-// closes on this page: brainstorm → save → see it here next to the
-// milestones.
-function brainstormCardHTML(campaign, state, brandId) {
-  const ideas = listBrandIdeas(brandId, { campaignId: campaign.id });
-  const trackCls = ideaTrackClass(campaign);
-  return `
-    <div class="section-title" style="margin-top:28px;"><h2>${t("camp.guided.bsTitle")}</h2><span class="text-faint" style="font-size:12px;">${t("camp.guided.bsSub")}</span></div>
-    <div class="card glass-card cd-next cd-brainstorm-card" id="cd-brainstorm-card">
-      <h3 class="cd-next-title">${t("camp.bsCard.title")}</h3>
-      <p class="cd-next-why">${t("camp.bsCard.body")}</p>
-      <div class="cd-next-actions">
-        <button type="button" class="btn btn-primary glow" id="cd-brainstorm" data-cd-brainstorm style="--glow-color: color-mix(in srgb, var(--accent) 55%, transparent);">${icon("bulb", { size: 14 })}${t("camp.bsCard.btn")}${icon("arrowRight", { size: 14 })}</button>
-      </div>
-      <div class="cd-bs-ideas">
-        <div class="cd-bs-ideas-head">${icon("bookmark", { size: 13 })}<b>${t("camp.bsCard.ideasTitle")}</b><span class="text-faint">${ideas.length ? t("camp.ideas.summary", { count: ideas.length }) : ""}</span></div>
-        <div class="cd-idea-bubbles" id="cd-idea-kept">
-          ${ideas.length ? ideas.map((idea) => ideaBubbleHTML(idea, state, trackCls)).join("") : `<p class="text-faint cd-idea-empty">${t("camp.bsCard.ideasEmpty")}</p>`}
-        </div>
-      </div>
-    </div>`;
-}
-
-// Pemula's "what is this page for" strip, right under the title: two
-// things and only two — follow the milestones, brainstorm ideas — so the
-// page's purpose is never a guess.
-function guidedIntroHTML() {
-  return `
-    <div class="cd-guided-intro">
-      <div class="cd-guided-intro-item">
-        <span class="cd-guided-intro-n">1</span>
-        <div><b>${t("camp.guided.intro1Title")}</b><p>${t("camp.guided.intro1Body")}</p></div>
-      </div>
-      <div class="cd-guided-intro-item">
-        <span class="cd-guided-intro-n">2</span>
-        <div><b>${t("camp.guided.intro2Title")}</b><p>${t("camp.guided.intro2Body")}</p></div>
-      </div>
     </div>`;
 }
 
