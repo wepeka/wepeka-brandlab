@@ -149,16 +149,20 @@ body{
    spotlight — their own backdrop-blur picks this color up too. Kept
    noticeably fainter in light theme, where most of what sits on top is
    still plain readable text/forms, not glass. */
-body.has-brand-tint{
+/* The wash lives on a fixed layer behind the page: painted on <body> itself
+   it tiled once per screen height (the background repeats over the whole
+   canvas), so a long page showed hard seams where the glow restarted —
+   the owner saw "garis-garis, background-nya kepotong" (2026-10-27). */
+body.has-brand-tint{ background: #060605; }
+body.has-brand-tint::before{
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
   background:
     radial-gradient(1300px 650px at 14% -10%, color-mix(in srgb, var(--brand-tint) 18%, transparent), transparent 58%),
-    radial-gradient(1000px 800px at 100% 45%, color-mix(in srgb, var(--brand-tint) 9%, transparent), transparent 60%),
-    #060605;
+    radial-gradient(1000px 800px at 100% 45%, color-mix(in srgb, var(--brand-tint) 9%, transparent), transparent 60%);
 }
-:root[data-theme="light"] body.has-brand-tint{
-  background:
-    radial-gradient(1100px 550px at 12% -8%, color-mix(in srgb, var(--brand-tint) 10%, transparent), transparent 60%),
-    var(--bg);
+:root[data-theme="light"] body.has-brand-tint{ background: var(--bg); }
+:root[data-theme="light"] body.has-brand-tint::before{
+  background: radial-gradient(1100px 550px at 12% -8%, color-mix(in srgb, var(--brand-tint) 10%, transparent), transparent 60%);
 }
 
 /* All-brands home — the same indigo/violet wash as wepeka.com's own
