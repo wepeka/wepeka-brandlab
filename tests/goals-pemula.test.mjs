@@ -172,3 +172,33 @@ describe("pictures and words", () => {
   });
 });
 
+
+describe("the level's tree (js/goal-tree.js)", () => {
+  test("nodes sit on an arc over the trunk, mirrored left/right, inside the picture", async () => {
+    const { treeNodePos } = await import("../js/goal-tree.js");
+    assert.deepEqual(treeNodePos(0, 1), { x: 500, y: 150 });
+    for (const n of [2, 5, 8]) {
+      const pts = Array.from({ length: n }, (_, k) => treeNodePos(k, n));
+      pts.forEach((p, k) => {
+        assert.ok(p.x >= 100 && p.x <= 900 && p.y >= 100 && p.y <= 340, `${n}:${k}`);
+        assert.equal(p.x - 500, 500 - pts[n - 1 - k].x);
+        assert.equal(p.y, pts[n - 1 - k].y);
+      });
+    }
+  });
+  test("a reached target bears fruit, one under way grows a ring, an untouched one is a bud; the tapped one is marked", async () => {
+    const { goalTreeSVG } = await import("../js/goal-tree.js");
+    const svg = goalTreeSVG([
+      { i: 0, pct: 1, met: true, value: "152/152" },
+      { i: 3, pct: 0.4, met: false, value: "8/39" },
+      { i: 5, pct: 0, met: false, value: "<b>" },
+    ], { selected: 3 });
+    assert.equal((svg.match(/class="gt-fruit"/g) || []).length, 1);
+    assert.equal((svg.match(/class="gt-ring-fill"/g) || []).length, 1);
+    assert.equal((svg.match(/class="gt-bud"/g) || []).length, 1);
+    assert.equal((svg.match(/class="gt-fill"/g) || []).length, 2, "no wood grows on an untouched branch");
+    assert.match(svg, /is-sel" style="--k:1;"[^>]*data-tree-node="3"/);
+    assert.ok(svg.includes("&lt;b&gt;") && !svg.includes("<b>"));
+    assert.equal(goalTreeSVG([]), "");
+  });
+});
