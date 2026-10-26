@@ -24,6 +24,8 @@ export default {
   "cl.continue": { en: "Continue", id: "Lanjutkan" },
   "cal.x.add": { en: "Add", id: "Tambah" },
   "cal.x.count": { en: "{n} pieces", id: "{n} konten" },
+  "cal.x.addOn": { en: "Add a piece on {day}", id: "Tambah konten hari {day}" },
+  "cal.x.scriptsDesc": { en: "Every script of a week as one PDF.", id: "Semua script seminggu jadi satu PDF." },
   "cal.x.emptyPast": { en: "Nothing that day", id: "Kosong" },
   "cl.peek.empty": { en: "Nothing here yet — start with New content", id: "Belum ada — mulai dari Konten baru" },
   "cl.peek.seriesNone": { en: "Make your first series here", id: "Bikin seri pertamamu di sini" },

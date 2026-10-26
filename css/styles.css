@@ -7619,12 +7619,32 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
   .calx-head-help .page-help-btn span{ display:none; }
   .cal-head .cal-nav{ gap:6px; }
   .cal-head #cal-today{ padding-left:10px; padding-right:10px; }
-  .calx-head .cal-head-actions{ width:100%; }
-  .calx-head .cal-head-actions .cl-cta{ order:-1; width:100%; justify-content:space-between; }
-  .calx-head .cal-head-actions > .btn{ flex:1 1 0; }
+  .calx-head .cal-head-actions{ width:100%; flex-wrap:nowrap; }
+  .calx-head .cal-head-actions .cl-cta{ order:-1; flex:1 1 auto; justify-content:space-between; }
+  .calx-head .cal-head-actions > .btn{ flex:none; min-height:48px; padding:0 14px; border-radius:999px; }
+  .calx-head .calx-bank-label{ display:none; }
   .cal-month-label{ font-size:19px; }
 }
 @media (prefers-reduced-motion: reduce){
   .calx-head-art svg, .calx-day.is-flash, .calx-daypanel{ animation:none; }
+}
+/* Kalender, Pemula — calmer (owner: "kok kelihatan crowded dan rame
+   banget"): a card is its title and one step dot; a day adds with a small +. */
+.calx-card.is-simple{ flex-direction:column; align-items:stretch; gap:5px; padding:9px 11px 9px 14px; }
+.calx-card.is-simple .calx-card-title{ font-size:13px; }
+.calx-step{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color: var(--text-muted); }
+.calx-step i{ width:7px; height:7px; border-radius:50%; background: var(--stage); }
+.calx-day-add{ margin-left:auto; display:grid; place-items:center; width:28px; height:28px; border:0; border-radius:50%; background: var(--surface-2); color: var(--text-muted); cursor:pointer;
+  transition: background .2s ease, color .2s ease, transform .3s var(--ease-spring); }
+.calx-day-add:hover{ background: color-mix(in srgb, #36D27F 30%, var(--surface-2)); color: var(--text); transform: rotate(90deg); }
+.calx-more{ width:40px; height:40px; border-radius:50%; background: var(--surface); }
+/* A phone skips the days already gone by with nothing on them. */
+@media (max-width: 899px){ .calx-day.is-past.is-empty{ display:none; } }
+.calx-head .calx-head-row h1{ margin-right:2px; }
+@media (min-width: 900px){
+  .calx-day{ position:relative; min-height:190px; }
+  .calx-day .calx-day-add{ position:absolute; top:10px; right:10px; opacity:.55; }
+  .calx-day:hover .calx-day-add{ opacity:1; }
+  .calx-day.is-past{ opacity:.55; }
 }
 /* ======================= end CREATE FOR PEMULA ======================= */

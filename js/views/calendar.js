@@ -72,6 +72,17 @@ function pieceCardHTML(c, campaignById, state) {
   const campaign = c.campaignId ? campaignById.get(c.campaignId) : null;
   const meta = [c.platform, c.format, campaign ? campaignDisplayName(campaign.name) : ""].filter(Boolean).map(escapeHtml).join(" · ");
   const done = c.status === "published";
+  // Pemula: the title and where it is (a dot + the step), nothing else.
+  if (guidedNow()) {
+    return `
+    <div class="calx-card is-simple ${done ? "is-done" : ""} ${isSlotItem(c) ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" data-id="${escapeHtml(c.id)}" draggable="${done ? "false" : "true"}" style="--stage:${stageColor(c.status)};" title="${escapeHtml([c.title, meta].filter(Boolean).join(" · "))}">
+      <span class="calx-card-bar" aria-hidden="true"></span>
+      <span class="calx-card-main">
+        <span class="calx-card-title">${escapeHtml(c.title || t("common.untitled"))}</span>
+        <span class="calx-step">${done ? icon("check", { size: 11 }) : `<i aria-hidden="true"></i>`}${escapeHtml(stageLabel(c))}</span>
+      </span>
+    </div>`;
+  }
   return `
     <div class="calx-card ${done ? "is-done" : ""} ${isSlotItem(c) ? "is-slot" : ""} ${state.highlightId === c.id ? "is-highlight" : ""}" data-id="${escapeHtml(c.id)}" draggable="${done ? "false" : "true"}" style="--stage:${stageColor(c.status)};">
       <span class="calx-card-bar" aria-hidden="true"></span>
@@ -187,7 +198,10 @@ export function render(root, { brandId }) {
   // day, too narrow to read a title. Month stays one tap away (and is used
   // when placing a piece from the Bank).
   const narrow = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
-  const state = { view: narrow ? "week" : "month", cursor: new Date(), highlightId: null, bankOpen: readBankOpen(), bankCampaignId: null, placingId: null };
+  // Pemula opens on the week planner, the Bank closed (owner, 2026-10-27:
+  // "kok kelihatan crowded dan rame banget") — both one tap away.
+  const guided = getMode() === "guided";
+  const state = { view: narrow || guided ? "week" : "month", cursor: new Date(), highlightId: null, bankOpen: guided ? false : readBankOpen(), bankCampaignId: null, placingId: null };
   // Arriving from a campaign ("Jadwalkan …"): jump to that piece's month,
   // or — when it has no date yet — open the Bank on it, scoped to that
   // campaign, so it can be dragged (or tapped) onto a day.
@@ -659,10 +673,12 @@ function paint(root, brandId, state, refresh) {
   const goalWeek = goalWeekSummary(brandId);
 
   const guided = guidedNow();
+  // Pemula: two buttons up top; "Atur jadwal" and "Unduh script" wait in
+  // the ⋯ beside the view switch.
   const actions = `
       <div class="flex gap-8 cal-head-actions">
-        <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}">${icon("layers", { size: 15 })}${t("calendar.contentBankBtn")}${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
-        <button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>
+        <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}" title="${escapeHtml(t("calendar.contentBankBtn"))}">${icon("layers", { size: 15 })}<span class="calx-bank-label">${t("calendar.contentBankBtn")}</span>${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
+        ${guided ? "" : `<button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>`}
         ${guided
           ? `<button type="button" class="cl-cta" id="new-content"><span>${t("calendar.newContentBtn")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>`
           : `<button class="btn btn-primary" id="new-content">${icon("plus", { size: 16 })}${t("calendar.newContentBtn")}</button>`}
@@ -674,8 +690,7 @@ function paint(root, brandId, state, refresh) {
       <div class="calx-head-title">
         <span class="calx-head-art cl-pic">${createArtSVG("calendar")}</span>
         <div class="calx-head-text">
-          <div class="calx-head-row"><h1>${t("contentOs.tab.calendar")}</h1><span class="calx-head-help">${helpButtonHTML("calendar")}${guideVideoButtonHTML("calendar")}</span></div>
-          <p class="calx-head-what">${t("calendar.whatGuided")}</p>
+          <div class="calx-head-row"><h1>${t("contentOs.tab.calendar")}</h1><span class="calx-head-help">${guideVideoButtonHTML("calendar")}</span></div>
         </div>
       </div>
       ${actions}
@@ -695,12 +710,13 @@ function paint(root, brandId, state, refresh) {
         <button class="icon-btn" id="cal-next" aria-label="${t("calendar.nextPeriod")}">${icon("chevronRight", { size: 16 })}</button>
         <button class="btn btn-secondary btn-sm" id="cal-today">${t("calendar.today")}</button>
       </div>
-      ${goalWeek ? `<a class="cal-goalchip" href="#/brand/${brandId}/goals" title="${escapeHtml(t("roadmap.cal.goalChip"))}">${icon("target", { size: 12 })}${t("roadmap.cal.weekChip", { slots: goalWeek.slots, deadlines: goalWeek.deadlines })}</a>` : ""}
+      ${goalWeek && !guided ? `<a class="cal-goalchip" href="#/brand/${brandId}/goals" title="${escapeHtml(t("roadmap.cal.goalChip"))}">${icon("target", { size: 12 })}${t("roadmap.cal.weekChip", { slots: goalWeek.slots, deadlines: goalWeek.deadlines })}</a>` : ""}
       <div class="cal-head-end">
-        <button type="button" class="btn btn-ghost btn-sm" id="cal-scripts">${icon("download", { size: 13 })}${t("cr.bulk.open")}</button>
+        ${guided ? "" : `<button type="button" class="btn btn-ghost btn-sm" id="cal-scripts">${icon("download", { size: 13 })}${t("cr.bulk.open")}</button>`}
         <div class="segmented" style="width:150px;">
-          ${["month", "week"].map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
+          ${(guided ? ["week", "month"] : ["month", "week"]).map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
         </div>
+        ${guided ? `<button type="button" class="icon-btn calx-more" id="cal-schedule" aria-haspopup="menu" aria-label="${escapeHtml(t("cal.schedule.btn"))}" title="${escapeHtml(t("cal.schedule.btn"))}">${icon("dots", { size: 16 })}</button>` : ""}
       </div>
     </div>
     ${state.placingId ? placingBarHTML(state, brandId) : ""}
@@ -721,7 +737,7 @@ function paint(root, brandId, state, refresh) {
     e.stopPropagation();
     const btn = e.currentTarget;
     const rect = btn.getBoundingClientRect();
-    const menu = openMenu(btn, { className: "sched-menu", top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 328) });
+    const menu = openMenu(btn, { className: "sched-menu", top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - 328)) });
     if (!menu) return;
     const option = (act, id, ic, title, desc, cost) => `
       <button type="button" data-act="${act}" ${id ? `id="${id}"` : ""}>
@@ -732,7 +748,7 @@ function paint(root, brandId, state, refresh) {
       ${option("week", "", "sparkle", t("chat.week.button"), t("cal.schedule.weekDesc"), t("chat.week.cost"))}
       ${option("autoschedule", "ai-autoschedule", "bot", t("calendar.autoscheduleBtn"), t("cal.schedule.autoDesc"), t("chat.week.cost"))}
       ${option("cadence", "edit-cadence", "gear", t("calendar.editCadenceBtn"), t("cal.schedule.cadenceDesc"), t("cal.schedule.noAi"))}
-      <p class="sched-menu-note">${t("cal.schedule.manual")}</p>
+      ${guided ? option("scripts", "", "download", t("cr.bulk.open"), t("cal.x.scriptsDesc"), t("cal.schedule.noAi")) : `<p class="sched-menu-note">${t("cal.schedule.manual")}</p>`}
       <div class="menu-divider"></div>
       <button type="button" data-act="clear" id="clear-month" class="danger">
         ${icon("trash", { size: 16 })}
@@ -747,11 +763,12 @@ function paint(root, brandId, state, refresh) {
       else if (act === "autoschedule") runAutoSchedule(brandId, refresh);
       else if (act === "cadence") openContentCadenceSetup(brand);
       else if (act === "clear") openClearMonth(brandId, state.cursor, refresh);
+      else if (act === "scripts") openScriptBulkPdf({ brandId, week: state.view === "week" ? iso(state.cursor) : "this" });
     });
   });
   // Every script of a week as one PDF: the week on screen in Minggu view,
   // else this week (the picker can switch to any date or next week).
-  qs("#cal-scripts").addEventListener("click", () => {
+  qs("#cal-scripts")?.addEventListener("click", () => {
     openScriptBulkPdf({ brandId, week: state.view === "week" ? iso(state.cursor) : "this" });
   });
   wireHelpButtons(root);
@@ -1052,13 +1069,14 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
           <span class="calx-day-num">${escapeHtml(formatCellDate(k).split(", ").pop())}</span>
           ${k === todayISO ? `<span class="calx-today-chip">${t("calendar.today")}</span>` : ""}
           ${holiday ? `<span class="calx-holiday">${escapeHtml(holiday.label)}</span>` : ""}
-          ${list.length ? `<span class="calx-day-count">${t("cal.x.count", { n: list.length })}</span>` : ""}
+          ${list.length && !guidedNow() ? `<span class="calx-day-count">${t("cal.x.count", { n: list.length })}</span>` : ""}
+          ${guidedNow() && !past ? `<button type="button" class="calx-day-add" data-add-date="${k}" aria-label="${escapeHtml(t("cal.x.addOn", { day: longDay(k) }))}" title="${escapeHtml(t("cal.x.add"))}">${icon("plus", { size: 14 })}</button>` : ""}
         </div>
         <div class="calx-day-items">
           ${dl.map((x) => deadlineCardHTML(x, brandId)).join("")}
           ${list.map((c) => pieceCardHTML(c, campaignById, state)).join("")}
           ${ghost ? seriesGhostHTML(k, ghost) : ""}
-          ${past ? (empty ? `<p class="calx-empty">${t("cal.x.emptyPast")}</p>` : "") : `<button type="button" class="calx-add" data-add-date="${k}">${icon("plus", { size: 14 })}${t("cal.x.add")}</button>`}
+          ${guidedNow() ? "" : past ? (empty ? `<p class="calx-empty">${t("cal.x.emptyPast")}</p>` : "") : `<button type="button" class="calx-add" data-add-date="${k}">${icon("plus", { size: 14 })}${t("cal.x.add")}</button>`}
         </div>
       </section>`;
   }).join("");
