@@ -130,8 +130,8 @@ function buildDetailSteps(campaign) {
         : t("guide.camp.stages.phase.body"),
     },
     {
-      selector: "#cd-milestones .cd-row:nth-child(1), #cd-milestones .gd-tile:nth-child(1)",
-      showIf: has("#cd-milestones .cd-row, #cd-milestones .gd-tile"),
+      selector: "#cd-milestones .cd-row:nth-child(1), #cd-milestones .gd-tile:nth-child(1), .gd .gt",
+      showIf: has("#cd-milestones .cd-row, #cd-milestones .gd-tile, .gd .gt"),
       title: t("guide.camp.milestones.title"),
       body: t("guide.camp.milestones.body"),
     },

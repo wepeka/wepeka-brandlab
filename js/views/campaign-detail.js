@@ -40,6 +40,7 @@ import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
 import { goalTodo, goalKind } from "../goal-todo.js";
 import { goalArtSVG, goalKindByKey } from "../goal-art.js";
+import { goalTreeSVG, wireGoalTree } from "../goal-tree.js";
 import { addGoalTask, goalTaskPlaces } from "../goal-actions.js";
 import { draftFromIdea } from "../idea-draft.js";
 import { openGoalIdeasChat } from "../consultant-panel.js";
@@ -159,7 +160,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
           ${stage ? `<button type="button" class="btn btn-ghost btn-sm" id="cd-add-milestone">${icon("plus", { size: 13 })}${t("camp.detail.addMilestone")}</button>` : ""}
         </div>
       </div>
-      ${isLadder ? missionTreeHTML(stage, stageRead.readings) : ""}
+      ${isLadder ? goalTreeSectionHTML({ stage, stageRead, state, kind: kindOf(campaign) }) : ""}
       ${milestoneListHTML(stageRead.readings, stage, false)}
       ${ladderRulesHTML(campaign, stage, false)}
     </div>
@@ -235,20 +236,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       openMilestoneMenu(btn, stageRead.readings[Number(btn.dataset.cdMsMenu)], { campaign, stage, refresh });
     })
   );
-  // Phone widths: the tree is wider than the screen (see .cd-tree
-  // min-width) — start it scrolled to the middle so the trunk is centred
-  // and both halves of the canopy peek in, instead of opening on branch 1.
-  const treeScroll = qs(".cd-tree-scroll", root);
-  if (treeScroll) treeScroll.scrollLeft = Math.max(0, (treeScroll.scrollWidth - treeScroll.clientWidth) / 2);
-  qsa(".mission-node", root).forEach((node) =>
-    node.addEventListener("click", () => {
-      const row = qs(`.cd-row[data-milestone-index="${node.dataset.milestoneIndex}"]`, root);
-      if (!row) return;
-      qsa(".cd-row.is-highlight", root).forEach((r) => r.classList.remove("is-highlight"));
-      row.classList.add("is-highlight");
-      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    })
-  );
+  wireGoalTree(root, { onSelect: (i) => { if (stage) { state.treeSel = state.treeSel || {}; state.treeSel[stage.id] = i; } } });
   qs("[data-cd-insights]", root)?.addEventListener("click", () => run({ type: "insights" }));
   qs("#cd-manual-all", root)?.addEventListener("click", () => openManualSheet({ campaign, stage, ctx, refresh }));
   qsa("[data-cd-brainstorm]", root).forEach((btn) => btn.addEventListener("click", () => goBrainstorm({ brandId, campaign, stage, ctxLabel })));
@@ -368,6 +356,15 @@ function guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind }) {
     </section>`;
 }
 
+// A target's one button: its posts (per-post targets), else its action.
+function msActionHTML(r, i, stage) {
+  const m = r.milestone;
+  const isIdentity = m.key === "concept" && m.track === "community";
+  if (PER_POST_METRICS.includes(m.metric)) return `<button type="button" class="gd-mini" data-cd-ms-posts="${i}">${t("camp.posts.button")}</button>`;
+  const label = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : r.action?.label;
+  return (r.action && r.action.type !== "info") || isIdentity ? `<button type="button" class="gd-mini" data-cd-ms-action="${i}">${esc(label)}</button>` : "";
+}
+
 // One tile per number of the level/phase on view. Index = the reading's
 // index in stageRead.readings, so Pro's row handlers (data-cd-ms-*) work.
 function perfTileHTML(r, i, stage) {
@@ -379,10 +376,7 @@ function perfTileHTML(r, i, stage) {
   const src = r.auto
     ? r.updatedAt ? `<span class="${r.stale ? "cd-stale" : ""}">${esc(ageLabel(r.updatedAt))}</span>` : r.home === "insights" ? `<span class="cd-stale">${t("camp.m.notLogged")}</span>` : t("gl.tile.auto")
     : r.updatedAt ? esc(ageLabel(r.updatedAt)) : t("gl.tile.manual");
-  const isIdentity = m.key === "concept" && m.track === "community";
-  const posts = !locked && PER_POST_METRICS.includes(m.metric) ? `<button type="button" class="gd-mini" data-cd-ms-posts="${i}">${t("camp.posts.button")}</button>` : "";
-  const label = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : r.action?.label;
-  const act = posts || (!locked && ((r.action && r.action.type !== "info") || isIdentity) ? `<button type="button" class="gd-mini" data-cd-ms-action="${i}">${esc(label)}</button>` : "");
+  const act = locked ? "" : msActionHTML(r, i, stage);
   const del = !locked && stage.kind === "window" ? `<button type="button" class="gd-tile-del" data-cd-ms-del="${i}" aria-label="${t("roadmap.ms.remove")}" title="${t("roadmap.ms.remove")}">${icon("x", { size: 12 })}</button>` : "";
   return `
     <div class="gd-tile is-${r.met ? "met" : r.pct > 0 ? "going" : "zero"}" data-milestone-index="${i}">
@@ -413,8 +407,12 @@ function perfSectionHTML({ campaign, stages, state, stageRead, autoIndex, ctx })
     <section class="gd-sec" id="gd-perf">
       <div class="gd-sec-head"><h2>${t("gl.perf.title")}</h2>${stage.kind === "level" && stage.state === "locked" ? `<span class="gd-sec-note">${icon("lock", { size: 12 })}${t("camp.detail.locked")}</span>` : ""}</div>
       ${stageNavHTML(stages, state.stageIndex, campaignActivities(campaign, ctx.content), ctx.content, campaign)}
-      ${list.length ? `<div class="gd-tiles" id="cd-milestones">${req.map(tile).join("")}</div>` : `<p class="gd-empty-line">${t(ticks ? "gl.perf.onlyTicks" : "gl.perf.none")}</p>`}
-      ${opt.length ? `<details class="gd-more"><summary>${t("camp.detail.optionalCount", { count: opt.length })}</summary><div class="gd-tiles">${opt.map(tile).join("")}</div></details>` : ""}
+      ${stage.kind === "level"
+        // A level reads as its tree (every target, tap one for its card);
+        // an Event phase as tiles.
+        ? goalTreeSectionHTML({ stage, stageRead, state, kind: kindOf(campaign) }) || `<p class="gd-empty-line">${t("gl.perf.none")}</p>`
+        : `${list.length ? `<div class="gd-tiles" id="cd-milestones">${req.map(tile).join("")}</div>` : `<p class="gd-empty-line">${t(ticks ? "gl.perf.onlyTicks" : "gl.perf.none")}</p>`}
+      ${opt.length ? `<details class="gd-more"><summary>${t("camp.detail.optionalCount", { count: opt.length })}</summary><div class="gd-tiles">${opt.map(tile).join("")}</div></details>` : ""}`}
       ${owners.map((o) => `<a class="cd-delegated" href="#" data-cd-delegated="${o.id}">${icon("link", { size: 13 })}<span>${esc(t("camp.detail.delegated", { count: stageRead.readings.filter((r) => r.milestone.delegatedTo?.id === o.id).length, name: o.name }))}</span>${icon("arrowRight", { size: 13 })}</a>`).join("")}
       <div class="gd-perf-foot">
         ${ticks ? `<span class="gd-sec-note">${icon("check", { size: 12 })}${t("gl.perf.ticksBelow", { n: ticks })}</span>` : "<span></span>"}
@@ -1359,95 +1357,59 @@ function milestoneRowHTML(r, i, stage, guided) {
     </div>`;
 }
 
-// ---------- Mission tree ----------
-// The "pohon" view of a level: one trunk, one branch per milestone, each
-// branch filling from trunk to node in proportion to that milestone's
-// progress (reading.pct), a green halo once it's met. Nodes carry only a
-// rung number that matches the numbered row below (the list is the legend);
-// hovering/tapping a node shows label + progress, clicking it highlights
-// its row. Ported from the pre-rewrite campaigns.js mission tree so the
-// level campaigns (Grow Social Media / Personal Branding, the ones
-// recommended to beginners) keep their map, not just a list.
-function missionNodePos(i, n) {
-  const x = n === 1 ? 500 : 150 + (700 * i) / (n - 1);
-  const t = n === 1 ? 0.5 : i / (n - 1);
-  const y = 300 - Math.sin(Math.PI * t) * 150;
-  return { x, y };
+// ---------- The level's tree ("pohon") ----------
+// Both modes, Grow Brand levels: js/goal-tree.js draws it (one trunk, a
+// branch per target filling with its progress, leaves while it grows,
+// fruit once it's reached). Tapping a node opens that target's card right
+// under the tree — its number, its source and its one button (the same
+// data-cd-ms-* handlers as the tiles and Pro's rows).
+const compactNum = (n) => {
+  const v = Number(n) || 0;
+  if (v >= 1000000) return `${(v / 1000000).toFixed(1).replace(/\.0$/, "").replace(".", ",")}jt`;
+  if (v >= 10000) return `${Math.round(v / 1000)}rb`;
+  return formatNumber(v);
+};
+function treeValue(r) {
+  if (r.isCheck) return r.met ? t("camp.detail.done") : t("camp.detail.notYet");
+  if (r.target) return `${compactNum(r.current)}/${compactNum(r.target)}`;
+  return r.logged ? compactNum(r.current) : "–";
 }
-
-function missionProgressText(r) {
-  const m = r.milestone;
-  if (r.isCheck) return r.met ? t("camp.detail.done") : t("camp.detail.notHappened");
-  if (r.target) return `${formatNumber(r.current)}/${formatNumber(r.target)}${r.unit && r.unit !== "Rp" ? " " + r.unit : ""}`;
-  return r.logged ? `${formatNumber(r.current)}${r.unit ? " " + r.unit : ""}` : m.notApplicable ? t("camp.detail.notRelevant") : t("camp.detail.notLoggedCap");
-}
-
-function missionTreeHTML(stage, readings) {
-  const all = readings.filter((r) => !r.milestone.notApplicable);
-  if (!all.length) return "";
-  const n = all.length;
-  const trunk = { x: 500, y: 380 };
-  const nodes = all.map((r, k) => ({ ...missionNodePos(k, n), r, i: readings.indexOf(r), pct: r.met ? 1 : r.pct }));
-
-  const branchTracks = nodes
-    .map((nd) => {
-      const midY = (trunk.y + nd.y) / 2;
-      return `<path d="M${trunk.x},${trunk.y} C ${trunk.x},${midY} ${nd.x},${midY} ${nd.x},${nd.y}" fill="none" stroke="var(--border)" stroke-width="6" stroke-linecap="round" opacity=".35"/>`;
-    })
-    .join("");
-  const branchFills = nodes
-    .map((nd) => {
-      if (nd.pct <= 0) return "";
-      const midY = (trunk.y + nd.y) / 2;
-      const c = nd.pct >= 1 ? "var(--health-good)" : "var(--health-average)";
-      const loading = nd.pct < 1 ? "mission-loading" : "";
-      return `<path d="M${trunk.x},${trunk.y} C ${trunk.x},${midY} ${nd.x},${midY} ${nd.x},${nd.y}" fill="none" stroke="${c}" stroke-width="6" stroke-linecap="round" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${(100 * (1 - nd.pct)).toFixed(1)}" class="${loading}"/>`;
-    })
-    .join("");
-  const halos = nodes.map((nd) => (nd.pct >= 1 ? `<circle cx="${nd.x}" cy="${nd.y}" r="30" fill="var(--health-good)" class="mission-halo" opacity=".7"/>` : "")).join("");
-  const RING_R = 17;
-  const RING_CIRC = 2 * Math.PI * RING_R;
-  const cores = nodes
-    .map((nd) => {
-      if (nd.pct >= 1) {
-        return `
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="var(--health-good)"/>
-      <g transform="translate(${nd.x - 9},${nd.y - 9}) scale(0.75)" fill="none" stroke="var(--bg)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></g>`;
-      }
-      if (nd.pct > 0) {
-        const offset = RING_CIRC * (1 - nd.pct);
-        return `
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="var(--surface-2)" stroke="var(--border)" stroke-width="3"/>
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="none" stroke="var(--health-average)" stroke-width="4" stroke-linecap="round" stroke-dasharray="${RING_CIRC.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}" transform="rotate(-90 ${nd.x} ${nd.y})" class="mission-loading"/>
-      <text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="central" font-size="15" font-weight="800" fill="var(--text)">${nd.i + 1}</text>`;
-      }
-      return `
-      <circle cx="${nd.x}" cy="${nd.y}" r="${RING_R}" fill="var(--border)"/>
-      <text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="central" font-size="15" font-weight="800" fill="var(--text-faint)">${nd.i + 1}</text>`;
-    })
-    .join("");
-  const nodeButtons = nodes
-    .map(
-      (nd) => `
-      <div class="mission-node" data-milestone-index="${nd.i}" tabindex="0" role="note" data-tooltip="${esc(`${nd.i + 1}. ${nd.r.milestone.label} — ${missionProgressText(nd.r)}${nd.r.milestone.description ? `\n${nd.r.milestone.description}` : ""}`)}" style="left:${(nd.x / 10).toFixed(1)}%;top:${((nd.y / 460) * 100).toFixed(1)}%;"></div>`
-    )
-    .join("");
-  const met = nodes.filter((nd) => nd.pct >= 1).length;
+function goalTreeSectionHTML({ stage, stageRead, state, kind }) {
+  const list = stageRead.readings.map((r, i) => ({ r, i })).filter(({ r }) => !r.milestone.notApplicable);
+  if (!list.length) return "";
+  state.treeSel = state.treeSel || {};
+  const fallback = (list.find(({ r }) => !r.met && r.milestone.required !== false) || list.find(({ r }) => !r.met) || list[0]).i;
+  const sel = list.some(({ i }) => i === state.treeSel[stage.id]) ? state.treeSel[stage.id] : fallback;
+  // Grow in the first time this level is on screen. A repaint while it is
+  // still growing (a sync landing, a toast's write) picks the motion up
+  // where it was instead of snapping it full or starting it over.
+  if (state.treeGrow?.id !== stage.id) state.treeGrow = { id: stage.id, at: Date.now() };
+  const grownFor = Date.now() - state.treeGrow.at;
+  const animate = grownFor < 1800;
+  const met = list.filter(({ r }) => r.met).length;
+  const nodes = list.map(({ r, i }, k) => ({ i, pct: r.pct, met: r.met, value: treeValue(r), aria: `${k + 1}. ${r.milestone.label} — ${treeValue(r)}` }));
+  const locked = stage.state === "locked";
+  const cards = list.map(({ r, i }, k) => {
+    const src = r.auto ? (r.updatedAt ? ageLabel(r.updatedAt) : r.sourceLabel || t("gl.tile.auto")) : r.updatedAt ? ageLabel(r.updatedAt) : t("gl.tile.manual");
+    const value = r.isCheck ? (r.met ? t("camp.detail.done") : t("camp.detail.notYet")) : `${formatNumber(r.current)}${r.target ? ` / ${formatNumber(r.target)}` : ""}${r.unit && r.unit !== "Rp" ? ` ${r.unit}` : ""}`;
+    return `
+      <div class="gt-card${r.met ? " is-met" : ""}" data-tree-info="${i}" ${i === sel ? "" : "hidden"}>
+        <span class="gt-card-n">${r.met ? icon("check", { size: 14 }) : k + 1}</span>
+        <span class="gt-card-main"><b>${esc(r.milestone.label)}</b><small>${esc(src)}${r.milestone.required === false ? ` · ${esc(t("camp.optional").replace(/[()]/g, ""))}` : ""}</small></span>
+        <span class="gt-card-val">${esc(value)}</span>
+        <span class="gt-card-act">${locked ? "" : msActionHTML(r, i, stage)}</span>
+        <span class="gt-card-bar"><span style="width:${Math.round((r.met ? 1 : Math.min(1, r.pct || 0)) * 100)}%"></span></span>
+      </div>`;
+  }).join("");
   return `
-    <div class="cd-tree-scroll"><div class="mission-tree cd-tree" aria-label="${esc(t("camp.detail.treeAria", { name: stage.name || "" }))}">
-      <svg viewBox="0 0 1000 460" role="img" aria-label="${esc(t("camp.detail.treeSvgAria", { met, total: n }))}">
-        <path d="M500,440 C 470,452 440,455 410,450" stroke="var(--border)" stroke-width="4" stroke-linecap="round" fill="none"/>
-        <path d="M500,440 C 530,452 560,455 590,450" stroke="var(--border)" stroke-width="4" stroke-linecap="round" fill="none"/>
-        <path d="M500,440 L500,380" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" opacity=".5"/>
-        ${branchTracks}
-        ${branchFills}
-        ${halos}
-        ${cores}
-      </svg>
-      ${nodeButtons}
-    </div></div>
-    <p class="cd-tree-legend">${t("camp.detail.treeLegend")}</p>
-  `;
+    <div class="gt${animate ? " is-growing" : ""}" style="${kindVars(kind)}${animate ? `--gt-skip:-${grownFor}ms;` : ""}">
+      <div class="gt-head">
+        <span class="gt-pill">${icon("sparkle", { size: 13 })}${esc(t("gl.tree.title", { met, total: list.length }))}</span>
+        <span class="gt-hint"><span class="gt-hint-wide">${t("gl.tree.hint")}</span><span class="gt-hint-narrow">${t("gl.tree.hintSwipe")}</span></span>
+      </div>
+      <div class="gt-scroll"><div class="gt-stage">${goalTreeSVG(nodes, { selected: sel, label: t("camp.detail.treeSvgAria", { met, total: list.length }) })}</div></div>
+      ${cards}
+    </div>`;
 }
 
 function ladderRulesHTML(campaign, stage, guided) {

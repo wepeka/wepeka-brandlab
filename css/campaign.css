@@ -448,4 +448,95 @@ button.gd-row:hover .gd-row-go{ transform: translateX(3px); color: var(--text); 
 @media (prefers-reduced-motion: reduce){
   .gl-card, .gl-slip, .gl-tile, .gd-hero, .gd-tile, .gd-row, .gd-meter > span, .gd-art svg, .gl.is-entering .gl-card, .gl.is-entering .gl-art svg{ animation:none !important; transition:none !important; }
 }
+/* The level's tree (js/goal-tree.js, both modes): same idea as before —
+   a branch per target filling with its progress — drawn in the goal's own
+   colours: wood that grows out of the trunk, leaves while a target is under
+   way, fruit with a check once it's reached, a canopy that fills out with
+   the level, and the tapped target's card underneath. */
+.gt{ --ink:#1b1a17; --shade: color-mix(in srgb, var(--cat2, var(--cat)) 60%, #000); --tint: color-mix(in srgb, var(--cat) 50%, #fff);
+  position:relative; overflow:hidden; isolation:isolate; margin: 4px 0 14px; padding:16px 18px 14px; border-radius:28px; color: var(--ink);
+  background: linear-gradient(165deg, color-mix(in srgb, var(--cat) 62%, #fff) 0%, var(--cat) 40%, var(--cat2, var(--cat)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 18px 40px -28px color-mix(in srgb, var(--cat) 80%, transparent); }
+.gt-head{ position:relative; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.gt-pill{ display:inline-flex; align-items:center; gap:6px; padding:6px 13px; border-radius:999px; background: rgba(255,255,255,.66); color: var(--ink); font-size:12.5px; font-weight:800; }
+.gt-hint{ font-size:12px; font-weight:700; color: rgba(27,26,23,.62); }
+.gt-hint-narrow{ display:none; }
+.gt-scroll{ overflow-x:auto; scrollbar-width:none; margin: 0 -18px; }
+.gt-scroll::-webkit-scrollbar{ display:none; }
+.gt-stage{ max-width: 780px; margin: 0 auto; }
+.gt-svg{ display:block; width:100%; height:auto; overflow:visible; }
+.gt-node-body, .gt-node-body > *, .gt-leaves, .gt-sel, .gt-ring-fill{ transform-box: fill-box; }
+.gt-canopy{ opacity: calc(.35 + var(--fill, 0) * .65); }
+.gt-canopy circle{ fill: color-mix(in srgb, var(--cat) 42%, #fff); }
+.gt-hill{ fill: var(--shade); }
+.gt-hill.is-back{ fill: color-mix(in srgb, var(--cat2, var(--cat)) 78%, #000); opacity:.55; }
+.gt-root{ fill:none; stroke: var(--shade); stroke-width:9; stroke-linecap:round; }
+.gt-trunk{ fill: var(--shade); }
+.gt-track{ fill:none; stroke: var(--shade); stroke-width:12; stroke-linecap:round; opacity:.22; }
+.gt-fill{ fill:none; stroke: var(--shade); stroke-width:12; stroke-linecap:round; }
+.gt-leaf{ fill: var(--tint); }
+.gt-leaf.is-light{ fill: color-mix(in srgb, var(--cat) 18%, #fff); }
+.gt-leaves{ transform-origin: 50% 100%; }
+.gt-node{ cursor:pointer; outline:none; }
+.gt-node-body{ transform-origin:center; transition: transform .35s var(--ease-spring, ease); }
+.gt-node:hover .gt-node-body, .gt-node:focus-visible .gt-node-body{ transform: scale(1.13); }
+.gt-fruit{ fill: #fff6e8; stroke: var(--shade); stroke-width:4; }
+.gt-shine{ fill: rgba(255,255,255,.9); }
+.gt-check{ fill:none; stroke: var(--shade); stroke-width:6; stroke-linecap:round; stroke-linejoin:round; }
+.gt-bud{ fill: var(--shade); }
+.gt-bud.is-open{ fill: #fff; }
+.gt-ring{ fill:none; stroke: color-mix(in srgb, var(--cat) 30%, #fff); stroke-width:6; }
+.gt-ring-fill{ fill:none; stroke: var(--shade); stroke-width:6; stroke-linecap:round; transform-origin:center; }
+.gt-num{ font-family: var(--font-body); font-size:22px; font-weight:800; fill: var(--ink); text-anchor:middle; }
+.gt-num.is-dim{ fill:#fff; }
+.gt-tag rect{ fill: rgba(255,255,255,.86); }
+.gt-tag text{ font-family: var(--font-body); font-size:18px; font-weight:800; fill: var(--ink); text-anchor:middle; }
+.gt-node.is-met .gt-tag rect{ fill: var(--ink); }
+.gt-node.is-met .gt-tag text{ fill: #fff; }
+.gt-sel{ fill:none; stroke: var(--ink); stroke-width:3.5; stroke-dasharray: 7 7; opacity:0; transform-origin:center; transition: opacity .2s ease; }
+.gt-node.is-sel .gt-sel{ opacity:1; animation: gt-spin 9s linear infinite; }
+.gt-node:focus-visible .gt-sel{ opacity:1; }
+@keyframes gt-spin{ to{ transform: rotate(360deg); } }
+/* Alive, a little: fruit bobs, the leaves sway while the mouse is on the tree. */
+.gt-node.is-met .gt-node-body > *{ animation: gt-bob 3.2s ease-in-out infinite; animation-delay: calc(var(--k, 0) * -.5s); }
+@keyframes gt-bob{ 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-4px); } }
+.gt:hover .gt-leaves{ animation: gt-sway 1.4s ease-in-out infinite alternate; animation-delay: calc(var(--k, 0) * -.3s); }
+@keyframes gt-sway{ from{ transform: rotate(-4deg); } to{ transform: rotate(4deg); } }
+/* First look at a level: the canopy fades in, the wood grows branch by
+   branch, then leaves and fruit pop out. */
+.gt.is-growing .gt-canopy{ animation: gt-fade .9s ease backwards; animation-delay: var(--gt-skip, 0ms); }
+@keyframes gt-fade{ from{ opacity:0; } }
+.gt.is-growing .gt-fill{ animation: gt-grow 1s var(--ease-out, ease) backwards; animation-delay: calc(var(--k, 0) * 90ms + 150ms + var(--gt-skip, 0ms)); }
+@keyframes gt-grow{ from{ stroke-dashoffset:100; } }
+.gt.is-growing .gt-leaves{ animation: gt-pop .6s var(--ease-spring, ease) backwards; animation-delay: calc(var(--k, 0) * 90ms + 750ms + var(--gt-skip, 0ms)); }
+.gt.is-growing .gt-node-body{ animation: gt-pop .55s var(--ease-spring, ease) backwards; animation-delay: calc(var(--k, 0) * 90ms + 450ms + var(--gt-skip, 0ms)); }
+@keyframes gt-pop{ from{ transform: scale(0); } }
+.gt.is-growing .gt-tag{ animation: gt-fade .4s ease backwards; animation-delay: calc(var(--k, 0) * 90ms + 650ms + var(--gt-skip, 0ms)); }
+/* The tapped target's card: a paper slip on the tree's colour. */
+.gt-card{ position:relative; z-index:1; display:grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items:center; gap:8px 14px; margin-top:6px; padding:12px 14px; border-radius:18px; color: var(--ink);
+  background: rgba(255,255,255,.9); box-shadow: 0 1px 0 rgba(27,26,23,.08), 0 10px 22px -14px rgba(27,26,23,.55); animation: gl-card-in .3s var(--ease-out, ease) both; }
+.gt-card[hidden]{ display:none; }
+.gt-card-n{ display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background: var(--shade); color:#fff; font-size:14px; font-weight:800; }
+.gt-card.is-met .gt-card-n{ background: linear-gradient(135deg, var(--cat), var(--cat2, var(--cat))); color: var(--ink); }
+.gt-card-main{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.gt-card-main b{ font-size:14px; font-weight:800; line-height:1.3; overflow-wrap:anywhere; }
+.gt-card-main small{ font-size:12px; font-weight:600; color: rgba(27,26,23,.62); }
+.gt-card-val{ font-family: var(--font-display); font-size:18px; white-space:nowrap; }
+.gt-card-act:empty{ display:none; }
+.gt-card .gd-mini{ background: var(--ink); color:#fff; border-color: transparent; }
+.gt-card-bar{ grid-column: 1 / -1; height:6px; border-radius:999px; background: rgba(27,26,23,.1); overflow:hidden; }
+.gt-card-bar > span{ display:block; height:100%; border-radius:inherit; background: linear-gradient(90deg, var(--cat), var(--cat2, var(--cat))); }
+@media (max-width: 760px){
+  .gt{ padding:14px 12px 12px; border-radius:24px; }
+  .gt-scroll{ margin: 0 -12px; }
+  .gt-hint-wide{ display:none; }
+  .gt-hint-narrow{ display:inline; }
+  .gt-stage{ min-width: 600px; }
+  .gt-card{ grid-template-columns: 32px minmax(0, 1fr); }
+  .gt-card-val, .gt-card-act{ grid-column: 2; }
+  .gt-card-n{ width:32px; height:32px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .gt *, .gt-card{ animation:none !important; transition:none !important; }
+}
 /* ======================= end GOALS FOR PEMULA ======================= */
