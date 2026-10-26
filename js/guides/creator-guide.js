@@ -8,6 +8,7 @@ import { listContent, listCampaigns } from "../store.js";
 import { qs } from "../dom.js";
 import { t } from "../i18n.js";
 import { adaptForAccount, markTourSeen, tourSeen, offerNextTour, showTourRecap, startGuideOnMount } from "./common.js";
+import { getMode } from "../mode.js";
 
 // ---------- Bab 1 · Bikin konten pertama (or jump straight in) ----------
 
@@ -187,9 +188,48 @@ function executionSteps() {
   ];
 }
 
+// ---------- Pemula: the folders + steps workspace (js/views/creator.js) ----------
+// The same cycle on Pemula's Creator: the two-step "Konten baru", the Ide
+// step with the chat beside it, then the script with the AI writer (dummy
+// during the tour) and on to shooting.
+
+function pemulaIntroSteps(hasOpen) {
+  if (hasOpen) {
+    return [{ selector: ".cw-item", title: t("guide.creator.existing.title"), body: t("cg.list.body"), interactive: { type: "clickAny" } }];
+  }
+  return [
+    { selector: "#new-content", title: t("guide.creator.new.title"), body: t("guide.creator.new.body"), interactive: { type: "click", extraSelectors: ["#new-content-empty"] } },
+    { selector: ".nw-tiles", showIf: () => !!qs(".nw-tiles"), title: t("cg.wiz1.title"), body: t("cg.wiz1.body"), interactive: { type: "clickAny" } },
+    { selector: "#nw-next", showIf: () => !!qs(".nw-tiles"), title: t("nw.next"), body: t("cg.wiz1.next"), interactive: { type: "click" } },
+    { selector: "#nw-text", showIf: () => !!qs("#nw-text"), title: t("cg.wiz2.title"), body: t("cg.wiz2.body"), interactive: { type: "input", minLength: 3 }, skippable: true },
+    { selector: "#nw-next", showIf: () => !!qs("#nw-text"), title: t("nw.start"), body: t("cg.wiz2.start"), interactive: { type: "click" }, write: true },
+  ];
+}
+
+function pemulaWorkSteps() {
+  return [
+    { selector: ".cw-steps", title: t("cg.steps.title"), body: t("cg.steps.body") },
+    { selector: "#f-idea", showIf: () => !!qs("#f-idea"), title: t("cw.idea.label"), body: t("cg.idea.body") },
+    { selector: ["#consultant-panel.is-ws-docked", ".cw-chat-invite"], showIf: () => !!qs("#cw-to-script"), title: t("cw.idea.chatTitle"), body: t("cg.chat.body") },
+    { selector: "#cw-to-script", showIf: () => !!qs("#cw-to-script"), title: t("cw.idea.next"), body: t("cg.toScript.body"), interactive: { type: "click" }, write: true },
+    { selector: "#ai-generate-all", showIf: () => !qs("#ai-prompt"), title: t("cw.script.aiBtn"), body: t("guide.creator.aiAll.body"), interactive: { type: "click" }, waitTimeout: 6000 },
+  ];
+}
+
+function pemulaAfterAiSteps() {
+  return [
+    { selector: ["#f-script-plain", "#script-cards", "#slide-editor"], title: t("guide.creator.scriptEdit.title"), body: t("guide.creator.scriptEdit.body") },
+    { selector: "#cw-to-shoot", title: t("cw.script.next"), body: t("cg.toShoot.body"), interactive: { type: "click" }, write: true },
+  ];
+}
+
 export function buildCreatorSteps({ brandId }) {
   const campaigns = listCampaigns(brandId);
   const unfinished = listContent(brandId).filter((c) => c.status !== "published");
+  if (getMode() === "guided") {
+    // aiSteps without its first one: Pemula's own step opens the writer.
+    return adaptForAccount([...pemulaIntroSteps(unfinished.length > 0), ...pemulaWorkSteps(), ...aiSteps().slice(1), ...pemulaAfterAiSteps(), ...executionSteps()]);
+  }
   const intro = unfinished.length ? existingContentStep() : newContentSteps(campaigns);
   return adaptForAccount([...intro, ...aiSteps(), ...scriptingSteps(), ...executionSteps()]);
 }

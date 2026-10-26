@@ -616,7 +616,7 @@ const WEEKDAY_NAME = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Th
 
 // ---- Message rendering ----------------------------------------------------
 
-const starterChip = (q, mode = "") => `<button type="button" class="consultant-starter" data-chat-ask="${esc(q)}" ${mode ? `data-chat-engine="${mode}"` : ""}>${esc(q)}</button>`;
+const starterChip = (q, mode = "", bsMode = "") => `<button type="button" class="consultant-starter" data-chat-ask="${esc(q)}" ${mode ? `data-chat-engine="${mode}"` : ""} ${bsMode ? `data-chat-bsmode="${bsMode}"` : ""}>${esc(q)}</button>`;
 
 // An idea offered in the chat. "Pakai ini" makes a draft right here, "Buatkan
 // script" makes one and opens Creator's AI writer, "Simpan" keeps it in the
@@ -856,8 +856,11 @@ function normalizedScript(text) {
 // "Script siap syuting": a script the AI wrote ([[script:…]], see
 // js/ai-directives.js), shown whole and readable, with one button that
 // approves it into a real draft in Creator — script and caption filled in.
-function scriptCardHTML(sc, ref) {
+// In a conversation about one piece (Creator's Ide step), "Pakai di konten
+// ini" puts the script into THAT piece instead of making a second draft.
+function scriptCardHTML(sc, ref, info = {}) {
   const meta = [sc.format, funnelShort(sc.funnel)].filter(Boolean).join(" · ");
+  const here = info.content && (!sc.contentId || sc.contentId === info.content.id);
   return `
     <div class="cp-script">
       <div class="cp-script-head">${icon("teleprompter", { size: 14 })}<span>${t("chat.script.label")}</span>${meta ? `<small>${esc(meta)}</small>` : ""}</div>
@@ -865,7 +868,11 @@ function scriptCardHTML(sc, ref) {
       <div class="cp-script-body">${scriptBeatsHTML(sc.script, esc) || renderLightMarkdown(sc.script)}</div>
       ${sc.caption ? `<div class="cp-script-caption"><b>${t("chat.script.caption")}</b><p>${esc(sc.caption)}</p></div>` : ""}
       <div class="cp-script-actions">
-        ${sc.contentId
+        ${here
+          ? sc.contentId
+            ? `<span class="bs-done">${icon("check", { size: 12 })} ${t("cw.chat.usedScript")}</span>`
+            : `<button type="button" class="btn btn-primary btn-sm" data-script-approve="${ref}">${icon("check", { size: 13 })}${t("cw.chat.useScript")}</button>`
+          : sc.contentId
           ? `<button type="button" class="btn btn-secondary btn-sm" data-script-open="${esc(sc.contentId)}">${icon("check", { size: 13 })}${t("chat.script.saved")}${icon("arrowRight", { size: 12 })}</button>`
           : `<button type="button" class="btn btn-primary btn-sm" data-script-approve="${ref}">${icon("check", { size: 13 })}${t("chat.script.approve")}</button>`}
         <button type="button" class="btn btn-ghost btn-sm" data-script-copy="${ref}">${icon("copy", { size: 13 })}${t("chat.script.copy")}</button>
@@ -921,7 +928,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
         )
         .join("")}</div>`
     : "";
-  const scriptsHTML = (h.scripts || []).map((sc, j) => scriptCardHTML(sc, `${index}:${j}`)).join("");
+  const scriptsHTML = (h.scripts || []).map((sc, j) => scriptCardHTML(sc, `${index}:${j}`, info)).join("");
   const weekPlanHTML = h.weekPlan
     ? isLatestPlan
       ? weekPlanCardHTML(h, index, activeCampaignsFor(listCampaigns(brand.id)), getSettings().formats || [])
@@ -957,7 +964,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   // Otomatis steers the saving: under fresh idea cards, one line says what
   // keeping one does.
   const guideHTML = auto && isLast && ideas.some((x) => !x.saved && !x.contentId)
-    ? `<p class="cp-guide">${icon("bookmark", { size: 12 })}${t("chat.guide.ideas")}</p>`
+    ? `<p class="cp-guide">${icon("bookmark", { size: 12 })}${info.content ? t("cw.chat.guideHere") : t("chat.guide.ideas")}</p>`
     : "";
   // Follow-ups only under the newest answer — older chips would re-ask
   // questions the conversation has already moved past.
@@ -1032,6 +1039,14 @@ const AUTO_STARTERS = [
   { key: "chat.starter.today", engine: "companion" },
 ];
 
+// A conversation about one piece of content (Creator's Ide step, Pemula):
+// ideas for THIS piece, every one answered by Brainstorm.
+const CONTENT_STARTERS = [
+  { key: "cw.chat.starter.ideas", bsMode: "ideas" },
+  { key: "cw.chat.starter.sharpen" },
+  { key: "cw.chat.starter.angle" },
+];
+
 // The same, for a conversation about one goal.
 const GOAL_STARTERS = [
   { key: "chat.starter.goalIdeas", engine: "brainstorm" },
@@ -1045,6 +1060,11 @@ function emptyStateHTML(brandId, info, full) {
   if (currentThread(brandId)?.mode === "script") {
     return `<div class="consultant-msg consultant-msg-assistant">${esc(t("cr.disc.intro"))}</div>
       <div class="consultant-starters">${SCRIPT_CHIPS.map((k) => starterChip(t(`cr.disc.chip.${k}`), "brainstorm")).join("")}</div>`;
+  }
+  if (mode === "auto" && info?.content) {
+    const title = (info.content.title || "").trim();
+    return `<div class="consultant-msg consultant-msg-assistant">${title ? t("cw.chat.greet", { title: esc(title) }) : t("cw.chat.greetEmpty")}</div>
+      <div class="consultant-starters">${CONTENT_STARTERS.map((s) => starterChip(t(s.key), "brainstorm", s.bsMode || "")).join("")}</div>`;
   }
   if (mode === "auto") {
     // A conversation opened about one goal (its page's Brainstorm button)
@@ -1213,7 +1233,9 @@ function chatCoreHTML(brandId, full) {
   const last = history[history.length - 1];
   const forkShown = last?.role === "assistant" && last.engine === "brainstorm" && last.question && !(last.ideas || []).length && !(last.tasks || []).length && !last.drafts?.length && !last.scripts?.length;
   // A disabled box says why it's disabled instead of still inviting typing.
-  const placeholder = pending ? t("chat.placeholder.pending") : quotaOut ? t("chat.placeholder.quota") : answerHint ? t("bs.answer.ph") : t(`chat.placeholder.${mode}`);
+  // A script talk asks for changes to that script, not "what content?".
+  const scriptTalk = currentThread(brandId)?.mode === "script";
+  const placeholder = pending ? t("chat.placeholder.pending") : quotaOut ? t("chat.placeholder.quota") : answerHint ? t("bs.answer.ph") : scriptTalk ? t("cw.chat.scriptPh") : t(`chat.placeholder.${mode}`);
   // Only the Wepeka admin can fix the shared AI key (Settings → AI is an
   // admin-only panel) — anyone else would land on a page without it.
   const setupLink = isAdmin(currentUid()) ? ` <a href="#/settings/ai">${t("chat.setupAi")} ${icon("arrowRight", { size: 11 })}</a>` : "";
@@ -1261,7 +1283,7 @@ function panelHTML(brandId) {
     <div class="consultant-panel-head cp-head">
       <div class="cp-head-main">
         <span class="cp-head-icon">${icon(MODE_ICON[mode], { size: 16 })}</span>
-        <div><b>${t("chat.title")}</b><small>${t(`chat.mode.tip.${mode}`)}</small></div>
+        <div><b>${t("chat.title")}</b><small>${currentThread(brandId)?.mode === "script" ? t("cr.disc.title") : t(`chat.mode.tip.${mode}`)}</small></div>
       </div>
       <div class="cp-head-actions">
         ${has && mode !== "auto" ? `<button type="button" class="icon-btn" data-chat-clear aria-label="${t(`chat.clear.${mode}`)}" title="${t(`chat.clear.${mode}`)}" ${pending ? "disabled" : ""}>${icon("trash", { size: 14 })}</button>` : ""}
@@ -1505,7 +1527,8 @@ function renderPanel(brandId, { seed = "", keep = true, focus = null, sync = fal
   };
   autosize();
   input.addEventListener("input", autosize);
-  const wantFocus = focus === true || hadFocus || (focus !== false && !isTouch() && !page);
+  // Docked beside a piece in Creator: the page keeps the caret.
+  const wantFocus = focus === true || hadFocus || (focus !== false && !isTouch() && !page && !wsDock);
   if (!pending && wantFocus) {
     input.focus();
     if (typed) input.setSelectionRange(input.value.length, input.value.length);
@@ -1622,7 +1645,7 @@ function wire(host, brandId, input, history) {
       rerender({ seed: `${q} `, focus: true });
       return;
     }
-    sendMessage(brandId, q, { engine });
+    sendMessage(brandId, q, { engine, bsMode: btn.dataset.chatBsmode || "chat" });
   });
   on("[data-chat-more]", () => sendMessage(brandId, t("bs.opt.moreMsg"), { engine: "brainstorm", bsMode: "ideas" }));
   on("[data-chat-go-ideas]", () => sendMessage(brandId, t("bs.ideasNow.message"), { engine: "brainstorm", bsMode: "ideas" }));
@@ -1700,10 +1723,26 @@ function wire(host, brandId, input, history) {
   // Scripts ([[script:…]]): "Setujui" makes the draft — script, caption,
   // format and funnel filled in, placed in the conversation's scope — and
   // the card turns into a link to it.
-  on("[data-script-approve]", (btn) => {
+  on("[data-script-approve]", async (btn) => {
     const { h, j } = refAt(btn.dataset.scriptApprove);
     const sc = h?.scripts?.[j];
     if (!sc || sc.contentId) return;
+    const here = chatScopeInfo(brandId).content;
+    if (here) {
+      const cur = getContent(here.id) || here;
+      if ((cur.script || "").trim() && !(await confirmDialog({ title: t("cw.chat.replace.title"), message: t("cw.chat.replace.body"), confirmLabel: t("cw.chat.replace.ok") }))) return;
+      updateContent(here.id, {
+        script: normalizedScript(sc.script),
+        ...(sc.caption && !(cur.caption || "").trim() ? { caption: sc.caption } : {}),
+        ...(!(cur.title || "").trim() && sc.title ? { title: sc.title.slice(0, 80) } : {}),
+        ...(cur.status === "idea" ? { status: "draft" } : {}),
+      });
+      sc.contentId = here.id;
+      syncThreadBlocks(h);
+      toast(t("cw.chat.usedScript"));
+      rerender();
+      return;
+    }
     const item = draftFromScope(brandId, { title: sc.title, funnel: sc.funnel, idea: h.question ? t("cons.draftIdea", { question: h.question }) : "" });
     updateContent(item.id, { ...matchFormat(sc.format), script: normalizedScript(sc.script), caption: sc.caption || "", status: "draft" });
     sc.contentId = item.id;
@@ -1750,7 +1789,10 @@ function wire(host, brandId, input, history) {
     const content = chatScopeInfo(brandId).content;
     if (!idea || !content) return;
     const existing = getContent(content.id)?.idea || "";
-    updateContent(content.id, { idea: [existing, `${idea.title}${idea.why ? ` — ${idea.why}` : ""}`].filter(Boolean).join("\n\n") });
+    // A piece started without words (Pemula's "Cari ide bareng AI") takes
+    // the picked idea as its working title too.
+    const untitled = !(getContent(content.id)?.title || "").trim();
+    updateContent(content.id, { idea: [existing, `${idea.title}${idea.why ? ` — ${idea.why}` : ""}`].filter(Boolean).join("\n\n"), ...(untitled ? { title: idea.title.slice(0, 80) } : {}) });
     idea.usedHere = true;
     syncThreadBlocks(h);
     toast(t("bs.idea.usedToast"));
@@ -2461,7 +2503,7 @@ function leaveScriptThread(brandId) {
 // `docked`: opened from Creator's full-screen script page (js/script-focus.js)
 // — on a wide screen the panel then sits as a column beside the script
 // instead of floating over it (css: .consultant-panel.is-docked).
-export function openScriptChat({ contentId, title = "", getCurrent = null, applyRevision = null, onRegenerate = null, docked = false } = {}) {
+export function openScriptChat({ contentId, title = "", getCurrent = null, applyRevision = null, onRegenerate = null, docked = false, focus = true } = {}) {
   const brandId = page ? page.brandId : mountedBrandId;
   if (!brandId || !contentId) return;
   const threadId = scriptThreadId(contentId, brandId);
@@ -2469,11 +2511,101 @@ export function openScriptChat({ contentId, title = "", getCurrent = null, apply
   scriptHosts.set(threadId, { contentId, getCurrent, applyRevision, onRegenerate });
   if (currentThread(brandId)?.mode !== "script") modeBeforeScript.set(brandId, modeOf(brandId));
   loadThread(brandId, threadId);
-  togglePanel(brandId, true, { focus: true });
+  togglePanel(brandId, true, { focus });
   // Opened from inside a dialog (Creator's AI writer): sit above it.
   qs("#consultant-panel")?.classList.toggle("is-above-modal", !!document.querySelector(".overlay:not(.is-leaving)"));
   qs("#consultant-panel")?.classList.toggle("is-docked", docked);
   document.body.classList.toggle("script-focus-docked", docked);
+}
+
+// ---- Docked beside a piece in Creator (Pemula) ---------------------------------
+// Creator's workspace keeps this same chat as a column next to the piece
+// (js/views/creator.js places it): on the Ide step the conversation about
+// that piece — Otomatis, answered by Brainstorm, idea cards "Pakai di sini",
+// a script card "Pakai di konten ini" — and on the Script step the piece's
+// script talk (openScriptChat). It never takes the caret from the page
+// (renderPanel), ✕ undocks it ("chat:undocked" tells Creator), and leaving
+// Creator puts back the Obrolan that was open before.
+let wsDock = null; // { contentId, kind }
+let dockPrev = null; // the Otomatis Obrolan open before docking
+export const isChatDocked = () => !!wsDock;
+
+// The Otomatis Obrolan about this piece: the newest one there is, or a new
+// one about it (made by its first message).
+function openContentConversation(brandId, contentId) {
+  setMode(brandId, "auto");
+  if (currentSession.has(brandId) && currentSession.get(brandId) === null && pendingScope.get(brandId)?.contentId === contentId) return;
+  const curTh = currentSessionOf(brandId)?.threadId ? getBrainstorm(currentSessionOf(brandId).threadId) : null;
+  if (curTh?.contentId === contentId && curTh.mode !== "script") return;
+  const sessions = chatSessionsOf(brandId);
+  const th = listBrainstorms(brandId)
+    .filter((x) => x.contentId === contentId && x.mode !== "script" && sessions.some((ss) => ss.threadId === x.id))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  const sess = th ? sessions.find((ss) => ss.threadId === th.id) : null;
+  hints.delete(brandId);
+  if (sess) {
+    currentSession.set(brandId, sess.id);
+    pendingScope.delete(brandId);
+  } else startConversation(brandId, { scope: { contentId }, auto: true });
+}
+
+export function dockChat({ contentId, kind = "idea", title = "", getCurrent = null, applyRevision = null, onRegenerate = null } = {}) {
+  const brandId = mountedBrandId;
+  const panel = qs("#consultant-panel");
+  if (page || !brandId || !contentId || !panel) return false;
+  if (kind === "script") scriptHosts.set(scriptThreadId(contentId, brandId), { contentId, getCurrent, applyRevision, onRegenerate });
+  if (wsDock && wsDock.contentId === contentId && wsDock.kind === kind && isOpen) return true;
+  if (pending) return !!wsDock; // never switch threads mid-answer
+  if (!wsDock) dockPrev = { has: currentSession.has(brandId), session: currentSession.get(brandId), scope: pendingScope.get(brandId) || null, mode: modeOf(brandId) };
+  wsDock = { contentId, kind };
+  panel.classList.add("is-ws-docked");
+  panel.dataset.dockKind = kind;
+  document.body.classList.add("chat-ws-docked");
+  if (kind === "script") openScriptChat({ contentId, title, getCurrent, applyRevision, onRegenerate, focus: false });
+  else {
+    leaveScriptThread(brandId);
+    openContentConversation(brandId, contentId);
+    togglePanel(brandId, true, { focus: false });
+  }
+  return true;
+}
+
+// The same conversation in the small panel (a phone, a narrow window).
+export function openContentChat({ contentId } = {}) {
+  const brandId = mountedBrandId;
+  if (page || !brandId || !contentId || pending) return;
+  leaveScriptThread(brandId);
+  openContentConversation(brandId, contentId);
+  togglePanel(brandId, true, { focus: !isTouch() });
+}
+
+// Creator moving on (another step, another page): no "chat:undocked" — that
+// one means the owner closed it.
+let quietUndock = false;
+export function undockChat() {
+  if (!wsDock || !mountedBrandId) return;
+  quietUndock = true;
+  try { togglePanel(mountedBrandId, false); } finally { quietUndock = false; }
+}
+
+function clearDock(brandId, { keepSession = false } = {}) {
+  if (!wsDock) return;
+  wsDock = null;
+  const panel = qs("#consultant-panel");
+  panel?.classList.remove("is-ws-docked");
+  panel?.removeAttribute("style");
+  if (panel) delete panel.dataset.dockKind;
+  document.body.classList.remove("chat-ws-docked");
+  const prev = dockPrev;
+  dockPrev = null;
+  if (!keepSession && prev && !pending) {
+    if (prev.has) currentSession.set(brandId, prev.session);
+    else currentSession.delete(brandId);
+    if (prev.scope) pendingScope.set(brandId, prev.scope);
+    else pendingScope.delete(brandId);
+    setMode(brandId, prev.mode || "auto");
+  }
+  if (!quietUndock && !keepSession) window.dispatchEvent(new CustomEvent("chat:undocked"));
 }
 
 function scriptPiece(th) {
@@ -2687,7 +2819,9 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       sessionId = ensureSession(brandId, text).id;
       const seeded = seedEngine.get(brandId) || null;
       seedEngine.delete(brandId);
-      picked = MODES.includes(engine) ? engine : planEntry || bsMode === "week" ? "brainstorm" : seeded || (await decideEngine(ai, text, historyFor(brandId, "auto")));
+      // A conversation about one piece of content is about its idea and
+      // script: Brainstorm answers, with no routing call.
+      picked = MODES.includes(engine) ? engine : planEntry || bsMode === "week" ? "brainstorm" : seeded || (activeScope(brandId).contentId ? "brainstorm" : await decideEngine(ai, text, historyFor(brandId, "auto")));
       if (openPlan && !planEntry && planKind === null && picked === "brainstorm") planEntry = openPlan;
     } else if (direct) {
       picked = direct;
@@ -2970,7 +3104,7 @@ function expandToPage(brandId) {
   carryDraft = qs("#consultant-input")?.value || "";
   expandedFrom = location.hash;
   expanding = true;
-  togglePanel(brandId, false);
+  togglePanel(brandId, false, { keepSession: true });
   const mode = modeOf(brandId);
   const id = mode === "auto" ? currentSessionOf(brandId)?.id : mode === "brainstorm" && getBrainstorm(brainstormThread.get(brandId)) ? brainstormThread.get(brandId) : null;
   location.hash = id ? `#/brand/${brandId}/chat/${id}` : `#/brand/${brandId}/chat`;
@@ -2998,7 +3132,7 @@ function watchStore(brandId) {
   });
 }
 
-function togglePanel(brandId, open, { seed = "", focus = null } = {}) {
+function togglePanel(brandId, open, { seed = "", focus = null, keepSession = false } = {}) {
   // On the page the chat is already on screen: put the caret there instead.
   if (open && page) {
     if (seed) carryDraft = seed;
@@ -3009,6 +3143,7 @@ function togglePanel(brandId, open, { seed = "", focus = null } = {}) {
     leaveScriptThread(brandId);
     qs("#consultant-panel")?.classList.remove("is-docked");
     document.body.classList.remove("script-focus-docked");
+    clearDock(brandId, { keepSession });
   }
   isOpen = open;
   const panel = qs("#consultant-panel");
@@ -3227,7 +3362,7 @@ function wireDocument() {
     if (e.key !== "Escape") return;
     if (document.querySelector(".overlay:not(.is-leaving), .tp-overlay, .tour-overlay")) return;
     if (page && ideasFocus) { e.preventDefault(); ideasFocus = false; renderPanel(page.brandId); return; }
-    if (isOpen && mountedBrandId) { e.preventDefault(); togglePanel(mountedBrandId, false); }
+    if (isOpen && mountedBrandId && !wsDock) { e.preventDefault(); togglePanel(mountedBrandId, false); }
   };
   document.addEventListener("keydown", docKeydown);
 }
