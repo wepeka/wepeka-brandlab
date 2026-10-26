@@ -1,11 +1,11 @@
-// The five apps' own pictures (js/apps.js) on the Beranda launcher: solid
-// vector shapes, white with a few dark details, fully opaque (owner,
-// 2026-10-26: "icon yang ada di kartunya buat vector aja, gausa pake warna
-// opacity rendah" — and earlier: no mascots, and solid silhouettes over
-// thin outlines). Drawn in a 120×120 box; the card sets the size.
-const INK = "#1b1a17";
-const W = "#ffffff";
-
+// The five apps' pictures on the Beranda launcher (js/apps.js): solid vector
+// shapes in the card's own colours — a light tint of the card plus a deep
+// shade for details, fully opaque — drawn big so they run off the card's
+// edge (owner, 2026-10-26/27: no mascots; "buat vector aja, gausa opacity
+// rendah"; then "nge-overlap jadi gak kelihatan full, warnanya nyatu sama
+// kartunya", with an animation on hover). Colours and motion live in
+// css/styles.css (.lh-card-art): `i-main` = the tint, `i-ink` = the shade,
+// the other classes are the parts that move.
 function seal() {
   // A scalloped badge: twelve bumps round a disc, a star in the middle.
   const bumps = Array.from({ length: 12 }, (_, i) => {
@@ -17,31 +17,33 @@ function seal() {
     const r = i % 2 ? 9 : 21;
     return `${(60 + Math.cos(a) * r).toFixed(1)},${(60 + Math.sin(a) * r).toFixed(1)}`;
   }).join(" ");
-  return `<g fill="${W}">${bumps}<circle cx="60" cy="60" r="42"/></g><polygon points="${star}" fill="${INK}" stroke="${INK}" stroke-width="5" stroke-linejoin="round"/>`;
+  return `<g class="i-seal"><g class="i-main">${bumps}<circle cx="60" cy="60" r="42"/></g><polygon class="i-ink i-round i-star" points="${star}"/></g>`;
 }
 
 const DRAW = {
   builder: seal,
   campaigns: () => `
-    <rect x="24" y="12" width="12" height="98" rx="6" fill="${INK}"/>
-    <path d="M36 18 H94 L80 39 L94 60 H36 Z" fill="${W}" stroke="${W}" stroke-width="10" stroke-linejoin="round"/>`,
+    <rect class="i-ink" x="24" y="12" width="12" height="98" rx="6"/>
+    <path class="i-main i-round i-flag" d="M36 18 H94 L80 39 L94 60 H36 Z"/>`,
   "content-os": () => `
-    <g transform="rotate(38 60 60)">
-      <rect x="45" y="6" width="30" height="20" rx="9" fill="${INK}"/>
-      <rect x="45" y="22" width="30" height="62" fill="${W}"/>
-      <path d="M45 84 H75 L60 110 Z" fill="${W}" stroke="${W}" stroke-width="4" stroke-linejoin="round"/>
-      <path d="M54 99 H66 L60 110 Z" fill="${INK}"/>
-    </g>`,
+    <g class="i-pencil"><g transform="rotate(38 60 60)">
+      <rect class="i-ink" x="45" y="6" width="30" height="20" rx="9"/>
+      <rect class="i-main" x="45" y="22" width="30" height="62"/>
+      <path class="i-main i-round-thin" d="M45 84 H75 L60 110 Z"/>
+      <path class="i-ink" d="M54 99 H66 L60 110 Z"/>
+    </g></g>`,
   report: () => `
-    <rect x="14" y="62" width="24" height="42" rx="8" fill="${W}"/>
-    <rect x="48" y="24" width="24" height="80" rx="8" fill="${W}"/>
-    <rect x="82" y="44" width="24" height="60" rx="8" fill="${W}"/>
-    <rect x="8" y="104" width="104" height="8" rx="4" fill="${INK}"/>`,
+    <rect class="i-main i-bar i-bar-1" x="14" y="62" width="24" height="42" rx="8"/>
+    <rect class="i-main i-bar i-bar-2" x="48" y="24" width="24" height="80" rx="8"/>
+    <rect class="i-main i-bar i-bar-3" x="82" y="44" width="24" height="60" rx="8"/>
+    <rect class="i-ink" x="8" y="104" width="104" height="8" rx="4"/>`,
   papan: () => `
-    <path d="M20 20 H100 V76 L76 100 H20 Z" fill="${W}" stroke="${W}" stroke-width="12" stroke-linejoin="round"/>
-    <path d="M106 76 L76 106 V86 Q76 76 86 76 Z" fill="${INK}"/>
-    <rect x="30" y="38" width="52" height="9" rx="4.5" fill="${INK}"/>
-    <rect x="30" y="56" width="34" height="9" rx="4.5" fill="${INK}"/>`,
+    <g class="i-note">
+      <path class="i-main i-round" d="M20 20 H100 V76 L76 100 H20 Z"/>
+      <path class="i-ink i-fold" d="M106 76 L76 106 V86 Q76 76 86 76 Z"/>
+      <rect class="i-ink i-line i-line-1" x="30" y="38" width="52" height="9" rx="4.5"/>
+      <rect class="i-ink i-line i-line-2" x="30" y="56" width="34" height="9" rx="4.5"/>
+    </g>`,
 };
 
 export function appIconSVG(appKey) {

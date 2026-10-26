@@ -1301,7 +1301,7 @@ function launcherTodayHTML(ctx, step) {
     ? `<button type="button" class="lh-video" data-guide-video-btn="${esc(step.guide)}"><span class="lh-video-dot">${icon("play", { size: 12 })}</span>${t("lh.video")}</button>`
     : "";
   return `
-    <section class="lh-today" id="journey-hero" style="--app:${app.color}">
+    <section class="lh-today" id="journey-hero" style="--app:${app.color};--app2:${app.color2 || app.color}">
       <span class="lh-today-art" aria-hidden="true">${appIconSVG(app.key)}</span>
       <div class="lh-today-pills">
         <span class="lh-pill is-strong">${esc(step.chip)}</span>
@@ -1352,14 +1352,14 @@ function appStatus(app, { brand, campaigns, content, journey, locked, reportIsDu
 }
 
 // An app: a block in its own colour gradient, its name, one line, where it
-// stands, and its solid vector picture in the corner (js/app-icons.js;
-// owner, 2026-10-26: no mascots, gradients, a glow and movement under the
-// mouse, the picture fully opaque).
+// stands, and its picture big in the corner, running off the edge in the
+// card's own colours (js/app-icons.js); under the mouse the card lifts and
+// glows and the picture plays its own little move.
 function appCardHTML(app, { brandId, status, current, locked, hereLabel }) {
   const name = t(app.labelKey);
   const attrs = locked ? `href="#" data-locked-step` : `href="${app.path(brandId)}"`;
   return `
-    <a class="lh-card${current ? " is-current" : ""}${locked ? " is-locked" : ""}" ${attrs} style="--app:${app.color}" data-app="${app.key}" aria-label="${esc(`${name} — ${t(app.subKey)}`)}">
+    <a class="lh-card${current ? " is-current" : ""}${locked ? " is-locked" : ""}" ${attrs} style="--app:${app.color};--app2:${app.color2 || app.color}" data-app="${app.key}" aria-label="${esc(`${name} — ${t(app.subKey)}`)}">
       <span class="lh-card-name">${esc(name)}</span>
       <span class="lh-card-sub">${esc(t(app.subKey))}</span>
       <span class="lh-card-status${status.tone ? ` is-${status.tone}` : ""}">${locked ? icon("lock", { size: 12 }) : status.tone === "good" ? icon("check", { size: 12 }) : ""}${esc(status.text)}</span>

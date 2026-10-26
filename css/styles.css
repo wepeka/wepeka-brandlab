@@ -6824,16 +6824,22 @@ details[open] > :not(summary){ animation: reveal-up .28s var(--ease-out) both; }
 /* An app block. */
 .lh-card{ position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:flex-start;
   min-height:206px; padding:22px 22px 20px; border-radius:30px; color: var(--ink); text-decoration:none;
-  background: linear-gradient(140deg, color-mix(in srgb, var(--app) 58%, #fff) 0%, var(--app) 50%, color-mix(in srgb, var(--app) 76%, #000) 100%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 72%, #fff) 0%, var(--app) 34%, var(--app2, var(--app)) 78%, color-mix(in srgb, var(--app2, var(--app)) 82%, #000) 100%);
+  background-size: 150% 150%; background-position: 0% 0%;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 12px 30px -20px color-mix(in srgb, var(--app) 85%, transparent);
   -webkit-tap-highlight-color: transparent;
-  transition: transform .4s cubic-bezier(.2,.8,.2,1.15), box-shadow .4s ease; }
+  transition: transform .45s cubic-bezier(.2,.8,.2,1.25), box-shadow .45s ease, background-position .8s cubic-bezier(.22,1,.36,1); }
+/* One streak of light crosses the card as the mouse arrives. */
+.lh-card::after{ content:""; position:absolute; z-index:0; inset:-20% -60%; pointer-events:none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.38) 50%, transparent 62%); transform: translateX(-75%); }
+.lh-card:hover::after{ animation: lh-sweep .9s cubic-bezier(.22,1,.36,1); }
+@keyframes lh-sweep{ from{ transform: translateX(-75%); } to{ transform: translateX(75%); } }
 /* The light that follows the mouse (--mx/--my from home.js). */
 .lh-card::before, .lh-today::before{ content:""; position:absolute; inset:0; z-index:0; pointer-events:none; border-radius:inherit; opacity:0;
   background: radial-gradient(280px circle at var(--mx, 70%) var(--my, 10%), rgba(255,255,255,.42), transparent 62%);
   transition: opacity .35s ease; }
 .lh-card:hover::before, .lh-today:hover::before{ opacity:1; }
-.lh-card:hover{ transform: translateY(-7px) scale(1.012);
+.lh-card:hover{ transform: translateY(-8px) scale(1.015); background-position: 100% 100%;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 0 1px color-mix(in srgb, var(--app) 55%, transparent),
     0 26px 50px -18px color-mix(in srgb, var(--app) 80%, transparent), 0 0 38px -4px color-mix(in srgb, var(--app) 60%, transparent); }
 .lh-card:active{ transform: translateY(-2px) scale(.985); transition-duration:.12s; }
@@ -6843,33 +6849,64 @@ details[open] > :not(summary){ animation: reveal-up .28s var(--ease-out) both; }
 .lh-card-status{ position:relative; z-index:1; display:inline-flex; align-items:center; gap:5px; margin-top:auto; padding:7px 12px;
   border-radius:999px; background: rgba(255,255,255,.72); font-size:12px; font-weight:800; white-space:nowrap; }
 .lh-card-go, .lh-card-here{ position:absolute; z-index:1; top:18px; right:18px; display:grid; place-items:center; background: var(--ink); color:#fff; }
-.lh-card-go{ width:38px; height:38px; border-radius:50%; transition: transform .2s ease; }
-.lh-card:hover .lh-card-go{ transform: rotate(-35deg); }
+.lh-card-go{ width:38px; height:38px; border-radius:50%; transition: transform .45s cubic-bezier(.34,1.56,.64,1), background .2s; }
+.lh-card:hover .lh-card-go{ transform: rotate(-45deg) scale(1.12); }
+.lh-card-name, .lh-card-sub{ transition: transform .45s cubic-bezier(.34,1.56,.64,1); }
+.lh-card:hover .lh-card-name{ transform: translateX(3px); }
+.lh-card:hover .lh-card-sub{ transform: translateX(3px); transition-delay:.04s; }
+.lh-card-status{ transition: transform .45s cubic-bezier(.34,1.56,.64,1); }
+.lh-card:hover .lh-card-status{ transform: translateY(-2px) scale(1.04); }
 .lh-card-here{ padding:8px 13px; border-radius:999px; font-size:12px; font-weight:800; }
-.lh-card-art{ position:absolute; z-index:0; right:18px; bottom:16px; width:96px; height:96px;
-  filter: drop-shadow(0 10px 14px color-mix(in srgb, var(--app) 60%, #000 25%));
-  transform: rotate(-8deg); transition: transform .5s cubic-bezier(.2,.8,.2,1.4); }
+.lh-card-art{ position:absolute; z-index:0; right:-42px; bottom:-52px; width:210px; height:210px;
+  filter: drop-shadow(0 14px 22px color-mix(in srgb, var(--app2, var(--app)) 60%, #000 35%));
+  transform: rotate(-10deg); transition: transform .6s cubic-bezier(.34,1.56,.64,1); }
 .lh-card-art svg{ width:100%; height:100%; display:block; overflow:visible; }
-.lh-card:hover .lh-card-art{ transform: rotate(4deg) scale(1.12) translateY(-6px); }
+.lh-card:hover .lh-card-art{ transform: rotate(-2deg) scale(1.06) translate(-12px,-12px); }
+/* The picture in the card's own colours: a light tint and a deep shade. */
+.lh-card-art .i-main, .lh-today-art .i-main{ fill: color-mix(in srgb, var(--app) 52%, #fff); }
+.lh-card-art .i-ink, .lh-today-art .i-ink{ fill: color-mix(in srgb, var(--app2, var(--app)) 62%, #000); }
+.lh-card-art .i-main.i-round, .lh-today-art .i-main.i-round{ stroke: color-mix(in srgb, var(--app) 52%, #fff); stroke-width:10; stroke-linejoin:round; }
+.lh-card-art .i-ink.i-round, .lh-today-art .i-ink.i-round{ stroke: color-mix(in srgb, var(--app2, var(--app)) 62%, #000); stroke-width:5; stroke-linejoin:round; }
+.lh-card-art .i-round-thin, .lh-today-art .i-round-thin{ stroke: color-mix(in srgb, var(--app) 52%, #fff); stroke-width:4; stroke-linejoin:round; }
+.lh-card-art svg *, .lh-today-art svg *{ transform-box: fill-box; }
+/* Each picture's own move under the mouse. */
+.lh-card:hover .i-seal{ transform-origin:center; animation: i-spin 1.1s cubic-bezier(.34,1.56,.64,1); }
+.lh-card:hover .i-star{ transform-origin:center; animation: i-twinkle 1.1s ease-in-out infinite .3s; }
+@keyframes i-spin{ from{ transform: rotate(0); } to{ transform: rotate(60deg); } }
+@keyframes i-twinkle{ 0%,100%{ transform: scale(1); } 50%{ transform: scale(1.25) rotate(12deg); } }
+.lh-card:hover .i-flag{ transform-origin: left center; animation: i-wave 1s ease-in-out infinite; }
+@keyframes i-wave{ 0%,100%{ transform: skewY(0) scaleX(1); } 25%{ transform: skewY(-7deg) scaleX(.94); } 50%{ transform: skewY(0) scaleX(1.03); } 75%{ transform: skewY(6deg) scaleX(.95); } }
+.lh-card:hover .i-pencil{ transform-origin:center; animation: i-scribble .7s ease-in-out infinite; }
+@keyframes i-scribble{ 0%,100%{ transform: translate(0,0) rotate(0); } 25%{ transform: translate(-6px,4px) rotate(-4deg); } 50%{ transform: translate(2px,7px) rotate(2deg); } 75%{ transform: translate(6px,2px) rotate(4deg); } }
+.lh-card:hover .i-bar{ transform-origin: center bottom; animation: i-grow .9s cubic-bezier(.34,1.56,.64,1) both; }
+.lh-card:hover .i-bar-2{ animation-delay:.08s; }
+.lh-card:hover .i-bar-3{ animation-delay:.16s; }
+@keyframes i-grow{ 0%{ transform: scaleY(.35); } 100%{ transform: scaleY(1); } }
+.lh-card:hover .i-note{ transform-origin: 30% 20%; animation: i-lift .9s cubic-bezier(.34,1.56,.64,1) both; }
+.lh-card:hover .i-line{ transform-origin: left center; animation: i-write .7s cubic-bezier(.22,1,.36,1) both; }
+.lh-card:hover .i-line-2{ animation-delay:.15s; }
+@keyframes i-lift{ 0%{ transform: rotate(0) translateY(0); } 100%{ transform: rotate(-8deg) translateY(-6px); } }
+@keyframes i-write{ from{ transform: scaleX(0); } to{ transform: scaleX(1); } }
 /* Where today's step happens: a slow glow, breathing. */
 .lh-card.is-current{ animation: lh-glow 2.8s ease-in-out infinite; }
 @keyframes lh-glow{ 0%,100%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 0 0 color-mix(in srgb, var(--app) 0%, transparent), 0 12px 30px -20px color-mix(in srgb, var(--app) 85%, transparent); }
   50%{ box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 0 4px color-mix(in srgb, var(--app) 35%, transparent), 0 0 36px -2px color-mix(in srgb, var(--app) 55%, transparent); } }
 .lh-card.is-current:hover{ animation:none; }
 @keyframes lh-bob{ 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-6px); } }
-.lh-card.is-locked{ background: linear-gradient(140deg, color-mix(in srgb, var(--app) 30%, #e6e1d8) 0%, color-mix(in srgb, var(--app) 38%, #c9c2b6) 100%); }
+.lh-card.is-locked{ background: linear-gradient(135deg, color-mix(in srgb, var(--app) 26%, #ece7de) 0%, color-mix(in srgb, var(--app2, var(--app)) 34%, #bdb6aa) 100%); }
+.lh-card.is-locked .lh-card-art{ filter: grayscale(.55) drop-shadow(0 12px 18px rgba(0,0,0,.25)); }
 .lh-card.is-locked .lh-card-go{ background: rgba(27,26,23,.55); }
 /* Board: one wide, short block across the bottom. */
 .lh-card[data-app="papan"]{ min-height:112px; flex-direction:row; align-items:center; gap:18px; padding:20px 24px; }
 .lh-card[data-app="papan"] .lh-card-sub{ max-width:none; margin:0; }
 .lh-card[data-app="papan"] .lh-card-status{ margin:0; }
 .lh-card[data-app="papan"] .lh-card-go{ top:50%; right:24px; margin-top:-19px; }
-.lh-card[data-app="papan"] .lh-card-art{ right:96px; bottom:auto; top:50%; margin-top:-36px; width:72px; height:72px; }
+.lh-card[data-app="papan"] .lh-card-art{ right:88px; bottom:-58px; width:170px; height:170px; }
 
 /* Today's step: a warm cream block, the step's own character up top. */
 .lh-today{ position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:flex-start;
   padding:26px 26px 22px; border-radius:30px; color: var(--ink);
-  background: linear-gradient(155deg, #fffaf3 0%, var(--cream) 48%, color-mix(in srgb, var(--app) 26%, var(--cream)) 100%);
+  background: linear-gradient(155deg, #fffaf3 0%, var(--cream) 40%, color-mix(in srgb, var(--app) 30%, var(--cream)) 80%, color-mix(in srgb, var(--app2, var(--app)) 34%, var(--cream)) 100%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
   transition: transform .4s cubic-bezier(.2,.8,.2,1.15), box-shadow .4s ease; }
 .lh-today > *{ position:relative; z-index:1; }
@@ -6877,11 +6914,15 @@ details[open] > :not(summary){ animation: reveal-up .28s var(--ease-out) both; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 26px 50px -22px color-mix(in srgb, var(--app) 70%, transparent), 0 0 36px -8px color-mix(in srgb, var(--app) 50%, transparent); }
 :root[data-theme="light"] .lh-today{ background: linear-gradient(155deg, #ffffff 0%, #fffaf3 50%, color-mix(in srgb, var(--app) 20%, #fff) 100%); box-shadow: 0 1px 0 rgba(27,26,23,.04), 0 18px 40px -24px rgba(27,26,23,.25); }
 .lh-today > .lh-today-art{ position:absolute; z-index:0; top:22px; right:22px; width:112px; height:112px; border-radius:50%; display:grid; place-items:center; color:#fff;
-  background: linear-gradient(140deg, color-mix(in srgb, var(--app) 60%, #fff) 0%, var(--app) 55%, color-mix(in srgb, var(--app) 76%, #000) 100%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 72%, #fff) 0%, var(--app) 40%, var(--app2, var(--app)) 100%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 14px 30px -12px color-mix(in srgb, var(--app) 80%, transparent);
-  animation: lh-bob 3.4s ease-in-out infinite; }
-.lh-today-art svg{ width:58px; height:58px; filter: drop-shadow(0 4px 6px rgba(0,0,0,.18)); }
-@media (prefers-reduced-motion: reduce){ .lh-card.is-current, .lh-today > .lh-today-art{ animation:none; } .lh-card:hover, .lh-today:hover{ transform:none; } }
+  overflow:hidden; animation: lh-bob 3.4s ease-in-out infinite; }
+.lh-today-art svg{ width:100px; height:100px; margin: 26px -26px -26px 0; filter: drop-shadow(0 6px 10px rgba(0,0,0,.2)); transform: rotate(-10deg); transition: transform .6s cubic-bezier(.34,1.56,.64,1); }
+.lh-today:hover .lh-today-art svg{ transform: rotate(0) scale(1.08); }
+@media (prefers-reduced-motion: reduce){
+  .lh-card.is-current, .lh-today > .lh-today-art, .lh-card:hover::after, .lh-card:hover .lh-card-art svg *{ animation:none; }
+  .lh-card:hover, .lh-today:hover, .lh-card:hover .lh-card-art, .lh-card:hover .lh-card-go, .lh-card:hover .lh-card-name, .lh-card:hover .lh-card-sub, .lh-card:hover .lh-card-status{ transform:none; }
+}
 .lh-today-pills{ display:flex; flex-wrap:wrap; gap:6px; padding-right:140px; }
 .lh-pill{ display:inline-flex; align-items:center; gap:5px; padding:6px 12px; border-radius:999px; background: rgba(27,26,23,.07); font-size:12px; font-weight:800; }
 .lh-pill.is-strong{ background: var(--ink); color:#fff; }
@@ -6930,13 +6971,14 @@ details[open] > :not(summary){ animation: reveal-up .28s var(--ease-out) both; }
   .lh-bento{ gap:12px; }
   .lh-today{ padding:20px 18px 18px; border-radius:26px; }
   .lh-today > .lh-today-art{ width:72px; height:72px; top:16px; right:16px; }
-  .lh-today-art svg{ width:38px; height:38px; }
+  .lh-today-art svg{ width:66px; height:66px; margin: 18px -18px -18px 0; }
   .lh-today-pills{ padding-right:96px; }
   .lh-today h2{ padding-right:84px; font-size:26px; margin-top:12px; }
   .lh-today-why{ font-size:13.5px; margin-top:10px; }
   .lh-parts{ display:none; }
   .lh-today-actions{ margin-top:16px; gap:8px; }
-  .lh-cta, .lh-video{ min-height:48px; }
+  .lh-cta, .lh-video{ min-height:48px; font-size:14px; }
+  .lh-cta{ text-align:left; line-height:1.25; }
   .lh-today-foot{ padding-top:18px; }
   .lh-today-actions{ width:100%; }
   .lh-cta, .lh-video{ flex:1 1 100%; justify-content:space-between; }
@@ -6949,9 +6991,9 @@ details[open] > :not(summary){ animation: reveal-up .28s var(--ease-out) both; }
   .lh-card-status{ margin-top:10px; max-width:100%; white-space:normal; padding:5px 9px; font-size:11px; line-height:1.25; }
   .lh-card-go{ width:32px; height:32px; top:14px; right:14px; }
   .lh-card-here{ position:relative; top:auto; right:auto; margin-top:auto; padding:6px 10px; font-size:11px; }
-  .lh-card-art{ width:58px; height:58px; right:12px; bottom:12px; }
+  .lh-card-art{ width:120px; height:120px; right:-26px; bottom:-30px; }
   .lh-card[data-app="papan"]{ min-height:96px; padding:16px 18px; }
-  .lh-card[data-app="papan"] .lh-card-art{ right:62px; width:52px; height:52px; margin-top:-26px; }
+  .lh-card[data-app="papan"] .lh-card-art{ right:4px; width:104px; height:104px; bottom:-46px; }
   .lh-card[data-app="papan"] .lh-card-go{ right:16px; margin-top:-16px; }
 }
 

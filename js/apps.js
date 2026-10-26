@@ -6,14 +6,16 @@
 //
 // `matches` = which route views light the app's tab up; `gated` = locked in
 // Pemula until the brand identity is done (js/brand-progress.js identityDone);
-// `color` = the app's own colour on its icon (the colours approved for the
-// Kenalan Fitur videos, so a feature looks the same in the videos and here).
+// `color` = the app's own colour (the colours approved for the Kenalan Fitur
+// videos, so a feature looks the same in the videos and here); `color2` = the
+// second stop of its card's gradient, a neighbouring hue so the gradient
+// reads clearly (owner, 2026-10-27: "gradasinya kurang kelihatan").
 export const APPS = [
-  { key: "builder", labelKey: "app.brand.name", subKey: "app.brand.sub", icon: "target", color: "#FFA52B", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"], guide: "brand-builder" },
-  { key: "campaigns", labelKey: "app.goals.name", subKey: "app.goals.sub", icon: "flag", color: "#30D97D", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales"], gated: true, guide: "campaigns" },
-  { key: "content-os", labelKey: "app.create.name", subKey: "app.create.sub", icon: "edit", color: "#3B9BFF", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], guide: "creator" },
-  { key: "report", labelKey: "app.report.name", subKey: "app.report.sub", icon: "chart", color: "#A974FF", path: (id) => `#/brand/${id}/report`, tour: "tab-report", matches: ["report"] },
-  { key: "papan", labelKey: "app.board.name", subKey: "app.board.sub", icon: "papan", color: "#FF4F9A", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"] },
+  { key: "builder", labelKey: "app.brand.name", subKey: "app.brand.sub", icon: "target", color: "#FFA52B", color2: "#FF5F2E", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"], guide: "brand-builder" },
+  { key: "campaigns", labelKey: "app.goals.name", subKey: "app.goals.sub", icon: "flag", color: "#30D97D", color2: "#0FA3A3", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals", "sales"], gated: true, guide: "campaigns" },
+  { key: "content-os", labelKey: "app.create.name", subKey: "app.create.sub", icon: "edit", color: "#3B9BFF", color2: "#4F55F5", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], guide: "creator" },
+  { key: "report", labelKey: "app.report.name", subKey: "app.report.sub", icon: "chart", color: "#A974FF", color2: "#E04FD8", path: (id) => `#/brand/${id}/report`, tour: "tab-report", matches: ["report"] },
+  { key: "papan", labelKey: "app.board.name", subKey: "app.board.sub", icon: "papan", color: "#FF4F9A", color2: "#FF7A45", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"] },
 ];
 
 export const appByKey = (key) => APPS.find((a) => a.key === key) || null;
