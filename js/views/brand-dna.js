@@ -1,4 +1,3 @@
-import { backLinkHTML } from "../back-link.js";
 import { getBrand, updateBrand, getSettings, defaultBrandDNA, defaultPersonality, listCampaigns, listContent, localISODate, isSharedBrand, onChange } from "../store.js";
 import { merge3 } from "../collab/diff.js";
 import { linesToList, listToLines, toast, qs, qsa, escapeHtml, openMenu, closeMenu, loadingHTML, revealStepTop } from "../dom.js";
@@ -20,6 +19,8 @@ import { aiUsageRemaining } from "../ai-usage.js";
 import { ensurePdfLibs } from "../pdf-libs.js";
 import { aiReportButtonHTML } from "../ai-report.js";
 import { trackStep, trackIdentityIfDone } from "../activation.js";
+import { myBrandSubHeadHTML } from "../my-brand-head.js";
+import { BRAND_PARTS } from "../brand-art.js";
 
 const TOUR_STEPS = [
   { selector: ".dna-progress-label", title: t("dna.tour.title"), body: t("dna.tour.body") },
@@ -362,25 +363,28 @@ function paint(root, brandId, brand, state, refresh) {
   const isReview = state.stepIndex >= STEPS.length;
   const step = isReview ? null : STEPS[state.stepIndex];
 
+  // My Brand's look (css/my-brand.css): the back pill + picture tile, one
+  // chunky segment per step, and the step sliding in from the side it came
+  // from when Lanjut / Kembali moves it.
+  const part = BRAND_PARTS.dna;
+  const moved = state.paintedStep !== undefined && state.paintedStep !== state.stepIndex;
+  const stepAnim = moved ? (state.stepIndex > state.paintedStep ? "mb-step-next" : "mb-step-back") : "";
+  const segments = STEPS.map((_, i) => `<i class="${isReview || i < state.stepIndex ? "is-done" : i === state.stepIndex ? "is-current" : ""}"></i>`).join("");
   root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brand.id}/builder`, t("nav.builder"))} · ${t("dna.eyebrowWizard")}${helpButtonHTML("brand-dna")}${guideVideoButtonHTML("brand-dna")}</div>
-        <h1>${t("home.identity.dna")}</h1>
-        <p class="page-head-brand">${escapeHtml(brand.name)}</p>
-      </div>
-    </div>
+    <div class="mb-page" style="--dna-c:${part.color};--dna-c2:${part.color2};">
+    ${myBrandSubHeadHTML({ brandId: brand.id, part: "dna", title: t("home.identity.dna"), helpHTML: `${helpButtonHTML("brand-dna")}${guideVideoButtonHTML("brand-dna")}` })}
     <div class="dna-wizard-layout">
     <div class="dna-wizard-main" style="max-width:640px;">
       ${liveCardHTML(state, brand)}
       <div class="flex items-center justify-between" style="margin-bottom:6px;">
         <span class="text-faint dna-progress-label" style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${isReview ? t("dna.progress.review") : t("dna.progress.step", { n: state.stepIndex + 1, total: total - 1 })}</span>
       </div>
-      <div style="height:5px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-bottom:24px;">
-        <div style="height:100%;background:var(--accent);width:${Math.round(((state.stepIndex + 1) / total) * 100)}%;transition:width .2s;"></div>
-      </div>
+      <div class="dna-steps" aria-hidden="true">${segments}</div>
+      <div class="dna-step-body ${stepAnim}" style="margin-top:20px;">
       ${!isReview && state.stepIndex === 0 && getMode() === "advanced" && countAnswered(state.answers) < 8 ? proBriefHTML() : ""}
       ${isReview ? reviewHTML(state) : stepHTML(step, state, brandId)}
+      </div>
+    </div>
     </div>
     </div>
   `;

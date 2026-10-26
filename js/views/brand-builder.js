@@ -9,6 +9,11 @@ import { t } from "../i18n.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress } from "../brand-progress.js";
 export { visualBasicsDone } from "../brand-progress.js";
 import { getMode } from "../mode.js";
+import { appByKey } from "../apps.js";
+import { appIconSVG } from "../app-icons.js";
+import { brandArtSVG, BRAND_PARTS } from "../brand-art.js";
+import { wirePointerLight } from "../my-brand-head.js";
+import { ensureGoogleFont, ensureCustomFont } from "./brand-guidelines.js";
 
 // The Brand Builder hub: two doors — Brand DNA (its own wizard,
 // js/views/brand-dna.js) and Brand Book (js/views/brand-guidelines.js).
@@ -16,8 +21,9 @@ import { getMode } from "../mode.js";
 // (js/brand-progress.js), so the two pages never disagree about how far
 // along a brand is. Nothing else lives here any more.
 const HUB_TOUR_STEPS = [
-  { selector: ".bb-hub-door:nth-child(1)", title: "Brand DNA", body: t("builder.tour.dna.body") },
-  { selector: ".bb-hub-door:nth-child(2)", title: "Brand Book", body: t("builder.tour.guidelines.body") },
+  { selector: ".mb-id", title: t("mb.id.eyebrow"), body: t("mb.tour.id.body") },
+  { selector: '.mb-card[data-part="dna"]', title: "Brand DNA", body: t("builder.tour.dna.body") },
+  { selector: '.mb-card[data-part="book"]', title: "Brand Book", body: t("builder.tour.guidelines.body") },
 ];
 
 // Whole-Builder completeness — both doors done. Used to decide whether
@@ -92,86 +98,149 @@ export function render(root, { brandId, stage }) {
   return () => {};
 }
 
+// My Brand (owner, 2026-10-27: "benerin My Brand, Brand DNA sama Brand Book
+// buat jadi lebih menarik"): the brand's own card on top — logo, name,
+// tagline, colours, fonts, filling in as the two parts are done — then
+// Brand DNA and Brand Book as two big cards in the launcher's style.
 function paintHub(root, brand) {
+  const app = appByKey("builder");
+  const pro = getMode() === "advanced";
+  const dnaDone = brandDnaDone(brand);
+  const book = brandBookProgress(brand);
+  const bookDone = pro ? book.filled >= book.total : visualBasicsDone(brand);
+  const current = !dnaDone ? "dna" : !bookDone ? "book" : "";
   root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow flex items-center gap-6">${helpButtonHTML("brand-builder-hub")}${guideVideoButtonHTML("brand-builder-hub")}</div>
-        <h1>${t("app.brand.name")}</h1>
-        <p class="page-head-brand">${escapeHtml(brand.name)}</p>
-        <p class="text-muted" style="font-size:13px;margin-top:4px;max-width:640px;">${t("builder.hub.sub")}</p>
+    <div class="mb">
+      <header class="mb-head">
+        <div class="mb-head-title">
+          <span class="mb-tile lh-pic" style="--app:${app.color};--app2:${app.color2};">${appIconSVG("builder")}</span>
+          <div>
+            <h1>${t("app.brand.name")}</h1>
+            <p>${t("mb.sub")}</p>
+          </div>
+        </div>
+        <div class="page-eyebrow mb-help">${helpButtonHTML("brand-builder-hub")}${guideVideoButtonHTML("brand-builder-hub")}</div>
+      </header>
+      ${idCardHTML(brand)}
+      <div class="mb-grid">
+        ${dnaCardHTML(brand, current === "dna")}
+        ${bookCardHTML(brand, current === "book", { pro, book, bookDone })}
       </div>
-    </div>
-    <div class="intro-note" style="max-width:640px;">
-      ${icon("sparkle", { size: 15 })}
-      <span>${t("builder.hub.intro")}</span>
-    </div>
-    <div class="bb-hub-grid">
-      ${dnaDoorHTML(brand)}
-      ${bookDoorHTML(brand)}
     </div>
   `;
   wireHelpButtons(root);
+  wirePointerLight(qs(".mb", root));
   setPageGuide(() => runSpotlightTour(HUB_TOUR_STEPS));
 
   if (consumeDnaJustCompleted(brand.id)) celebrateDnaComplete(root);
 }
 
+const HEX = /^#[0-9a-f]{3,8}$/i;
+const isImageUrl = (u) => typeof u === "string" && (u.startsWith("data:image/") || u.startsWith("https://"));
+
+// The brand's card: what the two parts have produced so far, in the brand's
+// own colours and font — and a quiet placeholder for what's still missing.
+function idCardHTML(brand) {
+  const bg = brand.brandGuidelines || {};
+  const dna = brand.brandDNA || {};
+  const colors = ["primary", "secondary", "accent"].map((k) => bg.colors?.[k]).filter((c) => c && HEX.test(c));
+  const font = (bg.fonts?.primary || "").trim();
+  const font2 = (bg.fonts?.secondary || "").trim();
+  const custom = font ? bg.customFonts?.[font] : "";
+  if (font) {
+    if (!custom) ensureGoogleFont(font);
+    else if (typeof custom === "string" && custom.startsWith("data:")) ensureCustomFont(font, custom);
+  }
+  const logo = bg.logo?.dataUrl || brand.avatar || "";
+  const tagline = (dna.tagline || "").trim();
+  const line = (dna.oneLiner || "").trim();
+  const c1 = colors[0] || "#FFA52B";
+  const c2 = colors[1] || colors[2] || "#FF5F2E";
+  const fontStyle = font ? ` style="font-family:'${escapeHtml(font)}', var(--font-display), sans-serif"` : "";
+  return `
+    <section class="mb-id" style="--b1:${c1};--b2:${c2};">
+      <div class="mb-id-cover" aria-hidden="true">
+        <span class="mb-id-logo${isImageUrl(logo) ? " is-image" : ""}">${isImageUrl(logo) ? `<img src="${escapeHtml(logo)}" alt="" />` : escapeHtml((brand.name || "?").trim().charAt(0).toUpperCase())}</span>
+      </div>
+      <div class="mb-id-body">
+        <span class="mb-id-eyebrow">${t("mb.id.eyebrow")}</span>
+        <h2${fontStyle}>${escapeHtml(brand.name)}</h2>
+        ${tagline ? `<p class="mb-id-tagline">“${escapeHtml(tagline)}”</p>` : `<a class="mb-id-missing" href="#/brand/${brand.id}/dna">${icon("plus", { size: 13 })}${t("mb.id.noTagline")}</a>`}
+        ${line ? `<p class="mb-id-line">${escapeHtml(line)}</p>` : ""}
+        <div class="mb-id-meta">
+          <div class="mb-id-group">
+            <span class="mb-id-label">${t("mb.id.colors")}</span>
+            ${colors.length
+              ? `<span class="mb-id-swatches">${colors.map((c) => `<span class="mb-id-swatch" style="background:${c}" title="${c}"></span>`).join("")}</span>`
+              : `<a class="mb-id-missing" href="#/brand/${brand.id}/guidelines/color">${icon("plus", { size: 13 })}${t("mb.id.noColors")}</a>`}
+          </div>
+          <div class="mb-id-group">
+            <span class="mb-id-label">${t("mb.id.fonts")}</span>
+            ${font
+              ? `<span class="mb-id-font"><b${fontStyle}>Aa</b><span>${escapeHtml([font, font2].filter(Boolean).join(" · "))}</span></span>`
+              : `<a class="mb-id-missing" href="#/brand/${brand.id}/guidelines/typography">${icon("plus", { size: 13 })}${t("mb.id.noFonts")}</a>`}
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
+// One part of My Brand as a big card: its step, name, one line, how far it
+// is, and the button — with its picture running off the corner.
+function partCardHTML({ part, href, step, name, sub, pct, progress, done, current, cta }) {
+  const c = BRAND_PARTS[part];
+  return `
+    <a class="lh-card mb-card${current ? " is-current" : ""}${done ? " is-done" : ""}" href="${href}" data-part="${part}" style="--app:${c.color};--app2:${c.color2};">
+      <span class="mb-card-step">${step}</span>
+      <span class="lh-card-name">${name}</span>
+      <span class="lh-card-sub">${sub}</span>
+      <span class="mb-card-progress"><span class="mb-bar"><i style="width:${pct}%"></i></span><b>${done ? icon("check", { size: 13 }) : ""}${progress}</b></span>
+      <span class="mb-card-cta">${cta}<span class="mb-card-cta-dot">${icon("arrowRight", { size: 15 })}</span></span>
+      ${current ? `<span class="lh-card-here">${t("lh.here")}</span>` : ""}
+      <span class="lh-card-art">${brandArtSVG(part)}</span>
+    </a>`;
+}
+
+function dnaCardHTML(brand, current) {
+  const { filled, total } = brandDnaCompleteness(brand.brandDNA);
+  const done = brandDnaDone(brand);
+  return partCardHTML({
+    part: "dna",
+    href: `#/brand/${brand.id}/dna`,
+    step: t("mb.step", { n: 1 }),
+    name: "Brand DNA",
+    sub: t("mb.dna.sub"),
+    pct: total ? Math.round((filled / total) * 100) : 0,
+    progress: t("builder.progress.dnaQuestions", { done: filled, total }),
+    done,
+    current,
+    cta: done ? t("mb.cta.edit") : filled ? t("mb.cta.continue") : t("mb.cta.start"),
+  });
+}
+
+// Same count as the Brand Book page's own bar and Beranda
+// (brandBookProgress) in both modes. Pemula's "done" is colours + fonts —
+// all My Goals waits for.
+function bookCardHTML(brand, current, { book, bookDone }) {
+  return partCardHTML({
+    part: "book",
+    href: `#/brand/${brand.id}/guidelines/color`,
+    step: t("mb.step", { n: 2 }),
+    name: "Brand Book",
+    sub: t("mb.book.sub"),
+    pct: Math.round((book.filled / book.total) * 100),
+    progress: t("builder.progress.stages", { done: book.filled, total: book.total }),
+    done: bookDone,
+    current,
+    cta: bookDone ? t("mb.cta.edit") : book.filled ? t("mb.cta.continue") : t("mb.cta.start"),
+  });
+}
+
 function celebrateDnaComplete(root) {
-  const dnaDoor = qs(`a.bb-hub-door[href$="/dna"]`, root);
+  const dnaDoor = qs(`.mb-card[data-part="dna"]`, root);
   if (dnaDoor) {
-    dnaDoor.classList.add("bb-hub-door-celebrate");
-    dnaDoor.addEventListener("animationend", () => dnaDoor.classList.remove("bb-hub-door-celebrate"), { once: true });
+    dnaDoor.classList.add("mb-card-celebrate");
+    dnaDoor.addEventListener("animationend", () => dnaDoor.classList.remove("mb-card-celebrate"), { once: true });
   }
   toast(t("builder.celebrate.dna"));
-}
-
-function doorHTML({ href, iconName, label, helpKey, desc, pct, progressLabel, primary }) {
-  return `
-    <a class="card dark-surface bb-hub-door ${primary ? "is-next" : ""}" href="${href}">
-      <div class="bb-hub-icon">${icon(iconName, { size: 30 })}</div>
-      <h2 class="flex items-center gap-6">${label}${helpButtonHTML(helpKey)}</h2>
-      <p>${desc}</p>
-      <div class="bb-hub-progress">
-        <div class="bb-hub-bar"><span style="width:${pct}%;"></span></div>
-        <span>${progressLabel}</span>
-      </div>
-    </a>
-  `;
-}
-
-function dnaDoorHTML(brand) {
-  const { filled, total } = brandDnaCompleteness(brand.brandDNA);
-  return doorHTML({
-    href: `#/brand/${brand.id}/dna`,
-    iconName: "target",
-    label: "Brand DNA",
-    helpKey: "term-brand-dna",
-    desc: t("builder.group.dna.doorDesc"),
-    pct: total ? Math.round((filled / total) * 100) : 0,
-    progressLabel: t("builder.progress.dnaQuestions", { done: filled, total }),
-    primary: !brandDnaDone(brand),
-  });
-}
-
-// Same count as the Brand Guidelines page's own bar and Beranda
-// (brandBookProgress) in both modes — Pemula used to see "Warna & font
-// selesai" at 100% here while the page itself said 2/6. What Pemula still
-// gets is the highlight: once colour and fonts are set this door stops
-// being "next", since that's all the Tujuan tab waits for.
-function bookDoorHTML(brand) {
-  const pro = getMode() === "advanced";
-  const basics = visualBasicsDone(brand);
-  const book = brandBookProgress(brand);
-  const pct = Math.round((book.filled / book.total) * 100);
-  return doorHTML({
-    href: `#/brand/${brand.id}/guidelines/color`,
-    iconName: "book",
-    label: "Brand Book",
-    helpKey: "term-brand-guidelines",
-    desc: t("builder.group.guidelines.doorDesc"),
-    pct,
-    progressLabel: t("builder.progress.stages", { done: book.filled, total: book.total }),
-    primary: brandDnaDone(brand) && !(pro ? book.filled >= book.total : basics),
-  });
 }

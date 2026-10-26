@@ -1,0 +1,197 @@
+/* =========================================================================
+   My Brand — the hub (js/views/brand-builder.js), Brand DNA
+   (js/views/brand-dna.js) and the Brand Book (js/views/brand-guidelines.js).
+   Owner, 2026-10-27: "benerin My Brand, Brand DNA sama Brand Book buat jadi
+   lebih menarik", and make every app feel like one product. Same language
+   as the Beranda launcher (css/styles.css "Pemula Beranda" block): two-hue
+   gradient blocks with a big picture running off the edge, a glow + light
+   under the mouse, dark ink on bright, few words. Its own file so the other
+   apps' work can merge without touching it.
+   ========================================================================= */
+
+/* Pictures coloured from their container's --app/--app2 (js/brand-art.js,
+   js/app-icons.js). The launcher's .lh-card-art rules cover i-main/i-ink;
+   these add the paler tint, the helix strands, and the same set for any
+   .lh-pic tile. */
+.lh-card-art .i-light, .lh-pic .i-light, .lh-today-art .i-light{ fill: color-mix(in srgb, var(--app) 26%, #fff); }
+.lh-pic .i-main{ fill: color-mix(in srgb, var(--app) 52%, #fff); }
+.lh-pic .i-ink{ fill: color-mix(in srgb, var(--app2, var(--app)) 62%, #000); }
+.lh-pic .i-main.i-round{ stroke: color-mix(in srgb, var(--app) 52%, #fff); stroke-width:10; stroke-linejoin:round; }
+.lh-pic .i-ink.i-round{ stroke: color-mix(in srgb, var(--app2, var(--app)) 62%, #000); stroke-width:5; stroke-linejoin:round; }
+.lh-pic .i-round-thin{ stroke: color-mix(in srgb, var(--app) 52%, #fff); stroke-width:4; stroke-linejoin:round; }
+.lh-card-art .i-strand, .lh-pic .i-strand, .lh-today-art .i-strand{ fill:none; stroke-width:14; stroke-linecap:round; }
+.lh-card-art .i-strand-a, .lh-pic .i-strand-a, .lh-today-art .i-strand-a{ stroke: color-mix(in srgb, var(--app) 52%, #fff); }
+.lh-card-art .i-strand-b, .lh-pic .i-strand-b, .lh-today-art .i-strand-b{ stroke: color-mix(in srgb, var(--app2, var(--app)) 62%, #000); }
+.lh-pic svg *{ transform-box: fill-box; }
+
+/* Their moves under the mouse: the helix turns, its rungs pulse; the
+   book's ribbon swings and the palette dots hop. */
+.lh-card:hover .i-helix{ transform-origin:center; animation: mb-twist 1.4s ease-in-out infinite; }
+.lh-card:hover .i-rung{ transform-origin:center; animation: mb-rung 1.4s ease-in-out infinite; }
+.lh-card:hover .i-rung-2{ animation-delay:.15s; }
+.lh-card:hover .i-rung-3{ animation-delay:.3s; }
+@keyframes mb-twist{ 0%,100%{ transform: scaleX(1); } 50%{ transform: scaleX(.72); } }
+@keyframes mb-rung{ 0%,100%{ transform: scaleX(1); } 50%{ transform: scaleX(.6); } }
+.lh-card:hover .i-ribbon{ transform-origin: 50% 0; animation: mb-swing 1s ease-in-out infinite; }
+.lh-card:hover .i-dot{ transform-origin:center; animation: mb-hop .8s cubic-bezier(.34,1.56,.64,1) infinite; }
+.lh-card:hover .i-dot-2{ animation-delay:.12s; }
+.lh-card:hover .i-dot-3{ animation-delay:.24s; }
+@keyframes mb-swing{ 0%,100%{ transform: rotate(0); } 50%{ transform: rotate(-12deg); } }
+@keyframes mb-hop{ 0%,100%{ transform: translateY(0); } 40%{ transform: translateY(-7px); } }
+
+/* ---- The hub ---------------------------------------------------------- */
+.mb{ --ink:#1b1a17; --cream:#fff6e8; max-width:1180px; margin:0 auto; }
+.mb-head{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin: 0 0 22px; }
+.mb-head-title{ display:flex; align-items:center; gap:16px; min-width:0; }
+.mb-head-title h1{ margin:0; font-size:38px; line-height:1.02; letter-spacing:-.01em; }
+.mb-head-title p{ margin:6px 0 0; font-size:14.5px; color: var(--text-muted); }
+.mb-help{ margin:0; display:flex; align-items:center; gap:6px; flex-wrap:nowrap; }
+
+/* An app's/part's picture on a small gradient tile, like a real app icon. */
+.mb-tile{ flex:none; position:relative; overflow:hidden; display:grid; place-items:center; width:64px; height:64px; border-radius:20px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 72%, #fff) 0%, var(--app) 45%, var(--app2, var(--app)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 12px 26px -12px color-mix(in srgb, var(--app) 80%, transparent); }
+.mb-tile svg{ width:76%; height:76%; display:block; overflow:visible; transform: translate(8%, 10%) rotate(-8deg); }
+
+/* The brand's own card. */
+.mb-id{ position:relative; overflow:hidden; isolation:isolate; display:grid; grid-template-columns: minmax(180px, 30%) 1fr; margin-bottom:18px;
+  border-radius:30px; color: var(--ink);
+  background: linear-gradient(155deg, #fffaf3 0%, var(--cream) 55%, color-mix(in srgb, var(--b1) 16%, var(--cream)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+  transition: transform .45s cubic-bezier(.2,.8,.2,1.2), box-shadow .45s ease; }
+:root[data-theme="light"] .mb-id{ box-shadow: 0 1px 0 rgba(27,26,23,.04), 0 18px 40px -24px rgba(27,26,23,.25); }
+.mb-id::before{ content:""; position:absolute; inset:0; z-index:2; pointer-events:none; border-radius:inherit; opacity:0;
+  background: radial-gradient(320px circle at var(--mx, 70%) var(--my, 10%), rgba(255,255,255,.45), transparent 62%); transition: opacity .35s ease; }
+.mb-id:hover::before{ opacity:1; }
+.mb-id:hover{ transform: translateY(-4px); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 26px 50px -24px color-mix(in srgb, var(--b1) 70%, transparent); }
+.mb-id-cover{ position:relative; display:grid; place-items:center; min-height:220px;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--b1) 75%, #fff) 0%, var(--b1) 45%, var(--b2) 100%); }
+.mb-id-cover::after{ content:""; position:absolute; inset:auto -30% -45% auto; width:80%; aspect-ratio:1; border-radius:50%; background: rgba(255,255,255,.14); }
+.mb-id-logo{ position:relative; z-index:1; width:108px; height:108px; border-radius:50%; overflow:hidden; display:grid; place-items:center;
+  background: rgba(255,255,255,.22); color:#fff; font-family: var(--font-display); font-size:46px; text-shadow: 0 2px 10px rgba(0,0,0,.25);
+  box-shadow: 0 0 0 4px rgba(255,255,255,.55), 0 18px 34px -14px rgba(0,0,0,.45); transition: transform .5s cubic-bezier(.34,1.56,.64,1); }
+.mb-id-logo.is-image{ background:#fff; }
+.mb-id-logo img{ width:100%; height:100%; object-fit:cover; display:block; }
+.mb-id:hover .mb-id-logo{ transform: scale(1.06) rotate(-4deg); }
+.mb-id-body{ position:relative; z-index:1; display:flex; flex-direction:column; justify-content:center; padding:26px 30px; min-width:0; }
+.mb-id-eyebrow{ font-size:11.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color: rgba(27,26,23,.5); }
+.mb-id-body h2{ margin:6px 0 0; font-size:36px; line-height:1.05; color: var(--ink); overflow-wrap:anywhere; }
+.mb-id-tagline{ margin:8px 0 0; font-size:17px; font-weight:700; color: rgba(27,26,23,.78); }
+.mb-id-line{ margin:6px 0 0; max-width:62ch; font-size:13.5px; line-height:1.5; color: rgba(27,26,23,.6); }
+.mb-id-meta{ display:flex; flex-wrap:wrap; gap:14px 30px; margin-top:18px; padding-top:16px; border-top:1px dashed rgba(27,26,23,.14); }
+.mb-id-group{ display:flex; flex-direction:column; gap:7px; }
+.mb-id-label{ font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color: rgba(27,26,23,.45); }
+.mb-id-swatches{ display:flex; }
+.mb-id-swatch{ width:34px; height:34px; border-radius:50%; border:3px solid var(--cream); margin-left:-8px; box-shadow: 0 4px 10px -4px rgba(0,0,0,.35);
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1); }
+.mb-id-swatch:first-child{ margin-left:0; }
+.mb-id:hover .mb-id-swatch{ transform: translateY(-3px); }
+.mb-id:hover .mb-id-swatch:nth-child(2){ transition-delay:.05s; }
+.mb-id:hover .mb-id-swatch:nth-child(3){ transition-delay:.1s; }
+.mb-id-font{ display:flex; align-items:center; gap:10px; font-size:13.5px; font-weight:700; color: rgba(27,26,23,.72); }
+.mb-id-font b{ font-size:30px; line-height:1; color: var(--ink); }
+.mb-id-missing{ display:inline-flex; align-items:center; gap:6px; width:max-content; padding:6px 12px; border-radius:999px; border:1.5px dashed rgba(27,26,23,.25);
+  font-size:12.5px; font-weight:700; color: rgba(27,26,23,.6); text-decoration:none; transition: background .2s, border-color .2s, color .2s; }
+.mb-id-missing:hover{ background: rgba(27,26,23,.06); border-color: rgba(27,26,23,.45); color: var(--ink); }
+.mb-id-tagline + .mb-id-meta, .mb-id-missing + .mb-id-meta{ margin-top:16px; }
+
+/* The two parts. */
+.mb-grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:16px; }
+.mb-card{ min-height:300px; padding:24px 26px 22px; }
+.mb-card-step{ position:relative; z-index:1; margin-bottom:12px; padding:5px 11px; border-radius:999px; background: rgba(255,255,255,.62); font-size:11.5px; font-weight:800; letter-spacing:.02em; }
+.mb-card .lh-card-name{ font-size:34px; }
+.mb-card .lh-card-sub{ max-width:60%; font-size:14px; }
+.mb-card-progress{ position:relative; z-index:1; display:flex; align-items:center; gap:10px; width:min(60%, 320px); margin-top:auto; padding-top:20px; font-size:12.5px; font-weight:800; }
+.mb-card-progress b{ display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.mb-bar{ flex:1; height:10px; border-radius:999px; background: rgba(255,255,255,.45); overflow:hidden; }
+.mb-bar i{ display:block; height:100%; border-radius:inherit; background: var(--ink); transition: width .8s cubic-bezier(.22,1,.36,1); }
+.mb-card-cta{ position:relative; z-index:1; display:inline-flex; align-items:center; gap:10px; margin-top:14px; min-height:46px; padding:0 6px 0 18px;
+  border-radius:999px; background: var(--ink); color:#fff; font-size:14.5px; font-weight:800; }
+.mb-card-cta-dot{ display:grid; place-items:center; width:34px; height:34px; border-radius:50%; color: var(--ink);
+  background: linear-gradient(140deg, color-mix(in srgb, var(--app) 60%, #fff), var(--app)); transition: transform .35s cubic-bezier(.34,1.56,.64,1); }
+.mb-card:hover .mb-card-cta-dot{ transform: translateX(3px) rotate(-30deg); }
+.mb-card .lh-card-art{ width:240px; height:240px; right:-40px; bottom:-48px; }
+.mb-card .lh-card-here{ top:20px; right:20px; }
+.mb-card-celebrate{ animation: bb-hub-celebrate .9s ease; }
+
+/* ---- A part's page: back pill + picture tile + title ---------------------- */
+.mb-backpill{ display:inline-flex; align-items:center; gap:8px; margin-bottom:16px; padding:5px 16px 5px 8px; border-radius:999px; color: var(--ink, #1b1a17);
+  font-size:14px; font-weight:800; text-decoration:none;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 72%, #fff) 0%, var(--app) 55%, var(--app2, var(--app)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5); transition: transform .35s cubic-bezier(.34,1.56,.64,1), box-shadow .3s ease; }
+.mb-backpill:hover{ transform: translateX(-3px); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 8px 22px -8px color-mix(in srgb, var(--app) 75%, transparent); }
+.mb-backpill-art{ display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background: rgba(255,255,255,.4); }
+.mb-backpill-art svg{ width:24px; height:24px; display:block; }
+.mb-subhead{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+.mb-subhead-title{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; min-width:0; }
+.mb-subhead-title h1{ margin:0; font-size:36px; line-height:1.02; }
+.mb-subhead .mb-tile{ width:58px; height:58px; border-radius:18px; }
+.mb-subhead-right{ margin-left:auto; }
+
+/* ---- Brand DNA: chunky steps, a calmer form, the brand card beside it ----- */
+.dna-steps{ display:flex; gap:6px; margin: 4px 0 8px; }
+.dna-steps i{ flex:1; height:10px; border-radius:999px; background: var(--surface-2); transition: background .4s ease; }
+.dna-steps i.is-done{ background: color-mix(in srgb, var(--dna-c, #FF8A3D) 55%, var(--surface-2)); }
+.dna-steps i.is-current{ background: linear-gradient(90deg, var(--dna-c, #FF8A3D), var(--dna-c2, #FF4F6E)); box-shadow: 0 0 14px -2px color-mix(in srgb, var(--dna-c, #FF8A3D) 70%, transparent); }
+.dna-wizard-main h2{ font-family: var(--font-display); font-size:30px; line-height:1.12; letter-spacing:-.01em; margin-top:14px; }
+.dna-wizard-main .textarea, .dna-wizard-main .input{ border-radius:18px; padding:14px 16px; font-size:15px; transition: border-color .2s, box-shadow .25s; }
+.dna-wizard-main .textarea:focus, .dna-wizard-main .input:focus{ border-color: color-mix(in srgb, var(--dna-c, #FF8A3D) 70%, var(--border));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dna-c, #FF8A3D) 22%, transparent); outline:none; }
+.dna-examples button{ border:1px solid var(--border); background: var(--surface); transition: transform .3s cubic-bezier(.34,1.56,.64,1), background .2s, border-color .2s; }
+.dna-examples button:hover{ transform: translateY(-2px); background: color-mix(in srgb, var(--dna-c, #FF8A3D) 16%, var(--surface)); border-style:solid; border-color: color-mix(in srgb, var(--dna-c, #FF8A3D) 55%, var(--border)); }
+.dna-nav #wiz-next{ min-height:48px; padding:0 8px 0 20px; border-radius:999px; background: #1b1a17; color:#fff; font-weight:800; gap:10px; }
+:root:not([data-theme="light"]) .dna-nav #wiz-next{ background:#fff; color:#1b1a17; }
+.dna-nav #wiz-next svg{ width:34px; height:34px; padding:9px; border-radius:50%; color:#1b1a17; background: linear-gradient(140deg, color-mix(in srgb, var(--dna-c, #FF8A3D) 60%, #fff), var(--dna-c, #FF8A3D)); transition: transform .35s cubic-bezier(.34,1.56,.64,1); }
+.dna-nav #wiz-next:hover:not(:disabled) svg{ transform: translateX(3px); }
+.dna-nav #wiz-back{ min-height:48px; border-radius:999px; }
+/* The brand card beside the form, in the hub's look. */
+.dna-wizard-main > .dna-live{ border:0; border-radius:26px; color:#1b1a17; overflow:hidden;
+  background: linear-gradient(155deg, #fffaf3 0%, #fff6e8 55%, color-mix(in srgb, var(--dna-c, #FF8A3D) 18%, #fff6e8) 100%); }
+.dna-wizard-main > .dna-live summary, .dna-wizard-main > .dna-live .dna-live-card{ --text:#1b1a17; --text-muted: rgba(27,26,23,.62); --text-faint: rgba(27,26,23,.48); --border: rgba(27,26,23,.12); --border-soft: rgba(27,26,23,.08); color:#1b1a17; }
+.dna-wizard-main > .dna-live .dna-live-avatar{ border-radius:50%; }
+/* Moving between steps: the new one slides in from the side it came from. */
+@keyframes mb-step-in-next{ from{ opacity:0; transform: translateX(28px); } to{ opacity:1; transform:none; } }
+@keyframes mb-step-in-back{ from{ opacity:0; transform: translateX(-28px); } to{ opacity:1; transform:none; } }
+.mb-step-next{ animation: mb-step-in-next .45s cubic-bezier(.22,1,.36,1) both; }
+.mb-step-back{ animation: mb-step-in-back .45s cubic-bezier(.22,1,.36,1) both; }
+
+/* ---- Brand Book: section chips and the preview frame ---------------------- */
+.bb-tab-row{ gap:8px; border-bottom:0; padding-bottom:4px; }
+.bb-tab{ min-height:40px; padding:0 16px; font-size:13px; border-radius:999px; transition: transform .3s cubic-bezier(.34,1.56,.64,1), background .2s, border-color .2s, color .2s, box-shadow .25s; }
+.bb-tab:hover{ transform: translateY(-2px); }
+.bb-tab.active, .bb-tab.done.active{ border-color:transparent; color:#1b1a17;
+  background: linear-gradient(135deg, #FFE27A 0%, #FFD23F 45%, #FF8A2B 100%); box-shadow: 0 10px 22px -12px rgba(255,138,43,.8); }
+.brandbook-right{ border-radius:28px; padding:20px; background:
+  linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
+  linear-gradient(135deg, rgba(255,210,63,.55), rgba(255,138,43,.25) 40%, transparent 70%) border-box;
+  border:1.5px solid transparent; }
+.brandbook-left > h2:first-of-type{ font-family: var(--font-display); font-size:28px; line-height:1.12; letter-spacing:-.01em; }
+@media (max-width: 720px){ .brandbook-left > h2:first-of-type{ font-size:23px; } }
+.bb-progress-bar{ height:10px; border-radius:999px; }
+.bb-progress-bar span{ background: linear-gradient(90deg, #FFD23F, #FF8A2B); }
+
+@media (prefers-reduced-motion: reduce){
+  .lh-card:hover .i-helix, .lh-card:hover .i-rung, .lh-card:hover .i-ribbon, .lh-card:hover .i-dot, .mb-step-next, .mb-step-back{ animation:none; }
+  .mb-id:hover, .mb-id:hover .mb-id-logo, .mb-id:hover .mb-id-swatch, .bb-tab:hover{ transform:none; }
+}
+
+@media (max-width: 860px){
+  .mb-grid{ grid-template-columns: 1fr; }
+}
+@media (max-width: 720px){
+  .mb-head-title h1, .mb-subhead-title h1{ font-size:28px; }
+  .mb-tile{ width:52px; height:52px; border-radius:16px; }
+  .mb-head .mb-help .page-help-btn span, .mb-subhead .mb-help .page-help-btn span{ display:none; }
+  .mb-id{ grid-template-columns: 1fr; }
+  .mb-id-cover{ min-height:150px; }
+  .mb-id-logo{ width:84px; height:84px; font-size:36px; }
+  .mb-id-body{ padding:20px 20px 22px; }
+  .mb-id-body h2{ font-size:28px; }
+  .mb-card{ min-height:250px; padding:20px 18px 18px; }
+  .mb-card .lh-card-name{ font-size:28px; }
+  .mb-card .lh-card-sub{ display:block; max-width:62%; font-size:13px; }
+  .mb-card-progress{ width:64%; }
+  .mb-card .lh-card-art{ width:170px; height:170px; right:-34px; bottom:-40px; }
+  .mb-card .lh-card-here{ position:absolute; top:16px; right:16px; margin:0; }
+  .dna-wizard-main h2{ font-size:24px; }
+}

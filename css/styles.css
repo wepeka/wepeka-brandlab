@@ -7043,6 +7043,11 @@ body:has(#view-root .lh) .topbar .tabs, body:has(#view-root .lh) .bottom-nav{ di
   .topbar .tabs .tab[data-tab-key="home"]{ padding: 9px 7px; }
 }
 .tab[style*="--app"]:not(.active):not(.is-locked) svg{ color: var(--app); }
+/* The open app's tab wears that app's own gradient (My Goals green, Create
+   blue…) instead of one brand colour for all — the same colours as its card
+   on Beranda, so the tab says which app you're in. */
+.tab.active[style*="--app"]{ color:#1b1a17; background: linear-gradient(135deg, color-mix(in srgb, var(--app) 70%, #fff) 0%, var(--app) 50%, var(--app2, var(--app)) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 8px 20px -10px color-mix(in srgb, var(--app) 80%, transparent); }
 
 /* Report page (js/views/report-page.js). */
 .rpage-bar{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }

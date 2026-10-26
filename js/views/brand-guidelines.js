@@ -1,4 +1,4 @@
-import { backLinkHTML } from "../back-link.js";
+import { myBrandSubHeadHTML } from "../my-brand-head.js";
 import { getBrand, updateBrand, getSettings, withBrandAssets, loadBrandAssets, hydrateGuidelines, fillGuidelinesFiles, onChange, isSharedBrand } from "../store.js";
 import { merge3 } from "../collab/diff.js";
 import { qs, qsa, escapeHtml, resizeImageFile, fileToDataURL, toast, pickBookTextColor, loadingHTML, revealStepTop } from "../dom.js";
@@ -376,21 +376,18 @@ function paint(root, brandId, brand, state, refresh) {
   // (the group page it used to point at is gone from the link graph, still
   // reachable by URL only), Pemula's Beranda (the map every step returns
   // to, same as Brand DNA's own back link).
-  const backHref = getMode() === "guided" ? `#/brand/${brand.id}` : `#/brand/${brand.id}/builder`;
-  const backLabel = getMode() === "guided" ? t("nav.home") : t("nav.builder");
+  // My Brand's look (css/my-brand.css): back to the My Brand hub in both
+  // modes — the app the Brand Book belongs to — with the part's picture
+  // tile; a section slides in from the side it came from.
+  const moved = state.paintedStep !== undefined && state.paintedStep !== state.stepIndex;
+  const stepAnim = moved ? (state.stepIndex > state.paintedStep ? "mb-step-next" : "mb-step-back") : "";
   root.innerHTML = `
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(backHref, backLabel)} · ${escapeHtml(brand.name)} · ${isReview ? t("bg.review.eyebrow") : step.title}${helpButtonHTML("brand-guidelines")}${guideVideoButtonHTML("brand-guidelines")}</div>
-        <h1>${t("bg.pageTitle")}</h1>
-      </div>
-      ${guidelinesProgressHTML(state)}
-    </div>
+    ${myBrandSubHeadHTML({ brandId: brand.id, part: "book", title: t("bg.pageTitle"), helpHTML: `${helpButtonHTML("brand-guidelines")}${guideVideoButtonHTML("brand-guidelines")}`, rightHTML: guidelinesProgressHTML(state) })}
     ${sectionTabsHTML(state, state.answers)}
     ${
       isReview
-        ? reviewHTML(brand, state)
-        : `<div class="brandbook-layout">
+        ? `<div class="${stepAnim}">${reviewHTML(brand, state)}</div>`
+        : `<div class="brandbook-layout ${stepAnim}">
              <div class="brandbook-left">
                <button type="button" class="bb-preview-jump" data-bb-preview-jump>${icon("eye", { size: 15 })}${t("bg.previewJump")}</button>
                ${stepHTML(step, state, brand)}

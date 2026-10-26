@@ -163,7 +163,7 @@ const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 // Pemula keeps My Goals locked until the identity is done (`gated`).
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
-  ...APPS.map((a) => ({ key: a.key, labelKey: a.labelKey, icon: a.icon, color: a.color, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
+  ...APPS.map((a) => ({ key: a.key, labelKey: a.labelKey, icon: a.icon, color: a.color, color2: a.color2, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -274,7 +274,7 @@ export function shellHTML({ brandId, active }) {
     ? TABS.map((tab) => {
         const locked = lock && tab.gated;
         const label = t(tab.labelKey);
-        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" ${tab.matches.includes(active) ? `aria-current="page"` : ""} href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" aria-label="${escapeHtml(label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}"${tab.color ? ` style="--app:${tab.color}"` : ""}>${icon(locked ? "lock" : tab.icon, { size: 16 })}<span class="tab-label">${label}</span></a>`;
+        return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" ${tab.matches.includes(active) ? `aria-current="page"` : ""} href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" aria-label="${escapeHtml(label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}"${tab.color ? ` style="--app:${tab.color};--app2:${tab.color2 || tab.color}"` : ""}>${icon(locked ? "lock" : tab.icon, { size: 16 })}<span class="tab-label">${label}</span></a>`;
       }).join("")
     : "";
 

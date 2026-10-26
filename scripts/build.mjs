@@ -228,7 +228,7 @@ async function main() {
   // else in the app references these by path (only index.html's own
   // <link> tags, rewritten below), so there's no unhashed copy left around
   // to drift out of sync with these.
-  const cssFiles = ["styles.css", "auth.css", "campaign.css", "report.css"];
+  const cssFiles = ["styles.css", "auth.css", "campaign.css", "report.css", "my-brand.css"];
   const cssHashed = {};
   for (const name of cssFiles) {
     cssHashed[name] = await hashedCopy(path.join(ROOT, "css", name), DIST_CSS, { minifyCss: true });
