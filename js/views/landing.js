@@ -352,13 +352,13 @@ function fitHTML() {
 // `wide`: a single screenshot too dense for half a row (the goal roadmap).
 const SHOT_DIR = "assets/landing/shots";
 const MODULES = [
-  { color: "#06b6d4", videos: ["dna", "book"], shots: [["01-brand-dna.jpg", "AI"], ["02-brand-book-warna.jpg", "Warna"]] },
-  { color: "#8b5cf6", videos: ["grow", "goal", "event"], shots: [["03-tujuan-roadmap.jpg", "Roadmap"]], wide: true },
-  { color: "#ec4899", videos: ["script", "flow", "series"], shots: [["05-creator-script.jpg", "Script"], ["06-teleprompter.jpg", "Teleprompter"], ["04-daftar-konten.jpg", "Terbit"]] },
-  { color: "#3b82f6", videos: ["calendar"], shots: [["07-kalender.jpg", "Jadwal"]] },
-  { color: "#22c55e", videos: ["list"], shots: [["08-insight-screenshot.jpg", "Screenshot"], ["08-laporan-pdf.jpg", "PDF"]] },
-  { color: "#f59e0b", videos: ["aiIntro", "ask", "credits"], shots: [["09-tanya-brandlab.jpg", "AI"]] },
-  { color: "#6366f1", videos: ["sales", "quick"], shots: [["10-brainstorm.jpg", "Brainstorm"], ["10-tulisan-cepat.jpg", "Tulisan Cepat"]] },
+  { color: "#FFA52B", videos: ["dna", "book"], shots: [["01-brand-dna.jpg", "AI"], ["02-brand-book-warna.jpg", "Warna"]] },
+  { color: "#30D97D", videos: ["grow", "goal", "event"], shots: [["03-tujuan-roadmap.jpg", "Roadmap"]], wide: true },
+  { color: "#3B9BFF", videos: ["script", "flow", "series"], shots: [["05-creator-script.jpg", "Script"], ["06-teleprompter.jpg", "Teleprompter"], ["04-daftar-konten.jpg", "Terbit"]] },
+  { color: "#0EA5E9", videos: ["calendar"], shots: [["07-kalender.jpg", "Jadwal"]] },
+  { color: "#A974FF", videos: ["list"], shots: [["08-insight-screenshot.jpg", "Report"], ["08-laporan-pdf.jpg", "PDF"]] },
+  { color: "#FF6FAE", videos: ["aiIntro", "ask", "credits"], shots: [["09-tanya-brandlab.jpg", "AI"]] },
+  { color: "#D946EF", videos: ["sales", "quick"], shots: [["10-brainstorm.jpg", "Brainstorm"], ["10-tulisan-cepat.jpg", "Tulisan Cepat"]] },
 ];
 
 // A screenshot in a browser-window frame; click opens it large.

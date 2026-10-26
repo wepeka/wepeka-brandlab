@@ -81,9 +81,9 @@ export default {
       "topics": {
         "all": "Semua",
         "intro": "Kenalan",
-        "brand": "Brand",
-        "goals": "Tujuan",
-        "content": "Konten",
+        "brand": "My Brand",
+        "goals": "My Goals",
+        "content": "Create",
         "ai": "AI"
       },
       "empty": "Belum ada video yang cocok. Coba kata lain, misalnya kalender, script, atau AI.",
@@ -211,10 +211,10 @@ export default {
     "modules": {
       "eyebrow": "Lihat sendiri isinya",
       "title": "7 kemampuan inti, 1 sistem brand",
-      "subtitle": "Empat tab: Beranda, Brand, Tujuan, Konten. Ini yang kamu buka tiap hari di Brandlab — semuanya per brand, dan satu akun bisa pegang lebih dari satu brand.",
+      "subtitle": "Lima aplikasi di satu Beranda: My Brand, My Goals, Create, Report, dan Board, plus satu langkah yang perlu kamu kerjain hari ini. Semuanya per brand, dan satu akun bisa pegang lebih dari satu brand.",
       "items": [
         {
-          "name": "Brand DNA & Brand Book",
+          "name": "My Brand: Brand DNA & Brand Book",
           "tagline": "Fondasi brand dalam 7 langkah, jadi PDF brand guidelines.",
           "points": [
             "Wizard StoryBrand 7 bagian: siapa pelangganmu, masalahnya, posisi brand-mu, sampai one-liner",
@@ -223,7 +223,7 @@ export default {
           ]
         },
         {
-          "name": "Tujuan & Roadmap",
+          "name": "My Goals: Tujuan & Roadmap",
           "tagline": "Pilih tujuan, dapat tangga misi mingguan.",
           "points": [
             "Pilih tujuannya: launching produk, naikin follower, dorong penjualan, bangun personal brand",
@@ -232,7 +232,7 @@ export default {
           ]
         },
         {
-          "name": "Creator",
+          "name": "Create: Creator",
           "tagline": "Hook, naskah, dan caption dengan suara brand kamu.",
           "points": [
             "Generator hook, script video, dan caption yang baca Brand DNA kamu — bukan template generik",
@@ -241,7 +241,7 @@ export default {
           ]
         },
         {
-          "name": "Kalender & AI Auto-Schedule",
+          "name": "Create: Kalender & AI Auto-Schedule",
           "tagline": "Tarik konten ke tanggal, atau minta AI usulin jadwalnya.",
           "points": [
             "Database konten + kalender dalam satu tempat: draft, dijadwalkan, terbit",
@@ -250,13 +250,13 @@ export default {
           ]
         },
         {
-          "name": "Insight dari Screenshot + Sinyal Performa",
-          "tagline": "Update angka tinggal screenshot — tanpa setup API.",
+          "name": "Report: Insight & Laporan PDF",
+          "tagline": "Semua angka kontenmu di satu halaman — update tinggal screenshot.",
           "points": [
             "Upload screenshot Instagram Insights, Brandlab baca angkanya sendiri (views, reach, likes, saves, follower)",
             "Tiap post dinilai pakai benchmark brand kamu sendiri, per tahap funnel",
             "Sinyal otomatis di Beranda: post yang lagi naik, engagement turun, streak posting terancam, konten overdue",
-            "Download laporan performa jadi PDF, tinggal kirim ke klien atau tim"
+            "Halaman Report: angka utama, konten terbaik, dan laporan PDF sekali klik, tinggal kirim ke klien atau tim"
           ]
         },
         {
@@ -270,7 +270,7 @@ export default {
         },
         {
           "name": "Brainstorm, Pelacak Penjualan & Tulisan Cepat",
-          "tagline": "Pelengkap di dalam tab Tujuan dan Konten.",
+          "tagline": "Pelengkap di dalam My Goals dan Create.",
           "points": [
             "Brainstorm: partner mikir buat ide kampanye atau angle konten, idenya bisa langsung disimpan",
             "Pelacak Penjualan: catat penjualan supaya konten bisa dibandingkan dengan omzet",

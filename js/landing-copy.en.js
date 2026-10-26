@@ -81,9 +81,9 @@ export default {
       "topics": {
         "all": "All",
         "intro": "Intro",
-        "brand": "Brand",
-        "goals": "Goals",
-        "content": "Content",
+        "brand": "My Brand",
+        "goals": "My Goals",
+        "content": "Create",
         "ai": "AI"
       },
       "empty": "No video matches that yet. Try another word, such as calendar, script or AI.",
@@ -211,10 +211,10 @@ export default {
     "modules": {
       "eyebrow": "See what's inside",
       "title": "7 core capabilities, 1 brand system",
-      "subtitle": "Four tabs: Home, Brand, Goals, Content. This is what you open every day in Brandlab — everything is per brand, and one account can run more than one brand.",
+      "subtitle": "Five apps on one Home: My Brand, My Goals, Create, Report and Board, plus the one step to do today. Everything is per brand, and one account can run more than one brand.",
       "items": [
         {
-          "name": "Brand DNA & Brand Book",
+          "name": "My Brand: Brand DNA & Brand Book",
           "tagline": "Your brand foundation in 7 steps, exported as a brand guidelines PDF.",
           "points": [
             "A 7-part StoryBrand wizard: who your customer is, their problem, your position, down to a one-liner",
@@ -223,7 +223,7 @@ export default {
           ]
         },
         {
-          "name": "Goals & Roadmap",
+          "name": "My Goals: Goals & Roadmap",
           "tagline": "Pick a goal, get a ladder of weekly missions.",
           "points": [
             "Pick the goal: product launch, grow followers, drive sales, build a personal brand",
@@ -232,7 +232,7 @@ export default {
           ]
         },
         {
-          "name": "Creator",
+          "name": "Create: Creator",
           "tagline": "Hooks, scripts and captions in your brand's voice.",
           "points": [
             "A hook, video script and caption generator that reads your Brand DNA — not a generic template",
@@ -241,7 +241,7 @@ export default {
           ]
         },
         {
-          "name": "Calendar & AI Auto-Schedule",
+          "name": "Create: Calendar & AI Auto-Schedule",
           "tagline": "Drag content onto a date, or ask the AI to suggest the dates.",
           "points": [
             "Content database + calendar in one place: draft, scheduled, published",
@@ -250,13 +250,13 @@ export default {
           ]
         },
         {
-          "name": "Insights from a Screenshot + Performance Signals",
-          "tagline": "Update your numbers from a screenshot — no API setup.",
+          "name": "Report: Insights & PDF Report",
+          "tagline": "All your content numbers on one page — updated from a screenshot.",
           "points": [
             "Upload an Instagram Insights screenshot and Brandlab reads the numbers itself (views, reach, likes, saves, followers)",
             "Every post is scored against your own benchmarks, per funnel stage",
             "Automatic signals on your home screen: a post taking off, engagement dropping, a posting streak at risk, overdue content",
-            "Download a performance report as a PDF, ready to send a client or your team"
+            "The Report page: headline numbers, best content, and a one-click PDF report, ready to send a client or your team"
           ]
         },
         {
@@ -270,7 +270,7 @@ export default {
         },
         {
           "name": "Brainstorm, Sales Tracker & Quick Copy",
-          "tagline": "Companions inside the Goals and Content tabs.",
+          "tagline": "Companions inside My Goals and Create.",
           "points": [
             "Brainstorm: a thinking partner for campaign ideas and content angles, ideas can be saved in one tap",
             "Sales Tracker: log sales so content can be compared with revenue",
