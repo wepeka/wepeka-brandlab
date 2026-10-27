@@ -217,21 +217,82 @@ export function composePayReminderEmail({ name = "", label = "", amount = 0, dea
 // text, escaped first.
 const bodyHTML = (body) => esc(body).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
 
-// One announcement, as an email. → { subject, html, text }.
-export function composeAnnouncementEmail({ title = "", body = "", link = "", appUrl = APP_URL } = {}) {
+// One announcement, as an email, in the same look as the trial comeback
+// email (owner, 2026-10-27: "kok gak kaya yang visual trial tadi"): a dark
+// hero with the kind, the title, the body's first paragraph, the first
+// screenshot and the button; then the rest of the body (a block of "- "
+// lines becomes a list), the other screenshots with their captions, and
+// the community links. `kind`/`images` are the post's own fields
+// (js/announcements.js); an image path "/assets/…" is made absolute on
+// `appUrl`. Tables and inline styles only. → { subject, html, text }.
+const KIND_BADGE = { feature: ["&#10024;", "Fitur baru", "#93c5fd"], fix: ["&#128295;", "Perbaikan", "#86efac"], info: ["&#128227;", "Info", "#fcd34d"] };
+const APP_DOTS = ["#FFA52B", "#30D97D", "#3B9BFF", "#A974FF", "#FF6FAE"];
+function bodyBlocks(body) {
+  return String(body || "").trim().split(/\n\s*\n/).map((block) => {
+    const lines = block.split("\n").filter((l) => l.trim());
+    return lines.length && lines.every((l) => /^\s*[-*•]\s+/.test(l))
+      ? { list: lines.map((l) => l.replace(/^\s*[-*•]\s+/, "")) }
+      : { p: block.trim() };
+  }).filter((b) => b.list || b.p);
+}
+const announcementImages = (images, appUrl) => (Array.isArray(images) ? images : [])
+  .filter((x) => x && /^(\/[^/]|https:\/\/)/.test(String(x.src || "")))
+  .slice(0, 6)
+  .map((x) => ({ src: String(x.src).startsWith("/") ? `${appUrl}${x.src}` : String(x.src), alt: String(x.alt || x.caption || "").replace(/\*\*/g, ""), caption: String(x.caption || "") }));
+export function composeAnnouncementEmail({ title = "", body = "", link = "", kind = "feature", images = [], appUrl = APP_URL } = {}) {
   const subject = `Brandlab: ${String(title).trim()}`.slice(0, 190);
   const updatesUrl = `${appUrl}/#/updates`;
   const settingsUrl = `${appUrl}/#/settings/reminders`;
   const safeLink = /^https:\/\//i.test(String(link).trim()) ? String(link).trim() : "";
-  const html = shell(`<p style="margin:0 0 6px;color:#888;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">Pengumuman</p>
-<h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;">${esc(title)}</h1>
-${body ? `<p style="margin:0 0 18px;">${bodyHTML(body)}</p>` : ""}
-<p style="margin:0;"><a href="${esc(safeLink || updatesUrl)}" style="${BUTTON}background:#111;color:#fff;">${safeLink ? "Buka" : "Lihat di Brandlab"}</a></p>
-${communityHTML()}
-<p style="margin:18px 0 0;color:#888;font-size:12px;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email pengumuman? Matikan di <a href="${esc(settingsUrl)}" style="color:#888;">Pengaturan → Pengingat</a>.</p>`);
+  const cta = [safeLink ? "Buka" : "Lihat di Brandlab", safeLink || updatesUrl];
+  const [badgeIcon, badgeLabel, badgeColor] = KIND_BADGE[kind] || KIND_BADGE.feature;
+  const blocks = bodyBlocks(body);
+  const lead = blocks[0]?.p ? blocks.shift().p : "";
+  const shots = announcementImages(images, appUrl);
+  const hero = shots.shift();
+  const blockHTML = (b) => b.list
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">${b.list.map((item, i) => `<tr><td width="22" valign="top" style="padding:7px 0 7px;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="10" height="10" bgcolor="${APP_DOTS[i % APP_DOTS.length]}" style="width:10px;height:10px;border-radius:999px;background:${APP_DOTS[i % APP_DOTS.length]};font-size:0;line-height:0;">&nbsp;</td></tr></table></td><td valign="top" style="padding:2px 0 8px;${font}font-size:15px;line-height:1.55;color:#292524;">${bodyHTML(item)}</td></tr>`).join("")}</table>`
+    : `<p style="margin:0 0 14px;${font}font-size:15px;line-height:1.6;color:#292524;">${bodyHTML(b.p)}</p>`;
+  const shotCell = (x) => `<a href="${esc(updatesUrl)}" style="text-decoration:none;"><img src="${esc(x.src)}" width="236" alt="${esc(x.alt)}" style="display:block;width:100%;max-width:236px;height:auto;border:0;border-radius:12px;"></a>${x.caption ? `<p style="margin:8px 0 0;${font}font-size:13px;line-height:1.45;color:#57534e;">${bodyHTML(x.caption)}</p>` : ""}`;
+  const rows = [];
+  for (let i = 0; i < shots.length; i += 2) rows.push(shots.slice(i, i + 2));
+  const shotsHTML = rows.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;">
+<tr><td style="padding:24px 28px 10px;"><p style="margin:0;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Lihat tampilannya</p></td></tr>
+${rows.map((row) => `<tr><td style="padding:8px 28px 10px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td width="50%" valign="top" style="padding-right:8px;">${shotCell(row[0])}</td><td width="50%" valign="top" style="padding-left:8px;">${row[1] ? shotCell(row[1]) : "&nbsp;"}</td></tr></table></td></tr>`).join("")}
+<tr><td style="height:16px;line-height:16px;font-size:0;">&nbsp;</td></tr>
+</table>` : "";
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f6efe9;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(lead.replace(/\*\*/g, "").slice(0, 140))}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f6efe9" style="background:#f6efe9;background-image:linear-gradient(180deg,#ffedd5 0%,#fce7f3 48%,#ede9fe 100%);"><tr><td align="center" style="padding:24px 12px 32px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#140d1f" style="max-width:560px;border-collapse:separate;background:#140d1f;background-image:linear-gradient(155deg,#1e3a8a 0%,#5b21b6 40%,#2a0f2e 72%,#0c0a09 100%);border-radius:22px;overflow:hidden;">
+<tr><td height="5" bgcolor="#ec4899" style="height:5px;line-height:5px;font-size:0;background:#ec4899;background-image:linear-gradient(90deg,#ffa52b,#30d97d,#3b9bff,#a974ff,#ff6fae);">&nbsp;</td></tr>
+<tr><td style="padding:24px 28px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td valign="middle"><img src="${esc(appUrl)}/assets/wepeka-logo.png" width="104" height="26" alt="Wepeka" style="display:block;border:0;outline:none;"></td>
+<td valign="middle" style="padding:0 10px;${font}font-size:20px;color:#57534e;">|</td>
+<td valign="middle" style="${font}font-size:19px;font-weight:800;color:#ffffff;">Brandlab</td>
+</tr></table>
+</td></tr>
+<tr><td style="padding:26px 28px 0;">
+<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:#0f1b3d;background:rgba(0,0,0,.34);${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${badgeColor};">${badgeIcon} ${badgeLabel}</span>
+<h1 style="margin:16px 0 12px;${font}font-size:28px;font-weight:800;line-height:1.2;color:#ffffff;">${esc(title)}</h1>
+${lead ? `<p style="margin:0 0 20px;${font}font-size:16px;line-height:1.6;color:#d6d3d1;">${bodyHTML(lead)}</p>` : ""}
+</td></tr>
+${hero ? `<tr><td style="padding:0 28px;"><a href="${esc(cta[1])}" style="text-decoration:none;"><img src="${esc(hero.src)}" width="504" alt="${esc(hero.alt)}" style="display:block;width:100%;max-width:504px;height:auto;border:0;border-radius:14px;"></a>${hero.caption ? `<p style="margin:10px 0 0;${font}font-size:13px;line-height:1.45;color:#c4b5fd;">${bodyHTML(hero.caption)}</p>` : ""}</td></tr>` : ""}
+<tr><td style="padding:22px 28px 30px;">
+${bigButton(cta[1], `${esc(cta[0])} &rarr;`, "#ffffff", "#140d1f")}
+</td></tr>
+</table>
+${blocks.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;"><tr><td style="padding:24px 28px 12px;">${blocks.map(blockHTML).join("")}</td></tr></table>` : ""}
+${shotsHTML}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;"><tr><td style="padding:4px 28px 24px;${font}">${communityHTML()}</td></tr></table>
+<p style="max-width:520px;margin:18px auto 0;${font}font-size:12px;line-height:1.6;color:#6b6259;text-align:center;">Kamu menerima email ini karena punya akun Brandlab. Nggak mau terima email pengumuman? Matikan di <a href="${esc(settingsUrl)}" style="color:#6b6259;">Pengaturan → Pengingat</a>.<br>Wepeka Brandlab &middot; <a href="${esc(appUrl)}" style="color:#6b6259;">${esc(appUrl.replace(/^https?:\/\//, ""))}</a></p>
+</td></tr></table>
+</body></html>`;
   const text = [
     String(title).trim(), "", String(body || "").trim(), "",
-    `${safeLink ? "Buka" : "Lihat di Brandlab"}: ${safeLink || updatesUrl}`, "",
+    `${cta[0]}: ${cta[1]}`, "",
     communityText(), "",
     `Nggak mau terima email pengumuman? Matikan di Pengaturan → Pengingat: ${settingsUrl}`,
   ].join("\n");
