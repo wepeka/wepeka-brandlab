@@ -178,3 +178,70 @@ export function sparkSVG(values, { height = 56 } = {}) {
       <path class="rl-spark-line" d="${line}" vector-effect="non-scaling-stroke"/>
     </svg>`;
 }
+
+// The engagement rate over time: one line with a wash (in the interactions
+// colour), the ER scale's "healthy" mark as a dashed guide, a dot on every
+// point that has an ER when there's room, and the highest point labelled.
+// `points`: [{ er, label }] in time order (er in %, null = no ER there);
+// `guide`: the healthy threshold (%); `fmt`: how a % is written (`tickFmt`
+// for the axis, whole numbers there). Returns
+// the SVG and where each point sits, for the hover layer.
+export function erChartSVG({ width, points, guide = null, fmt = (v) => `${v}%`, tickFmt = (v) => `${Math.round(v)}%`, labels = {} }) {
+  const W = Math.max(280, Math.round(width));
+  const small = W < 520;
+  const padL = small ? 40 : 48, padR = small ? 10 : 16;
+  const top = 30, plotH = small ? 150 : 190, axisH = 26;
+  const H = top + plotH + axisH;
+  const base = top + plotH;
+  const innerW = W - padL - padR;
+  const n = points.length;
+  const band = innerW / Math.max(1, n);
+  const xs = points.map((_, i) => padL + band * (i + 0.5));
+  const vals = points.map((p) => (Number.isFinite(p.er) ? p.er : null));
+  const yMax = niceMax(Math.max(0, ...vals.filter((v) => v !== null), guide ? guide * 1.25 : 0));
+  const yOf = (v) => base - (v / yMax) * plotH;
+  const ys = vals.map((v) => (v === null ? null : yOf(v)));
+  const linePts = xs.map((x, i) => ({ x, y: ys[i] })).filter((p) => p.y !== null);
+  const line = monotonePath(linePts);
+  const area = linePts.length > 1 ? `${line} L${linePts[linePts.length - 1].x},${base} L${linePts[0].x},${base} Z` : "";
+  let peak = -1;
+  vals.forEach((v, i) => { if (v !== null && (peak < 0 || v > vals[peak])) peak = i; });
+
+  const grid = [0, yMax / 2, yMax].map((tv) => `<line class="rl-grid" x1="${padL}" x2="${W - padR}" y1="${yOf(tv)}" y2="${yOf(tv)}"/><text class="rl-tick" x="${padL - 8}" y="${yOf(tv) + 4}" text-anchor="end">${esc(tickFmt(tv))}</text>`).join("");
+  const guideMark = guide && guide < yMax
+    ? `<g class="rl-er-guide"><line x1="${padL}" x2="${W - padR}" y1="${yOf(guide)}" y2="${yOf(guide)}"/><text x="${W - padR}" y="${yOf(guide) - 7}" text-anchor="end">${esc(labels.guide || "")}</text></g>`
+    : "";
+  const every = band >= (small ? 52 : 58);
+  const shown = new Set(every ? points.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1]);
+  const xLabels = points.map((p, i) => (shown.has(i) ? `<text class="rl-xlabel" x="${xs[i]}" y="${base + 18}" text-anchor="${!every && i === 0 && n > 1 ? "start" : !every && i === n - 1 && n > 1 ? "end" : "middle"}">${esc(p.label)}</text>` : "")).join("");
+  const dots = band >= 14 ? xs.map((x, i) => (ys[i] === null || i === peak ? "" : `<circle class="rl-er-dot" style="--i:${i}" cx="${x}" cy="${ys[i]}" r="3.5"/>`)).join("") : "";
+  let peakMark = "";
+  if (peak >= 0) {
+    const px = xs[peak], py = ys[peak];
+    const txt = `${fmt(vals[peak])}${labels.peak ? ` · ${labels.peak}` : ""}`;
+    const pw = Math.round(txt.length * 6.6 + 18);
+    const bx = Math.min(W - padR - pw, Math.max(padL, px - pw / 2));
+    const by = Math.max(2, py - 36);
+    peakMark = `
+      <g class="rl-peak">
+        <rect class="rl-peak-pill" x="${bx}" y="${by}" width="${pw}" height="22" rx="11"/>
+        <text class="rl-peak-text" x="${bx + pw / 2}" y="${by + 15}" text-anchor="middle">${esc(txt)}</text>
+        <circle class="rl-dot is-er" cx="${px}" cy="${py}" r="5.5"/>
+      </g>`;
+  }
+  const svg = `
+    <svg class="rl-trend-svg rl-er-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(labels.aria || "")}">
+      <defs><linearGradient id="rl-wash-er" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--rl-bar);stop-opacity:.3"/><stop offset="1" style="stop-color:var(--rl-bar);stop-opacity:0"/></linearGradient></defs>
+      ${grid}
+      ${guideMark}
+      ${area ? `<path class="rl-area" d="${area}" fill="url(#rl-wash-er)"/>` : ""}
+      ${line ? `<path class="rl-line is-er" d="${line}" pathLength="1"/>` : ""}
+      <line class="rl-x" x1="0" x2="0" y1="${top - 6}" y2="${base}"/>
+      ${dots}
+      ${peakMark}
+      <circle class="rl-hdot is-er" cx="0" cy="0" r="6"/>
+      <line class="rl-base" x1="${padL}" x2="${W - padR}" y1="${base}" y2="${base}"/>
+      ${xLabels}
+    </svg>`;
+  return { svg, xs, ys, band, height: H, padL, padR, top, interBase: base };
+}

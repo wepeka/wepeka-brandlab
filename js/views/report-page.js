@@ -16,9 +16,10 @@
 // benchmarks, and a brand with no numbers gets a friendly empty state.
 import { getBrand, getSettings, listContent, onChange, organicViews, localISODate, FUNNELS, ER_SCALE } from "../store.js";
 import { computeReportData, previousRange, rangeFor, rangeLabel, openReportModal, reportAdviceState, requestReportAdvice, OVERALL_START } from "./report.js";
-import { interactionsOf, interactionsTotal, trendSeries, formatMix, postingRhythm } from "../report-journey.js";
-import { trendChartSVG, ringSVG, sparkSVG, compactNum } from "./report-charts.js";
-import { isHealthy } from "../formulas.js";
+import { interactionsOf, interactionsTotal, trendSeries, formatMix, postingRhythm, erSeries, healthMix, HEALTH_ORDER, erBy, engagementMix } from "../report-journey.js";
+import { trendChartSVG, erChartSVG, ringSVG, sparkSVG, compactNum } from "./report-charts.js";
+import { isHealthy, computeContentMetrics } from "../formulas.js";
+import { brandRetentionStats, ratingLabel } from "../retention.js";
 import { hasAiKey, AiApiError } from "../ai.js";
 import { appByKey } from "../apps.js";
 import { appIconSVG } from "../app-icons.js";
@@ -197,6 +198,97 @@ function trendStop(n, d, series) {
           </table></div>
         </details>
       </div>
+    </section>`;
+}
+
+// ---------- Engagement rate & its details ----------
+// The charts the old Pro Beranda had (js/views/brand-home-analytics.js),
+// now on the journey (owner, 2026-10-27: "analytics yang dulu grafik2 dll
+// engagement rate masukin di report juga"): the ER over time against the
+// scale's healthy mark, how the posts score, ER per platform and per
+// format, what the interactions are made of, and video retention. All for
+// the period on screen, from the same numbers as the PDF.
+const HEALTH_VAR = {
+  excellent: "var(--health-good)",
+  good: "color-mix(in srgb, var(--health-good) 50%, var(--surface-2))",
+  average: "var(--health-average)",
+  poor: "var(--health-poor)",
+};
+// Bars of an average ER per group, highest first; nothing for fewer than
+// two groups (one bar would only repeat the average above).
+function erBarsCard(title, rows, nameOf) {
+  if (rows.length < 2) return "";
+  const best = rows[0].avg || 0;
+  return `
+    <div class="rl-card rl-mix-card">
+      <h3>${title}</h3>
+      <ul class="rl-bars rl-stagger">${rows.map((r, i) => `
+        <li style="--i:${i}"><span class="rl-bars-name"><b>${esc(nameOf(r.name))}</b><small>${t(r.n === 1 ? "rl.posts.one" : "rl.posts", { n: r.n })}</small></span>
+          <span class="rl-bars-track"><span class="rl-bars-fill${i === 0 ? " is-best" : ""}" style="--w:${best ? Math.max(3, Math.round((r.avg / best) * 100)) : 0}%"></span></span>
+          <span class="rl-bars-val">${formatPercent(r.avg)}</span></li>`).join("")}</ul>
+    </div>`;
+}
+
+function erStop(n, d, p, ers) {
+  if (d.avgER === null || !ers.points.some((pt) => pt.er !== null)) return "";
+  const scale = getSettings().erScale || ER_SCALE;
+  const sub = ers.unit === "post" ? t("rl.er.subPost") : ers.unit === "week" ? t("rl.er.subWeek") : t("rl.er.subMonth");
+  const h = healthMix(d);
+  const healthCard = h.rated ? `
+    <div class="rl-card rl-mix-card">
+      <h3>${t("rl.health.title")}</h3>
+      <div class="rl-stack" role="img" aria-label="${esc(HEALTH_ORDER.filter((k) => h.counts[k]).map((k) => `${t(`rl.health.${k}`)} ${h.counts[k]}`).join(", "))}">${HEALTH_ORDER.filter((k) => h.counts[k]).map((k) => `<span style="--grow:${h.counts[k]};background:${HEALTH_VAR[k]}"></span>`).join("")}</div>
+      <ul class="rl-mix-list">${HEALTH_ORDER.map((k) => `
+        <li><i style="background:${HEALTH_VAR[k]}"></i><b>${t(`rl.health.${k}`)}</b><span>${t(h.counts[k] === 1 ? "rl.posts.one" : "rl.posts", { n: h.counts[k] })}</span><em>${Math.round((h.counts[k] / h.rated) * 100)}%</em></li>`).join("")}</ul>
+      ${h.unrated ? `<p class="rl-hint">${t(h.unrated === 1 ? "rl.health.unrated.one" : "rl.health.unrated", { n: h.unrated })}</p>` : ""}
+    </div>` : "";
+  const platformCard = erBarsCard(t("rl.an.platform"), erBy(d, (x) => x.c.platform), (name) => (name ? platformName(name) : t("rl.an.noPlatform")));
+  const delta = p && p.avgER !== null ? deltaHTML(d.avgER, p.avgER, { points: true }) : "";
+  return `
+    <section class="rl-stop rl-reveal" data-stop="er">
+      ${stopHead(n, t("rl.er.title"), t("rl.er.sub", { good: scale.good }))}
+      <div class="rl-card rl-trend rl-er">
+        <div class="rl-er-head">
+          <div class="rl-er-fig"><small>${t("rl.er.avg")}</small>${countHTML(d.avgER, "pct", formatPercent(d.avgER))}${delta}</div>
+          <p>${esc(sub)}</p>
+        </div>
+        <div class="rl-chart" id="rl-er" tabindex="0" aria-describedby="rl-er-hint"></div>
+        <p class="rl-hint" id="rl-er-hint">${t("rl.trend.hint")}</p>
+      </div>
+      ${healthCard || platformCard ? `<div class="rl-two rl-er-cards">${healthCard}${platformCard}</div>` : ""}
+    </section>`;
+}
+
+function analyticsStop(n, d) {
+  const formatCard = erBarsCard(t("rl.an.format"), erBy(d, (x) => x.c.format), (name) => name || t("rl.an.noFormat"));
+  const mix = engagementMix(d);
+  const mixMax = Math.max(0.5, ...mix.map((r) => r.avg));
+  const mixCard = mix.length ? `
+    <div class="rl-card rl-mix-card">
+      <h3>${t("rl.an.mix")}</h3>
+      <ul class="rl-bars rl-stagger">${mix.map((r, i) => `
+        <li style="--i:${i}"><span class="rl-bars-name"><b>${esc(t(`ret.mix.${r.key}`))}</b><small>${t(r.n === 1 ? "rl.posts.one" : "rl.posts", { n: r.n })}</small></span>
+          <span class="rl-bars-track"><span class="rl-bars-fill" style="--w:${Math.max(3, Math.round((r.avg / mixMax) * 100))}%"></span></span>
+          <span class="rl-bars-val">${formatPercent(r.avg)}</span></li>`).join("")}</ul>
+      <p class="rl-hint">${t("ret.mix.hint")}</p>
+    </div>` : "";
+  const ret = brandRetentionStats(d.posts.map((x) => x.c), getSettings(), computeContentMetrics);
+  const tile = (key, value, rating) => (value === null ? "" : `
+    <div class="rl-ret-tile${rating ? ` is-${rating}` : ""}">${countHTML(value, "pct0", `${Math.round(value)}%`)}<span>${t(`ret.kpi.${key}`)}</span>${rating ? `<em>${esc(ratingLabel(rating))}</em>` : ""}</div>`);
+  const topHooks = ret.rows.filter((x) => x.a.hookPct !== null && x.a.hookPct !== undefined).sort((a, b) => b.a.hookPct - a.a.hookPct).slice(0, 3);
+  const retCard = ret.n ? `
+    <div class="rl-card rl-ret">
+      <h3>${t("rl.an.ret")}</h3>
+      <div class="rl-ret-tiles">${tile("hook", ret.hook, ret.ratings.hook)}${tile("watch", ret.watch, ret.ratings.watch)}${tile("completion", ret.completion, ret.ratings.completion)}</div>
+      <p class="rl-hint">${t("rl.an.retN", { n: ret.n })}</p>
+      ${topHooks.length > 1 ? `<h3 class="rl-ret-sub">${t("rl.an.retTop")}</h3><ol class="rl-ret-list">${topHooks.map((x) => `<li><b>${esc(x.c.title || t("common.untitled"))}</b><em>${Math.round(x.a.hookPct)}%</em></li>`).join("")}</ol>` : ""}
+    </div>` : "";
+  if (!formatCard && !mixCard && !retCard) return "";
+  return `
+    <section class="rl-stop rl-reveal" data-stop="analytics">
+      ${stopHead(n, t("rl.an.title"), t("rl.an.sub"))}
+      ${formatCard || mixCard ? `<div class="rl-two">${formatCard}${mixCard}</div>` : ""}
+      ${retCard}
     </section>`;
 }
 
@@ -509,28 +601,48 @@ export function render(root, { brandId }) {
     qs("#rl-end", rangeBox)?.addEventListener("change", onDate);
   }
 
-  // The chart is drawn at the width it gets, and again when that changes.
-  let series = null;
-  let geo = null;
+  // The charts are drawn at the width they get, and again when that changes.
+  const trend = { series: null, geo: null };
+  const er = { series: null, geo: null };
+  const pointName = (series, pt) => (series.unit === "post" ? pt.title || t("common.untitled") : series.unit === "week" ? t("rl.trend.weekOf", { date: dayMonth(pt.date) }) : new Date(pt.date + "T12:00:00").toLocaleDateString(locale(), { month: "long", year: "numeric" }));
+  const pointLabel = (series, pt) => (series.unit === "month" ? new Date(pt.date + "T12:00:00").toLocaleDateString(locale(), { month: "short" }) : dayMonth(pt.date));
   function drawTrend() {
     const box = qs("#rl-trend", body);
-    if (!box || !series) return;
+    if (!box || !trend.series) return;
     const width = box.clientWidth;
     if (!width) return;
-    const fmtLabel = (pt) => (series.unit === "month" ? new Date(pt.date + "T12:00:00").toLocaleDateString(locale(), { month: "short" }) : dayMonth(pt.date));
-    geo = trendChartSVG({
+    trend.geo = trendChartSVG({
       width,
-      points: series.points.map((pt) => ({ ...pt, label: fmtLabel(pt) })),
+      points: trend.series.points.map((pt) => ({ ...pt, label: pointLabel(trend.series, pt) })),
       labels: { views: t("store.metric.views"), inter: t("rl.kpi.inter"), aria: t("rl.trend.aria") },
       peakLabel: t("rl.trend.peak"),
     });
-    box.innerHTML = `${geo.svg}<div class="rl-tip" role="status" hidden></div>`;
+    box.innerHTML = `${trend.geo.svg}<div class="rl-tip" role="status" hidden></div>`;
   }
-  function wireTrend() {
-    const box = qs("#rl-trend", body);
+  function drawEr() {
+    const box = qs("#rl-er", body);
+    if (!box || !er.series) return;
+    const width = box.clientWidth;
+    if (!width) return;
+    const scale = getSettings().erScale || ER_SCALE;
+    er.geo = erChartSVG({
+      width,
+      points: er.series.points.map((pt) => ({ ...pt, label: pointLabel(er.series, pt) })),
+      guide: scale.good,
+      fmt: (v) => formatPercent(v),
+      labels: { aria: t("rl.er.aria"), peak: t("rl.trend.peak"), guide: t("rl.er.guide", { good: scale.good }) },
+    });
+    box.innerHTML = `${er.geo.svg}<div class="rl-tip" role="status" hidden></div>`;
+  }
+  // Point at a chart (or the arrow keys): a crosshair, the point's dot and
+  // a tooltip, text only (titles are the owner's own words). `chart`: its
+  // { series, geo }; `rowsOf(pt)`: the tooltip's [key, label, value] rows.
+  function wireHover(sel, chart, rowsOf) {
+    const box = qs(sel, body);
     if (!box) return;
     let idx = -1;
     const show = (i) => {
+      const { geo, series } = chart;
       if (!geo || i < 0 || i >= series.points.length) return;
       idx = i;
       const pt = series.points[i];
@@ -543,24 +655,22 @@ export function render(root, { brandId }) {
       const dot = qs(".rl-hdot", svg);
       if (geo.ys[i] !== null) { dot.setAttribute("cx", x); dot.setAttribute("cy", geo.ys[i]); dot.style.display = ""; } else dot.style.display = "none";
       qsa(".rl-bar", svg).forEach((b) => b.classList.toggle("is-hover", Number(b.dataset.i) === i));
-      // Tooltip: the number first, the name after; text only (titles are
-      // the owner's own words).
       const tip = qs(".rl-tip", box);
       tip.textContent = "";
       const head = document.createElement("div");
       head.className = "rl-tip-head";
-      head.textContent = series.unit === "post" ? pt.title || t("common.untitled") : series.unit === "week" ? t("rl.trend.weekOf", { date: dayMonth(pt.date) }) : new Date(pt.date + "T12:00:00").toLocaleDateString(locale(), { month: "long", year: "numeric" });
+      head.textContent = pointName(series, pt);
       const sub = document.createElement("div");
       sub.className = "rl-tip-sub";
       sub.textContent = series.unit === "post" ? [dayMonth(pt.date), pt.format].filter(Boolean).join(" · ") : t(pt.n === 1 ? "rl.posts.one" : "rl.posts", { n: pt.n });
       tip.append(head, sub);
-      [["line", t("store.metric.views"), pt.views], ["bar", t("rl.kpi.inter"), pt.inter]].forEach(([kind, label, v]) => {
+      rowsOf(pt).forEach(([kind, label, text]) => {
         const row = document.createElement("div");
         row.className = "rl-tip-row";
         const key = document.createElement("i");
         key.className = `rl-key-${kind}`;
         const val = document.createElement("b");
-        val.textContent = v === null ? t("rl.trend.empty") : formatNumber(v);
+        val.textContent = text;
         const name = document.createElement("span");
         name.textContent = label;
         row.append(key, val, name);
@@ -582,20 +692,23 @@ export function render(root, { brandId }) {
     };
     const indexAt = (clientX) => {
       const r = box.getBoundingClientRect();
-      const i = Math.floor((clientX - r.left - geo.padL) / geo.band);
-      return Math.max(0, Math.min(series.points.length - 1, i));
+      const i = Math.floor((clientX - r.left - chart.geo.padL) / chart.geo.band);
+      return Math.max(0, Math.min(chart.series.points.length - 1, i));
     };
-    box.addEventListener("pointermove", (e) => { if (geo) show(indexAt(e.clientX)); });
+    box.addEventListener("pointermove", (e) => { if (chart.geo) show(indexAt(e.clientX)); });
     box.addEventListener("pointerleave", hide);
     box.addEventListener("blur", hide);
     box.addEventListener("keydown", (e) => {
+      const last = chart.series.points.length - 1;
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         e.preventDefault();
-        const next = idx < 0 ? (e.key === "ArrowRight" ? 0 : series.points.length - 1) : idx + (e.key === "ArrowRight" ? 1 : -1);
-        show(Math.max(0, Math.min(series.points.length - 1, next)));
+        const next = idx < 0 ? (e.key === "ArrowRight" ? 0 : last) : idx + (e.key === "ArrowRight" ? 1 : -1);
+        show(Math.max(0, Math.min(last, next)));
       } else if (e.key === "Escape") hide();
     });
   }
+  const trendRows = (pt) => [["line", t("store.metric.views"), pt.views === null ? t("rl.trend.empty") : formatNumber(pt.views)], ["bar", t("rl.kpi.inter"), pt.inter === null ? t("rl.trend.empty") : formatNumber(pt.inter)]];
+  const erRows = (pt) => [["er", "ER", pt.er === null ? t("rl.er.none") : formatPercent(pt.er)]];
 
   function paint({ quiet = false } = {}) {
     undoMotion();
@@ -609,14 +722,17 @@ export function render(root, { brandId }) {
     ai.state = now;
     lastSig = sigNow(b, now);
     ai.advice = ai.made.get(now.sig) || now.advice;
-    series = trendSeries(d);
+    trend.series = trendSeries(d);
+    er.series = erSeries(d, trend.series);
 
     if (!d.publishedCount && !d.sales.count) {
       body.innerHTML = emptyHTML(b, st);
     } else {
       let n = 0;
       const stops = [
-        (k) => trendStop(k, d, series),
+        (k) => trendStop(k, d, trend.series),
+        (k) => erStop(k, d, p, er.series),
+        (k) => analyticsStop(k, d),
         (k) => bestStop(k, d, b),
         (k) => rhythmStop(k, d, st),
         (k) => mixStop(k, d),
@@ -636,7 +752,9 @@ export function render(root, { brandId }) {
     qsa("[data-open-pdf]", body).forEach((el) => el.addEventListener("click", openPdf));
     qs("#rl-ai-go", body)?.addEventListener("click", makeAdvice);
     drawTrend();
-    wireTrend();
+    drawEr();
+    wireHover("#rl-trend", trend, trendRows);
+    wireHover("#rl-er", er, erRows);
     undoMotion = mountMotion(body, seen);
   }
 
@@ -695,6 +813,7 @@ export function render(root, { brandId }) {
       if (w === lastWidth) return;
       lastWidth = w;
       drawTrend();
+      drawEr();
     }, 120);
   };
   window.addEventListener("resize", onResize);
