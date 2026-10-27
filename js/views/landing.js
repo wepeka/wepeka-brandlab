@@ -11,7 +11,8 @@
 //   numbers      the plan table in js/views/pricing.js (its {tokens})
 //   plans        that same module, rendered with `embed`
 //   videos       /api/guide-videos, the list the app itself plays
-//   screenshots  assets/landing/shots, copies of wpk-dp's public/brandlab/shots
+//   clips        assets/landing/clips, the real app recorded in motion (the same
+//                files as wpk-dp's public/brandlab/clips)
 //
 // In-page links are buttons that scroll (data-lp-goto), never "#anchor"
 // hrefs: while signed out, every hashchange repaints this page (js/main.js).
@@ -253,6 +254,7 @@ function heroHTML(facts, returning) {
       <p class="lp-lead">${x(COPY.subtitle)}</p>
       ${liveBox("heroSeats", facts, returning, "div", "lp-hero-seats")}
       ${liveBox("heroCta", facts, returning, "div", "lp-hero-cta")}
+      ${reelHTML()}
       <div class="lp-audience">
         <p>${x(COPY.audienceTitle)}</p>
         <ul>${COPY.audienceItems.map((a) => `<li><span aria-hidden="true">✓</span><span><strong>${x(a.who)}</strong> — ${x(a.why)}</span></li>`).join("")}</ul>
@@ -345,36 +347,60 @@ function fitHTML() {
     </section>`;
 }
 
-// One entry per module, in the order of the copy's modules.items: the hue
-// its screenshots were taken in (the demo brand's Brand Color changes per
-// module, and the frame picks the same hue), its screenshots with their
-// corner tag, and which guide videos belong under it (by description key).
-// `wide`: a single screenshot too dense for half a row (the goal roadmap).
-const SHOT_DIR = "assets/landing/shots";
+// One entry per module, in the order of the copy's modules.items: its app's
+// colours (the stage is a gradient of the two, like the app's own cards),
+// which guide videos belong under it (by description key), and its motion
+// clips — the real app recorded with a pointer moving over it, cropped to
+// the part worth showing (assets/landing/clips: <name>.mp4 + <name>.jpg
+// poster; w × h of the file). The copy's item.highlights are read out in
+// order across a module's clips; `marks` rings the spot a highlight is about
+// ([x %, y %, ring width %] of the clip) — only where that spot stays put
+// while the clip plays. `duo`: two clips side by side under the text.
+const CLIP_DIR = "assets/landing/clips";
 const MODULES = [
-  { color: "#FFA52B", videos: ["dna", "book"], shots: [["01-brand-dna.jpg", "AI"], ["02-brand-book-warna.jpg", "Warna"]] },
-  { color: "#30D97D", videos: ["grow", "goal", "event"], shots: [["03-tujuan-roadmap.jpg", "Roadmap"]], wide: true },
-  { color: "#3B9BFF", videos: ["script", "flow", "series"], shots: [["05-creator-script.jpg", "Script"], ["06-teleprompter.jpg", "Teleprompter"], ["04-daftar-konten.jpg", "Terbit"]] },
-  { color: "#0EA5E9", videos: ["calendar"], shots: [["07-kalender.jpg", "Jadwal"]] },
-  { color: "#A974FF", videos: ["list"], shots: [["08-insight-screenshot.jpg", "Report"], ["08-laporan-pdf.jpg", "PDF"]] },
-  { color: "#FF6FAE", videos: ["aiIntro", "ask", "credits"], shots: [["09-tanya-brandlab.jpg", "AI"]] },
-  { color: "#D946EF", videos: ["sales", "quick"], shots: [["10-brainstorm.jpg", "Brainstorm"], ["10-tulisan-cepat.jpg", "Tulisan Cepat"]] },
+  { color: "#FFA52B", color2: "#FF6B3D", videos: ["dna", "book"], clips: [{ src: "my-brand", w: 1440, h: 862, notes: 2, marks: [[16, 34, 12], [42, 82, 15]] }] },
+  { color: "#30D97D", color2: "#14B8A6", videos: ["grow", "goal", "event"], duo: true, clips: [{ src: "pohon", w: 1440, h: 782, notes: 2, marks: [[73.5, 31.6, 7], [52.9, 19.8, 7]] }, { src: "goals", w: 1440, h: 920, notes: 1 }] },
+  { color: "#3B9BFF", color2: "#6366F1", videos: ["script", "flow", "series"], duo: true, clips: [{ src: "create", w: 1200, h: 1162, notes: 1 }, { src: "teleprompter", w: 1440, h: 890, notes: 1 }] },
+  { color: "#22C3EE", color2: "#3B9BFF", videos: ["calendar"], clips: [{ src: "kalender", w: 1440, h: 890, notes: 2 }] },
+  { color: "#A974FF", color2: "#D946EF", videos: ["list"], clips: [{ src: "report", w: 1440, h: 986, notes: 2 }] },
+  { color: "#FF6FAE", color2: "#A974FF", videos: ["aiIntro", "ask", "credits"], clips: [{ src: "tanya-brandlab", w: 1100, h: 1040, notes: 1 }] },
+  { color: "#FF6FAE", color2: "#FF8A3D", videos: ["sales", "quick"], clips: [{ src: "tulisan-cepat", w: 1440, h: 936, notes: 2 }] },
 ];
+// The hero's showreel: Beranda, the five apps lighting up under the pointer.
+const REEL = { src: "beranda", w: 1440, h: 924 };
+const APPS = [["My Brand", "#FFA52B"], ["My Goals", "#30D97D"], ["Create", "#3B9BFF"], ["Report", "#A974FF"], ["Board", "#FF6FAE"]];
 
-// A screenshot in a browser-window frame; click opens it large.
-function frameHTML([file, badge], alt) {
-  const src = `${SHOT_DIR}/${file}`;
+// A clip on its stage (lp-show): muted, looping, played only while on screen
+// ("motion clips" in render); the poster stands in until then, and for anyone who asked for
+// less motion. Click plays it large. Numbered rings mark the spots its notes
+// are about; the notes sit on the stage's lower edge.
+function clipHTML(clip, { alt, notes = [], color, color2, eager = false, cls = "" }) {
+  const src = `${CLIP_DIR}/${clip.src}`;
   const label = escapeHtml(alt);
+  const marks = (clip.marks || []).slice(0, notes.length);
   return `
-    <figure class="lp-frame">
-      <div class="lp-frame-box">
-        <div class="lp-frame-bar"><i></i><i></i><i></i><span class="lp-frame-chip"><img src="assets/wepeka-favicon-32.png" alt="" width="16" height="16" />Wepeka Brandlab</span></div>
-        <button type="button" class="lp-frame-shot" data-lp-zoom="${src}" data-lp-alt="${label}" aria-label="${x(F.modules.zoom)}: ${label}">
-          <img src="${src}" alt="${label}" width="1920" height="1200" loading="lazy" decoding="async" />
+    <figure class="lp-show ${cls}" style="--m:${color};--m2:${color2};">
+      <div class="lp-show-view">
+        <button type="button" class="lp-show-shot" data-lp-clip="${src}" data-lp-alt="${label}" aria-label="${x(F.modules.zoom)}: ${label}">
+          <video muted loop playsinline preload="${eager ? "auto" : "none"}" poster="${src}.jpg" width="${clip.w}" height="${clip.h}" data-lp-video aria-hidden="true" tabindex="-1">
+            <source src="${src}.mp4" type="video/mp4" />
+          </video>
+          <span class="lp-show-play" aria-hidden="true">${icon("play", { size: 18 })}</span>
         </button>
+        ${marks.map(([mx, my, size], i) => `<span class="lp-mark" style="left:${mx}%;top:${my}%;--ring:${size}%;" aria-hidden="true"><b>${i + 1}</b></span>`).join("")}
       </div>
-      <span class="lp-frame-badge">${escapeHtml(badge)}</span>
+      ${notes.length ? `<figcaption class="lp-show-notes">${notes.map((note, i) => `<span class="lp-note">${i < marks.length ? `<b>${i + 1}</b>` : `<i></i>`}${x(note)}</span>`).join("")}</figcaption>` : ""}
     </figure>`;
+}
+
+function reelHTML() {
+  const r = F.reel;
+  return `
+    <div class="lp-reel">
+      ${clipHTML(REEL, { alt: "Brandlab — Beranda", notes: r.marks, color: "#FFA52B", color2: "#A974FF", eager: true, cls: "lp-show--reel" })}
+      <div class="lp-reel-apps" aria-hidden="true">${APPS.map(([name, c]) => `<span style="--a:${c};">${name}</span>`).join("")}</div>
+      <p class="lp-reel-note">${x(r.note)}</p>
+    </div>`;
 }
 
 function modulesHTML() {
@@ -385,17 +411,21 @@ function modulesHTML() {
       <ol class="lp-modules">
         ${m.items.map((item, i) => {
           const mod = MODULES[i] || MODULES[0];
-          const gallery = mod.shots.length > 1 || mod.wide;
           const text = `
             <div class="lp-mod-name"><span>${i + 1}</span><h3>${x(item.name)}</h3></div>
             <p class="lp-mod-tag">${x(item.tagline)}</p>
-            ${checksHTML(item.points, gallery ? "lp-checks--2col" : "")}
+            ${checksHTML(item.points, mod.duo ? "lp-checks--2col" : "")}
             <div class="lp-watch" data-lp-watch-for="${i}" hidden></div>`;
-          const shots = mod.shots.map((shot) => frameHTML(shot, mod.shots.length > 1 ? `${fill(item.name)} — ${shot[1]}` : fill(item.name))).join("");
+          let at = 0;
+          const stages = mod.clips.map((clip) => {
+            const notes = (item.highlights || []).slice(at, at + (clip.notes || 0));
+            at += clip.notes || 0;
+            return clipHTML(clip, { alt: `${fill(item.name)}${notes[0] ? ` — ${fill(notes[0])}` : ""}`, notes, color: mod.color, color2: mod.color2 });
+          }).join("");
           return `
-            <li class="lp-mod ${gallery ? "is-gallery" : ""} ${i % 2 === 1 ? "is-flip" : ""}" style="--m:${mod.color}">
+            <li class="lp-mod ${mod.duo ? "is-duo" : ""} ${i % 2 === 1 ? "is-flip" : ""}" style="--m:${mod.color};">
               <div class="lp-mod-text lp-reveal">${text}</div>
-              <div class="lp-mod-shots lp-mod-shots--${mod.wide ? "wide" : mod.shots.length} lp-reveal">${shots}</div>
+              <div class="lp-mod-shows ${mod.duo ? `lp-mod-shows--${mod.clips[0].h / mod.clips[0].w > 0.8 ? "tall" : "wide"}` : ""} lp-reveal">${stages}</div>
             </li>`;
         }).join("")}
       </ol>
@@ -634,7 +664,7 @@ function videosHTML(items) {
     </div>`;
 }
 
-// ---------- pop-up (a video opened from a module, a screenshot opened large) ----------
+// ---------- pop-up (a video opened from a module, a clip played large) ----------
 function openLightbox({ title, sub = "", bodyHTML, kind }) {
   const back = document.activeElement;
   const box = document.createElement("div");
@@ -659,10 +689,9 @@ function openLightbox({ title, sub = "", bodyHTML, kind }) {
   const onKey = (e) => {
     if (e.key === "Escape") close();
   };
-  // Outside the picture or the player (or on the picture itself: it is
-  // already as large as it gets) closes; the video's own controls don't.
+  // Outside the player closes; the video's own controls don't.
   box.addEventListener("click", (e) => {
-    if (e.target.closest(".lp-lightbox-x") || !e.target.closest(kind === "video" ? ".lp-lightbox-in" : ".lp-lightbox-head")) close();
+    if (e.target.closest(".lp-lightbox-x") || !e.target.closest(".lp-lightbox-in")) close();
   });
   document.addEventListener("keydown", onKey);
   document.body.style.overflow = "hidden";
@@ -697,6 +726,27 @@ export function render(root, { returning = false, goto = null } = {}) {
   }
   const watchReveals = (scope) => qsa(".lp-reveal", scope).forEach((el) => (seen ? seen.observe(el) : el.classList.add("is-in")));
   watchReveals(page);
+
+  // ----- motion clips -----
+  // Each plays while it is on screen and pauses once it leaves, so only the
+  // ones being looked at download and run. Less motion asked for, or the
+  // browser saving data: the poster stays, with a play badge — a click
+  // still plays it large.
+  const still = reduced || navigator.connection?.saveData === true || !("IntersectionObserver" in window);
+  const clips = qsa("[data-lp-video]", page);
+  if (still) qsa(".lp-show", page).forEach((el) => el.classList.add("is-still"));
+  else {
+    const onScreen = new IntersectionObserver((entries) => {
+      if (!root.isConnected) return onScreen.disconnect();
+      for (const { target: v, isIntersecting } of entries) {
+        if (isIntersecting) {
+          v.muted = true;
+          v.play().then(() => v.closest(".lp-show")?.classList.add("is-playing"), () => v.closest(".lp-show")?.classList.add("is-still"));
+        } else v.pause();
+      }
+    }, { threshold: 0.15 });
+    clips.forEach((v) => onScreen.observe(v));
+  }
 
   // ----- plans + what the server says about seats and checkout -----
   const paintLive = () => {
@@ -819,7 +869,7 @@ export function render(root, { returning = false, goto = null } = {}) {
 
   // ----- clicks -----
   page.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-lp-goto],[data-lp-play],[data-lp-watch],[data-lp-topic],[data-lp-more],[data-lp-zoom],[data-lp-cta],[data-lp-enter],[data-lp-buy],a[data-plan]");
+    const el = e.target.closest("[data-lp-goto],[data-lp-play],[data-lp-watch],[data-lp-topic],[data-lp-more],[data-lp-clip],[data-lp-cta],[data-lp-enter],[data-lp-buy],a[data-plan]");
     if (!el) return;
     const d = el.dataset;
     // A buy link (here or on a plan card): it leaves for wepeka.com to sign
@@ -839,8 +889,9 @@ export function render(root, { returning = false, goto = null } = {}) {
     } else if ("lpMore" in d) {
       vid.expanded = !vid.expanded;
       paintList();
-    } else if (d.lpZoom) {
-      openLightbox({ kind: "shot", title: d.lpAlt || "", bodyHTML: `<img src="${escapeHtml(d.lpZoom)}" alt="${escapeHtml(d.lpAlt || "")}" />` });
+    } else if (d.lpClip) {
+      const src = escapeHtml(d.lpClip);
+      openLightbox({ kind: "clip", title: d.lpAlt || "", bodyHTML: `<video src="${src}.mp4" poster="${src}.jpg" autoplay muted loop playsinline controls></video>` });
     } else if (d.lpCta) gaEvent("brandlab_cta", { location: d.lpCta, intent: "open" });
     else if (d.lpEnter) gaEvent("brandlab_cta", { location: d.lpEnter, intent: "login" });
   });

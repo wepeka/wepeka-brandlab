@@ -1476,30 +1476,67 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .lp-modules{ list-style:none; margin:clamp(48px,6vw,64px) 0 0; padding:0; display:flex; flex-direction:column; gap:clamp(56px,8vw,88px); }
 .lp-mod{ display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:clamp(28px,5vw,56px); }
 .lp-mod.is-flip .lp-mod-text{ order:2; }
-.lp-mod.is-gallery{ grid-template-columns:1fr; gap:28px; }
-.lp-mod.is-gallery .lp-mod-text{ order:0; }
 .lp-mod-name{ display:flex; align-items:center; gap:12px; }
-.lp-mod-name span{ display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:50%; background: var(--pl-pink); color:#fff; font-family: var(--font-display); font-size:14px; font-weight:900; box-shadow: var(--pl-shadow-card); }
+.lp-mod-name span{ display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:50%; background: linear-gradient(135deg, var(--m), color-mix(in srgb, var(--m) 62%, #fff)); color:#17140F; font-family: var(--font-display); font-size:14px; font-weight:900; box-shadow: var(--pl-shadow-card); }
 .lp-mod-name h3{ margin:0; font-family: var(--font-display); font-size:clamp(22px,2.8vw,30px); font-weight:900; line-height:1.15; }
 .lp-mod-tag{ max-width:60ch; margin:12px 0 20px; font-size:clamp(15px,1.6vw,18px); line-height:1.5; color: var(--text-muted); }
-.lp-mod-shots{ display:grid; gap:22px; min-width:0; }
-.lp-mod-shots--2{ grid-template-columns:1fr 1fr; }
-.lp-mod-shots--3{ grid-template-columns:repeat(3,1fr); }
-.lp-mod-shots--wide{ width:100%; max-width:920px; margin:0 auto; }
-.lp-frame{ position:relative; margin:0; min-width:0; }
-.lp-frame::before{ content:""; position:absolute; inset:-12px; border-radius:28px; background: linear-gradient(135deg, color-mix(in srgb, var(--m) 32%, transparent), transparent 50%, color-mix(in srgb, var(--m) 24%, transparent)); filter: blur(20px); opacity:.7; pointer-events:none; transition: opacity .5s; }
-.lp-frame:hover::before{ opacity:1; }
-.lp-frame-box{ position:relative; overflow:hidden; border-radius:16px; border:1px solid color-mix(in srgb, var(--m) 45%, transparent); background: var(--surface); box-shadow: var(--pl-shadow-pop); transition: transform .5s ease-out; }
-.lp-frame-bar{ display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid var(--border); background: color-mix(in srgb, var(--m) 10%, transparent); }
-.lp-frame-bar i{ width:10px; height:10px; border-radius:50%; background: rgba(251,113,133,.8); }
-.lp-frame-bar i:nth-child(2){ background: rgba(251,191,36,.8); }
-.lp-frame-bar i:nth-child(3){ background: rgba(52,211,153,.8); }
-.lp-frame-chip{ display:inline-flex; align-items:center; gap:6px; margin-left:10px; padding:2px 10px 2px 4px; border-radius:999px; background: color-mix(in srgb, var(--m) 15%, transparent); color: color-mix(in srgb, var(--m) 65%, var(--text)); font-size:11px; font-weight:700; white-space:nowrap; }
-.lp-frame-chip img{ width:16px; height:16px; border-radius:50%; }
-.lp-frame-shot{ appearance:none; display:block; width:100%; aspect-ratio:16/10; padding:0; border:0; background: var(--surface-2); cursor:zoom-in; }
-.lp-frame-shot img{ display:block; width:100%; height:100%; object-fit:cover; object-position:top; }
-.lp-frame-badge{ position:absolute; top:-12px; right:-8px; padding:4px 12px; border-radius:999px; background: linear-gradient(90deg, var(--m), color-mix(in srgb, var(--m) 72%, #fff)); color:#fff; font-size:11.5px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; box-shadow: var(--pl-shadow-pop); }
-@media (hover:hover) and (prefers-reduced-motion: no-preference){ .lp-frame:hover .lp-frame-box{ transform: translateY(-4px) rotate(-.5deg); } }
+
+/* A motion clip on its stage (lp-show): a gradient of the app's two
+   colours, like the app's own cards, lifting and glowing under the
+   pointer; the clip plays while on screen (js/views/landing.js). */
+.lp-show{ --pad:clamp(10px,1.5vw,16px); position:relative; isolation:isolate; margin:0; min-width:0; padding:var(--pad) var(--pad) 0; border-radius:clamp(20px,2.4vw,28px); background: linear-gradient(135deg, var(--m), var(--m2)); box-shadow: 0 28px 60px -30px color-mix(in srgb, var(--m) 75%, transparent), inset 0 1px 0 rgba(255,255,255,.35); transition: transform .5s cubic-bezier(.34,1.4,.64,1), box-shadow .5s ease; }
+.lp-show::before{ content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit; background: radial-gradient(70% 90% at 12% 0%, rgba(255,255,255,.38), transparent 60%), radial-gradient(60% 70% at 100% 100%, rgba(0,0,0,.2), transparent 70%); pointer-events:none; }
+.lp-show::after{ content:""; position:absolute; inset:-14px; z-index:-2; border-radius:36px; background: linear-gradient(135deg, var(--m), var(--m2)); filter: blur(26px); opacity:.28; pointer-events:none; transition: opacity .5s; }
+.lp-show-view{ position:relative; }
+.lp-show-shot{ appearance:none; position:relative; display:block; width:100%; padding:0; border:0; border-radius:clamp(12px,1.5vw,16px); overflow:hidden; background:#0b0b0e; box-shadow: 0 16px 34px -16px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.18); cursor:zoom-in; }
+.lp-show-shot video{ display:block; width:100%; height:auto; }
+.lp-show-play{ position:absolute; right:12px; bottom:12px; display:grid; place-items:center; width:38px; height:38px; border-radius:50%; background: rgba(255,255,255,.92); color:#17140F; box-shadow: 0 6px 16px rgba(0,0,0,.35); opacity:0; transform: scale(.8); transition: opacity .3s, transform .3s; pointer-events:none; }
+.lp-show-play svg{ fill:currentColor; margin-left:2px; }
+.lp-show.is-still .lp-show-play, .lp-show-shot:hover .lp-show-play, .lp-show-shot:focus-visible .lp-show-play{ opacity:1; transform:none; }
+.lp-show.is-playing .lp-show-shot:not(:hover) .lp-show-play{ opacity:0; }
+/* a numbered ring around the spot a note is about (it never covers it) */
+.lp-mark{ position:absolute; z-index:2; width:max(30px, var(--ring)); aspect-ratio:1; transform: translate(-50%,-50%); border-radius:50%; border:2.5px solid #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--m) 70%, transparent), 0 0 22px rgba(255,255,255,.35), inset 0 0 14px rgba(255,255,255,.2); pointer-events:none; }
+.lp-mark b{ position:absolute; top:-6px; right:-6px; display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background: linear-gradient(135deg, var(--m), var(--m2)); color:#17140F; font-family: var(--font-display); font-size:11.5px; font-weight:900; box-shadow: 0 0 0 2px #fff, 0 4px 10px rgba(0,0,0,.35); }
+.lp-mark::after{ content:""; position:absolute; inset:-3px; border-radius:50%; border:2px solid #fff; opacity:0; }
+/* the notes, sitting on the stage's lower edge */
+.lp-show-notes{ position:relative; z-index:3; display:flex; flex-wrap:wrap; gap:8px; margin:-17px 0 0; padding:0 12px 14px; }
+.lp-note{ display:inline-flex; align-items:center; gap:8px; max-width:100%; padding:6px 13px 6px 6px; border-radius:999px; background:#fff; color:#17140F; font-size:12.5px; font-weight:800; line-height:1.25; box-shadow: 0 8px 20px -6px rgba(0,0,0,.45); }
+.lp-note b, .lp-note i{ display:grid; place-items:center; flex:none; width:22px; height:22px; border-radius:50%; background: linear-gradient(135deg, var(--m), var(--m2)); color:#17140F; font-family: var(--font-display); font-size:11.5px; font-style:normal; font-weight:900; }
+.lp-note i::before{ content:""; width:7px; height:7px; border-radius:50%; background:#fff; }
+@media (hover:hover) and (prefers-reduced-motion: no-preference){
+  .lp-show:hover{ transform: translateY(-6px) rotate(-.4deg); box-shadow: 0 40px 80px -30px color-mix(in srgb, var(--m) 90%, transparent), inset 0 1px 0 rgba(255,255,255,.35); }
+  .lp-show:hover::after{ opacity:.55; }
+}
+@media (prefers-reduced-motion: no-preference){
+  .lp-mark::after{ animation: lp-mark-ping 2.4s cubic-bezier(0,0,.2,1) infinite; }
+  .lp-mark:nth-of-type(2)::after{ animation-delay:1.2s; }
+}
+@keyframes lp-mark-ping{ 0%{ opacity:.9; transform: scale(1); } 80%,100%{ opacity:0; transform: scale(1.4); } }
+
+/* a module: text + its stage side by side; duo = two clips under the text */
+.lp-mod-shows{ display:grid; gap:clamp(24px,3vw,36px); min-width:0; }
+.lp-mod{ grid-template-columns:minmax(0,5fr) minmax(0,7fr); }
+.lp-mod.is-flip{ grid-template-columns:minmax(0,7fr) minmax(0,5fr); }
+.lp-mod.is-duo{ grid-template-columns:1fr; gap:28px; }
+.lp-mod.is-duo .lp-mod-text{ order:0; }
+.lp-mod-shows--wide{ grid-template-columns:minmax(0,7fr) minmax(0,5fr); align-items:center; }
+.lp-mod-shows--tall{ grid-template-columns:minmax(0,5fr) minmax(0,7fr); align-items:center; }
+
+/* Hero showreel: Beranda in motion, wider than the hero's text column */
+.lp-reel{ width:min(1120px, calc(100vw - 32px)); margin-top:clamp(18px,3vw,30px); display:flex; flex-direction:column; align-items:center; gap:14px; }
+.lp-reel .lp-show{ width:100%; }
+.lp-reel-apps{ display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+.lp-reel-apps span{ padding:5px 12px; border-radius:999px; background: color-mix(in srgb, var(--a) 16%, transparent); border:1px solid color-mix(in srgb, var(--a) 50%, transparent); color: color-mix(in srgb, var(--a) 70%, var(--text)); font-size:12.5px; font-weight:800; }
+.lp-reel-note{ margin:0; font-size:13.5px; color: var(--text-muted); }
+@media (max-width:560px){
+  .lp-reel-apps{ gap:6px; }
+  .lp-reel-apps span{ padding:4px 9px; font-size:11px; }
+  .lp-show-notes{ padding:0 8px 10px; gap:6px; margin-top:-14px; }
+  .lp-note{ font-size:11.5px; padding:5px 10px 5px 5px; gap:6px; }
+  .lp-note b, .lp-note i{ width:19px; height:19px; font-size:10.5px; }
+  .lp-mark{ width:max(22px, var(--ring)); border-width:2px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--m) 70%, transparent), 0 0 14px rgba(255,255,255,.35); }
+  .lp-mark b{ width:18px; height:18px; top:-6px; right:-7px; font-size:10px; }
+}
 .lp-watch{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:18px; font-size:12px; font-weight:800; color: var(--text-muted); }
 .lp-watch-chip{ appearance:none; display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; border:1px solid color-mix(in srgb, var(--m) 45%, transparent); background: color-mix(in srgb, var(--m) 12%, transparent); cursor:pointer; font:inherit; font-size:12.5px; font-weight:700; color: var(--text); transition: background .15s; }
 .lp-watch-chip:hover{ background: color-mix(in srgb, var(--m) 24%, transparent); }
@@ -1508,10 +1545,10 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .lp-mod-foot{ margin-top:clamp(48px,6vw,72px); }
 .lp-mod-foot p{ max-width:520px; margin:0; font-size:14px; line-height:1.6; color: var(--text-muted); }
 @media (max-width:900px){
-  .lp-mod{ grid-template-columns:1fr; gap:24px; }
+  .lp-mod, .lp-mod.is-flip{ grid-template-columns:1fr; gap:24px; }
   .lp-mod.is-flip .lp-mod-text{ order:0; }
 }
-@media (max-width:720px){ .lp-mod-shots--2, .lp-mod-shots--3{ grid-template-columns:1fr; } }
+@media (max-width:720px){ .lp-mod-shows--wide, .lp-mod-shows--tall{ grid-template-columns:1fr; } }
 
 /* Value stack */
 .lp-stack{ max-width:780px; margin:40px auto 0; overflow:hidden; }
@@ -1573,8 +1610,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 /* Pop-up: a module's video, or a screenshot opened large (lives on <body>) */
 .lp-lightbox{ position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:clamp(12px,3vw,32px); background: rgba(0,0,0,.84); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
 .lp-lightbox-in{ width:100%; max-width:960px; }
-.lp-lightbox--shot{ cursor:zoom-out; }
-.lp-lightbox--shot .lp-lightbox-in{ max-width:1400px; }
+.lp-lightbox--clip .lp-lightbox-in{ max-width:1400px; }
 .lp-lightbox-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; color:#fff; cursor:default; }
 .lp-lightbox-head > div{ display:flex; flex-direction:column; min-width:0; }
 .lp-lightbox-head strong, .lp-lightbox-head span{ overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -1582,7 +1618,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 .lp-lightbox-head span{ font-size:14px; color: rgba(255,255,255,.7); }
 .lp-lightbox-x{ appearance:none; display:grid; place-items:center; flex:none; width:44px; height:44px; border-radius:50%; border:0; background: rgba(255,255,255,.1); color:#fff; cursor:pointer; transition: background .15s; }
 .lp-lightbox-x:hover{ background: rgba(255,255,255,.2); }
-.lp-lightbox-body img{ display:block; width:100%; max-height:calc(100vh - 130px); border-radius:12px; object-fit:contain; }
+.lp-lightbox-body > video{ display:block; width:100%; max-height:calc(100vh - 130px); border-radius:12px; background:#000; object-fit:contain; }
 
 /* The wait between a pay button and the payment window (js/pay-loading.js).
    Above modals (70) and menus (75); Midtrans Snap's own window sits far

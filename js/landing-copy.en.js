@@ -220,6 +220,10 @@ export default {
             "A 7-part StoryBrand wizard: who your customer is, their problem, your position, down to a one-liner",
             "AI suggests options at every step — you never start from a blank page",
             "Logo, colors, fonts and tone of voice compiled into a Brand Book PDF you can hand to your team or vendors"
+          ],
+          "highlights": [
+            "Your brand card",
+            "Brand DNA → Brand Book"
           ]
         },
         {
@@ -229,6 +233,11 @@ export default {
             "Pick the goal: product launch, grow followers, drive sales, build a personal brand",
             "Each goal is split into small, clear missions — you know what this week is for",
             "Every goal's progress shows on your brand Home"
+          ],
+          "highlights": [
+            "Fruit = target reached",
+            "Leaves = target in progress",
+            "4 kinds of goal"
           ]
         },
         {
@@ -238,6 +247,10 @@ export default {
             "A hook, video script and caption generator that reads your Brand DNA — not a generic template",
             "Funnel-aware: content for people who don't know you yet differs from content for people ready to buy",
             "Built-in teleprompter so you can record straight from the script"
+          ],
+          "highlights": [
+            "Peek inside without opening",
+            "Built-in teleprompter"
           ]
         },
         {
@@ -247,6 +260,10 @@ export default {
             "Content database + calendar in one place: draft, scheduled, published",
             "Auto-schedule: the AI suggests dates for unscheduled content over the next 3 weeks, to your rhythm — you approve them first",
             "Several brands from one account — each with its own calendar, one click to switch"
+          ],
+          "highlights": [
+            "Drag content to a date",
+            "Colour = content stage"
           ]
         },
         {
@@ -257,6 +274,10 @@ export default {
             "Every post is scored against your own benchmarks, per funnel stage",
             "Automatic signals on your home screen: a post taking off, engagement dropping, a posting streak at risk, overdue content",
             "The Report page: headline numbers, best content, and a one-click PDF report, ready to send a client or your team"
+          ],
+          "highlights": [
+            "Every number on one page",
+            "Each dot = one post"
           ]
         },
         {
@@ -266,6 +287,9 @@ export default {
             "Before answering it reads live data: engagement rate, unpublished content, campaign progress",
             "Ask “how did this month go?” — the answer quotes your real numbers, not general tips",
             "It can prepare drafts for you to check and edit, and point you to the screen you need"
+          ],
+          "highlights": [
+            "Answers use your brand's own numbers"
           ]
         },
         {
@@ -275,11 +299,15 @@ export default {
             "Brainstorm: a thinking partner for campaign ideas and content angles, ideas can be saved in one tap",
             "Sales Tracker: log sales so content can be compared with revenue",
             "Quick Copy: chat, WhatsApp broadcast, caption & Threads generator — three ready-to-send variants"
+          ],
+          "highlights": [
+            "3 versions ready to send",
+            "Open straight in WhatsApp"
           ]
         }
       ],
       "placeholder": "Screenshot coming soon",
-      "zoom": "Enlarge screenshot",
+      "zoom": "Play it bigger",
       "zoomClose": "Close",
       "modeNote": "There's a Beginner mode (guided step by step) and a Pro mode (straight to the features). Switch anytime.",
       "cta": "Try free for {days} days"
@@ -473,6 +501,13 @@ export default {
       "title": "Questions first?",
       "body": "Chat the Wepeka team on WhatsApp:",
       "message": "Hi Wepeka, I have a question about Brandlab."
+    },
+    "reel": {
+      "note": "The real Brandlab, Beginner mode. This is how it feels to use.",
+      "marks": [
+        "Today's step",
+        "5 apps, 1 home"
+      ]
     }
   }
 };

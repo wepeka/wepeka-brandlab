@@ -4,6 +4,7 @@
 // admin's titles. No browser, no network.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 
 globalThis.window.scrollTo ??= () => {};
 globalThis.fetch = async () => {
@@ -40,6 +41,25 @@ describe("front page", () => {
         assert.deepEqual(landingHTML({ returning, facts }).match(/\{\w+\}/g), null);
       }
     }
+  });
+
+  test("every motion clip is on disk with its poster, and every module's notes are there in both languages", async () => {
+    const html = landingHTML();
+    const clips = [...html.matchAll(/data-lp-clip="([^"]+)"/g)].map((m) => m[1]);
+    assert.equal(clips.length, 10, "the hero reel + nine module clips");
+    for (const clip of clips) {
+      for (const ext of ["mp4", "jpg"]) assert.ok(existsSync(new URL(`../${clip}.${ext}`, import.meta.url)), `${clip}.${ext}`);
+    }
+    assert.equal((html.match(/<video /g) || []).length, clips.length);
+    assert.ok(!/<video [^>]*autoplay/.test(html), "clips start only once on screen (js), never on their own");
+    for (const lang of ["id", "en"]) {
+      const copy = (await import(`../js/landing-copy.${lang}.js`)).default.funnel;
+      assert.equal(copy.reel.marks.length, 2, lang);
+      for (const item of copy.modules.items) assert.ok(item.highlights?.length >= 1, `${lang}: ${item.name}`);
+    }
+    const notes = (html.match(/class="lp-note"/g) || []).length;
+    const wanted = (await import("../js/landing-copy.id.js")).default.funnel.modules.items.reduce((n, item) => n + item.highlights.length, 2);
+    assert.equal(notes, wanted, "each highlight shows once");
   });
 
   test("in-page links never touch the hash (a hashchange repaints the page while signed out)", () => {

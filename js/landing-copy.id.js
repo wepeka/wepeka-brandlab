@@ -220,6 +220,10 @@ export default {
             "Wizard StoryBrand 7 bagian: siapa pelangganmu, masalahnya, posisi brand-mu, sampai one-liner",
             "AI nyaranin opsi di tiap langkah — nggak mulai dari halaman kosong",
             "Logo, warna, font, dan tone of voice dirangkum jadi Brand Book PDF yang bisa dibagikan ke tim atau vendor"
+          ],
+          "highlights": [
+            "Kartu brand kamu",
+            "Brand DNA → Brand Book"
           ]
         },
         {
@@ -229,6 +233,11 @@ export default {
             "Pilih tujuannya: launching produk, naikin follower, dorong penjualan, bangun personal brand",
             "Tiap tujuan dipecah jadi misi kecil yang jelas — kamu tahu minggu ini ngapain",
             "Progres tiap tujuan kelihatan di Beranda brand"
+          ],
+          "highlights": [
+            "Berbuah = target tercapai",
+            "Daun = target lagi jalan",
+            "4 jenis tujuan"
           ]
         },
         {
@@ -238,6 +247,10 @@ export default {
             "Generator hook, script video, dan caption yang baca Brand DNA kamu — bukan template generik",
             "Sadar funnel: konten buat orang yang belum kenal beda dengan buat yang siap beli",
             "Teleprompter bawaan buat langsung rekam dari naskahnya"
+          ],
+          "highlights": [
+            "Intip isinya tanpa dibuka",
+            "Teleprompter bawaan"
           ]
         },
         {
@@ -247,6 +260,10 @@ export default {
             "Database konten + kalender dalam satu tempat: draft, dijadwalkan, terbit",
             "Jadwal otomatis: AI usulin tanggal buat konten yang belum terjadwal (3 minggu ke depan) sesuai ritme kamu — kamu setujuin dulu",
             "Pegang beberapa brand dari satu akun — tiap brand punya kalendernya sendiri, pindah brand sekali klik"
+          ],
+          "highlights": [
+            "Tarik konten ke tanggal",
+            "Warna = tahap konten"
           ]
         },
         {
@@ -257,6 +274,10 @@ export default {
             "Tiap post dinilai pakai benchmark brand kamu sendiri, per tahap funnel",
             "Sinyal otomatis di Beranda: post yang lagi naik, engagement turun, streak posting terancam, konten overdue",
             "Halaman Report: angka utama, konten terbaik, dan laporan PDF sekali klik, tinggal kirim ke klien atau tim"
+          ],
+          "highlights": [
+            "Semua angka di 1 halaman",
+            "Tiap titik = 1 konten"
           ]
         },
         {
@@ -266,6 +287,9 @@ export default {
             "Sebelum jawab, dia baca data live: engagement rate, konten yang belum kepublish, progress campaign",
             "Tanya “bulan ini gimana?” — jawabannya nyebut angka asli kamu, bukan tips umum",
             "Bisa nyiapin draf konten buat kamu cek & sunting, dan nunjukin layar yang perlu kamu buka"
+          ],
+          "highlights": [
+            "Jawabannya pakai angka brand kamu"
           ]
         },
         {
@@ -275,11 +299,15 @@ export default {
             "Brainstorm: partner mikir buat ide kampanye atau angle konten, idenya bisa langsung disimpan",
             "Pelacak Penjualan: catat penjualan supaya konten bisa dibandingkan dengan omzet",
             "Tulisan Cepat: generator chat, broadcast WhatsApp, caption & Threads — tiga varian siap kirim"
+          ],
+          "highlights": [
+            "3 pilihan siap kirim",
+            "Buka langsung di WhatsApp"
           ]
         }
       ],
       "placeholder": "Screenshot menyusul",
-      "zoom": "Perbesar screenshot",
+      "zoom": "Putar lebih besar",
       "zoomClose": "Tutup",
       "modeNote": "Ada mode Pemula (dituntun langkah demi langkah) dan mode Pro (langsung ke fitur). Bisa ganti kapan saja.",
       "cta": "Coba gratis {days} hari"
@@ -473,6 +501,13 @@ export default {
       "title": "Mau tanya-tanya dulu?",
       "body": "Chat WhatsApp tim Wepeka:",
       "message": "Halo Wepeka, saya mau tanya soal Brandlab."
+    },
+    "reel": {
+      "note": "Tampilan asli Brandlab, mode Pemula. Begini rasanya dipakai.",
+      "marks": [
+        "Langkah hari ini",
+        "5 aplikasi, 1 Beranda"
+      ]
     }
   }
 };
