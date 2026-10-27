@@ -9,7 +9,7 @@
 import {
   KINDS, listAnnouncements, announcementsStatus, onAnnouncements, startAnnouncements, announcementsSeenAt, markAnnouncementsSeen,
   isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement, announcementEmailReady, emailAnnouncement,
-  groupInviteStatus, sendGroupInvite,
+  groupInviteStatus, sendGroupInvite, trialComebackStatus, sendTrialComeback,
 } from "../announcements.js";
 import { renderLightMarkdown } from "../ai-directives.js";
 import { backToLastBrandHTML } from "../back-link.js";
@@ -57,26 +57,33 @@ function composerHTML(editing) {
     </section>`;
 }
 
-// "Email: gabung grup WhatsApp" (admin, once email works). `invite`: what
-// the real send reached so far ({ sent, total, remaining }) and, after a
-// test, how many it would reach ({ reach: { total, circle } }).
-function inviteHTML(invite) {
-  const st = invite.status;
-  const line = st?.total != null
-    ? st.remaining > 0 ? t("ann.invite.progress", { sent: st.sent, total: st.total, remaining: st.remaining }) : t("ann.invite.done", { sent: st.sent })
-    : t("ann.invite.never");
-  const reach = invite.reach && !(st?.total != null && st.remaining === 0) ? ` ${t("ann.invite.reach", invite.reach)}` : "";
+// The admin's one-off emails (once email works), one card each:
+//   invite  "Email: gabung grup WhatsApp" (every active account)
+//   trial   "Email: ajak balik akun trial" (trial accounts, running or ended)
+// Their texts are the `ann.<key>.*` keys. `st`: what the real send reached
+// so far ({ status: { sent, total, remaining } }) and, after a test, how
+// many it would reach (`reach`, from the endpoint's counts).
+const MAILINGS = [
+  { key: "invite", status: groupInviteStatus, send: sendGroupInvite, reach: (r) => ({ total: r.total ?? 0, circle: r.circle ?? 0 }) },
+  { key: "trial", status: trialComebackStatus, send: sendTrialComeback, reach: (r) => ({ total: r.total ?? 0, ended: r.ended ?? 0 }) },
+];
+function mailingHTML(key, st) {
+  const done = st.status;
+  const line = done?.total != null
+    ? done.remaining > 0 ? t(`ann.${key}.progress`, { sent: done.sent, total: done.total, remaining: done.remaining }) : t(`ann.${key}.done`, { sent: done.sent })
+    : t(`ann.${key}.never`);
+  const reach = st.reach && !(done?.total != null && done.remaining === 0) ? ` ${t(`ann.${key}.reach`, st.reach)}` : "";
   return `
-    <section class="card ann-composer ann-invite" id="ann-invite">
+    <section class="card ann-composer ann-mailing ann-${key}" id="ann-${key}">
       <div class="ann-composer-head">
-        <b>${t("ann.invite.title")}</b>
+        <b>${t(`ann.${key}.title`)}</b>
         <span class="tag">${t("ann.adminOnly")}</span>
       </div>
-      <p class="field-hint">${t("ann.invite.hint")}</p>
-      <p class="field-hint" id="ann-invite-status">${esc(line + reach)}</p>
+      <p class="field-hint">${t(`ann.${key}.hint`)}</p>
+      <p class="field-hint ann-mailing-status" id="ann-${key}-status">${esc(line + reach)}</p>
       <div class="ann-composer-actions">
-        <button type="button" class="btn btn-secondary" id="ann-invite-test" ${invite.busy ? "disabled" : ""}>${icon("send", { size: 14 })}${t("ann.invite.test")}</button>
-        <button type="button" class="btn btn-primary" id="ann-invite-send" ${invite.busy ? "disabled" : ""}>${icon("send", { size: 14 })}${t("ann.invite.send")}</button>
+        <button type="button" class="btn btn-secondary" id="ann-${key}-test" ${st.busy ? "disabled" : ""}>${icon("send", { size: 14 })}${t(`ann.${key}.test`)}</button>
+        <button type="button" class="btn btn-primary" id="ann-${key}-send" ${st.busy ? "disabled" : ""}>${icon("send", { size: 14 })}${t(`ann.${key}.send`)}</button>
       </div>
     </section>`;
 }
@@ -165,7 +172,7 @@ export function render(root, { tab } = {}) {
   // A connection that never answers (offline, blocked network) used to
   // leave "Memuat…" up forever. After a while, say so and offer a retry.
   let slow = false;
-  const invite = { status: null, reach: null, busy: false };
+  const mailing = Object.fromEntries(MAILINGS.map((m) => [m.key, { status: null, reach: null, busy: false }]));
   const slowTimer = setTimeout(() => { slow = true; paint(); }, 12000);
 
   const paint = () => {
@@ -181,7 +188,7 @@ export function render(root, { tab } = {}) {
       ${lifetime ? tabsHTML("updates") : ""}
       <div class="ann-wrap">
         ${admin ? composerHTML(editing) : ""}
-        ${admin && emailOn && !editing ? inviteHTML(invite) : ""}
+        ${admin && emailOn && !editing ? MAILINGS.map((m) => mailingHTML(m.key, mailing[m.key])).join("") : ""}
         <div class="ann-list">
           ${status === "error"
             ? `<div class="card ann-empty">${t("ann.error")}</div>`
@@ -254,32 +261,35 @@ export function render(root, { tab } = {}) {
       }
     });
     qs("#ann-cancel", root)?.addEventListener("click", () => { editingId = null; paint(); });
-    qs("#ann-invite-test", root)?.addEventListener("click", async () => {
-      invite.busy = true;
-      paint();
-      const r = await sendGroupInvite({ test: true }).catch(() => ({ ok: false, error: "network" }));
-      invite.busy = false;
-      if (r.ok) {
-        invite.reach = { total: r.total ?? 0, circle: r.circle ?? 0 };
-        toast(t("ann.invite.testSent", { to: r.to || "" }));
-      } else toast(t(r.error === "email-off" ? "ann.email.off" : "ann.invite.failed"), "error");
-      paint();
-    });
-    qs("#ann-invite-send", root)?.addEventListener("click", async () => {
-      const ok = await confirmDialog({ title: t("ann.invite.confirmTitle"), message: t("ann.invite.confirmBody"), confirmLabel: t("ann.invite.send") });
-      if (!ok) return;
-      invite.busy = true;
-      paint();
-      toast(t("ann.email.sending"));
-      const r = await sendGroupInvite().catch(() => ({ ok: false, error: "network" }));
-      invite.busy = false;
-      if (r.ok) {
-        invite.status = { sent: r.sentTotal ?? 0, total: r.total ?? 0, remaining: r.remaining ?? 0 };
-        if (!r.sent && !r.partial) toast(t("ann.invite.nothing"));
-        else toast(t(r.partial ? "ann.invite.partial" : "ann.invite.sent", { sent: r.sent ?? 0, remaining: r.remaining ?? 0 }));
-      } else toast(t(r.error === "busy" ? "ann.invite.busy" : r.error === "email-off" ? "ann.email.off" : "ann.invite.failed"), "error");
-      paint();
-    });
+    for (const m of MAILINGS) {
+      const st = mailing[m.key];
+      qs(`#ann-${m.key}-test`, root)?.addEventListener("click", async () => {
+        st.busy = true;
+        paint();
+        const r = await m.send({ test: true }).catch(() => ({ ok: false, error: "network" }));
+        st.busy = false;
+        if (r.ok) {
+          st.reach = m.reach(r);
+          toast(t(`ann.${m.key}.testSent`, { to: r.to || "" }));
+        } else toast(t(r.error === "email-off" ? "ann.email.off" : `ann.${m.key}.failed`), "error");
+        paint();
+      });
+      qs(`#ann-${m.key}-send`, root)?.addEventListener("click", async () => {
+        const ok = await confirmDialog({ title: t(`ann.${m.key}.confirmTitle`), message: t(`ann.${m.key}.confirmBody`), confirmLabel: t(`ann.${m.key}.send`) });
+        if (!ok) return;
+        st.busy = true;
+        paint();
+        toast(t("ann.email.sending"));
+        const r = await m.send().catch(() => ({ ok: false, error: "network" }));
+        st.busy = false;
+        if (r.ok) {
+          st.status = { sent: r.sentTotal ?? 0, total: r.total ?? 0, remaining: r.remaining ?? 0 };
+          if (!r.sent && !r.partial) toast(t(`ann.${m.key}.nothing`));
+          else toast(t(r.partial ? `ann.${m.key}.partial` : `ann.${m.key}.sent`, { sent: r.sent ?? 0, remaining: r.remaining ?? 0 }));
+        } else toast(t(r.error === "busy" ? `ann.${m.key}.busy` : r.error === "email-off" ? "ann.email.off" : `ann.${m.key}.failed`), "error");
+        paint();
+      });
+    }
     root.querySelectorAll("[data-ann-email]").forEach((b) => b.addEventListener("click", async () => {
       const a = listAnnouncements().find((x) => x.id === b.dataset.annEmail);
       if (!a) return;
@@ -308,8 +318,10 @@ export function render(root, { tab } = {}) {
   const off = onAnnouncements(paint);
   // Admin: once we know email can be sent, the composer gets its checkbox.
   if (isAnnouncementAdmin()) announcementEmailReady().then((on) => { if (on && !emailOn && root.isConnected) { emailOn = true; paint(); } });
-  // Admin: how far the WhatsApp group email got (one small read).
-  if (isAnnouncementAdmin()) groupInviteStatus().then((r) => { if (r.ok && root.isConnected) { invite.status = r; paint(); } }).catch(() => {});
+  // Admin: how far each one-off email got (one small read each).
+  if (isAnnouncementAdmin()) {
+    for (const m of MAILINGS) m.status().then((r) => { if (r.ok && root.isConnected) { mailing[m.key].status = r; paint(); } }).catch(() => {});
+  }
   root.addEventListener("click", (e) => { if (e.target.closest("[data-ann-retry]")) location.reload(); });
   return () => { clearTimeout(slowTimer); off(); };
 }

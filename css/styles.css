@@ -6645,7 +6645,8 @@ div.home-path-step{ cursor:pointer; }
 }
 /* "Email: gabung grup WhatsApp" card under the composer (admin). */
 .ann-invite{ border-color: color-mix(in srgb, #25D366 45%, var(--border)); }
-.ann-invite #ann-invite-status{ color: var(--text-muted); font-weight:600; }
+.ann-trial{ border-color: color-mix(in srgb, #3B9BFF 45%, var(--border)); }
+.ann-mailing .ann-mailing-status{ color: var(--text-muted); font-weight:600; }
 
 /* ============================================================
    Kerja Tim — the live layer on a shared brand (js/collab/live.js):

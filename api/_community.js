@@ -1,7 +1,8 @@
 // The emails Brandlab sends about itself — the invoice after a payment
 // and the reminder for a Founder / Agency checkout left unpaid
-// (api/midtrans/webhook.js), and an announcement mailed to
-// every active account (api/announcements/notify.js). The invoice and the
+// (api/midtrans/webhook.js), an announcement mailed to every active
+// account (api/announcements/notify.js), the WhatsApp group invite and the
+// trial comeback email (api/announcements/*). The invoice and the
 // announcement carry the same community links as the app
 // (js/community.js): the WhatsApp group and the two Instagram accounts.
 // Everything here is pure (no Firestore, no fetch),
@@ -368,6 +369,135 @@ export function announcementRecipients(accounts, optedOut = new Set(), now = Dat
     if (!looksLikeEmail(email) || seen.has(email)) continue;
     seen.add(email);
     out.push({ uid: a.uid, email, circle: Boolean(lifetimeGroupFor(a.uid, a)) });
+  }
+  return out;
+}
+
+// "Ajak balik akun trial" (admin, api/announcements/trial-comeback.js).
+// Owner, 2026-10-27: "intinya gak ada lagi bingung pake brandlab, minta
+// mereka segera checkout karena UI brandlab kita ubah jadi lebih mudah dan
+// friendly". One email per trial account, in two versions:
+//   ended: false  the trial still runs until `endsAt`: come back and look
+//   ended: true   it ended on `endsAt`: the data is still there, pick a plan
+// `founder`: api/offer.js founderFacts read at send time, so the seat line
+// is the live count; with every seat gone the offer box points at the
+// monthly plans instead. Same look as the group invite (dark hero, big
+// buttons, tables and inline styles only). → { subject, html, text }.
+const dayLabel = (ms) => new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "long" }).format(new Date(ms));
+const daysLeft = (endsAt, now) => Math.max(1, Math.ceil((Number(endsAt) - now) / 86_400_000));
+export const TRIAL_COMEBACK_CHANGES = [
+  ["&#129517;", "Langkah hari ini", "Buka Brandlab, langsung kelihatan satu hal yang perlu kamu kerjain hari ini."],
+  ["&#129513;", "5 app, bukan puluhan menu", "My Brand, My Goals, Create, Report, Board. Tinggal pilih mau ngapain."],
+  ["&#127795;", "Target jadi pohon", "Tiap target di My Goals jadi satu cabang. Kalau tercapai, berbuah."],
+  ["&#9997;&#65039;", "Bikin konten selangkah-selangkah", "Ide, script, syuting, edit, upload. Satu layar, satu tombol."],
+];
+export function composeTrialComebackEmail({ ended = false, endsAt = null, founder = null, starterMonthly = 49000, now = Date.now(), appUrl = APP_URL } = {}) {
+  const settingsUrl = `${appUrl}/#/settings/reminders`;
+  const pricingUrl = `${appUrl}/#/pricing`;
+  const founderUrl = buyUrl("founder");
+  const helpUrl = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent("Halo Wepeka, aku mau tanya soal Brandlab.")}`;
+  const when = Number(endsAt) > 0 ? dayLabel(endsAt) : "";
+  const subject = ended ? "Trial kamu udah selesai, tapi Brandlab-nya udah beda" : "Brandlab udah kami rombak, sekarang jauh lebih gampang";
+  const preheader = ended
+    ? "Data brand kamu masih aman. Tampilannya sekarang jauh lebih simpel."
+    : "Trial kamu masih jalan. Coba lagi 5 menit, kamu bakal ngerasa bedanya.";
+  const sub = "Ada yang bilang ke kami Brandlab kebanyakan menu dan bikin bingung. Kami dengerin, terus tampilannya kami rombak total.";
+  const status = ended
+    ? `Trial kamu selesai${when ? ` ${when}` : ""}. Brand DNA, konten, dan target yang udah kamu isi masih aman tersimpan. Pilih paket, langsung lanjut dari situ.`
+    : `Trial kamu masih jalan${when ? ` sampai ${when}` : ""}, sisa ${daysLeft(endsAt, now)} hari. Buka lagi, ikutin Langkah hari ini, rasain bedanya.`;
+  const heroCta = ended ? ["Lanjut pakai Brandlab", pricingUrl] : ["Buka Brandlab lagi", appUrl];
+  const seats = founder && !founder.soldOut ? founder : null;
+  const offerTitle = seats ? "Harga Founder Lifetime" : "Pilih paket Brandlab";
+  const offerBody = seats
+    ? `Sekali bayar, pakai selamanya. 3 brand, 100 AI credit per hari.`
+    : `Mulai ${rupiah(starterMonthly)} per bulan. Semua yang udah kamu isi tetap ada.`;
+  const seatLine = seats
+    ? `Sisa ${seats.waveLeft} kursi di harga ini.${seats.nextPrice ? ` Habis itu naik jadi ${rupiah(seats.nextPrice)}.` : ""}`
+    : "";
+  const offerCta = seats ? ["Ambil Founder Lifetime", founderUrl] : ["Lihat paket", pricingUrl];
+
+  const changesHTML = TRIAL_COMEBACK_CHANGES.map(([emoji, title, body]) => `<tr><td width="48" valign="top" style="padding:8px 0;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="38" height="38" align="center" bgcolor="#f5f5f4" style="width:38px;height:38px;border-radius:12px;background:#f5f5f4;font-size:19px;line-height:38px;">${emoji}</td></tr></table></td><td valign="top" style="padding:8px 0 8px 6px;${font}"><p style="margin:0;font-size:15.5px;font-weight:800;color:#1c1917;">${esc(title)}</p><p style="margin:2px 0 0;font-size:14px;line-height:1.5;color:#57534e;">${esc(body)}</p></td></tr>`).join("");
+  const priceHTML = seats
+    ? `<p style="margin:10px 0 2px;${font}font-size:34px;font-weight:800;line-height:1.1;color:#ffffff;">${esc(rupiah(seats.price))}</p>
+<p style="margin:0 0 10px;${font}font-size:14px;color:#fcd9bd;"><span style="text-decoration:line-through;">${esc(rupiah(seats.normal))}</span> &nbsp;harga normal</p>`
+    : "";
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f6efe9;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f6efe9" style="background:#f6efe9;background-image:linear-gradient(180deg,#ffedd5 0%,#fce7f3 48%,#ede9fe 100%);"><tr><td align="center" style="padding:24px 12px 32px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#140d1f" style="max-width:560px;border-collapse:separate;background:#140d1f;background-image:linear-gradient(155deg,#1e3a8a 0%,#5b21b6 40%,#2a0f2e 72%,#0c0a09 100%);border-radius:22px;overflow:hidden;">
+<tr><td height="5" bgcolor="#ec4899" style="height:5px;line-height:5px;font-size:0;background:#ec4899;background-image:linear-gradient(90deg,#ffa52b,#30d97d,#3b9bff,#a974ff,#ff6fae);">&nbsp;</td></tr>
+<tr><td style="padding:24px 28px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td valign="middle"><img src="${esc(appUrl)}/assets/wepeka-logo.png" width="104" height="26" alt="Wepeka" style="display:block;border:0;outline:none;"></td>
+<td valign="middle" style="padding:0 10px;${font}font-size:20px;color:#57534e;">|</td>
+<td valign="middle" style="${font}font-size:19px;font-weight:800;color:#ffffff;">Brandlab</td>
+</tr></table>
+</td></tr>
+<tr><td style="padding:26px 28px 0;">
+<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:#0f1b3d;background:rgba(0,0,0,.34);${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#93c5fd;">&#10024; Tampilan baru</span>
+<h1 style="margin:16px 0 12px;${font}font-size:30px;font-weight:800;line-height:1.18;color:#ffffff;">Brandlab sekarang<br><span style="color:#ffa52b;">jauh lebih gampang</span></h1>
+<p style="margin:0 0 20px;${font}font-size:16px;line-height:1.6;color:#d6d3d1;">${esc(sub)}</p>
+</td></tr>
+<tr><td style="padding:0 28px;"><a href="${esc(heroCta[1])}" style="text-decoration:none;"><img src="${esc(appUrl)}/assets/announcements/ui-1-beranda.jpg" width="504" alt="Beranda Brandlab yang baru: lima app dan Langkah hari ini" style="display:block;width:100%;max-width:504px;height:auto;border:0;border-radius:14px;"></a></td></tr>
+<tr><td style="padding:20px 28px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#1c1530" style="border-collapse:separate;background:#1c1530;background:rgba(0,0,0,.32);border:1px solid #4c3a78;border-radius:16px;"><tr><td style="padding:16px 18px;${font}font-size:15px;line-height:1.6;color:#ede9fe;">${esc(status)}</td></tr></table>
+</td></tr>
+<tr><td style="padding:20px 28px 30px;">
+${bigButton(heroCta[1], `${esc(heroCta[0])} &rarr;`, "#ffffff", "#140d1f")}
+</td></tr>
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;">
+<tr><td style="padding:24px 28px 18px;">
+<p style="margin:0 0 8px;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Yang beda sekarang</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${changesHTML}</table>
+</td></tr>
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#c2410c" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#c2410c;background-image:linear-gradient(135deg,#f97316 0%,#ec4899 100%);border-radius:22px;">
+<tr><td style="padding:24px 28px 26px;">
+<p style="margin:0;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#ffedd5;">${esc(offerTitle)}</p>
+${priceHTML}
+<p style="margin:${seats ? "0" : "10px"} 0 ${seatLine ? "6px" : "18px"};${font}font-size:15px;line-height:1.55;color:#ffffff;">${esc(offerBody)}</p>
+${seatLine ? `<p style="margin:0 0 18px;${font}font-size:14.5px;font-weight:800;line-height:1.5;color:#ffffff;">&#9201;&#65039; ${esc(seatLine)}</p>` : ""}
+${bigButton(offerCta[1], `${esc(offerCta[0])} &rarr;`, "#140d1f", "#ffffff")}
+${seats ? `<p style="margin:14px 0 0;${font}font-size:13px;color:#ffedd5;">Mau bulanan aja? <a href="${esc(pricingUrl)}" style="color:#ffffff;font-weight:700;">Paket mulai ${esc(rupiah(starterMonthly))}/bulan</a></p>` : ""}
+</td></tr>
+</table>
+<p style="max-width:520px;margin:18px auto 0;${font}font-size:13px;line-height:1.6;color:#57534e;text-align:center;">Masih ada yang bikin bingung? <a href="${esc(helpUrl)}" style="color:#be185d;font-weight:700;">Chat tim Wepeka di WhatsApp</a></p>
+<p style="max-width:520px;margin:10px auto 0;${font}font-size:12px;line-height:1.6;color:#6b6259;text-align:center;">Kamu menerima email ini karena pernah coba Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#6b6259;">Pengaturan &rarr; Pengingat</a>.<br>Wepeka Brandlab &middot; <a href="${esc(appUrl)}" style="color:#6b6259;">${esc(appUrl.replace(/^https?:\/\//, ""))}</a></p>
+</td></tr></table>
+</body></html>`;
+  const text = [
+    "Brandlab sekarang jauh lebih gampang", "",
+    sub, "",
+    status, "",
+    `${heroCta[0]}: ${heroCta[1]}`, "",
+    "Yang beda sekarang:",
+    ...TRIAL_COMEBACK_CHANGES.map(([, title, body]) => `- ${title}: ${body}`), "",
+    seats ? `${offerTitle}: ${rupiah(seats.price)} (harga normal ${rupiah(seats.normal)}). ${offerBody} ${seatLine}` : `${offerTitle}: ${offerBody}`,
+    `${offerCta[0]}: ${offerCta[1]}`,
+    ...(seats ? [`Mau bulanan aja? Paket mulai ${rupiah(starterMonthly)}/bulan: ${pricingUrl}`] : []), "",
+    `Masih ada yang bikin bingung? Chat tim Wepeka di WhatsApp: ${helpUrl}`, "",
+    `Nggak mau terima email info seperti ini? Matikan di Pengaturan → Pengingat: ${settingsUrl}`,
+  ].join("\n");
+  return { subject, html, text };
+}
+
+// Who the trial comeback email goes to: every account still on the trial
+// plan, running or ended (someone who paid is on another plan, so never
+// here), with an address, that hasn't turned these emails off. Same
+// opt-out as the announcements. One email per address.
+//   → [{ uid, email, ended, endsAt }]
+export function trialRecipients(accounts, optedOut = new Set(), now = Date.now()) {
+  const seen = new Set();
+  const out = [];
+  for (const a of accounts || []) {
+    if (!a || a.status !== "active" || a.plan !== "trial" || optedOut.has(a.uid) || isAdminUid(a.uid)) continue;
+    const email = String(a.email || "").trim().toLowerCase();
+    if (!looksLikeEmail(email) || seen.has(email)) continue;
+    seen.add(email);
+    const endsAt = Number(a.trialEndsAt) || null;
+    out.push({ uid: a.uid, email, ended: !(endsAt > now), endsAt });
   }
   return out;
 }
