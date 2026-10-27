@@ -4940,7 +4940,7 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .ann-kind span{ display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); font-size:12.5px; font-weight:700; color: var(--text-muted); cursor:pointer; }
 .ann-kind input:checked + span{ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .ann-kind input:focus-visible + span{ outline:2px solid var(--accent); outline-offset:2px; }
-.ann-composer-actions{ display:flex; justify-content:flex-end; gap:8px; }
+.ann-composer-actions{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .ann-item{ display:flex; flex-direction:column; gap:8px; }
 .ann-item.is-new{ border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .ann-meta{ display:flex; align-items:center; flex-wrap:wrap; gap:10px; font-size:12px; }
