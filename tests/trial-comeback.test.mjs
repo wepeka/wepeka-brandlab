@@ -27,12 +27,13 @@ test("recipients: trial accounts only, running and ended, minus opted out, the t
   assert.equal(list[0].endsAt, now + 9 * day);
 });
 
-test("a running trial: come back and look, days left, Founder seats from the live count", () => {
+test("a running trial: it isn't complicated any more, try again, Founder seats from the live count", () => {
   const founder = founderFacts({ founderSlotsSold: 13 }, now);
   const m = composeTrialComebackEmail({ ended: false, endsAt: now + 9 * day, founder, now, appUrl: "https://brandlab.wepeka.com" });
-  assert.equal(m.subject, "Brandlab udah kami rombak, sekarang jauh lebih gampang");
-  assert.match(m.text, /Trial kamu masih jalan sampai 5 November, sisa 9 hari/);
-  assert.match(m.text, /Buka Brandlab lagi: https:\/\/brandlab\.wepeka\.com\n/);
+  assert.equal(m.subject, "Dulu ribet? Sekarang Brandlab udah nggak ribet lagi");
+  assert.match(m.text, /^Dulu ribet\? Sekarang udah nggak\./);
+  assert.match(m.text, /Akses trial kamu masih jalan sampai 5 November\. Coba buka lagi/);
+  assert.match(m.text, /Coba lagi sekarang: https:\/\/brandlab\.wepeka\.com\n/);
   assert.match(m.text, /Rp 499\.000 \(harga normal Rp 3\.000\.000\)/);
   assert.match(m.text, /Sisa 2 kursi di harga ini\. Habis itu naik jadi Rp 599\.000\./);
   assert.ok(m.text.includes(buyUrl("founder")) && m.html.includes(buyUrl("founder").replace(/&/g, "&amp;")), "the Founder button goes straight to its checkout");
@@ -41,11 +42,12 @@ test("a running trial: come back and look, days left, Founder seats from the liv
   assert.match(m.text, /Matikan di Pengaturan → Pengingat: https:\/\/brandlab\.wepeka\.com\/#\/settings\/reminders/);
 });
 
-test("an ended trial: the data is still there, the button opens the plans", () => {
+test("an ended trial: never told it ended — what they filled in is still there, the button opens the plans", () => {
   const m = composeTrialComebackEmail({ ended: true, endsAt: now - 3 * day, founder: founderFacts({ founderSlotsSold: 13 }, now), now });
-  assert.equal(m.subject, "Trial kamu udah selesai, tapi Brandlab-nya udah beda");
-  assert.match(m.text, /Trial kamu selesai 24 Oktober\. Brand DNA, konten, dan target yang udah kamu isi masih aman tersimpan\./);
+  assert.equal(m.subject, "Dulu ribet? Sekarang Brandlab udah nggak ribet lagi");
+  assert.match(m.text, /Brand DNA, konten, dan target yang udah kamu isi masih tersimpan rapi\./);
   assert.match(m.text, /Lanjut pakai Brandlab: https:\/\/brandlab\.wepeka\.com\/#\/pricing/);
+  for (const part of [m.html, m.text]) assert.doesNotMatch(part, /trial[^.]{0,20}(habis|selesai|berakhir)/i, "owner: \"jangan trialmu habis\"");
 });
 
 test("the second wave and a sold-out Founder", () => {

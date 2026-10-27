@@ -376,20 +376,23 @@ export function announcementRecipients(accounts, optedOut = new Set(), now = Dat
 // "Ajak balik akun trial" (admin, api/announcements/trial-comeback.js).
 // Owner, 2026-10-27: "intinya gak ada lagi bingung pake brandlab, minta
 // mereka segera checkout karena UI brandlab kita ubah jadi lebih mudah dan
-// friendly". One email per trial account, in two versions:
-//   ended: false  the trial still runs until `endsAt`: come back and look
-//   ended: true   it ended on `endsAt`: the data is still there, pick a plan
+// friendly"; then "jangan trialmu habis … kasitau nah ini udah gak ribet
+// lagi lho". So it opens on "it used to feel complicated, not any more" and
+// never tells anyone their trial is over. One email per trial account,
+// same subject, two leads:
+//   ended: false  the trial still runs until `endsAt`: try it again now
+//   ended: true   it has ended: what they filled in is still there, pick a plan
 // `founder`: api/offer.js founderFacts read at send time, so the seat line
 // is the live count; with every seat gone the offer box points at the
 // monthly plans instead. Same look as the group invite (dark hero, big
 // buttons, tables and inline styles only). → { subject, html, text }.
 const dayLabel = (ms) => new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "long" }).format(new Date(ms));
-const daysLeft = (endsAt, now) => Math.max(1, Math.ceil((Number(endsAt) - now) / 86_400_000));
 export const TRIAL_COMEBACK_CHANGES = [
-  ["&#129517;", "Langkah hari ini", "Buka Brandlab, langsung kelihatan satu hal yang perlu kamu kerjain hari ini."],
-  ["&#129513;", "5 app, bukan puluhan menu", "My Brand, My Goals, Create, Report, Board. Tinggal pilih mau ngapain."],
-  ["&#127795;", "Target jadi pohon", "Tiap target di My Goals jadi satu cabang. Kalau tercapai, berbuah."],
-  ["&#9997;&#65039;", "Bikin konten selangkah-selangkah", "Ide, script, syuting, edit, upload. Satu layar, satu tombol."],
+  ["&#129517;", "Nggak bingung mulai dari mana", "Langkah hari ini di Beranda: satu hal yang perlu kamu kerjain, langsung di depan mata."],
+  ["&#129513;", "Nggak ada lagi menu numpuk", "Cukup 5 app: My Brand, My Goals, Create, Report, Board."],
+  ["&#9997;&#65039;", "Bikin konten tinggal ikutin", "Ide, script, syuting, edit, upload. Satu layar, satu tombol."],
+  ["&#127795;", "Progres kelihatan jelas", "Target di My Goals jadi pohon. Tiap target tercapai, berbuah."],
+  ["&#127916;", "Ada panduan di tiap halaman", "Tekan Panduan, Brandlab nunjukin langkahnya satu per satu."],
 ];
 export function composeTrialComebackEmail({ ended = false, endsAt = null, founder = null, starterMonthly = 49000, now = Date.now(), appUrl = APP_URL } = {}) {
   const settingsUrl = `${appUrl}/#/settings/reminders`;
@@ -397,15 +400,15 @@ export function composeTrialComebackEmail({ ended = false, endsAt = null, founde
   const founderUrl = buyUrl("founder");
   const helpUrl = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent("Halo Wepeka, aku mau tanya soal Brandlab.")}`;
   const when = Number(endsAt) > 0 ? dayLabel(endsAt) : "";
-  const subject = ended ? "Trial kamu udah selesai, tapi Brandlab-nya udah beda" : "Brandlab udah kami rombak, sekarang jauh lebih gampang";
+  const subject = "Dulu ribet? Sekarang Brandlab udah nggak ribet lagi";
   const preheader = ended
-    ? "Data brand kamu masih aman. Tampilannya sekarang jauh lebih simpel."
-    : "Trial kamu masih jalan. Coba lagi 5 menit, kamu bakal ngerasa bedanya.";
-  const sub = "Ada yang bilang ke kami Brandlab kebanyakan menu dan bikin bingung. Kami dengerin, terus tampilannya kami rombak total.";
+    ? "Kami rombak total. Semua yang udah kamu isi masih tersimpan rapi."
+    : "Kami rombak total. Buka sekali, langsung tahu harus ngapain.";
+  const sub = "Kalau kemarin Brandlab kerasa ribet, menunya banyak dan bingung mulai dari mana, kamu nggak sendiri. Makanya tampilannya kami rombak total. Sekarang buka Brandlab, langsung kelihatan satu hal yang perlu kamu kerjain hari ini. Udah, itu aja.";
   const status = ended
-    ? `Trial kamu selesai${when ? ` ${when}` : ""}. Brand DNA, konten, dan target yang udah kamu isi masih aman tersimpan. Pilih paket, langsung lanjut dari situ.`
-    : `Trial kamu masih jalan${when ? ` sampai ${when}` : ""}, sisa ${daysLeft(endsAt, now)} hari. Buka lagi, ikutin Langkah hari ini, rasain bedanya.`;
-  const heroCta = ended ? ["Lanjut pakai Brandlab", pricingUrl] : ["Buka Brandlab lagi", appUrl];
+    ? "Brand DNA, konten, dan target yang udah kamu isi masih tersimpan rapi. Tinggal pilih paket, langsung lanjut dari situ."
+    : `Akses trial kamu masih jalan${when ? ` sampai ${when}` : ""}. Coba buka lagi 5 menit aja, rasain sendiri bedanya.`;
+  const heroCta = ended ? ["Lanjut pakai Brandlab", pricingUrl] : ["Coba lagi sekarang", appUrl];
   const seats = founder && !founder.soldOut ? founder : null;
   const offerTitle = seats ? "Harga Founder Lifetime" : "Pilih paket Brandlab";
   const offerBody = seats
@@ -436,7 +439,7 @@ export function composeTrialComebackEmail({ ended = false, endsAt = null, founde
 </td></tr>
 <tr><td style="padding:26px 28px 0;">
 <span style="display:inline-block;padding:6px 12px;border-radius:999px;background:#0f1b3d;background:rgba(0,0,0,.34);${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#93c5fd;">&#10024; Tampilan baru</span>
-<h1 style="margin:16px 0 12px;${font}font-size:30px;font-weight:800;line-height:1.18;color:#ffffff;">Brandlab sekarang<br><span style="color:#ffa52b;">jauh lebih gampang</span></h1>
+<h1 style="margin:16px 0 12px;${font}font-size:30px;font-weight:800;line-height:1.18;color:#ffffff;">Dulu ribet?<br><span style="color:#ffa52b;">Sekarang udah nggak.</span></h1>
 <p style="margin:0 0 20px;${font}font-size:16px;line-height:1.6;color:#d6d3d1;">${esc(sub)}</p>
 </td></tr>
 <tr><td style="padding:0 28px;"><a href="${esc(heroCta[1])}" style="text-decoration:none;"><img src="${esc(appUrl)}/assets/announcements/ui-1-beranda.jpg" width="504" alt="Beranda Brandlab yang baru: lima app dan Langkah hari ini" style="display:block;width:100%;max-width:504px;height:auto;border:0;border-radius:14px;"></a></td></tr>
@@ -449,7 +452,7 @@ ${bigButton(heroCta[1], `${esc(heroCta[0])} &rarr;`, "#ffffff", "#140d1f")}
 </table>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;">
 <tr><td style="padding:24px 28px 18px;">
-<p style="margin:0 0 8px;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Yang beda sekarang</p>
+<p style="margin:0 0 8px;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Yang bikin nggak ribet lagi</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${changesHTML}</table>
 </td></tr>
 </table>
@@ -468,11 +471,11 @@ ${seats ? `<p style="margin:14px 0 0;${font}font-size:13px;color:#ffedd5;">Mau b
 </td></tr></table>
 </body></html>`;
   const text = [
-    "Brandlab sekarang jauh lebih gampang", "",
+    "Dulu ribet? Sekarang udah nggak.", "",
     sub, "",
     status, "",
     `${heroCta[0]}: ${heroCta[1]}`, "",
-    "Yang beda sekarang:",
+    "Yang bikin nggak ribet lagi:",
     ...TRIAL_COMEBACK_CHANGES.map(([, title, body]) => `- ${title}: ${body}`), "",
     seats ? `${offerTitle}: ${rupiah(seats.price)} (harga normal ${rupiah(seats.normal)}). ${offerBody} ${seatLine}` : `${offerTitle}: ${offerBody}`,
     `${offerCta[0]}: ${offerCta[1]}`,
