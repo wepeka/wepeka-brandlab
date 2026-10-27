@@ -346,6 +346,55 @@ function start() {
     }
   });
 
+  // ---- motion clips (the real app, assets/landing/clips) ----
+  // A phone on an ad's data plan downloads only what comes near the screen:
+  // poster and file are set once a clip is a screen and a half away, and it
+  // plays only while it is on screen. Less motion asked for, or data saver:
+  // the poster with a play badge; a tap still plays it large.
+  const clips = all("[data-clip] video");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches || navigator.connection?.saveData === true || !("IntersectionObserver" in window);
+  const load = (v) => {
+    if (v.dataset.poster) { v.poster = v.dataset.poster; delete v.dataset.poster; }
+    if (!still && v.dataset.src) { v.src = v.dataset.src; delete v.dataset.src; }
+  };
+  if (!("IntersectionObserver" in window)) clips.forEach(load);
+  else {
+    const near = new IntersectionObserver((entries) => {
+      for (const en of entries) if (en.isIntersecting) { load(en.target); near.unobserve(en.target); }
+    }, { rootMargin: "150% 0px" });
+    clips.forEach((v) => near.observe(v));
+  }
+  if (still) clips.forEach((v) => v.closest(".fd-show")?.classList.add("is-still"));
+  else {
+    const onScreen = new IntersectionObserver((entries) => {
+      for (const { target: v, isIntersecting } of entries) {
+        if (!isIntersecting) { v.pause(); continue; }
+        load(v);
+        v.muted = true;
+        v.play().catch(() => v.closest(".fd-show")?.classList.add("is-still"));
+      }
+    }, { threshold: 0.2 });
+    clips.forEach((v) => onScreen.observe(v));
+  }
+  document.addEventListener("click", (e) => {
+    const shot = e.target.closest("[data-clip]");
+    if (!shot) return;
+    const box = document.createElement("div");
+    box.className = "fd-clipbox";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", shot.getAttribute("aria-label") || "");
+    box.innerHTML = `<video src="${esc(shot.dataset.clip)}.mp4" poster="${esc(shot.dataset.clip)}.jpg" autoplay muted loop playsinline controls></video><button type="button" aria-label="Tutup">✕</button>`;
+    const close = () => { box.remove(); document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; shot.focus(); };
+    const onKey = (k) => { if (k.key === "Escape") close(); };
+    box.addEventListener("click", (k) => { if (k.target === box || k.target.closest("button")) close(); });
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    document.body.append(box);
+    box.querySelector("button").focus();
+    gaEvent("clip_zoom", { clip: shot.dataset.clip.split("/").pop() });
+  });
+
   // ---- the buy bar at the bottom: once the hero's button is scrolled
   // past, and out of the way again at the closing offer ----
   const bar = document.querySelector("[data-sticky]");

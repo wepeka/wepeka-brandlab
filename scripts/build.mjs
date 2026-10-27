@@ -379,7 +379,7 @@ async function buildFounderPage() {
     if (typeof from === "string" && html === before) throw new Error(`build.mjs: founder/index.html no longer contains ${from} — update buildFounderPage()`);
   }
   await fs.writeFile(path.join(OUT, "index.html"), html);
-  await copyDir(path.join(SRC, "img"), path.join(OUT, "img"));
+  // Its pictures are the front page's motion clips (assets/landing/clips), served from /assets.
   const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
   console.log(`founder/: index.html ${kb(Buffer.byteLength(html))} (CSS inlined), ${jsFile} ${kb((await fs.stat(path.join(OUT, jsFile))).size)}`);
 }
