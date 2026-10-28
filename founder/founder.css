@@ -363,3 +363,13 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-tag-board{ color:#FF6FAE !important; }
 .fd-step-body > .fd-show,.fd-step-body > .fd-fig{ margin-left:-50px; }
 .fd-step-body > .fd-fig .fd-show{ margin-left:0; }
+
+/* weekly session highlight, and the "dibimbing" sticker floating right of the price */
+.fd-trust-glow{ padding:6px 14px; border-radius:999px; color:#fff; font-weight:800; background:rgba(255,196,60,.12); border:1px solid rgba(255,208,90,.55); box-shadow:0 0 14px rgba(255,190,50,.45), 0 0 34px rgba(255,150,30,.25), inset 0 0 12px rgba(255,200,80,.12); animation:fd-glow 2.6s ease-in-out infinite; }
+.fd-trust-glow svg{ color:#ffd25a; }
+@keyframes fd-glow{ 50%{ box-shadow:0 0 20px rgba(255,190,50,.7), 0 0 44px rgba(255,150,30,.4), inset 0 0 14px rgba(255,200,80,.2); } }
+.fd-price-row{ position:relative; }
+.fd-guide-tag{ position:absolute; right:0; top:50%; transform:translateY(-50%) rotate(4deg); padding:7px 10px; border-radius:12px; background:linear-gradient(135deg,#FFE066,#FFB800); color:#2a1d00; font:900 11px/1.15 "JUST Sans",sans-serif; text-align:center; text-decoration:none; box-shadow:0 8px 22px -8px rgba(255,184,0,.8), 0 0 0 2px rgba(255,255,255,.18); animation:fd-float 3s ease-in-out infinite; }
+@keyframes fd-float{ 50%{ transform:translateY(calc(-50% - 5px)) rotate(4deg); } }
+@media (prefers-reduced-motion:reduce){ .fd-trust-glow,.fd-guide-tag{ animation:none; } }
+@media (max-width:480px){ .fd-cut-to{ font-size:12px; } .fd-guide-tag{ right:-8px; top:-28px; padding:5px 8px; font-size:10px; transform:rotate(4deg); animation-name:fd-float-s; } @keyframes fd-float-s{ 50%{ transform:translateY(-4px) rotate(4deg); } } }

@@ -90,7 +90,7 @@ export function planPrice(offer, plan, founderPay) {
 export function wavesHTML(tiers, open) {
   return tiers.map((t, i) => {
     if (i + 1 === open) return "";
-    if (i + 1 < open) return `<div class="fd-wave is-past"><span class="fd-wave-full"><i></i><b>${t.seats}/${t.seats}</b> terisi</span><span class="fd-wave-price">${rp(t.price)}</span></div>`;
+    if (i + 1 < open) return `<div class="fd-wave is-past"><span class="fd-wave-full"><b>Gelombang ${i + 1}</b><i></i>${t.seats}/${t.seats} terisi</span><span class="fd-wave-price">${rp(t.price)}</span></div>`;
     return `<div class="fd-wave is-next"><span class="fd-wave-name">${t.seats} kursi berikutnya</span><span class="fd-wave-price">${rp(t.price)}</span></div>`;
   }).join("");
 }
