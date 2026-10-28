@@ -84,6 +84,16 @@ export function planPrice(offer, plan, founderPay) {
   return p ? p[billing] : 0;
 }
 
+// The next Weekly Founders Session: Friday 19.00 WIB ("Jumat, 30 Okt · 19.00 WIB").
+export function nextSession(now = Date.now()) {
+  const wib = new Date(now + 7 * 3600e3);
+  let days = (5 - wib.getUTCDay() + 7) % 7;
+  if (days === 0 && wib.getUTCHours() >= 19) days = 7;
+  const d = new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate() + days));
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  return `Jumat, ${d.getUTCDate()} ${months[d.getUTCMonth()]} · 19.00 WIB`;
+}
+
 // The other seat waves, above the live price: the ones already full stay as
 // a small "15/15" line (people see it sold), the ones to come show their
 // price. The open wave is the big price below, so it is not listed.
@@ -217,6 +227,8 @@ function start() {
     for (const a of all('[data-plan="founder-ultimate"]')) a.hidden = !v.agencyOpen;
     return v;
   };
+
+  for (const el of all('[data-f="nextSession"]')) el.textContent = nextSession();
 
   // Doors whose address lives in shared constants, not in the markup.
   // The trial door, sign-up form first like the buy buttons (wpk-dp connect `join=1`).
