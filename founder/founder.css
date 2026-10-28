@@ -346,3 +346,20 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
   .fd-sticky{ left:50%; right:auto; bottom:18px; width:min(560px, calc(100% - 32px)); transform:translate(-50%,160%); border:1px solid rgba(255,255,255,.12); border-radius:20px; padding:10px 10px 10px 20px; box-shadow:0 20px 50px -20px rgba(0,0,0,.8); }
   .fd-sticky.is-on{ transform:translate(-50%,0); }
 }
+
+/* ---------- seat waves above the live price ---------- */
+.fd-waves{ display:flex; flex-direction:column; gap:5px; margin:0 0 10px; }
+.fd-wave{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 10px; border-radius:10px; background:rgba(255,255,255,.05); border:1px dashed rgba(255,255,255,.16); font-size:12.5px; font-weight:700; color:var(--muted); }
+.fd-wave-price{ color:var(--text); white-space:nowrap; }
+.fd-wave.is-next .fd-wave-name::before{ content:"Berikutnya · "; font-weight:600; color:var(--faint); }
+.fd-wave.is-past{ padding:4px 10px; font-size:11.5px; opacity:.62; }
+.fd-wave.is-past .fd-wave-price{ text-decoration:line-through; color:var(--faint); }
+.fd-wave-full{ display:inline-flex; align-items:center; gap:6px; }
+.fd-wave-full i{ display:inline-block; width:34px; height:5px; border-radius:3px; background:var(--grad); }
+.fd-wave-full b{ color:#fda4af; font-weight:800; }
+/* clips: notes without a ring show a dot, and clips use the full width like wepeka.com */
+.fd-pin b:empty{ position:relative; }
+.fd-pin b:empty::after{ content:""; width:7px; height:7px; border-radius:50%; background:#fff; }
+.fd-tag-board{ color:#FF6FAE !important; }
+.fd-step-body > .fd-show,.fd-step-body > .fd-fig{ margin-left:-50px; }
+.fd-step-body > .fd-fig .fd-show{ margin-left:0; }

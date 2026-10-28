@@ -84,6 +84,17 @@ export function planPrice(offer, plan, founderPay) {
   return p ? p[billing] : 0;
 }
 
+// The other seat waves, above the live price: the ones already full stay as
+// a small "15/15" line (people see it sold), the ones to come show their
+// price. The open wave is the big price below, so it is not listed.
+export function wavesHTML(tiers, open) {
+  return tiers.map((t, i) => {
+    if (i + 1 === open) return "";
+    if (i + 1 < open) return `<div class="fd-wave is-past"><span class="fd-wave-full"><i></i><b>${t.seats}/${t.seats}</b> terisi</span><span class="fd-wave-price">${rp(t.price)}</span></div>`;
+    return `<div class="fd-wave is-next"><span class="fd-wave-name">${t.seats} kursi berikutnya</span><span class="fd-wave-price">${rp(t.price)}</span></div>`;
+  }).join("");
+}
+
 export function offerView(offer, promo = null) {
   const f = offer?.founder || null;
   const tiers = f?.tiers?.length ? f.tiers : FALLBACK.tiers;
@@ -120,6 +131,7 @@ export function offerView(offer, promo = null) {
     text: {
       price: rp(pay),
       priceBefore: rp(price),
+      waves: wavesHTML(tiers, f ? f.wave : 1),
       priceMath: rp(pay),
       normal: rp(normal),
       savePct: `Hemat ${Math.round((1 - pay / normal) * 100)}%`,
@@ -151,7 +163,7 @@ export function offerView(offer, promo = null) {
       othersList: offer?.others ? othersHTML(offer) : "",
       perDayRows: [1, 2, 5].map((y) => `<div class="fd-perday-row"><span>${y} tahun</span><i style="--w:${Math.max(6, Math.round((perDay(y) / perDay(1)) * 100))}%"></i><b>${rp(perDay(y))}/hari</b></div>`).join(""),
     },
-    html: new Set(["seatNote", "codeOnText", "perDayRows", "othersList"]),
+    html: new Set(["seatNote", "codeOnText", "perDayRows", "othersList", "waves"]),
     seatNote,
     pips: f ? { size: f.waveSize, taken: f.waveTaken } : null,
     agencyOpen: !agency?.soldOut,
