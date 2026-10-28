@@ -104,16 +104,16 @@ describe("offer facts (api/offer.js)", () => {
   test("waves, seats left and the next price", () => {
     const one = founderFacts({ founderSlotsSold: 4 });
     assert.equal(one.price, FOUNDER_TIERS[0].amount);
-    assert.deepEqual([one.wave, one.waveTaken, one.waveSize, one.waveLeft, one.nextPrice], [1, 4, 15, 11, FOUNDER_TIERS[1].amount]);
+    assert.deepEqual([one.wave, one.waveTaken, one.waveSize, one.waveLeft, one.nextPrice], [1, 4, 5, 1, FOUNDER_TIERS[1].amount]);
     const two = founderFacts({ founderSlotsSold: 20 });
-    assert.deepEqual([two.wave, two.waveTaken, two.waveSize, two.waveLeft, two.nextPrice, two.price], [2, 5, 35, 30, null, FOUNDER_TIERS[1].amount]);
+    assert.deepEqual([two.wave, two.waveTaken, two.waveSize, two.waveLeft, two.nextPrice, two.price], [2, 3, 33, 30, null, FOUNDER_TIERS[1].amount]);
     assert.equal(founderFacts({ founderSlotsSold: 50 }).soldOut, true);
     assert.equal(agencyFacts({ founderUltimateSlotsSold: 15 }).soldOut, true);
   });
 
   test("an open checkout's hold counts as taken", () => {
-    const f = founderFacts({ founderSlotsSold: 14, holds: { founderSlotsSold: { abc: Date.now() + 60000, old: Date.now() - 1 } } });
-    assert.equal(f.taken, 15);
+    const f = founderFacts({ founderSlotsSold: 16, holds: { founderSlotsSold: { abc: Date.now() + 60000, old: Date.now() - 1 } } });
+    assert.equal(f.taken, 17);
     assert.equal(f.wave, 2);
   });
 
@@ -147,7 +147,7 @@ describe("Founder's Deal page (founder/founder.js)", () => {
     const nb = (s) => s.replace(/ /g, " ");
     assert.equal(nb(v.text.price), "Rp 499.000");
     assert.equal(nb(v.text.ctaLabel), "Beli Lifetime · Rp 499.000");
-    assert.match(nb(v.seatNote), /Sisa <b>11 kursi<\/b> di harga ini\. Habis itu naik jadi Rp 599\.000\./);
+    assert.match(nb(v.seatNote), /Tinggal <b>1 kursi<\/b> di harga ini\. Habis itu naik jadi Rp 599\.000\./);
     assert.equal(v.canBuy, true);
     assert.equal(v.community, true);
   });
@@ -189,7 +189,7 @@ describe("Founder's Deal page (founder/founder.js)", () => {
     const v = page.offerView(null);
     assert.equal(v.known, false);
     assert.equal(v.canBuy, true);
-    assert.match(v.text.tiersNote.replace(/ /g, " "), /^15 kursi pertama Rp 499\.000, 35 berikutnya Rp 599\.000\./);
+    assert.match(v.text.tiersNote.replace(/ /g, " "), /^17 kursi pertama Rp 499\.000, 33 berikutnya Rp 599\.000\./);
   });
 
   test("payments closed: the trial is the door", () => {

@@ -96,6 +96,8 @@ export function founderNow(taken = 0) {
   const i = FOUNDER.tiers.findIndex((tier) => taken < tier.upTo);
   const soldOut = i === -1;
   const wave = FOUNDER.tiers[soldOut ? FOUNDER.tiers.length - 1 : i];
+  // The first wave always reads "1 seat left" (owner, 2026-10-28; api/_plans.js).
+  if (i === 0) return { soldOut, wave: { ...wave, people: taken + 1 }, nextWave: FOUNDER.tiers[1] || null, left: 1, takenInWave: taken };
   const left = soldOut ? 0 : wave.upTo - taken;
   return { soldOut, wave, nextWave: soldOut ? null : FOUNDER.tiers[i + 1] || null, left, takenInWave: wave.people - left };
 }

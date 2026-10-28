@@ -30,10 +30,13 @@ export function founderFacts(slotsDoc, now = Date.now()) {
   const open = wave === -1 ? FOUNDER_TIERS.length - 1 : wave;
   const tier = FOUNDER_TIERS[open];
   const waveStart = open === 0 ? 0 : FOUNDER_TIERS[open - 1].upTo;
+  // The first wave always reads "1 seat left" (owner, 2026-10-28; see _plans.js).
+  const held = open === 0;
+  const waveTaken = Math.max(0, taken - waveStart);
   return {
     taken, cap, soldOut: taken >= cap,
     price: seatPrice(plan, taken),
-    wave: open + 1, waveSize: tier.upTo - waveStart, waveTaken: Math.max(0, taken - waveStart), waveLeft: Math.max(0, tier.upTo - taken),
+    wave: open + 1, waveSize: held ? waveTaken + 1 : tier.upTo - waveStart, waveTaken, waveLeft: held ? 1 : Math.max(0, tier.upTo - taken),
     nextPrice: FOUNDER_TIERS[open + 1]?.amount ?? null,
     tiers: FOUNDER_TIERS.map((t, i) => ({ seats: t.upTo - (i ? FOUNDER_TIERS[i - 1].upTo : 0), price: t.amount })),
     normal: NORMAL_PRICES.founder,

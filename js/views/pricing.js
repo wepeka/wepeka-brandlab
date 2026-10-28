@@ -364,7 +364,7 @@ const STUDIO = { key: "studio", monthly: 249000, yearly: 1990000, brands: 10, cr
 
 // Two waves inside the same 50 slots (api/_plans.js FOUNDER_TIERS — keep in
 // sync). The page never shows how many are sold, only which wave is open.
-const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 15, people: 15, price: 499000 }, { upTo: 50, people: 35, price: 599000 }], brands: 3, credits: 100, features: ["proForever", "contentDayForever", "team", "upcoming", "bookStyles", "circle", "review", "badge"] };
+const FOUNDER = { key: "founder", slotField: "founderSlotsSold", tiers: [{ upTo: 17, people: 17, price: 499000 }, { upTo: 50, people: 33, price: 599000 }], brands: 3, credits: 100, features: ["proForever", "contentDayForever", "team", "upcoming", "bookStyles", "circle", "review", "badge"] };
 const AGENCY = { key: "founder-ultimate", slotField: "founderUltimateSlotsSold", price: 799000, brands: 15, credits: 100 };
 // Hard caps, mirrored from api/_plans.js SLOT_CAPS.
 const FOUNDER_SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };

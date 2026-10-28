@@ -18,8 +18,8 @@ describe("seat holds: the math", () => {
     assert.equal(seatsTaken(doc, F, now), 11);
     assert.equal(seatsTakenOf(doc, F, now), 11, "the pricing page counts the same way");
   });
-  test("the price wave follows sold + held: the 15th seat held, the next buyer pays the second wave", () => {
-    const doc = { [F]: 14 };
+  test("the price wave follows sold + held: the last first-wave seat held, the next buyer pays the second wave", () => {
+    const doc = { [F]: 16 };
     const first = reserveSeat(doc, F, "a", founder, now);
     assert.equal(first.price, 499000);
     const second = reserveSeat({ ...doc, holds: { [F]: first.holds } }, F, "b", founder, now);
@@ -94,18 +94,18 @@ describe("seat holds: the pay window", () => {
     assert.match(src, /\.\.\.\(hold \? \{ hold, payBy, /);
   });
   test("a held wave-1 seat keeps the wave closed for the whole window, then frees it", () => {
-    const first = reserveSeat({ [F]: 14 }, F, "a", founder, now);
+    const first = reserveSeat({ [F]: 16 }, F, "a", founder, now);
     assert.equal(first.price, 499000);
-    const doc = { [F]: 14, holds: { [F]: first.holds } };
+    const doc = { [F]: 16, holds: { [F]: first.holds } };
     // Just before the order stops being payable, the seat is still taken:
     // the next buyer pays the second wave, so the held order can't settle
     // at a wave price somebody else also got.
     const late = now + SEAT_CHECKOUT_MINUTES * MIN - 1;
     assert.equal(reserveSeat(doc, F, "b", founder, late).price, 599000);
     // In the margin for a late notification: still held.
-    assert.equal(seatsTaken(doc, F, now + HOLD_MS - 1), 15);
+    assert.equal(seatsTaken(doc, F, now + HOLD_MS - 1), 17);
     // After the hold: back on sale at the first wave.
-    assert.equal(seatsTaken(doc, F, now + HOLD_MS), 14);
+    assert.equal(seatsTaken(doc, F, now + HOLD_MS), 16);
     assert.equal(reserveSeat(doc, F, "b", founder, now + HOLD_MS).price, 499000);
   });
   test("the last seat stays held for the whole window", () => {

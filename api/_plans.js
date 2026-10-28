@@ -391,10 +391,14 @@ export function isPaidAccount(account, now = Date.now()) {
 export const SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };
 
 // Founder Lifetime is sold in two waves inside the same 50 slots: the first
-// 15 buyers pay less than the 35 after them. Mirrored for display in
-// js/views/pricing.js (FOUNDER.tiers); keep the two in sync.
+// buyers pay less than the ones after them. Mirrored for display in
+// js/views/pricing.js (FOUNDER.tiers) and js/views/landing.js founderNow /
+// api/offer.js founderFacts; keep them in sync.
+// 2026-10-28 (owner): the first wave was re-opened for 2 more buyers after
+// its 15 sold out (15 -> 17) and every counter shows "1 seat left" until
+// they are in, then Rp 599.000 takes over.
 export const FOUNDER_TIERS = [
-  { upTo: 15, amount: 499000 },
+  { upTo: 17, amount: 499000 },
   { upTo: 50, amount: 599000 },
 ];
 export function founderAmount(sold) {

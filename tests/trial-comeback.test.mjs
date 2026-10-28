@@ -28,14 +28,14 @@ test("recipients: trial accounts only, running and ended, minus opted out, the t
 });
 
 test("a running trial: it isn't complicated any more, try again, Founder seats from the live count", () => {
-  const founder = founderFacts({ founderSlotsSold: 13 }, now);
+  const founder = founderFacts({ founderSlotsSold: 15 }, now);
   const m = composeTrialComebackEmail({ ended: false, endsAt: now + 9 * day, founder, now, appUrl: "https://brandlab.wepeka.com" });
   assert.equal(m.subject, "Dulu ribet? Sekarang Brandlab udah nggak ribet lagi");
   assert.match(m.text, /^Dulu ribet\? Sekarang udah nggak\./);
   assert.match(m.text, /Akses trial kamu masih jalan sampai 5 November\. Coba buka lagi/);
   assert.match(m.text, /Coba lagi sekarang: https:\/\/brandlab\.wepeka\.com\n/);
   assert.match(m.text, /Rp 499\.000 \(harga normal Rp 3\.000\.000\)/);
-  assert.match(m.text, /Sisa 2 kursi di harga ini\. Habis itu naik jadi Rp 599\.000\./);
+  assert.match(m.text, /Sisa 1 kursi di harga ini\. Habis itu naik jadi Rp 599\.000\./);
   assert.ok(m.text.includes(buyUrl("founder")) && m.html.includes(buyUrl("founder").replace(/&/g, "&amp;")), "the Founder button goes straight to its checkout");
   for (const part of [m.html, m.text]) assert.ok(!part.includes(LIFETIME_INVITE), "never the Lifetime group");
   assert.ok(m.html.includes("/assets/announcements/ui-1-beranda.jpg"));
@@ -43,7 +43,7 @@ test("a running trial: it isn't complicated any more, try again, Founder seats f
 });
 
 test("an ended trial: never told it ended — what they filled in is still there, the button opens the plans", () => {
-  const m = composeTrialComebackEmail({ ended: true, endsAt: now - 3 * day, founder: founderFacts({ founderSlotsSold: 13 }, now), now });
+  const m = composeTrialComebackEmail({ ended: true, endsAt: now - 3 * day, founder: founderFacts({ founderSlotsSold: 15 }, now), now });
   assert.equal(m.subject, "Dulu ribet? Sekarang Brandlab udah nggak ribet lagi");
   assert.match(m.text, /Brand DNA, konten, dan target yang udah kamu isi masih tersimpan rapi\./);
   assert.match(m.text, /Lanjut pakai Brandlab: https:\/\/brandlab\.wepeka\.com\/#\/pricing/);

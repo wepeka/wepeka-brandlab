@@ -16,7 +16,7 @@ import { gaEvent } from "../js/analytics.js";
 // Same as api/_plans.js FOUNDER_TIERS, api/offer.js NORMAL_PRICES / PRO_MONTHLY
 // and js/account.js TRIAL_DAYS (tests/founder-page.test.mjs keeps them equal).
 export const FALLBACK = {
-  tiers: [{ seats: 15, price: 499000 }, { seats: 35, price: 599000 }],
+  tiers: [{ seats: 17, price: 499000 }, { seats: 33, price: 599000 }],
   normal: 3000000,
   proMonthly: 99000,
   trialDays: 30,

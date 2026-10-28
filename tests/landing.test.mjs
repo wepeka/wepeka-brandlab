@@ -88,7 +88,7 @@ describe("front page", () => {
   test("the seat counter shows only a live count, and never once every seat is gone", () => {
     assert.ok(!landingHTML().includes("lp-seats-n"), "unknown count: no number");
     const some = landingHTML({ facts: live(2) });
-    assert.match(some, /class="lp-seats-n">13</);
+    assert.match(some, /class="lp-seats-n">1</);
     assert.equal(some.match(/class="lp-pips"[^>]*>(.*?)<\/span>/)[1].split('class="is-taken"').length - 1, 2);
     const gone = landingHTML({ facts: live(50) });
     assert.ok(!gone.includes("lp-seats-n"));
@@ -102,9 +102,10 @@ describe("front page", () => {
   });
 
   test("the Founder wave follows the seats taken", () => {
-    assert.deepEqual([founderNow(0).wave.price, founderNow(0).left], [499000, 15]);
-    assert.deepEqual([founderNow(14).left, founderNow(14).takenInWave, founderNow(14).nextWave.price], [1, 14, 599000]);
-    assert.deepEqual([founderNow(15).wave.price, founderNow(15).left, founderNow(15).nextWave], [599000, 35, null]);
+    // The first wave is held at "1 seat left" until the 17th seat is taken.
+    assert.deepEqual([founderNow(15).wave.price, founderNow(15).left, founderNow(15).takenInWave, founderNow(15).wave.people, founderNow(15).nextWave.price], [499000, 1, 15, 16, 599000]);
+    assert.deepEqual([founderNow(16).wave.price, founderNow(16).left, founderNow(16).takenInWave, founderNow(16).wave.people], [499000, 1, 16, 17]);
+    assert.deepEqual([founderNow(17).wave.price, founderNow(17).left, founderNow(17).nextWave], [599000, 33, null]);
     assert.equal(founderNow(50).soldOut, true);
   });
 });
