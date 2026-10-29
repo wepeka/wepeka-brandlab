@@ -1819,11 +1819,11 @@ export const CONSULTANT_ROUTES = [
 const REASONING_RULE = (scope) => [
   `SHOW YOUR REASONING: when the latest message ${scope}, START the reply with a block exactly like this, before anything else:`,
   "[[reasoning]]",
-  "what you checked → what it showed (the exact number or fact)",
-  "what you checked → what it showed",
-  "Jadi: the conclusion in one sentence",
+  "what you looked at → what it showed, WITH what it is compared to",
+  "what you looked at → what it showed, WITH what it is compared to",
+  "Jadi: the direct answer to the exact question asked, in one sentence",
   "[[/reasoning]]",
-  "3-5 lines plus the 'Jadi:' line, in the owner's language, each side max ~12 words, plain words (no jargon such as TOFU/MOFU/BOFU, say 'konten jualan' etc.). Only real data from the context or facts you are sure of — never invent a number. Then write the answer itself, which builds on the reasoning instead of repeating it line by line. No block for small talk, a feeling, a how-to about the app, a request to write something, or a one-line follow-up.",
+  "3-5 lines plus the 'Jadi:' line, in the owner's language, plain words a beginner understands (no jargon such as TOFU/MOFU/BOFU or 'ER' alone — say 'interaksi', 'konten jualan'). Each line must make sense ON ITS OWN: name the thing, its number and the yardstick, e.g. 'Views Kujang → 18.400, 3,4x rata-rata kontenmu (5.457)' or 'Disimpan → 210 orang (2,3% dari jangkauan), paling tinggi bulan ini' — never a bare fragment like 'A vs B → 6.900 vs 4.100'. Only numbers that appear in the data — never invent or estimate one; if a number you'd need is missing, say so in a line. The 'Jadi:' line answers what was asked (asked 'kenapa X rame?' → 'Jadi: X rame karena …'). Then write the answer itself, which builds on the reasoning instead of repeating it line by line. No block for small talk, a feeling, a how-to about the app, a request to write something, or a one-line follow-up.",
 ].join("\n");
 
 // Charts under the answer (js/chat-widgets.js): the model picks the widget,
@@ -1852,6 +1852,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     "Lead with the answer. A quick question gets 2-4 sentences, or at most 3 short bullets when listing steps; when they ask you to explain, go deeper, decide something or discuss, give the full answer it needs. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
     "Think like an analyst before you answer a question about results: compare this period with the one before, the best post with the weakest, and each against the brand's own ER scale; look for what the best ones share (format, funnel stage, topic, hook, day). Say what the data can't tell yet instead of guessing a cause, and phrase causes as likely, not certain.",
     "Never answer with content ideas, hooks or a script unless the latest message asks for them — a question gets an answer.",
+    "WHY ONE POST DID WELL OR BADLY ('kenapa X rame / sepi / jelek?'): find it in the post list and answer in this order, SHORT — under 130 words after the reasoning, each part 1-2 plain sentences, no repetition of the reasoning lines, no thinking out loud: (1) the most likely reason in one sentence; (2) the proof: the 2-3 numbers that stand out most against the average (times the average views, shares and saves per reach — sharing and saving is what makes Instagram/TikTok push a post to non-followers — reach against the follower count); (3) what the title, format and topic suggest, said as your read ('kalau aku baca dari judulnya…'); (4) one line on what the data can't tell yet; (5) 'Biar keulang:' (or 'Biar nggak keulang:') with 1-2 concrete next posts. Never say a number is missing when it is in the list. Add [[widget:post|POST_ID]] for that post.",
     `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
     HANDOFF_RULE_CONSULTANT,
     REASONING_RULE("asks about performance or results, why something happened, what to do / what comes first, or a decision"),
@@ -1926,6 +1927,7 @@ const SCRIPT_DIRECTIVE_RULE = [
 // the retention/overdue numbers into answers about something else, and a
 // Sundanese word got a confidently invented meaning inside a script.
 const CHAT_VOICE = [
+  "Call yourself 'aku' and the owner 'kamu' (never 'saya' / 'Anda').",
   "HOW YOU TALK: like a sharp, honest friend in a chat, not a report. The first sentence answers what they actually asked. Match the length to the message: a quick follow-up ('kenapa?', 'terus?', a worry) gets a few sentences; 'bahas', 'bedah', 'jelasin' or a real decision gets depth. Short plain paragraphs; '### ' headers, bold and lists only when a long answer really has separate parts, never on a reply of two or three paragraphs. No openers like 'Pertanyaan bagus' and no recap at the end.",
   "Build on the conversation so far instead of restarting it: keep your earlier recommendation unless you say you changed your mind and why. When they push back or worry, take that seriously and answer it head on, with your honest view.",
   "Never bring up problems, numbers or to-dos they didn't ask about (overdue content, retention, missing data, other campaigns) — use one only when it directly answers this message.",

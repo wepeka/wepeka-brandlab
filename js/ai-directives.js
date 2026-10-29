@@ -33,7 +33,7 @@ function widgetRequest(kind, arg) {
   const k = String(kind || "").trim().toLowerCase().replace(/_/g, "-").replace(/^top$/, "top-posts");
   if (!WIDGET_KINDS.includes(k)) return null;
   const a = String(arg || "").trim();
-  if (k === "campaign") return { kind: k, period: DEFAULT_PERIOD, arg: a.replace(/^campaign:/i, "") };
+  if (k === "campaign" || k === "post") return { kind: k, period: DEFAULT_PERIOD, arg: a.replace(/^(?:campaign|post|id)\s*[:=]\s*/i, "") };
   const p = a.toLowerCase().replace(/\s+|hari|days?/g, "");
   return { kind: k, period: WIDGET_PERIODS.includes(p) ? p : PERIOD_ALIASES[p] || DEFAULT_PERIOD, arg: "" };
 }

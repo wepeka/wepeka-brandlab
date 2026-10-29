@@ -5537,6 +5537,23 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .chw-seg.is-poor, .chw-legend i.is-poor{ background: var(--health-poor); }
 .chw-legend{ display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; font-size:11px; color: var(--text-muted); }
 .chw-legend i{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+.chw-vs-title{ font-size:13px; font-weight:800; color: var(--text); margin-bottom:6px; }
+.chw-vs-title small{ display:block; font-size:11px; font-weight:600; color: var(--text-faint); }
+.chw-vs-legend{ display:flex; gap:12px; font-size:11px; color: var(--text-muted); margin-bottom:6px; }
+.chw-vs-legend i{ display:inline-block; width:10px; height:6px; border-radius:3px; margin-right:5px; vertical-align:1px; background: color-mix(in srgb, var(--text-muted) 45%, var(--surface-2)); }
+.chw-vs-legend i.is-hot{ background: var(--chw-bar); }
+.chw-vs-row{ display:grid; grid-template-columns: minmax(0, 1.2fr) minmax(70px, 1fr) auto; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--border-soft, var(--border)); }
+.chw-vs-row:first-of-type{ border-top:0; }
+.chw-vs-name{ font-size:12px; color: var(--text); min-width:0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.chw-vs-x{ font-size:10.5px; font-weight:800; padding:1px 6px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-muted); }
+.chw-vs-x.is-up{ color: var(--health-good); background: color-mix(in srgb, var(--health-good) 14%, transparent); }
+.chw-vs-x.is-down{ color: var(--health-poor); background: color-mix(in srgb, var(--health-poor) 14%, transparent); }
+.chw-vs-bars{ display:flex; flex-direction:column; gap:3px; }
+.chw-vs-bars .chw-bar-track{ height:8px; }
+.chw-vs-bars .chw-bar-track.is-avg{ height:5px; }
+.chw-bar-fill.is-avg{ background: color-mix(in srgb, var(--text-muted) 45%, var(--surface-2)); }
+.chw-vs-val{ font-size:12px; font-weight:700; text-align:right; color: var(--text); font-variant-numeric: tabular-nums; white-space:nowrap; }
+.chw-vs-val small{ display:block; font-size:10.5px; font-weight:600; color: var(--text-faint); }
 .chw-cols{ display:flex; align-items:flex-end; gap:6px; height:80px; padding-top:6px; }
 .chw-col{ position:relative; flex:1; max-width:28px; height: var(--h); min-height:2px; border-radius:5px 5px 2px 2px; background: color-mix(in srgb, var(--chw-line) 55%, var(--surface)); transform-origin:bottom; outline:none; }
 .chw-col.is-hot{ background: var(--chw-bar); }

@@ -22,7 +22,7 @@ import { icon } from "./icons.js";
 import { escapeHtml as esc, formatNumber, formatPercent, formatDate } from "./dom.js";
 import { funnelShort } from "./funnel-field.js";
 
-export const WIDGET_KINDS = ["performance", "engagement", "top-posts", "formats", "funnel", "followers", "sales", "retention", "schedule", "campaign"];
+export const WIDGET_KINDS = ["performance", "engagement", "top-posts", "post", "formats", "funnel", "followers", "sales", "retention", "schedule", "campaign"];
 export const WIDGET_PERIODS = ["7", "30", "90", "all"];
 export const DEFAULT_PERIOD = "30";
 export const MAX_WIDGETS = 2;
@@ -58,6 +58,7 @@ export function postRows(content, settings, start, end) {
       return {
         id: c.id, title: c.title || "", date: dateOf(c), format: (c.format || "").trim(), funnel: c.funnel || "",
         views: organicViews(c) ?? null, reach: contentMetric(c, "reach"), inter: interactionsOf(nums),
+        likes: nums.likes, comments: nums.comments, shares: nums.shares, saves: nums.saves,
         er: isNum(m.engagementRate) ? m.engagementRate : null, health: m.health || null,
       };
     })
@@ -69,6 +70,25 @@ function totals(rows) {
   const inter = rows.map((r) => r.inter).filter(isNum);
   const ers = rows.map((r) => r.er).filter(isNum);
   return { posts: rows.length, views: views.length ? sum(views) : null, inter: inter.length ? sum(inter) : null, er: avg(ers), rated: ers.length };
+}
+
+// Shares and saves per 100 people reached — what the platforms push a post
+// on (js/ai.js RETENTION_SPECIALIST_CONTEXT: >=1% each is strong).
+const rateOf = (r, key) => (isNum(r[key]) && isNum(r.reach) && r.reach > 0 ? (r[key] / r.reach) * 100 : null);
+// One post against the average of the OTHER posts around it: "kenapa yang
+// Kujang rame?" is answered by how far it stands out, and on what.
+export const POST_METRICS = ["views", "reach", "shareRate", "saveRate", "comments", "er"];
+function postMetric(r, key) {
+  if (key === "shareRate") return rateOf(r, "shares");
+  if (key === "saveRate") return rateOf(r, "saves");
+  return isNum(r[key]) ? r[key] : null;
+}
+export function postVsAverage(row, others) {
+  return POST_METRICS.map((key) => {
+    const v = postMetric(row, key);
+    const a = avg(others.map((o) => postMetric(o, key)).filter(isNum));
+    return { key, v, avg: a, x: isNum(v) && isNum(a) && a > 0 ? Math.round((v / a) * 10) / 10 : null };
+  }).filter((m) => isNum(m.v));
 }
 
 const slimPost = (r) => ({ id: r.id, title: r.title.slice(0, 80), date: r.date, format: r.format.slice(0, 30), views: r.views, er: r.er });
@@ -104,6 +124,14 @@ export function computeWidget({ kind, period = DEFAULT_PERIOD, arg = "" }, ctx) 
     const metric = byViews.length ? "views" : "er";
     const list = (metric === "views" ? byViews : byEr).slice(0, 5).map(slimPost);
     return { ...base, empty: !list.length, metric, posts: list };
+  }
+  if (kind === "post") {
+    const pool = postRows(content, settings, shift(today, -89), today);
+    const all = pool.length ? pool : postRows(content, settings, ALL_START, today);
+    const row = all.find((r) => r.id === arg) || postRows(content, settings, ALL_START, today).find((r) => r.id === arg);
+    if (!row) return { ...base, empty: true, postId: "" };
+    const others = all.filter((r) => r.id !== row.id);
+    return { ...base, period: "90", empty: false, postId: row.id, title: row.title.slice(0, 80), date: row.date, format: row.format.slice(0, 30), others: others.length, metrics: postVsAverage(row, others) };
   }
   if (kind === "formats" || kind === "funnel") {
     const keyOf = kind === "formats" ? (r) => r.format : (r) => r.funnel;
@@ -211,6 +239,7 @@ export function widgetMenuText(ctx) {
     performance: all.length > 0,
     engagement: all.some((r) => isNum(r.er)),
     "top-posts": all.some((r) => isNum(r.views) || isNum(r.er)),
+    post: all.length > 1,
     formats: all.length > 1,
     funnel: all.length > 1,
     followers: (brand?.insightsHistory || []).some((h) => isNum(h.followers)),
@@ -223,6 +252,7 @@ export function widgetMenuText(ctx) {
     performance: "posts published, total views, interactions and average engagement rate vs the period before, plus views per post",
     engagement: "engagement rate per post against the brand's ER scale, and how many posts are excellent/healthy/average/poor",
     "top-posts": "the 5 best posts of the period (by views, else by ER)",
+    post: "ONE post against the average of the brand's other posts (views, reach, shares and saves per reach, comments, ER, with 'Nx rata-rata') — the chart for 'kenapa X rame / sepi?'; use [[widget:post|POST_ID]] with the id from the post list",
     formats: "average ER and views per format (Reels, Carousel…) — what format works",
     funnel: "posts and average ER per funnel stage (awareness / trust / buying)",
     followers: "followers per platform now, the change over the period, and the line of logged follower counts",
@@ -250,7 +280,24 @@ export function widgetFactsText(ctx) {
   // Every post of the period, best first — "yang paling jelek yang mana?"
   // needs the bottom of the list as much as the top.
   const ranked = [...rows].sort((a, b) => (b.views ?? -1) - (a.views ?? -1) || (b.er ?? -1) - (a.er ?? -1));
-  const one = (x) => `"${x.title || "(tanpa judul)"}" (${[x.format, x.funnel, x.date].filter(Boolean).join(", ")}): ${x.views === null ? "views belum diisi" : `${n(x.views)} views`}, ${x.inter === null ? "interaksi belum diisi" : `${n(x.inter)} interaksi`}, ER ${p(x.er)}`;
+  // Every number a "why" needs, worked out here so the model never does
+  // the arithmetic: the post against the period's average, shares and saves
+  // per reach (what the platforms push on), comments.
+  const avgViews = avg(rows.map((x) => x.views).filter(isNum));
+  const avgShare = avg(rows.map((x) => rateOf(x, "shares")).filter(isNum));
+  const avgSave = avg(rows.map((x) => rateOf(x, "saves")).filter(isNum));
+  const times = (v, a) => (isNum(v) && isNum(a) && a > 0 ? ` (${(Math.round((v / a) * 10) / 10).toLocaleString("id-ID")}x rata-rata)` : "");
+  const one = (x) => [
+    `"${x.title || "(tanpa judul)"}" (id=${x.id}, ${[x.format, x.funnel, x.date].filter(Boolean).join(", ")}):`,
+    x.views === null ? "views belum diisi" : `${n(x.views)} views${times(x.views, avgViews)}`,
+    isNum(x.reach) ? `reach ${n(x.reach)}` : "",
+    isNum(x.likes) ? `${n(x.likes)} suka` : "",
+    isNum(x.comments) ? `${n(x.comments)} komen` : "",
+    isNum(x.shares) ? `${n(x.shares)} share${isNum(rateOf(x, "shares")) ? ` (${p(rateOf(x, "shares"))} dari reach${times(rateOf(x, "shares"), avgShare)})` : ""}` : "",
+    isNum(x.saves) ? `${n(x.saves)} simpan${isNum(rateOf(x, "saves")) ? ` (${p(rateOf(x, "saves"))} dari reach${times(rateOf(x, "saves"), avgSave)})` : ""}` : "",
+    `ER ${p(x.er)}`,
+  ].filter(Boolean).join(", ").replace(":,", ":");
+  if (ranked.length) lines.push(`Rata-rata per konten 30 hari terakhir: ${n(avgViews)} views, share ${p(avgShare)} dari reach, simpan ${p(avgSave)} dari reach (share/simpan >=1% dari reach = sinyal kuat buat algoritma).`);
   if (ranked.length) lines.push(`Semua konten terbit 30 hari terakhir, views tertinggi dulu:\n${ranked.slice(0, 15).map((x, i) => `${i + 1}. ${one(x)}`).join("\n")}${ranked.length > 15 ? `\n(+${ranked.length - 15} konten lain)` : ""}`);
   const fm = computeWidget({ kind: "formats", period: "90" }, ctx);
   const withEr = (fm?.groups || []).filter((g) => isNum(g.er) && g.name);
@@ -270,7 +317,8 @@ export function widgetHistoryLine(w) {
   if (w.kind === "top-posts") bits.push((w.posts || []).map((x, i) => `${i + 1}. ${x.title} (${w.metric === "views" ? `${x.views} views` : `ER ${x.er?.toFixed(1)}%`})`).join("; "));
   if (w.kind === "formats" || w.kind === "funnel") bits.push((w.groups || []).map((g) => `${g.name || "?"} ${g.n} posts${g.er !== null ? ` ER ${g.er.toFixed(1)}%` : ""}`).join("; "));
   if (w.kind === "campaign" && w.name) bits.push(`${w.name}: ${w.met}/${w.total} milestones`);
-  return `[[widget:${w.kind}|${w.kind === "campaign" ? w.campaignId : w.period}]]${bits.length && bits[0] ? ` (chart shown: ${bits.join(" ")})` : ""}`;
+  if (w.kind === "post" && w.title) bits.push(`${w.title}: ${(w.metrics || []).filter((m) => m.x !== null).map((m) => `${m.key} ${m.x}x avg`).join(", ")}`);
+  return `[[widget:${w.kind}|${w.kind === "campaign" ? w.campaignId : w.kind === "post" ? w.postId : w.period}]]${bits.length && bits[0] ? ` (chart shown: ${bits.join(" ")})` : ""}`;
 }
 
 // ---- Rendering --------------------------------------------------------------
@@ -349,12 +397,13 @@ function kpiHTML(label, value, delta = "") {
   return `<div class="chw-kpi"><small>${esc(label)}</small><b>${esc(value)}</b>${delta}</div>`;
 }
 
-const WIDGET_ICON = { performance: "chart", engagement: "heart", "top-posts": "flame", formats: "grid", funnel: "target", followers: "users", sales: "money", retention: "teleprompter", schedule: "calendar", campaign: "flag" };
+const WIDGET_ICON = { post: "eye", performance: "chart", engagement: "heart", "top-posts": "flame", formats: "grid", funnel: "target", followers: "users", sales: "money", retention: "teleprompter", schedule: "calendar", campaign: "flag" };
 // Where the owner goes to dig in or to fill the data in.
 function widgetPath(w) {
   if (w.kind === "sales") return "sales";
   if (w.kind === "schedule") return "content/calendar";
   if (w.kind === "campaign") return w.campaignId ? `campaigns/${w.campaignId}` : "campaigns";
+  if (w.kind === "post") return w.postId ? `content/creator/${w.postId}` : "content/list";
   if (w.empty && w.kind === "followers") return "__insights";
   if (w.empty) return "content/list";
   return "report";
@@ -362,6 +411,7 @@ function widgetPath(w) {
 
 function periodLabel(w) {
   if (w.kind === "schedule") return t("chw.period.next7");
+  if (w.kind === "post") return t("chw.post.vs", { n: w.others });
   if (w.kind === "campaign") return "";
   return w.period === "all" ? t("chw.period.all") : t("chw.period.lastN", { n: w.period });
 }
@@ -397,6 +447,23 @@ function bodyHTML(w) {
       v: w.metric === "views" ? p.views : p.er, hot: i === 0,
       valHTML: w.metric === "views" ? `${esc(compact(p.views))}${isNum(p.er) ? `<small>ER ${esc(pct(p.er))}</small>` : ""}` : esc(pct(p.er)),
     })));
+  }
+  if (w.kind === "post") {
+    const fmt = (m, v) => (m.key === "er" || m.key.endsWith("Rate") ? pct(v) : compact(v));
+    const rows = w.metrics.map((m, i) => {
+      const top = Math.max(m.v, m.avg ?? 0) || 1;
+      const up = m.x !== null && m.x >= 1;
+      return `
+      <div class="chw-vs-row" style="--i:${i}">
+        <span class="chw-vs-name">${esc(t(`chw.post.${m.key}`))}${m.x !== null ? `<b class="chw-vs-x ${m.x >= 1.5 ? "is-up" : m.x < 0.75 ? "is-down" : ""}">${esc(`${String(m.x).replace(".", getLang() === "en" ? "." : ",")}x`)}</b>` : ""}</span>
+        <span class="chw-vs-bars">
+          <span class="chw-bar-track"><span class="chw-bar-fill${up ? " is-hot" : ""}" style="--w:${(m.v / top) * 100}%;--i:${i}"></span></span>
+          ${isNum(m.avg) ? `<span class="chw-bar-track is-avg"><span class="chw-bar-fill is-avg" style="--w:${(m.avg / top) * 100}%;--i:${i}"></span></span>` : ""}
+        </span>
+        <span class="chw-vs-val">${esc(fmt(m, m.v))}${isNum(m.avg) ? `<small>${esc(t("chw.post.avg", { v: fmt(m, m.avg) }))}</small>` : ""}</span>
+      </div>`;
+    }).join("");
+    return `<div class="chw-vs-title">${esc(w.title || t("common.untitled"))}<small>${esc([w.format, shortDate(w.date)].filter(Boolean).join(" · "))}</small></div><div class="chw-vs-legend"><span><i class="is-hot"></i>${esc(t("chw.post.this"))}</span><span><i></i>${esc(t("chw.post.avgLabel"))}</span></div>${rows}`;
   }
   if (w.kind === "formats" || w.kind === "funnel") {
     const useEr = w.groups.some((g) => isNum(g.er));

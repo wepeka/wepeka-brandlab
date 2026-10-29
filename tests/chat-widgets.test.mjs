@@ -146,3 +146,23 @@ describe("[[reasoning]] — Cara aku nyimpulin", async () => {
     assert.match(serializeDirectives("Naik.", { reasoning: parseReasoning("A → b\nJadi: c") }), /^\[\[reasoning\]\]\nA → b\nJadi: c\n\[\[\/reasoning\]\]\nNaik\.$/);
   });
 });
+
+describe("post widget: one post against the brand's average", () => {
+  test("multiples against the other posts, shares and saves per reach", () => {
+    const w = computeWidget({ kind: "post", arg: "a" }, ctx);
+    assert.equal(w.postId, "a");
+    const views = w.metrics.find((m) => m.key === "views");
+    assert.equal(views.v, 5000);
+    assert.equal(views.avg, (1200 + 800 + 300) / 3);
+    assert.equal(w.metrics.find((m) => m.key === "shareRate").v, 0.5);
+    assert.match(widgetHTML(w), /chw-vs-row/);
+    assert.doesNotMatch(widgetHTML(w), /undefined|NaN/);
+    assert.equal(computeWidget({ kind: "post", arg: "nope" }, ctx).empty, true);
+    assert.deepEqual(parseDirectives("x [[widget:post|id=a]]").widgets, [{ kind: "post", period: "30", arg: "a" }]);
+  });
+  test("the facts give every post its shares, saves and the average", () => {
+    const f = widgetFactsText(ctx);
+    assert.match(f, /"Post a" \(id=a, Reels, TOFU, 2026-10-25\): 5\.000 views \(2,1x rata-rata\), reach 1\.000, 80 suka, 10 komen, 5 share \(0,5% dari reach/);
+    assert.match(f, /Rata-rata per konten 30 hari terakhir: 2\.333 views/);
+  });
+});
