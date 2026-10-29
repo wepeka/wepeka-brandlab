@@ -3522,7 +3522,8 @@ export function mountConsultantPanel(brandId) {
   fab.className = "consultant-fab";
   fab.setAttribute("aria-label", t("cons.fabLabel"));
   // A little speech-bubble character (js/fab-face.js); ✕ while the chat is open.
-  fab.innerHTML = `<span class="fab-spark" aria-hidden="true"></span>${faceHTML()}<span class="fab-x" aria-hidden="true">${icon("x", { size: 20 })}</span>`;
+  // The small chat badge says it's a chat at a glance.
+  fab.innerHTML = `<span class="fab-spark" aria-hidden="true"></span>${faceHTML()}<span class="fab-chat-badge" aria-hidden="true">${icon("chat", { size: 11 })}</span><span class="fab-x" aria-hidden="true">${icon("x", { size: 20 })}</span>`;
   fab.addEventListener("click", async () => {
     // The first press ever: the "Tanya Brandlab" video (admin slot
     // `tanya-brandlab`) plays first, then the chat opens.
