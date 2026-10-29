@@ -1,7 +1,7 @@
 // Brandlab's community doors: the WhatsApp group (announcements + a place
 // to ask the Wepeka team), for Lifetime accounts their own group on top of
 // it (the Founder Circle — its link comes from the server, api/community.js,
-// never from this bundle) and a chat to start their guided setup, and the
+// never from this bundle) and a chat to ask the Wepeka team, and the
 // two Instagram accounts to follow. Each
 // door keeps its check once tapped, and says what would be missed until
 // then (owner, 2026-10-13). Shown

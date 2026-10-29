@@ -64,7 +64,7 @@ ${inner}
 // A Lifetime buyer is guided by the Wepeka team until Brandlab runs (the
 // promise on /founder, owner 2026-10-18); it starts with this chat. The
 // app's door (js/community.js) opens the same chat.
-export const GUIDE_WA_TEXT = "Halo Wepeka, aku baru jadi Founder Brandlab. Mau mulai dibimbing.";
+export const GUIDE_WA_TEXT = "Halo Wepeka, aku baru jadi Founder Brandlab. Ada yang mau aku tanyakan.";
 export const GUIDE_WA_URL = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURIComponent(GUIDE_WA_TEXT)}`;
 
 // The block every email ends on: join the group, follow the accounts.
@@ -75,9 +75,9 @@ export const GUIDE_WA_URL = `https://wa.me/${SUPPORT_WA_NUMBER}?text=${encodeURI
 function communityHTML({ lifetime = false, circle = lifetime } = {}) {
   const follow = FOLLOW_INSTAGRAM.map((h) => `<a href="${esc(instagramUrl(h))}" style="color:#c2185b;font-weight:700;text-decoration:none;">@${esc(h)}</a>`).join(" &nbsp;·&nbsp; ");
   const guide = lifetime ? `<div style="margin:22px 0 0;padding:16px 18px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;">
-<p style="margin:0 0 6px;font-weight:700;">Mulai dibimbing tim Wepeka</p>
-<p style="margin:0 0 12px;color:#444;font-size:14px;">Chat kami di WhatsApp. Lewat chat, kami temani sampai Brand DNA, Brand Book, dan rencana minggu pertamamu jadi.</p>
-<p style="margin:0;"><a href="${esc(GUIDE_WA_URL)}" style="${BUTTON}background:#f97316;color:#fff;">Mulai dibimbing</a></p>
+<p style="margin:0 0 6px;font-weight:700;">Tanya tim Wepeka</p>
+<p style="margin:0 0 12px;color:#444;font-size:14px;">Ada yang bikin bingung? Tulis pertanyaanmu di WhatsApp, nanti kami arahkan ke langkah yang pas.</p>
+<p style="margin:0;"><a href="${esc(GUIDE_WA_URL)}" style="${BUTTON}background:#f97316;color:#fff;">Chat tim Wepeka</a></p>
 </div>` : "";
   const circleBlock = circle ? `<div style="margin:${lifetime ? "12px" : "22px"} 0 0;padding:16px 18px;background:#fff4f9;border:1px solid #f6c7dd;border-radius:12px;">
 <p style="margin:0 0 6px;font-weight:700;">Grup WhatsApp Lifetime (Founder Circle)</p>
@@ -93,7 +93,7 @@ function communityHTML({ lifetime = false, circle = lifetime } = {}) {
 }
 function communityText({ lifetime = false, circle = lifetime } = {}) {
   return [
-    ...(lifetime ? ["Mulai dibimbing tim Wepeka (lewat chat, kami temani sampai Brand DNA, Brand Book, dan rencana minggu pertamamu jadi):", GUIDE_WA_URL, ""] : []),
+    ...(lifetime ? ["Ada pertanyaan? Chat tim Wepeka di WhatsApp:", GUIDE_WA_URL, ""] : []),
     ...(circle ? ["Grup WhatsApp Lifetime (Founder Circle), khusus akun Lifetime. Link ini jangan dibagikan ya:", LIFETIME_WA_GROUP_URL, ""] : []),
     "Gabung grup WhatsApp Brandlab (fitur baru, perbaikan, dan tips diumumkan di sana dulu):",
     BRANDLAB_WA_GROUP_URL,
