@@ -93,6 +93,7 @@ export default {
   "ai.voice.listening": { en: "Listening…", id: "Lagi dengerin…" },
   "ai.voice.hint": { en: "Just talk — your words show up here.", id: "Ngomong aja, kata-katamu muncul di sini." },
   "ai.voice.done": { en: "Done", id: "Selesai" },
+  "ai.voice.close": { en: "Close", id: "Tutup" },
   "ai.voice.cancel": { en: "Cancel", id: "Batal" },
   "ai.voice.denied": { en: "Allow microphone access in your browser, then try again.", id: "Izinkan akses mikrofon di browser dulu, lalu coba lagi." },
   "ai.voice.offline": { en: "Voice typing needs an internet connection.", id: "Ubah suara jadi tulisan butuh koneksi internet." },

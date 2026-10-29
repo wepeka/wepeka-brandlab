@@ -79,6 +79,7 @@ function sheetHTML() {
         <span class="vm-dot" aria-hidden="true"></span>
         <span class="vm-status">${t("ai.voice.listening")}</span>
         <span class="vm-time">0:00</span>
+        <button type="button" class="vm-x" aria-label="${t("ai.voice.cancel")}">${icon("x", { size: 16 })}</button>
       </div>
       <div class="vm-stage">
         <div class="vm-orb" aria-hidden="true"><span class="vm-halo"></span><span class="vm-core">${icon("mic", { size: 26 })}</span></div>
@@ -101,13 +102,27 @@ function listen(button, targetEl) {
   rec.continuous = !phone;
   rec.maxAlternatives = 1;
 
+  // Drop the keyboard first: on a phone it would cover the sheet's buttons.
+  try { document.activeElement?.blur?.(); } catch { /* nothing focused */ }
+  const backdrop = document.createElement("div");
+  backdrop.className = "vm-backdrop";
+  document.body.append(backdrop);
   const sheet = document.createElement("div");
   sheet.className = "vm-sheet";
   sheet.setAttribute("role", "dialog");
   sheet.setAttribute("aria-label", t("ai.voice.start"));
   sheet.innerHTML = sheetHTML();
   document.body.append(sheet);
-  requestAnimationFrame(() => sheet.classList.add("is-in"));
+  requestAnimationFrame(() => { sheet.classList.add("is-in"); backdrop.classList.add("is-in"); });
+  // Keep the sheet above the on-screen keyboard if it comes back.
+  const lift = () => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    sheet.style.setProperty("--vm-lift", `${Math.round(covered)}px`);
+  };
+  window.visualViewport?.addEventListener("resize", lift);
+  lift();
   const $ = (sel) => sheet.querySelector(sel);
   const bars = [...sheet.querySelectorAll(".vm-wave i")];
   button.classList.add("mic-active");
@@ -148,6 +163,7 @@ function listen(button, targetEl) {
     const key = e.error === "not-allowed" || e.error === "service-not-allowed" ? "ai.voice.denied" : e.error === "network" ? "ai.voice.offline" : e.error === "audio-capture" ? "ai.voice.noMic" : "";
     setStatus(key ? t(key) : t("ai.voice.error", { error: e.error }), "error");
     $(".vm-done").disabled = !words();
+    $(".vm-cancel span").textContent = t("ai.voice.close");
   });
   rec.addEventListener("end", () => {
     committed = words();
@@ -216,7 +232,9 @@ function listen(button, targetEl) {
     // What was still being heard when Selesai was pressed counts too.
     const text = [words(), session.interim].filter(Boolean).join(" ").trim();
     sheet.classList.remove("is-in");
-    setTimeout(() => sheet.remove(), 200);
+    backdrop.classList.remove("is-in");
+    window.visualViewport?.removeEventListener("resize", lift);
+    setTimeout(() => { sheet.remove(); backdrop.remove(); }, 200);
     if (!keep || !text) return;
     const before = targetEl.value.replace(/\s+$/, "");
     const joined = before ? `${before} ${text}` : text;
@@ -231,6 +249,9 @@ function listen(button, targetEl) {
 
   $(".vm-done").addEventListener("click", () => finish(true));
   $(".vm-cancel").addEventListener("click", () => finish(false));
+  $(".vm-x").addEventListener("click", () => finish(false));
+  // Tapping outside the sheet keeps what was said, like pressing Selesai.
+  backdrop.addEventListener("click", () => finish(true));
   try {
     rec.start();
   } catch (err) {
