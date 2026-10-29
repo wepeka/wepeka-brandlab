@@ -196,6 +196,11 @@ let answerHint = false; // "Jawab dulu": placeholder asks for their answer
 let pending = false;
 let noKeyNotice = false; // "AI belum diatur" shown inside the chat
 let streamShown = ""; // the answer so far, kept across a re-render mid-answer
+// "Cara aku nyimpulin" while it is being written: { steps, live } — and when
+// the question went out, for the "Lagi mikir · 6 dtk" line before any word.
+let streamSteps = null;
+let askedAt = 0;
+let thinkTick = 0;
 let renderedCount = -1; // messages drawn last time (new one => scroll down)
 let lastHTML = ""; // chat markup drawn last time (a store sync that changes nothing skips the redraw)
 let syncTimer = null;
@@ -386,7 +391,7 @@ function threadEntries(th, engine) {
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
       weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
       // A reply that stopped before the end: "Coba lagi" re-asks the same
@@ -941,6 +946,23 @@ function matchFormat(name) {
   return { format: hit?.name || "", platform };
 }
 
+// "Cara aku nyimpulin": what the AI checked and what it found, then the
+// conclusion — above the answer, open. `live`: still being written (the
+// last step pulses). `thinkMs`: how long it thought before writing.
+function reasoningHTML(steps, { live = false, thinkMs = null } = {}) {
+  const n = steps.filter((x) => x.kind !== "conclusion").length;
+  const meta = live
+    ? t("chat.reasoning.live")
+    : [t("chat.reasoning.steps", { n }), thinkMs >= 1500 ? t("chat.reasoning.thought", { n: Math.round(thinkMs / 1000) }) : ""].filter(Boolean).join(" · ");
+  const rows = steps.map((x, i) => (x.kind === "conclusion"
+    ? `<li class="cp-why-end"><b>${esc(t("chat.reasoning.so"))}</b> ${esc(x.text)}</li>`
+    : `<li style="--i:${i}"><span class="cp-why-check">${esc(x.check)}</span>${x.found ? `<span class="cp-why-found">${esc(x.found)}</span>` : ""}</li>`)).join("");
+  return `<details class="cp-why${live ? " is-live" : ""}" open><summary>${icon("sparkle", { size: 12 })}<span>${esc(t("chat.reasoning.title"))}</span><small>${esc(meta)}</small></summary><ol>${rows}</ol></details>`;
+}
+function reasoningBlocks(parsed, thinkMs) {
+  return parsed.reasoning?.length ? { reasoning: parsed.reasoning, ...(thinkMs > 0 ? { thinkMs: Math.round(thinkMs) } : {}) } : {};
+}
+
 function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatestPlan }) {
   if (h.role === "day") return `<div class="companion-day">${esc(h.label)}</div>`;
   if (h.role === "user") {
@@ -1049,6 +1071,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     else if (hint && hint.question === h.question) switchHTML = switchChipHTML(hint.to, h.question, { fromModel: false });
   }
   const body = h.text ? `<div class="consultant-md">${renderLightMarkdown(h.text)}</div>` : "";
+  const reasoningCard = (h.reasoning || []).length ? reasoningHTML(h.reasoning, { thinkMs: h.thinkMs }) : "";
   // Charts the Konsultan asked for, drawn from the numbers frozen on the
   // answer (js/chat-widgets.js). They grow in once, when the answer arrives.
   const widgetsHTML = (h.widgets || []).length
@@ -1065,7 +1088,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     : "";
   const cutHTML = h.cut ? `<p class="cp-cut">${icon("info", { size: 12 })}<span>${t("chat.cut.note")}</span></p>` : "";
   const retryHTML = h.retry && (!h.cut || isLast) ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-resend="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
-  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${widgetsHTML}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
+  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${reasoningCard}${body}${widgetsHTML}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
 }
 
 // Brainstorm openers read from what is happening in the brand right now.
@@ -2455,10 +2478,20 @@ function syncThreadBlocks(h) {
 
 // The "typing" bubble — dots until the first words arrive, then the answer
 // so far (`shown`, already cleaned of directives).
+// The pending answer: "Lagi mikir · 6 dtk" until the first words, then the
+// reasoning steps as they are written, then the answer itself.
+function pendingInnerHTML(shown = streamShown) {
+  const steps = streamSteps?.steps?.length ? reasoningHTML(streamSteps.steps, { live: streamSteps.live }) : "";
+  if (!shown && !steps) {
+    const sec = askedAt ? Math.floor((Date.now() - askedAt) / 1000) : 0;
+    return `<span class="cp-thinking" role="status" aria-label="${t("cons.typing")}"><span class="typing-dots"><i></i><i></i><i></i></span><span class="cp-thinking-label">${esc(sec >= 2 ? t("chat.thinking.secs", { n: sec }) : t("chat.thinking"))}</span></span>`;
+  }
+  return `${steps}${shown ? `<div class="consultant-md">${renderLightMarkdown(shown)}</div>` : ""}`;
+}
 function pendingBubble(shown = "") {
   const messagesEl = qs("#consultant-messages");
   if (!messagesEl || qs("#consultant-pending", messagesEl)) return;
-  const inner = shown ? `<div class="consultant-md">${renderLightMarkdown(shown)}</div>` : `<span class="typing-dots" role="status" aria-label="${t("cons.typing")}"><i></i><i></i><i></i></span>`;
+  const inner = pendingInnerHTML(shown);
   messagesEl.insertAdjacentHTML("beforeend", `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending is-new" id="consultant-pending">${inner}</div>`);
   // The answer is rewritten on every streamed chunk; a screen reader would
   // read each half-sentence again. Busy until finishReply: then the whole
@@ -2485,6 +2518,8 @@ function aiReady(brandId) {
 function finishReply(brandId, { streamed }) {
   pending = false;
   streamShown = "";
+  streamSteps = null;
+  clearInterval(thinkTick);
   qs("#consultant-messages")?.setAttribute("aria-busy", "false");
   persistChat(brandId);
   // Closed mid-answer, or moved to another brand: the answer waits in the
@@ -2835,6 +2870,8 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   tails.set(tk, retryRef ? [] : [{ role: "user", text, images: images.map((a) => a.thumb) }]);
   pending = true;
   streamShown = "";
+  streamSteps = null;
+  askedAt = Date.now();
   renderPanel(brandId, { keep: false });
   qs(`[data-consultant-msg="${historyFor(brandId).length - 1}"]`)?.classList.add("is-new");
   const sendBtn = qs("#consultant-send");
@@ -2856,20 +2893,35 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
     if (streamTimer) return;
     streamTimer = setTimeout(() => {
       streamTimer = 0;
-      let shown = parseDirectives(streamRaw).cleanText;
+      const live = parseDirectives(streamRaw);
+      let shown = live.cleanText;
+      if (!firstWordsAt) firstWordsAt = Date.now();
+      streamSteps = live.reasoning.length ? { steps: live.reasoning, live: false } : live.reasoningLive ? { steps: live.reasoningLive, live: true } : null;
       const open = shown.lastIndexOf("[[");
       if (open !== -1 && !shown.slice(open).includes("]]")) shown = shown.slice(0, open);
       shown = shown.replace(/\[$/, "").trim();
       // A script block is still being written: say so instead of a stall.
       if (/\[\[script:/i.test(streamRaw) && !/\[\[\/script\]\]/i.test(streamRaw)) shown = `${shown}\n\n*${t("chat.script.writing")}*`.trim();
-      if (!shown || !pending) return;
+      if (!pending || (!shown && !streamSteps)) return;
       streamShown = shown;
       const bubble = qs("#consultant-pending");
       if (!bubble) return;
-      bubble.innerHTML = `<div class="consultant-md">${renderLightMarkdown(shown)}</div>`;
+      bubble.innerHTML = pendingInnerHTML(shown);
       scrollToBottom();
     }, 40);
   };
+  // How long the model thought before its first words — shown on the
+  // reasoning card ("mikir 8 dtk"). Meanwhile the pending line counts up.
+  let firstWordsAt = 0;
+  const thinkMsNow = () => (firstWordsAt ? firstWordsAt - askedAt : Date.now() - askedAt);
+  clearInterval(thinkTick);
+  thinkTick = setInterval(() => {
+    if (!pending) return clearInterval(thinkTick);
+    if (streamShown || streamSteps) return;
+    const label = qs("#consultant-pending .cp-thinking-label");
+    const sec = Math.floor((Date.now() - askedAt) / 1000);
+    if (label && sec >= 2) label.textContent = t("chat.thinking.secs", { n: sec });
+  }, 1000);
 
   // A weekPlan card still open in THIS transcript — in Otomatis as much as
   // in the Pro Brainstorm tab — takes a follow-up ABOUT it ("yang Rabu
@@ -3048,7 +3100,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         } else {
           // Only the clean text, never the raw [[…]] lines (cutBlocks covers a
           // reply with nothing readable in it).
-          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...cutBlocks(parsed, streamCut) }, sessionId });
         }
       } else if (picked === "companion") {
         const thread = ensureCompanionThread(brandId);
@@ -3096,7 +3148,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           removeBrainstormMessage(thread.id, asked?.id);
           askedRef = null;
           reroute = handoff;
-        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(widgets.length ? { widgets } : {}), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(widgets.length ? { widgets } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
       }
       if (!reroute) break;
     }

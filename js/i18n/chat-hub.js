@@ -228,6 +228,14 @@ export default {
   "chat.make.script": { en: "Turn into a script", id: "Jadikan script" },
   "chat.make.ideas": { en: "3 content ideas", id: "Kasih 3 ide konten" },
   "chat.make.scriptMsg": { en: "Turn what we just discussed into a shoot-ready video script for my brand — take the strongest angle and stick to my brand's facts.", id: "Jadikan script video siap syuting dari diskusi kita barusan — ambil angle paling kuat buat brand-ku, pakai fakta brand-ku." },
+  // "Lagi mikir" + "Cara aku nyimpulin" (js/consultant-panel.js reasoningHTML)
+  "chat.thinking": { en: "Thinking…", id: "Lagi mikir…" },
+  "chat.thinking.secs": { en: "Thinking · {n}s", id: "Lagi mikir · {n} dtk" },
+  "chat.reasoning.title": { en: "How I got there", id: "Cara aku nyimpulin" },
+  "chat.reasoning.live": { en: "checking your data…", id: "lagi cek datamu…" },
+  "chat.reasoning.steps": { en: "{n} steps", id: "{n} langkah" },
+  "chat.reasoning.thought": { en: "thought for {n}s", id: "mikir {n} dtk" },
+  "chat.reasoning.so": { en: "So:", id: "Jadi:" },
   // Charts under a Konsultan answer (js/chat-widgets.js). Prefix: chw.
   "chw.title.performance": { en: "Content performance", id: "Performa konten" },
   "chw.title.engagement": { en: "Engagement rate", id: "Engagement rate" },

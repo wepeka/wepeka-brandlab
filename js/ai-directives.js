@@ -38,6 +38,24 @@ function widgetRequest(kind, arg) {
   return { kind: k, period: WIDGET_PERIODS.includes(p) ? p : PERIOD_ALIASES[p] || DEFAULT_PERIOD, arg: "" };
 }
 
+// "Cara aku nyimpulin": the steps behind an answer about results or what to
+// do — [[reasoning]] lines "what was checked → what it showed", ending with
+// "Jadi: …" — shown as a card above the answer (js/consultant-panel.js).
+export const MAX_REASONING = 6;
+const CONCLUSION = /^(jadi|kesimpulan(nya)?|intinya|so|conclusion)\s*[:：]\s*/i;
+export function parseReasoning(body) {
+  const steps = [];
+  String(body || "").split("\n").forEach((raw) => {
+    const line = raw.replace(/\[\[[^\]]*\]?\]?/g, "").replace(/^\s*(?:[-•*]|\d+[.)])\s*/, "").replace(/\*\*/g, "").trim();
+    if (!line || steps.length >= MAX_REASONING) return;
+    if (CONCLUSION.test(line)) return void steps.push({ kind: "conclusion", text: line.replace(CONCLUSION, "").slice(0, 220) });
+    const m = line.match(/^(.*?)\s*(?:→|->|=>)\s*(.+)$/);
+    const check = (m ? m[1] : line).replace(/^(?:(?:saya|aku|gue|i)\s+)?(?:cek|dicek|ngecek|lihat|check(?:ed)?)\s*[:：]?\s+/i, "").trim();
+    steps.push({ kind: "step", check: check.slice(0, 160), found: m ? m[2].trim().slice(0, 200) : "" });
+  });
+  return steps.filter((x) => x.kind === "conclusion" ? x.text : x.check);
+}
+
 export function parseDirectives(rawText) {
   const nav = [];
   const drafts = [];
@@ -49,6 +67,9 @@ export function parseDirectives(rawText) {
   const saves = [];
   const scripts = [];
   const widgets = [];
+  let reasoning = [];
+  // An unclosed [[reasoning]] (still streaming): the steps so far, shown live.
+  let reasoningLive = null;
   let handoff = null;
   let metrics = null;
   // The unclosed script/revision a reply ended inside (cut off, or the
@@ -59,6 +80,14 @@ export function parseDirectives(rawText) {
   let partial = null;
   const partialBody = (body) => String(body || "").replace(/\[\[[^\]\n]*\]\]/g, "").replace(/\[\[[^\]]*$/, "").replace(/\[$/, "").trim();
   const cleanText = (rawText || "")
+    .replace(/\[\[reasoning\]\]([\s\S]*?)\[\[\/reasoning\]\]/gi, (_, body) => {
+      if (!reasoning.length) reasoning = parseReasoning(body);
+      return "";
+    })
+    .replace(/\[\[reasoning\]\]([\s\S]*)$/i, (_, body) => {
+      reasoningLive = parseReasoning(body.replace(/\n[^\n]*$/, ""));
+      return "";
+    })
     .replace(/\[\[metrics:([^\]\n]+)\]\]/gi, (_, body) => {
       if (metrics) return "";
       const perf = {};
@@ -203,7 +232,7 @@ export function parseDirectives(rawText) {
     .replace(/\[\[[^\]]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, widgets, handoff, metrics, partial };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, widgets, reasoning, reasoningLive, handoff, metrics, partial };
 }
 
 // Nothing the owner could see or use came back: no text, no card, no
@@ -212,7 +241,7 @@ export function parseDirectives(rawText) {
 export function isEmptyReply(p) {
   if (!p) return true;
   return !p.cleanText && !p.partial && !p.handoff && !p.metrics
-    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts", "widgets"].some((k) => (p[k] || []).length);
+    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts", "widgets", "reasoning"].some((k) => (p[k] || []).length);
 }
 
 // What the model wrote last time, as it wrote it: the reply's text plus its
@@ -223,7 +252,9 @@ export function isEmptyReply(p) {
 // no longer saw itself use.
 export function serializeDirectives(text, blocks = {}) {
   const b = blocks || {};
-  const out = [String(text || "").trim()];
+  const out = [];
+  if ((b.reasoning || []).length) out.push(`[[reasoning]]\n${b.reasoning.map((x) => (x.kind === "conclusion" ? `Jadi: ${x.text}` : `${x.check}${x.found ? ` → ${x.found}` : ""}`)).join("\n")}\n[[/reasoning]]`);
+  out.push(String(text || "").trim());
   (b.ideas || []).forEach((i) => i?.title && out.push(`[[idea:${i.title}|${i.why || ""}]]`));
   (b.scripts || []).forEach((sc) => {
     if (!sc?.script) return;

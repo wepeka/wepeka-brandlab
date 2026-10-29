@@ -5445,6 +5445,31 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cp-metrics-list span b{ color: var(--text); }
 .cp-metrics-actions{ margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; color: var(--text-muted); }
 
+/* "Lagi mikir · 6 dtk" and "Cara aku nyimpulin" above an answer
+   (js/consultant-panel.js reasoningHTML): the data checked → what it showed,
+   then the conclusion. Open by default; a live card pulses its last step. */
+.cp-thinking{ display:inline-flex; align-items:center; gap:8px; }
+.cp-thinking-label{ font-size:12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cp-why{ margin:0 0 10px; padding:9px 11px 10px; border-radius: var(--radius-md); border:1px solid color-mix(in srgb, #9D74F0 30%, var(--border)); background: color-mix(in srgb, #9D74F0 7%, var(--surface)); }
+.cp-why summary{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; cursor:pointer; list-style:none; font-size:12px; font-weight:800; color: var(--text); }
+.cp-why summary > span{ white-space:nowrap; }
+.cp-why summary::-webkit-details-marker{ display:none; }
+.cp-why summary svg{ color:#9D74F0; flex:none; }
+.cp-why summary small{ margin-left:auto; font-weight:600; font-size:11px; color: var(--text-faint); white-space:nowrap; }
+.cp-why summary::after{ content:"▾"; font-size:10px; color: var(--text-faint); transition: transform .2s; }
+.cp-why:not([open]) summary::after{ transform: rotate(-90deg); }
+.cp-why ol{ list-style:none; margin:8px 0 0; padding:0 0 0 4px; display:flex; flex-direction:column; gap:6px; border-left:2px solid color-mix(in srgb, #9D74F0 35%, transparent); }
+.cp-why li{ position:relative; padding-left:12px; font-size:12.5px; line-height:1.4; display:flex; flex-direction:column; gap:1px; animation: chw-fade .35s ease-out both; }
+.cp-why li::before{ content:""; position:absolute; left:-5px; top:6px; width:8px; height:8px; border-radius:50%; background: var(--surface); border:2px solid #9D74F0; }
+.cp-why-check{ color: var(--text-muted); }
+.cp-why-found{ color: var(--text); font-weight:700; }
+.cp-why-end{ margin-top:2px; color: var(--text); }
+.cp-why-end::before{ background:#9D74F0 !important; }
+.cp-why-end b{ color:#9D74F0; }
+.cp-why.is-live li:last-child::before{ animation: cp-why-pulse 1s ease-in-out infinite; }
+@keyframes cp-why-pulse{ 50%{ box-shadow: 0 0 0 4px color-mix(in srgb, #9D74F0 30%, transparent); } }
+:root[data-theme="light"] .cp-why{ border-color: color-mix(in srgb, #7C4DEB 28%, var(--border)); background: color-mix(in srgb, #7C4DEB 6%, var(--surface)); }
+@media (prefers-reduced-motion: reduce){ .cp-why li, .cp-why.is-live li:last-child::before{ animation:none; } }
 /* Charts under a Konsultan answer (js/chat-widgets.js). One hue per chart,
    the Report page's pair (css/report.css): a violet line, an orange bar.
    Text stays in text tokens; the bar/line carries the comparison. */

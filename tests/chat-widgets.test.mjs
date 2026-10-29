@@ -124,3 +124,25 @@ describe("routing: own numbers → Konsultan, content buttons only for content t
     assert.equal(isContentTalk("menurutmu harga Rp15rb kemahalan nggak?"), false);
   });
 });
+
+describe("[[reasoning]] — Cara aku nyimpulin", async () => {
+  const { parseReasoning } = await import("../js/ai-directives.js");
+  test("steps and the conclusion, out of the text", () => {
+    const p = parseDirectives("[[reasoning]]\n- Cek: views 30 hari vs sebelumnya → 38.200 vs 12.300\n2. Konten teratas -> Kujang 48% views\nJadi: naik, tapi bertumpu ke satu konten\n[[/reasoning]]\nBulan ini naik.");
+    assert.equal(p.cleanText, "Bulan ini naik.");
+    assert.deepEqual(p.reasoning, [
+      { kind: "step", check: "views 30 hari vs sebelumnya", found: "38.200 vs 12.300" },
+      { kind: "step", check: "Konten teratas", found: "Kujang 48% views" },
+      { kind: "conclusion", text: "naik, tapi bertumpu ke satu konten" },
+    ]);
+    assert.equal(isEmptyReply(parseDirectives("[[reasoning]]\nA → b\n[[/reasoning]]")), false);
+  });
+  test("while streaming: finished lines only, nothing raw in the text", () => {
+    const p = parseDirectives("[[reasoning]]\nViews → naik\nKonten tera");
+    assert.deepEqual(p.reasoningLive, [{ kind: "step", check: "Views", found: "naik" }]);
+    assert.equal(p.cleanText, "");
+  });
+  test("goes back into the history", () => {
+    assert.match(serializeDirectives("Naik.", { reasoning: parseReasoning("A → b\nJadi: c") }), /^\[\[reasoning\]\]\nA → b\nJadi: c\n\[\[\/reasoning\]\]\nNaik\.$/);
+  });
+});

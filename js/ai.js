@@ -1813,6 +1813,19 @@ export const CONSULTANT_ROUTES = [
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
+// "Cara aku nyimpulin" (js/ai-directives.js parseReasoning): the owner sees
+// HOW an answer about results or what to do was reached — the data checked
+// and what it showed — written first, so it appears while the answer streams.
+const REASONING_RULE = (scope) => [
+  `SHOW YOUR REASONING: when the latest message ${scope}, START the reply with a block exactly like this, before anything else:`,
+  "[[reasoning]]",
+  "what you checked → what it showed (the exact number or fact)",
+  "what you checked → what it showed",
+  "Jadi: the conclusion in one sentence",
+  "[[/reasoning]]",
+  "3-5 lines plus the 'Jadi:' line, in the owner's language, each side max ~12 words, plain words (no jargon such as TOFU/MOFU/BOFU, say 'konten jualan' etc.). Only real data from the context or facts you are sure of — never invent a number. Then write the answer itself, which builds on the reasoning instead of repeating it line by line. No block for small talk, a feeling, a how-to about the app, a request to write something, or a one-line follow-up.",
+].join("\n");
+
 // Charts under the answer (js/chat-widgets.js): the model picks the widget,
 // the app draws it from the real numbers. The menu says which ones have data.
 const WIDGET_RULE = (menu) => [
@@ -1841,6 +1854,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     "Never answer with content ideas, hooks or a script unless the latest message asks for them — a question gets an answer.",
     `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
     HANDOFF_RULE_CONSULTANT,
+    REASONING_RULE("asks about performance or results, why something happened, what to do / what comes first, or a decision"),
     widgetMenu && !hasPhoto ? WIDGET_RULE(widgetMenu) : "",
     `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
     "When there is an obvious next question, end with at most 2 follow-ups, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~8 words), answerable from this brand's context and data above. The app turns each into a button. Skip them when the answer is complete on its own. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
@@ -1864,7 +1878,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     .filter(Boolean)
     .join("\n\n");
 
-  return callModel(ai, system, question, hasPhoto ? 1400 : 1000, { onText, images, feature: "consultant", history: chatTurns(history) });
+  return callModel(ai, system, question, hasPhoto ? 1400 : 1300, { onText, images, feature: "consultant", history: chatTurns(history) });
 }
 
 // "Otomatis" in "Tanya Brandlab" (js/consultant-panel.js): one box in front
@@ -2128,6 +2142,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         "Facts about other companies, people, events, and what words or local/cultural terms mean: state only what is widely documented and you are confident about; mark anything uncertain with 'kalau nggak salah' or '(perlu dicek)'; never invent numbers, quotes, dates, campaign results or a word's meaning (a script that teaches a term uses one you are sure of).",
         "After a substantive breakdown you may end with up to 2 [[ask:…]] next steps that follow from THIS discussion; when it is about marketing or content, one of them may turn it into content for THIS brand (e.g. 'Jadikan script Reels', 'Cari angle buat brand-ku'). After a quick follow-up, the next natural question is fine. When they say 'jadikan script/konten/carousel', write the [[script:…]] block from the strongest angle of the discussion right away.",
         "Push back when something is weak, and weigh trade-offs honestly.",
+        REASONING_RULE("asks for a recommendation, a decision or a strategy ('mending X atau Y', 'harus ngapain', 'strategi biar …', 'kemahalan nggak?') — not for a breakdown of another brand, not when they ask for ideas or a script"),
         "If the latest message is mainly a question about their own numbers, performance, followers, sales, schedule or campaign progress, reply with ONLY the line [[handoff:consultant]] — the app passes it straight to the Konsultan, who has the live data and draws the charts. Where something is in the app you may answer yourself.",
         "You may end with at most 2 [[ask:…]] lines: tap-to-send next steps (max 5 words each) in the owner's own words, plain language — never marketing jargon such as TOFU/MOFU/BOFU or funnel.",
         "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",

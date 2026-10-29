@@ -250,7 +250,7 @@ export function widgetFactsText(ctx) {
   // Every post of the period, best first — "yang paling jelek yang mana?"
   // needs the bottom of the list as much as the top.
   const ranked = [...rows].sort((a, b) => (b.views ?? -1) - (a.views ?? -1) || (b.er ?? -1) - (a.er ?? -1));
-  const one = (x) => `"${x.title || "(tanpa judul)"}" (${[x.format, x.funnel, x.date].filter(Boolean).join(", ")}): ${x.views === null ? "views belum diisi" : `${n(x.views)} views`}, ER ${p(x.er)}`;
+  const one = (x) => `"${x.title || "(tanpa judul)"}" (${[x.format, x.funnel, x.date].filter(Boolean).join(", ")}): ${x.views === null ? "views belum diisi" : `${n(x.views)} views`}, ${x.inter === null ? "interaksi belum diisi" : `${n(x.inter)} interaksi`}, ER ${p(x.er)}`;
   if (ranked.length) lines.push(`Semua konten terbit 30 hari terakhir, views tertinggi dulu:\n${ranked.slice(0, 15).map((x, i) => `${i + 1}. ${one(x)}`).join("\n")}${ranked.length > 15 ? `\n(+${ranked.length - 15} konten lain)` : ""}`);
   const fm = computeWidget({ kind: "formats", period: "90" }, ctx);
   const withEr = (fm?.groups || []).filter((g) => isNum(g.er) && g.name);
