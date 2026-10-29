@@ -16,7 +16,8 @@
 // What's found goes into Ide Tersimpan (addBrandIdea) or to the chat, typed
 // by the owner — nothing is created by itself.
 //
-// Mounted/unmounted per render by js/layout.js, beside the Coretan button.
+// Mounted/unmounted per render by js/layout.js; opened from the Coretan
+// button's menu (js/notes-float.js) or Creator's Ide step.
 import { addBrandIdea } from "./store.js";
 import { icon, platformIcon } from "./icons.js";
 import { escapeHtml as esc, qs, toast } from "./dom.js";
@@ -110,44 +111,58 @@ async function suggestions(q) {
 }
 
 // ---- The panel -----------------------------------------------------------------
-const state = { q: "", tab: "web", suggest: [], suggestFor: "" };
+// One column, top to bottom: the search bar, what people search (after a
+// search), the result kind + "Buka di", the results, and a line to note an
+// idea. Before a search there is only the bar and a short explainer.
+const state = { q: "", tab: "web", suggest: [], suggestFor: "", menu: false };
+const SUGGEST_SHOWN = 4;
+
+const chipsHTML = (list) => list.slice(0, SUGGEST_SHOWN).map((s) => `<button type="button" class="isr-chip" data-isr-q="${esc(s)}">${esc(s)}</button>`).join("");
+const siteIcon = (s) => (s.platform ? platformIcon(s.key) : icon(s.icon, { size: 15 }));
 
 function panelHTML() {
   const q = state.q;
   return `
     <div class="isr-head" data-drag>
-      <span class="isr-title">${icon("search", { size: 14 })}${t("isr.title")}</span>
-      <span class="isr-head-actions">
-        <button type="button" class="icon-btn" data-isr-popout ${q ? "" : "disabled"} aria-label="${esc(t("isr.popout"))}" title="${esc(t("isr.popout"))}">${icon("expand", { size: 14 })}</button>
-        <button type="button" class="icon-btn" data-isr-close aria-label="${esc(t("common.close"))}" title="${esc(t("common.close"))}">${icon("x", { size: 14 })}</button>
-      </span>
+      <span class="isr-title"><span class="isr-title-dot">${icon("search", { size: 13 })}</span>${t("isr.title")}</span>
+      <button type="button" class="isr-x" data-isr-close aria-label="${esc(t("common.close"))}" title="${esc(t("common.close"))}">${icon("x", { size: 15 })}</button>
     </div>
-    <form class="isr-form" data-isr-form>
-      <input class="input isr-q" name="q" value="${esc(q)}" placeholder="${esc(t("isr.ph"))}" autocomplete="off" aria-label="${esc(t("isr.title"))}" />
-      <button type="submit" class="btn btn-primary btn-sm">${t("isr.go")}</button>
+    <form class="isr-bar" data-isr-form role="search">
+      ${icon("search", { size: 15 })}
+      <input class="isr-q" name="q" value="${esc(q)}" placeholder="${esc(t("isr.ph"))}" autocomplete="off" aria-label="${esc(t("isr.title"))}" />
+      <button type="submit" class="isr-go">${t("isr.go")}</button>
     </form>
+    ${q ? `
     <div class="isr-suggest" ${state.suggest.length ? "" : "hidden"}>
-      <span class="isr-k">${t("isr.people")}</span>
-      <div class="isr-chips">${state.suggest.map((s) => `<button type="button" class="isr-chip" data-isr-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+      <span class="isr-k">${icon("flame", { size: 12 })}${t("isr.people")}</span>
+      <div class="isr-chips">${chipsHTML(state.suggest)}</div>
     </div>
-    <div class="isr-tabs" role="tablist">
-      ${FRAME_TABS.map((f) => `<button type="button" role="tab" class="${state.tab === f.key ? "is-on" : ""}" aria-selected="${state.tab === f.key}" data-isr-tab="${f.key}">${t(`isr.tab.${f.key}`)}</button>`).join("")}
+    <div class="isr-toolbar">
+      <div class="isr-tabs" role="tablist" aria-label="${esc(t("isr.title"))}">
+        ${FRAME_TABS.map((f) => `<button type="button" role="tab" class="${state.tab === f.key ? "is-on" : ""}" aria-selected="${state.tab === f.key}" data-isr-tab="${f.key}">${t(`isr.tab.${f.key}`)}</button>`).join("")}
+      </div>
+      <div class="isr-open">
+        <button type="button" class="isr-open-btn" data-isr-menu aria-haspopup="menu" aria-expanded="${state.menu}" title="${esc(t("isr.frameNote"))}">${t("isr.openIn")}${icon("chevronDown", { size: 13 })}</button>
+        <div class="isr-menu" role="menu" ${state.menu ? "" : "hidden"}>
+          <p class="isr-menu-note">${t("isr.menuNote")}</p>
+          ${SITES.map((s) => `<button type="button" role="menuitem" data-isr-site="${s.key}">${siteIcon(s)}<span>${t(`isr.site.${s.key}`)}</span>${icon("arrowRight", { size: 12 })}</button>`).join("")}
+        </div>
+      </div>
     </div>
     <div class="isr-frame">
-      ${q
-        ? `<iframe title="${esc(t("isr.title"))}" src="${esc(FRAME_TABS.find((f) => f.key === state.tab).url(q))}" referrerpolicy="no-referrer"></iframe>`
-        : `<div class="isr-empty">${icon("bulb", { size: 22 })}<b>${t("isr.emptyTitle")}</b><span>${t("isr.emptyBody")}</span></div>`}
-    </div>
-    <p class="isr-note text-faint">${t("isr.frameNote")}</p>
-    <div class="isr-sites">
-      <span class="isr-k">${t("isr.openIn")}</span>
-      <div class="isr-site-row">${SITES.map((s) => `<button type="button" class="isr-site" data-isr-site="${s.key}" ${q ? "" : "disabled"} title="${esc(t("isr.siteTitle", { site: t(`isr.site.${s.key}`) }))}">${s.platform ? platformIcon(s.key) : icon(s.icon, { size: 13 })}<span>${t(`isr.site.${s.key}`)}</span></button>`).join("")}</div>
+      <iframe title="${esc(t("isr.title"))}" src="${esc(FRAME_TABS.find((f) => f.key === state.tab).url(q))}" referrerpolicy="no-referrer"></iframe>
     </div>
     <form class="isr-save" data-isr-save>
       <input class="input" name="idea" placeholder="${esc(t("isr.notePh"))}" autocomplete="off" aria-label="${esc(t("isr.notePh"))}" />
-      <button type="submit" class="btn btn-secondary btn-sm" title="${esc(t("isr.saveTitle"))}">${icon("bookmark", { size: 13 })}${t("isr.save")}</button>
-      <button type="button" class="btn btn-ghost btn-sm" data-isr-chat title="${esc(t("isr.chatTitle"))}">${icon("chat", { size: 13 })}${t("isr.chat")}</button>
-    </form>`;
+      <button type="submit" class="btn btn-primary btn-sm" title="${esc(t("isr.saveTitle"))}">${t("isr.save")}</button>
+      <button type="button" class="isr-chat" data-isr-chat aria-label="${esc(t("isr.chatTitle"))}" title="${esc(t("isr.chatTitle"))}">${icon("chat", { size: 15 })}</button>
+    </form>` : `
+    <div class="isr-empty">
+      <div class="isr-empty-art">${icon("bulb", { size: 26 })}</div>
+      <b>${t("isr.emptyTitle")}</b>
+      <span>${t("isr.emptyBody")}</span>
+      <div class="isr-empty-sites">${SITES.slice(0, 5).map((s) => `<span title="${esc(t(`isr.site.${s.key}`))}">${siteIcon(s)}</span>`).join("")}</div>
+    </div>`}`;
 }
 
 function paint() {
@@ -155,8 +170,17 @@ function paint() {
   mounted.panel.innerHTML = panelHTML();
 }
 
+function setMenu(open) {
+  state.menu = open;
+  const menu = mounted && qs(".isr-menu", mounted.panel);
+  if (!menu) return;
+  menu.hidden = !open;
+  qs("[data-isr-menu]", mounted.panel)?.setAttribute("aria-expanded", String(open));
+}
+
 async function search(q) {
   state.q = String(q || "").trim();
+  state.menu = false;
   store.set(QUERY_KEY, state.q);
   paint();
   if (!state.q || state.suggestFor === state.q) return;
@@ -170,7 +194,7 @@ async function search(q) {
   const box = qs(".isr-suggest", mounted.panel);
   if (!box) return;
   box.hidden = !list.length;
-  box.querySelector(".isr-chips").innerHTML = list.map((s) => `<button type="button" class="isr-chip" data-isr-q="${esc(s)}">${esc(s)}</button>`).join("");
+  box.querySelector(".isr-chips").innerHTML = chipsHTML(list);
 }
 
 function wire(panel) {
@@ -189,12 +213,16 @@ function wire(panel) {
   });
   panel.addEventListener("click", async (e) => {
     const b = e.target.closest("button");
+    if (!b?.hasAttribute("data-isr-menu") && !e.target.closest(".isr-menu")) setMenu(false);
     if (!b || b.disabled) return;
     if (b.hasAttribute("data-isr-close")) return setOpen(false);
+    if (b.hasAttribute("data-isr-menu")) return setMenu(!state.menu);
     if (b.dataset.isrQ) return search(b.dataset.isrQ);
-    if (b.dataset.isrTab) { state.tab = b.dataset.isrTab; return paint(); }
-    if (b.dataset.isrSite) return openSideWindow(SITES.find((s) => s.key === b.dataset.isrSite).url(state.q));
-    if (b.hasAttribute("data-isr-popout")) return openSideWindow(FRAME_TABS.find((f) => f.key === state.tab).url(state.q).replace("igu=1&", ""));
+    if (b.dataset.isrTab) { state.tab = b.dataset.isrTab; state.menu = false; return paint(); }
+    if (b.dataset.isrSite) {
+      setMenu(false);
+      return openSideWindow(SITES.find((s) => s.key === b.dataset.isrSite).url(state.q));
+    }
     if (b.hasAttribute("data-isr-chat")) {
       const note = qs("[data-isr-save] input", panel)?.value.trim() || "";
       const seed = note ? t("isr.chatSeed", { idea: note }) : state.q ? t("isr.chatSeedQ", { q: state.q }) : "";
@@ -202,6 +230,7 @@ function wire(panel) {
       openConsultantPanel({ seed });
     }
   });
+  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (state.menu) setMenu(false); else setOpen(false); } });
   dragAndKeep(panel);
 }
 
@@ -211,8 +240,8 @@ function dragAndKeep(panel) {
   const saved = (() => { try { return JSON.parse(store.get(BOX_KEY) || "null"); } catch { return null; } })();
   const place = (box) => {
     if (!box || window.matchMedia?.("(max-width: 720px)").matches) return;
-    const w = Math.min(box.w || 420, window.innerWidth - 16);
-    const h = Math.min(box.h || 600, window.innerHeight - 16);
+    const w = Math.min(box.w || 460, window.innerWidth - 16);
+    const h = Math.min(box.h || 640, window.innerHeight - 16);
     Object.assign(panel.style, {
       width: `${w}px`, height: `${h}px`,
       left: `${Math.max(8, Math.min(box.x, window.innerWidth - w - 8))}px`,
@@ -250,14 +279,20 @@ function dragAndKeep(panel) {
   }
 }
 
+// No button of its own: it opens from the Coretan button's menu
+// (js/notes-float.js) and Creator's Ide step. Opening one floating panel
+// closes the other — "brandlab:tools" says which one is open.
+export const TOOLS_EVENT = "brandlab:tools";
+const announce = (open) => window.dispatchEvent(new CustomEvent(TOOLS_EVENT, { detail: { tool: "search", open } }));
+
 function setOpen(open) {
   if (!mounted) return;
-  const { panel, fab } = mounted;
+  const { panel } = mounted;
+  if (panel.hidden === !open) return;
   panel.hidden = !open;
-  fab.classList.toggle("is-open", open);
-  fab.setAttribute("aria-expanded", String(open));
   store.set(OPEN_KEY, open ? "1" : "0");
-  if (!open) return;
+  announce(open);
+  if (!open) { state.menu = false; return; }
   paint();
   const input = qs(".isr-q", panel);
   input?.focus();
@@ -265,7 +300,10 @@ function setOpen(open) {
   if (state.q && state.suggestFor !== state.q) search(state.q);
 }
 
-// Opens the panel, optionally on a keyword (Creator's Ide step, the chat).
+export const isIdeaSearchOpen = () => !!mounted && !mounted.panel.hidden;
+export const closeIdeaSearch = () => setOpen(false);
+
+// Opens the panel, optionally on a keyword (Creator's Ide step).
 export function openIdeaSearch(q = "") {
   if (!mounted) return;
   if (q) state.q = String(q).trim();
@@ -276,21 +314,15 @@ export function openIdeaSearch(q = "") {
 export function mountIdeaSearch(brandId) {
   if (mounted?.brandId === brandId) return;
   unmountIdeaSearch();
-  const fab = document.createElement("button");
-  fab.type = "button";
-  fab.className = "isr-fab";
-  fab.setAttribute("aria-label", t("isr.title"));
-  fab.setAttribute("aria-expanded", "false");
-  fab.title = t("isr.fabTitle");
-  fab.innerHTML = icon("search", { size: 18 });
   const panel = document.createElement("div");
   panel.className = "isr-float";
   panel.hidden = true;
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-label", t("isr.title"));
-  document.body.append(fab, panel);
-  fab.addEventListener("click", () => setOpen(panel.hidden));
-  mounted = { brandId, fab, panel };
+  document.body.append(panel);
+  const onTools = (e) => { if (e.detail?.tool !== "search" && e.detail?.open) setOpen(false); };
+  window.addEventListener(TOOLS_EVENT, onTools);
+  mounted = { brandId, panel, onTools };
   wire(panel);
   state.q = store.get(QUERY_KEY);
   if (store.get(OPEN_KEY) === "1") setOpen(true);
@@ -298,7 +330,7 @@ export function mountIdeaSearch(brandId) {
 
 export function unmountIdeaSearch() {
   if (!mounted) return;
-  mounted.fab.remove();
+  window.removeEventListener(TOOLS_EVENT, mounted.onTools);
   mounted.panel.remove();
   mounted = null;
 }
