@@ -18,6 +18,7 @@ import { getLang } from "../i18n.js";
 import { pulseTextFor } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments } from "../brand-memory.js";
 import { basisHTML } from "../brand-learning.js";
+import { captionStyleToggleHTML, wireCaptionStyleToggles, getCaptionStyle, stripHashtags } from "../caption-style.js";
 import { writingRulesOf, writingRulesRowHTML, wireWritingRules, applyFixedHashtags } from "../writing-rules.js";
 import { mountAiFeedback } from "../ai-feedback.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
@@ -243,6 +244,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       ${structurePickerHTML(state.funnel, state.structure)}`}`
       }
 
+      ${!lite || lite === "caption" ? `<div class="field cap-style-field" style="margin-bottom:14px;"><label>${t("cr.f.caption")}</label>${captionStyleToggleHTML()}</div>` : ""}
       <button type="button" class="btn btn-primary btn-block" id="ai-generate">${icon("bot", { size: 14 })}${t("cr.ai.generate")}</button>
       <div id="ai-result" style="margin-top:16px;">
         <div id="ai-current-batch"></div>
@@ -342,7 +344,8 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       // the topic-specific fields below, same seam campaignLine already uses.
       seriesContext: linkedSeriesContext(),
       campaignLine: linkedCampaignLine(),
-      hashtags: writingRulesOf(brand && getBrand(brand.id)).hashtags,
+      hashtags: getCaptionStyle().hashtags ? writingRulesOf(brand && getBrand(brand.id)).hashtags : [],
+      captionStyle: getCaptionStyle(),
       ...extra,
     };
   }
@@ -481,7 +484,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       const out = demo ? await demoGenerateScript(params) : await generateScript(ai, params);
       const { hooks, script, slides = [] } = out;
       // Fixed hashtags (Aturan tulisan) are put on by code, never guessed.
-      const caption = applyFixedHashtags(out.caption, params.hashtags);
+      const caption = params.captionStyle?.hashtags === false ? stripHashtags(out.caption) : applyFixedHashtags(out.caption, params.hashtags);
       loadingEl.remove();
       batchCount++;
       const suffix = batchCount > 1 ? ` ${t("cr.ai.batch", { n: batchCount })}` : "";
@@ -682,6 +685,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       btn.disabled = false;
     }
   };
+  wireCaptionStyleToggles(overlay);
   overlay.querySelector("#ai-generate").addEventListener("click", runGenerate);
   // Coming from the discussion ("Generate ulang…"): the prompt already holds
   // the guidance from the chat, so start right away.
@@ -837,10 +841,13 @@ function paint(root, brandId, state, refresh) {
   if (!state.selectedId || !items.find((c) => c.id === state.selectedId)) {
     state.selectedId = items[0]?.id || null;
   }
-  const selected = state.selectedId ? getContent(state.selectedId) : null;
   const groupBy = sidebarGroupBy(series);
   // Pemula: the list as folders + the piece as steps (simpleLayoutHTML).
   const guided = getMode() === "guided";
+  // Pemula opens on the overview (numbers + the list); a piece's steps show
+  // once one is picked.
+  const overview = guided && items.length > 0 && !state.phoneOpen;
+  const selected = !overview && state.selectedId ? getContent(state.selectedId) : null;
   if (guided && selected) {
     const cur = currentStep(selected);
     if (state.viewStep && STEP_KEYS.indexOf(state.viewStep) >= STEP_KEYS.indexOf(cur)) state.viewStep = null;
@@ -852,9 +859,9 @@ function paint(root, brandId, state, refresh) {
   // beside it saving a message, a sync) leaves the page as it is — the
   // motion that's playing, the scroll, what's being typed.
   if (guided) {
-    const html = simpleLayoutHTML({ brand, brandId, all, items, campaigns, series, selected, groupBy, state });
+    const html = simpleLayoutHTML({ brand, brandId, all, items, campaigns, series, selected, groupBy, state, overview });
     const stable = html.replace(/ is-arriving| is-stepping| is-entering/g, "");
-    if (stable === state.lastHTML && root.querySelector(".cw-layout")) {
+    if (stable === state.lastHTML && root.querySelector(".cw-layout, .cw-overview")) {
       state.arrive = false;
       state.stepChanged = false;
       syncDock(root, state, selected);
@@ -896,6 +903,7 @@ function paint(root, brandId, state, refresh) {
   `;
 
   wireHelpButtons(root);
+  wireCaptionStyleToggles(root);
   setPageGuide(() => startCreatorGuide(brandId));
 
   qs("#new-content")?.addEventListener("click", () => state.startNewContent());
@@ -925,6 +933,7 @@ function paint(root, brandId, state, refresh) {
   qs("[data-back-to-list]", root)?.addEventListener("click", () => {
     if (guided) {
       state.phoneOpen = false;
+      state.ov = "list";
       paint(root, brandId, state, refresh);
       window.scrollTo({ top: 0 });
       return;
@@ -2144,7 +2153,8 @@ function draftingPanel(c, campaigns, series = []) {
           <label for="f-caption" style="margin-bottom:0;">${t("cr.f.caption")}</label>
           <button type="button" class="ai-field-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
         </div>
-        <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
+        ${captionStyleToggleHTML()}
+      <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
       </div>
       <div class="row-2">
         <div class="field">
@@ -2214,35 +2224,40 @@ function stepBarsHTML(c) {
   return `<span class="cw-bars" aria-hidden="true">${STEP_KEYS.slice(0, 5).map((k, i) => `<i class="${i < cur ? "is-done" : i === cur ? "is-current" : ""}"></i>`).join("")}</span>`;
 }
 
+const delBtnHTML = (c) => `<button type="button" class="cw-item-del" data-delete-content="${c.id}" aria-label="${escapeHtml(t("common.delete"))}" title="${escapeHtml(t("common.delete"))}">${icon("trash", { size: 14 })}</button>`;
+
 function bigItemHTML(c, arrive) {
   const step = currentStep(c);
   const n = Math.min(STEP_KEYS.indexOf(step) + 1, 5);
   const meta = [c.platform, c.format].filter(Boolean).map(escapeHtml).join(" · ");
   return `
     <div class="cw-item is-selected${arrive ? " is-arriving" : ""}" data-select="${c.id}" aria-current="true" style="--stage:${STEP_COLOR[step]};--stage2:${STEP_COLOR2[step]};">
-      <div class="cw-item-top"><span class="cw-item-stage">${step === "done" ? t("cw.step.done") : `${stepLabel(step, c)} · ${n}/5`}</span>${shortWhen(c)}</div>
+      <div class="cw-item-top"><span class="cw-item-stage">${step === "done" ? t("cw.step.done") : `${stepLabel(step, c)} · ${n}/5`}</span><span class="cw-item-right">${shortWhen(c)}${delBtnHTML(c)}</span></div>
       <div class="cw-item-title">${escapeHtml(c.title || t("common.untitled"))}</div>
       ${stepBarsHTML(c)}
       ${meta ? `<div class="cw-item-meta">${meta}</div>` : ""}
     </div>`;
 }
 
-function smallItemHTML(c) {
+function smallItemHTML(c, { withStep = false } = {}) {
+  const step = currentStep(c);
   return `
-    <div class="cw-item" data-select="${c.id}" style="--stage:${STEP_COLOR[currentStep(c)]};" title="${escapeHtml(stepLabel(currentStep(c), c))}">
+    <div class="cw-item" data-select="${c.id}" style="--stage:${STEP_COLOR[step]};" title="${escapeHtml(stepLabel(step, c))}">
       <span class="cw-item-dot" aria-hidden="true"></span>
       <span class="cw-item-name">${escapeHtml(c.title || t("common.untitled"))}</span>
+      ${withStep ? `<span class="cw-item-step">${escapeHtml(step === "done" ? t("cw.step.done") : stepLabel(step, c))}</span>` : ""}
       ${shortWhen(c)}
+      ${delBtnHTML(c)}
     </div>`;
 }
 
-function foldersHTML(items, selectedId, state, by, series) {
+function foldersHTML(items, selectedId, state, by, series, { allOpen = false } = {}) {
   return sidebarGroups(items, by, series)
     .filter((g) => g.items.length)
     .map((g, i) => {
       const key = `${by}:${g.key}`;
       const hasSel = g.items.some((c) => c.id === selectedId);
-      const open = state.folders.has(key) ? state.folders.get(key) : hasSel;
+      const open = state.folders.has(key) ? state.folders.get(key) : hasSel || allOpen;
       const expanded = state.expandedGroups.has(key);
       let shown = g.items;
       if (!expanded && g.items.length > GROUP_PREVIEW) {
@@ -2263,7 +2278,7 @@ function foldersHTML(items, selectedId, state, by, series) {
           ${icon("chevronDown", { size: 14, className: "cw-folder-chev" })}
         </button>
         <div class="cw-folder-body"><div class="cw-folder-inner">
-          ${shown.map((c) => (c.id === selectedId ? bigItemHTML(c, state.arrive) : smallItemHTML(c))).join("")}
+          ${shown.map((c) => (c.id === selectedId ? bigItemHTML(c, state.arrive) : smallItemHTML(c, { withStep: allOpen }))).join("")}
           ${more}
         </div></div>
       </section>`;
@@ -2361,6 +2376,7 @@ function captionFieldHTML(c) {
           <button type="button" class="ai-field-btn" id="ai-quick-caption" aria-label="${t("cr.f.quickCaptionAria")}" title="${t("cr.f.quickCaptionTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
         </div>
       </div>
+      ${captionStyleToggleHTML()}
       <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
     </div>`;
 }
@@ -2474,7 +2490,156 @@ function simpleEmptyHTML() {
     </div>`;
 }
 
-function simpleLayoutHTML({ brandId, all, items, campaigns, series, selected, groupBy, state }) {
+// The numbers on top of the overview: what is late, due this week / next
+// week / this month, what is already posted, and where the open pieces
+// stand in the five steps.
+function overviewStats(all) {
+  const today = localISODate();
+  const thisWeek = weekStart(today);
+  const nextWeek = addDays(thisWeek, 7);
+  const later = addDays(thisWeek, 14);
+  const month = today.slice(0, 7);
+  const open = all.filter((c) => !isDone(c));
+  const due = (test) => open.filter((c) => c.scheduleDate && test(c.scheduleDate)).length;
+  const posted = all.filter((c) => c.status === "published");
+  const steps = STEP_KEYS.slice(0, 5).map((k) => ({ key: k, n: open.filter((c) => currentStep(c) === k).length }));
+  return {
+    late: due((d) => d < today),
+    week: due((d) => d >= today && d < nextWeek),
+    next: due((d) => d >= nextWeek && d < later),
+    month: due((d) => d >= today && d.slice(0, 7) === month),
+    posted: posted.length,
+    postedMonth: posted.filter((c) => (c.publishedDate || localISODate(new Date(c.updatedAt || Date.now()))).slice(0, 7) === month).length,
+    steps,
+  };
+}
+
+// This month as a chart: one column per day, one block per piece (posted
+// = green, late = red, the rest in the colour of their step), plus the next
+// pieces on the schedule.
+function monthChartData(all) {
+  const today = localISODate();
+  const month = today.slice(0, 7);
+  const days = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0).getDate();
+  const cols = Array.from({ length: days }, () => []);
+  let planned = 0;
+  let posted = 0;
+  all.forEach((c) => {
+    const posted_ = c.status === "published";
+    const date = posted_ ? c.publishedDate || c.scheduleDate : c.scheduleDate;
+    if (!date || date.slice(0, 7) !== month || c.status === "archived") return;
+    planned++;
+    if (posted_) posted++;
+    const kind = posted_ ? "posted" : date < today ? "late" : "open";
+    cols[Number(date.slice(8, 10)) - 1].push({ kind, color: STEP_COLOR[currentStep(c)] });
+  });
+  const upcoming = all
+    .filter((c) => !isDone(c) && c.scheduleDate && c.scheduleDate >= today)
+    .sort((a, b) => a.scheduleDate.localeCompare(b.scheduleDate) || (a.title || "").localeCompare(b.title || ""))
+    .slice(0, 4);
+  return { today, days, cols, planned, posted, upcoming, todayIdx: Number(today.slice(8, 10)) - 1 };
+}
+
+function monthChartHTML(m) {
+  const loc = getLang() === "en" ? "en-US" : "id-ID";
+  const monthName = new Date(`${m.today}T00:00:00`).toLocaleDateString(loc, { month: "long", year: "numeric" });
+  const peak = Math.max(3, ...m.cols.map((c) => c.length));
+  const pct = m.planned ? Math.round((m.posted / m.planned) * 100) : 0;
+  const bars = m.cols.map((col, i) => `<div class="cw-day${i === m.todayIdx ? " is-today" : ""}${col.length ? "" : " is-empty"}" title="${i + 1}">
+      <span class="cw-day-stack">${col.map((b, k) => `<i class="is-${b.kind}" style="--sc:${b.color};--h:${100 / peak}%;--k:${k};"></i>`).join("")}</span>
+      <em>${i === m.todayIdx || (i + 1) % 5 === 0 || i === 0 ? i + 1 : ""}</em>
+    </div>`).join("");
+  return `
+    <div class="cw-month">
+      <div class="cw-month-head">
+        <div><b>${escapeHtml(monthName)}</b><span>${m.planned ? t("cw.ov.monthOf", { done: m.posted, total: m.planned }) : t("cw.ov.monthNone")}</span></div>
+        <strong>${pct}%</strong>
+      </div>
+      <b class="cw-month-bar"><i style="width:${pct}%"></i></b>
+      <div class="cw-days" style="--n:${m.days};">${bars}</div>
+      <div class="cw-legend"><span class="is-posted"><i></i>${t("cw.ov.legend.posted")}</span><span class="is-open"><i></i>${t("cw.ov.legend.open")}</span><span class="is-late"><i></i>${t("cw.ov.legend.late")}</span></div>
+    </div>`;
+}
+
+function upcomingHTML(m) {
+  const loc = getLang() === "en" ? "en-US" : "id-ID";
+  const rows = m.upcoming.map((c) => {
+    const d = new Date(`${c.scheduleDate}T00:00:00`);
+    const step = currentStep(c);
+    return `<div class="cw-up" data-select="${c.id}" style="--sc:${STEP_COLOR[step]};">
+      <span class="cw-up-date"><b>${d.getDate()}</b><small>${escapeHtml(d.toLocaleDateString(loc, { month: "short" }))}</small></span>
+      <span class="cw-up-text"><b>${escapeHtml(c.title || t("common.untitled"))}</b><small><i></i>${escapeHtml(stepLabel(step, c))}${c.platform ? ` · ${escapeHtml(c.platform)}` : ""}</small></span>
+    </div>`;
+  }).join("");
+  return `<div class="cw-sched"><div class="cw-sched-head"><b>${t("cw.ov.sched")}</b></div>${rows || `<p class="cw-sched-empty">${t("cw.ov.schedNone")}</p>`}</div>`;
+}
+
+function statsHTML(all) {
+  const s = overviewStats(all);
+  const open = s.steps.reduce((n, x) => n + x.n, 0);
+  const total = open + s.posted;
+  const pct = total ? Math.round((s.posted / total) * 100) : 0;
+  const kpi = (cls, n, label) => `<div class="cw-kpi ${cls}${cls === "is-late" && n ? " is-alert" : ""}"><span class="cw-kpi-label">${label}</span><b>${n}</b></div>`;
+  const bar = s.steps.filter((x) => x.n).map((x) => `<i style="flex:${x.n};--sc:${STEP_COLOR[x.key]};" title="${escapeHtml(stepLabel(x.key, {}))} · ${x.n}"></i>`).join("");
+  return `
+    <div class="cw-stats-view">
+      <div class="cw-hero">
+        <div class="cw-hero-main">
+          <span class="cw-hero-eyebrow">${t("cw.ov.running")}</span>
+          <b class="cw-hero-num">${open}</b>
+          <p class="cw-hero-sub">${s.late ? `<span class="cw-hero-chip is-late">${t("cw.ov.lateChip", { n: s.late })}</span>` : `<span class="cw-hero-chip">${t("cw.ov.onTrack")}</span>`}${s.week ? `<span class="cw-hero-chip">${t("cw.ov.weekChip", { n: s.week })}</span>` : ""}</p>
+        </div>
+        <div class="cw-hero-ring" aria-label="${escapeHtml(t("cw.ov.posted"))}">
+          <div class="cw-ring"><svg viewBox="0 0 100 100" width="132" height="132" aria-hidden="true"><circle class="cw-ring-track" cx="50" cy="50" r="42" pathLength="100" /><circle class="cw-ring-arc" cx="50" cy="50" r="42" pathLength="100" style="--off:${100 - pct}" transform="rotate(-90 50 50)" /></svg><span><b>${s.posted}</b><small>${t("cw.ov.posted")}</small></span></div>
+          ${s.postedMonth ? `<small class="cw-ring-sub">${t("cw.ov.postedMonth", { n: s.postedMonth })}</small>` : ""}
+        </div>
+        <div class="cw-kpis" role="list" aria-label="${escapeHtml(t("cw.ov.aria"))}">
+          ${kpi("is-late", s.late, t("cw.ov.late"))}${kpi("is-week", s.week, t("cw.ov.week"))}${kpi("is-next", s.next, t("cw.ov.next"))}${kpi("is-month", s.month, t("cw.ov.month"))}
+        </div>
+      </div>
+      ${(() => { const m = monthChartData(all); return `<div class="cw-ov-grid">${monthChartHTML(m)}${upcomingHTML(m)}</div>`; })()}
+      ${open ? `<div class="cw-flow" aria-label="${escapeHtml(t("cw.ov.stages"))}">
+        <div class="cw-flow-head"><b>${t("cw.ov.stages")}</b></div>
+        <div class="cw-flow-bar">${bar}</div>
+        <div class="cw-stages">${s.steps.map((x) => `<span class="cw-stage-chip${x.n ? "" : " is-zero"}" style="--sc:${STEP_COLOR[x.key]};"><i></i>${escapeHtml(stepLabel(x.key, {}))}<b>${x.n}</b></span>`).join("")}</div>
+      </div>` : ""}
+    </div>`;
+}
+
+const ovBackHTML = (label) => `<button type="button" class="cw-ov-back" data-ov-go="home">${icon("chevronLeft", { size: 15 })}${label}</button>`;
+
+// Pemula's first screen: two big cards, nothing else. Each opens its own
+// page (the list, or the numbers); a piece opens from the list.
+function overviewHTML({ all, items, series, groupBy, state }) {
+  const view = state.ov || "home";
+  if (view === "stats") return `<section class="cw-overview">${ovBackHTML(t("cw.ov.back"))}<h2 class="cw-ov-title">${t("cw.ov.statsTitle")}</h2>${statsHTML(all)}</section>`;
+  if (view === "list") {
+    return `<section class="cw-overview">${ovBackHTML(t("cw.ov.back"))}
+      <div class="cw-ov-head"><h2 class="cw-ov-title">${t("cw.ov.list")}</h2>${groupByToggleHTML(groupBy, series.length > 0)}</div>
+      <p class="cw-ov-hint">${t("cw.ov.hint")}</p>
+      <div class="cw-folders">${foldersHTML(items, null, state, groupBy, series, { allOpen: true })}</div>
+    </section>`;
+  }
+  const s = overviewStats(all);
+  const open = s.steps.reduce((n, x) => n + x.n, 0);
+  const m = monthChartData(all);
+  const pct = m.planned ? Math.round((m.posted / m.planned) * 100) : 0;
+  return `
+    <section class="cw-overview cw-ov-home">
+      <button type="button" class="cw-ov-card is-list" data-ov-go="list">
+        <span class="cw-ov-card-art">${icon("layers", { size: 34 })}</span>
+        <span class="cw-ov-card-text"><b>${t("cw.ov.list")}</b><small>${t("cw.ov.listSum", { n: open })}${s.late ? ` · ${t("cw.ov.lateChip", { n: s.late })}` : ""}</small></span>
+        <span class="cw-ov-card-go">${icon("arrowRight", { size: 18 })}</span>
+      </button>
+      <button type="button" class="cw-ov-card is-stats" data-ov-go="stats">
+        <span class="cw-ov-card-art">${icon("chart", { size: 34 })}</span>
+        <span class="cw-ov-card-text"><b>${t("cw.ov.statsBtn")}</b><small>${m.planned ? t("cw.ov.statsSum", { pct }) : t("cw.ov.monthNone")}</small></span>
+        <span class="cw-ov-card-go">${icon("arrowRight", { size: 18 })}</span>
+      </button>
+    </section>`;
+}
+
+function simpleLayoutHTML({ brandId, all, items, campaigns, series, selected, groupBy, state, overview = false }) {
   const step = selected ? state.viewStep || currentStep(selected) : null;
   state.wasWide = isWideDock();
   const docked = !!selected && wantsDock(step) && !state.dockOff && state.wasWide;
@@ -2484,18 +2649,18 @@ function simpleLayoutHTML({ brandId, all, items, campaigns, series, selected, gr
       <div class="cw-head-title"><span class="cw-head-art">${createArtSVG("creator")}</span><h1>${t("contentOs.tab.creator")}</h1></div>
       <div class="cw-head-actions">
         ${guideVideoButtonHTML("creator")}
-        <button type="button" class="btn btn-secondary cw-week" id="cr-week-plan">${icon("sparkle", { size: 15 })}<span>${t("chat.week.button")}</span><span class="btn-cost">${t("chat.week.cost")}</span></button>
+        <button type="button" class="btn cw-week is-hot" id="cr-week-plan">${icon("sparkle", { size: 15 })}<span>${t("chat.week.button")}</span><span class="btn-cost">${t("chat.week.cost")}</span></button>
         <button type="button" class="cl-cta" id="new-content"><span>${t("cl.new")}</span><span class="cl-cta-dot">${icon("plus", { size: 18 })}</span></button>
       </div>
     </div>
-    <div class="cw-layout${docked ? " has-dock" : ""}${phoneOpen ? " is-phone-open" : ""}" data-brand="${escapeHtml(brandId)}">
+    ${overview ? overviewHTML({ all, items, series, groupBy, state }) : `<div class="cw-layout${docked ? " has-dock" : ""}${phoneOpen ? " is-phone-open" : ""}" data-brand="${escapeHtml(brandId)}">
       <aside class="cw-side">
         ${items.length ? groupByToggleHTML(groupBy, series.length > 0) : ""}
         <div class="cw-folders">${items.length ? foldersHTML(items, selected?.id, state, groupBy, series) : `<div class="cw-side-empty">${t(all.length ? "cr.sidebarEmpty" : "cr.sidebarEmptyFirst")}</div>`}</div>
       </aside>
       <section class="cw-main">${selected ? workspaceHTML(selected, step, { campaigns, series, state, docked }) : simpleEmptyHTML()}</section>
       ${docked ? `<div class="cw-dock-slot" data-kind="${step}" aria-hidden="true"></div>` : ""}
-    </div>`;
+    </div>`}`;
 }
 
 // The docked chat is the app's one chat panel (it lives in <body>, outside
@@ -2595,6 +2760,8 @@ function wireSimple(root, brandId, state, refresh, selected) {
     folder?.classList.toggle("is-open");
     btn.setAttribute("aria-expanded", String(folder?.classList.contains("is-open")));
   }));
+
+  qsa("[data-ov-go]", root).forEach((b) => b.addEventListener("click", () => { state.ov = b.dataset.ovGo; repaint(); window.scrollTo({ top: 0 }); }));
 
   if (!selected) { undockChat(); return; }
 

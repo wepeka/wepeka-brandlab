@@ -114,11 +114,56 @@ async function suggestions(q) {
 // One column, top to bottom: the search bar, what people search (after a
 // search), the result kind + "Buka di", the results, and a line to note an
 // idea. Before a search there is only the bar and a short explainer.
-const state = { q: "", tab: "web", suggest: [], suggestFor: "", menu: false };
+const state = { q: "", tab: "web", suggest: [], suggestFor: "", menu: false, read: { phase: "idle", pct: 0, text: "", msg: "" }, readHot: false };
 const SUGGEST_SHOWN = 4;
 
 const chipsHTML = (list) => list.slice(0, SUGGEST_SHOWN).map((s) => `<button type="button" class="isr-chip" data-isr-q="${esc(s)}">${esc(s)}</button>`).join("");
 const siteIcon = (s) => (s.platform ? platformIcon(s.key) : icon(s.icon, { size: 15 }));
+
+// "Baca hasilnya ke chat": the results on screen are read (js/web-read.js)
+// and handed to Tanya Brandlab, which answers from them. One strip under the
+// tabs that changes with where the reading is.
+function readHTML() {
+  const r = state.read;
+  if (r.phase === "ask") return `<div class="isr-read-status"><i class="isr-spin"></i><span>${t("isr.read.ask")}</span></div>`;
+  if (r.phase === "ocr") return `<div class="isr-read-status"><i class="isr-spin"></i><span>${t("isr.read.ocr", { n: r.pct })}</span><b class="isr-read-bar"><i style="width:${r.pct}%"></i></b></div>`;
+  if (r.phase === "preview") {
+    return `<div class="isr-read-preview"><p>${t("isr.read.previewNote")}</p><textarea class="textarea" data-isr-read-text rows="5">${esc(r.text)}</textarea><div class="isr-read-actions"><button type="button" class="btn btn-primary btn-sm" data-isr-read-send>${t("isr.read.send")}</button><button type="button" class="btn btn-ghost btn-sm" data-isr-read-cancel>${t("common.cancel")}</button></div></div>`;
+  }
+  if (r.phase === "done") return `<div class="isr-read-status is-done">${icon("check", { size: 15 })}<span>${t("isr.read.sent")}</span></div>`;
+  return `${r.phase === "error" ? `<p class="isr-read-err">${icon("info", { size: 13 })}<span>${esc(r.msg)}</span></p>` : ""}
+    <button type="button" class="isr-read-btn${state.readHot ? " is-hot" : ""}" data-isr-read>${icon("eye", { size: 16 })}<span>${t(r.phase === "error" ? "isr.read.again" : "isr.read")}</span></button>
+    <span class="isr-read-hint">${t("isr.readHint")}</span>`;
+}
+
+function setRead(patch) {
+  Object.assign(state.read, patch);
+  const wrap = mounted && qs("[data-isr-read-wrap]", mounted.panel);
+  if (wrap) wrap.innerHTML = readHTML();
+}
+
+async function sendRead(text) {
+  const { openConsultantPanel } = await import("./consultant-panel.js");
+  openConsultantPanel({ seed: t("isr.read.msg", { q: state.q }), send: true, engine: "brainstorm", web: { q: state.q, text } });
+  setRead({ phase: "done", text: "" });
+  setTimeout(() => { if (state.read.phase === "done") setRead({ phase: "idle" }); }, 3500);
+}
+
+async function doRead() {
+  if (!mounted || ["ask", "ocr"].includes(state.read.phase)) return;
+  state.readHot = false;
+  const { readScreenText, screenReadSupported } = await import("./web-read.js");
+  if (!screenReadSupported()) return setRead({ phase: "error", msg: t("isr.read.err.unsupported") });
+  try {
+    const frame = qs(".isr-frame iframe", mounted.panel);
+    const { text, whole } = await readScreenText(frame, { onStatus: (phase, pct = 0) => setRead({ phase, pct }) });
+    if (text.length < 40) return setRead({ phase: "error", msg: t("isr.read.err.empty") });
+    if (whole) return setRead({ phase: "preview", text });
+    await sendRead(text);
+  } catch (err) {
+    setRead({ phase: "error", msg: t(`isr.read.err.${err?.code === "denied" || err?.code === "unsupported" ? err.code : "failed"}`) });
+  }
+}
 
 function panelHTML() {
   const q = state.q;
@@ -149,6 +194,7 @@ function panelHTML() {
         </div>
       </div>
     </div>
+    <div class="isr-read" data-isr-read-wrap>${readHTML()}</div>
     <div class="isr-frame">
       <iframe title="${esc(t("isr.title"))}" src="${esc(FRAME_TABS.find((f) => f.key === state.tab).url(q))}" referrerpolicy="no-referrer"></iframe>
     </div>
@@ -217,6 +263,12 @@ function wire(panel) {
     if (!b || b.disabled) return;
     if (b.hasAttribute("data-isr-close")) return setOpen(false);
     if (b.hasAttribute("data-isr-menu")) return setMenu(!state.menu);
+    if (b.hasAttribute("data-isr-read")) return doRead();
+    if (b.hasAttribute("data-isr-read-cancel")) return setRead({ phase: "idle", text: "" });
+    if (b.hasAttribute("data-isr-read-send")) {
+      const text = qs("[data-isr-read-text]", panel)?.value.trim() || "";
+      return text ? sendRead(text.slice(0, 3500)) : setRead({ phase: "idle" });
+    }
     if (b.dataset.isrQ) return search(b.dataset.isrQ);
     if (b.dataset.isrTab) { state.tab = b.dataset.isrTab; state.menu = false; return paint(); }
     if (b.dataset.isrSite) {
@@ -304,9 +356,12 @@ export const isIdeaSearchOpen = () => !!mounted && !mounted.panel.hidden;
 export const closeIdeaSearch = () => setOpen(false);
 
 // Opens the panel, optionally on a keyword (Creator's Ide step).
-export function openIdeaSearch(q = "") {
+export function openIdeaSearch(q = "", { read = false } = {}) {
   if (!mounted) return;
   if (q) state.q = String(q).trim();
+  // Opened from a chat card: the reading button is the next thing to press.
+  state.readHot = read;
+  if (state.read.phase !== "ask" && state.read.phase !== "ocr") state.read = { phase: "idle", pct: 0, text: "", msg: "" };
   setOpen(true);
   if (q) search(state.q);
 }

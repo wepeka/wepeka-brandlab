@@ -317,6 +317,7 @@ export default {
   "tp.rec.runText": { en: "Run text", id: "Jalankan teks" },
   "tp.rec.pauseText": { en: "Pause text", id: "Jeda teks" },
   "tp.rec.fromTop": { en: "From the top", id: "Dari atas" },
+  "tp.rec.moveBand": { en: "Drag to move the text box", id: "Geser buat pindahin kotak teks" },
   "tp.rec.tapText": { en: "Tap the text to pause or continue", id: "Ketuk teks buat jeda atau lanjut" },
   "tp.rec.textEnd": { en: "That's the end of the script. Press stop when you're done.", id: "Teksnya sudah habis. Tekan stop kalau sudah selesai." },
   "tp.rec.maxReached": { en: "Recording stops at 10 minutes so your phone's memory doesn't fill up.", id: "Rekaman berhenti di 10 menit biar memori HP nggak penuh." },

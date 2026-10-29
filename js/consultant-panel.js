@@ -69,6 +69,8 @@ import { planWeek, normalizePlanItems, activeCampaignsFor, defaultWeeklyCount, c
 import { weekPlanBasis } from "./brand-learning.js";
 import { trackStep } from "./activation.js";
 import { analyzeScreenshot } from "./ocr.js";
+import { webAugment } from "./web-read.js";
+import { openIdeaSearch } from "./idea-search.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
@@ -384,14 +386,14 @@ function threadEntries(th, engine) {
     if (m.role === "user") {
       lastQuestion = m.text;
       lastQuestionId = m.id;
-      out.push({ role: "user", text: m.text, images: m.blocks?.images || [], msgId: m.id, threadId: th.id, at: m.at, sessionId: m.sessionId || null, engine: engine === "companion" ? "companion" : undefined, deletable: engine === "companion" });
+      out.push({ role: "user", text: m.text, images: m.blocks?.images || [], web: m.blocks?.web || null, msgId: m.id, threadId: th.id, at: m.at, sessionId: m.sessionId || null, engine: engine === "companion" ? "companion" : undefined, deletable: engine === "companion" });
       return;
     }
     const b = m.blocks || {};
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], searches: b.searches || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
       weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
       // A reply that stopped before the end: "Coba lagi" re-asks the same
@@ -614,7 +616,7 @@ function historyForModel(brandId, cur, logMessages, lastId, max = HISTORY_FOR_MO
   // first idea card, "ganti hook-nya" means the script just written — so
   // every reply goes back with its ideas, script, plan… as the directive
   // lines the model wrote (js/ai-directives.js serializeDirectives).
-  const toTurn = (m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m) : m.text });
+  const toTurn = (m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m) : webAugment(m.text, m.web) });
   // A long thread keeps its first exchange (what the owner came for) next
   // to the latest messages, instead of losing it off the top.
   if (rows.length > max) {
@@ -978,7 +980,8 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
       ? `<button type="button" class="cp-msg-mem ${inMem ? "is-saved" : ""} ${del ? "has-del" : ""}" data-chat-msg-mem="${index}" ${inMem ? "disabled" : ""} aria-label="${esc(inMem ? t("chat.memory.msgSaved") : t("chat.memory.msgSave"))}" title="${esc(inMem ? t("chat.memory.msgSaved") : t("chat.memory.msgSave"))}">${icon("heart", { size: 11 })}</button>`
       : "";
     const imgs = (h.images || []).length ? `<div class="cp-msg-images">${h.images.map((src) => `<img src="${esc(src)}" alt="" />`).join("")}</div>` : "";
-    return `<div class="consultant-msg consultant-msg-user" data-consultant-msg="${index}">${imgs}${esc(h.text)}${mem}${del}</div>`;
+    const webChip = h.web?.text ? `<div class="cp-web-chip">${icon("search", { size: 12 })}<span>${esc(t("chat.web.chars", { n: h.web.text.length.toLocaleString("id-ID") }))}</span></div>` : "";
+    return `<div class="consultant-msg consultant-msg-user" data-consultant-msg="${index}">${imgs}${esc(h.text)}${webChip}${mem}${del}</div>`;
   }
 
   const isBs = h.engine === "brainstorm";
@@ -1072,6 +1075,9 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     else if (hint && hint.question === h.question) switchHTML = switchChipHTML(hint.to, h.question, { fromModel: false });
   }
   const body = h.text ? `<div class="consultant-md">${renderLightMarkdown(h.text)}</div>` : "";
+  // The model doesn't know it and won't guess: a card that opens the search
+  // and reads the results back (js/idea-search.js + js/web-read.js).
+  const searchHTML = (h.searches || []).map((x) => `<div class="cp-search-card"><span class="cp-search-ic">${icon("search", { size: 18 })}</span><div class="cp-search-text"><b>${t("chat.web.card.title")}</b><span class="cp-search-q">${esc(x.q)}</span><small>${t("chat.web.card.body")}</small></div><button type="button" class="btn btn-primary btn-sm" data-chat-search="${esc(x.q)}">${icon("search", { size: 13 })}${t("chat.web.card.btn")}</button></div>`).join("");
   const reasoningCard = (h.reasoning || []).length ? reasoningHTML(h.reasoning, { thinkMs: h.thinkMs }) : "";
   // Charts the Konsultan asked for, drawn from the numbers frozen on the
   // answer (js/chat-widgets.js). They grow in once, when the answer arrives.
@@ -1089,7 +1095,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     : "";
   const cutHTML = h.cut ? `<p class="cp-cut">${icon("info", { size: 12 })}<span>${t("chat.cut.note")}</span></p>` : "";
   const retryHTML = h.retry && (!h.cut || isLast) ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-resend="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
-  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${reasoningCard}${body}${widgetsHTML}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
+  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${reasoningCard}${body}${searchHTML}${widgetsHTML}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
 }
 
 // Brainstorm openers read from what is happening in the brand right now.
@@ -1654,6 +1660,7 @@ function wire(host, brandId, input, history) {
     attachments.set(brandId, list);
     rerender({ focus: true });
   });
+  on("[data-chat-search]", (el) => openIdeaSearch(el.dataset.chatSearch, { read: true }));
   on("[data-chat-metrics-save]", (el) => openMetricsPicker(brandId, history[Number(el.dataset.chatMetricsSave)]));
   qs("#chat-ideas-now", host)?.addEventListener("click", () => sendMessage(brandId, input.value.trim() || t("chat.ideasNow.message"), { engine: "brainstorm", bsMode: "ideas" }));
 
@@ -2779,12 +2786,12 @@ function cutBlocks(parsed, streamCut) {
   return { cut: true, ...(parsed.partial ? { partial: parsed.partial } : {}) };
 }
 
-async function sendScriptMessage(brandId, th, text, ai, retryRef = null) {
+async function sendScriptMessage(brandId, th, text, ai, retryRef = null, web = null) {
   if (pending) return;
-  const asked = askOnce(th.id, { role: "user", text }, retryRef);
+  const asked = askOnce(th.id, { role: "user", text, ...(web?.text ? { blocks: { web } } : {}) }, retryRef);
   // The revisions it proposed go back with each reply, so "pendekin lagi"
   // works on the version on the table rather than the original.
-  const history = (getBrainstorm(th.id)?.messages || th.messages || []).filter((m) => m.id !== asked?.id).slice(-SCRIPT_HISTORY).map((m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m.blocks) : m.text }));
+  const history = (getBrainstorm(th.id)?.messages || th.messages || []).filter((m) => m.id !== asked?.id).slice(-SCRIPT_HISTORY).map((m) => ({ role: m.role, text: m.role === "assistant" ? serializeDirectives(m.text, m.blocks) : webAugment(m.text, m.blocks?.web) }));
   pending = true;
   streamShown = "";
   renderPanel(brandId, { keep: false });
@@ -2802,7 +2809,7 @@ async function sendScriptMessage(brandId, th, text, ai, retryRef = null) {
       series: piece.seriesId ? getSeries(piece.seriesId) : null,
       seriesEpisodes: piece.seriesId ? seriesEpisodeTitles(getSeries(piece.seriesId), listContent(brandId)).filter((x) => x !== piece.title) : [],
       history,
-      message: text,
+      message: webAugment(text, web),
       onText: (soFar, meta) => {
         if (meta?.cut) cut = true;
         const shown = parseDirectives(soFar).cleanText;
@@ -2817,6 +2824,7 @@ async function sendScriptMessage(brandId, th, text, ai, retryRef = null) {
     const blocks = {
       ...(parsed.revisions.length ? { revisions: parsed.revisions.map((r) => ({ ...r, applied: false })) } : {}),
       ...(parsed.asks.length ? { asks: parsed.asks.slice(0, 2) } : {}),
+      ...(parsed.searches.length ? { searches: parsed.searches } : {}),
       ...cutBlocks(parsed, cut),
     };
     appendBrainstormMessage(th.id, {
@@ -2848,7 +2856,9 @@ function putRevision(th, target, text) {
 
 // `planRevision`: a per-row "Ganti ide ini" — always about the open plan.
 // `retryRef`: "Coba lagi" — the stored question to answer again (askOnce).
-async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat", weekCount = null, campaignId = null, planRevision = false, retryRef = null } = {}) {
+async function sendMessage(brandId, text, { view = null, engine = null, bsMode = "chat", weekCount = null, campaignId = null, planRevision = false, retryRef = null, web = null } = {}) {
+  // Search results read off the screen belong to the writing partner.
+  if (web?.text) engine = "brainstorm";
   // A photo always goes to the Konsultan: it is the engine that reads
   // numbers and has the brand's tracked data to compare them with.
   const images = attachments.get(brandId) || [];
@@ -2860,7 +2870,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   const ai = aiReady(brandId);
   if (!ai) return;
   const scriptTh = currentThread(brandId);
-  if (scriptTh?.mode === "script" && !images.length) return sendScriptMessage(brandId, scriptTh, text, ai, retryRef);
+  if (scriptTh?.mode === "script" && !images.length) return sendScriptMessage(brandId, scriptTh, text, ai, retryRef, web);
   // Only now: with no AI key the photos stay in the composer, next to the notice.
   attachments.delete(brandId);
   answerHint = false;
@@ -2868,7 +2878,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   const tk = tailKey(brandId, cur);
   // Shown at once; stored in its engine's log once the engine is known.
   // A retry's question is already on screen (and stored).
-  tails.set(tk, retryRef ? [] : [{ role: "user", text, images: images.map((a) => a.thumb) }]);
+  tails.set(tk, retryRef ? [] : [{ role: "user", text, images: images.map((a) => a.thumb), web }]);
   pending = true;
   streamShown = "";
   streamSteps = null;
@@ -3061,7 +3071,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           const detected = findSeriesByNameInText(brandId, text);
           if (detected) { th = updateBrainstorm(th.id, { seriesId: detected.id }) || getBrainstorm(th.id); toast(t("series.autoDetected", { name: detected.name })); }
         }
-        const asked = askOnce(th.id, { role: "user", text, sessionId }, retryRef);
+        const asked = askOnce(th.id, { role: "user", text, sessionId, ...(web?.text ? { blocks: { web } } : {}) }, retryRef);
         askedRef = asked ? { threadId: th.id, msgId: asked.id } : null;
         tails.delete(tk);
         const scope = threadScope(th);
@@ -3082,7 +3092,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           campaign: info.campaign, stageText: info.stageText, content: info.content, series: info.series, goalId: scope.goalId || null, eventCampaign,
           seriesEpisodes: seriesEpisodeTitles(info.series, contentAll),
           seriesOverview: info.series ? "" : buildSeriesOverview(listSeries(brandId), contentAll, { days: seriesDays(brand?.contentCadence, listSeries(brandId)) }),
-          history: threadHistory, message: text, mode: bsMode,
+          history: threadHistory, message: webAugment(text, web), mode: bsMode,
           turns: all.filter((m) => m.role === "user").length,
           onText: streamInto,
         });
@@ -3101,7 +3111,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         } else {
           // Only the clean text, never the raw [[…]] lines (cutBlocks covers a
           // reply with nothing readable in it).
-          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...cutBlocks(parsed, streamCut) }, sessionId });
+          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...(parsed.searches.length ? { searches: parsed.searches } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...cutBlocks(parsed, streamCut) }, sessionId });
         }
       } else if (picked === "companion") {
         const thread = ensureCompanionThread(brandId);
@@ -3319,7 +3329,7 @@ function togglePanel(brandId, open, { seed = "", focus = null, keepSession = fal
 // runs "Rangkum".
 // `send` asks `seed` right away (with `bsMode`, e.g. "ideas" for three
 // ideas at once); `fresh` starts a new Obrolan for it.
-export function openConsultantPanel({ seed = "", mode = null, engine = null, recap = false, send = false, bsMode = "chat", fresh = false, weekCount = null, campaignId = null } = {}) {
+export function openConsultantPanel({ seed = "", mode = null, engine = null, recap = false, send = false, bsMode = "chat", fresh = false, weekCount = null, campaignId = null, web = null } = {}) {
   const brandId = page ? page.brandId : mountedBrandId;
   if (!brandId) return;
   if (recap) setMode(brandId, "companion");
@@ -3329,7 +3339,7 @@ export function openConsultantPanel({ seed = "", mode = null, engine = null, rec
   if (fresh && !pending) startConversation(brandId, { auto: modeOf(brandId) === "auto" });
   if (send && seed) {
     togglePanel(brandId, true);
-    sendMessage(brandId, seed, { engine: MODES.includes(engine) ? engine : null, bsMode, weekCount, campaignId });
+    sendMessage(brandId, seed, { engine: MODES.includes(engine) ? engine : null, bsMode, weekCount, campaignId, web });
     return;
   }
   if (engine && MODES.includes(engine)) {

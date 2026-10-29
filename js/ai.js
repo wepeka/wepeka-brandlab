@@ -8,6 +8,7 @@ import { COPY_LENGTHS, COPY_REWRITES, copyFormatRules, formatByKey, goalByKey } 
 import { aiLimitReached, aiDailyLimit, aiQuotaPeriod, teamAiContext } from "./ai-usage.js";
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
+import { captionStyleRule, getCaptionStyle } from "./caption-style.js";
 import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
 import { brandVoiceText, listBrandIdeas, scopeBrandId, getBrand, isOwnBrand, isSeatPaused } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
@@ -431,11 +432,12 @@ export const videoStyleLine = (content) => (isPovContent(content) ? POV_STYLE_RU
 
 export async function generateScript(
   ai,
-  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [], hookTypes = [], structure = "auto", audienceLanguage = "", body = "", hook = null, avoidHooks = [], videoStyle = "" }
+  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [], captionStyle = null, hookTypes = [], structure = "auto", audienceLanguage = "", body = "", hook = null, avoidHooks = [], videoStyle = "" }
 ) {
   const wantsHooks = !only || only === "hooks";
   const wantsScript = !only || only === "script";
   const wantsCaption = !only || only === "caption";
+  const capStyle = { ...getCaptionStyle(), ...(captionStyle || {}) };
   const isCarousel = (format || "").toLowerCase().includes("carousel");
   const pov = !isCarousel && videoStyle === "pov";
   const lang = audienceLanguage || getLang();
@@ -498,9 +500,7 @@ export async function generateScript(
     wantsHooks ? '"hooks": [{"type": "hook type key", "say": "...", "onScreen": "...", "visual": "...", "why": "..."}]' : "",
     wantsScript ? (isCarousel ? '"slides": [{"text": "..."}]' : '"beats": [{"label": "...", "visual": "...", "onScreen": "...", "say": "..."}]') : "",
     wantsCaption
-      ? hashtags.length
-        ? `"caption": "a short caption (2-4 sentences) that adds what the video doesn't say — a question to the audience, the offer, or a detail taken from the facts (never a new one) — ending with exactly these hashtags and no others: ${hashtags.join(" ")}"`
-        : '"caption": "a short caption (2-4 sentences) that adds what the video doesn\'t say — a question to the audience, the offer, or a detail taken from the facts (never a new one) — with 3-5 relevant hashtags"'
+      ? `"caption": "a short caption (2-4 sentences) that adds what the video doesn't say — a question to the audience, the offer, or a detail taken from the facts (never a new one). ${captionStyleRule(capStyle)} Use \\n for line breaks.${!capStyle.hashtags ? "" : hashtags.length ? ` End with exactly these hashtags and no others: ${hashtags.join(" ")}` : " End with 3-5 relevant hashtags."}"`
       : "",
   ].filter(Boolean).join(", ");
 
@@ -1970,7 +1970,7 @@ const SCRIPT_DIRECTIVE_RULE = [
   "Narasi: 1-3 short spoken sentences",
   "",
   "…more beats; the last one is CTA with exactly ONE ask…",
-  "CAPTION: a ready-to-post caption, 2-4 sentences, with 3-5 relevant hashtags (or the brand's fixed hashtags when the context names them)",
+  "CAPTION: a ready-to-post caption, 2-4 sentences, dressed for Instagram (a scroll-stopping first line, short lines with blank lines between them, an emoji where it adds meaning, a last line with one ask ending on 👇) with 3-5 relevant hashtags (or the brand's fixed hashtags when the context names them) — no hashtags when the owner says so",
   "[[/script]]",
   "FUNNEL is exactly TOFU, MOFU or BOFU. Format is one of: Reels, Short Video, Carousel, Story, Long Video, Static Post. In English replies the labels are \"[0-3 s]\", \"Visual:\", \"On-screen text:\", \"Voice:\".",
   "Unless they say otherwise the video is about 30 seconds: all narration together about 60-80 words (people speak about 2.5 words a second), timings that add up. Every beat changes the shot. The business facts in the brand context are the only facts: no invented process, policy, urgency, testimonial or number.",
@@ -1993,6 +1993,17 @@ const CHAT_VOICE = [
   "Build on the conversation so far instead of restarting it: keep your earlier recommendation unless you say you changed your mind and why. When they push back or worry, take that seriously and answer it head on, with your honest view.",
   "Never bring up problems, numbers or to-dos they didn't ask about (overdue content, retention, missing data, other campaigns) — use one only when it directly answers this message.",
   "Never state something you aren't sure of as fact — what a word or local term means, a company's numbers, a date: leave it out, pick something you are sure of, or say 'kalau nggak salah' / '(perlu dicek)'.",
+].join("\n");
+
+// Not knowing is allowed, guessing about it is not (owner's ask, 2026-10-30:
+// "marketing Fore" — a brand the model can't place). The model says so and
+// asks the owner to search; the app turns [[search:…]] into a card that opens
+// the in-app search and reads the results off the screen back into the chat
+// (js/web-read.js). A message that already carries "SEARCH RESULTS" is
+// answered from them.
+const WEB_SEARCH_RULE = [
+  "WHEN YOU DON'T KNOW IT: if the owner names a specific brand, product, person, place, event, slang term or trend that you cannot place with confidence, or whose current details matter (prices, a recent campaign, what they are doing now), do NOT guess, bluff or describe a different thing with the same name. Say so in one short sentence in your own words ('Fore itu aku belum yakin persisnya — daripada nebak, cari dulu yuk'), then add exactly one line [[search:a good search query, max 8 words, in the language people would google it]]. The app shows a button that opens a search and reads the results back to you. Add nothing else that depends on the unknown thing, and no ideas or script for it yet.",
+  "When the owner's message contains a block 'SEARCH RESULTS' it was read off their screen with OCR (typos and page clutter are normal): answer from it plus what you are sure of, say which points come from the results, ignore the clutter, and if the results still don't answer it, say what is missing instead of filling the gap.",
 ].join("\n");
 
 // Konsultan and Teman never answer "the other tab does that": a message
@@ -2209,6 +2220,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         "If the latest message is mainly a question about their own numbers, performance, followers, sales, schedule or campaign progress, reply with ONLY the line [[handoff:consultant]] — the app passes it straight to the Konsultan, who has the live data and draws the charts. Where something is in the app you may answer yourself.",
         "You may end with at most 2 [[ask:…]] lines: tap-to-send next steps (max 5 words each) in the owner's own words, plain language — never marketing jargon such as TOFU/MOFU/BOFU or funnel.",
         "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",
+        WEB_SEARCH_RULE,
         SCRIPT_DIRECTIVE_RULE,
         SCRIPT_VOICE_RULE,
         CRINGE_RULE,
@@ -2270,7 +2282,8 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
     // Value first: the old "ask ONE short question first" turned every
     // "kurang menarik" into a round of questions before anything changed.
     "When the owner asks for a change — even a vague one ('kurang menarik', 'bikin lebih seru', 'terserah kamu') — don't ask what they mean: pick the change most likely to help (usually a sharper hook, a faster middle, a clearer payoff or a single clear ask), make it, and say in one line what you changed and one other direction you could take. Ask first only when two readings would lead to opposite edits, and even then offer your best guess in the same reply.",
-    `A concrete change always comes as the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : isPovContent(content) ? 'This video has no talking: write the script as beats, a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (the acting) and "Teks layar:" (the text that tells the story) lines — never a "Narasi:" line; the last beat is the CTA with one ask, in the text. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:".' : 'Write the script as beats, the same shape the app uses everywhere (upgrade an old "HOOK / ISI PEMBAHASAN" script to it when you rewrite): a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (what to film), "Teks layar:" (short on-screen text, only when it helps) and "Narasi:" (the exact words) lines; the last beat is the CTA with one ask. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:", "Voice:".'} Put at most ONE revise block per reply, always the full text (never a fragment), and keep the words around it to a sentence or two. Never write a revise block for a mere question, and never mention or explain the [[...]] syntax.`,
+    `A concrete change always comes as the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : isPovContent(content) ? 'This video has no talking: write the script as beats, a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (the acting) and "Teks layar:" (the text that tells the story) lines — never a "Narasi:" line; the last beat is the CTA with one ask, in the text. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:".' : 'Write the script as beats, the same shape the app uses everywhere (upgrade an old "HOOK / ISI PEMBAHASAN" script to it when you rewrite): a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (what to film), "Teks layar:" (short on-screen text, only when it helps) and "Narasi:" (the exact words) lines; the last beat is the CTA with one ask. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:", "Voice:".'} A caption you write follows this style: ${captionStyleRule(getCaptionStyle())} Put at most ONE revise block per reply, always the full text (never a fragment), and keep the words around it to a sentence or two. Never write a revise block for a mere question, and never mention or explain the [[...]] syntax.`,
+    WEB_SEARCH_RULE,
     SCRIPT_VOICE_RULE,
     CRINGE_RULE,
     "End with at most 2 [[ask:…]] lines: quick next edits the owner might want, max 5 words each, in their words (e.g. 'Pendekin jadi 15 detik', 'Coba hook lawan arus', 'Lebih santai').",

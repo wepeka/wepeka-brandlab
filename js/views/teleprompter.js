@@ -2,6 +2,7 @@ import { icon } from "../icons.js";
 import { escapeHtml } from "../dom.js";
 import { t } from "../i18n.js";
 import { openRecordMode } from "./teleprompter-record.js";
+import { makeAdjustable } from "../box-adjust.js";
 
 // Fill light for shooting: the backdrop around the script panel turns into
 // a bright colour field (a phone/laptop screen is often the only light a
@@ -82,6 +83,9 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
   `;
   document.body.appendChild(overlay);
 
+  // The black panel: drag the title bar to move it, pull a bottom corner to
+  // resize it (the lit-screen mode keeps its own size).
+  const adjust = makeAdjustable(overlay.querySelector(".tp-panel"), { key: LIGHT_KEY.replace("light", "box"), dragHandle: overlay.querySelector(".tp-head"), minW: 300, minH: 260 });
   const scrollEl = overlay.querySelector("#tp-scroll");
   const textEl = overlay.querySelector("#tp-text");
   const playBtn = overlay.querySelector("#tp-play");
@@ -165,6 +169,7 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
 
   function applyLight() {
     overlay.classList.toggle("tp-light-on", light.on);
+    adjust.reload(`${LIGHT_KEY.replace("light", "box")}${light.on ? "-lit" : ""}`);
     overlay.style.setProperty("--tp-light", `color-mix(in srgb, ${light.color} ${light.brightness}%, #000)`);
     lightBtn.setAttribute("aria-pressed", String(light.on));
     lightBtn.classList.toggle("is-on", light.on);
@@ -231,6 +236,7 @@ export function openTeleprompter(scriptText, { title = "" } = {}) {
     document.removeEventListener("keydown", onKeydown);
     document.removeEventListener("visibilitychange", onVisibility);
     if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
+    adjust.destroy();
     overlay.remove();
   }
   function onKeydown(e) {
