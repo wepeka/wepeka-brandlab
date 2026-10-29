@@ -166,3 +166,16 @@ describe("post widget: one post against the brand's average", () => {
     assert.match(f, /Rata-rata per konten 30 hari terakhir: 2\.333 views/);
   });
 });
+
+describe("Teman gets the brand's news, also mid-talk", async () => {
+  const { movesToCompanion, routeByRules: route } = await import("../js/chat-router.js");
+  const news = ["dapet orderan 50 kaos buat seragam kantor", "kemarin diajak collab sama coffee shop", "omzet bulan ini tembus 10 juta", "akhirnya ada yang repeat order!", "hari ini rame banget yang beli", "ada reseller dari Bekasi mau ambil 100 pcs"];
+  test("news → Teman, first message and mid-talk", () => {
+    for (const s of news) { assert.equal(route(s), "companion", s); assert.equal(movesToCompanion(s), true, s); }
+  });
+  test("questions, worries mid-talk, requests to write and other brands stay put", () => {
+    for (const s of ["kenapa konten aku sepi?", "omzet bulan ini berapa?", "tapi aku takut rugi", "kasih ide konten dari orderan 50 kaos tadi", "followers mereka rame banget", "capek banget hari ini"]) assert.equal(movesToCompanion(s), false, s);
+    assert.equal(movesToConsultant("omzet bulan ini tembus 10 juta"), false);
+    assert.equal(route("kenapa konten aku sepi?"), "consultant");
+  });
+});

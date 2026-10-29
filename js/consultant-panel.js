@@ -73,7 +73,7 @@ import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
 import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply } from "./ai-directives.js";
-import { routeByRules, isWriteRequest, movesToBrainstorm, movesToConsultant, isContentTalk } from "./chat-router.js";
+import { routeByRules, isWriteRequest, movesToBrainstorm, movesToConsultant, movesToCompanion, isContentTalk } from "./chat-router.js";
 import { computeWidgets, widgetHTML, widgetMenuText, widgetFactsText } from "./chat-widgets.js";
 import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
@@ -508,6 +508,7 @@ async function decideEngine(ai, text, history) {
   if (prev) {
     if (prev !== "brainstorm" && movesToBrainstorm(text)) return "brainstorm";
     if (prev !== "consultant" && movesToConsultant(text)) return "consultant";
+    if (prev !== "companion" && movesToCompanion(text)) return "companion";
     return prev;
   }
   const byRules = routeByRules(text);
@@ -3112,7 +3113,11 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         const threadHistory = historyForModel(brandId, cur, msgs, asked?.id, COMPANION_HISTORY_FOR_MODEL);
         const raw = await companionChat(ai, { brand, pulseText, history: threadHistory, message: text, kinds: MOMENT_KINDS });
         const parsed = parseDirectives(raw.trim());
-        const { cleanText, ideas, asks, moments, handoff } = parsed;
+        const { cleanText, ideas, asks, handoff } = parsed;
+        // Never the same news twice: a moment this log already offered (saved
+        // or not) isn't offered again under the next message.
+        const offered = new Set(msgs.flatMap((m) => (m.blocks?.moments || []).map((x) => String(x.title || "").toLowerCase().trim())));
+        const moments = parsed.moments.filter((x) => !offered.has(x.title.toLowerCase().trim()));
         if (!hop && !cleanText && handoff && handoff !== "companion") {
           removeBrainstormMessage(thread.id, asked?.id);
           askedRef = null;

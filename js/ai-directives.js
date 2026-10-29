@@ -265,6 +265,9 @@ export function serializeDirectives(text, blocks = {}) {
   (b.saves || []).forEach((x) => x?.title && out.push(`[[save:${x.title}|${x.why || ""}]]`));
   (b.tasks || []).forEach((x) => x?.title && out.push(`[[task:${x.title}|${x.why || ""}]]`));
   (b.widgets || []).forEach((w) => w?.kind && out.push(widgetHistoryLine(w)));
+  // Moments already offered for Memori Brand — so the next reply doesn't
+  // offer the same news again.
+  (b.moments || []).forEach((m) => m?.title && out.push(`[[moment:${m.kind || "other"}|${m.title}|${m.detail || ""}]]`));
   if (b.weekPlan?.items?.length) out.push(`(Week plan shown as a card:)\n${b.weekPlan.items.map((it) => `- ${it.date}: ${it.title}${it.angle ? ` — ${it.angle}` : ""}`).join("\n")}`);
   return out.filter(Boolean).join("\n");
 }

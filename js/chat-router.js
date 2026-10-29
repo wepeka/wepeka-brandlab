@@ -19,8 +19,21 @@ const STRONG_WRITE = /\b(bikin|bikinin|bikinkan|buatin|buatkan|jadikan|jadiin|ja
 const CREATIVE_NOUN = new RegExp(`\\b(${NOUNS})\\b`, "i");
 const WEAK_WRITE = new RegExp(`\\b(buat|kasih|kasi|minta|bantu|bantuin|tolong|ganti|perbaiki|make|give me|suggest)\\s+(?:[\\p{L}\\d-]+\\s+){0,2}?(${NOUNS})\\b`, "iu");
 const IDEA_WORDS = /\b(ide|idea|ideas|brainstorm|inspirasi|konten apa|bikin apa|posting apa|post apa|upload apa|topik|angle|hook|hooknya|mentok|buntu|stuck|script|scriptnya|skrip|naskah|narasi|voice ?over|caption)\b/i;
-const FEELING = /\b(capek|cape|lelah|males|malas|bosan|bosen|stres|stress|pusing|semangat|semangatin|takut|khawatir|nyerah|menyerah|sedih|senang|seneng|curhat|kesel|kesal|galau|minder|insecure|overwhelmed|tired|burnout|exhausted|frustrated)\b|\b(mau|pengen|pingin|ingin) cerita\b|\b(nggak|gak|ga) ?tau (harus )?mulai\b|\bnggak tahu (harus )?mulai\b|\bbingung (harus )?mulai\b/i;
+const FEELING = /\b(capek|cape|lelah|males|malas|bosan|bosen|stres|stress|pusing|semangat|semangatin|takut|khawatir|nyerah|menyerah|sedih|senang|seneng|curhat|kesel|kesal|galau|minder|insecure|overwhelmed|tired|burnout|exhausted|frustrated|down|bete|kecewa|bangga|lega|deg-?degan|happy|excited)\b|\b(mau|pengen|pingin|ingin) cerita\b|\b(nggak|gak|ga) ?tau (harus )?mulai\b|\bnggak tahu (harus )?mulai\b|\bbingung (harus )?mulai\b/i;
 const HAPPENED = /\b(tadi ada|barusan|hari ini ada|kemarin ada|baru aja ada|baru saja ada)\b/i;
+// Something that happened to the brand, said as news rather than asked as a
+// question: an order, an offer, a launch, a sale record, a complaint, a busy
+// or quiet day. That is the Teman's job — it offers to keep it in Memori
+// Brand, which every other AI feature reads. Before, only the few
+// HAPPENED phrases above reached the Teman, and only as the first message
+// of an Obrolan: "dapet orderan 50 kaos" or "kemarin diajak collab" went to
+// whoever was already talking and never became brand memory.
+const NEWS = /\b(dapet|dapat)\s+(orderan|order|pesanan|tawaran|klien|client|reseller|endorse(?:an)?|kerja ?sama|sponsor)\b|\b(diajak|ditawarin|ditawari|diundang|dihubungi|di-?dm)\b|\b(launching|launch|rilis|ngerilis|buka cabang|pindah tempat|pop ?up|bazar|bazaar)\b|\brepeat order\b|\b(borong|ngeborong|sold ?out|habis terjual|ludes|laris|laku keras|tembus|rekor|naik drastis|turun drastis|anjlok)\b|\b(komplain|complain|protes|refund|retur|review jelek|ulasan jelek|bintang 1)\b|\b(rame|ramai|sepi)\b|\bada (?:yang|reseller|pelanggan|customer|orang|klien|toko)\b[^?]*\b(order|beli|pesen|pesan|nanya|ambil|komplain|minta|dm|tag)\b|\b(akhirnya|alhamdulillah|yeay|yay|wkwk)\b/i;
+// A question wants an answer (the Konsultan, or Brainstorm) even when it
+// mentions news: "kenapa konten aku sepi?", "omzet bulan ini berapa?".
+const QUESTION = /\?|^\s*(apa|apakah|kenapa|mengapa|gimana|gmn|bagaimana|berapa|kapan|siapa|mana|di ?mana|boleh|bisakah|haruskah|perlu ?gak|mending|sebaiknya|kok)\b|\b(gimana|bagaimana|berapa|kenapa|mengapa|apa aja|apakah|harus apa|ngapain|mending|sebaiknya|menurutmu|menurut kamu|enaknya)\b/i;
+export const isQuestion = (text) => QUESTION.test(String(text || ""));
+const isNews = (s) => HAPPENED.test(s) || (NEWS.test(s) && !QUESTION.test(s));
 const DATA = /\b(performa|performance|engagement|angka|statistik|insight|insights|follower|followers|reach|jangkauan|views|tayangan|penonton|jadwal|schedule|kalender|calendar|overdue|telat|level|milestone|progres|progress|berapa|how many|kenapa konten|why is|di mana|dimana|menu|fitur|benchmark|target|campaign|penjualan|omzet|sales|retensi|retention)\b/i;
 // "Let's talk it through": a discussion goes to the thinking partner
 // (Brainstorm), not the Konsultan's short data answers — unless it is about
@@ -65,7 +78,16 @@ export function movesToBrainstorm(text) {
 const OTHERS = /\b(mereka|dia|kompetitor|competitor|brand lain|brand itu|brand tsb|their|they|them)\b/i;
 export function movesToConsultant(text) {
   const s = String(text || "");
-  return routeByRules(s) === "consultant" && !OTHERS.test(s);
+  return routeByRules(s) === "consultant" && QUESTION.test(s) && !OTHERS.test(s);
+}
+
+// Mid-conversation, news about the brand goes to the Teman — the one that
+// files it in Memori Brand. Only news: a worry or a mood in the middle of a
+// talk ("tapi aku takut rugi") stays with whoever is talking (the 2026-10-06
+// test: passing those to the Teman made one talk feel like a switchboard).
+export function movesToCompanion(text) {
+  const s = String(text || "");
+  return isNews(s) && !isWriteRequest(s) && !ASK_FOR_WORDS.test(s) && !QUESTION.test(s) && !OTHERS.test(s);
 }
 
 // Talk about content — under such an answer the chat offers "Jadikan
@@ -85,8 +107,8 @@ export function routeByRules(text) {
   // 2. feelings and news ("capek kerja buat konten tiap hari", "tadi ada
   //    yang borong 20 cup, bisa jadi konten?") — Teman also files the news.
   //    A clear ask for ideas outranks the mood, never the news.
-  if (FEELING.test(s) && !HAPPENED.test(s) && ASK_FOR_WORDS.test(s)) return "brainstorm";
-  if (FEELING.test(s) || HAPPENED.test(s)) return "companion";
+  if (FEELING.test(s) && !isNews(s) && ASK_FOR_WORDS.test(s)) return "brainstorm";
+  if (FEELING.test(s) || isNews(s)) return "companion";
   // 3. "kasih ide konten buat campaign…", "ganti hook-nya"
   if (WEAK_WRITE.test(s)) return "brainstorm";
   // 4. only one side's words
