@@ -344,3 +344,43 @@ describe("script cards (scriptToBeats / beatsToScript / beatTimeline)", () => {
     assert.match(beatsToScript(beats, { lang }), /Voice: Mampir malam ini\./);
   });
 });
+
+// Gaya video "Akting + teks" (content.videoStyle "pov"): nobody speaks, the
+// story is the text on screen.
+describe("silent (POV) scripts", () => {
+  const POV = [
+    { label: "HOOK", visual: "Kamu melotot ke layar HP, kaget.", onScreen: "POV: baru sadar pesanan 50 cup belum dibikin" },
+    { label: "PANIK", visual: "Lari ke bar, nyalain mesin kopi.", onScreen: "15 menit sebelum diambil" },
+    { label: "CTA", visual: "Senyum sambil nunjuk kopi yang sudah jadi.", onScreen: "Pesan dari H-1 ya 😭" },
+  ];
+  const stored = renderScript(POV);
+  test("the Biasa box shows and edits the screen text", () => {
+    const shown = plainScript(stored);
+    assert.equal(shown.text, POV.map((b) => b.onScreen).join("\n\n"));
+    assert.equal(shown.silent, true);
+    assert.equal(applyPlainScript(stored, shown.text), stored);
+    const edited = parseScript(applyPlainScript(stored, [POV[0].onScreen, "10 menit sebelum diambil", POV[2].onScreen].join("\n\n")));
+    assert.equal(edited.beats[1].onScreen, "10 menit sebelum diambil");
+    assert.equal(edited.beats[1].visual, POV[1].visual);
+    assert.equal(edited.beats[1].say, "");
+    const added = parseScript(applyPlainScript(stored, [shown.text, "Follow buat cerita dapur lainnya"].join("\n\n")));
+    assert.equal(added.beats.at(-1).onScreen, "Follow buat cerita dapur lainnya");
+  });
+  test("nothing to read aloud, but a real length", () => {
+    assert.equal(spokenText(stored), "");
+    const { words, seconds } = scriptLength(stored);
+    assert.ok(words > 10);
+    assert.ok(seconds >= 6 && seconds <= 15, `seconds=${seconds}`);
+  });
+  test("a POV hook stays screen text, never spoken", () => {
+    const hook = { say: "", onScreen: "POV: kamu pelanggan pertama hari ini", visual: "Buka pintu kedai." };
+    const swapped = parseScript(applyHook(stored, hook));
+    assert.equal(swapped.beats[0].say, "");
+    assert.equal(swapped.beats[0].onScreen, hook.onScreen);
+    assert.equal(hookOf(applyHook("", hook)), hook.onScreen);
+    assert.equal(parseScript(applyHook("", hook)).beats[0].say, "");
+  });
+  test("a talking script with one text-only part is not silent", () => {
+    assert.equal(plainScript(renderScript([...BEATS, { label: "TUTUP", onScreen: "Sampai besok" }])).silent, undefined);
+  });
+});

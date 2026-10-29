@@ -4,11 +4,12 @@ import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, formatNumber, toast, qs, qsa, wireClickableCards, openMenu, closeMenu } from "../dom.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
+import { openIdeaSearch } from "../idea-search.js";
 import { consumeNavContext, go } from "../nav-context.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { generateScript, AiApiError, hasAiKey, buildFullContext, buildSeriesContext, seriesEpisodeTitles, campaignSummaryLine, durationToSeconds } from "../ai.js";
 import { HOOK_TYPES, SCRIPT_STRUCTURES, orderedHookTypes, recommendedHookTypes, recommendedStructures, hookTypeByKey } from "../knowledge/hook-types.js";
-import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, plainScript, applyPlainScript, isCarouselContent } from "../script-format.js";
+import { applyHook, parseSlides, serializeSlides, hookText, hookOf, scriptBeatsHTML, scriptLength, spokenText, plainScript, applyPlainScript, isCarouselContent, isPovContent } from "../script-format.js";
 import { openScriptPdfPreview } from "../script-pdf.js";
 import { openScriptFocus } from "../script-focus.js";
 import { mountScriptCards } from "../script-cards.js";
@@ -147,7 +148,7 @@ function hookCardHTML(h, i, { inScript = false, used = false, restore = false, c
       <div class="hook-card-main">
         ${badge || flag ? `<div class="hook-card-tags">${badge}${flag}</div>` : ""}
         <div class="hook-say">${escapeHtml(hookText(o))}</div>
-        ${o.onScreen ? `<div class="hook-layer"><span>${t("cr.ai.hookOnScreen")}</span>${escapeHtml(o.onScreen)}</div>` : ""}
+        ${o.onScreen && o.say ? `<div class="hook-layer"><span>${t("cr.ai.hookOnScreen")}</span>${escapeHtml(o.onScreen)}</div>` : ""}
         ${o.visual ? `<div class="hook-layer"><span>${carousel ? t("cr.ai.hookCover") : t("cr.ai.hookVisual")}</span>${escapeHtml(o.visual)}</div>` : ""}
         ${o.why ? `<div class="hook-why">${escapeHtml(o.why)}</div>` : ""}
       </div>
@@ -182,8 +183,9 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
     return;
   }
 
-  const state = { funnel: content.funnel || "TOFU", duration: defaultDuration(content.format), hookTypes: [], structure: "auto", showAllHooks: false };
+  const state = { funnel: content.funnel || "TOFU", duration: defaultDuration(content.format), hookTypes: [], structure: "auto", showAllHooks: false, videoStyle: isPovContent(content) ? "pov" : "" };
   const isCarouselPiece = isCarouselContent(content);
+  const styleChip = (key, label) => `<button type="button" data-style="${key}" class="${state.videoStyle === key ? "active" : ""}" aria-pressed="${state.videoStyle === key}">${label}</button>`;
   // #6/#7: once every field this modal is for has a "used" click (any
   // batch — Generate More gives independent alternatives, not a pipeline,
   // so a script from batch 1 + a caption from batch 2 still counts), the
@@ -224,6 +226,13 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
           ? ""
           : `
       ${isCarouselPiece ? "" : `<div class="field" style="margin-bottom:14px;">
+        <label id="ai-style-label">${t("cr.style.label")}</label>
+        <div class="chip-select" id="ai-style-chips" role="group" aria-labelledby="ai-style-label">
+          ${styleChip("", t("cr.style.talk"))}${styleChip("pov", t("cr.style.pov"))}
+        </div>
+        <p class="hook-type-help text-faint" id="ai-style-help" style="margin-top:6px;">${t(state.videoStyle ? "cr.style.povHint" : "cr.style.talkHint")}</p>
+      </div>
+      <div class="field" id="ai-duration-field" style="margin-bottom:14px;" ${state.videoStyle ? "hidden" : ""}>
         <label id="ai-duration-label">${t("cr.ai.duration")}</label>
         <div class="chip-select" id="ai-duration-chips" role="group" aria-labelledby="ai-duration-label">
           ${DURATION_OPTIONS.map((d) => `<button type="button" data-val="${d.val}" class="${state.duration === d.val ? "active" : ""}" aria-pressed="${state.duration === d.val}">${d.label}</button>`).join("")}
@@ -281,6 +290,18 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
     if (help) help.textContent = t(`script.struct.${state.structure}.desc`);
   });
 
+  // Gaya video: the piece takes the pick, so Creator, the chat and the next
+  // generate all read the same style. A POV Reel has no length to pick.
+  overlay.querySelectorAll("#ai-style-chips button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.videoStyle = btn.dataset.style === "pov" ? "pov" : "";
+      overlay.querySelectorAll("#ai-style-chips button").forEach((b) => { b.classList.toggle("active", b === btn); b.setAttribute("aria-pressed", String(b === btn)); });
+      overlay.querySelector("#ai-style-help").textContent = t(state.videoStyle ? "cr.style.povHint" : "cr.style.talkHint");
+      overlay.querySelector("#ai-duration-field").hidden = !!state.videoStyle;
+      if (content.id && getContent(content.id) && (getContent(content.id).videoStyle || "") !== state.videoStyle) updateContent(content.id, { videoStyle: state.videoStyle });
+    });
+  });
+
   const customDurationInput = overlay.querySelector("#ai-duration-custom");
   overlay.querySelectorAll("#ai-duration-chips button").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -310,6 +331,7 @@ function openAiScriptModal(content, brand, onInsert, lite = null, opts = {}) {
       duration: state.duration === "Custom" ? customDurationInput?.value.trim() : state.duration,
       hookTypes: state.hookTypes,
       structure: state.structure,
+      videoStyle: state.videoStyle,
       audienceLanguage: brand?.audienceLanguage || "",
       // Full brand context (DNA + personality + tone of voice + visual
       // guidelines + active campaigns) instead of just the legacy
@@ -1134,6 +1156,15 @@ function paint(root, brandId, state, refresh) {
       if (cardsHost.isConnected && !cardsHost.contains(document.activeElement)) saveScriptField();
     }, 0));
   }
+  qsa("[data-video-style]", root).forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", () => {
+      const style = btn.dataset.videoStyle === "pov" ? "pov" : "";
+      if (style === ((getContent(selected.id) || selected).videoStyle || "")) return;
+      saveScriptField();
+      updateContent(selected.id, { videoStyle: style });
+    });
+  });
   qsa("[data-script-mode]", root).forEach((btn) => {
     btn.addEventListener("mousedown", (e) => e.preventDefault());
     btn.addEventListener("click", () => {
@@ -1238,6 +1269,13 @@ function paint(root, brandId, state, refresh) {
           },
         }),
     });
+  });
+
+  // "Cari ide di web": the floating browser (js/idea-search.js), on this
+  // piece's title.
+  qs("#cw-idea-search", root)?.addEventListener("click", () => {
+    const words = (qs("#f-title", root)?.value ?? selected.title ?? "").trim();
+    openIdeaSearch(words);
   });
 
   const tpBtn = qs("#open-teleprompter", root);
@@ -1848,7 +1886,7 @@ function executionPanel(c) {
     <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:4px;">${escapeHtml(c.title || t("common.untitled"))}</div>
-      <button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>
+      ${isPovContent(c) ? "" : `<button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>`}
       ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-shot-big">${icon("check", { size: 20 })}${t("cr.doneShooting")}</button>
     </div>
@@ -2011,10 +2049,27 @@ const scriptEditorMode = () => {
   return "plain";
 };
 
+// ---- Gaya video: talking to camera, or "Akting + teks" (POV) --------------
+// content.videoStyle. A POV piece has no lines to say: the AI writes the
+// acting and the text on screen, the Biasa box holds that text, and there
+// is no teleprompter.
+function videoStyleHTML(c) {
+  const pov = isPovContent(c);
+  const btn = (key, label) => `<button type="button" class="${(key === "pov") === pov ? "active" : ""}" data-video-style="${key}" aria-pressed="${(key === "pov") === pov}">${label}</button>`;
+  return `<div class="video-style-row">
+      <span class="video-style-label" id="video-style-label">${t("cr.style.label")}</span>
+      <div class="segmented video-style" role="group" aria-labelledby="video-style-label">
+        ${btn("talk", `${icon("mic", { size: 13 })}${t("cr.style.talk")}`)}${btn("pov", `${icon("typography", { size: 13 })}${t("cr.style.pov")}`)}
+      </div>
+      <span class="text-faint video-style-hint">${t(pov ? "cr.style.povHint" : "cr.style.talkHint")}</span>
+    </div>`;
+}
+
 function scriptFieldHTML(c) {
   const mode = scriptEditorMode();
   const cards = mode === "cards";
   const shown = plainScript(c.script || "");
+  const pov = isPovContent(c);
   const modeBtn = (key, label, title) =>
     `<button type="button" class="${mode === key ? "active" : ""}" data-script-mode="${key}" aria-pressed="${mode === key}" title="${escapeHtml(t(title))}">${t(label)}</button>`;
   // A textarea drops one leading line break of its content — hence the "\n".
@@ -2029,11 +2084,12 @@ function scriptFieldHTML(c) {
             <button type="button" class="ai-field-btn" id="ai-quick-script" aria-label="${t("cr.f.quickScriptAria")}" title="${t("cr.f.quickScriptTitle")}">${icon("bot", { size: 15 })}<span>${t("cr.f.aiWrite")}</span></button>
           </div>
         </div>
-        ${hookTemplateButtonHTML()}
-        ${cards ? `<div id="script-cards"></div>` : `<textarea class="textarea" id="f-script-plain" style="min-height:220px;" placeholder="${escapeHtml(t("cr.f.scriptPh"))}">\n${escapeHtml(shown.text)}</textarea>`}
+        ${videoStyleHTML(c)}
+        ${pov ? "" : hookTemplateButtonHTML()}
+        ${cards ? `<div id="script-cards"></div>` : `<textarea class="textarea" id="f-script-plain" style="min-height:220px;" placeholder="${escapeHtml(t(pov ? "cr.f.scriptPhPov" : "cr.f.scriptPh"))}">\n${escapeHtml(shown.text)}</textarea>`}
         <textarea id="f-script" hidden>\n${escapeHtml(c.script || "")}</textarea>
         ${cards ? "" : `<p class="text-faint script-len-note" id="script-len-note" ${(c.script || "").trim() ? "" : "hidden"}>${icon("clock", { size: 11 })}<span>${t("cr.ai.lengthBadge", scriptLengthVars(c.script))}</span></p>
-        ${shown.directed ? `<p class="text-faint script-plain-more">${t("cr.plain.moreShort")} <button type="button" data-script-mode="cards">${t("cr.plain.moreOpen")}</button></p>` : ""}`}
+        ${shown.directed ? `<p class="text-faint script-plain-more">${t(shown.silent ? "cr.plain.moreShortPov" : "cr.plain.moreShort")} <button type="button" data-script-mode="cards">${t("cr.plain.moreOpen")}</button></p>` : ""}`}
       </div>`;
 }
 
@@ -2271,6 +2327,7 @@ function ideaStepHTML(c, { campaigns, series, review, docked }) {
     <div class="cw-field">
       <label class="cw-label" for="f-idea">${t("cw.idea.label")}</label>
       <textarea class="textarea cw-idea" id="f-idea" placeholder="${escapeHtml(t("cw.idea.ph"))}">${escapeHtml(c.idea || "")}</textarea>
+      <button type="button" class="cw-idea-search" id="cw-idea-search">${icon("search", { size: 13 })}${t("cw.idea.search")}</button>
     </div>
     <div id="funnel-goal-wrap" class="cw-goal">${funnelGoalFieldHTML(c)}</div>
     ${campaigns.length ? campaignFieldHTML(c, campaigns) : ""}
@@ -2330,7 +2387,7 @@ function scriptStepHTML(c, { review, docked }) {
 function shootStepHTML(c, { review }) {
   const designed = isDesigned(c);
   return `
-    ${designed ? "" : `<button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>`}
+    ${designed || isPovContent(c) ? "" : `<button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>`}
     ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
     ${review ? "" : nextBtnHTML("mark-shot-big", designed ? t("cw.doneDesign") : t("cr.doneShooting"), "edit", { check: true })}`;
 }

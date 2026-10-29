@@ -12,7 +12,7 @@ import { isAdmin, currentUid, getCachedAccount, isTrial } from "./account.js";
 import { brandVoiceText, listBrandIdeas, scopeBrandId, getBrand, isOwnBrand, isSeatPaused } from "./store.js";
 import { HOOK_TYPES, hookTypeByKey, structureByKey } from "./knowledge/hook-types.js";
 import { templateParts, isFactBlank } from "./knowledge/hook-templates.js";
-import { renderScript } from "./script-format.js";
+import { renderScript, isPovContent } from "./script-format.js";
 import { noteAiAnswer } from "./ai-last.js";
 
 class AiApiError extends Error {}
@@ -384,27 +384,38 @@ function hookTypeKeyOf(raw) {
 function cleanHook(h, allowed) {
   if (!h || typeof h !== "object") return typeof h === "string" && h.trim() ? { type: "", say: h.trim(), onScreen: "", visual: "", why: "" } : null;
   const say = String(h.say || h.text || h.hook || "").trim();
-  if (!say) return null;
+  const onScreen = String(h.onScreen || h.on_screen || h.text_on_screen || "").trim().slice(0, 120);
+  // A POV hook (Gaya video "Akting + teks") is screen text only.
+  if (!say && !onScreen) return null;
   const type = hookTypeKeyOf(h.type);
   return {
     type: allowed.has(type) ? type : "",
     say: say.slice(0, 300),
-    onScreen: String(h.onScreen || h.on_screen || h.text_on_screen || "").trim().slice(0, 120),
+    onScreen,
     visual: String(h.visual || "").trim().slice(0, 300),
     why: String(h.why || "").trim().slice(0, 240),
   };
 }
 
+// Gaya video "Akting + teks" (content.videoStyle "pov"): a Reel without a
+// talking head — someone acts a moment and the text on screen tells it.
+// Creator's writer and every chat that writes a script for the piece read it.
+const POV_STYLE_RULE =
+  "VIDEO STYLE — ACTING + TEXT ON SCREEN (no talking head, no voice-over): nobody speaks to the camera. A person (the owner, a staff member, a friend) acts out a short, relatable moment — a reaction, a situation the audience knows too well, a before/after, a tiny skit — usually over a trending sound, and the TEXT ON SCREEN tells the story. Typical openers: \"POV: …\", \"Kamu pas …\", \"Me when …\", \"Hal yang cuma dimengerti …\", \"Nobody: … / Aku: …\" — vary them. The text reads like a caption a friend would post: first or second person, specific, funny or painfully relatable, never like an ad. Each line stays on screen 2-4 seconds, max 12 words. The visual is an acting direction — exactly what the person does or the face they make — so it can be filmed without memorising anything. Keep ONE point of view from start to end: whoever the hook says \"kamu\" or \"aku\" is stays that same person in every beat.";
+export const videoStyleLine = (content) => (isPovContent(content) ? POV_STYLE_RULE : "");
+
 export async function generateScript(
   ai,
-  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [], hookTypes = [], structure = "auto", audienceLanguage = "", body = "", hook = null, avoidHooks = [] }
+  { title, idea, platform, format, funnel, effort, brief, prompt, duration, goal, mofuGoal, bofuOffer, articleText, brandContext, seriesContext, campaignLine, only, hashtags = [], hookTypes = [], structure = "auto", audienceLanguage = "", body = "", hook = null, avoidHooks = [], videoStyle = "" }
 ) {
   const wantsHooks = !only || only === "hooks";
   const wantsScript = !only || only === "script";
   const wantsCaption = !only || only === "caption";
   const isCarousel = (format || "").toLowerCase().includes("carousel");
+  const pov = !isCarousel && videoStyle === "pov";
   const lang = audienceLanguage || getLang();
-  const sec = durationToSeconds(duration, format);
+  // A POV Reel lives on a few lines of text: 20 seconds at most.
+  const sec = pov ? Math.min(20, durationToSeconds(duration, format)) : durationToSeconds(duration, format);
   const min = Math.round(sec * 2.1);
   const max = Math.round(sec * 2.7);
   const [minBeats, maxBeats] = bodyBeatCount(sec);
@@ -421,6 +432,8 @@ export async function generateScript(
     ? [
         isCarousel
           ? `HOOKS — write ${hookCount} alternative COVER slides (slide 1). Each: "say" = the cover headline, max 9 words, the promise of the carousel; "visual" = what the cover image shows (one concrete photo idea); "why" = one short plain sentence: why this would make THIS audience swipe; "type" = its hook type key; "onScreen" = "".`
+          : pov
+          ? `HOOKS — write ${hookCount} hooks for this video WITHOUT talking. Each: "onScreen" = the hook text shown from the very first frame, max 12 words — on its own it must make THIS audience stay (\"POV: …\" when it fits, other openers too); "visual" = what the person is doing or feeling in the first 2 seconds — one concrete action or expression, an acting direction; "say" = "" (always empty: nobody talks); plus "why" = one short plain sentence: why this would stop THIS audience scrolling; and "type" = its hook type key.`
           : `HOOKS — write ${hookCount} hooks. Each hook has three layers that work together: "say" = the first spoken line, max 12 words (under 10 is better: it must be said in about 3 seconds), carrying the promise of the video; "onScreen" = max 7 words of bold text overlay, readable on mute and not a copy of "say"; "visual" = what the very first frame shows — one concrete action or close-up that can really be filmed (never "aesthetic shot" or "b-roll"); plus "why" = one short plain sentence: why this would stop THIS audience scrolling; and "type" = its hook type key.`,
         "All hooks open the SAME video: they make the same promise and lead into the same body, so any of them can be swapped in without changing the rest. They must differ in approach, not just in wording. Never open with a greeting (\"Hai guys\", \"Halo semuanya\"), \"Di video ini\", or the brand name alone.",
         picked.length
@@ -430,8 +443,15 @@ export async function generateScript(
       ].filter(Boolean).join("\n")
     : "";
 
+  const povBeats = Math.max(2, Math.min(5, Math.round(sec / 4) - 1));
   const bodyRules = wantsScript
-    ? isCarousel
+    ? pov
+      ? [
+          `BODY — after the hook: ${povBeats} beats, a mini plot (set-up → the relatable twist → the payoff); the last one ends on a light ask in the text (follow, save, tag a friend, come by) — never a hard sell.`,
+          `Each beat: "label" = 1-3 words in capitals naming what the beat does, in the output language (e.g. SITUASI, PLOT TWIST, CTA); "visual" = the next action or reaction to act out, concrete, a different shot from the beat before; "onScreen" = the next line of text, max 12 words, continuing the hook's story; "say" = "" (always empty).`,
+          `LENGTH — the video is about ${sec} seconds: the hook plus ${povBeats} beats, each text readable in 2-4 seconds.`,
+        ].join("\n")
+      : isCarousel
       ? [
           `SLIDES — after the cover, write the remaining slides (4 to 7) as "slides": one short block of on-slide text each (max ~25 words, not narration). One clear point per slide${struct.beats ? `, following this flow: ${struct.beats}` : ", in the flow that fits the topic best"}; the last slide is the takeaway + one call to action.`,
         ].join("\n")
@@ -442,8 +462,9 @@ export async function generateScript(
         ].join("\n")
     : "";
 
-  const effortLine =
-    effort === "involved"
+  const effortLine = pov
+    ? "Production: one or two people acting in the brand's own place, a phone on a tripod or in hand, the text added afterwards in CapCut or Edits. No lines to memorise, no crew."
+    : effort === "involved"
       ? "Production: this can be a bigger shoot — several locations, props, other people on camera, or a short narrative are fine if they serve the idea."
       : "Production: keep it simple to shoot — one person with a phone, in the brand's own place, a few shots (talking to camera plus close-ups of the product, place or process). No crew, no special props.";
 
@@ -461,10 +482,13 @@ export async function generateScript(
   const system = [
     isCarousel
       ? "You write Instagram/TikTok carousel posts for small businesses in Indonesia: a cover that stops the scroll and slides that are easy to read in two seconds each."
+      : pov
+      ? "You are a short-form video scriptwriter for small businesses in Indonesia. You write POV / text-on-screen Reels: a short acted scene told by the text on screen, that an owner can shoot alone with one phone. Every beat says what to SHOW (the acting) and what TEXT goes on screen."
       : "You are a short-form video scriptwriter for small businesses in Indonesia. You write scripts an owner can shoot alone with one phone and understand at a glance: every beat says what to SHOW, what TEXT goes on screen and what to SAY.",
     outputLanguageRule({ audienceLanguage: lang }),
     SHORT_FORM_CRAFT,
     NATURAL_WRITING_CONTEXT,
+    pov ? POV_STYLE_RULE : "",
     hookRules,
     bodyRules,
     only === "caption" ? "Only write the caption — no hooks, no script." : "",
@@ -476,13 +500,13 @@ export async function generateScript(
       : "No brand context was given — keep it natural and conversational.",
     seriesContext || "",
     articleText && wantsScript ? "A reference text is given below — build the body from its most relevant, attention-worthy points instead of inventing unrelated content." : "",
-    `Before answering, check: ${[wantsHooks ? "every hook is short, from the requested types and opens the same promise" : "", wantsScript && !isCarousel ? `the narration of one hook plus the beats stays under ${max} words, there is exactly one ask and it sits in the last beat` : "", "every sentence about how the business works, what it offers or how it does things is in the facts (delete any that isn't), and no urgency or proof is added"].filter(Boolean).join("; ")}.`,
+    `Before answering, check: ${[wantsHooks ? "every hook is short, from the requested types and opens the same promise" : "", wantsScript && pov ? "every \"say\" is empty, every text is max 12 words and there is exactly one ask, in the last beat" : wantsScript && !isCarousel ? `the narration of one hook plus the beats stays under ${max} words, there is exactly one ask and it sits in the last beat` : "", "every sentence about how the business works, what it offers or how it does things is in the facts (delete any that isn't), and no urgency or proof is added"].filter(Boolean).join("; ")}.`,
     `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {${shape}}`,
   ].filter(Boolean).join("\n\n");
 
   const hookLine = hook ? (typeof hook === "string" ? hook : [hook.say, hook.onScreen && `(on screen: ${hook.onScreen})`, hook.visual && `(first frame: ${hook.visual})`].filter(Boolean).join(" ")) : "";
   const user = [
-    `Platform: ${platform || "Instagram"} · Format: ${format || "Reels"} · Target length: ${isCarousel ? "one carousel post" : `${sec} seconds`}`,
+    `Platform: ${platform || "Instagram"} · Format: ${format || "Reels"}${pov ? " · Style: acting + text on screen (POV), no talking" : ""} · Target length: ${isCarousel ? "one carousel post" : `${sec} seconds`}`,
     goal ? `Goal of this piece: ${goal}` : "",
     campaignLine ? `This piece belongs to campaign: ${campaignLine}` : "",
     title ? `Title: ${title}` : "",
@@ -500,7 +524,13 @@ export async function generateScript(
   const parsed = parseJsonObject(raw);
   if (!parsed) throw new AiApiError(t("ai.error.unreadable"));
 
-  const hooks = (Array.isArray(parsed.hooks) ? parsed.hooks : []).map((h) => cleanHook(h, allowed)).filter(Boolean).slice(0, 4);
+  const hooks = (Array.isArray(parsed.hooks) ? parsed.hooks : [])
+    .map((h) => cleanHook(h, allowed))
+    .filter(Boolean)
+    // POV: the line is the screen text — a model that wrote it under "say"
+    // gets it moved there.
+    .map((h) => (pov ? { ...h, onScreen: h.onScreen || h.say, say: "" } : h))
+    .slice(0, 4);
   if (wantsHooks && !hooks.length) throw new AiApiError(t("ai.error.unreadable"));
   // The caption has come back under another key ("Caption", "captions")
   // often enough to look for it rather than drop it.
@@ -516,8 +546,8 @@ export async function generateScript(
     return { hooks, script: wantsScript ? script : "", beats: [], caption, slides: wantsScript ? slides : [], angle: String(parsed.angle || "").trim(), targetSec: null };
   }
   const beats = (Array.isArray(parsed.beats) ? parsed.beats : [])
-    .map((b) => ({ label: String(b?.label || "").trim(), visual: String(b?.visual || "").trim(), onScreen: String(b?.onScreen || b?.on_screen || "").trim(), say: String(b?.say || "").trim() }))
-    .filter((b) => b.say || b.visual);
+    .map((b) => ({ label: String(b?.label || "").trim(), visual: String(b?.visual || "").trim(), onScreen: String(b?.onScreen || b?.on_screen || "").trim(), say: pov ? "" : String(b?.say || "").trim() }))
+    .filter((b) => b.say || b.visual || b.onScreen);
   if (wantsScript && !beats.length) throw new AiApiError(t("ai.error.unreadable"));
   const opener = hooks[0] || (hook && typeof hook === "object" ? hook : hook ? { say: String(hook) } : null);
   dropRepeatedHook(beats, opener);
@@ -1870,6 +1900,7 @@ const SCRIPT_DIRECTIVE_RULE = [
   "Unless they say otherwise the video is about 30 seconds: all narration together about 60-80 words (people speak about 2.5 words a second), timings that add up. Every beat changes the shot. The business facts in the brand context are the only facts: no invented process, policy, urgency, testimonial or number.",
   "A script about the brand's own story, people or history (how it started, the founder, a real customer) uses ONLY what the context says. When those facts aren't there, still write the full script, but put clearly marked placeholders where the real story goes — e.g. 'Narasi: Kami mulai tahun [isi: tahun mulai] karena [isi: alasan sebenarnya].' — and after the block ask for those details in one sentence. Never invent a backstory, a founder's feelings or a customer's words.",
   "When they ask to change a script you already wrote (shorter, another hook, more casual), apply it at once and write the FULL new block again — never only the changed part, never ask first.",
+  "A video WITHOUT talking (the owner asks for POV, acting with text on screen, no talking head — or the piece's video style says so): leave out every Narasi line; each beat is a Visual line (the acting: what the person does or the face they make) and a Teks layar line (the text that tells the story, max 12 words, e.g. 'POV: …'); the hook's Teks layar is the hook. About 10-20 seconds, 3-5 beats.",
   "Hook styles you can switch to when they want a stronger opening: curiosity gap, contrarian, common mistake, result first, specific number (from the facts only), story drop-in, call-out of the audience, POV, behind the scenes, versus, honest warning, on-camera test.",
   "Outside the block write only ONE short sentence before it (what you made and why it fits), and after it at most 2 [[ask:…]] follow-ups such as 'Pendekin jadi 15 detik' or 'Coba hook lawan arus'. Never paste the script outside the block, never two script blocks, and never [[draft:…]] for the same piece.",
 ].join("\n");
@@ -2055,7 +2086,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     goal ? `This conversation is about ONE goal the owner is working toward — help them think about how to get there:\n${goalLine(goal)}\nYou cannot change the roadmap yourself. When something should change (the date, the weekly posting rhythm, the expected attendance), say exactly what and why, and tell the owner to use "Re-plot" on the roadmap page. Never say the plan has been changed.` : "",
     eventCampaign ? `EVENT the owner is preparing (its phases; use these exact phase names when you file a step under a phase):\n${campaignSummaryLine(eventCampaign, brand)}\nPhases: ${(eventCampaign.eventPlan?.phases || []).map((p) => `${p.name} (${p.dateFrom}..${p.dateTo})`).join("; ")}\nMilestones already in it (never suggest these again): ${(eventCampaign.eventPlan?.phases || []).flatMap((p) => (p.milestones || []).map((m) => m.label)).slice(0, 40).join("; ")}` : "",
     campaign ? `This conversation is about ONE campaign of the brand:\n${campaignSummaryLine(campaign, brand)}${stageText ? `\nCurrent focus: ${stageText}` : ""}` : "",
-    content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.` : "",
+    content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.${isPovContent(content) ? `\n${POV_STYLE_RULE}` : ""}` : "",
     series
       ? `This conversation is about a NEW EPISODE of the owner's recurring series "${series.name}" — every idea/draft you propose must be a fresh episode of it, consistent with the series' saved concept/tone/structure below, not a generic idea:\n${buildSeriesContext(series, { episodes: seriesEpisodes })}`
       : seriesOverview,
@@ -2144,6 +2175,7 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
   const piece = [
     `Title: ${content?.title || "(untitled)"}`,
     `Funnel: ${content?.funnel || "?"} · Format: ${content?.format || "?"} · Platform: ${content?.platform || "?"}`,
+    videoStyleLine(content),
     content?.idea ? `Idea note: ${content.idea}` : "",
     `CURRENT SCRIPT:\n${(content?.script || "").trim() || "(empty)"}`,
     `CURRENT CAPTION:\n${(content?.caption || "").trim() || "(empty)"}`,
@@ -2158,7 +2190,7 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
     // Value first: the old "ask ONE short question first" turned every
     // "kurang menarik" into a round of questions before anything changed.
     "When the owner asks for a change — even a vague one ('kurang menarik', 'bikin lebih seru', 'terserah kamu') — don't ask what they mean: pick the change most likely to help (usually a sharper hook, a faster middle, a clearer payoff or a single clear ask), make it, and say in one line what you changed and one other direction you could take. Ask first only when two readings would lead to opposite edits, and even then offer your best guess in the same reply.",
-    `A concrete change always comes as the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : 'Write the script as beats, the same shape the app uses everywhere (upgrade an old "HOOK / ISI PEMBAHASAN" script to it when you rewrite): a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (what to film), "Teks layar:" (short on-screen text, only when it helps) and "Narasi:" (the exact words) lines; the last beat is the CTA with one ask. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:", "Voice:".'} Put at most ONE revise block per reply, always the full text (never a fragment), and keep the words around it to a sentence or two. Never write a revise block for a mere question, and never mention or explain the [[...]] syntax.`,
+    `A concrete change always comes as the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : isPovContent(content) ? 'This video has no talking: write the script as beats, a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (the acting) and "Teks layar:" (the text that tells the story) lines — never a "Narasi:" line; the last beat is the CTA with one ask, in the text. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:".' : 'Write the script as beats, the same shape the app uses everywhere (upgrade an old "HOOK / ISI PEMBAHASAN" script to it when you rewrite): a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (what to film), "Teks layar:" (short on-screen text, only when it helps) and "Narasi:" (the exact words) lines; the last beat is the CTA with one ask. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:", "Voice:".'} Put at most ONE revise block per reply, always the full text (never a fragment), and keep the words around it to a sentence or two. Never write a revise block for a mere question, and never mention or explain the [[...]] syntax.`,
     "End with at most 2 [[ask:…]] lines: quick next edits the owner might want, max 5 words each, in their words (e.g. 'Pendekin jadi 15 detik', 'Coba hook lawan arus', 'Lebih santai').",
     "Never invent numbers, prices, processes, policies or events that are not in the brand's context and data.",
     // ---- DYNAMIC last.

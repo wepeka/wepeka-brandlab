@@ -6,6 +6,7 @@ import { getTheme, toggleTheme } from "./theme.js";
 import { getMode, toggleMode } from "./mode.js";
 import { t, getLang } from "./i18n.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
+import { mountIdeaSearch, unmountIdeaSearch } from "./idea-search.js";
 import { returnTo, clearNavContext } from "./nav-context.js";
 import { getCachedAccount, isTrial, isReadOnly, isLifetime, trialDaysLeft, TRIAL_DAYS, accessState } from "./account.js";
 import { aiDailyLimit, aiUsageToday, aiQuotaPeriod, aiExtras } from "./ai-usage.js";
@@ -549,6 +550,8 @@ export function wireShell({ brandId }) {
   else unmountConsultantPanel();
   if (brandId) mountNotesFloat(brandId);
   else unmountNotesFloat();
+  if (brandId) mountIdeaSearch(brandId);
+  else unmountIdeaSearch();
 
   const menuBtn = qs("#app-menu-btn");
   menuBtn?.addEventListener("click", async (e) => {

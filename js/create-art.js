@@ -50,6 +50,16 @@ const DRAW = {
     <rect class="i-ink" x="34" y="6" width="52" height="108" rx="13"/>
     <rect class="i-main" x="40" y="16" width="40" height="88" rx="7"/>
     <path class="i-ink a-play" d="M53 46 L53 74 L74 60 Z"/>`,
+  // POV / teks: the phone with a line of text on top of the scene.
+  pov: () => `
+    <rect class="i-ink" x="34" y="6" width="52" height="108" rx="13"/>
+    <rect class="i-main" x="40" y="16" width="40" height="88" rx="7"/>
+    <circle class="i-ink" cx="60" cy="68" r="9"/>
+    <path class="i-ink" d="M44 104 Q44 81 60 81 Q76 81 76 104 Z"/>
+    <g class="a-caption">
+      <rect class="i-ink" x="16" y="26" width="62" height="24" rx="8"/>
+      <rect class="i-main" x="23" y="32" width="36" height="5" rx="2.5"/><rect class="i-main" x="23" y="40" width="24" height="5" rx="2.5"/>
+    </g>`,
   carousel: () => `
     <g class="a-fan-1"><rect class="i-ink" x="18" y="22" width="60" height="78" rx="10" transform="rotate(-12 48 61)"/></g>
     <g class="a-fan-2"><rect class="i-ink" x="30" y="18" width="60" height="78" rx="10" opacity=".7" transform="rotate(-3 60 57)"/></g>

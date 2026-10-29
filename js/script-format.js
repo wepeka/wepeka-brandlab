@@ -64,12 +64,21 @@ export function estimateSeconds(words) {
   return Math.max(1, Math.round((Number(words) || 0) / SPOKEN_WPS));
 }
 
-// How long one beat takes on screen: its narration at speaking pace, or a
+// How long one beat takes on screen: its narration at speaking pace; a
+// silent beat as long as its screen text needs to be read (a POV line), or a
 // couple of seconds for a purely visual moment.
 export function beatSeconds(b) {
   const w = countWords(b?.say);
-  if (!w) return 2;
+  if (!w) return Math.max(2, Math.round(countWords(b?.onScreen) / SPOKEN_WPS) + 1);
   return Math.max(2, Math.round(w / SPOKEN_WPS));
+}
+
+// A script nobody speaks in — Gaya video "Akting + teks" (POV): every part
+// is a shot plus the text on screen, no part has words to say. Its words are
+// the screen text: that's what the Biasa box shows and edits.
+export function isSilentScript(beats) {
+  const has = (v) => !!String(v || "").trim();
+  return !!beats?.length && beats.every((b) => !has(b.say) && !has(b.note)) && beats.some((b) => has(b.onScreen));
 }
 
 // Where each beat starts and ends — the same timing renderScript writes
@@ -270,7 +279,7 @@ export function spokenText(text) {
   const s = String(text || "");
   const parsed = parseScript(s);
   if (!parsed) return readable(withoutLabels(s));
-  const words = parsed.beats.map(partWords);
+  const words = parsed.beats.map((b) => partWords(b));
   const speakers = new Set(words.flatMap((w) => [...w.matchAll(LINE_TAG)].map((m) => speakerOf(m[1])).filter(Boolean)));
   const named = (w) => w.replace(LINE_TAG, (_, tag) => (speakers.size > 1 && speakerOf(tag) ? `${speakerOf(tag)}: ` : ""));
   return readable(words.map((w) => readable(named(w))).filter(Boolean).join("\n\n"));
@@ -283,17 +292,20 @@ export function spokenText(text) {
 // and the Syuting screen still show them); `directed` says the script has
 // such lines the box isn't showing.
 
-// The words of one part: what's said, or the loose text under its header.
-const partWords = (b) => withoutLabels(String(b.say || "").trim() ? b.say : b.note || "").trim();
+// The words of one part: what's said, or the loose text under its header —
+// in a silent script, the text on screen.
+const partWords = (b, silent = false) => (silent ? String(b.onScreen || "").trim() : withoutLabels(String(b.say || "").trim() ? b.say : b.note || "").trim());
 const splitParagraphs = (s) => s.split(/\n[ \t]*(?:\n[ \t]*)+/).map((p) => p.trim()).filter(Boolean);
 
 export function plainScript(text) {
   const s = String(text || "").replace(/\r\n?/g, "\n");
   const parsed = parseScript(s);
   if (!parsed) return { text: withoutLabels(s), directed: false };
+  const silent = isSilentScript(parsed.beats);
   return {
-    text: parsed.beats.map(partWords).filter(Boolean).join("\n\n"),
-    directed: parsed.beats.some((b) => b.visual || b.onScreen || (b.note && String(b.say || "").trim())),
+    text: parsed.beats.map((b) => partWords(b, silent)).filter(Boolean).join("\n\n"),
+    directed: parsed.beats.some((b) => b.visual || (!silent && b.onScreen) || (b.note && String(b.say || "").trim())),
+    ...(silent ? { silent } : {}),
   };
 }
 
@@ -346,8 +358,9 @@ export function applyPlainScript(script, plain, { lang = "id" } = {}) {
   // A whole script with parts pasted in is taken as it is.
   if (!parsed || parseScript(typed)) return typed;
   const { beats } = parsed;
+  const silent = isSilentScript(beats);
   const paras = splitParagraphs(typed);
-  const worded = beats.map((b, at) => ({ at, words: partWords(b) })).filter((x) => x.words);
+  const worded = beats.map((b, at) => ({ at, words: partWords(b, silent) })).filter((x) => x.words);
   // An emptied box is an emptied script — unless it never showed anything
   // (a script of shots and screen text only).
   if (!paras.length) return worded.length ? "" : stored;
@@ -355,11 +368,12 @@ export function applyPlainScript(script, plain, { lang = "id" } = {}) {
   let next = 0;
   // Parts without words aren't in the box; they keep their place.
   const keepSilentUntil = (end) => {
-    for (; next < end; next++) if (!partWords(beats[next])) out.push(beats[next]);
+    for (; next < end; next++) if (!partWords(beats[next], silent)) out.push(beats[next]);
   };
   pairParagraphs(worded.map((x) => x.words), paras).forEach(({ o, n }) => {
     if (o === undefined) {
-      out.push({ label: langOf(stored, lang) === "en" ? "BODY" : "ISI", visual: "", onScreen: "", say: paras[n], note: "" });
+      const part = { label: langOf(stored, lang) === "en" ? "BODY" : "ISI", visual: "", onScreen: "", say: "", note: "" };
+      out.push(silent ? { ...part, onScreen: paras[n] } : { ...part, say: paras[n] });
       return;
     }
     const { at, words } = worded[o];
@@ -368,15 +382,23 @@ export function applyPlainScript(script, plain, { lang = "id" } = {}) {
     if (n === undefined) return;
     const b = beats[at];
     if (paras[n] === words) out.push(b);
+    else if (silent) out.push({ ...b, onScreen: paras[n] });
     else out.push(String(b.say || "").trim() ? { ...b, say: paras[n] } : { ...b, say: paras[n], note: "" });
   });
   keepSilentUntil(beats.length);
   return beatsToScript(out, { preamble: parsed.preamble, lang: langOf(stored, lang) });
 }
 
-// Narration words / estimated seconds of a script (any shape).
+// Narration words / estimated seconds of a script (any shape). A silent
+// script counts its screen text and lasts as long as its parts do.
 export function scriptLength(text) {
   const words = countWords(spokenText(text));
+  if (!words) {
+    const parsed = parseScript(text);
+    if (parsed && isSilentScript(parsed.beats)) {
+      return { words: countWords(parsed.beats.map((b) => b.onScreen).join(" ")), seconds: beatTimeline(parsed.beats).at(-1).to };
+    }
+  }
   return { words, seconds: estimateSeconds(words) };
 }
 
@@ -437,8 +459,11 @@ export function applyHook(script, hook, prevHook = "", { lang = "id" } = {}) {
   const text = (script || "").replace(/\r/g, "");
   const h = hookText(hook);
   if (!h) return text;
+  // A POV hook ({ say: "", onScreen: "POV: …" }) is screen text only: it
+  // stays unspoken.
+  const silentHook = typeof hook === "object" && hook && !String(hook.say || "").trim();
   if (!text.trim()) {
-    if (typeof hook === "object" && hook) return renderScript([{ label: "HOOK", ...hook, say: hook.say || h }], { lang });
+    if (typeof hook === "object" && hook) return renderScript([{ label: "HOOK", ...hook, say: silentHook ? "" : hook.say || h }], { lang });
     return h;
   }
   const parsed = parseScript(text);
@@ -448,7 +473,7 @@ export function applyHook(script, hook, prevHook = "", { lang = "id" } = {}) {
     parsed.beats[0] = {
       ...first,
       label: /hook/i.test(first.label) ? first.label : "HOOK",
-      say: obj.say || h,
+      say: silentHook ? "" : obj.say || h,
       onScreen: obj.onScreen !== undefined ? obj.onScreen : first.onScreen,
       visual: obj.visual || first.visual,
       note: "",
@@ -475,3 +500,10 @@ export function langOf(text, fallback) {
   if (/^\s*(Voice|On-screen text)\s*:/im.test(text)) return "en";
   return fallback;
 }
+
+// ---- Gaya video -----------------------------------------------------------------
+// content.videoStyle: "" (talking to camera, the default) or "pov" — "Akting
+// + teks": nobody talks, someone acts a moment and the text on screen tells
+// it ("POV: …"). Only a video has a style.
+export const VIDEO_STYLES = ["talk", "pov"];
+export const isPovContent = (c) => c?.videoStyle === "pov" && !isCarouselContent(c);

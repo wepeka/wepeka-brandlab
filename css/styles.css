@@ -1649,7 +1649,7 @@ table.data-table{ width:100%; border-collapse:collapse; font-size:13.5px; }
 /* The app's own floating buttons live beside #app (which main.js makes
    inert): under the page they are out of sight, and out of the Tab key's
    reach too. */
-body:has(> .pay-thanks) > :is(.notes-fab, .notes-float, .consultant-fab, .consultant-fab-hint, .consultant-panel, .tour-pill){ visibility:hidden; }
+body:has(> .pay-thanks) > :is(.notes-fab, .notes-float, .isr-fab, .isr-float, .consultant-fab, .consultant-fab-hint, .consultant-panel, .tour-pill){ visibility:hidden; }
 :root[data-theme="light"] .pay-thanks{ --pt-floor:#fbfaff; }
 .pay-thanks-inner{ display:flex; flex-direction:column; align-items:center; gap:20px; width:min(520px, 100%); min-height:100%; margin:0 auto; padding: clamp(20px, 4vh, 44px) 20px 0; }
 .pay-thanks-mark{ justify-content:center; font-size:19px; }
@@ -4762,6 +4762,53 @@ body.tour-active .notes-fab, body.tour-active .notes-float{ display:none; }
   .notes-fab{ right:68px; bottom:16px; width:40px; height:40px; }
   .notes-float{ right:10px; left:10px; width:auto; bottom:68px; max-height:calc(100vh - 144px); max-height:calc(100dvh - 144px); }
 }
+/* ---- Cari ide: a small browser floating beside the work (js/idea-search.js) ---- */
+.cw-idea-search{ display:inline-flex; align-items:center; gap:6px; margin-top:8px; padding:6px 12px; border-radius:999px; border:1px solid color-mix(in srgb, #5BB8FF 55%, var(--border)); background: color-mix(in srgb, #5BB8FF 14%, var(--surface)); color: var(--text); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
+.cw-idea-search:hover{ background: color-mix(in srgb, #5BB8FF 24%, var(--surface)); }
+.isr-fab{ position:fixed; right:140px; bottom:30px; z-index:65; width:42px; height:42px; border-radius:12px; border:1px solid color-mix(in srgb, #5BB8FF 55%, var(--border)); background: color-mix(in srgb, #5BB8FF 22%, var(--bg-raised)); color: var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: var(--shadow-lg); transform: rotate(4deg); transition: transform .15s ease; }
+.isr-fab:hover{ transform: rotate(0) scale(1.05); }
+.isr-fab.is-open{ transform:none; background: var(--surface-2); }
+.isr-float{ position:fixed; right:24px; bottom:84px; z-index:67; width:420px; height:min(620px, calc(100vh - 120px)); height:min(620px, calc(100dvh - 120px)); min-width:320px; min-height:380px; max-width:calc(100vw - 16px); max-height:calc(100vh - 16px);
+  display:flex; flex-direction:column; gap:8px; padding:0 12px 12px; resize:both; overflow:hidden;
+  background: var(--bg-raised); border:1px solid color-mix(in srgb, #5BB8FF 45%, var(--border)); border-top:4px solid #5BB8FF; border-radius:14px; box-shadow: var(--shadow-lg); }
+.isr-float[hidden]{ display:none; }
+.isr-float.is-dragging{ user-select:none; opacity:.96; }
+.isr-float.is-dragging iframe{ pointer-events:none; }
+.isr-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 -12px; padding:8px 8px 4px 12px; cursor:grab; touch-action:none; }
+.isr-float.is-dragging .isr-head{ cursor:grabbing; }
+.isr-title{ display:flex; align-items:center; gap:6px; font-weight:800; font-size:14px; }
+.isr-head-actions{ display:flex; gap:2px; }
+.isr-head-actions .icon-btn{ width:28px; height:28px; }
+.isr-form, .isr-save{ display:flex; gap:6px; }
+.isr-form .input, .isr-save .input{ flex:1; min-width:0; height:34px; font-size:13px; }
+.isr-k{ display:block; margin-bottom:4px; font-size:11px; font-weight:800; letter-spacing:.02em; color: var(--text-muted); }
+.isr-chips{ display:flex; gap:5px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; }
+.isr-chip{ flex:none; border:1px solid var(--border); background: var(--surface); color: var(--text); padding:4px 10px; border-radius:999px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.isr-chip:hover{ border-color:#5BB8FF; background: color-mix(in srgb, #5BB8FF 14%, var(--surface)); }
+.isr-tabs{ display:flex; gap:4px; padding:3px; border-radius:10px; background: var(--surface-2); }
+.isr-tabs button{ flex:1; border:0; background:transparent; color: var(--text-muted); font:inherit; font-size:12px; font-weight:700; padding:5px 8px; border-radius:8px; cursor:pointer; }
+.isr-tabs button.is-on{ background: var(--surface); color: var(--text); }
+.isr-frame{ flex:1; min-height:120px; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:#fff; }
+.isr-frame iframe{ width:100%; height:100%; border:0; display:block; }
+.isr-empty{ height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:18px; text-align:center; background: var(--surface); color: var(--text-muted); font-size:12.5px; line-height:1.45; }
+.isr-empty b{ color: var(--text); font-size:14px; }
+.isr-note{ margin:-2px 0 0; font-size:11px; line-height:1.4; }
+.isr-site-row{ display:flex; flex-wrap:wrap; gap:5px; }
+.isr-site svg{ width:13px; height:13px; flex:none; }
+.isr-site{ display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border); background: var(--surface); color: var(--text); padding:5px 10px; border-radius:999px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
+.isr-site:hover:not(:disabled){ border-color: var(--text); }
+.isr-site:disabled{ opacity:.45; cursor:default; }
+.isr-save .btn{ flex:none; }
+body.tour-active .isr-fab, body.tour-active .isr-float{ display:none; }
+body:has(main.view-papan) :is(.isr-fab, .isr-float){ display:none !important; }
+@media (max-width: 720px){ body.chat-page-open .isr-fab{ display:none; } }
+@media (max-width: 640px){
+  .isr-fab{ right:116px; bottom:16px; width:40px; height:40px; }
+  .isr-float{ right:10px; left:10px; width:auto; min-width:0; bottom:68px; top:10px; height:auto; resize:none; }
+  .isr-head{ cursor:default; }
+  .isr-save{ flex-wrap:wrap; }
+  .isr-save .input{ flex-basis:100%; }
+}
 .scratch-hint{ font-size:11.5px; color: var(--text-faint); margin:0 0 10px; line-height:1.45; }
 .scratch-add{ min-height:0; font-size:13px; margin-bottom:4px; }
 .sn-hint{ margin:0 0 10px; font-size:11px; color: var(--text-faint); }
@@ -5889,6 +5936,8 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
      100vh - 110px. Now capped to end below the 60px header. */
   body:has(.bottom-nav) .notes-float{ bottom: calc(130px + env(safe-area-inset-bottom)); max-height: calc(100vh - 206px - env(safe-area-inset-bottom)); max-height: calc(100dvh - 206px - env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .notes-fab{ bottom: calc(80px + env(safe-area-inset-bottom)); }
+  body:has(.bottom-nav) .isr-fab{ bottom: calc(80px + env(safe-area-inset-bottom)); }
+  body:has(.bottom-nav) .isr-float{ bottom: calc(130px + env(safe-area-inset-bottom)); }
   body:has(.bottom-nav) .toast-root{ bottom: calc(140px + env(safe-area-inset-bottom)); }
   body.tour-active .bottom-nav{ z-index:59; }
 }
@@ -6377,6 +6426,12 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
    the whole video sits on top. Used in Creator and, larger, in Layar penuh. */
 .script-mode{ flex-wrap:nowrap; padding:2px; }
 .script-mode button{ flex:none; padding:5px 10px; font-size:11.5px; }
+/* Gaya video: talking to camera, or acting + text (POV). */
+.video-style-row{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:0 0 10px; }
+.video-style-label{ font-size:12px; font-weight:800; color: var(--text-muted); }
+.video-style{ flex-wrap:nowrap; padding:2px; }
+.video-style button{ flex:none; display:inline-flex; align-items:center; gap:5px; padding:5px 11px; font-size:11.5px; }
+.video-style-hint{ flex:1 1 220px; font-size:12px; }
 #f-script-plain{ font-size:15px; line-height:1.65; }
 .script-plain-more{ margin:4px 0 0; font-size:11.5px; }
 .script-plain-more button{ padding:0; border:0; background:none; font:inherit; font-weight:700; color: var(--accent); cursor:pointer; }
@@ -7175,6 +7230,7 @@ body:has(#view-root .lh) .topbar .tabs, body:has(#view-root .lh) .bottom-nav{ di
   body:has(#view-root .lh) .consultant-fab{ bottom: calc(16px + env(safe-area-inset-bottom)); }
   body:has(#view-root .lh) .consultant-fab-hint{ bottom: calc(22px + env(safe-area-inset-bottom)); }
   body:has(#view-root .lh) .notes-fab{ bottom: calc(20px + env(safe-area-inset-bottom)); }
+  body:has(#view-root .lh) .isr-fab{ bottom: calc(20px + env(safe-area-inset-bottom)); }
   body:has(#view-root .lh) .toast-root{ bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce){ .topbar .tabs, .bottom-nav{ animation:none; } }
@@ -7349,6 +7405,7 @@ body:has(#view-root .lh) .topbar .tabs, body:has(#view-root .lh) .bottom-nav{ di
 .nw-tile:hover .a-sun, .nw-tile.is-on .a-sun{ animation: a-rise .8s var(--ease-spring) both; }
 @keyframes a-rise{ from{ transform: translateY(14px); } to{ transform: translateY(-4px); } }
 .nw-tile:hover .a-ring, .nw-tile.is-on .a-ring{ transform-origin:center; animation: a-pop .7s var(--ease-spring); }
+.nw-tile:hover .a-caption, .nw-tile.is-on .a-caption{ transform-origin: left center; animation: a-pop .6s var(--ease-spring); }
 
 /* Inside one of the five: a round back pill in that part's gradient. */
 .cl-bar{ display:flex; align-items:center; gap:10px; margin: 0 0 14px; }
@@ -7372,8 +7429,8 @@ main.view.is-arriving > .cl{ animation:none; }
 .nw.is-back{ animation: nw-in-back .32s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes nw-in-fwd{ from{ opacity:0; transform: translateX(28px); } to{ opacity:1; transform:none; } }
 @keyframes nw-in-back{ from{ opacity:0; transform: translateX(-28px); } to{ opacity:1; transform:none; } }
-.nw-tiles{ display:grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap:10px; }
-.nw-tile{ position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-height:196px; padding:14px 12px 12px;
+.nw-tiles{ display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; }
+.nw-tile{ position:relative; overflow:hidden; isolation:isolate; display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-height:150px; padding:14px 12px 12px;
   border:0; border-radius:24px; color: var(--ink); font:inherit; text-align:left; cursor:pointer;
   background: linear-gradient(135deg, color-mix(in srgb, var(--tile) 70%, #fff) 0%, var(--tile) 35%, var(--tile2, var(--tile)) 82%, color-mix(in srgb, var(--tile2, var(--tile)) 82%, #000) 100%);
   background-size: 160% 160%; box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
@@ -7582,6 +7639,7 @@ body.chat-ws-docked .consultant-fab, body.chat-ws-docked .consultant-fab-hint{ v
 /* The notes button would sit on the chat's send box: it steps aside while
    the chat is docked (it is back on every other step). */
 body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
+body.chat-ws-docked .isr-fab:not(.is-open){ visibility:hidden; }
 
 /* Light theme: the cards are already light; the white pill turns black. */
 :root[data-theme="light"] .cw-card, :root[data-theme="light"] .cw-empty{ box-shadow: 0 1px 0 rgba(27,26,23,.04), 0 18px 40px -26px rgba(27,26,23,.28); }

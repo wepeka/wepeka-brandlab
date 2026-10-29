@@ -25,6 +25,9 @@ import { addDays } from "../goal-roadmap.js";
 // to store, best first; a short video on TikTok/YouTube is a "Short Video".
 const KINDS = [
   { key: "video", color: "#FF6FAE", color2: "#FF7A45", match: /reel|short/i },
+  // The same short-video format, without talking: someone acts a moment and
+  // the text on screen tells it (content.videoStyle "pov").
+  { key: "pov", color: "#5BB8FF", color2: "#7A5CFF", match: /reel|short/i },
   { key: "carousel", color: "#FFC83D", color2: "#FF8A3D", match: /carousel/i },
   { key: "photo", color: "#36D27F", color2: "#0FA3A3", match: /static|post|foto|photo|image/i },
   { key: "story", color: "#A974FF", color2: "#E04FD8", match: /story/i },
@@ -37,7 +40,7 @@ export function formatForKind(kindKey, platform, formats) {
   const kind = KINDS.find((k) => k.key === kindKey);
   if (!kind) return names.includes(kindKey) ? kindKey : "";
   const hits = names.filter((n) => kind.match.test(n));
-  if (kindKey === "video") {
+  if (kindKey === "video" || kindKey === "pov") {
     const short = hits.find((n) => /short/i.test(n));
     const reels = hits.find((n) => /reel/i.test(n));
     return (/tiktok|youtube/i.test(platform || "") ? short || reels : reels || short) || "";
@@ -253,6 +256,7 @@ export function openNewContentWizard({ brandId, defaults = {}, onSaved, stay = f
       // A phase only travels with the campaign it came with.
       campaignPhaseId: campaign && campaign.id === defaults.campaignId ? defaults.campaignPhaseId || "" : "",
       seriesId: defaults.seriesId || "",
+      ...(s.kind === "pov" ? { videoStyle: "pov" } : {}),
     });
     if (!made) return;
     closeOverlay(overlay);
