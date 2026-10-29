@@ -235,9 +235,10 @@ describe("Beranda renders the new shape", () => {
   });
 
   // Pemula (2026-10-26, "terlalu ribet dan banyak fitur"): a home screen of
-  // five app icons plus ONE step for today — no dashboard widgets.
+  // app icons plus ONE step for today — no dashboard widgets. The sixth, the
+  // Pitch Deck (2026-10-29), sits next to Board.
   const root = () => ({ innerHTML: "", isConnected: true, querySelector: () => null, querySelectorAll: () => [], classList: { contains: () => false } });
-  test("Pemula: the five apps and today's step, nothing else", async () => {
+  test("Pemula: the six apps and today's step, nothing else", async () => {
     const store = await import("../js/store.js");
     const { render } = await import("../js/views/home.js");
     const { APPS } = await import("../js/apps.js");
@@ -247,7 +248,7 @@ describe("Beranda renders the new shape", () => {
     const r = root();
     render(r, { brandId: b.id })?.();
     const html = r.innerHTML;
-    assert.deepEqual(APPS.map((a) => a.key), ["builder", "campaigns", "content-os", "report", "papan"]);
+    assert.deepEqual(APPS.map((a) => a.key), ["builder", "campaigns", "content-os", "report", "papan", "deck"]);
     for (const a of APPS) assert.ok(html.includes(`data-app="${a.key}"`), a.key);
     assert.ok(html.includes('id="journey-hero"'), "today's step");
     assert.ok(!html.includes('id="home-week"') && !html.includes("home-more") && !html.includes("recent-strip"), "no dashboard widgets");

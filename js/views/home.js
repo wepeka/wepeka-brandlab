@@ -20,7 +20,7 @@ import { analyticsSectionHTML, wireAnalyticsSection } from "./brand-home-analyti
 import { openReportModal, reportDue, snoozeReport } from "./report.js";
 import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML, videoRefForGuide, canShowVideo, guideVideosReady } from "../guide-videos.js";
-import { APPS, appByKey } from "../apps.js";
+import { APPS, appByKey, DECK_SLIDE_COUNT } from "../apps.js";
 import { appIconSVG } from "../app-icons.js";
 import { getUserFirstName } from "../auth.js";
 import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
@@ -1348,6 +1348,7 @@ function appStatus(app, { brand, campaigns, content, journey, locked, reportIsDu
     if (week) return { text: t("lh.status.reportWeek", { n: week }), tone: "" };
     return { text: t("lh.status.reportNone"), tone: "" };
   }
+  if (app.key === "deck") return { text: t("lh.status.deck", { n: DECK_SLIDE_COUNT }), tone: "" };
   return { text: t("lh.status.boardNone"), tone: "" };
 }
 

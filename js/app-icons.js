@@ -1,4 +1,4 @@
-// The five apps' pictures on the Beranda launcher (js/apps.js): solid vector
+// The apps' pictures on the Beranda launcher (js/apps.js): solid vector
 // shapes in the card's own colours — a light tint of the card plus a deep
 // shade for details, fully opaque — drawn big so they run off the card's
 // edge (owner, 2026-10-26/27: no mascots; "buat vector aja, gausa opacity
@@ -43,6 +43,12 @@ const DRAW = {
       <path class="i-ink i-fold" d="M106 76 L76 106 V86 Q76 76 86 76 Z"/>
       <rect class="i-ink i-line i-line-1" x="30" y="38" width="52" height="9" rx="4.5"/>
       <rect class="i-ink i-line i-line-2" x="30" y="56" width="34" height="9" rx="4.5"/>
+    </g>`,
+  deck: () => `
+    <rect class="i-ink i-slide-back" x="30" y="14" width="76" height="56" rx="10"/>
+    <g class="i-slide-front">
+      <rect class="i-main i-round" x="14" y="38" width="86" height="64" rx="12"/>
+      <path class="i-ink i-round i-play" d="M49 56 L73 70 L49 84 Z"/>
     </g>`,
 };
 

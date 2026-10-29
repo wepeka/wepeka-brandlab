@@ -233,6 +233,9 @@ function parseRoute(hash) {
   if ((m = h.match(PAPAN_KEY_ROUTE))) return { view: "papan", brandId: m[1], boardId: m[2], boardKey: m[3] };
   if ((m = h.match(/^\/brand\/([^/]+)\/papan\/([^/]+)\/?$/))) return { view: "papan", brandId: m[1], boardId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/papan\/?$/))) return { view: "papan", brandId: m[1] };
+  // Pitch Deck: Brandlab step by step for a new account; /deck/3 = slide 3.
+  if ((m = h.match(/^\/brand\/([^/]+)\/deck\/(\d{1,2})\/?$/))) return { view: "deck", brandId: m[1], slide: Number(m[2]) };
+  if ((m = h.match(/^\/brand\/([^/]+)\/deck\/?$/))) return { view: "deck", brandId: m[1] };
   // The chat's own page. Its old address (under Brainstorm) still works.
   if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/([^/]+)\/?$/))) return { view: "chat", brandId: m[1], threadId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/(?:chat|brainstorm)\/?$/))) return { view: "chat", brandId: m[1] };
@@ -890,6 +893,7 @@ async function renderRoute() {
         report: () => import("./views/report-page.js"),
         chat: () => import("./views/chat.js"),
         papan: () => import("./views/papan.js"),
+        deck: () => import("./views/deck.js"),
         announcements: () => import("./views/announcements.js"),
         goals: () => import("./views/goal-roadmap.js"),
         "content-os": () => import("./views/content-os.js"),
@@ -935,6 +939,9 @@ async function renderRoute() {
         break;
       case "papan":
         cleanup = view.render(viewRoot, { brandId: route.brandId, boardId: route.boardId || null });
+        break;
+      case "deck":
+        cleanup = view.render(viewRoot, { brandId: route.brandId, slide: route.slide || 1 });
         break;
       case "content-os":
         cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });

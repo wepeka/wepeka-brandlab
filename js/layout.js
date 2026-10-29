@@ -163,7 +163,7 @@ const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 // Pemula keeps My Goals locked until the identity is done (`gated`).
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
-  ...APPS.map((a) => ({ key: a.key, labelKey: a.labelKey, icon: a.icon, color: a.color, color2: a.color2, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
+  ...APPS.filter((a) => a.tab !== false).map((a) => ({ key: a.key, labelKey: a.labelKey, icon: a.icon, color: a.color, color2: a.color2, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
 ];
 
 function notifRowHTML({ content, brand }, tone) {

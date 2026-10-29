@@ -1,0 +1,430 @@
+/* Pitch Deck (js/views/deck.js): Brandlab step by step as slides, in the
+   launcher's own look — a big gradient block in the app's colours, ink text,
+   solid pictures (js/app-icons.js) and white make-believe screens. */
+
+/* Registered so the deck's colour can fade from one app to the next. */
+@property --dk-a{ syntax:"<color>"; inherits:true; initial-value:#FFD23F; }
+@property --dk-b{ syntax:"<color>"; inherits:true; initial-value:#FF9F1C; }
+
+.view-deck{ padding-top:20px; }
+.dk{ --ink:#1b1a17; --cream:#fff6e8; --ease:cubic-bezier(.22,1,.36,1); --pop:cubic-bezier(.34,1.56,.64,1);
+  position:relative; isolation:isolate; overflow:clip; display:flex; flex-direction:column;
+  max-width:1240px; margin:0 auto; min-height: calc(100dvh - var(--header-h) - 130px);
+  padding:20px 28px 18px; border-radius:34px; color: var(--ink);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--dk-a) 62%, #fff) 0%, var(--dk-a) 38%, var(--dk-b) 82%, color-mix(in srgb, var(--dk-b) 84%, #000) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 30px 60px -36px color-mix(in srgb, var(--dk-b) 90%, transparent);
+  transition: --dk-a .9s var(--ease), --dk-b .9s var(--ease), box-shadow .9s ease; }
+
+/* Two soft lights drifting behind everything. */
+.dk-blob{ position:absolute; z-index:-1; border-radius:50%; pointer-events:none; filter: blur(10px); }
+.dk-blob-1{ width:520px; height:520px; top:-220px; left:-160px; background: radial-gradient(circle, rgba(255,255,255,.55), transparent 65%); animation: dk-drift 14s ease-in-out infinite alternate; }
+.dk-blob-2{ width:620px; height:620px; right:-220px; bottom:-300px; background: radial-gradient(circle, color-mix(in srgb, var(--dk-b) 70%, #fff 0%), transparent 65%); opacity:.7; animation: dk-drift 18s ease-in-out infinite alternate-reverse; }
+@keyframes dk-drift{ from{ transform: translate(0,0) scale(1); } to{ transform: translate(80px,40px) scale(1.12); } }
+
+/* Top line: back to Beranda, the deck's name, the slide count. */
+.dk-top{ display:flex; align-items:center; gap:14px; }
+.dk-back{ display:inline-flex; align-items:center; gap:4px; padding:8px 14px 8px 10px; border-radius:999px; background: rgba(255,255,255,.62);
+  color: var(--ink); font-size:13px; font-weight:800; text-decoration:none; transition: transform .3s var(--pop), background .2s; }
+.dk-back:hover{ background:#fff; transform: translateX(-3px); }
+.dk-top-title{ flex:1; min-width:0; font-size:13px; font-weight:800; color: rgba(27,26,23,.62); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dk-count{ font-family: var(--font-display); font-size:22px; letter-spacing:.02em; font-variant-numeric: tabular-nums; }
+.dk-progress{ height:5px; margin:14px 0 0; border-radius:999px; background: rgba(27,26,23,.12); overflow:hidden; }
+.dk-progress i{ display:block; height:100%; border-radius:inherit; background: var(--ink); transform-origin:left; transform: scaleX(.1); transition: transform .7s var(--ease); }
+
+/* The slides sit on top of each other; the stage is as tall as the tallest. */
+.dk-stage{ flex:1; display:grid; align-items:center; padding:12px 0 4px; touch-action: pan-y; }
+.dk-slide{ grid-area: 1 / 1; min-width:0; visibility:hidden; opacity:0; pointer-events:none; }
+.dk-slide.is-active{ visibility:visible; opacity:1; pointer-events:auto; animation: dk-in .8s var(--ease) both; }
+.dk[data-dir="back"] .dk-slide.is-active{ animation-name: dk-in-back; }
+.dk-slide.is-leaving{ visibility:visible; animation: dk-out .42s cubic-bezier(.4,0,.2,1) both; }
+.dk[data-dir="back"] .dk-slide.is-leaving{ animation-name: dk-out-back; }
+@keyframes dk-in{ from{ opacity:0; transform: translateX(90px) scale(.97); filter: blur(8px); } to{ opacity:1; transform:none; filter:none; } }
+@keyframes dk-in-back{ from{ opacity:0; transform: translateX(-90px) scale(.97); filter: blur(8px); } to{ opacity:1; transform:none; filter:none; } }
+@keyframes dk-out{ from{ opacity:1; transform:none; } to{ opacity:0; transform: translateX(-70px) scale(.96); } }
+@keyframes dk-out-back{ from{ opacity:1; transform:none; } to{ opacity:0; transform: translateX(70px) scale(.96); } }
+/* A slide's pieces rise in one after another (--i), every time it shows.
+   `translate`, not `transform`, so the mouse tilt keeps working after. */
+.dk-slide [data-a]{ opacity:0; }
+.dk-slide.is-active [data-a]{ animation: dk-rise .75s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms + 140ms); }
+.dk-slide.is-leaving [data-a]{ opacity:1; }
+@keyframes dk-rise{ from{ opacity:0; translate: 0 26px; } to{ opacity:1; translate: 0 0; } }
+
+/* Text left, picture right. */
+.dk-cols{ display:grid; grid-template-columns: minmax(0,1.02fr) minmax(0,1fr); gap:52px; align-items:center; padding:8px 10px; }
+.dk-eyebrow-row{ display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.dk-eyebrow{ display:inline-block; margin:0; padding:7px 13px; border-radius:999px; background: rgba(255,255,255,.55);
+  font-size:12px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; }
+.dk-state{ display:inline-flex; align-items:center; gap:5px; padding:6px 11px; border-radius:999px; font-size:12px; font-weight:800; }
+.dk-state.is-done{ background: var(--ink); color:#fff; }
+.dk-state.is-locked{ background: rgba(27,26,23,.14); }
+.dk-h{ margin:18px 0 0; font-family: var(--font-display); font-size:56px; font-weight:400; line-height:1.06; letter-spacing:-.015em; color: var(--ink); text-wrap: balance; }
+h1.dk-h{ font-size:62px; }
+.dk-lead{ margin:16px 0 0; max-width:46ch; font-size:17px; line-height:1.55; font-weight:600; color: rgba(27,26,23,.74); }
+.dk-keys{ margin:18px 0 0; font-size:12.5px; font-weight:700; color: rgba(27,26,23,.55); }
+
+/* What the step gives you. */
+.dk-result{ display:inline-flex; align-items:center; flex-wrap:wrap; gap:6px; margin:18px 0 0; padding:9px 14px; border-radius:14px;
+  background: rgba(255,255,255,.5); font-size:13.5px; font-weight:700; }
+.dk-result span{ color: rgba(27,26,23,.6); }
+.dk-result svg{ flex:none; }
+
+/* "Caranya": the step's own steps on a line that draws itself in. */
+.dk-how{ margin:16px 10px 0; }
+.dk-how-label{ margin:0 0 10px; font-size:12px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color: rgba(27,26,23,.6); }
+.dk-how ol{ --upto:1; position:relative; list-style:none; margin:0; padding:0; display:grid; grid-template-columns: repeat(var(--n), minmax(0,1fr)); gap:10px; }
+.dk-how-line{ position:absolute; z-index:0; top:20px; left:calc(50% / var(--n)); right:calc(50% / var(--n)); height:4px; margin-top:-2px; border-radius:999px; background: rgba(27,26,23,.14); overflow:hidden; }
+.dk-how-line i{ display:block; height:100%; border-radius:inherit; background: var(--ink); transform-origin:left; transform: scaleX(var(--upto)); transition: transform .5s var(--ease); }
+.is-active .dk-how-line i{ animation: dk-draw-x 1.3s var(--ease) .5s both; }
+@keyframes dk-draw-x{ from{ scale: 0 1; } to{ scale: 1 1; } }
+.dk-how-step{ position:relative; z-index:1; min-width:0; }
+.dk-how-link{ display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; padding:0 10px 10px; border-radius:20px; text-align:center; }
+.dk-how-link{ width:100%; border:0; background:transparent; color: var(--ink); font: inherit; text-decoration:none; cursor:pointer; transition: background .25s, transform .4s var(--pop); }
+.dk-how-n{ flex:none; display:grid; place-items:center; width:40px; height:40px; margin-bottom:4px; border-radius:50%; background:#fff; color: var(--ink);
+  font-family: var(--font-display); font-size:17px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--dk-a) 70%, #fff), 0 8px 16px -10px rgba(27,26,23,.6);
+  transition: transform .4s var(--pop), background .25s, color .25s; }
+.dk-how-step b{ font-size:14.5px; font-weight:800; line-height:1.25; }
+.dk-how-d{ font-size:13px; font-weight:600; line-height:1.45; color: rgba(27,26,23,.7); }
+.dk-how-go{ display:inline-grid; place-items:center; width:26px; height:26px; margin-top:auto; border-radius:50%; background: var(--ink); color:#fff;
+  opacity:.0; transform: scale(.6); transition: opacity .2s, transform .4s var(--pop); }
+.dk-how-step.is-lit .dk-how-n{ background: var(--ink); color:#fff; }
+.dk-how-step:hover .dk-how-n{ transform: scale(1.15) rotate(-8deg); }
+.dk-how-link:not(.is-static):hover{ background: rgba(255,255,255,.62); transform: translateY(-5px); }
+.dk-how-link.is-static{ cursor:default; }
+.dk-how-link:hover .dk-how-go, .dk-how-link:focus-visible .dk-how-go{ opacity:1; transform: rotate(-45deg) scale(1); }
+.dk-how-link:focus-visible{ outline:3px solid var(--ink); outline-offset:2px; }
+/* Links show their arrow faintly at rest, so it's clear they go somewhere. */
+.dk-how-link .dk-how-go{ opacity:.35; transform: scale(.85); }
+
+.dk-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:26px; }
+.dk-btn{ display:inline-flex; align-items:center; gap:10px; min-height:54px; padding:0 8px 0 22px; border:0; border-radius:999px;
+  background: var(--ink); color:#fff; font: inherit; font-size:15px; font-weight:800; text-decoration:none; cursor:pointer;
+  box-shadow: 0 14px 28px -16px rgba(27,26,23,.8); transition: transform .35s var(--pop), box-shadow .3s; }
+.dk-btn:hover{ transform: translateY(-3px); box-shadow: 0 20px 34px -16px rgba(27,26,23,.85); }
+.dk-btn:active{ transform: translateY(0) scale(.97); transition-duration:.1s; }
+.dk-btn:focus-visible, .dk-arrow:focus-visible, .dk-dot:focus-visible, .dk-node:focus-visible, .dk-tile:focus-visible, .dk-back:focus-visible{ outline:3px solid var(--ink); outline-offset:3px; }
+.dk-btn-dot{ display:grid; place-items:center; width:38px; height:38px; border-radius:50%; color: var(--ink);
+  background: linear-gradient(140deg, color-mix(in srgb, var(--dk-a) 55%, #fff), var(--dk-a)); transition: transform .4s var(--pop); }
+.dk-btn:hover .dk-btn-dot{ transform: translateX(4px) rotate(-30deg); }
+.dk-btn.is-ghost{ padding:0 20px; background: rgba(255,255,255,.4); color: var(--ink); box-shadow: inset 0 0 0 2px rgba(27,26,23,.16); }
+.dk-btn.is-ghost:hover{ background: rgba(255,255,255,.8); }
+
+/* ---- The picture side. ---- */
+.dk-slide:has(.dk-how) .dk-h{ font-size:46px; margin-top:14px; }
+.dk-slide:has(.dk-how) .dk-lead{ margin-top:12px; }
+.dk-slide:has(.dk-how) .dk-actions{ margin-top:18px; }
+.dk-slide:has(.dk-how) .dk-visual{ min-height:280px; }
+.dk-slide:has(.dk-how) .dk-board{ height:270px; }
+.dk-slide:has(.dk-how) .dk-bars{ height:120px; }
+.dk-slide:has(.dk-how) .dk-loop{ width:min(330px, 100%); }
+.dk-visual{ position:relative; min-height:400px; display:grid; place-items:center; perspective:1000px; }
+.dk-visual-art{ position:absolute; z-index:0; right:-36px; bottom:-56px; width:270px; height:270px; pointer-events:none;
+  filter: drop-shadow(0 18px 26px color-mix(in srgb, var(--dk-b) 60%, #000 35%)); transform: rotate(-10deg); animation: dk-float 6s ease-in-out infinite; }
+.dk-visual-art svg{ width:100%; height:100%; display:block; overflow:visible; }
+@keyframes dk-float{ 0%,100%{ translate: 0 0; } 50%{ translate: 0 -14px; } }
+.dk-visual-art .i-main, .dk-tile-art .i-main{ fill: color-mix(in srgb, var(--dk-a) 50%, #fff); }
+.dk-visual-art .i-ink, .dk-tile-art .i-ink{ fill: color-mix(in srgb, var(--dk-b) 60%, #000); }
+.dk-visual-art .i-main.i-round, .dk-tile-art .i-main.i-round{ stroke: color-mix(in srgb, var(--dk-a) 50%, #fff); stroke-width:10; stroke-linejoin:round; }
+.dk-visual-art .i-ink.i-round, .dk-tile-art .i-ink.i-round{ stroke: color-mix(in srgb, var(--dk-b) 60%, #000); stroke-width:5; stroke-linejoin:round; }
+.dk-visual-art .i-round-thin, .dk-tile-art .i-round-thin{ stroke: color-mix(in srgb, var(--dk-a) 50%, #fff); stroke-width:4; stroke-linejoin:round; }
+.dk-visual-art .i-strand, .dk-tile-art .i-strand{ fill:none; stroke-width:14; stroke-linecap:round; }
+.dk-visual-art svg *, .dk-tile-art svg *{ transform-box: fill-box; }
+/* The tiles on the cover wear their own app's colours. */
+.dk-tile-art{ --dk-a: var(--app); --dk-b: var(--app2); }
+
+/* A white make-believe screen that leans toward the mouse (--rx/--ry). */
+.dk-device{ position:relative; z-index:1; width:min(420px, 100%); padding:20px; border-radius:26px; background:#fff; color: var(--ink);
+  box-shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 40px 70px -30px rgba(27,26,23,.55), 0 0 0 1px rgba(27,26,23,.04);
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transform-style: preserve-3d; transition: transform .4s var(--ease); }
+.dk-visual:hover .dk-device{ transition-duration:.15s; }
+.dk-dev-head{ display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:15px; }
+.dk-dev-dot{ width:12px; height:12px; border-radius:50%; background: linear-gradient(135deg, var(--dk-a), var(--dk-b)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--dk-a) 25%, transparent); }
+.dk-dev-head b{ flex:1; }
+
+/* Brand DNA: questions, answers writing themselves, a ring filling up. */
+.dk-ring{ width:36px; height:36px; }
+.dk-ring svg{ width:100%; height:100%; transform: rotate(-90deg); }
+.dk-ring circle{ fill:none; stroke-width:4.5; stroke:#efece6; }
+.dk-ring .dk-ring-fill{ stroke: var(--dk-b); stroke-linecap:round; stroke-dasharray:94.25; stroke-dashoffset:94.25; }
+.is-active .dk-ring-fill{ animation: dk-ring 1.6s var(--ease) .6s both; }
+@keyframes dk-ring{ to{ stroke-dashoffset:22; } }
+.dk-qa{ margin-top:12px; }
+.dk-q{ display:inline-block; padding:8px 13px; border-radius:14px 14px 14px 4px; background: color-mix(in srgb, var(--dk-a) 24%, #fff); font-size:13.5px; font-weight:800; }
+.dk-a{ display:grid; gap:6px; margin:9px 0 0 6px; }
+.dk-a i{ display:block; height:9px; border-radius:999px; background:#ece8e1; transform-origin:left; }
+.dk-a i:nth-child(1){ width:92%; } .dk-a i:nth-child(2){ width:58%; }
+.is-active .dk-qa{ animation: dk-pop .5s var(--pop) both; animation-delay: calc(var(--q) * .38s + .25s); }
+.is-active .dk-a i{ animation: dk-write .7s var(--ease) both; animation-delay: calc(var(--q) * .38s + .5s); }
+.is-active .dk-a i:nth-child(2){ animation-delay: calc(var(--q) * .38s + .65s); }
+.dk-qa:hover .dk-q{ transform: scale(1.04) rotate(-1deg); }
+.dk-q{ transition: transform .3s var(--pop); }
+/* Individual translate/scale, so a piece's own hover transform still works after. */
+@keyframes dk-pop{ from{ opacity:0; translate: 0 10px; scale:.92; } to{ opacity:1; translate:0 0; scale:1; } }
+@keyframes dk-write{ from{ transform: scaleX(0); } to{ transform: scaleX(1); } }
+.dk-spark{ position:absolute; top:-14px; right:-14px; display:inline-flex; align-items:center; gap:5px; padding:8px 12px; border-radius:999px;
+  background: var(--ink); color:#fff; font-size:12.5px; font-weight:800; box-shadow: 0 12px 24px -10px rgba(27,26,23,.7); animation: dk-bob 2.6s ease-in-out infinite; transform: translateZ(40px); }
+@keyframes dk-bob{ 0%,100%{ translate:0 0; } 50%{ translate:0 -7px; } }
+
+/* Brand Book: logo, swatches popping in, type sample. */
+.dk-book{ display:grid; gap:18px; }
+.dk-logo{ width:88px; height:88px; border-radius:24px; display:grid; place-items:center; overflow:hidden;
+  background: linear-gradient(135deg, var(--dk-a), var(--dk-b)); color:#fff; font-family: var(--font-display); font-size:34px; box-shadow: 0 12px 24px -12px var(--dk-b); }
+.dk-logo img{ width:100%; height:100%; object-fit:cover; background:#fff; }
+.is-active .dk-logo{ animation: dk-spin-in .9s var(--pop) .35s both; }
+@keyframes dk-spin-in{ from{ opacity:0; transform: rotate(-30deg) scale(.6); } to{ opacity:1; transform:none; } }
+.dk-swatches{ display:flex; gap:10px; }
+.dk-swatches span{ width:48px; height:48px; border-radius:50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0,0,0,.08), 0 8px 16px -10px rgba(0,0,0,.5); transition: transform .35s var(--pop); }
+.is-active .dk-swatches span{ animation: dk-pop .55s var(--pop) both; animation-delay: calc(var(--k) * 90ms + .55s); }
+.dk-swatches span:hover{ transform: translateY(-8px) scale(1.15); }
+.dk-type{ display:flex; align-items:center; gap:18px; padding-top:14px; border-top:1px solid #efece6; }
+.dk-type b{ font-family: var(--font-display); font-size:64px; font-weight:400; line-height:1; transition: transform .4s var(--pop); }
+.dk-type:hover b{ transform: rotate(-6deg) scale(1.08); }
+.dk-type span{ flex:1; display:grid; gap:7px; }
+.dk-type i{ display:block; height:9px; border-radius:999px; background:#ece8e1; transform-origin:left; }
+.dk-type i:nth-child(2){ width:76%; } .dk-type i:nth-child(3){ width:48%; }
+.is-active .dk-type i{ animation: dk-write .7s var(--ease) both .9s; }
+
+/* My Goals: four kinds, one goal's bar filling up. */
+.dk-kinds{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; }
+.dk-kind{ display:flex; align-items:center; gap:9px; padding:13px 12px; border-radius:16px; background: color-mix(in srgb, var(--dk-a) 16%, #fff);
+  font-size:13.5px; transition: transform .35s var(--pop), background .2s; }
+.dk-kind svg{ flex:none; color: color-mix(in srgb, var(--dk-b) 75%, #000); }
+.dk-kind:hover{ transform: translateY(-4px) rotate(-1.5deg); background: color-mix(in srgb, var(--dk-a) 34%, #fff); }
+.is-active .dk-kind{ animation: dk-pop .5s var(--pop) both; animation-delay: calc(var(--k) * 90ms + .35s); }
+.dk-goal{ margin-top:16px; padding:16px; border-radius:18px; background: var(--ink); color:#fff; }
+.dk-goal-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; }
+.dk-goal-top b{ font-family: var(--font-display); font-size:22px; font-weight:400; }
+.dk-goal-top span{ opacity:.7; font-weight:700; }
+.dk-bar{ height:12px; margin-top:12px; border-radius:999px; background: rgba(255,255,255,.16); overflow:hidden; }
+.dk-bar i{ display:block; height:100%; width:62%; border-radius:inherit; background: linear-gradient(90deg, var(--dk-a), color-mix(in srgb, var(--dk-a) 50%, #fff)); transform-origin:left; }
+.is-active .dk-bar i{ animation: dk-write 1.4s var(--ease) .8s both; }
+
+/* Create: a highlight walking through the six stages, a script writing. */
+.dk-stages{ display:flex; flex-wrap:wrap; gap:6px; }
+.dk-stages span{ padding:8px 12px; border-radius:999px; background:#f2efe9; font-size:12.5px; font-weight:800;
+  animation: dk-stage 6s ease-in-out infinite; animation-delay: calc(var(--k) * 1s - 1s); }
+@keyframes dk-stage{ 0%,14%{ background: var(--ink); color:#fff; transform: translateY(-3px); } 20%,100%{ background:#f2efe9; color: var(--ink); transform:none; } }
+.dk-script{ position:relative; display:grid; gap:8px; margin-top:16px; padding:16px; border-radius:18px; background:#f8f6f1; }
+.dk-tag{ justify-self:start; padding:4px 9px; border-radius:8px; background: var(--dk-a); font-size:11px; font-weight:800; letter-spacing:.06em; }
+.dk-script i{ display:block; height:10px; border-radius:999px; background:#e6e1d8; transform-origin:left; }
+.dk-script i:nth-of-type(2){ width:82%; } .dk-script i:nth-of-type(3){ width:56%; }
+.is-active .dk-script i{ animation: dk-write .8s var(--ease) both; animation-delay: .7s; }
+.is-active .dk-script i:nth-of-type(2){ animation-delay:.85s; } .is-active .dk-script i:nth-of-type(3){ animation-delay:1s; }
+.dk-tele{ position:absolute; right:12px; top:12px; display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background: var(--ink); color:#fff; transition: transform .35s var(--pop); }
+.dk-script:hover .dk-tele{ transform: scale(1.15) rotate(-10deg); }
+
+/* Report: two numbers, bars growing, a PDF badge. */
+.dk-stats{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+.dk-stats span{ display:grid; padding:12px 14px; border-radius:16px; background: color-mix(in srgb, var(--dk-a) 16%, #fff); transition: transform .35s var(--pop); }
+.dk-stats span:hover{ transform: translateY(-4px); }
+.dk-stats small{ font-size:12px; font-weight:800; opacity:.6; }
+.dk-stats b{ font-family: var(--font-display); font-size:30px; font-weight:400; }
+.dk-bars{ display:flex; align-items:flex-end; gap:8px; height:160px; margin-top:16px; padding:0 4px; border-bottom:2px solid #efece6; }
+.dk-bars i{ flex:1; height: var(--h); border-radius:10px 10px 4px 4px; background: linear-gradient(180deg, var(--dk-a), var(--dk-b)); transform-origin:bottom; transition: filter .2s, transform .35s var(--pop); }
+.is-active .dk-bars i{ animation: dk-grow .9s var(--pop) both; animation-delay: calc(var(--k) * 80ms + .45s); }
+.dk-bars i:hover{ filter: brightness(1.12); transform: scaleY(1.06); }
+@keyframes dk-grow{ from{ scale: 1 0; } to{ scale: 1 1; } }
+.dk-pdf{ position:absolute; right:-12px; bottom:-14px; display:inline-flex; align-items:center; gap:6px; padding:10px 14px; border-radius:14px; background: var(--ink); color:#fff;
+  font-size:13px; font-weight:800; box-shadow: 0 14px 26px -12px rgba(27,26,23,.7); animation: dk-bob 2.4s ease-in-out infinite; }
+
+/* Board: sticky notes landing on a dotted canvas, two cursors at work. */
+.dk-board{ height:320px; padding:0; overflow:hidden; background:#fbfaf7 radial-gradient(circle, #ddd7cc 1.2px, transparent 1.4px) 0 0 / 18px 18px; }
+.dk-note{ position:absolute; display:block; width:124px; min-height:92px; padding:12px; border-radius:6px; background: var(--c);
+  font-size:13.5px; font-weight:800; line-height:1.3; box-shadow: 0 10px 18px -10px rgba(0,0,0,.45); transform: rotate(var(--r)); transition: transform .35s var(--pop), box-shadow .3s; }
+.dk-note:nth-of-type(1){ left:26px; top:28px; } .dk-note:nth-of-type(2){ left:170px; top:44px; }
+.dk-note:nth-of-type(3){ left:48px; top:168px; } .dk-note:nth-of-type(4){ left:206px; top:178px; }
+.dk-note:hover{ transform: rotate(0) scale(1.1); z-index:2; box-shadow: 0 18px 30px -12px rgba(0,0,0,.5); }
+.is-active .dk-note{ animation: dk-drop .7s var(--pop) both; animation-delay: calc(var(--k) * 140ms + .4s); }
+@keyframes dk-drop{ from{ opacity:0; translate: 0 -40px; scale:1.15; } to{ opacity:1; translate:0 0; scale:1; } }
+.dk-cursor{ position:absolute; z-index:3; display:flex; align-items:flex-start; gap:2px; pointer-events:none; }
+.dk-cursor svg{ width:20px; height:20px; }
+.dk-cursor b{ margin-top:14px; padding:3px 8px; border-radius:8px; color:#fff; font-size:11px; }
+.dk-cursor.is-you{ left:120px; top:120px; animation: dk-cur-a 7s ease-in-out infinite; }
+.dk-cursor.is-you svg{ fill: var(--ink); } .dk-cursor.is-you b{ background: var(--ink); }
+.dk-cursor.is-team{ left:300px; top:70px; animation: dk-cur-b 8s ease-in-out infinite; }
+.dk-cursor.is-team svg{ fill:#3B9BFF; } .dk-cursor.is-team b{ background:#3B9BFF; }
+@keyframes dk-cur-a{ 0%,100%{ translate:0 0; } 30%{ translate:110px -60px; } 60%{ translate:40px 80px; } }
+@keyframes dk-cur-b{ 0%,100%{ translate:0 0; } 35%{ translate:-170px 90px; } 70%{ translate:-60px 170px; } }
+
+/* Tanya Brandlab: a short chat appearing line by line. */
+.dk-chat{ display:grid; gap:10px; }
+.dk-msg{ margin:0; max-width:84%; padding:11px 14px; font-size:14px; font-weight:700; line-height:1.45; }
+.dk-msg.is-me{ justify-self:end; border-radius:18px 18px 4px 18px; background: var(--ink); color:#fff; }
+.dk-msg.is-ai{ justify-self:start; border-radius:18px 18px 18px 4px; background: color-mix(in srgb, var(--dk-a) 22%, #fff); }
+.is-active .dk-msg{ animation: dk-pop .5s var(--pop) both; }
+.is-active .dk-msg:nth-of-type(1){ animation-delay:.45s; } .is-active .dk-msg:nth-of-type(2){ animation-delay:1.15s; } .is-active .dk-msg:nth-of-type(3){ animation-delay:1.8s; }
+.dk-msg.is-typing{ display:flex; gap:5px; padding:14px 16px; }
+.dk-msg.is-typing i{ width:8px; height:8px; border-radius:50%; background: rgba(27,26,23,.4); animation: dk-blink 1.2s ease-in-out infinite; }
+.dk-msg.is-typing i:nth-child(2){ animation-delay:.15s; } .dk-msg.is-typing i:nth-child(3){ animation-delay:.3s; }
+@keyframes dk-blink{ 0%,100%{ opacity:.3; translate:0 0; } 50%{ opacity:1; translate:0 -4px; } }
+.dk-msg{ transition: transform .3s var(--pop); }
+.dk-msg:hover{ transform: scale(1.03); }
+
+/* ---- Cover: the five apps fanned out like cards in a hand. ---- */
+.dk-fan{ position:relative; height:400px; perspective:1000px; transform-style:preserve-3d; }
+.dk-tile{ --x:0px; --y:0px; --rot:0deg; position:absolute; left:50%; top:50%; width:168px; height:210px; margin:-105px 0 0 -84px; padding:16px; border:0; border-radius:28px;
+  display:flex; align-items:flex-start; overflow:hidden; cursor:pointer; color: var(--ink); text-align:left; font: inherit;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 72%, #fff) 0%, var(--app) 38%, var(--app2) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 24px 40px -22px rgba(27,26,23,.65);
+  transform: translate(var(--x), var(--y)) rotate(var(--rot)) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform .55s var(--pop), box-shadow .35s; animation: dk-bob 4s ease-in-out infinite; animation-delay: calc(var(--k) * -.8s); }
+/* Stacked toward the middle; the right-hand cards carry their name and
+   picture on their outer side, where they're not covered. */
+.dk-fan .dk-tile:nth-child(1){ --x:-176px; --y:34px; --rot:-16deg; z-index:1; }
+.dk-fan .dk-tile:nth-child(2){ --x:-88px; --y:6px; --rot:-8deg; z-index:2; }
+.dk-fan .dk-tile:nth-child(3){ --x:0px; --y:-4px; --rot:0deg; z-index:3; }
+.dk-fan .dk-tile:nth-child(4){ --x:88px; --y:6px; --rot:8deg; z-index:2; }
+.dk-fan .dk-tile:nth-child(5){ --x:176px; --y:34px; --rot:16deg; z-index:1; }
+.dk-fan .dk-tile:nth-child(n+4){ justify-content:flex-end; text-align:right; }
+.dk-fan .dk-tile:nth-child(n+4) .dk-tile-art{ right:auto; left:-24px; transform: rotate(10deg); }
+.dk-fan .dk-tile:nth-child(n+4):hover .dk-tile-art{ transform: rotate(0) scale(1.1) translate(8px,-8px); }
+.dk-fan:hover .dk-tile:nth-child(1){ --x:-206px; } .dk-fan:hover .dk-tile:nth-child(2){ --x:-104px; }
+.dk-fan:hover .dk-tile:nth-child(4){ --x:104px; } .dk-fan:hover .dk-tile:nth-child(5){ --x:206px; }
+.dk-fan .dk-tile:hover{ --y:-34px; --rot:0deg; z-index:5; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 0 3px rgba(255,255,255,.7), 0 34px 50px -20px rgba(27,26,23,.7); }
+.dk-tile b{ position:relative; z-index:1; max-width:84px; font-family: var(--font-display); font-size:19px; font-weight:400; line-height:1.05; }
+.dk-tile-art{ position:absolute; right:-24px; bottom:-28px; width:132px; height:132px; transform: rotate(-10deg); transition: transform .55s var(--pop);
+  filter: drop-shadow(0 10px 16px color-mix(in srgb, var(--app2) 60%, #000 35%)); }
+.dk-tile-art svg{ width:100%; height:100%; display:block; overflow:visible; }
+.dk-tile:hover .dk-tile-art{ transform: rotate(0) scale(1.1) translate(-8px,-8px); }
+/* Each picture's own move under the mouse (same as on the launcher). */
+.dk-tile:hover .i-seal, .dk-visual:hover .i-seal{ transform-origin:center; animation: i-spin 1.1s var(--pop); }
+.dk-tile:hover .i-star, .dk-visual:hover .i-star{ transform-origin:center; animation: i-twinkle 1.1s ease-in-out infinite .3s; }
+.dk-tile:hover .i-flag, .dk-visual:hover .i-flag{ transform-origin:left center; animation: i-wave 1s ease-in-out infinite; }
+.dk-tile:hover .i-pencil, .dk-visual:hover .i-pencil{ transform-origin:center; animation: i-scribble .7s ease-in-out infinite; }
+.dk-tile:hover .i-bar, .dk-visual:hover .i-bar{ transform-origin:center bottom; animation: i-grow .9s var(--pop) both; }
+.dk-tile:hover .i-bar-2, .dk-visual:hover .i-bar-2{ animation-delay:.08s; }
+.dk-tile:hover .i-bar-3, .dk-visual:hover .i-bar-3{ animation-delay:.16s; }
+.dk-tile:hover .i-note, .dk-visual:hover .i-note{ transform-origin:30% 20%; animation: i-lift .9s var(--pop) both; }
+.dk-tile:hover .i-line, .dk-visual:hover .i-line{ transform-origin:left center; animation: i-write .7s var(--ease) both; }
+.dk-visual:hover .i-slide-back{ transform-origin:80% 100%; animation: i-fan .8s var(--pop) both; }
+.dk-visual:hover .i-slide-front{ transform-origin:20% 100%; animation: i-deal .8s var(--pop) both; }
+
+/* ---- The map: every step as a card you can jump to. ---- */
+.dk-map{ padding:8px 10px; }
+.dk-map .dk-lead{ max-width:60ch; }
+.dk-nodes{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:14px; margin-top:28px; counter-reset: node; }
+.dk-node{ position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:6px; min-height:150px; padding:16px; border:0; border-radius:24px; cursor:pointer;
+  background: rgba(255,255,255,.6); color: var(--ink); font: inherit; text-align:left;
+  transition: transform .45s var(--pop), background .25s, box-shadow .35s; }
+.dk-node:hover{ transform: translateY(-8px) rotate(-1deg); background:#fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--app) 70%, transparent), 0 26px 40px -20px color-mix(in srgb, var(--app2) 90%, #000); }
+.dk-node-num{ display:grid; place-items:center; width:44px; height:44px; margin-bottom:6px; border-radius:14px; font-family: var(--font-display); font-size:20px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 70%, #fff), var(--app) 45%, var(--app2)); box-shadow: inset 0 1px 0 rgba(255,255,255,.5); transition: transform .45s var(--pop); }
+.dk-node:hover .dk-node-num{ transform: rotate(-10deg) scale(1.12); }
+.dk-node.is-done .dk-node-num{ background: var(--ink); color:#fff; }
+.dk-node-kicker{ font-size:11.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: rgba(27,26,23,.55); }
+.dk-node b{ font-size:16px; font-weight:800; line-height:1.28; }
+.dk-node-go{ position:absolute; top:14px; right:14px; display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background: var(--ink); color:#fff;
+  transform: scale(.7); opacity:.0; transition: transform .45s var(--pop), opacity .25s; }
+.dk-node:hover .dk-node-go, .dk-node:focus-visible .dk-node-go{ transform: rotate(-45deg) scale(1); opacity:1; }
+
+/* ---- The weekly loop: four stops, a dot going round. ---- */
+.dk-loop{ position:relative; width:min(380px, 100%); aspect-ratio:1; margin:0 auto; transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .4s var(--ease); }
+.dk-loop::before{ content:""; position:absolute; inset:14%; border-radius:50%; border:3px dashed rgba(27,26,23,.28); animation: dk-turn 40s linear infinite; }
+.dk-loop-orbit{ position:absolute; inset:14%; border-radius:50%; animation: dk-turn 8s linear infinite; }
+.dk-loop-orbit i{ position:absolute; left:50%; top:-10px; width:20px; height:20px; margin-left:-10px; border-radius:50%; background: var(--ink); box-shadow: 0 0 0 6px rgba(255,255,255,.6); }
+@keyframes dk-turn{ to{ transform: rotate(360deg); } }
+.dk-loop-node{ position:absolute; display:grid; place-items:center; padding:12px 16px; border-radius:18px; background:#fff; font-size:14px; white-space:nowrap;
+  box-shadow: 0 16px 30px -18px rgba(27,26,23,.7); translate:-50% -50%; animation: dk-stop 8s ease-in-out infinite; animation-delay: calc(var(--k) * 2s); transition: scale .35s var(--pop); }
+.dk-loop-node:hover{ scale:1.12; }
+@keyframes dk-stop{ 0%,6%{ background: var(--ink); color:#fff; } 18%,100%{ background:#fff; color: var(--ink); } }
+.dk-loop-center{ position:absolute; left:50%; top:50%; display:grid; place-items:center; gap:4px; width:42%; aspect-ratio:1; translate:-50% -50%; border-radius:50%;
+  background: rgba(255,255,255,.55); text-align:center; font-size:15px; }
+.dk-loop-center svg{ animation: dk-turn 4s linear infinite; }
+
+/* ---- Bottom: arrows and one dot per slide (its name on hover). ---- */
+/* A floating bar, centred and sticky, so it stays in reach on short
+   screens and clear of the chat button in the corner. */
+.dk-nav{ position:sticky; bottom:16px; z-index:5; align-self:center; display:flex; align-items:center; gap:14px; margin-top:8px; padding:6px;
+  border-radius:999px; background: rgba(255,255,255,.42); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: 0 14px 30px -18px rgba(27,26,23,.6), inset 0 1px 0 rgba(255,255,255,.6); }
+.dk-arrow{ display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:50px; height:50px; padding:0; border:0; border-radius:999px; cursor:pointer;
+  background: rgba(255,255,255,.62); color: var(--ink); font: inherit; font-size:15px; font-weight:800; transition: transform .35s var(--pop), background .2s, opacity .2s; }
+.dk-arrow:hover:not(:disabled){ background:#fff; transform: translateX(-3px); }
+.dk-arrow:disabled{ opacity:.35; cursor:default; }
+.dk-arrow.is-next{ padding:0 14px 0 22px; background: var(--ink); color:#fff; }
+.dk-arrow.is-next:hover{ background: var(--ink); transform: translateX(4px); }
+.dk-arrow.is-next svg{ transition: transform .35s var(--pop); }
+.dk-arrow.is-next:hover svg{ transform: translateX(3px); }
+.dk-dots{ display:flex; align-items:center; gap:8px; }
+.dk-dot{ position:relative; width:11px; height:11px; padding:0; border:0; border-radius:999px; cursor:pointer; background: rgba(27,26,23,.22);
+  transition: width .45s var(--ease), background .3s, transform .3s var(--pop); }
+.dk-dot.is-past{ background: rgba(27,26,23,.55); }
+.dk-dot.is-active{ width:38px; background: var(--ink); }
+.dk-dot:hover{ transform: scale(1.35); }
+.dk-dot.is-active:hover{ transform: scaleY(1.35); }
+.dk-dot::after{ content: attr(data-label); position:absolute; left:50%; bottom:calc(100% + 12px); padding:6px 10px; border-radius:10px; background: var(--ink); color:#fff;
+  font-size:12px; font-weight:800; white-space:nowrap; pointer-events:none; opacity:0; transform: translate(-50%, 6px); transition: opacity .2s, transform .3s var(--pop); }
+.dk-dot:hover::after{ opacity:1; transform: translate(-50%, 0); }
+
+/* ---- Narrower screens. ---- */
+@media (max-width: 1000px){
+  .dk-cols{ grid-template-columns: minmax(0,1fr); gap:28px; }
+  .dk-h{ font-size:44px; } h1.dk-h{ font-size:48px; }
+  .dk-visual{ min-height:340px; }
+  .dk-nodes{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 720px){
+  .view-deck{ padding-top:12px; }
+  .dk{ min-height:0; padding:14px 14px 18px; border-radius:26px; }
+  .dk-top{ order:-3; gap:8px; }
+  .dk-top-title{ font-size:12px; }
+  .dk-count{ font-size:18px; }
+  .dk-progress{ order:-2; margin-top:12px; }
+  /* The arrows and dots come up top on a phone, where the thumb reaches them
+     without scrolling past a long slide. */
+  .dk-nav{ order:-1; position:static; align-self:stretch; justify-content:space-between; margin:12px 0 0; padding:0; background:none; box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none; }
+  .dk-arrow{ min-width:42px; height:42px; }
+  .dk-arrow.is-next{ padding:0 10px; }
+  .dk-arrow.is-next span{ display:none; }
+  .dk-dots{ gap:6px; }
+  .dk-dot{ width:8px; height:8px; }
+  .dk-dot.is-active{ width:26px; }
+  .dk-dot::after{ display:none; }
+  /* Each slide only as tall as itself here (a phone scrolls the page): the
+     one going out floats over the one coming in. */
+  .dk-stage{ position:relative; align-items:start; padding-top:14px; }
+  .dk-slide:not(.is-active):not(.is-leaving){ display:none; }
+  .dk-slide.is-leaving{ position:absolute; top:14px; left:0; right:0; }
+  .dk-cols, .dk-map{ padding:4px 2px; }
+  .dk-h{ font-size:33px; margin-top:14px; } h1.dk-h{ font-size:36px; }
+  .dk-lead{ font-size:15px; }
+  .dk-btn{ min-height:50px; font-size:14px; }
+  .dk-actions .dk-btn{ flex:1 1 100%; justify-content:space-between; }
+  .dk-actions .dk-btn.is-ghost{ justify-content:center; }
+  .dk-visual{ min-height:0; padding:10px 0 30px; }
+  .dk-visual-art{ width:170px; height:170px; right:-20px; bottom:-30px; }
+  .dk-device{ padding:16px; border-radius:22px; }
+  .dk-board{ height:290px; }
+  .dk-note{ width:104px; min-height:80px; font-size:12.5px; padding:10px; }
+  .dk-note:nth-of-type(2){ left:146px; } .dk-note:nth-of-type(4){ left:170px; }
+  .dk-fan{ height:270px; }
+  .dk-tile{ width:118px; height:150px; margin:-75px 0 0 -59px; padding:12px; border-radius:22px; }
+  .dk-tile b{ max-width:56px; font-size:15px; }
+  .dk-tile-art{ width:92px; height:92px; right:-18px; bottom:-20px; }
+  .dk-fan .dk-tile:nth-child(1){ --x:-112px; --y:26px; } .dk-fan .dk-tile:nth-child(2){ --x:-56px; --y:4px; }
+  .dk-fan .dk-tile:nth-child(4){ --x:56px; --y:4px; } .dk-fan .dk-tile:nth-child(5){ --x:112px; --y:26px; }
+  .dk-fan:hover .dk-tile:nth-child(1){ --x:-112px; } .dk-fan:hover .dk-tile:nth-child(2){ --x:-56px; }
+  .dk-fan:hover .dk-tile:nth-child(4){ --x:56px; } .dk-fan:hover .dk-tile:nth-child(5){ --x:112px; }
+  .dk-nodes{ gap:10px; margin-top:20px; }
+  .dk-node{ min-height:128px; padding:13px; border-radius:20px; }
+  .dk-node-num{ width:38px; height:38px; font-size:17px; }
+  .dk-node b{ font-size:14px; }
+  .dk-loop{ width:min(300px, 100%); }
+  .dk-slide:has(.dk-how) .dk-h{ font-size:33px; }
+  .dk-slide:has(.dk-how) .dk-visual{ min-height:0; }
+  .dk-how{ margin:8px 2px 0; }
+  .dk-how ol{ grid-template-columns: minmax(0,1fr); gap:4px; }
+  .dk-how-line{ top:20px; bottom:20px; left:19px; right:auto; width:4px; height:auto; margin:0 0 0 -2px; }
+  .dk-how-line i{ height:100%; transform-origin:top; transform: scaleY(var(--upto)); }
+  .is-active .dk-how-line i{ animation-name: dk-draw-y; }
+  @keyframes dk-draw-y{ from{ scale: 1 0; } to{ scale: 1 1; } }
+  .dk-how-link{ display:grid; grid-template-columns: 40px minmax(0,1fr) auto; column-gap:12px; row-gap:2px; align-items:start; padding:6px 8px 8px 0; text-align:left; }
+  .dk-how-n{ grid-row: span 2; margin:0; }
+  .dk-how-step b{ grid-column:2; padding-top:3px; }
+  .dk-how-d{ grid-column:2; }
+  .dk-how-go{ grid-column:3; grid-row:1 / span 2; align-self:center; margin:0; }
+  .dk-how-link:not(.is-static):hover{ transform:none; }
+  .dk-loop-node{ padding:9px 12px; font-size:12.5px; }
+}
+@media (prefers-reduced-motion: reduce){
+  .dk, .dk *, .dk *::before, .dk *::after{ animation-duration:.01ms !important; animation-iteration-count:1 !important; animation-delay:0s !important; transition-duration:.01ms !important; }
+}
