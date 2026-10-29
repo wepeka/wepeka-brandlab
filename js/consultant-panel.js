@@ -45,6 +45,7 @@
 // Otomatis / Konsultan / Brainstorm / Teman lets the owner open one log on
 // its own; there a one-line chip offers another tab when a message clearly
 // belongs there (keyword rules, or the model's [[handoff:…]]).
+import { faceHTML, wireFace } from "./fab-face.js";
 import { t, getLang, campaignDisplayName } from "./i18n.js";
 import { draftFromIdea } from "./idea-draft.js";
 import {
@@ -3520,7 +3521,8 @@ export function mountConsultantPanel(brandId) {
   fab.id = "consultant-fab";
   fab.className = "consultant-fab";
   fab.setAttribute("aria-label", t("cons.fabLabel"));
-  fab.innerHTML = icon("chat", { size: 22 });
+  // A little speech-bubble character (js/fab-face.js); ✕ while the chat is open.
+  fab.innerHTML = `<span class="fab-spark" aria-hidden="true"></span>${faceHTML()}<span class="fab-x" aria-hidden="true">${icon("x", { size: 20 })}</span>`;
   fab.addEventListener("click", async () => {
     // The first press ever: the "Tanya Brandlab" video (admin slot
     // `tanya-brandlab`) plays first, then the chat opens.
@@ -3531,6 +3533,7 @@ export function mountConsultantPanel(brandId) {
     togglePanel(brandId, !isOpen);
   });
   document.body.appendChild(fab);
+  wireFace(fab);
 
   // A speech bubble beside the round button, shown once per account so
   // people learn it is an AI they can ask — then it stays out of the way.

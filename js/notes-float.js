@@ -11,6 +11,7 @@ import { scratchPadHTML, wireScratchPad, scratchCount } from "./scratch-pad.js";
 import { icon } from "./icons.js";
 import { escapeHtml as esc, qs } from "./dom.js";
 import { t } from "./i18n.js";
+import { faceHTML, wireFace } from "./fab-face.js";
 import { openIdeaSearch, closeIdeaSearch, isIdeaSearchOpen, TOOLS_EVENT } from "./idea-search.js";
 
 const OPEN_KEY = "brandlab:notes-open";
@@ -67,7 +68,6 @@ function syncFab() {
   if (!mounted) return;
   const open = !mounted.panel.hidden || isIdeaSearchOpen();
   mounted.fab.classList.toggle("is-open", open);
-  mounted.fab.querySelector(".notes-fab-icon").innerHTML = icon(open ? "x" : "edit", { size: 18 });
 }
 
 function setMenu(open) {
@@ -97,7 +97,9 @@ export function mountNotesFloat(brandId) {
   fab.setAttribute("aria-haspopup", "menu");
   fab.setAttribute("aria-expanded", "false");
   fab.title = t("tools.fab");
-  fab.innerHTML = `<span class="notes-fab-icon">${icon("edit", { size: 18 })}</span><span class="notes-fab-count"></span>`;
+  // A sticky note with a face and a magnifier (js/fab-face.js); ✕ while a
+  // panel is open.
+  fab.innerHTML = `${faceHTML()}<span class="notes-fab-lens" aria-hidden="true">${icon("search", { size: 10 })}</span><span class="fab-x" aria-hidden="true">${icon("x", { size: 16 })}</span><span class="notes-fab-count"></span>`;
   const menu = document.createElement("div");
   menu.className = "tools-menu";
   menu.hidden = true;
@@ -116,6 +118,7 @@ export function mountNotesFloat(brandId) {
   panel.className = "notes-float";
   panel.hidden = true;
   document.body.append(fab, menu, panel);
+  wireFace(fab);
   fab.addEventListener("click", () => {
     // A panel is open: the button (now ✕) closes it.
     if (!panel.hidden || isIdeaSearchOpen()) { setMenu(false); setOpen(false); closeIdeaSearch(); return; }
