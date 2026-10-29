@@ -7900,13 +7900,14 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
 /* ======================= end CREATE FOR PEMULA ======================= */
 
 /* ---- The floating buttons as little characters (js/fab-face.js) ----
-   Tanya Brandlab = a gradient speech bubble, Catatan & Cari ide = a sticky
+   Tanya Brandlab = a white-to-ice-blue speech bubble (stands out on the
+   colourful cards), Catatan & Cari ide = a sticky
    note with a magnifier. Both bob gently, blink and glance at the pointer;
    while their panel is open they show ✕ and hold still. Sizes are in em so
    one font-size scales the whole face. */
 .consultant-fab{ width:58px; height:58px; font-size:10px; border-radius:50% 50% 6px 50%; color:#1b1a17;
-  background: linear-gradient(140deg, #FFD15C 0%, #FF9A3D 45%, #FF5FA2 100%);
-  box-shadow: 0 14px 28px -10px rgba(255,105,95,.7), inset 0 2px 0 rgba(255,255,255,.5), inset 0 -5px 0 rgba(120,20,60,.12);
+  background: linear-gradient(150deg, #FFFFFF 0%, #EEF8FF 40%, #BFE4FF 100%);
+  box-shadow: 0 0 0 2px #8FD0FF, 0 14px 30px -8px rgba(40,140,230,.75), inset 0 2px 0 #fff, inset 0 -5px 0 rgba(60,140,220,.16);
   animation: fab-bob 3.4s ease-in-out infinite; transition: scale .25s cubic-bezier(.2,.8,.2,1.6), rotate .25s ease, background .2s, box-shadow .2s; }
 .consultant-fab:hover{ transform:none; scale:1.08; rotate:-6deg; }
 .consultant-fab:active{ transform:none; scale:.94; }
@@ -7940,6 +7941,6 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
 .is-open > .fab-x{ display:grid; place-items:center; }
 .is-open > .fab-face, .is-open > .fab-spark, .is-open > .notes-fab-lens{ display:none; }
 /* a small twinkle on the chat bubble */
-.fab-spark{ position:absolute; top:5px; right:7px; width:9px; height:9px; background:#fff; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity:.9; animation: fab-twinkle 2.6s ease-in-out infinite; }
+.fab-spark{ position:absolute; top:5px; right:7px; width:9px; height:9px; background:#4FB3FF; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity:.9; animation: fab-twinkle 2.6s ease-in-out infinite; }
 @keyframes fab-twinkle{ 0%,100%{ scale:.6; opacity:.5; rotate:0deg; } 50%{ scale:1.1; opacity:1; rotate:45deg; } }
 @media (prefers-reduced-motion: reduce){ .consultant-fab, .notes-fab, .fab-spark{ animation:none; } }
