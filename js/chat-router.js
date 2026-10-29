@@ -56,6 +56,27 @@ export function movesToBrainstorm(text) {
   return isWriteRequest(text) || ASK_FOR_WORDS.test(String(text || ""));
 }
 
+// The other way round: a talk that started as a brainstorm (or a vent)
+// turns to the owner's own numbers — "terus performa konten aku gimana?",
+// "followers aku naik berapa?". Brainstorm has no live data and only
+// answered "tanya Konsultan" ([[handoff:consultant]]), so the Konsultan
+// takes it, with its charts. Not when the numbers are someone else's
+// ("followers mereka berapa?" while dissecting another brand).
+const OTHERS = /\b(mereka|dia|kompetitor|competitor|brand lain|brand itu|brand tsb|their|they|them)\b/i;
+export function movesToConsultant(text) {
+  const s = String(text || "");
+  return routeByRules(s) === "consultant" && !OTHERS.test(s);
+}
+
+// Talk about content — under such an answer the chat offers "Jadikan
+// script" / "Kasih 3 ide". Under anything else (a data answer, a pricing
+// question, a worry) those buttons only pushed ideas nobody asked for.
+const CONTENT_TALK = /\b(bedah|breakdown|viral|trend|tren|marketing|campaign|kampanye|branding)\b/i;
+export function isContentTalk(text) {
+  const s = String(text || "");
+  return IDEA_WORDS.test(s) || CREATIVE_NOUN.test(s) || CONTENT_TALK.test(s);
+}
+
 export function routeByRules(text) {
   const s = String(text || "");
   if (!s.trim()) return null;

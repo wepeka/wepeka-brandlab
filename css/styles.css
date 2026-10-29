@@ -5369,6 +5369,113 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cp-metrics-list span{ font-size:12px; padding:3px 8px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-muted); }
 .cp-metrics-list span b{ color: var(--text); }
 .cp-metrics-actions{ margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; color: var(--text-muted); }
+
+/* Charts under a Konsultan answer (js/chat-widgets.js). One hue per chart,
+   the Report page's pair (css/report.css): a violet line, an orange bar.
+   Text stays in text tokens; the bar/line carries the comparison. */
+.consultant-msg-assistant:has(.chw-card){ max-width:96%; width:96%; }
+.chw-stack-list{ display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+.chw-card{
+  --chw-line:#9D74F0; --chw-bar:#D9742A; --chw-soft: color-mix(in srgb, var(--chw-line) 16%, transparent);
+  position:relative; container: chw / inline-size; padding:12px 12px 10px; border:1px solid var(--border); border-radius: var(--radius-md);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--chw-line) 7%, var(--surface)), var(--surface) 60%);
+  box-shadow: 0 10px 24px -20px color-mix(in srgb, var(--chw-line) 70%, transparent);
+}
+:root[data-theme="light"] .chw-card{ --chw-line:#7C4DEB; --chw-bar:#E0661A; }
+.chw-head{ display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.chw-icon{ width:24px; height:24px; border-radius:8px; display:grid; place-items:center; flex:none; color:#fff; background: linear-gradient(135deg, var(--chw-line), color-mix(in srgb, var(--chw-line) 55%, #E04FD8)); }
+.chw-title{ font-weight:800; font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chw-period{ font-size:11px; font-weight:700; color: var(--text-muted); padding:2px 8px; border-radius: var(--radius-pill); background: var(--surface-2); white-space:nowrap; }
+.chw-kpis{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; margin-bottom:10px; }
+@container chw (min-width: 470px){ .chw-kpis:not(.is-two){ grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.chw-kpi{ padding:8px 10px; border-radius:10px; background: var(--surface-2); display:flex; flex-direction:column; gap:1px; min-width:0; }
+.chw-kpi small{ font-size:11px; color: var(--text-muted); }
+.chw-kpi b{ font-family: var(--font-display); font-size:18px; line-height:1.2; color: var(--text); font-variant-numeric: tabular-nums; }
+.chw-delta{ font-size:11px; font-weight:700; white-space:nowrap; }
+.chw-delta.is-up{ color: var(--health-good); }
+.chw-delta.is-down{ color: var(--health-poor); }
+.chw-delta.is-flat{ color: var(--text-faint); font-weight:600; }
+.chw-sub{ font-size:11.5px; color: var(--text-muted); margin: 2px 0 6px; }
+.chw-sub.is-foot{ margin: 6px 0 0; }
+/* The line: SVG stretched to the box, HTML dots on top (round at any width). */
+.chw-line{ position:relative; height:110px; margin: 18px 4px 0; }
+.chw-line svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.chw-area{ fill: var(--chw-soft); stroke:none; }
+.chw-stroke{ fill:none; stroke: var(--chw-line); stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.chw-pt{ position:absolute; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; background: var(--chw-line); box-shadow: 0 0 0 2px var(--surface); cursor:default; outline:none; }
+.chw-pt::before{ content:""; position:absolute; inset:-9px; }
+.chw-pt.is-peak{ width:11px; height:11px; margin:-5.5px 0 0 -5.5px; }
+.chw-pt[data-tip]:hover::after, .chw-pt[data-tip]:focus::after, .chw-col[data-tip]:hover::after, .chw-col[data-tip]:focus::after{
+  content: attr(data-tip); position:absolute; bottom: calc(100% + 8px); left:50%; transform: translateX(-50%); z-index:3;
+  width:max-content; max-width:200px; white-space:normal; text-align:center;
+  padding:5px 8px; border-radius:8px; font-size:11px; font-weight:600; line-height:1.3;
+  color: var(--text); background: var(--bg-raised); border:1px solid var(--border); box-shadow: 0 8px 20px -10px rgba(0,0,0,.4); pointer-events:none;
+}
+.chw-peak{ position:absolute; transform: translate(-50%, calc(-100% - 10px)); font-size:10.5px; font-weight:800; padding:2px 7px; border-radius: var(--radius-pill); color: var(--text); background: var(--bg-raised); border:1px solid var(--border); white-space:nowrap; pointer-events:none; }
+.chw-guide{ position:absolute; left:0; right:0; border-top:1.5px dashed color-mix(in srgb, var(--text-muted) 55%, transparent); pointer-events:none; }
+.chw-peak.is-right{ transform: translate(calc(-100% + 10px), calc(-100% - 10px)); }
+.chw-peak.is-left{ transform: translate(-10px, calc(-100% - 10px)); }
+.chw-guide em{ position:absolute; right:0; top:-17px; font-style:normal; font-size:10px; color: var(--text-muted); padding:0 4px; border-radius:4px; background: var(--surface); }
+.chw-axis{ display:flex; justify-content:space-between; font-size:10.5px; color: var(--text-faint); margin-top:4px; }
+/* Bars and meters: the label and value carry the reading. */
+.chw-bars{ display:flex; flex-direction:column; gap:7px; margin-top:4px; }
+.chw-bar-row, .chw-meter{ display:grid; grid-template-columns: minmax(0, 1.25fr) minmax(60px, 1fr) auto; align-items:center; gap:8px; }
+.chw-meter{ margin-top:7px; }
+.chw-bar-name{ font-size:12px; color: var(--text); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chw-bar-name b{ color: var(--text-muted); margin-right:3px; }
+.chw-bar-name small, .chw-bar-val small{ display:block; font-size:10.5px; color: var(--text-faint); overflow:hidden; text-overflow:ellipsis; }
+.chw-bar-track{ position:relative; height:10px; border-radius:6px; background: var(--surface-2); overflow:visible; }
+.chw-bar-fill{ display:block; height:100%; width: var(--w); border-radius:6px; background: color-mix(in srgb, var(--chw-line) 62%, var(--surface)); transform-origin:left center; }
+.chw-bar-fill.is-hot{ background: var(--chw-bar); }
+.chw-mark{ position:absolute; top:-3px; bottom:-3px; width:2px; margin-left:-1px; border-radius:1px; background: var(--text-muted); }
+.chw-bar-val{ font-size:12px; font-weight:700; text-align:right; color: var(--text); font-variant-numeric: tabular-nums; white-space:nowrap; }
+.chw-stack{ display:flex; gap:2px; height:10px; margin-top:12px; border-radius:6px; overflow:hidden; }
+.chw-seg{ min-width:4px; }
+.chw-seg.is-excellent, .chw-legend i.is-excellent{ background: var(--health-good); }
+.chw-seg.is-good, .chw-legend i.is-good{ background: color-mix(in srgb, var(--health-good) 55%, var(--surface)); }
+.chw-seg.is-average, .chw-legend i.is-average{ background: var(--health-average); }
+.chw-seg.is-poor, .chw-legend i.is-poor{ background: var(--health-poor); }
+.chw-legend{ display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; font-size:11px; color: var(--text-muted); }
+.chw-legend i{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+.chw-cols{ display:flex; align-items:flex-end; gap:6px; height:80px; padding-top:6px; }
+.chw-col{ position:relative; flex:1; max-width:28px; height: var(--h); min-height:2px; border-radius:5px 5px 2px 2px; background: color-mix(in srgb, var(--chw-line) 55%, var(--surface)); transform-origin:bottom; outline:none; }
+.chw-col.is-hot{ background: var(--chw-bar); }
+.chw-follow{ display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:8px; }
+.chw-follow-card{ padding:9px 10px; border-radius:10px; background: var(--surface-2); display:flex; flex-direction:column; gap:2px; text-transform:none; }
+.chw-follow-card small{ font-size:11px; color: var(--text-muted); text-transform:capitalize; }
+.chw-follow-card b{ font-family: var(--font-display); font-size:20px; line-height:1.15; }
+.chw-follow-card em{ font-style:normal; font-size:10.5px; color: var(--text-faint); }
+.chw-spark{ width:100%; height:34px; margin-top:4px; }
+.chw-days{ display:flex; flex-direction:column; gap:4px; }
+.chw-day{ display:grid; grid-template-columns: 46px minmax(0,1fr); gap:8px; align-items:center; padding:6px 8px; border-radius:9px; background: var(--surface-2); }
+.chw-day.is-today{ box-shadow: inset 3px 0 0 var(--chw-line); }
+.chw-day-name{ font-size:11.5px; font-weight:800; color: var(--text-muted); text-transform:capitalize; }
+.chw-day-name small{ margin-left:4px; font-weight:600; color: var(--text-faint); }
+.chw-day-items{ display:flex; flex-wrap:wrap; gap:4px; min-width:0; }
+.chw-day-items span{ font-size:12px; padding:2px 8px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--chw-line) 18%, var(--surface)); color: var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chw-day-items em{ font-style:normal; font-size:11.5px; color: var(--text-faint); }
+.chw-camp-stage{ font-size:12.5px; font-weight:700; color: var(--text); }
+.chw-next{ margin:4px 0 0; padding-left:18px; font-size:12px; color: var(--text); display:flex; flex-direction:column; gap:2px; }
+.chw-note{ display:flex; gap:6px; align-items:flex-start; margin:8px 0 0; font-size:12px; color: var(--text-muted); }
+.chw-note svg{ flex:none; margin-top:2px; }
+.chw-note.is-warn{ color: var(--health-poor); margin:0 0 8px; }
+.chw-empty{ display:flex; gap:6px; align-items:flex-start; margin:0; font-size:12.5px; color: var(--text-muted); }
+.chw-empty svg{ flex:none; margin-top:2px; }
+.chw-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding-top:8px; border-top:1px solid var(--border-soft, var(--border)); font-size:10.5px; color: var(--text-faint); }
+.chw-open{ display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border); background: var(--surface-2); padding:4px 10px; border-radius: var(--radius-pill); font:inherit; font-size:11.5px; font-weight:700; color: var(--text); cursor:pointer; white-space:nowrap; }
+.chw-open:hover{ border-color: color-mix(in srgb, var(--chw-line) 60%, var(--border)); background: color-mix(in srgb, var(--chw-line) 14%, var(--surface-2)); }
+/* Fresh answer: bars grow, the line draws, the dots pop — once. */
+.chw-anim .chw-bar-fill{ animation: chw-grow-x .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+.chw-anim .chw-col{ animation: chw-grow-y .6s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.chw-anim .chw-stroke{ stroke-dasharray:1; animation: chw-draw 1s ease-out both; }
+.chw-anim .chw-area, .chw-anim .chw-pt, .chw-anim .chw-peak{ animation: chw-fade .5s ease-out .6s both; }
+.chw-anim{ animation: chw-rise .35s ease-out both; }
+@keyframes chw-grow-x{ from{ transform: scaleX(0); } }
+@keyframes chw-grow-y{ from{ transform: scaleY(0); } }
+@keyframes chw-draw{ from{ stroke-dashoffset:1; } to{ stroke-dashoffset:0; } }
+@keyframes chw-fade{ from{ opacity:0; } }
+@keyframes chw-rise{ from{ opacity:0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce){ .chw-anim, .chw-anim *{ animation:none !important; } }
 .cp-pick-list{ display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto; margin-top:10px; }
 .cp-pick-row{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:9px 10px; border-radius:8px; border:1px solid transparent; background:transparent; color: var(--text); cursor:pointer; font:inherit; }
 .cp-pick-row:hover{ background: var(--surface-2); border-color: var(--border); }

@@ -1783,7 +1783,15 @@ export const CONSULTANT_ROUTES = [
   { key: "home", label: t("ai.route.home"), path: "" },
 ];
 
-export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null, kinds = [], images = [], imageText = "" }) {
+// Charts under the answer (js/chat-widgets.js): the model picks the widget,
+// the app draws it from the real numbers. The menu says which ones have data.
+const WIDGET_RULE = (menu) => [
+  "CHARTS: the app can draw live widgets from this brand's real data right under your answer. When the latest message is about performance, results, growth, what works, followers, sales, retention, the schedule or a campaign's progress, add 1 (at most 2) widget lines on their own lines at the end, in the exact form [[widget:KIND]] or [[widget:KIND|PERIOD]] (PERIOD = 7, 30, 90 or all; default 30; 'minggu ini' = 7, 'bulan ini' = 30, '3 bulan' = 90, 'selama ini' = all). Pick the widget that answers THIS question best, e.g. 'konten mana yang paling bagus' → top-posts, 'format apa yang jalan' → formats, 'performa bulan ini' → performance, 'engagement aku gimana' → engagement, 'minggu ini aku posting apa' → schedule.",
+  "The chart shows the numbers, so your text interprets instead of listing them: lead with the verdict in one sentence (naik / turun / stabil / belum cukup data) and the one or two numbers that matter, then WHY (which posts, formats or days drove it — from the data), then 1-3 concrete moves. Every number you write must match the live data below exactly. No widget for a question that isn't about numbers, and never one marked NO DATA YET — say what to fill in instead.",
+  `Widgets:\n${menu}`,
+].join("\n");
+
+export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = "", history = [], question, onText = null, kinds = [], images = [], imageText = "", widgetMenu = "", screen = "" }) {
   const routesList = CONSULTANT_ROUTES.map((r) => `${r.key} = ${r.label}`).join(", ");
   const hasPhoto = images.length > 0 || !!imageText;
   const system = [
@@ -1799,13 +1807,18 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     NATURAL_WRITING_CONTEXT,
     CHAT_VOICE,
     "Lead with the answer. A quick question gets 2-4 sentences, or at most 3 short bullets when listing steps; when they ask you to explain, go deeper, decide something or discuss, give the full answer it needs. Apply the marketing/branding thinking above naturally; never quote or name-drop the source books to the user.",
+    "Think like an analyst before you answer a question about results: compare this period with the one before, the best post with the weakest, and each against the brand's own ER scale; look for what the best ones share (format, funnel stage, topic, hook, day). Say what the data can't tell yet instead of guessing a cause, and phrase causes as likely, not certain.",
+    "Never answer with content ideas, hooks or a script unless the latest message asks for them — a question gets an answer.",
     `If the user's message itself tells something that HAPPENED to the brand (a sale or a change in sales, an offer, a notable customer, a collab, a launch, a complaint, an event, a new product or price) that is not already in the brand context above, answer as usual and add ONE line [[moment:KIND|short title, max 80 chars, in the user's language|the specifics they gave, max 160 chars, or empty]] with KIND one of ${kinds.length ? kinds.join(", ") : "sales-spike, offer, vip, collab, launch, complaint, event, other"} — the app asks them whether to save it to brand memory. Never for questions, plans or feelings.`,
     HANDOFF_RULE_CONSULTANT,
+    widgetMenu && !hasPhoto ? WIDGET_RULE(widgetMenu) : "",
     `When your answer tells the user to go do something in a specific screen of this app, or they ask where a screen is, end with ONE line for the single most relevant screen, in the exact form [[goto:KEY]] using ONLY these keys: ${routesList}. To point at ONE specific campaign from the live data above, use [[goto:campaign:ID]] with that campaign's exact id instead — only a campaign your answer names, never another one. Use [[open:insights]] only when the answer is about refreshing Instagram profile numbers. At most one of these per reply, on its own line at the very end, and none when the answer doesn't send them anywhere.`,
     "When there is an obvious next question, end with at most 2 follow-ups, each on its own line in the exact form [[ask:Question]] — written the way THIS user would ask it (their language, short, max ~8 words), answerable from this brand's context and data above. The app turns each into a button. Skip them when the answer is complete on its own. Never repeat a question already asked in this conversation, and never mention or explain these lines.",
     // ---- DYNAMIC: brand-, pulse-, data- and photo-specific, so it never
     // matches an earlier turn's prefix past this point anyway.
     buildBrandContext(brand),
+    screen ? `The owner has this screen of the app open behind the chat right now: ${screen}. A vague "ini" / "di sini" / "this" usually means that screen.` : "",
+    `Today is ${new Date().toLocaleDateString("en-CA")}.`,
     pulseText || "",
     snapshotText ? `Live tracked data for this brand right now (background: quote a number only when the latest message is about performance, these numbers or what to do first):\n${snapshotText}` : "",
     hasPhoto
@@ -2068,10 +2081,12 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         // Value first. The old version ("you ask, they answer, then you
         // propose") opened most replies with a question, and owners felt the
         // chat went round in circles before it gave them anything.
-        "Every reply moves the work forward with something concrete — an idea, a draft, a direct answer, a decision. Never a reply that only asks questions.",
+        // Owners asked a question and got three idea cards back ("ditanya
+        // selalu muncul ide"): the reply now fits what was asked.
+        "Answer what the owner actually asked. A question gets a direct answer, a worry gets your honest take, a discussion gets a discussion, and only a request for ideas gets ideas. Every reply gives something concrete (an answer, an opinion, a draft, a decision) — never a reply that only asks questions.",
         "If the request is vague, don't interrogate: make the most sensible assumption from the brand data, name it in a few words (e.g. 'Aku anggap buat mahasiswa yang nugas malam —'), and deliver. They will correct you if it's off.",
         "Ask at most ONE question per reply, only at the end, and only when the answer would really change the next step. Never ask something the conversation already answered.",
-        "When they want ideas or ask what to post: one short sentence, then exactly 3 ideas as [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] lines, each a clearly different angle (offline steps for an event may be [[task:…]] lines instead). Never ideas only as prose. Otherwise write [[idea:…]] lines only when the conversation has clearly landed on something concrete.",
+        "When they want ideas or ask what to post: one short sentence, then exactly 3 ideas as [[idea:Short title (max 8 words)|why it fits THIS brand + the first step, one sentence, max 22 words]] lines, each a clearly different angle (offline steps for an event may be [[task:…]] lines instead). Never ideas only as prose. Otherwise write NO [[idea:…]] lines — not under an answer, an explanation, a discussion, a worry or a question about numbers or pricing: idea cards nobody asked for make the owner feel unheard. The exception: the conversation has clearly landed on one concrete piece to make.",
         "When they pick one ('yang kedua', 'oke itu'): go straight to the next useful thing — the script if it's a video, the post copy if it's a post, the first concrete steps if it's an activity — instead of confirming the choice again.",
         "When they ask to change something you wrote (shorter, a punchier hook, more casual): apply it at once, give the full new version, and say in one line what changed.",
         // "Bedah marketing X" used to get two short paragraphs (or worse, the
@@ -2080,9 +2095,9 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         // discussion, and every discussion ends one tap away from content.
         "DISCUSSION: when the owner wants to discuss, understand or break something down — another brand's marketing ('bedah marketing …'), a case, a trend, a strategy, an idea of their own — be the senior strategist friend they would otherwise ask ChatGPT: a real, substantive analysis with your own opinion, concrete examples, what is smart and what is weak, and what THIS brand can take from it. Make it easy to read on a phone: short '### ' headers or numbered points when it has parts, short paragraphs. The follow-ups that come after ('kenapa?', 'terus gimana?', a worry, a push-back) are conversation: answer them in plain paragraphs, as long as the point needs, not as another article.",
         "Facts about other companies, people, events, and what words or local/cultural terms mean: state only what is widely documented and you are confident about; mark anything uncertain with 'kalau nggak salah' or '(perlu dicek)'; never invent numbers, quotes, dates, campaign results or a word's meaning (a script that teaches a term uses one you are sure of).",
-        "A discussion is for making something: after a substantive breakdown, end with 2 [[ask:…]] next steps, at least one of which turns it into content for THIS brand (e.g. 'Jadikan script Reels', 'Jadikan carousel 5 slide', 'Cari angle buat brand-ku'); after a quick follow-up, the next natural question is fine too. When they say 'jadikan script/konten/carousel', write the [[script:…]] block from the strongest angle of the discussion right away.",
+        "After a substantive breakdown you may end with up to 2 [[ask:…]] next steps that follow from THIS discussion; when it is about marketing or content, one of them may turn it into content for THIS brand (e.g. 'Jadikan script Reels', 'Cari angle buat brand-ku'). After a quick follow-up, the next natural question is fine. When they say 'jadikan script/konten/carousel', write the [[script:…]] block from the strongest angle of the discussion right away.",
         "Push back when something is weak, and weigh trade-offs honestly.",
-        "If they ask about their numbers, performance, schedule, campaign progress, or where something is in the app, answer briefly from the data above and end with the line [[handoff:consultant]] so they can dig in with the Konsultan. Only then.",
+        "If the latest message is mainly a question about their own numbers, performance, followers, sales, schedule or campaign progress, reply with ONLY the line [[handoff:consultant]] — the app passes it straight to the Konsultan, who has the live data and draws the charts. Where something is in the app you may answer yourself.",
         "You may end with at most 2 [[ask:…]] lines: tap-to-send next steps (max 5 words each) in the owner's own words, plain language — never marketing jargon such as TOFU/MOFU/BOFU or funnel.",
         "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",
         SCRIPT_DIRECTIVE_RULE,

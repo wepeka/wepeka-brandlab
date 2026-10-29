@@ -72,7 +72,8 @@ import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
 import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply } from "./ai-directives.js";
-import { routeByRules, isWriteRequest, movesToBrainstorm } from "./chat-router.js";
+import { routeByRules, isWriteRequest, movesToBrainstorm, movesToConsultant, isContentTalk } from "./chat-router.js";
+import { computeWidgets, widgetHTML, widgetMenuText, widgetFactsText } from "./chat-widgets.js";
 import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
 import { go } from "./nav-context.js";
@@ -384,7 +385,7 @@ function threadEntries(th, engine) {
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
       weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
       // A reply that stopped before the end: "Coba lagi" re-asks the same
@@ -493,10 +494,16 @@ function lastEngine(history) {
 // a switchboard. Moving on is still possible: a request to write goes to
 // Brainstorm, a photo to the Konsultan (sendMessage), the Konsultan/Teman
 // hand a message that isn't theirs on themselves ([[handoff]]), and
-// "Bukan ini maksudmu?" stays under every reply.
+// "Bukan ini maksudmu?" stays under every reply. A plain question about the
+// owner's own numbers moves to the Konsultan too (chat-router.js
+// movesToConsultant): it is the one with the live data and the charts.
 async function decideEngine(ai, text, history) {
   const prev = lastEngine(history);
-  if (prev) return prev !== "brainstorm" && movesToBrainstorm(text) ? "brainstorm" : prev;
+  if (prev) {
+    if (prev !== "brainstorm" && movesToBrainstorm(text)) return "brainstorm";
+    if (prev !== "consultant" && movesToConsultant(text)) return "consultant";
+    return prev;
+  }
   const byRules = routeByRules(text);
   if (byRules) return byRules;
   try {
@@ -552,9 +559,41 @@ function buildSnapshot(brandId) {
     // AI never calls a 5% post "bagus" while the list shows it as Sedang.
     `Skala engagement rate di Brandlab (dipakai untuk menilai konten): ${erScale.excellent}% ke atas = sangat bagus, ${erScale.good}–${erScale.excellent}% = sehat, ${erScale.average}–${erScale.good}% = sedang, di bawah ${erScale.average}% = buruk banget.`,
     retentionSnapshotText(published),
+    // The numbers the chart widgets draw (js/chat-widgets.js), so what the
+    // Konsultan says and the chart under it never disagree.
+    widgetFactsText(widgetCtx(brandId)),
     campaigns.length ? `Campaign aktif:\n${coverageLines.join("\n")}` : "Belum ada campaign aktif.",
   ].join("\n");
 }
+
+const widgetCtx = (brandId) => ({ brand: getBrand(brandId), content: listContent(brandId), campaigns: listCampaigns(brandId), settings: getSettings(), today: localISODate() });
+
+// Which screen the owner has open behind the small chat panel, so "ini
+// maksudnya apa?" or "kenapa di sini kosong?" is read against that screen.
+function screenNow(brandId) {
+  if (page) return "";
+  const m = String(location.hash || "").match(/^#\/brand\/[^/]+\/?(.*)$/);
+  if (!m) return "";
+  const path = m[1].replace(/\?.*$/, "").replace(/\/$/, "");
+  const route = [...CONSULTANT_SCREENS].sort((a, b) => b.path.length - a.path.length).find((r) => (r.path ? path === r.path || path.startsWith(`${r.path}/`) : path === ""));
+  return route ? route.label : "";
+}
+const CONSULTANT_SCREENS = [
+  { path: "", label: "Beranda (home) of this brand" },
+  { path: "dna", label: "Brand DNA" },
+  { path: "guidelines", label: "Brand Guidelines" },
+  { path: "builder", label: "Brand Builder" },
+  { path: "campaigns", label: "Campaigns / goals list" },
+  { path: "goals", label: "My Goals" },
+  { path: "content", label: "Create (content workspace)" },
+  { path: "content/list", label: "Content list" },
+  { path: "content/creator", label: "Creator (writing one piece: idea, script, caption)" },
+  { path: "content/calendar", label: "Content calendar" },
+  { path: "content/copy", label: "Copywriting" },
+  { path: "sales", label: "Sales tracker" },
+  { path: "report", label: "Report (content results & PDF)" },
+  { path: "papan", label: "Board (whiteboard)" },
+];
 
 // What the model should read as "the conversation so far". In Otomatis
 // that is the Obrolan on screen — whichever engine answered each turn — so
@@ -987,7 +1026,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   // script from it, or three ideas. "Diskusi lalu langsung jadi", without
   // copying anything out to another app. Only when the reply brought no
   // follow-up chips of its own (those already offer the same next step).
-  const forkHTML = isLast && isBs && h.question && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan && !h.revisions?.length && !h.asks?.length && getBrainstorm(h.threadId)?.mode !== "script"
+  const forkHTML = isLast && isBs && h.question && isContentTalk(h.question) && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan && !h.revisions?.length && !h.asks?.length && getBrainstorm(h.threadId)?.mode !== "script"
     ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-chat-make-script>${icon("teleprompter", { size: 13 })}${t("chat.make.script")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-go-ideas>${icon("sparkle", { size: 13 })}${t("chat.make.ideas")}</button></div>`
     : "";
   // The recap offer (Teman, un-recapped chat from before today).
@@ -1009,6 +1048,11 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     else if (hint && hint.question === h.question) switchHTML = switchChipHTML(hint.to, h.question, { fromModel: false });
   }
   const body = h.text ? `<div class="consultant-md">${renderLightMarkdown(h.text)}</div>` : "";
+  // Charts the Konsultan asked for, drawn from the numbers frozen on the
+  // answer (js/chat-widgets.js). They grow in once, when the answer arrives.
+  const widgetsHTML = (h.widgets || []).length
+    ? `<div class="chw-stack-list">${h.widgets.map((w) => widgetHTML(w, { fresh: isLast && Date.now() - (h.at || 0) < 15000 })).join("")}</div>`
+    : "";
   const toolsHTML = h.engine && !h.ephemeral
     ? `<div class="cp-msg-tools"><button type="button" class="cp-copy" data-chat-copy="${index}" title="${t("chat.copy")}">${icon("copy", { size: 12 })}<span>${t("chat.copy")}</span></button><button type="button" class="cp-copy cp-report" data-chat-report="${index}" title="${esc(t("lapor.ai.btnTitle"))}">${icon("flag", { size: 12 })}<span>${t("lapor.ai.btn")}</span></button>${retryToggle}</div>`
     : "";
@@ -1020,7 +1064,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     : "";
   const cutHTML = h.cut ? `<p class="cp-cut">${icon("info", { size: 12 })}<span>${t("chat.cut.note")}</span></p>` : "";
   const retryHTML = h.retry && (!h.cut || isLast) ? `<div class="consultant-nav-buttons"><button type="button" class="consultant-nav-btn" data-chat-resend="${index}">${icon("refresh", { size: 12 })}${t("chat.retry")}</button></div>` : "";
-  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
+  return `<div class="consultant-msg consultant-msg-assistant" data-consultant-msg="${index}" data-engine="${h.engine || ""}">${engineHTML}${body}${widgetsHTML}${partialHTML}${cutHTML}${scriptsHTML}${retryHTML}${revisionsHTML}${navHTML}${draftsHTML}${cardsHTML}${weekPlanHTML}${guideHTML}${replyActions}${asksHTML}${forkHTML}${nudgeHTML}${switchHTML}${toolsHTML}</div>`;
 }
 
 // Brainstorm openers read from what is happening in the brand right now.
@@ -2993,9 +3037,18 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         // A step is filed under the event; without one it is kept as an idea.
         const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
         const allIdeas = [...ideas, ...(eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why })))];
-        // Only the clean text, never the raw [[…]] lines (cutBlocks covers a
-        // reply with nothing readable in it).
-        appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+        // A question about the owner's own numbers comes back as ONLY
+        // [[handoff:consultant]]: the Konsultan answers it in this same turn,
+        // with the live data and its charts.
+        if (!hop && !cleanText && handoff === "consultant" && !allIdeas.length && !scripts.length && !drafts.length) {
+          removeBrainstormMessage(th.id, asked?.id);
+          askedRef = null;
+          reroute = handoff;
+        } else {
+          // Only the clean text, never the raw [[…]] lines (cutBlocks covers a
+          // reply with nothing readable in it).
+          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+        }
       } else if (picked === "companion") {
         const thread = ensureCompanionThread(brandId);
         const asked = askOnce(thread.id, { role: "user", text, sessionId }, retryRef);
@@ -3033,15 +3086,16 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
             toast(t("chat.image.ocrNote"), "info");
           }
         }
-        const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: prior, question: text, onText: streamInto, kinds: MOMENT_KINDS, images: modelImages, imageText });
+        const reply = await askBrandConsultant(ai, { brand, snapshotText, pulseText, history: prior, question: text, onText: streamInto, kinds: MOMENT_KINDS, images: modelImages, imageText, widgetMenu: widgetMenuText(widgetCtx(brandId)), screen: screenNow(brandId) });
         const parsed = parseDirectives(reply.trim());
         const { cleanText, asks, handoff, moments, metrics } = parsed;
+        const widgets = computeWidgets(parsed.widgets, widgetCtx(brandId));
         const nav = relevantNav(parsed.nav, cleanText);
         if (!hop && !cleanText && handoff && handoff !== "consultant" && !images.length) {
           removeBrainstormMessage(thread.id, asked?.id);
           askedRef = null;
           reroute = handoff;
-        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(widgets.length ? { widgets } : {}), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
       }
       if (!reroute) break;
     }

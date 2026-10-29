@@ -150,6 +150,14 @@ const DEEPSEEK_API_BASE = "https://api.deepseek.com/chat/completions";
 // thinking tokens count against max_tokens, so a short cap can come back
 // empty), hence the explicit "disabled" in deepSeekBody.
 const DEEPSEEK_MODEL = "deepseek-flash";
+// The chat partners think before they answer (2026-10-29): in the real-chat
+// test (2026-10-06) thinking was clearly the best quality for ~3x the cost
+// of a message (~Rp37 vs ~Rp11), still inside every plan's margin. Only
+// these talks — everything else (JSON planners, captions, routing) stays
+// quick and cheap. The thinking tokens don't count against the reply's
+// max_tokens: they get THINK_TOKENS of their own on top.
+export const THINK_FEATURES = new Set(["consultant", "brainstorm", "discuss"]);
+const THINK_TOKENS = 6000;
 
 // DeepSeek's chat model can't look at a picture. A call that carries one
 // goes to a provider that can and has a key in Vercel (Gemini first: the
@@ -202,12 +210,13 @@ function dataUrlToInlinePart(dataUrl) {
   const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || "");
   return m ? { inlineData: { mimeType: m[1], data: m[2] } } : null;
 }
-function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false, history = [] } = {}) {
+export function deepSeekBody(system, userPrompt, maxTokens, { temperature, json = false, stream = false, history = [], think = false } = {}) {
   return {
     model: DEEPSEEK_MODEL,
-    thinking: { type: "disabled" },
-    max_tokens: maxTokens,
-    ...(temperature !== undefined ? { temperature } : {}),
+    thinking: { type: think ? "enabled" : "disabled" },
+    max_tokens: maxTokens + (think ? THINK_TOKENS : 0),
+    // A thinking model ignores temperature; don't send it.
+    ...(temperature !== undefined && !think ? { temperature } : {}),
     ...(json ? { response_format: { type: "json_object" } } : {}),
     ...(stream ? { stream: true } : {}),
     messages: [
@@ -259,7 +268,7 @@ function providerError(status, body) {
   return new AiProxyError("provider", message || `HTTP ${status}`, 502, retryable);
 }
 
-async function callNonStream({ provider, apiKey, system, user, history = [], maxTokens, temperature, json, images }) {
+async function callNonStream({ provider, apiKey, system, user, history = [], maxTokens, temperature, json, images, think = false }) {
   if (provider === "gemini") {
     const res = await providerFetch(
       `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
@@ -285,7 +294,7 @@ async function callNonStream({ provider, apiKey, system, user, history = [], max
     if (images.length) throw new AiProxyError("noVision", "DeepSeek can't read images.", 400, false);
     const res = await providerFetch(
       DEEPSEEK_API_BASE,
-      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, json, history })) },
+      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, json, history, think })) },
       NON_STREAM_TIMEOUT_MS
     );
     const body = await readJsonSafe(res);
@@ -358,7 +367,7 @@ export async function withOneRetry(fn, deadline = Date.now() + NON_STREAM_TIMEOU
   }
 }
 
-async function pumpOpenAiSse(body, onDelta) {
+async function pumpOpenAiSse(body, onDelta, onThinking = null) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -381,6 +390,7 @@ async function pumpOpenAiSse(body, onDelta) {
       }
       const delta = ev.choices?.[0]?.delta?.content;
       if (delta) onDelta(delta);
+      else if (ev.choices?.[0]?.delta?.reasoning_content) onThinking?.();
     }
   }
 }
@@ -414,7 +424,9 @@ async function pumpAnthropicSse(body, onDelta) {
 // no streaming path wired up here (this app has never needed it) — it just
 // resolves in one shot and hands its whole answer over as a single delta,
 // same fallback the old client-side code gave a non-streaming provider.
-async function callStream({ provider, apiKey, system, user, history = [], maxTokens, temperature, images }, onDelta) {
+// `onThinking`: DeepSeek is thinking (reasoning text arrives, not shown) —
+// the caller keeps the connection and its own idle timer alive with it.
+async function callStream({ provider, apiKey, system, user, history = [], maxTokens, temperature, images, think = false }, onDelta, onThinking = null) {
   if (provider === "gemini") {
     const { text } = await callNonStream({ provider, apiKey, system, user, history, maxTokens, temperature, images, json: false });
     if (text) onDelta(text);
@@ -424,11 +436,11 @@ async function callStream({ provider, apiKey, system, user, history = [], maxTok
     if (images.length) throw new AiProxyError("noVision", "DeepSeek can't read images.", 400, false);
     const res = await providerFetch(
       DEEPSEEK_API_BASE,
-      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, stream: true, history })) },
+      { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify(deepSeekBody(system, user, maxTokens, { temperature, stream: true, history, think })) },
       STREAM_TIMEOUT_MS
     );
     if (!res.ok || !res.body) throw providerError(res.status, await readJsonSafe(res));
-    return pumpOpenAiSse(res.body, onDelta);
+    return pumpOpenAiSse(res.body, onDelta, onThinking);
   }
   const res = await providerFetch(
     ANTHROPIC_API_BASE,
@@ -573,6 +585,7 @@ export async function handleAiRequest(req, res, { db, uid, papan = null, started
   // Only a call a free slot paid for gets the free reply length; past
   // today's free allowance it's a normal call, with its normal length.
   if (reserved.kind === "free") maxTokens = Math.min(maxTokens, freeSpec.out);
+  const think = provider === "deepseek" && THINK_FEATURES.has(feature) && !wantJson && reserved.kind !== "free";
   const outcomeOf = (text) => (!String(text || "").trim() ? "fail" : isHandoffOnly(text) ? "handoff" : "ok");
 
   try {
@@ -596,14 +609,23 @@ export async function handleAiRequest(req, res, { db, uid, papan = null, started
       let text = "";
       let open = true;
       let failure = null;
+      // While the model thinks nothing is said yet: a small heartbeat every
+      // few seconds keeps the browser's 45 s silence limit from cutting it.
+      let beatAt = 0;
       try {
         await runAttempt(
           (touch) =>
-            callStream({ provider, apiKey, system, user, history, maxTokens, temperature, images }, (delta) => {
+            callStream({ provider, apiKey, system, user, history, maxTokens, temperature, images, think }, (delta) => {
               if (!open) return;
               touch();
               text += delta;
               send(JSON.stringify({ delta }));
+            }, () => {
+              if (!open) return;
+              touch();
+              if (Date.now() - beatAt < 5000) return;
+              beatAt = Date.now();
+              send(JSON.stringify({ thinking: true }));
             }),
           startedAt + STREAM_BUDGET_MS - Date.now(),
           { idleMs: STREAM_IDLE_MS, firstIdleMs: STREAM_FIRST_DELTA_MS }
@@ -627,7 +649,7 @@ export async function handleAiRequest(req, res, { db, uid, papan = null, started
     }
 
     try {
-      const { text } = await withOneRetry(() => callNonStream({ provider, apiKey, system, user, history, maxTokens, temperature, json: wantJson, images }), startedAt + NON_STREAM_BUDGET_MS);
+      const { text } = await withOneRetry(() => callNonStream({ provider, apiKey, system, user, history, maxTokens, temperature, json: wantJson, images, think }), startedAt + NON_STREAM_BUDGET_MS);
       const settled = await settle(outcomeOf(text));
       return res.status(200).json({ text, usage: { used: settled?.used ?? reserved.used, limit: quota.limit, period: quota.period } });
     } catch (err) {

@@ -11,6 +11,7 @@ import { t } from "./i18n.js";
 import { FUNNELS, MOMENT_KINDS } from "./store.js";
 import { CONSULTANT_ROUTES } from "./ai.js";
 import { escapeHtml } from "./dom.js";
+import { WIDGET_KINDS, WIDGET_PERIODS, DEFAULT_PERIOD, MAX_WIDGETS, widgetHistoryLine } from "./chat-widgets.js";
 
 export const MAX_ASKS = 4;
 export const MAX_DRAFTS = 3;
@@ -24,6 +25,18 @@ export const MAX_SCRIPTS = 1;
 export const METRIC_DIRECTIVE_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "reposts", "profileVisits", "followersGained", "videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"];
 const RETENTION_DIRECTIVE_KEYS = new Set(["videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"]);
 const HANDOFF_TARGETS = ["consultant", "brainstorm", "companion"];
+// A chart the Konsultan asks the app to draw under its answer
+// ([[widget:performance|30]], [[widget:campaign|ID]]) — js/chat-widgets.js
+// works the numbers out; the model only names the kind and the period.
+const PERIOD_ALIASES = { week: "7", minggu: "7", month: "30", bulan: "30", quarter: "90", "3bulan": "90", semua: "all", alltime: "all" };
+function widgetRequest(kind, arg) {
+  const k = String(kind || "").trim().toLowerCase().replace(/_/g, "-").replace(/^top$/, "top-posts");
+  if (!WIDGET_KINDS.includes(k)) return null;
+  const a = String(arg || "").trim();
+  if (k === "campaign") return { kind: k, period: DEFAULT_PERIOD, arg: a.replace(/^campaign:/i, "") };
+  const p = a.toLowerCase().replace(/\s+|hari|days?/g, "");
+  return { kind: k, period: WIDGET_PERIODS.includes(p) ? p : PERIOD_ALIASES[p] || DEFAULT_PERIOD, arg: "" };
+}
 
 export function parseDirectives(rawText) {
   const nav = [];
@@ -35,6 +48,7 @@ export function parseDirectives(rawText) {
   const moments = [];
   const saves = [];
   const scripts = [];
+  const widgets = [];
   let handoff = null;
   let metrics = null;
   // The unclosed script/revision a reply ended inside (cut off, or the
@@ -170,6 +184,11 @@ export function parseDirectives(rawText) {
       if (clean && saves.length < MAX_SAVES && !saves.some((x) => x.title === clean)) saves.push({ title: clean, why: (why || "").trim().slice(0, 400), saved: false, skipped: false });
       return "";
     })
+    .replace(/\[\[widget:([a-z_-]+)(?:\|([^\]\n]*))?\]\]/gi, (_, kind, arg) => {
+      const w = widgetRequest(kind, arg);
+      if (w && widgets.length < MAX_WIDGETS && !widgets.some((x) => x.kind === w.kind && x.arg === w.arg)) widgets.push(w);
+      return "";
+    })
     // "This belongs to another tab": one per reply, becomes a button that
     // asks the same question there.
     .replace(/\[\[handoff:([a-z]+)\]\]/gi, (_, target) => {
@@ -184,7 +203,7 @@ export function parseDirectives(rawText) {
     .replace(/\[\[[^\]]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, handoff, metrics, partial };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, widgets, handoff, metrics, partial };
 }
 
 // Nothing the owner could see or use came back: no text, no card, no
@@ -193,7 +212,7 @@ export function parseDirectives(rawText) {
 export function isEmptyReply(p) {
   if (!p) return true;
   return !p.cleanText && !p.partial && !p.handoff && !p.metrics
-    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts"].some((k) => (p[k] || []).length);
+    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts", "widgets"].some((k) => (p[k] || []).length);
 }
 
 // What the model wrote last time, as it wrote it: the reply's text plus its
@@ -214,6 +233,7 @@ export function serializeDirectives(text, blocks = {}) {
   (b.drafts || []).forEach((d) => d?.title && out.push(`[[draft:${d.funnel || "TOFU"}|${d.title}]]`));
   (b.saves || []).forEach((x) => x?.title && out.push(`[[save:${x.title}|${x.why || ""}]]`));
   (b.tasks || []).forEach((x) => x?.title && out.push(`[[task:${x.title}|${x.why || ""}]]`));
+  (b.widgets || []).forEach((w) => w?.kind && out.push(widgetHistoryLine(w)));
   if (b.weekPlan?.items?.length) out.push(`(Week plan shown as a card:)\n${b.weekPlan.items.map((it) => `- ${it.date}: ${it.title}${it.angle ? ` — ${it.angle}` : ""}`).join("\n")}`);
   return out.filter(Boolean).join("\n");
 }
