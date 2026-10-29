@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { isCircleMember, sessionOf, recordingsOf, reviewOf, bedahOf, circleView, waNumber, reviewRequest, composeReviewNote, CIRCLE_DOC } from "../api/_founderCircle.js";
 import { handleCircleRequest } from "../api/founder-circle.js";
 import { ADMIN_UIDS } from "../api/_aiQuota.js";
+import { questionView, newQuestion, questionTextOk, MAX_OPEN_QUESTIONS } from "../api/_founderCircle.js";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -15,10 +16,24 @@ function fakeDb(initial = {}) {
     for (const [k, v] of Object.entries(b)) out[k] = v && typeof v === "object" && !Array.isArray(v) && out[k] && typeof out[k] === "object" ? merge(out[k], v) : v;
     return out;
   };
+  let auto = 0;
+  const ref = (path) => ({
+    async get() { const d = docs.get(path); return { exists: d !== undefined, data: () => structuredClone(d) }; },
+    async set(data, opts = {}) { docs.set(path, opts.merge ? merge(docs.get(path), data) : structuredClone(data)); },
+  });
   return {
-    doc: (path) => ({
-      async get() { const d = docs.get(path); return { exists: d !== undefined, data: () => structuredClone(d) }; },
-      async set(data, opts = {}) { docs.set(path, opts.merge ? merge(docs.get(path), data) : structuredClone(data)); },
+    doc: ref,
+    collection: (name) => ({
+      doc: (id) => ref(`${name}/${id || `auto${++auto}`}`),
+      orderBy: (field, dir) => ({
+        limit: (n) => ({
+          async get() {
+            const rows = [...docs].filter(([k]) => k.startsWith(`${name}/`)).map(([k, v]) => ({ id: k.slice(name.length + 1), data: () => structuredClone(v), v }));
+            rows.sort((a, b) => (dir === "desc" ? b.v[field] - a.v[field] : a.v[field] - b.v[field]));
+            return { docs: rows.slice(0, n) };
+          },
+        }),
+      }),
     }),
     read: (path) => docs.get(path),
   };
@@ -191,3 +206,108 @@ describe("Founder Circle: the session card", async () => {
     for (const line of ics.split("\r\n")) assert.ok(line.length <= 61, `folded: ${line}`);
   });
 });
+
+
+describe("Founder Circle: the weekly question queue", () => {
+  const rina = { plan: "founder", status: "active", displayName: "Rina", email: "rina@example.com" };
+  const budi = { plan: "founder-ultimate", status: "active", displayName: "Budi", email: "budi@example.com" };
+  const base = () => fakeDb({ "accounts/u1": rina, "accounts/u2": budi, "accounts/admin": { plan: "pro", status: "active", displayName: "Tim" }, "brands/b1": { ownerId: "u1", name: "Kopi Rina" } });
+  const ask = (db, uid, text, brandId) => call(db, { method: "POST", uid, body: { action: "ask", text, brandId } });
+
+  test("a question joins the queue and its author sees their place", async () => {
+    const db = base();
+    const r = await ask(db, "u1", "Kenapa reach Reels saya turun terus?", "b1");
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.body.questions.open.length, 1);
+    assert.equal(r.body.questions.open[0].position, 1);
+    assert.equal(r.body.questions.open[0].mine, true);
+    assert.equal(r.body.questions.mineOpen, 1);
+  });
+  test("other Founders see the question but never who sent it", async () => {
+    const db = base();
+    await ask(db, "u1", "Kenapa reach Reels saya turun terus?", "b1");
+    const seen = await call(db, { uid: "u2" });
+    const q = seen.body.questions.open[0];
+    assert.equal(q.mine, false);
+    assert.equal(q.name, undefined);
+    assert.equal(q.email, undefined);
+    assert.equal(q.brandName, undefined);
+    assert.equal(JSON.stringify(seen.body).includes("Rina"), false);
+    assert.equal(JSON.stringify(seen.body).includes("rina@example.com"), false);
+    assert.equal(JSON.stringify(seen.body).includes("Kopi Rina"), false);
+    assert.equal(seen.body.admin, false);
+  });
+  test("Wepeka's team sees who sent it", async () => {
+    const db = base();
+    await ask(db, "u1", "Kenapa reach Reels saya turun terus?", "b1");
+    const seen = await call(db, { uid: ADMIN_UIDS[0] });
+    assert.equal(seen.body.admin, true);
+    assert.equal(seen.body.questions.open[0].name, "Rina");
+    assert.equal(seen.body.questions.open[0].brandName, "Kopi Rina");
+  });
+  test("first come, first served; places renumber when one leaves", async () => {
+    const db = base();
+    await ask(db, "u1", "Pertanyaan pertama dari Rina");
+    await new Promise((r) => setTimeout(r, 2));
+    const second = await handleAt(db, "u2", "Pertanyaan kedua dari Budi", NOW + 1000);
+    assert.deepEqual(second.questions.open.map((q) => q.position), [1, 2]);
+    assert.equal(second.questions.open[1].mine, true);
+    const firstId = second.questions.open[0].id;
+    await call(db, { method: "POST", uid: "u1", body: { action: "withdraw", id: firstId } });
+    const after = await call(db, { uid: "u2" });
+    assert.equal(after.body.questions.open.length, 1);
+    assert.equal(after.body.questions.open[0].position, 1);
+  });
+  test("a question needs a few words; each member has a cap", async () => {
+    const db = base();
+    assert.equal((await ask(db, "u1", "tes")).statusCode, 400);
+    for (let i = 0; i < MAX_OPEN_QUESTIONS; i++) assert.equal((await ask(db, "u1", `Pertanyaan nomor ${i + 1} soal branding`)).statusCode, 200);
+    const over = await ask(db, "u1", "Pertanyaan yang kelebihan jatah");
+    assert.equal(over.statusCode, 409);
+    assert.equal(over.body.error, "limit");
+  });
+  test("only the author withdraws a question; only the team marks it discussed", async () => {
+    const db = base();
+    const made = await ask(db, "u1", "Pertanyaan soal positioning brand");
+    const id = made.body.questions.open[0].id;
+    assert.equal((await call(db, { method: "POST", uid: "u2", body: { action: "withdraw", id } })).statusCode, 403);
+    assert.equal((await call(db, { method: "POST", uid: "u1", body: { action: "answer", id } })).statusCode, 403);
+    const done = await call(db, { method: "POST", uid: ADMIN_UIDS[0], body: { action: "answer", id } });
+    assert.equal(done.body.questions.open.length, 0);
+    assert.equal(done.body.questions.answered.length, 1);
+    const back = await call(db, { method: "POST", uid: ADMIN_UIDS[0], body: { action: "reopen", id } });
+    assert.equal(back.body.questions.open.length, 1);
+  });
+  test("a brand that isn't yours is ignored, not trusted", async () => {
+    const db = base();
+    const r = await ask(db, "u2", "Pertanyaan dengan brand milik orang lain", "b1");
+    assert.equal(r.statusCode, 200);
+    const admin = await call(db, { uid: ADMIN_UIDS[0] });
+    assert.equal(admin.body.questions.open[0].brandName, "");
+  });
+  test("an account outside the circle can't ask or read the queue", async () => {
+    const db = fakeDb({ "accounts/t1": { plan: "trial", status: "active" } });
+    const r = await call(db, { method: "POST", uid: "t1", body: { action: "ask", text: "Boleh tanya soal branding?" } });
+    assert.deepEqual(r.body, { member: false });
+    assert.equal((await call(db, { uid: "t1" })).body.questions, undefined);
+  });
+  test("the pure view drops withdrawn rows and never carries a uid", () => {
+    const docs = [
+      { id: "a", uid: "u1", text: "Terbuka pertama", status: "open", createdAt: 1 },
+      { id: "b", uid: "u2", text: "Sudah ditarik", status: "withdrawn", createdAt: 2 },
+      { id: "c", uid: "u2", text: "Sudah dibahas", status: "answered", createdAt: 3, answeredAt: 9 },
+    ];
+    const v = questionView(docs, "u1");
+    assert.equal(v.open.length, 1);
+    assert.equal(v.answered.length, 1);
+    assert.equal(JSON.stringify(v).includes("u2"), false);
+    assert.ok(newQuestion({ text: "  Halo   dunia ini  ", uid: "u1" }).text === "Halo dunia ini");
+    assert.equal(questionTextOk("pendek"), false);
+  });
+});
+
+async function handleAt(db, uid, text, now) {
+  const res = fakeRes();
+  await handleCircleRequest({ method: "POST", body: { action: "ask", text } }, res, { db, uid, now, notify: async () => {} });
+  return res.body;
+}

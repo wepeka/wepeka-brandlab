@@ -179,6 +179,109 @@ function reviewHTML(review) {
     </form>`;
 }
 
+// ---- The weekly question queue -------------------------------------------
+// Anything about branding and marketing, answered in the last 30 minutes of
+// the weekly session in queue order. Everyone in the circle reads the open
+// questions without who asked (the server never sends it); only the team
+// sees senders, and can put the queue on screen for the room.
+
+function queueItemHTML(q, { admin = false, done = false } = {}) {
+  const who = admin ? [q.name, q.brandName].filter(Boolean).join(" · ") : "";
+  return `<li class="circle-q${q.mine ? " is-mine" : ""}${done ? " is-done" : ""}" data-q="${esc(q.id)}">
+    <span class="circle-q-n">${done ? icon("check", { size: 12 }) : `#${q.position}`}</span>
+    <div class="circle-q-main">
+      <p class="circle-q-text">${esc(q.text)}</p>
+      <div class="circle-q-meta">
+        ${q.mine ? `<span class="circle-q-mine">${t("circle.queue.mine")}</span>` : ""}
+        ${who ? `<span class="circle-q-who">${esc(who)}</span>` : ""}
+        ${q.mine && !done ? `<button type="button" class="btn btn-ghost btn-sm" data-circle-withdraw="${esc(q.id)}">${t("circle.queue.withdraw")}</button>` : ""}
+        ${admin && !done ? `<button type="button" class="btn btn-ghost btn-sm" data-circle-stage-at="${esc(q.id)}">${icon("expand", { size: 12 })}${t("circle.stage.show")}</button>` : ""}
+        ${admin && !done ? `<button type="button" class="btn btn-secondary btn-sm" data-circle-answer="${esc(q.id)}">${icon("check", { size: 12 })}${t("circle.queue.answer")}</button>` : ""}
+        ${admin && done ? `<button type="button" class="btn btn-ghost btn-sm" data-circle-reopen="${esc(q.id)}">${t("circle.queue.reopen")}</button>` : ""}
+      </div>
+    </div>
+  </li>`;
+}
+
+function askFormHTML(qs) {
+  if (qs.mineOpen >= qs.max) return `<p class="circle-status is-scheduled">${icon("clock", { size: 14 })}<span>${t("circle.ask.limit", { max: qs.max })}</span></p>`;
+  const brands = listBrands();
+  return `
+    <form class="circle-form" data-circle-ask novalidate>
+      <div class="field"><label for="circle-ask-text">${t("circle.ask.label")}</label><textarea class="textarea" id="circle-ask-text" name="text" rows="3" placeholder="${esc(t("circle.ask.placeholder"))}"></textarea></div>
+      ${brands.length ? `<div class="field"><label for="circle-ask-brand">${t("circle.ask.brand")}</label><select class="select" id="circle-ask-brand" name="brandId"><option value="">${t("circle.ask.noBrand")}</option>${brandOptions()}</select></div>` : ""}
+      <p class="circle-muted">${t("circle.ask.hint")}</p>
+      <button type="submit" class="btn btn-primary btn-sm">${icon("send", { size: 13 })}${t("circle.ask.submit")}</button>
+    </form>`;
+}
+
+export function questionsHTML(view) {
+  const qs = view?.questions || { open: [], answered: [], mineOpen: 0, max: 3 };
+  const admin = !!view?.admin;
+  return `
+    ${askFormHTML(qs)}
+    <div class="circle-queue-head">
+      <b>${t("circle.queue.title", { n: qs.open.length })}</b>
+      ${admin ? `<button type="button" class="btn btn-secondary btn-sm" data-circle-stage>${icon("expand", { size: 13 })}${t("circle.stage.open")}</button>` : ""}
+    </div>
+    ${admin ? `<p class="circle-muted">${t("circle.queue.team")}</p>` : ""}
+    ${qs.open.length ? `<ol class="circle-queue">${qs.open.map((q) => queueItemHTML(q, { admin })).join("")}</ol>` : `<p class="circle-empty">${t("circle.queue.empty")}</p>`}
+    ${qs.answered.length ? `<details class="circle-done"><summary>${t("circle.queue.done", { n: qs.answered.length })}</summary><ol class="circle-queue">${qs.answered.map((q) => queueItemHTML(q, { admin, done: true })).join("")}</ol></details>` : ""}`;
+}
+
+// The queue full-screen, for sharing the screen in the session: one question
+// at a time, large. Sender names stay off unless the team switches them on
+// (they live only in this tab's memory — the room sees the question alone).
+function openStage(view, act, startId = "") {
+  let v = view;
+  let i = Math.max(0, (view.questions?.open || []).findIndex((q) => q.id === startId));
+  let showWho = false;
+  const el = document.createElement("div");
+  el.className = "circle-stage";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-modal", "true");
+  const close = () => { document.removeEventListener("keydown", onKey); el.remove(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const render = () => {
+    const list = v.questions?.open || [];
+    i = Math.min(Math.max(0, i), Math.max(0, list.length - 1));
+    const q = list[i];
+    const who = q && showWho ? [q.name, q.brandName].filter(Boolean).join(" · ") : "";
+    el.innerHTML = `
+      <div class="circle-stage-bar">
+        <span>${list.length ? t("circle.stage.count", { n: i + 1, total: list.length }) : ""}</span>
+        <label class="circle-stage-who"><input type="checkbox" data-stage-who ${showWho ? "checked" : ""}> ${t("circle.stage.who")}</label>
+        <button type="button" class="btn btn-ghost btn-sm" data-stage-close>${icon("x", { size: 14 })}${t("circle.stage.close")}</button>
+      </div>
+      <div class="circle-stage-body">
+        ${q ? `<span class="circle-stage-n">#${q.position}</span><p class="circle-stage-q">${esc(q.text)}</p>${who ? `<p class="circle-stage-sender">${esc(who)}</p>` : ""}` : `<p class="circle-stage-q">${t("circle.stage.empty")}</p>`}
+      </div>
+      ${q ? `<div class="circle-stage-foot">
+        <button type="button" class="btn btn-secondary" data-stage-prev ${i === 0 ? "disabled" : ""}>${t("circle.stage.prev")}</button>
+        <button type="button" class="btn btn-primary" data-stage-done>${icon("check", { size: 15 })}${t("circle.stage.done")}</button>
+        <button type="button" class="btn btn-secondary" data-stage-skip ${i >= list.length - 1 ? "disabled" : ""}>${t("circle.stage.skip")}</button>
+      </div>` : ""}`;
+  };
+  el.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-stage-close]")) return close();
+    if (e.target.closest("[data-stage-prev]")) { i -= 1; return render(); }
+    if (e.target.closest("[data-stage-skip]")) { i += 1; return render(); }
+    const done = e.target.closest("[data-stage-done]");
+    if (done) {
+      const q = v.questions.open[i];
+      done.disabled = true;
+      try { v = await act({ action: "answer", id: q.id }); render(); } catch { done.disabled = false; toast(t("circle.error")); }
+    }
+  });
+  el.addEventListener("change", (e) => {
+    if (e.target.matches("[data-stage-who]")) { showWho = e.target.checked; render(); }
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(el);
+  render();
+  el.querySelector("[data-stage-close]")?.focus();
+}
+
 function bedahHTML(bedah) {
   if (bedah) {
     return `<p class="circle-status is-scheduled">${icon("check", { size: 14 })}<span>${t("circle.bedah.on", { brand: esc(bedah.brandName) })}</span></p>
@@ -205,6 +308,7 @@ export function circleBodyHTML(view, now = Date.now()) {
   return `
     <p class="community-lead">${t("circle.lead")}</p>
     <section class="circle-sec"><h3>${icon("users", { size: 15 })}${t("circle.session.title")}</h3><div data-circle-session>${sessionHTML(view.session, now)}</div></section>
+    <section class="circle-sec" id="circle-ask"><h3>${icon("chat", { size: 15 })}${t("circle.ask.title")}</h3><p class="circle-muted">${t("circle.ask.body")}</p>${questionsHTML(view)}</section>
     <section class="circle-sec"><h3>${icon("play", { size: 15 })}${t("circle.rec.title")}</h3>${recordingsHTML(view.recordings || [])}</section>
     <section class="circle-sec" id="circle-review"><h3>${icon("book", { size: 15 })}${t("circle.review.title")}</h3><p class="circle-muted">${t("circle.review.body")}</p>${reviewHTML(view.review)}</section>
     <section class="circle-sec"><h3>${icon("target", { size: 15 })}${t("circle.bedah.title")}</h3><p class="circle-muted">${t("circle.bedah.body")}</p>${bedahHTML(view.bedah)}</section>`;
@@ -222,6 +326,7 @@ export function mountCircle(body, { member = isLifetime(getCachedAccount()), foc
     current = view;
     body.innerHTML = circleBodyHTML(view);
     if (focus === "review") body.querySelector("#circle-review")?.scrollIntoView({ block: "start" });
+    if (focus === "ask") body.querySelector("#circle-ask")?.scrollIntoView({ block: "start" });
   };
   const tick = setInterval(() => {
     if (!body.isConnected) { clearInterval(tick); return; }
@@ -246,6 +351,25 @@ export function mountCircle(body, { member = isLifetime(getCachedAccount()), foc
   loadCircle({ fresh: true }).then(paint).catch(fail);
 
   body.addEventListener("submit", async (e) => {
+    const askForm = e.target.closest("[data-circle-ask]");
+    if (askForm) {
+      e.preventDefault();
+      const btn = askForm.querySelector('button[type="submit"]');
+      const text = askForm.elements.text.value.trim();
+      if (text.length < 8) { toast(t("circle.ask.short"), "error"); return; }
+      btn.disabled = true;
+      try {
+        const view = await request("POST", { action: "ask", text, brandId: askForm.elements.brandId?.value || "" });
+        paint(view);
+        // 409: already at the cap — the view still comes back, so the page shows it.
+        if (view?.error === "limit") toast(t("circle.ask.limit", { max: view.questions?.max || 1 }), "error");
+        else { toast(t("circle.ask.sent")); gaEvent("founder_question_ask", {}); }
+      } catch (err) {
+        btn.disabled = false;
+        toast(t(err.code === "short" ? "circle.ask.short" : "circle.error"), "error");
+      }
+      return;
+    }
     const form = e.target.closest("[data-circle-review]");
     if (!form) return;
     e.preventDefault();
@@ -261,8 +385,22 @@ export function mountCircle(body, { member = isLifetime(getCachedAccount()), foc
       toast(t("circle.error"));
     }
   });
+  const act = async (payload) => { const view = await request("POST", payload); paint(view); return view; };
   body.addEventListener("click", async (e) => {
     if (e.target.closest("[data-circle-rec]")) gaEvent("founder_recording_open", {});
+    if (e.target.closest("[data-circle-stage]") && current?.admin) { openStage(current, act); return; }
+    const showOne = e.target.closest("[data-circle-stage-at]");
+    if (showOne && current?.admin) { openStage(current, act, showOne.getAttribute("data-circle-stage-at")); return; }
+    const qBtn = e.target.closest("[data-circle-withdraw],[data-circle-answer],[data-circle-reopen]");
+    if (qBtn) {
+      const action = qBtn.hasAttribute("data-circle-withdraw") ? "withdraw" : qBtn.hasAttribute("data-circle-answer") ? "answer" : "reopen";
+      qBtn.disabled = true;
+      try {
+        await act({ action, id: qBtn.getAttribute(`data-circle-${action}`) });
+        if (action === "withdraw") toast(t("circle.queue.withdrawn"));
+      } catch { qBtn.disabled = false; toast(t("circle.error"), "error"); }
+      return;
+    }
     const on = e.target.closest("[data-circle-bedah-on]");
     const off = e.target.closest("[data-circle-bedah-off]");
     if (!on && !off) return;

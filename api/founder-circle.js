@@ -8,10 +8,19 @@
 //   POST { action: "bedah", on, brandId? }
 //                                     → signs a brand up to be taken apart in
 //                                       a live session (or takes it off)
+//   POST { action: "ask", text, brandId? }
+//                                     → joins the weekly question queue (at
+//                                       most MAX_OPEN_QUESTIONS open each)
+//   POST { action: "withdraw", id }   → takes one's own open question back
+//   POST { action: "answer", id }     → team only: marks it as discussed
+//   POST { action: "reopen", id }     → team only: puts it back in line
+// The view carries the open queue WITHOUT who asked; only Wepeka's team gets
+// names (api/_founderCircle.js questionView).
 // A non-member gets { member: false, session } — only a public live, never
 // a Founder session (the app then shows what Lifetime includes, and the live).
 import { adminDb, requireAuth } from "./_firebaseAdmin.js";
-import { CIRCLE_DOC, MEMBER_COLLECTION, isCircleMember, circleView, publicView, reviewRequest, composeReviewNote } from "./_founderCircle.js";
+import { CIRCLE_DOC, MEMBER_COLLECTION, QUESTION_COLLECTION, MAX_OPEN_QUESTIONS, MAX_QUEUE_READ, isCircleMember, circleView, publicView, reviewRequest, composeReviewNote, newQuestion, questionTextOk, questionView } from "./_founderCircle.js";
+import { isAdminUid } from "./_aiQuota.js";
 import { sendEmail, emailConfigured } from "./_email.js";
 import { ownerEmails } from "./_ownerNotify.js";
 
@@ -50,9 +59,17 @@ export async function handleCircleRequest(req, res, { db, uid, now = Date.now(),
   }
 
   const memberRef = db.doc(`${MEMBER_COLLECTION}/${uid}`);
+  const admin = isAdminUid(uid);
+  // The newest MAX_QUEUE_READ questions (a filter on status would need a
+  // composite index; the circle is a few dozen people, so reading them all
+  // and sorting here is cheaper than the index).
+  const readQuestions = async () => {
+    const snap = await db.collection(QUESTION_COLLECTION).orderBy("createdAt", "desc").limit(MAX_QUEUE_READ).get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  };
   const view = async () => {
-    const [config, mine] = await Promise.all([db.doc(CIRCLE_DOC).get(), memberRef.get()]);
-    return circleView(config.exists ? config.data() : null, mine.exists ? mine.data() : null, now);
+    const [config, mine, questions] = await Promise.all([db.doc(CIRCLE_DOC).get(), memberRef.get(), readQuestions()]);
+    return circleView(config.exists ? config.data() : null, mine.exists ? mine.data() : null, now, { admin, questions: questionView(questions, uid, { admin }) });
   };
   if (req.method === "GET") return res.status(200).json(await view());
 
@@ -83,6 +100,31 @@ export async function handleCircleRequest(req, res, { db, uid, now = Date.now(),
     if (on && !brand) return res.status(404).json({ error: "brand" });
     const bedah = on ? { on: true, brandId: brand.id, brandName: brand.name || "Tanpa nama", at: now } : { on: false, at: now };
     await memberRef.set({ bedah, ...who, updatedAt: now }, { merge: true });
+    return res.status(200).json(await view());
+  }
+
+  if (body.action === "ask") {
+    if (!questionTextOk(body.text)) return res.status(400).json({ error: "short" });
+    const open = (await readQuestions()).filter((q) => q.uid === uid && q.status === "open");
+    if (open.length >= MAX_OPEN_QUESTIONS) return res.status(409).json({ error: "limit", ...(await view()) });
+    const brand = body.brandId ? await ownBrand(body.brandId) : null;
+    await db.collection(QUESTION_COLLECTION).doc().set(newQuestion({ text: body.text, brandId: brand?.id, brandName: brand?.name, ...who, uid }, now));
+    return res.status(200).json(await view());
+  }
+
+  if (body.action === "withdraw" || body.action === "answer" || body.action === "reopen") {
+    const id = typeof body.id === "string" && body.id && body.id.length <= 128 && !body.id.includes("/") ? body.id : "";
+    const ref = id ? db.doc(`${QUESTION_COLLECTION}/${id}`) : null;
+    const snap = ref ? await ref.get() : null;
+    if (!snap?.exists) return res.status(404).json({ error: "question" });
+    const q = snap.data();
+    if (body.action === "withdraw") {
+      if (q.uid !== uid && !admin) return res.status(403).json({ error: "forbidden" });
+      if (q.status === "open") await ref.set({ status: "withdrawn" }, { merge: true });
+    } else {
+      if (!admin) return res.status(403).json({ error: "forbidden" });
+      await ref.set(body.action === "answer" ? { status: "answered", answeredAt: now } : { status: "open", answeredAt: null }, { merge: true });
+    }
     return res.status(200).json(await view());
   }
 

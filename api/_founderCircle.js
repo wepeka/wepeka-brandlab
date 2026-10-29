@@ -18,6 +18,13 @@
 //                           name, email, updatedAt }
 //                         the member writes through the API; the admin moves
 //                         the review along (requested → scheduled → done)
+//   founderQuestions/{id} { uid, name, email, brandId, brandName, text,
+//                           status: open | answered | withdrawn,
+//                           createdAt, answeredAt }
+//                         the weekly "ask anything" queue: members write
+//                         through the API, everyone in the circle reads the
+//                         open queue WITHOUT who asked (questionView); only
+//                         Wepeka's team gets name, email and brand.
 // Everything here is pure (no Firestore, no fetch), tested in
 // tests/founder-circle.test.mjs.
 import { isLifetimePlan } from "./_plans.js";
@@ -92,8 +99,69 @@ function upcomingSession(config, now) {
 }
 
 // What a member's app gets.
-export function circleView(config, mine, now = Date.now()) {
-  return { member: true, session: upcomingSession(config, now), recordings: recordingsOf(config?.recordings), review: reviewOf(mine?.review), bedah: bedahOf(mine?.bedah) };
+export function circleView(config, mine, now = Date.now(), extra = {}) {
+  return { member: true, session: upcomingSession(config, now), recordings: recordingsOf(config?.recordings), review: reviewOf(mine?.review), bedah: bedahOf(mine?.bedah), ...extra };
+}
+
+// ---- The weekly question queue -------------------------------------------
+// Owner, 2026-10-29: Founders may ask anything about branding and marketing
+// (their brand, what blocks them); the team answers in the last 30 minutes
+// of the weekly session, in queue order; the team can share the screen and
+// everyone sees the questions anonymously; only the admin sees who sent it.
+export const QUESTION_COLLECTION = "founderQuestions";
+export const QUESTION_STATES = ["open", "answered", "withdrawn"];
+export const MAX_OPEN_QUESTIONS = 1; // per member: one short question at a time, so a few hundred Founders still fit the half hour
+export const MIN_QUESTION = 8;
+export const MAX_QUESTION = 2000; // only a safety net against abuse; the form shows no limit (owner, 2026-10-29)
+export const MAX_QUEUE_READ = 150; // newest documents read per request
+const MAX_ANSWERED_SHOWN = 12;
+
+// Keeps line breaks (a question may have paragraphs) but nothing wilder.
+const questionText = (v) => String(v ?? "").replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_QUESTION);
+
+// What a member writes: the text (too short is refused by the caller), and
+// the brand it is about if it is one of theirs (the caller checks).
+export function newQuestion({ text, brandId = "", brandName = "", name = "", email = "", uid = "" }, now = Date.now()) {
+  return {
+    uid: str(uid, 128),
+    name: str(name, 80),
+    email: str(email, 254),
+    brandId: str(brandId, 128),
+    brandName: str(brandName, 120),
+    text: questionText(text),
+    status: "open",
+    createdAt: now,
+    answeredAt: null,
+  };
+}
+export const questionTextOk = (text) => questionText(text).length >= MIN_QUESTION;
+
+// The queue as a person sees it. `docs` = [{ id, ...data }] in any order.
+//  - open questions oldest first, each with its place in line;
+//  - `mine`: this account's own (only it gets the flag, nobody gets a uid);
+//  - answered: the newest few, for "sudah dibahas";
+//  - name / email / brand only when `admin`.
+export function questionView(docs, uid, { admin = false } = {}) {
+  const rows = (Array.isArray(docs) ? docs : [])
+    .filter((d) => d && QUESTION_STATES.includes(d.status) && d.status !== "withdrawn" && str(d.text, MAX_QUESTION))
+    .map((d) => ({ ...d, createdAt: time(d.createdAt) || 0 }));
+  const shape = (d, position = 0) => ({
+    id: String(d.id),
+    text: questionText(d.text),
+    at: d.createdAt,
+    status: d.status,
+    position,
+    mine: !!uid && d.uid === uid,
+    ...(admin ? { name: str(d.name, 80), email: str(d.email, 254), brandName: str(d.brandName, 120) } : {}),
+  });
+  const open = rows.filter((d) => d.status === "open").sort((a, b) => a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)));
+  const done = rows.filter((d) => d.status === "answered").sort((a, b) => (time(b.answeredAt) || 0) - (time(a.answeredAt) || 0)).slice(0, MAX_ANSWERED_SHOWN);
+  return {
+    open: open.map((d, i) => shape(d, i + 1)),
+    answered: done.map((d) => shape(d)),
+    mineOpen: open.filter((d) => d.uid === uid).length,
+    max: MAX_OPEN_QUESTIONS,
+  };
 }
 
 // What every other account gets: a public live only — never a Founder

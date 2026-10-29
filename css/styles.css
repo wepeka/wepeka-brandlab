@@ -5949,6 +5949,32 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .circle-teaser li svg{ flex:none; margin-top:2px; color: var(--accent); }
 .circle-teaser b{ color: var(--text); }
 .trial-remind.is-circle .trial-remind-icon{ background: var(--health-good-soft); color: var(--health-good); }
+/* Founder question queue (js/founder-circle.js questionsHTML / openStage) */
+.circle-queue-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:14px 0 6px; font-size:13.5px; }
+.circle-queue{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.circle-q{ display:flex; gap:10px; padding:10px 12px; border-radius: var(--radius-sm); border:1px solid var(--border); background: var(--surface); }
+.circle-q.is-mine{ border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--accent-soft); }
+.circle-q.is-done{ opacity:.7; }
+.circle-q-n{ flex:none; display:grid; place-items:center; min-width:30px; height:24px; padding:0 6px; border-radius: var(--radius-pill); background: var(--surface-2); font-size:12px; font-weight:800; color: var(--text-muted); }
+.circle-q.is-mine .circle-q-n{ background: var(--accent); color:#fff; }
+.circle-q-main{ flex:1; min-width:0; }
+.circle-q-text{ margin:0; font-size:13.5px; line-height:1.55; white-space:pre-line; overflow-wrap:anywhere; }
+.circle-q-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:6px; }
+.circle-q-meta:empty{ display:none; }
+.circle-q-mine{ padding:1px 8px; border-radius: var(--radius-pill); background: var(--accent); color:#fff; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.circle-q-who{ font-size:12px; font-weight:700; color: var(--text-muted); }
+.circle-done{ margin-top:12px; }
+.circle-done summary{ cursor:pointer; font-size:13px; font-weight:700; color: var(--text-muted); }
+.circle-done .circle-queue{ margin-top:8px; }
+.circle-stage{ position:fixed; inset:0; z-index:400; display:flex; flex-direction:column; padding:20px clamp(18px,5vw,64px) 28px; background: var(--bg); color: var(--text); }
+.circle-stage-bar{ display:flex; align-items:center; gap:16px; font-size:14px; font-weight:700; color: var(--text-muted); }
+.circle-stage-bar > span{ flex:1; }
+.circle-stage-who{ display:inline-flex; align-items:center; gap:6px; font-weight:600; cursor:pointer; }
+.circle-stage-body{ flex:1; display:flex; flex-direction:column; justify-content:center; gap:18px; max-width:1100px; margin:0 auto; width:100%; }
+.circle-stage-n{ align-self:flex-start; padding:4px 14px; border-radius: var(--radius-pill); background: var(--accent); color:#fff; font-size:18px; font-weight:800; }
+.circle-stage-q{ margin:0; font-size:clamp(24px,4vw,46px); line-height:1.3; font-weight:700; white-space:pre-line; overflow-wrap:anywhere; }
+.circle-stage-sender{ margin:0; font-size:16px; color: var(--text-muted); }
+.circle-stage-foot{ display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
 /* Brand Book review screen: ask the Wepeka team (js/views/brand-guidelines.js teamReviewHTML) */
 .bb-team-review{ display:flex; align-items:center; gap:12px; margin:16px 0 0; padding:12px 14px; border-radius: var(--radius-md); border:1px dashed var(--border); background: var(--surface); }
 .bb-team-review p{ flex:1; min-width:0; margin:0; font-size:13px; line-height:1.5; color: var(--text-muted); }
