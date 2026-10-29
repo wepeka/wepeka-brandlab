@@ -30,6 +30,7 @@ import { postingLine } from "../brand-learning.js";
 import { weekRecap, weekAhead, weekCardParts, finishedCampaignRecaps, recapCardHTML } from "../weekly-recap.js";
 import { lowCreditNoteHTML, wireLowCreditNote, installLowCreditWatch } from "../ai-low-credit.js";
 import { brandDocFits } from "../brand-doc-size.js";
+import { routinesThisWeek } from "../goal-todo.js";
 
 // The brand's home, one file for both modes. A busy owner should get it in
 // five seconds on a phone, so the page has one fixed shape (2026-10-06):
@@ -1331,6 +1332,11 @@ function appStatus(app, { brand, campaigns, content, journey, locked, reportIsDu
   }
   if (app.key === "campaigns") {
     const running = campaigns.filter((c) => ["planning", "active", undefined, ""].includes(c.status)).length;
+    // "Rutin minggu ini" (js/goal-todo.js): what the goals do every week and
+    // hasn't been done yet this week is the card's line — "Lakuin ini".
+    const open = campaigns.filter((c) => !["archived", "completed"].includes(c.status))
+      .reduce((n, c) => n + routinesThisWeek({ brand, campaign: c, content }).rows.filter((r) => !r.done && !r.fresh).length, 0);
+    if (open) return { text: t("lh.status.goalsRoutine", { n: open }), tone: "do" };
     return running ? { text: t("lh.status.goalsActive", { n: running }), tone: "good" } : { text: t("lh.status.goalsNone"), tone: "" };
   }
   if (app.key === "content-os") {
@@ -1363,7 +1369,7 @@ function appCardHTML(app, { brandId, status, current, locked, hereLabel }) {
     <a class="lh-card${current ? " is-current" : ""}${locked ? " is-locked" : ""}" ${attrs} style="--app:${app.color};--app2:${app.color2 || app.color}" data-app="${app.key}" aria-label="${esc(`${name} — ${t(app.subKey)}`)}">
       <span class="lh-card-name">${esc(name)}</span>
       <span class="lh-card-sub">${esc(t(app.subKey))}</span>
-      <span class="lh-card-status${status.tone ? ` is-${status.tone}` : ""}">${locked ? icon("lock", { size: 12 }) : status.tone === "good" ? icon("check", { size: 12 }) : ""}${esc(status.text)}</span>
+      <span class="lh-card-status${status.tone ? ` is-${status.tone}` : ""}">${locked ? icon("lock", { size: 12 }) : status.tone === "good" ? icon("check", { size: 12 }) : status.tone === "do" ? icon("refresh", { size: 12 }) : ""}${esc(status.text)}</span>
       ${current ? `<span class="lh-card-here">${esc(hereLabel)}</span>` : `<span class="lh-card-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>`}
       <span class="lh-card-art" aria-hidden="true">${appIconSVG(app.key)}</span>
     </a>`;

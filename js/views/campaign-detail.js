@@ -39,10 +39,10 @@ import { t, campaignDisplayName } from "../i18n.js";
 import { attachMic } from "../voice-input.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
-import { goalTodo, goalKind } from "../goal-todo.js";
+import { goalTodo, goalKind, openCount, RITUAL_WEEKS } from "../goal-todo.js";
 import { goalArtSVG, goalKindByKey } from "../goal-art.js";
 import { goalTreeSVG, wireGoalTree } from "../goal-tree.js";
-import { addGoalTask, goalTaskPlaces } from "../goal-actions.js";
+import { addGoalTask, goalTaskPlaces, addGoalRoutine, toggleGoalRoutineWeek, removeGoalRoutine } from "../goal-actions.js";
 import { draftFromIdea } from "../idea-draft.js";
 import { openGoalIdeasChat } from "../consultant-panel.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
@@ -422,27 +422,90 @@ function perfSectionHTML({ campaign, stages, state, stageRead, autoIndex, ctx })
     </section>`;
 }
 
-function todoRowHTML(x, { done = false } = {}) {
+// A series' name on a piece of content, as a link to its series (owner,
+// 2026-10-29: what belongs to a series "ngelink ke sana juga").
+const seriesChipHTML = (brandId, name) => `<a class="gd-series-chip" href="#/brand/${brandId}/content/series" title="${esc(t("gl.rt.openSeries", { name }))}">${icon("refresh", { size: 11 })}<span>${esc(name)}</span></a>`;
+const dayDate = (day, date) => `${t(`calendar.dow.${day}`)}, ${formatEventDate(date)}`;
+
+function todoRowHTML(x, { done = false, brandId = "" } = {}) {
   const meta = [];
   if (x.kind === "content") {
     meta.push(t(`cw.step.${STEP_OF_STATUS[x.status] || "idea"}`));
     if (x.date) meta.push(x.late ? t("gl.todo.late", { date: formatEventDate(x.date) }) : formatEventDate(x.date));
     return `
-      <button type="button" class="gd-row is-content${x.late ? " is-late" : ""}${done ? " is-done" : ""}" data-cd-open-content="${x.id}">
-        <span class="gd-row-mark">${icon(FORMAT_ICON(x.format), { size: 14 })}</span>
-        <span class="gd-row-main"><b>${esc(x.label || t("common.untitled"))}</b><small>${esc(meta.join(" · "))}</small></span>
+      <div class="gd-row is-content${x.late ? " is-late" : ""}${done ? " is-done" : ""}">
+        <button type="button" class="gd-row-open" data-cd-open-content="${x.id}">
+          <span class="gd-row-mark">${icon(FORMAT_ICON(x.format), { size: 14 })}</span>
+          <span class="gd-row-main"><b>${esc(x.label || t("common.untitled"))}</b><small>${esc(meta.join(" · "))}</small></span>
+        </button>
+        ${x.seriesName ? seriesChipHTML(brandId, x.seriesName) : ""}
         <span class="gd-row-go">${icon("arrowRight", { size: 14 })}</span>
-      </button>`;
+      </div>`;
   }
   if (x.stageName && x.stageKind === "window") meta.push(x.stageName);
   if (x.date) meta.push(x.late ? t("gl.todo.late", { date: formatEventDate(x.date) }) : formatEventDate(x.date));
   if (x.optional) meta.push(t("camp.optional").replace(/[()]/g, ""));
+  if (x.ritualNeed && !done) meta.push(t("gl.rt.ritualAuto", { n: x.ritualWeeks, need: x.ritualNeed }));
   const canDel = !done && x.kind === "task" && (x.stageKind === "window" || x.custom);
   return `
     <div class="gd-row is-task${x.late ? " is-late" : ""}${done ? " is-done" : ""}">
       <button type="button" class="gd-check${done ? " is-on" : ""}" data-gd-tick="${esc(x.id)}" aria-pressed="${done}" aria-label="${esc(done ? t("gl.todo.untick", { name: x.label }) : t("gl.todo.tick", { name: x.label }))}">${icon("check", { size: 13 })}</button>
       <span class="gd-row-main"><b>${esc(x.label)}</b>${meta.length ? `<small>${esc(meta.join(" · "))}</small>` : ""}</span>
       ${canDel ? `<button type="button" class="gd-row-x" data-gd-del="${esc(x.id)}" aria-label="${t("roadmap.ms.remove")}" title="${t("roadmap.ms.remove")}">${icon("x", { size: 12 })}</button>` : ""}
+    </div>`;
+}
+
+// "Rutin minggu ini": one row per thing that comes back every week. A
+// series day: its episode (open it), or "Bikin episode" when there's none.
+// A routine: a tick that only covers this week.
+function routineRowHTML(r, brandId) {
+  const when = dayDate(r.day, r.date);
+  const lead = r.done ? t("gl.rt.doneWeek") : r.fresh ? t("gl.rt.startsNext", { day: t(`store.day.${r.day}`) }) : r.late ? t("gl.todo.late", { date: when }) : `${t("gl.rt.doThis")} · ${when}`;
+  const cls = `gd-row is-routine${r.late ? " is-late" : ""}${r.done ? " is-done" : ""}`;
+  if (r.kind === "series") {
+    if (r.episode) {
+      const meta = [r.done ? t("gl.rt.episodeOut") : t(`cw.step.${STEP_OF_STATUS[r.episode.status] || "idea"}`), r.done ? when : lead];
+      return `
+        <div class="${cls}">
+          <button type="button" class="gd-row-open" data-cd-open-content="${r.episode.id}">
+            <span class="gd-row-mark">${icon(r.done ? "check" : "play", { size: 14 })}</span>
+            <span class="gd-row-main"><b>${esc(r.episode.title || t("common.untitled"))}</b><small>${esc(meta.join(" · "))}</small></span>
+          </button>
+          ${seriesChipHTML(brandId, r.label)}
+          <span class="gd-row-go">${icon("arrowRight", { size: 14 })}</span>
+        </div>`;
+    }
+    return `
+      <div class="${cls}">
+        <span class="gd-row-mark is-empty">${icon("plus", { size: 14 })}</span>
+        <span class="gd-row-main"><b>${esc(t("gl.rt.episodeOf", { name: r.label }))}</b><small>${esc(lead)} · ${esc(t("gl.rt.noEpisode"))}</small></span>
+        <span class="gd-row-acts">
+          ${seriesChipHTML(brandId, r.label)}
+          <button type="button" class="gd-mini is-solid" data-gd-episode="${esc(r.seriesId)}" data-date="${esc(r.date)}">${icon("plus", { size: 12 })}${t("gl.rt.makeEpisode")}</button>
+        </span>
+      </div>`;
+  }
+  const meta = [r.done ? t("gl.rt.backNext", { day: t(`store.day.${r.day}`) }) : lead];
+  if (r.streak >= 2) meta.push(t("gl.rt.streak", { n: r.streak }));
+  return `
+    <div class="${cls}">
+      <button type="button" class="gd-check${r.done ? " is-on" : ""}" data-gd-routine="${esc(r.routineId)}" aria-pressed="${r.done}" aria-label="${esc(r.done ? t("gl.todo.untick", { name: r.label }) : t("gl.todo.tick", { name: r.label }))}">${icon("check", { size: 13 })}</button>
+      <span class="gd-row-main"><b>${esc(r.label)}</b><small>${esc(meta.join(" · "))}</small></span>
+      <span class="gd-rt-tag">${icon("refresh", { size: 11 })}${esc(r.ritual ? t("gl.rt.ritualTag", { day: t(`store.day.${r.day}`) }) : t("gl.rt.everyDay", { day: t(`store.day.${r.day}`) }))}</span>
+      <button type="button" class="gd-row-x" data-gd-routine-del="${esc(r.routineId)}" aria-label="${t("gl.rt.remove")}" title="${t("gl.rt.remove")}">${icon("x", { size: 12 })}</button>
+    </div>`;
+}
+
+function routineBlockHTML(routine, brandId) {
+  const { rows, seriesWithoutDay } = routine;
+  if (!rows.length && !seriesWithoutDay) return "";
+  const done = rows.filter((r) => r.done).length;
+  const total = rows.filter((r) => !r.fresh).length;
+  return `
+    <div class="gd-routine" id="gd-routine">
+      <div class="gd-group-head">${icon("refresh", { size: 13 })}<b>${t("gl.rt.title")}</b><span>${esc(rows.length ? t("gl.rt.sub", { done, total, from: formatEventDate(routine.monday), to: formatEventDate(routine.sunday) }) : t("gl.rt.subEmpty"))}</span></div>
+      ${rows.length ? `<div class="gd-list">${rows.map((r) => routineRowHTML(r, brandId)).join("")}</div>` : ""}
+      ${seriesWithoutDay ? `<button type="button" class="gd-rt-hint" data-gd-series-days>${icon("calendar", { size: 13 })}<span>${esc(t("gl.rt.seriesNoDay", { n: seriesWithoutDay }))}</span><b>${t("gl.rt.setDays")}</b></button>` : ""}
     </div>`;
 }
 
@@ -461,19 +524,23 @@ function ideaRowHTML(idea) {
 
 // Both modes: Pemula's middle section, Pro's top of the Aktivitas tab.
 function todoSectionHTML({ campaign, todo, state, guided }) {
-  const { items, ideas, done } = todo;
+  const { items, ideas, done, routine } = todo;
+  const brandId = campaign.brandId;
   const all = state.todoAll || items.length <= TODO_SHOWN + 2;
   const shown = all ? items : items.slice(0, TODO_SHOWN);
-  const empty = !items.length && !ideas.length;
+  const empty = !items.length && !ideas.length && !routine.rows.length;
+  const count = openCount(todo);
   return `
     <section class="gd-sec gd-todo${guided ? "" : " is-pro"}" id="gd-todo">
-      <div class="gd-sec-head"><h2>${t("gl.todo.title")}${items.length ? ` <span class="gd-count">${items.length}</span>` : ""}</h2></div>
+      <div class="gd-sec-head"><h2>${t("gl.todo.title")}${count ? ` <span class="gd-count">${count}</span>` : ""}</h2></div>
+      ${routineBlockHTML(routine, brandId)}
+      ${routine.rows.length && shown.length ? `<div class="gd-group-head gd-rest-head">${icon("check", { size: 13 })}<b>${t("gl.rt.restTitle")}</b></div>` : ""}
       ${empty ? `
         <div class="gd-todo-empty">
           <b>${t(done.length ? "gl.todo.allDone" : "gl.todo.emptyTitle")}</b>
           <p>${t("gl.todo.emptyBody")}</p>
         </div>` : ""}
-      ${shown.length ? `<div class="gd-list">${shown.map((x) => todoRowHTML(x)).join("")}</div>` : ""}
+      ${shown.length ? `<div class="gd-list">${shown.map((x) => todoRowHTML(x, { brandId })).join("")}</div>` : ""}
       ${!all ? `<button type="button" class="gd-more-btn" data-gd-all>${t("gl.todo.all", { n: items.length })}${icon("chevronDown", { size: 13 })}</button>` : ""}
       ${ideas.length ? `
         <div class="gd-ideas-group">
@@ -485,7 +552,7 @@ function todoSectionHTML({ campaign, todo, state, guided }) {
         <button type="button" class="gd-add" data-gd-add="task">${icon("plus", { size: 13 })}${t("gl.todo.addTask")}</button>
         <button type="button" class="gd-add is-ideas" data-gd-ideas>${icon("bulb", { size: 13 })}${t("gl.ideas.btn")}</button>
       </div>
-      ${done.length ? `<details class="gd-done"><summary>${t("gl.todo.done", { n: done.length })}</summary><div class="gd-list">${done.slice(0, 12).map((x) => todoRowHTML(x, { done: true })).join("")}</div></details>` : ""}
+      ${done.length ? `<details class="gd-done"><summary>${t("gl.todo.done", { n: done.length })}</summary><div class="gd-list">${done.slice(0, 12).map((x) => todoRowHTML(x, { done: true, brandId })).join("")}</div></details>` : ""}
     </section>`;
 }
 
@@ -527,6 +594,15 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
   qsa("[data-gd-tick]", root).forEach((b) => b.addEventListener("click", () => {
     const x = find(b.dataset.gdTick);
     if (!x) return;
+    // "Tentukan ritual mingguan": deciding it = naming it and its day, and
+    // from then on it comes back every week in "Rutin minggu ini".
+    if (x.msKey === "ritualPlan" && !x.done && !todo.routine.rows.some((r) => r.ritual)) {
+      openGoalTaskDialog({ campaign, ritual: true, onDone: () => {
+        setCampaignManualMetric(campaign.id, x.milestoneId, { done: true });
+        refresh();
+      } });
+      return;
+    }
     if (x.kind === "goalTask") {
       const g = getGoal(brandId, x.goalId);
       if (!g) return;
@@ -537,6 +613,36 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
     }
     runAction({ type: "manual", milestoneId: x.milestoneId }, { brandId, brand, campaign, stage: stageOf(x), stages, ctx, refresh, ctxLabel });
   }));
+  // Routines: a tick covers this week only (next Monday it asks again).
+  // Only a step nobody has touched yet: an owner who unticks it keeps it unticked.
+  const ritualTick = todo.items.find((x) => x.msKey === "ritual" && x.ritualNeed && x.ritualWeeks >= x.ritualNeed && !campaign.manualMetrics?.[x.milestoneId]);
+  qsa("[data-gd-routine]", root).forEach((b) => b.addEventListener("click", () => {
+    const r = todo.routine.rows.find((x) => x.routineId === b.dataset.gdRoutine);
+    if (!r) return;
+    const res = toggleGoalRoutineWeek(campaign.id, r.routineId, todo.routine.monday);
+    if (!res) return;
+    toast(t(res.done ? "gl.rt.ticked" : "camp.detail.unticked"));
+    refresh();
+  }));
+  // The community ritual ran RITUAL_WEEKS weeks → "Ritual mingguan komunitas
+  // berjalan" is true now; tick it once, here, where the owner sees it.
+  if (ritualTick) {
+    setCampaignManualMetric(campaign.id, ritualTick.milestoneId, { done: true, auto: true });
+    toast(t("gl.rt.ritualMet", { n: RITUAL_WEEKS }));
+    setTimeout(refresh, 0);
+  }
+  qsa("[data-gd-routine-del]", root).forEach((b) => b.addEventListener("click", async () => {
+    const r = todo.routine.rows.find((x) => x.routineId === b.dataset.gdRoutineDel);
+    if (!r) return;
+    const ok = await confirmDialog({ title: t("gl.rt.removeTitle"), message: t("gl.rt.removeMsg", { name: esc(r.label) }), confirmLabel: t("common.delete"), danger: true });
+    if (!ok) return;
+    removeGoalRoutine(campaign.id, r.routineId);
+    refresh();
+  }));
+  qsa("[data-gd-episode]", root).forEach((b) => b.addEventListener("click", () => {
+    runAction({ type: "new-content", defaults: { seriesId: b.dataset.gdEpisode, scheduleDate: b.dataset.date } }, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel });
+  }));
+  qs("[data-gd-series-days]", root)?.addEventListener("click", () => openContentCadenceSetup(brand));
   qsa("[data-gd-del]", root).forEach((b) => b.addEventListener("click", async () => {
     const x = find(b.dataset.gdDel);
     if (!x || x.kind !== "task") return;
@@ -560,7 +666,7 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
     const idea = todo.ideas.find((i) => i.id === b.dataset.gdIdeaTask);
     if (!idea) return;
     openGoalTaskDialog({ campaign, title: idea.text, why: idea.description || "", onDone: (res) => {
-      updateBrandIdea(brandId, idea.id, { status: "tasked", taskId: res.milestone.id });
+      updateBrandIdea(brandId, idea.id, { status: "tasked", taskId: res.milestone?.id || res.routine?.id || "" });
       refresh();
     } });
   }));
@@ -568,27 +674,55 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
 
 // "+ Tugas" and an idea's "Jadikan tugas": the step's words, and — for an
 // Event — which phase it belongs to, picked by the owner (never guessed).
-function openGoalTaskDialog({ campaign, title = "", why = "", onDone = () => {} }) {
+// "Ulangi tiap minggu" makes it a routine instead (its day picked here), so
+// it lands in "Rutin minggu ini" and comes back every week. `ritual`: the
+// community's weekly ritual — always weekly, its own words.
+const ROUTINE_DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+function openGoalTaskDialog({ campaign, title = "", why = "", ritual = false, onDone = () => {} }) {
   const places = goalTaskPlaces(campaign);
+  const dayChips = `<div class="chip-select gd-day-pick" id="gd-task-day" role="radiogroup" aria-label="${esc(t("gl.rt.dayLabel"))}">${ROUTINE_DAY_KEYS.map((d, i) => `<button type="button" role="radio" data-day="${d}" class="${i === 0 ? "active" : ""}" aria-checked="${i === 0}">${t(`calendar.dow.${d}`)}</button>`).join("")}</div>`;
+  const placeHTML = places.length ? `<div class="field" style="margin-bottom:0;"><label id="gd-task-phase-label">${t("gl.task.phase")}</label>
+        <div class="chip-select gd-phase-pick" id="gd-task-phase" role="radiogroup" aria-labelledby="gd-task-phase-label">${places.map((p, i) => `<button type="button" role="radio" data-phase="${esc(p.id)}" class="${i === 0 ? "active" : ""}" aria-checked="${i === 0}">${esc(phaseNameLabel(p.name))}<small>${esc(formatEventDate(p.dateFrom))}–${esc(formatEventDate(p.dateTo))}</small></button>`).join("")}</div></div>` : `<p class="hint" style="margin:0;">${icon("info", { size: 12 })}<span>${t("gl.task.levelNote")}</span></p>`;
   const overlay = openModal({
-    title: t("gl.task.title"),
+    title: t(ritual ? "gl.rt.ritualTitle" : "gl.task.title"),
     bodyHTML: `
-      <div class="field"><label for="gd-task-name">${t("gl.task.name")}</label><input class="input" id="gd-task-name" maxlength="120" autocomplete="off" value="${esc(title)}" placeholder="${esc(t(campaign.eventPlan ? "gl.task.phEvent" : "gl.task.ph"))}" /></div>
-      ${places.length ? `<div class="field" style="margin-bottom:0;"><label id="gd-task-phase-label">${t("gl.task.phase")}</label>
-        <div class="chip-select gd-phase-pick" id="gd-task-phase" role="radiogroup" aria-labelledby="gd-task-phase-label">${places.map((p, i) => `<button type="button" role="radio" data-phase="${esc(p.id)}" class="${i === 0 ? "active" : ""}" aria-checked="${i === 0}">${esc(phaseNameLabel(p.name))}<small>${esc(formatEventDate(p.dateFrom))}–${esc(formatEventDate(p.dateTo))}</small></button>`).join("")}</div></div>` : `<p class="hint" style="margin:0;">${icon("info", { size: 12 })}<span>${t("gl.task.levelNote")}</span></p>`}`,
+      ${ritual ? `<p class="hint" style="margin:0 0 12px;">${icon("info", { size: 12 })}<span>${t("gl.rt.ritualHint")}</span></p>` : ""}
+      <div class="field"><label for="gd-task-name">${t(ritual ? "gl.rt.ritualName" : "gl.task.name")}</label><input class="input" id="gd-task-name" maxlength="120" autocomplete="off" value="${esc(title)}" placeholder="${esc(t(ritual ? "gl.rt.ritualPh" : campaign.eventPlan ? "gl.task.phEvent" : "gl.task.ph"))}" /></div>
+      ${ritual ? "" : `<label class="gd-weekly-toggle"><input type="checkbox" id="gd-task-weekly" /><span>${icon("refresh", { size: 13 })}<b>${t("gl.rt.weekly")}</b><small>${t("gl.rt.weeklyHint")}</small></span></label>`}
+      <div class="field gd-weekly-day" id="gd-task-dayfield" style="margin-bottom:0;" ${ritual ? "" : "hidden"}><label>${t("gl.rt.dayLabel")}</label>${dayChips}</div>
+      <div id="gd-task-place">${ritual ? "" : placeHTML}</div>`,
     footHTML: `<button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button><button class="btn btn-primary" data-save>${icon("check", { size: 14 })}${t("gl.task.add")}</button>`,
     onMount: (el) => setTimeout(() => el.querySelector("#gd-task-name")?.focus(), 30),
   });
   let phaseId = places[0]?.id || null;
+  let day = "mon";
+  let weekly = ritual;
   qsa("[data-phase]", overlay).forEach((b) => b.addEventListener("click", () => {
     phaseId = b.dataset.phase;
     qsa("[data-phase]", overlay).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
   }));
+  qsa("[data-day]", overlay).forEach((b) => b.addEventListener("click", () => {
+    day = b.dataset.day;
+    qsa("[data-day]", overlay).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
+  }));
+  overlay.querySelector("#gd-task-weekly")?.addEventListener("change", (e) => {
+    weekly = e.target.checked;
+    overlay.querySelector("#gd-task-dayfield").hidden = !weekly;
+    overlay.querySelector("#gd-task-place").hidden = weekly;
+  });
   overlay.querySelector("[data-cancel]").addEventListener("click", () => closeOverlay(overlay));
   const save = () => {
     const input = overlay.querySelector("#gd-task-name");
     const name = input.value.trim();
     if (!name) { input.focus(); return; }
+    if (weekly) {
+      const made = addGoalRoutine(campaign.id, { label: name, day, kind: ritual ? "ritual" : "task" });
+      if (!made.ok) { toast(t("bs.failed"), "error"); return; }
+      closeOverlay(overlay);
+      toast(t("gl.rt.added", { day: t(`store.day.${day}`) }));
+      onDone({ ...made, weekly: true });
+      return;
+    }
     const res = addGoalTask(campaign.id, { title: name, why, phaseId });
     if (!res.ok) { toast(t("bs.failed"), "error"); return; }
     closeOverlay(overlay);

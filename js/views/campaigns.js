@@ -17,7 +17,7 @@ import { t, campaignDisplayName } from "../i18n.js";
 import { getMode } from "../mode.js";
 import { DEMO_TOAST } from "../tour-demo.js";
 import { campaignStages, activeStageIndex, campaignHeadline, readStage, TRACK_ICON } from "../campaign-metrics.js";
-import { goalKind, goalTodo, runningGoalsOfKind } from "../goal-todo.js";
+import { goalKind, goalTodo, runningGoalsOfKind, openCount } from "../goal-todo.js";
 import { goalArtSVG, GOAL_KINDS } from "../goal-art.js";
 import { crossCampaignInsights } from "../cross-campaign.js";
 import { nextActions } from "../next-action.js";
@@ -197,7 +197,7 @@ function goalsLandingHTML(brandId, brand, { animate }) {
     // One status line: an Event counts down; the others say what's waiting.
     let status = { text: t("gl.st.none"), tone: "" };
     if (all.length) {
-      const todo = running.reduce((n, c) => n + goalTodo({ brand, campaign: c, content, settings, goal: c.goalId ? getGoal(brandId, c.goalId) : null }).items.length, 0);
+      const todo = running.reduce((n, c) => n + openCount(goalTodo({ brand, campaign: c, content, settings, goal: c.goalId ? getGoal(brandId, c.goalId) : null })), 0);
       const soonest = slips.filter((x) => x.days !== null && x.days !== undefined && x.days >= 0).sort((a, b) => a.days - b.days)[0];
       if (k.key === "event" && soonest) status = { text: soonest.when, tone: soonest.days <= 7 ? "warn" : "" };
       else if (drafts.length && !slips.length) status = { text: t("gl.st.draft"), tone: "" };

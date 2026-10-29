@@ -359,6 +359,38 @@ export function addGoalTask(campaignId, { title, why = "", phaseId = null }) {
   return { ok: true, milestone, where: missionText(level).name || "" };
 }
 
+// ---------- Weekly routines ("Rutin minggu ini", js/goal-todo.js) ----------
+// A thing the goal does every week — a community ritual, or any "+ Tugas"
+// set to repeat. It is never "done" for good: each tick is kept as that
+// week's Monday in doneWeeks, so the row asks again the Monday after.
+const ROUTINE_WEEKS_KEPT = 104;
+
+export function addGoalRoutine(campaignId, { label, day = "mon", kind = "task" }) {
+  const camp = getCampaign(campaignId);
+  const text = String(label || "").trim().slice(0, 120);
+  if (!camp || !text) return { ok: false };
+  const routine = { id: `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, label: text, day, kind: kind === "ritual" ? "ritual" : "task", doneWeeks: [], createdAt: Date.now() };
+  updateCampaign(camp.id, { routines: [...(camp.routines || []), routine] });
+  return { ok: true, routine };
+}
+
+// Ticks (or unticks) one week of a routine; `monday` = that week's Monday.
+export function toggleGoalRoutineWeek(campaignId, routineId, monday) {
+  const camp = getCampaign(campaignId);
+  const r = (camp?.routines || []).find((x) => x.id === routineId);
+  if (!r || !monday) return null;
+  const had = (r.doneWeeks || []).includes(monday);
+  const doneWeeks = had ? r.doneWeeks.filter((w) => w !== monday) : [...(r.doneWeeks || []), monday].sort().slice(-ROUTINE_WEEKS_KEPT);
+  updateCampaign(camp.id, { routines: camp.routines.map((x) => (x.id === routineId ? { ...x, doneWeeks } : x)) });
+  return { done: !had, weeks: doneWeeks.length };
+}
+
+export function removeGoalRoutine(campaignId, routineId) {
+  const camp = getCampaign(campaignId);
+  if (!camp) return;
+  updateCampaign(camp.id, { routines: (camp.routines || []).filter((x) => x.id !== routineId) });
+}
+
 // The places a task for this goal can go, for the owner to pick from: an
 // Event's phases that aren't over (with their dates), nothing for a Grow
 // Brand goal (its task goes to the level it is on).

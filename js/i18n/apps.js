@@ -37,6 +37,7 @@ export default {
   "lh.status.brandDone": { en: "Ready", id: "Sudah siap" },
   "lh.status.brandProgress": { en: "{done} of 2 done", id: "{done} dari 2 selesai" },
   "lh.status.goalsActive": { en: "{n} running", id: "{n} berjalan" },
+  "lh.status.goalsRoutine": { en: "Do this: {n} weekly routine", id: "Lakuin ini: {n} rutin minggu ini" },
   "lh.status.goalsNone": { en: "No goal yet", id: "Belum ada tujuan" },
   "lh.status.createWip": { en: "{n} in progress", id: "{n} sedang dikerjakan" },
   "lh.status.createNone": { en: "No content yet", id: "Belum ada konten" },
