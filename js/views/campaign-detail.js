@@ -36,6 +36,7 @@ import { getMode } from "../mode.js";
 import { isTourDemo, DEMO_TOAST } from "../tour-demo.js";
 import { STATUS_LABELS_GUIDED, funnelShort } from "../funnel-field.js";
 import { t, campaignDisplayName } from "../i18n.js";
+import { attachMic } from "../voice-input.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
 import { goalTodo, goalKind } from "../goal-todo.js";
@@ -872,6 +873,7 @@ function wireIdeasWidget(root, { brand, campaign, refresh, state }) {
   );
   const input = qs("#cd-idea-input", root);
   if (!input) return;
+  attachMic(input);
   const addIdea = (text, source, description = "") => {
     const clean = text.trim();
     if (!clean) return;

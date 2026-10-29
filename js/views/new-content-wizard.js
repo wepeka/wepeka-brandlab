@@ -16,6 +16,7 @@ import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, toast } from "../dom.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { t, campaignDisplayName } from "../i18n.js";
+import { attachMic } from "../voice-input.js";
 import { createArtSVG } from "../create-art.js";
 import { activeCampaignsFor } from "../week-plan.js";
 import { addDays } from "../goal-roadmap.js";
@@ -167,6 +168,7 @@ export function openNewContentWizard({ brandId, defaults = {}, onSaved, stay = f
     syncNext();
     if (s.step === 2) {
       const ta = body.querySelector("#nw-text");
+      attachMic(ta);
       ta.focus();
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }

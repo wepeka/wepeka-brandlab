@@ -1852,6 +1852,47 @@ body:has(> .pay-thanks) > :is(.notes-fab, .notes-float, .tools-menu, .isr-float,
 .chip-icon-btn.loading{ color: var(--accent); animation: mic-pulse 1s ease-in-out infinite; }
 @keyframes mic-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.55; } }
 
+/* Voice typing (js/voice-input.js): the mic inside an idea box, and the
+   listening sheet with its live wave. --vm-level (0–1) is the voice level. */
+.vm-field{ position:relative; }
+.vm-field > textarea{ padding-bottom:46px; }
+.vm-field.is-line > input{ padding-right:48px; }
+.vm-field-mic{ position:absolute; right:10px; bottom:10px; width:36px; height:36px; border-radius:50%; border:0; display:grid; place-items:center; cursor:pointer; color:#fff;
+  background: linear-gradient(135deg, #3B9BFF, #8B5CF6 55%, #FF5FA2); box-shadow: 0 4px 14px rgba(91,92,246,.35); transition: transform .15s ease, box-shadow .15s ease; }
+.vm-field.is-line .vm-field-mic{ bottom:auto; top:50%; width:32px; height:32px; margin-top:-16px; right:7px; }
+.vm-field-mic:hover{ transform: scale(1.07); box-shadow: 0 6px 18px rgba(91,92,246,.45); }
+.vm-field-mic:focus-visible{ outline:2px solid #3B9BFF; outline-offset:2px; }
+.vm-field-mic.mic-active{ animation: mic-pulse 1.2s ease-in-out infinite; }
+
+.vm-sheet{ --vm-level:0; position:fixed; left:50%; bottom:max(20px, env(safe-area-inset-bottom)); z-index:300; width:min(460px, calc(100vw - 32px));
+  transform: translate(-50%, 24px); opacity:0; transition: transform .22s cubic-bezier(.2,.9,.3,1.2), opacity .18s ease; }
+.vm-sheet.is-in{ transform: translate(-50%, 0); opacity:1; }
+.vm-card{ position:relative; overflow:hidden; padding:16px 18px 14px; border-radius:26px; background: var(--bg-raised); border:1px solid var(--border); box-shadow: 0 18px 50px rgba(0,0,0,.28); }
+.vm-card::before{ content:""; position:absolute; inset:0 0 auto; height:4px; background: linear-gradient(90deg, #3B9BFF, #8B5CF6, #FF5FA2, #ffa52b); }
+.vm-top{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color: var(--text-muted); }
+.vm-dot{ width:9px; height:9px; border-radius:50%; background:#ff4d6d; box-shadow:0 0 0 0 rgba(255,77,109,.6); animation: vm-blink 1.4s ease-out infinite; }
+.vm-status{ flex:1; min-width:0; }
+.vm-time{ font-variant-numeric: tabular-nums; color: var(--text-faint); }
+.vm-sheet[data-state="error"] .vm-dot{ background: var(--text-faint); animation:none; }
+.vm-sheet[data-state="error"] .vm-status{ color: var(--health-poor); }
+.vm-stage{ display:flex; align-items:center; gap:14px; margin:12px 0 10px; }
+.vm-orb{ position:relative; width:64px; height:64px; flex:none; display:grid; place-items:center; }
+.vm-halo{ position:absolute; inset:0; border-radius:50%; background: radial-gradient(circle, rgba(139,92,246,.45), rgba(59,155,255,0) 70%);
+  transform: scale(calc(1 + var(--vm-level) * .9)); transition: transform .08s linear; }
+.vm-core{ position:relative; width:54px; height:54px; border-radius:50%; display:grid; place-items:center; color:#fff;
+  background: linear-gradient(135deg, #3B9BFF, #8B5CF6 55%, #FF5FA2); box-shadow: 0 6px 18px rgba(91,92,246,.4);
+  transform: scale(calc(1 + var(--vm-level) * .12)); transition: transform .08s linear; }
+.vm-wave{ flex:1; height:56px; display:flex; align-items:center; gap:3px; min-width:0; }
+.vm-wave i{ flex:1; height:100%; border-radius:99px; transform-origin:center; transform: scaleY(.08);
+  background: linear-gradient(180deg, #3B9BFF, #8B5CF6 50%, #FF5FA2); }
+.vm-text{ margin:0; min-height:46px; max-height:120px; overflow-y:auto; font-size:16px; line-height:1.45; color: var(--text); }
+.vm-interim{ color: var(--text-faint); }
+.vm-ph{ color: var(--text-faint); }
+.vm-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.vm-actions .btn{ display:inline-flex; align-items:center; gap:6px; }
+@keyframes vm-blink{ 0%{ box-shadow:0 0 0 0 rgba(255,77,109,.55); } 70%{ box-shadow:0 0 0 8px rgba(255,77,109,0); } 100%{ box-shadow:0 0 0 0 rgba(255,77,109,0); } }
+@media (prefers-reduced-motion: reduce){ .vm-dot{ animation:none; } .vm-halo, .vm-core{ transition:none; } }
+
 .asset-panel{ border:1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding:16px; }
 .asset-panel.empty{ display:flex; flex-direction:column; justify-content:center; }
 .asset-panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }

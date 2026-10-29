@@ -20,6 +20,7 @@ import { icon } from "./icons.js";
 import { escapeHtml as esc, qs, qsa, toast, openMenu, closeMenu } from "./dom.js";
 import { confirmDialog, promptDialog } from "./modals.js";
 import { t } from "./i18n.js";
+import { attachMic } from "./voice-input.js";
 
 const SCRATCH_CAP = 200;
 const FOLDER_CAP = 30;
@@ -192,6 +193,7 @@ export function wireScratchPad(root, { brandId, campaignId = null, fromLabel = "
 
   // Inside a folder
   const add = qs(".scratch-add", pad);
+  attachMic(add);
   if (add && refocus === key) {
     refocus = null;
     add.focus();

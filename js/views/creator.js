@@ -29,7 +29,7 @@ import { setPageGuide } from "../section-guide.js";
 import { openWeekPlanMenu, openScriptChat, openContentChat, dockChat, undockChat } from "../consultant-panel.js";
 import { startCreatorGuide, startCreatorGuideOnMount } from "../guides/creator-guide.js";
 import { isTourDemo, demoGenerateScript, DEMO_TOAST } from "../tour-demo.js";
-import { wireMic } from "../voice-input.js";
+import { wireMic, attachMic } from "../voice-input.js";
 import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
@@ -2630,5 +2630,6 @@ function wireSimple(root, brandId, state, refresh, selected) {
   autoFit(titleEl, 0);
   titleEl?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); titleEl.blur(); } });
   autoFit(qs("#f-idea", root), 120);
+  attachMic(qs("#f-idea", root));
   syncDock(root, state, selected);
 }
