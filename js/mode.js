@@ -12,12 +12,18 @@
 import { getSettings, updateSettings } from "./store.js";
 import { t } from "./i18n.js";
 
+// TEMPORARY: the Pemula/Pro choice is hidden (first-login picker + the menu
+// switch). Flip to true to bring both back. While off, nobody is asked; everyone
+// sees guided (Pemula), including accounts that were on advanced.
+export const MODE_SWITCH_ENABLED = false;
+
 export const MODE_LABELS = {
   guided: { label: t("mode.guided.name"), tagline: t("modes.guided.tagline") },
   advanced: { label: t("mode.advanced.name"), tagline: t("modes.advanced.tagline") },
 };
 
 export function getMode() {
+  if (!MODE_SWITCH_ENABLED) return "guided";
   return getSettings().experienceMode === "advanced" ? "advanced" : "guided";
 }
 
@@ -26,6 +32,7 @@ export function getMode() {
 // that explicitly sits on "advanced" has obviously toggled at some point,
 // so it counts as chosen even without the flag (older settings docs).
 export function hasChosenMode() {
+  if (!MODE_SWITCH_ENABLED) return true;
   const s = getSettings();
   return s.experienceModeChosen === true || s.experienceMode === "advanced";
 }

@@ -3,7 +3,7 @@ import { listBrands, getBrand, listOverdueAndDueSoon, onChange, isOwnBrand } fro
 import { logout } from "./auth.js";
 import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, pickTintForegroundLight, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
-import { getMode, toggleMode } from "./mode.js";
+import { getMode, toggleMode, MODE_SWITCH_ENABLED } from "./mode.js";
 import { t, getLang } from "./i18n.js";
 import { mountNotesFloat, unmountNotesFloat } from "./notes-float.js";
 import { mountIdeaSearch, unmountIdeaSearch } from "./idea-search.js";
@@ -432,7 +432,7 @@ function appMenuHTML(brandId, hasVideos) {
     <button type="button" data-act="founder-circle">${icon("sparkle", { size: 15 })}${t("circle.menu")}</button>
     <button type="button" data-act="report">${icon("flag", { size: 15 })}${t("lapor.menu")}</button>
     <div class="menu-divider"></div>
-    <button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>
+    ${MODE_SWITCH_ENABLED ? `<button type="button" data-act="mode">${icon(other === "guided" ? "target" : "sparkle", { size: 15 })}${t("menu.modeSwitch", { current: t(`mode.${mode}.name`), other: t(`mode.${other}.name`) })}</button>` : ""}
     <button type="button" data-act="theme">${icon(getTheme() === "light" ? "moon" : "sun", { size: 15 })}${t("topbar.toggleTheme")}</button>
     <button type="button" class="menu-ai-row" data-act="ai">${aiUsageRowHTML()}</button>
     <div class="menu-divider"></div>
