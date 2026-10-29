@@ -447,7 +447,9 @@ export function toneAxisDisplayLabel(axis, value) {
 
 // [formal bucket][character bucket] — low=Formal/Serius pole, high=Casual/
 // Playful pole, same "toko tutup lebih awal karena renovasi" scenario
-// throughout so only the tone changes, not the message.
+// throughout so only the tone changes, not the message. The AI copies
+// these, so even the most casual one stays clear of "gais"/"mimin" talk —
+// owners called that cringe (2026-10-29).
 const TONE_EXAMPLE_MATRIX = {
   low: {
     low: `"Pemberitahuan. Sehubungan dengan perbaikan fasilitas internal, operasional toko kami hari ini ditutup lebih awal pukul 17.00 WIB. Mohon maaf atas ketidaknyamanan yang ditimbulkan."`,
@@ -461,8 +463,8 @@ const TONE_EXAMPLE_MATRIX = {
   },
   high: {
     low: `"Halo, mohon maaf ya, tokonya tutup lebih awal hari ini jam 5 sore karena ada perbaikan. Makasih sudah mengerti."`,
-    mid: `"Gais, hari ini mimin tutup jam 5 sore ya, lagi renovasi dikit biar makin nyaman. Makasih pengertiannya!"`,
-    high: `"Gais, maaf banget ya! Hari ini mimin terpaksa tutup warung jam 5 sore nih, soalnya lantai toko mau divermak dulu biar makin estetik pas kamu nongkrong besok. Sampai ketemu besok dengan wajah baru, ya!"`,
+    mid: `"Hari ini kita tutup jam 5 sore ya, ada yang lagi dibenerin dikit di toko. Makasih udah ngerti, besok buka lagi kayak biasa."`,
+    high: `"Hari ini kita tutup jam 5 sore dulu ya. Lantainya lagi dibongkar, dan nugas sambil dengerin suara bor itu nggak enak banget. Besok kita buka lagi, lantainya udah rapi!"`,
   },
 };
 export function toneExampleMessage(formalValue, characterValue) {

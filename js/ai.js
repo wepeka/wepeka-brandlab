@@ -331,6 +331,31 @@ How strong short-form videos work (apply it, never mention it):
 - Pay off before the ask: the viewer gets the value first; the call to action comes last, once.
 - Realistic to shoot: the brand's own place, products and people, filmed with a phone. No actors, drones, studios or stock footage unless asked.`.trim();
 
+// Owners said scripts "nggak sesuai identity brand" and sometimes cringe.
+// Tested against DeepSeek (2026-10-29): the voice settings were in the
+// prompt, but the scripts all came out in one flat flyer voice, 4 of 6 used
+// the same "Kamu masih …?" hook, and some scolded the viewer ("Pantes nggak
+// pernah lancar"). The voice now gets its own block and a concrete list of
+// what reads as cringe to an Indonesian audience.
+export const CRINGE_RULE = `
+NOT CRINGE — leave out anything this audience would cringe at, or the owner would feel embarrassed saying out loud:
+- Fake hype: "auto …", "dijamin", "nggak bakal nyesel", "bikin nagih", "next level", "game changer", "gila sih", "Segini doang" / "Segitu doang", on-screen "Beneran." / "Wajib tahu!".
+- Worn-out scroll-stoppers: "Stop scroll!", "Tunggu dulu!", "Jangan di-skip", "Tonton sampai habis", "Kamu wajib tahu ini", "Rahasia yang jarang orang tahu", "Fakta mengejutkan", "Siapa di sini yang …?".
+- Scolding, bossing or talking down: "Pantes kamu …", "Masih …? Salah!", "Berhenti …!", "Stop …!", "Kamu salah selama ini", making fun of the viewer's problem. A mistake or contrarian angle names the habit with empathy ("Banyak yang nunda scaling karena takut sakit, dan itu wajar") — never shames.
+- Forced slang or trend talk the brand didn't choose: "gaes", "guys", "bestie", "sobat …", "slay", "gaskeun", "literally", "which is", "wkwk", "anjay", English sprinkled in to sound cool. Use the brand's own way of addressing people.
+- Ad-speak: "Tunggu apa lagi?", "Yuk buruan", "Kepoin sekarang juga", "Solusi tepat untuk Anda", "Jangan lupa like, comment, share dan follow", one "Yuk" after another.
+- Puns on the brand name, rhymes and pantun; exclamation marks, emojis and ALL-CAPS text beyond what the brand's tone allows.
+- Hollow on-screen text ("Cek ini!", "Simak!") — on-screen text always says something concrete.`.trim();
+
+export const SCRIPT_VOICE_RULE = `
+VOICE — the owner (or their staff) says these lines to camera, so they must sound like that person on a good day, talking to one customer standing in front of them, in THIS brand's voice: its tone of voice, personality, the way it addresses customers and what it must never come across as (all in the brand context) beat any writing habit of yours. Without a tone in the brand context, sound like a friendly, sensible owner: warm, plain and polite, everyday words, no slang beyond "nggak", "aja", "udah".
+- One speaker, one voice: decide how the speaker calls themselves ("kami" for a formal brand; "aku" for the owner of a casual one, "kami/kita" for the shop) and how they call the viewer, and keep both the same in every line.
+- Lines flow like talking, not facts read off a flyer: each beat follows from the one before, and connecting words people really say ("jadi", "nah", "makanya", "soalnya") are fine. Never three bare facts in a row as separate fragments.
+- The personality has to be heard: a playful brand gets one or two honest, specific observations from the audience's daily life that make them smile in recognition (never a pun, never at the viewer's expense); a serious or calm brand gets none and sounds sure and reassuring instead.
+- The hooks must not share an opening pattern — "Kamu masih …?", "Buat kamu yang …", "Ternyata …" may each appear at most once across all hooks.
+- Say each fact once or twice, where it does work — not the same price or claim in the hook, the body and the CTA.
+- Read-aloud test: say every spoken line in your head as the owner. If it sounds like an ad voice-over, a motivational poster, a teacher scolding or a trend forced on, rewrite it plainer.`.trim();
+
 // Scripts get their own, stricter version of COPY_FACTS_RULE: invented
 // urgency and invented personal stories were what the old prompt slipped
 // into BOFU scripts ("stok terbatas", "aku dulu juga gitu").
@@ -345,7 +370,7 @@ const SCRIPT_FACTS_RULE = [
 // on ("…mampir malam ini. Simpan dulu videonya.").
 const ONE_ASK = " One ask only — never two in a row (not \"mampir malam ini, simpan juga videonya\").";
 const FUNNEL_CTA = {
-  TOFU: "Funnel: TOFU (awareness). The goal is to be stopped for and remembered, not to sell. The CTA beat asks for ONE light thing — follow, save, comment, or tag a friend — and mentions the brand naturally, not as a pitch.",
+  TOFU: "Funnel: TOFU (awareness). The goal is to be stopped for and remembered, not to sell: no prices or offers in the body unless the topic itself is the offer. The CTA beat asks for ONE light thing — follow, save, comment, or tag a friend — and mentions the brand naturally, not as a pitch.",
   MOFU: "Funnel: MOFU (consideration). The goal is trust: show how it works or why it is different. The CTA beat asks for ONE thing — save it, ask in the comments/DM, or try something — with the brand as the one who can help.",
   BOFU: "Funnel: BOFU (conversion). The goal is a purchase/booking/visit. The CTA beat gives ONE clear step using the brand's own call to action and the exact offer from the facts (product, price, period, where to order).",
 };
@@ -498,9 +523,11 @@ export async function generateScript(
     brandContext
       ? `Brand context — write FOR this audience and IN this brand's voice. Tone-of-voice settings, personality traits, the form of address and words to avoid are rules, not suggestions:\n${brandContext}`
       : "No brand context was given — keep it natural and conversational.",
+    isCarousel ? "" : SCRIPT_VOICE_RULE,
+    CRINGE_RULE,
     seriesContext || "",
     articleText && wantsScript ? "A reference text is given below — build the body from its most relevant, attention-worthy points instead of inventing unrelated content." : "",
-    `Before answering, check: ${[wantsHooks ? "every hook is short, from the requested types and opens the same promise" : "", wantsScript && pov ? "every \"say\" is empty, every text is max 12 words and there is exactly one ask, in the last beat" : wantsScript && !isCarousel ? `the narration of one hook plus the beats stays under ${max} words, there is exactly one ask and it sits in the last beat` : "", "every sentence about how the business works, what it offers or how it does things is in the facts (delete any that isn't), and no urgency or proof is added"].filter(Boolean).join("; ")}.`,
+    `Before answering, check: ${[wantsHooks ? "every hook is short, from the requested types and opens the same promise" : "", wantsScript && pov ? "every \"say\" is empty, every text is max 12 words and there is exactly one ask, in the last beat" : wantsScript && !isCarousel ? `the narration of one hook plus the beats stays under ${max} words, there is exactly one ask and it sits in the last beat` : "", f === "TOFU" ? "no price or offer appears outside the CTA unless the topic is the offer" : "", "every sentence about how the business works, what it offers or how it does things is in the facts (delete any that isn't), and no urgency or proof is added", isCarousel ? "nothing from the NOT CRINGE list is left" : `every ${pov ? "on-screen" : "spoken"} line passes the read-aloud test in this brand's voice, the speaker and the form of address stay the same throughout, and nothing from the NOT CRINGE list is left`].filter(Boolean).join("; ")}.`,
     `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {${shape}}`,
   ].filter(Boolean).join("\n\n");
 
@@ -627,6 +654,7 @@ export async function fillHookTemplate(ai, { template, blanks = [], filled = {},
     "A [BRAND] / [BRAND/PERSON] blank means the brand this video is about: the owner's own brand, unless the video's topic is clearly about another brand.",
     `OUTPUT LANGUAGE: every value and the note are in ${lang === "en" ? "natural, friendly US English" : "Indonesian (Bahasa Indonesia), casual-friendly and natural"} — the template's own language — even when the brand info or the topic is written in another language.`,
     NATURAL_WRITING_CONTEXT,
+    CRINGE_RULE,
     brandContext,
     `Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"note": "", "options": [{"line": "the finished sentence", "values": {${blanks.map((b) => `"${b}": ""`).join(", ")}}}]} — exactly ${count} items in "options", each "values" with every blank as a key, exactly as written above. "note" is normally ""; fill it with ONE short friendly sentence only when the video's topic is too thin to fill the blanks well, or a real-data blank is left empty, saying what to add; name a box in lowercase without brackets ("durasi", not "[DURASI]"). Never comment on, check or correct the values the owner filled in.`,
   ]
@@ -738,6 +766,7 @@ export async function generateCopy(
     outputLanguageRule(),
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
+    CRINGE_RULE,
     brandContext
       ? `Brand context — write FOR this audience and IN this brand's voice. Tone-of-voice settings, personality traits, and words to avoid are rules, not suggestions:\n${brandContext}`
       : "No brand details were given, so keep it natural and conversational.",
@@ -787,6 +816,7 @@ export async function rewriteCopy(ai, { brandContext = "", format, customFormat 
     "Anything in quotation marks that came from a customer must stay word for word.",
     COPY_FACTS_RULE,
     NATURAL_WRITING_CONTEXT,
+    CRINGE_RULE,
     'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"parts":["..."],"note":"..."}.',
   ]
     .filter(Boolean)
@@ -969,9 +999,40 @@ function brandBuilderContextLines(brand) {
     const axes = TONE_AXES.map((a) => `${a.left}↔${a.right}: ${toneAxisLabel(a, tov[a.key] ?? 50)} (${tov[a.key] ?? 50}/100 toward ${a.right})`);
     lines.push(`Tone of voice: ${axes.join("; ")}`);
     lines.push(`Example of this tone (same message, this brand's voice): ${toneExampleMessage(tov.formal ?? 50, tov.character ?? 50)}`);
+    lines.push(`What this tone means when writing: ${toneWritingRules(tov)}`);
     if (tov.avoidWords?.length) lines.push(`Words/styles to avoid: ${tov.avoidWords.join(", ")}`);
   }
   return lines;
+}
+
+// The four sliders as numbers ("72/100 toward Casual") left the model to
+// guess what casual or playful means in a sentence; it guessed one flat
+// voice for every brand. Each bucket becomes a concrete writing rule.
+const TONE_RULES = {
+  formal: {
+    low: "polite, complete spoken Indonesian (\"tidak\", \"sudah\", \"saja\"), the brand calls itself \"kami\", no slang and no English filler",
+    mid: "friendly but tidy: everyday forms like \"nggak\" and \"aja\" are fine, no slang",
+    high: "casual, like chatting with a friend (\"nggak\", \"aja\", \"banget\", \"udah\"); slang only the mild kind this audience really uses, at most one word per video, never forced",
+  },
+  language: {
+    low: "everyday words a teenager knows; any term gets explained in plain words",
+    mid: "common words; a term of the trade only when it helps, explained once",
+    high: "the audience's own technical terms are fine, each still clear from context",
+  },
+  character: {
+    low: "no jokes, puns or memes — calm, sure and reassuring",
+    mid: "warm, with at most one light, smile-worthy observation; never a forced joke",
+    high: "humour from honest, specific observations of the audience's daily life — one or two per piece, never puns, never at the customer's expense",
+  },
+  emotion: {
+    low: "no exclamation marks, superlatives or emojis; let the facts carry it",
+    mid: "an exclamation mark only where real excitement fits; no emoji in spoken lines",
+    high: "energy and feeling are welcome — vivid reactions, an exclamation here and there — but no shouting caps and at most one emoji in on-screen text",
+  },
+};
+function toneWritingRules(tov) {
+  const bucket = (v) => (v < 35 ? "low" : v > 65 ? "high" : "mid");
+  return TONE_AXES.map((a) => TONE_RULES[a.key]?.[bucket(tov[a.key] ?? 50)]).filter(Boolean).join("; ") + ".";
 }
 
 // Brand Guidelines' visual choices — lets image/caption/campaign features
@@ -2149,6 +2210,8 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
         "You may end with at most 2 [[ask:…]] lines: tap-to-send next steps (max 5 words each) in the owner's own words, plain language — never marketing jargon such as TOFU/MOFU/BOFU or funnel.",
         "When the owner says they like an idea or picks one but not that they'll make it now, confirm in one sentence, ask whether you should keep it for later, and add [[save:That idea's title|why it fits, one sentence]] — the app shows a 'save to saved ideas' button. When they say they will make it now, confirm in one sentence and add [[draft:FUNNEL|Content title]] (FUNNEL is exactly TOFU, MOFU or BOFU) instead. At most 2 of these per reply.",
         SCRIPT_DIRECTIVE_RULE,
+        SCRIPT_VOICE_RULE,
+        CRINGE_RULE,
         "Never repeat an idea that was already shown or saved, and never offer again one they turned down. Never mention or explain the [[...]] lines.",
       ];
   // buildFullContext's "Active campaigns" list would otherwise repeat the
@@ -2208,6 +2271,8 @@ export async function discussScript(ai, { brand, campaigns = [], pulseText = "",
     // "kurang menarik" into a round of questions before anything changed.
     "When the owner asks for a change — even a vague one ('kurang menarik', 'bikin lebih seru', 'terserah kamu') — don't ask what they mean: pick the change most likely to help (usually a sharper hook, a faster middle, a clearer payoff or a single clear ask), make it, and say in one line what you changed and one other direction you could take. Ask first only when two readings would lead to opposite edits, and even then offer your best guess in the same reply.",
     `A concrete change always comes as the COMPLETE replacement text wrapped exactly like this: [[revise:script]]new full script[[/revise]] (or [[revise:caption]]new full caption[[/revise]]). ${isCarousel ? 'This is a carousel: write the script as "Slide 1", "Slide 2"… each on its own line followed by that slide\'s text.' : isPovContent(content) ? 'This video has no talking: write the script as beats, a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (the acting) and "Teks layar:" (the text that tells the story) lines — never a "Narasi:" line; the last beat is the CTA with one ask, in the text. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:".' : 'Write the script as beats, the same shape the app uses everywhere (upgrade an old "HOOK / ISI PEMBAHASAN" script to it when you rewrite): a header line per beat like "[0-3 dtk] HOOK", then "Visual:" (what to film), "Teks layar:" (short on-screen text, only when it helps) and "Narasi:" (the exact words) lines; the last beat is the CTA with one ask. In English replies the labels are "[0-3 s]", "Visual:", "On-screen text:", "Voice:".'} Put at most ONE revise block per reply, always the full text (never a fragment), and keep the words around it to a sentence or two. Never write a revise block for a mere question, and never mention or explain the [[...]] syntax.`,
+    SCRIPT_VOICE_RULE,
+    CRINGE_RULE,
     "End with at most 2 [[ask:…]] lines: quick next edits the owner might want, max 5 words each, in their words (e.g. 'Pendekin jadi 15 detik', 'Coba hook lawan arus', 'Lebih santai').",
     "Never invent numbers, prices, processes, policies or events that are not in the brand's context and data.",
     // ---- DYNAMIC last.
