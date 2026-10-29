@@ -1,6 +1,7 @@
 import { icon } from "../icons.js";
 import { escapeHtml } from "../dom.js";
 import { t, getLang } from "../i18n.js";
+import { makeAdjustable } from "../box-adjust.js";
 
 // Record mode for the teleprompter (opened from js/views/teleprompter.js):
 // the front camera fills the screen, the script rolls in a narrow band at
@@ -138,6 +139,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     <video class="tpr-cam" playsinline muted autoplay></video>
     <div class="tpr-top">
       <div class="tpr-band" id="tpr-band" title="${t("tp.rec.tapText")}">
+        <span class="tpr-band-move" id="tpr-band-move" title="${t("tp.rec.moveBand")}" aria-hidden="true"></span>
         <div class="tpr-scroll" id="tpr-scroll">
           <div class="tpr-text" id="tpr-text">${hasText ? escapeHtml(text) : `<span class="tpr-faint">${t("tp.noScript")}</span>`}</div>
         </div>
@@ -208,6 +210,9 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
   const $ = (sel) => el.querySelector(sel);
   const cam = $(".tpr-cam");
   const band = $("#tpr-band");
+  // Move the black band by its top handle, pull a bottom corner to resize it.
+  const bandAdjust = makeAdjustable(band, { key: "contentos:tpr-band", dragHandle: $("#tpr-band-move"), minW: 220, minH: 72, centerY: false });
+  $("#tpr-band-move").addEventListener("click", (e) => e.stopPropagation());
   const scrollEl = $("#tpr-scroll");
   const textEl = $("#tpr-text");
   const timerEl = $("#tpr-timer");
@@ -849,6 +854,7 @@ export function openRecordMode({ text = "", title = "", onExit } = {}) {
     keepAwake(false);
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("resize", onResize);
+    bandAdjust.destroy();
     document.removeEventListener("keydown", onKey);
     window.removeEventListener("hashchange", onLeave);
     window.removeEventListener("pagehide", onLeave);
