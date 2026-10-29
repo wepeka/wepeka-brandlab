@@ -307,7 +307,7 @@ export function openEventPhases(campaign) {
 // Event campaign as a milestone. With a target it is a tracked number, without
 // one a checklist tick. It gets a deadline just inside the phase window.
 // { title, why, target, unit, phaseId } → { ok, milestone, phase }
-export function addEventMilestone(campaignId, { title, why = "", target = null, unit = "", phaseId = null }) {
+export function addEventMilestone(campaignId, { title, why = "", target = null, unit = "", phaseId = null, fromPlay = "" }) {
   const camp = getCampaign(campaignId);
   const phases = camp?.eventPlan?.phases || [];
   if (!phases.length || !String(title || "").trim()) return { ok: false };
@@ -320,7 +320,7 @@ export function addEventMilestone(campaignId, { title, why = "", target = null, 
   const late = phase.dateTo > addDaysISO(phase.dateFrom, 2) ? addDaysISO(phase.dateTo, -2) : phase.dateTo;
   const milestone = {
     id, kind: numeric ? "number" : "check", label: String(title).trim().slice(0, 120), description: String(why || "").trim().slice(0, 300), unit: numeric ? String(unit || "").trim().slice(0, 24) : "",
-    target: numeric ? Math.round(n) : null, highlight: false, custom: true, fromBrainstorm: true, value: null, done: false, required: true, notApplicable: false, category: "IMPACT",
+    target: numeric ? Math.round(n) : null, highlight: false, custom: true, fromBrainstorm: true, ...(fromPlay ? { fromPlay: String(fromPlay).slice(0, 80) } : {}), value: null, done: false, required: true, notApplicable: false, category: "IMPACT",
     dueDate: late < today ? phase.dateTo : late,
   };
   updateCampaign(camp.id, { eventPlan: { ...camp.eventPlan, phases: phases.map((p) => (p.id === phase.id ? { ...p, milestones: [...(p.milestones || []), milestone] } : p)) } });
@@ -338,12 +338,12 @@ function addDaysISO(dateStr, days) {
 // owner picked (addEventMilestone above); a Grow Brand goal takes it as an
 // optional tick in the level it is on now — optional, so a step the owner
 // added never holds the level back. → { ok, milestone, where }
-export function addGoalTask(campaignId, { title, why = "", phaseId = null }) {
+export function addGoalTask(campaignId, { title, why = "", phaseId = null, fromPlay = "" }) {
   const camp = getCampaign(campaignId);
   const label = String(title || "").trim().slice(0, 120);
   if (!camp || !label) return { ok: false };
   if (camp.eventPlan?.phases?.length) {
-    const res = addEventMilestone(camp.id, { title: label, why, phaseId });
+    const res = addEventMilestone(camp.id, { title: label, why, phaseId, fromPlay });
     return res.ok ? { ok: true, milestone: res.milestone, where: res.phase.name } : { ok: false };
   }
   const missions = camp.missions || [];
@@ -353,7 +353,7 @@ export function addGoalTask(campaignId, { title, why = "", phaseId = null }) {
   const level = missions[at];
   const milestone = {
     id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, kind: "check", metric: "manual.check", label, description: String(why || "").trim().slice(0, 300),
-    unit: "", target: null, highlight: false, custom: true, fromIdea: true, required: false, notApplicable: false, category: "IMPACT",
+    unit: "", target: null, highlight: false, custom: true, fromIdea: true, ...(fromPlay ? { fromPlay: String(fromPlay).slice(0, 80) } : {}), required: false, notApplicable: false, category: "IMPACT",
   };
   updateCampaign(camp.id, { missions: missions.map((m, i) => (i === at ? { ...m, milestones: [...(m.milestones || []), milestone] } : m)) });
   return { ok: true, milestone, where: missionText(level).name || "" };

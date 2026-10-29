@@ -44,6 +44,7 @@ import { goalArtSVG, goalKindByKey } from "../goal-art.js";
 import { goalTreeSVG, wireGoalTree } from "../goal-tree.js";
 import { addGoalTask, goalTaskPlaces, addGoalRoutine, toggleGoalRoutineWeek, removeGoalRoutine } from "../goal-actions.js";
 import { draftFromIdea } from "../idea-draft.js";
+import { openGroups, playsOfGroup, groupLabel, findPlay, whatToDo } from "../goal-playbook.js";
 import { openGoalIdeasChat } from "../consultant-panel.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
 import { aiReportButtonHTML } from "../ai-report.js";
@@ -442,6 +443,7 @@ function todoRowHTML(x, { done = false, brandId = "" } = {}) {
         <span class="gd-row-go">${icon("arrowRight", { size: 14 })}</span>
       </div>`;
   }
+  if (x.fromPlay) meta.push(x.fromPlay);
   if (x.stageName && x.stageKind === "window") meta.push(x.stageName);
   if (x.date) meta.push(x.late ? t("gl.todo.late", { date: formatEventDate(x.date) }) : formatEventDate(x.date));
   if (x.optional) meta.push(t("camp.optional").replace(/[()]/g, ""));
@@ -515,11 +517,75 @@ function ideaRowHTML(idea) {
       <span class="gd-row-mark">${icon("bulb", { size: 14 })}</span>
       <span class="gd-row-main"><b>${esc(idea.text)}</b>${idea.description ? `<small>${esc(idea.description)}</small>` : ""}</span>
       <span class="gd-row-acts">
-        <button type="button" class="gd-mini is-solid" data-gd-idea-content="${idea.id}">${icon("plus", { size: 12 })}${t("gl.idea.toContent")}</button>
+        ${idea.playId && findPlay(idea.playId) ? `<button type="button" class="gd-mini is-solid" data-gd-idea-run="${idea.id}">${icon("play", { size: 12 })}${t("pb.run")}</button>` : ""}
+        <button type="button" class="gd-mini${idea.playId && findPlay(idea.playId) ? "" : " is-solid"}" data-gd-idea-content="${idea.id}">${icon("plus", { size: 12 })}${t("gl.idea.toContent")}</button>
         <button type="button" class="gd-mini" data-gd-idea-task="${idea.id}">${icon("check", { size: 12 })}${t("gl.idea.toTask")}</button>
         <button type="button" class="gd-row-x" data-idea-remove="${idea.id}" aria-label="${t("common.delete")}">${icon("x", { size: 12 })}</button>
       </span>
     </div>`;
+}
+
+// ---------- Pemula: the next few steps, numbered ----------
+// Owner, 2026-10-30, seeing 74 mixed rows: "membingungkan … gak jelas step
+// stepnya". So Pemula opens on FIVE numbered steps, each a plain verb + one
+// button; this week's routine first, then what is late (newest first), then
+// what is coming. Everything else stays under "Lihat semua" (the full list).
+const FOCUS_SHOWN = 5;
+
+function dueText(date, late, today) {
+  if (!date) return "";
+  const n = daysBetween(date, today);
+  if (late) return t("gl.due.late", { n: Math.max(1, n) });
+  if (date === today) return t("gl.due.today");
+  if (daysBetween(today, date) === 1) return t("gl.due.tomorrow");
+  return formatEventDate(date);
+}
+
+function focusEntries(todo) {
+  const rt = todo.routine.rows.filter((r) => !r.done && !r.fresh).map((r) => ({ tier: 0, date: r.date, late: r.late, kind: "routine", r }));
+  const items = todo.items.map((x) => ({ tier: x.late ? 1 : x.date ? 2 : 3, date: x.date || "", late: !!x.late, kind: "item", x }));
+  return [...rt, ...items].sort((a, b) => a.tier - b.tier || (a.tier === 1 ? b.date.localeCompare(a.date) : (a.date || "9999").localeCompare(b.date || "9999")));
+}
+
+function focusRowHTML(e, i, today) {
+  const due = dueText(e.date, e.late, today);
+  let title;
+  let detail = "";
+  let act;
+  if (e.kind === "routine") {
+    const r = e.r;
+    if (r.kind === "series") {
+      if (r.episode) {
+        title = r.episode.title || t("common.untitled");
+        detail = t("gl.focus.stage", { step: t(`cw.step.${STEP_OF_STATUS[r.episode.status] || "idea"}`) });
+        act = `<button type="button" class="gd-mini is-solid" data-cd-open-content="${r.episode.id}">${t("gl.focus.go")}</button>`;
+      } else {
+        title = t("gl.focus.makeEp", { name: r.label });
+        act = `<button type="button" class="gd-mini is-solid" data-gd-episode="${esc(r.seriesId)}" data-date="${esc(r.date)}">${icon("plus", { size: 12 })}${t("gl.rt.makeEpShort")}</button>`;
+      }
+    } else {
+      title = r.label;
+      detail = t("gl.rt.everyDay", { day: t(`store.day.${r.day}`) });
+      act = `<button type="button" class="gd-mini is-solid" data-gd-routine="${esc(r.routineId)}">${icon("check", { size: 12 })}${t("gl.focus.done")}</button>`;
+    }
+  } else {
+    const x = e.x;
+    title = x.label || t("common.untitled");
+    if (x.kind === "content") {
+      detail = t("gl.focus.stage", { step: t(`cw.step.${STEP_OF_STATUS[x.status] || "idea"}`) });
+      act = `<button type="button" class="gd-mini is-solid" data-cd-open-content="${x.id}">${t("gl.focus.go")}</button>`;
+    } else {
+      detail = x.fromPlay || (x.stageName && x.stageKind === "window" ? x.stageName : "");
+      act = `<button type="button" class="gd-mini is-solid" data-gd-tick="${esc(x.id)}">${icon("check", { size: 12 })}${t("gl.focus.done")}</button>`;
+    }
+  }
+  const sub = [due, detail].filter(Boolean).join(" · ");
+  return `
+    <li class="gd-step${e.late ? " is-late" : ""}">
+      <span class="gd-step-n">${i + 1}</span>
+      <span class="gd-step-main"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</span>
+      <span class="gd-step-act">${act}</span>
+    </li>`;
 }
 
 // Both modes: Pemula's middle section, Pro's top of the Aktivitas tab.
@@ -530,29 +596,50 @@ function todoSectionHTML({ campaign, todo, state, guided }) {
   const shown = all ? items : items.slice(0, TODO_SHOWN);
   const empty = !items.length && !ideas.length && !routine.rows.length;
   const count = openCount(todo);
-  return `
-    <section class="gd-sec gd-todo${guided ? "" : " is-pro"}" id="gd-todo">
-      <div class="gd-sec-head"><h2>${t("gl.todo.title")}${count ? ` <span class="gd-count">${count}</span>` : ""}</h2></div>
+  const today = localISODate();
+  const focus = guided ? focusEntries(todo) : [];
+  const fullList = `
       ${routineBlockHTML(routine, brandId)}
       ${routine.rows.length && shown.length ? `<div class="gd-group-head gd-rest-head">${icon("check", { size: 13 })}<b>${t("gl.rt.restTitle")}</b></div>` : ""}
-      ${empty ? `
+      ${shown.length ? `<div class="gd-list">${shown.map((x) => todoRowHTML(x, { brandId })).join("")}</div>` : ""}
+      ${!all ? `<button type="button" class="gd-more-btn" data-gd-all>${t("gl.todo.all", { n: items.length })}${icon("chevronDown", { size: 13 })}</button>` : ""}`;
+  const emptyHTML = empty ? `
         <div class="gd-todo-empty">
           <b>${t(done.length ? "gl.todo.allDone" : "gl.todo.emptyTitle")}</b>
-          <p>${t("gl.todo.emptyBody")}</p>
-        </div>` : ""}
-      ${shown.length ? `<div class="gd-list">${shown.map((x) => todoRowHTML(x, { brandId })).join("")}</div>` : ""}
-      ${!all ? `<button type="button" class="gd-more-btn" data-gd-all>${t("gl.todo.all", { n: items.length })}${icon("chevronDown", { size: 13 })}</button>` : ""}
-      ${ideas.length ? `
+          <p>${t(guided ? "gl.todo.emptyBody" : "gl.todo.emptyBodyPro")}</p>
+        </div>` : "";
+  const ideasHTML = ideas.length ? `
         <div class="gd-ideas-group">
           <div class="gd-group-head">${icon("bookmark", { size: 13 })}<b>${t("gl.todo.ideasTitle")}</b><span>${t("gl.todo.ideasSub")}</span></div>
           <div class="gd-list">${ideas.map(ideaRowHTML).join("")}</div>
-        </div>` : ""}
+        </div>` : "";
+  const foot = `
       <div class="gd-todo-foot">
         <button type="button" class="gd-add" data-gd-add="content">${icon("plus", { size: 13 })}${t("gl.todo.addContent")}</button>
         <button type="button" class="gd-add" data-gd-add="task">${icon("plus", { size: 13 })}${t("gl.todo.addTask")}</button>
-        <button type="button" class="gd-add is-ideas" data-gd-ideas>${icon("bulb", { size: 13 })}${t("gl.ideas.btn")}</button>
-      </div>
-      ${done.length ? `<details class="gd-done"><summary>${t("gl.todo.done", { n: done.length })}</summary><div class="gd-list">${done.slice(0, 12).map((x) => todoRowHTML(x, { done: true, brandId })).join("")}</div></details>` : ""}
+        ${guided ? "" : `<button type="button" class="gd-add is-ideas" data-gd-ideas>${icon("bulb", { size: 13 })}${t("gl.ideas.btn")}</button>`}
+      </div>`;
+  const doneHTML = done.length ? `<details class="gd-done"><summary>${t("gl.todo.done", { n: done.length })}</summary><div class="gd-list">${done.slice(0, 12).map((x) => todoRowHTML(x, { done: true, brandId })).join("")}</div></details>` : "";
+  if (guided) {
+    const rest = focus.length - FOCUS_SHOWN;
+    return `
+    <section class="gd-sec gd-todo" id="gd-todo">
+      <div class="gd-sec-head"><h2>${t("gl.todo.title")}</h2></div>
+      ${focus.length ? `<p class="gd-focus-sub">${t("gl.focus.sub")}</p><ol class="gd-steps">${focus.slice(0, FOCUS_SHOWN).map((e, i) => focusRowHTML(e, i, today)).join("")}</ol>` : emptyHTML}
+      ${ideasHTML}
+      ${foot}
+      ${rest > 0 ? `<details class="gd-all" id="gd-all"${state.allOpen ? " open" : ""}><summary>${t("gl.focus.all", { n: focus.length })}${icon("chevronDown", { size: 14 })}</summary>${fullList}</details>` : ""}
+      ${doneHTML}
+    </section>`;
+  }
+  return `
+    <section class="gd-sec gd-todo is-pro" id="gd-todo">
+      <div class="gd-sec-head"><h2>${t("gl.todo.title")}${count ? ` <span class="gd-count">${count}</span>` : ""}</h2></div>
+      ${fullList}
+      ${emptyHTML}
+      ${ideasHTML}
+      ${foot}
+      ${doneHTML}
     </section>`;
 }
 
@@ -574,8 +661,82 @@ function guidedPageHTML({ brandId, campaign, stages, autoIndex, state, stageRead
       ${guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind })}
       ${celebrate}
       ${perfSectionHTML({ campaign, stages, state, stageRead, autoIndex, ctx })}
+      ${playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kind })}
       ${todoSectionHTML({ campaign, todo, state, guided: true })}
     </div>`;
+}
+
+// ---------- "Cara mencapainya": what to DO for the target (js/goal-playbook.js) ----------
+// Owner, 2026-10-30: the page said what to reach but not how ("terlalu
+// ngawang"). One target at a time (chips pick which), 2–4 concrete plays
+// with three plain steps each; "Jalankan" turns the steps into the goal's
+// to-do, "Simpan" keeps the play under "Ide tersimpan". Nothing is made
+// until one of the two is tapped.
+function playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kind }) {
+  const stage = stages[autoIndex];
+  const read = stage ? readStage(stage, ctx) : { readings: [] };
+  const opts = openGroups(kind.key, read.readings);
+  const cur = opts.find((o) => o.group === state.pbGroup) || opts[0];
+  const plays = playsOfGroup(cur.group);
+  if (!plays.length) return "";
+  const mine = new Map(listBrandIdeas(brandId, { campaignId: campaign.id }).filter((i) => i.playId).map((i) => [i.playId, i]));
+  const r = cur.reading;
+  const left = r && r.target && !r.isCheck && r.current < r.target ? ` · ${esc(t("camp.detail.remaining", { count: formatNumber(r.target - r.current), unit: r.unit }))}` : "";
+  const lead = kind.key === "event"
+    ? t("pb.leadEvent")
+    : r
+      ? `${t("pb.target")} <b>${esc(r.milestone.label)}</b>${r.target && !r.isCheck ? ` — ${formatNumber(r.current)} / ${formatNumber(r.target)}${r.unit && r.unit !== "Rp" ? ` ${esc(r.unit)}` : ""}${left}` : ""}`
+      : t("pb.leadKeep");
+  const chips = opts.length > 1
+    ? `<div class="gd-play-chips" role="tablist" aria-label="${esc(t("pb.pickTarget"))}">${opts.slice(0, 6).map((o) => `<button type="button" role="tab" class="gd-play-chip${o.group === cur.group ? " is-on" : ""}" aria-selected="${o.group === cur.group}" data-gd-pb="${o.group}">${esc(groupLabel(o.group))}</button>`).join("")}</div>`
+    : "";
+  const card = (p) => {
+    const idea = mine.get(p.id);
+    const running = idea?.status === "tasked";
+    return `
+      <article class="gd-play${running ? " is-run" : idea ? " is-saved" : ""}">
+        <div class="gd-play-top"><span class="gd-play-ic">${icon(p.icon, { size: 16 })}</span><span class="gd-play-type">${t(`pb.type.${p.type}`)}</span></div>
+        <h3>${esc(p.title)}</h3>
+        <p class="gd-play-why">${esc(p.why)}</p>
+        <ol class="gd-play-steps">${p.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+        <div class="gd-play-acts">
+          ${running
+            ? `<span class="gd-play-state">${icon("check", { size: 13 })}${t("pb.running")}</span>`
+            : `<button type="button" class="gd-mini is-solid" data-gd-play-run="${p.id}">${icon("play", { size: 12 })}${t("pb.run")}</button>${idea ? `<span class="gd-play-state is-soft">${icon("bookmark", { size: 13 })}${t("pb.saved")}</span>` : `<button type="button" class="gd-mini" data-gd-play-save="${p.id}">${icon("bookmark", { size: 12 })}${t("pb.save")}</button>`}`}
+        </div>
+      </article>`;
+  };
+  return `
+    <section class="gd-sec gd-playbook" id="gd-playbook">
+      <div class="gd-sec-head"><h2>${t("pb.title")}</h2></div>
+      <p class="gd-play-lead">${lead}</p>
+      ${chips}
+      <div class="gd-plays">${plays.map(card).join("")}</div>
+      <p class="gd-play-foot">${t("pb.foot")} <button type="button" class="gd-play-link" data-gd-ideas>${icon("bulb", { size: 13 })}${t("pb.more")}</button></p>
+    </section>`;
+}
+
+// A play kept as a goal idea (once: its id is stored on the idea).
+function savePlayIdea(brandId, campaign, play, status = "") {
+  const had = listBrandIdeas(brandId, { campaignId: campaign.id }).find((i) => i.playId === play.id);
+  if (had) {
+    if (status) updateBrandIdea(brandId, had.id, { status });
+    return had;
+  }
+  const idea = addBrandIdea(brandId, { text: play.title, description: play.why, source: "playbook", campaignId: campaign.id, notes: play.steps.map((s, i) => `${i + 1}. ${s}`).join("\n") });
+  if (idea) updateBrandIdea(brandId, idea.id, { playId: play.id, ...(status ? { status } : {}) });
+  return idea;
+}
+
+// "Jalankan": every step becomes a step of the goal (an Event takes them into
+// its open phase, a Grow Brand level as optional ticks) — the to-do shows them.
+function runPlay(brandId, campaign, play) {
+  savePlayIdea(brandId, campaign, play, "tasked");
+  const made = play.steps.map((s) => addGoalTask(campaign.id, { title: s, why: play.why, fromPlay: play.title })).filter((x) => x.ok);
+  if (made.length) toast(t("pb.runToast", { n: made.length }));
+  else toast(t("bs.failed"), "error");
+  setTimeout(() => document.getElementById("gd-todo")?.scrollIntoView({ behavior: "smooth", block: "start" }), 160);
+  return made.length;
 }
 
 // The to-do's own buttons, and "Kasih ide" (hero + list foot), both modes.
@@ -655,6 +816,30 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
     if (b.dataset.gdAdd === "content") runAction({ type: "new-content" }, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel });
     else openGoalTaskDialog({ campaign, onDone: refresh });
   }));
+  qsa("[data-gd-pb]", root).forEach((b) => b.addEventListener("click", () => { state.pbGroup = b.dataset.gdPb; refresh(); }));
+  qsa("[data-gd-play-save]", root).forEach((b) => b.addEventListener("click", () => {
+    if (isTourDemo()) return toast(DEMO_TOAST);
+    const play = findPlay(b.dataset.gdPlaySave);
+    if (!play || !savePlayIdea(brandId, campaign, play)) return;
+    toast(t("pb.savedToast", { title: play.title }));
+    refresh();
+  }));
+  qsa("[data-gd-play-run]", root).forEach((b) => b.addEventListener("click", () => {
+    if (isTourDemo()) return toast(DEMO_TOAST);
+    const play = findPlay(b.dataset.gdPlayRun);
+    if (!play) return;
+    runPlay(brandId, campaign, play);
+    refresh();
+  }));
+  qsa("[data-gd-idea-run]", root).forEach((b) => b.addEventListener("click", () => {
+    if (isTourDemo()) return toast(DEMO_TOAST);
+    const idea = todo.ideas.find((i) => i.id === b.dataset.gdIdeaRun);
+    const play = idea && findPlay(idea.playId);
+    if (!play) return;
+    runPlay(brandId, campaign, play);
+    refresh();
+  }));
+  qs("#gd-all", root)?.addEventListener("toggle", (e) => { state.allOpen = e.target.open; });
   qsa("[data-gd-idea-content]", root).forEach((b) => b.addEventListener("click", () => {
     const idea = todo.ideas.find((i) => i.id === b.dataset.gdIdeaContent);
     if (!idea) return;
@@ -1525,6 +1710,8 @@ function goalTreeSectionHTML({ stage, stageRead, state, kind }) {
   const met = list.filter(({ r }) => r.met).length;
   const nodes = list.map(({ r, i }, k) => ({ i, pct: r.pct, met: r.met, value: treeValue(r), aria: `${k + 1}. ${r.milestone.label} — ${treeValue(r)}` }));
   const locked = stage.state === "locked";
+  // What to DO for this target, in plain words (js/goal-playbook.js), else the target's own note.
+  const how = (r) => (r.met ? "" : whatToDo(kind.key, r.milestone.key) || r.milestone.description || "");
   const cards = list.map(({ r, i }, k) => {
     const src = r.auto ? (r.updatedAt ? ageLabel(r.updatedAt) : r.sourceLabel || t("gl.tile.auto")) : r.updatedAt ? ageLabel(r.updatedAt) : t("gl.tile.manual");
     const value = r.isCheck ? (r.met ? t("camp.detail.done") : t("camp.detail.notYet")) : `${formatNumber(r.current)}${r.target ? ` / ${formatNumber(r.target)}` : ""}${r.unit && r.unit !== "Rp" ? ` ${r.unit}` : ""}`;
@@ -1534,6 +1721,7 @@ function goalTreeSectionHTML({ stage, stageRead, state, kind }) {
         <span class="gt-card-main"><b>${esc(r.milestone.label)}</b><small>${esc(src)}${r.milestone.required === false ? ` · ${esc(t("camp.optional").replace(/[()]/g, ""))}` : ""}</small></span>
         <span class="gt-card-val">${esc(value)}</span>
         <span class="gt-card-act">${locked ? "" : msActionHTML(r, i, stage)}</span>
+        ${how(r) ? `<span class="gt-card-how">${esc(how(r))}</span>` : ""}
         <span class="gt-card-bar"><span style="width:${Math.round((r.met ? 1 : Math.min(1, r.pct || 0)) * 100)}%"></span></span>
       </div>`;
   }).join("");

@@ -52,7 +52,7 @@ function checklist(campaign, ctx, today) {
         kind: "task", id: `ms:${stage.id}:${r.milestone.id}`, label: r.milestone.label, done: !!r.met,
         date: r.milestone.legacy?.dueDate || r.milestone.dueDate || "", stageId: stage.id, stageName: stage.name, stageKind: stage.kind,
         milestoneId: r.milestone.id, optional: r.milestone.required === false, custom: !!(r.milestone.custom || r.milestone.legacy?.custom),
-        identity: r.milestone.key === "concept" && r.milestone.track === "community", msKey: r.milestone.key || "",
+        identity: r.milestone.key === "concept" && r.milestone.track === "community", msKey: r.milestone.key || "", fromPlay: r.milestone.fromPlay || r.milestone.legacy?.fromPlay || "",
       }))
   );
 }
