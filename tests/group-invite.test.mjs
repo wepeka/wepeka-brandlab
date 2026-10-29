@@ -59,3 +59,15 @@ test("an announcement email still never carries the Lifetime link", () => {
   const m = composeAnnouncementEmail({ title: "Fitur baru", body: "Isi" });
   assert.ok(!m.html.includes(LIFETIME_INVITE) && !m.text.includes(LIFETIME_INVITE));
 });
+
+test("Founder session email: date, Discord, question page and the Lifetime group, in both parts", async () => {
+  const { composeFounderSessionEmail, FOUNDER_SESSION } = await import("../api/_community.js");
+  const m = composeFounderSessionEmail({ appUrl: "https://brandlab.wepeka.com" });
+  assert.match(m.subject, /19\.00 WIB/);
+  for (const part of [m.html, m.text]) {
+    assert.ok(part.includes(FOUNDER_SESSION.discordUrl));
+    assert.ok(part.includes("https://brandlab.wepeka.com/#/updates/sesi"));
+    assert.ok(part.includes(LIFETIME_WA_GROUP_URL));
+    assert.ok(part.includes("30 Oktober"));
+  }
+});

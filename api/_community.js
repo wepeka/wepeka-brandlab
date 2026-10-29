@@ -412,6 +412,67 @@ export function composeGroupInviteEmail({ circle = false, appUrl = APP_URL } = {
   return { subject, html: groupInviteHTML({ circle, appUrl, settingsUrl }), text };
 }
 
+// "Sesi Founder" reminder (admin, api/announcements/founder-session.js): one
+// email to Lifetime accounts only, so it may carry the Lifetime group's link
+// next to the Discord invite. A one-off for the first session, so its
+// details live here and not in Firestore. → { subject, html, text }.
+export const FOUNDER_SESSION = {
+  when: "Jumat, 30 Oktober 2026",
+  time: "19.00 WIB",
+  discordUrl: "https://discord.gg/9RghhpyD6",
+  questionPath: "/#/updates/sesi",
+};
+export function composeFounderSessionEmail({ appUrl = APP_URL } = {}) {
+  const { when, time, discordUrl, questionPath } = FOUNDER_SESSION;
+  const questionUrl = `${appUrl}${questionPath}`;
+  const settingsUrl = `${appUrl}/#/settings/reminders`;
+  const subject = `Besok kita kumpul: Sesi Founder pertama, ${time}`;
+  const steps = [
+    ["1", "Masuk Discord", "Klik tombol di bawah. Setelah masuk, kabari tim di grup WhatsApp Lifetime supaya kamu dikasih role Founder (untuk masuk ruang voice)."],
+    ["2", "Tulis satu pertanyaan", "Buka tab Sesi Founder di Brandlab, tulis satu pertanyaan singkat soal ide pengembangan brand-mu."],
+    ["3", "Ikut sesinya", "Di 30 menit terakhir, pertanyaan yang terpilih dibacakan dan dijawab bareng. Pertanyaannya anonim, jadi tanya aja tanpa sungkan."],
+  ];
+  const stepsHTML = steps.map(([n, title, body]) => `<tr><td width="40" valign="top" style="padding:8px 0;"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td width="30" height="30" align="center" bgcolor="${GOLD}" style="width:30px;height:30px;border-radius:999px;background:${GOLD};${font}font-size:14px;font-weight:800;color:#0c0a09;">${n}</td></tr></table></td><td valign="top" style="padding:8px 0;${font}"><p style="margin:0 0 2px;font-size:15.5px;font-weight:800;color:#1c1917;">${esc(title)}</p><p style="margin:0;font-size:14px;line-height:1.55;color:#57534e;">${esc(body)}</p></td></tr>`).join("");
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>Sesi Founder Brandlab</title></head>
+<body style="margin:0;padding:0;background:#f6efe9;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Jumat 30 Oktober, ${esc(time)}, di Discord Brandlab Community. Tulis satu pertanyaanmu dulu.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f6efe9" style="background:#f6efe9;"><tr><td align="center" style="padding:24px 12px 32px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#140d1f" style="max-width:560px;border-collapse:separate;background:#140d1f;background-image:linear-gradient(155deg,#4a2a0a 0%,#5b1747 42%,#1d0f2b 72%,#0c0a09 100%);border-radius:22px;overflow:hidden;">
+<tr><td height="5" bgcolor="#ec4899" style="height:5px;line-height:5px;font-size:0;background:#ec4899;background-image:linear-gradient(90deg,#ffa52b,#ec4899,#8b5cf6);">&nbsp;</td></tr>
+<tr><td style="padding:24px 28px 0;"><table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td valign="middle"><img src="${esc(appUrl)}/assets/wepeka-logo.png" width="104" height="26" alt="Wepeka" style="display:block;border:0;outline:none;"></td>
+<td valign="middle" style="padding:0 10px;${font}font-size:20px;color:#57534e;">|</td>
+<td valign="middle" style="${font}font-size:19px;font-weight:800;color:#ffffff;">Brandlab</td>
+</tr></table></td></tr>
+<tr><td style="padding:26px 28px 0;">
+<span style="display:inline-block;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.34);${font}font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GOLD};">&#9733; Founder Brandlab</span>
+<h1 style="margin:16px 0 12px;${font}font-size:30px;font-weight:800;line-height:1.18;color:#ffffff;">Besok kita kumpul<br><span style="color:${GOLD};">pertama kalinya</span> &#127881;</h1>
+<p style="margin:0 0 20px;${font}font-size:16px;line-height:1.6;color:#d6d3d1;">Sesi Founder pertama, khusus pemilik akun Lifetime.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr><td style="${font}font-size:15px;line-height:1.9;color:#ffffff;">&#128197; <b>${esc(when)}</b><br>&#9200; <b>${esc(time)}</b><br>&#128205; <b>Discord Brandlab Community</b></td></tr></table>
+</td></tr>
+<tr><td style="padding:0 28px 14px;">${bigButton(discordUrl, "Join Discord &rarr;", GOLD, "#0c0a09")}</td></tr>
+<tr><td style="padding:0 28px 30px;">${bigButton(LIFETIME_WA_GROUP_URL, "Grup WhatsApp Lifetime &rarr;", WA_GREEN, "#052e16")}<p style="margin:12px 0 0;${font}font-size:12.5px;color:#a8a29e;">Link grup ini khusus buat kamu, jangan dibagikan ya.</p></td></tr>
+</table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin-top:14px;border-collapse:separate;background:#ffffff;border-radius:22px;">
+<tr><td style="padding:24px 28px 8px;"><p style="margin:0 0 8px;${font}font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#78716c;">Yang perlu kamu lakukan</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stepsHTML}</table></td></tr>
+<tr><td style="padding:10px 28px 28px;">${bigButton(questionUrl, "Tulis pertanyaanku &rarr;", "#f97316", "#ffffff")}</td></tr>
+</table>
+<p style="max-width:520px;margin:18px auto 0;${font}font-size:12px;line-height:1.6;color:#6b6259;text-align:center;">Kamu menerima email ini karena punya akun Lifetime Brandlab. Nggak mau terima email info seperti ini? Matikan di <a href="${esc(settingsUrl)}" style="color:#6b6259;">Pengaturan &rarr; Pengingat</a>.<br>Wepeka Brandlab &middot; <a href="${esc(appUrl)}" style="color:#6b6259;">${esc(appUrl.replace(/^https?:\/\//, ""))}</a></p>
+</td></tr></table>
+</body></html>`;
+  const text = [
+    "Besok kita kumpul pertama kalinya 🎉", "",
+    "Sesi Founder pertama, khusus pemilik akun Lifetime.", "",
+    `📅 ${when}`, `⏰ ${time}`, "📍 Discord Brandlab Community", "",
+    ...steps.map(([n, title, body]) => `${n}. ${title}: ${body}`), "",
+    `Join Discord: ${discordUrl}`,
+    `Tulis pertanyaan: ${questionUrl}`,
+    `Grup WhatsApp Lifetime (jangan dibagikan): ${LIFETIME_WA_GROUP_URL}`, "",
+    `Nggak mau terima email info seperti ini? Matikan di Pengaturan → Pengingat: ${settingsUrl}`,
+  ].join("\n");
+  return { subject, html, text };
+}
+
 const looksLikeEmail = (v) => typeof v === "string" && v.length <= 254 && /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/.test(v);
 
 // Who an announcement is mailed to: every account that can use Brandlab

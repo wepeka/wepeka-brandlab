@@ -9,7 +9,7 @@
 import {
   KINDS, listAnnouncements, announcementsStatus, onAnnouncements, startAnnouncements, announcementsSeenAt, markAnnouncementsSeen,
   isAnnouncementAdmin, publishAnnouncement, editAnnouncement, removeAnnouncement, announcementEmailReady, emailAnnouncement,
-  groupInviteStatus, sendGroupInvite, trialComebackStatus, sendTrialComeback,
+  groupInviteStatus, sendGroupInvite, founderSessionStatus, sendFounderSession, trialComebackStatus, sendTrialComeback,
 } from "../announcements.js";
 import { renderLightMarkdown } from "../ai-directives.js";
 import { backToLastBrandHTML } from "../back-link.js";
@@ -59,12 +59,14 @@ function composerHTML(editing) {
 
 // The admin's one-off emails (once email works), one card each:
 //   invite  "Email: gabung grup WhatsApp" (every active account)
+//   session "Email: Sesi Founder" (Lifetime accounts only)
 //   trial   "Email: ajak balik akun trial" (trial accounts, running or ended)
 // Their texts are the `ann.<key>.*` keys. `st`: what the real send reached
 // so far ({ status: { sent, total, remaining } }) and, after a test, how
 // many it would reach (`reach`, from the endpoint's counts).
 const MAILINGS = [
   { key: "invite", status: groupInviteStatus, send: sendGroupInvite, reach: (r) => ({ total: r.total ?? 0, circle: r.circle ?? 0 }) },
+  { key: "session", status: founderSessionStatus, send: sendFounderSession, reach: (r) => ({ total: r.total ?? 0 }) },
   { key: "trial", status: trialComebackStatus, send: sendTrialComeback, reach: (r) => ({ total: r.total ?? 0, ended: r.ended ?? 0 }) },
 ];
 function mailingHTML(key, st) {

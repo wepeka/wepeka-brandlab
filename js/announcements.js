@@ -170,6 +170,8 @@ async function mailingCall(name, method, body) {
 }
 export const groupInviteStatus = () => mailingCall("group-invite", "GET");
 export const sendGroupInvite = ({ test = false } = {}) => mailingCall("group-invite", "POST", test ? { test: true } : {});
+export const founderSessionStatus = () => mailingCall("founder-session", "GET");
+export const sendFounderSession = ({ test = false } = {}) => mailingCall("founder-session", "POST", test ? { test: true } : {});
 export const trialComebackStatus = () => mailingCall("trial-comeback", "GET");
 export const sendTrialComeback = ({ test = false } = {}) => mailingCall("trial-comeback", "POST", test ? { test: true } : {});
 

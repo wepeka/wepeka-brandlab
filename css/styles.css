@@ -6980,6 +6980,7 @@ div.home-path-step{ cursor:pointer; }
 }
 /* "Email: gabung grup WhatsApp" card under the composer (admin). */
 .ann-invite{ border-color: color-mix(in srgb, #25D366 45%, var(--border)); }
+.ann-session{ border-color: color-mix(in srgb, #f5b544 55%, var(--border)); }
 .ann-trial{ border-color: color-mix(in srgb, #3B9BFF 45%, var(--border)); }
 .ann-mailing .ann-mailing-status{ color: var(--text-muted); font-weight:600; }
 
