@@ -19,6 +19,7 @@ import { consumeNavContext } from "../nav-context.js";
 import { funnelShort } from "../funnel-field.js";
 import { aiReportButtonHTML } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
+import { appIconSVG } from "../app-icons.js";
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -33,12 +34,29 @@ const VIEWS = [
   { key: "archived", labelKey: "contentList.views.archived", archived: true, test: () => true },
 ];
 
+// Terbit opens on one card per platform before any list (owner,
+// 2026-10-30): the four platforms the new-content wizard offers always,
+// "Lainnya" only when something went out elsewhere. Platform names are
+// user-editable, so they're matched loosely. Colours are the cards' own,
+// like the Beranda app cards.
+const KNOWN_PLATFORM = /instagram|facebook|tik\s*tok|youtube/i;
+const PLATFORM_CARDS = [
+  { key: "instagram", name: "Instagram", app: "#FF6F91", app2: "#9B3CF0", art: "instagram", test: (p) => /instagram/i.test(p || "") },
+  { key: "facebook", name: "Facebook", app: "#5B9BFF", app2: "#2F55E4", art: "facebook", test: (p) => /facebook/i.test(p || "") },
+  { key: "tiktok", name: "TikTok", app: "#3BE8E2", app2: "#FF3D6E", art: "tiktok", test: (p) => /tik\s*tok/i.test(p || "") },
+  { key: "youtube", name: "YouTube", app: "#FF7A6B", app2: "#D42A2A", art: "youtube", test: (p) => /youtube/i.test(p || "") },
+  { key: "other", app: "#F2C46D", app2: "#D9822B", art: "other-platforms", test: (p) => !KNOWN_PLATFORM.test(p || "") },
+];
+
 // Set once the server says it has no AI that can read a picture (api/ai.js
 // "vision"): screenshots go straight to OCR for the rest of this visit.
 let screenshotAiOff = false;
 
 export function render(root, { brandId }) {
-  const state = { view: "all", search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", seriesId: "", sort: "updated", dir: "desc" };
+  // pf: the platform card picked on Terbit ("" = show the cards, "all" =
+  // skip them, e.g. arriving from a campaign). pfAnimate: play the cards'
+  // entrance once, not again on every data refresh.
+  const state = { view: "all", search: "", funnel: "", format: "", platform: "", age: "", campaignId: "", seriesId: "", sort: "updated", dir: "desc", pf: "", pfAnimate: true };
   // Arriving from a campaign: filter to that campaign, and for "Isi
   // performa" open Quick Fill on the piece straight away.
   const navCtx = consumeNavContext();
@@ -47,9 +65,11 @@ export function render(root, { brandId }) {
   if (navCtx?.campaignId) {
     state.campaignId = navCtx.campaignId;
     state.view = navCtx.status === "published" ? "published" : navCtx.status ? "drafts" : "all";
+    state.pf = "all";
   }
   if (navCtx?.intent === "performance" && navCtx.contentId) {
     state.view = "published";
+    state.pf = "all";
     setTimeout(() => {
       const c = getContent(navCtx.contentId);
       if (c) openQuickFillModal({ c, onSaved: refresh });
@@ -95,6 +115,14 @@ function paint(root, brandId, state, refresh) {
   let items = pool.map((c) => ({ c, perf: c.performance, m: computeContentMetrics(c, settings) }));
 
   items = items.filter((x) => activeView.test(x.c.status));
+  const isPublishedView = state.view === "published";
+  const pickPlatform = isPublishedView && !state.pf;
+  const platformCards = isPublishedView ? platformCardData(items) : [];
+  const pfCard = isPublishedView ? PLATFORM_CARDS.find((x) => x.key === state.pf) : null;
+  if (pfCard) items = items.filter((x) => pfCard.test(x.c.platform));
+  // One platform at a time: the Platform/Format column says the same thing
+  // on every row, so it makes room for follower conversion.
+  const showFcr = !!pfCard;
 
   if (state.search.trim()) {
     const q = state.search.toLowerCase();
@@ -114,6 +142,7 @@ function paint(root, brandId, state, refresh) {
       case "date": av = a.c.scheduleDate || a.c.publishedDate || ""; bv = b.c.scheduleDate || b.c.publishedDate || ""; break;
       case "views": av = a.perf.views || 0; bv = b.perf.views || 0; break;
       case "er": av = a.m.engagementRate ?? -1; bv = b.m.engagementRate ?? -1; break;
+      case "fcr": av = followerConversion(a.c, a.m) ?? -1; bv = followerConversion(b.c, b.m) ?? -1; break;
       default: av = a.c.updatedAt; bv = b.c.updatedAt;
     }
     if (av < bv) return state.dir === "asc" ? -1 : 1;
@@ -131,7 +160,6 @@ function paint(root, brandId, state, refresh) {
   const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
   const igUnavailableNote = t("contentList.connectInEditBrand");
   const allContentCount = listContent(brandId, { includeArchived: true }).length;
-  const isPublishedView = state.view === "published";
   const staleQueue = listContent(brandId).filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
 
   root.innerHTML = `
@@ -152,7 +180,7 @@ function paint(root, brandId, state, refresh) {
       <div class="segmented" style="width:fit-content;flex:none;">
         ${VIEWS.map((v) => `<button data-view="${v.key}" class="${state.view === v.key ? "active" : ""}" aria-pressed="${state.view === v.key}">${t(v.labelKey)}</button>`).join("")}
       </div>
-      <div class="search-box">
+      ${pickPlatform ? "" : `<div class="search-box">
         ${icon("search", { size: 16 })}
         <input class="input" id="search" type="search" aria-label="${escapeText(t("contentList.searchAria"))}" placeholder="${escapeText(t("contentList.searchPlaceholder"))}" value="${escapeText(state.search)}" />
       </div>
@@ -165,16 +193,18 @@ function paint(root, brandId, state, refresh) {
         ${seriesList.map((s) => `<option value="${s.id}" ${state.seriesId === s.id ? "selected" : ""}>${escapeText(s.name || t("common.untitled"))}</option>`).join("")}
       </select>` : ""}
       <button type="button" class="btn btn-secondary btn-sm" id="filter-toggle">${icon("filter", { size: 13 })}${t("contentList.filter")}${panelFilterCount ? ` <span class="notif-badge" style="position:static;margin-left:2px;">${panelFilterCount}</span>` : ""}${icon("chevronDown", { size: 12 })}</button>
-      ${activeFilters ? `<button class="btn btn-ghost btn-sm" id="clear-filters">${icon("x", { size: 13 })}${t("contentList.clearFilters")}</button>` : ""}
+      ${activeFilters ? `<button class="btn btn-ghost btn-sm" id="clear-filters">${icon("x", { size: 13 })}${t("contentList.clearFilters")}</button>` : ""}`}
     </div>
 
+    ${pickPlatform ? platformCardsHTML(platformCards, state.pfAnimate) : `
+    ${pfCard ? platformHeadHTML(pfCard) : ""}
     <div class="table-wrap">
       <div class="table-scroll">
         <table class="data-table cl-cards">
           <thead>
             <tr>
               <th data-sort="title">${t("contentList.th.title")}</th>
-              <th>${t("contentList.th.platformFormat")}</th>
+              ${showFcr ? `<th data-sort="fcr" title="${escapeText(t("contentList.th.fcrHint"))}">${t("contentList.th.fcr")}</th>` : `<th>${t("contentList.th.platformFormat")}</th>`}
               <th>${t("contentList.th.campaign")}</th>
               <th>${t("contentList.th.status")}</th>
               <th data-sort="date">${t("contentList.th.date")}</th>
@@ -184,12 +214,12 @@ function paint(root, brandId, state, refresh) {
             </tr>
           </thead>
           <tbody>
-            ${items.length ? items.map((x) => rowHTML(x, campaignsById)).join("") : ""}
+            ${items.length ? items.map((x) => rowHTML(x, campaignsById, showFcr)).join("") : ""}
           </tbody>
         </table>
       </div>
       ${items.length ? "" : allContentCount ? emptyFilteredHTML() : emptyNoneHTML(brand)}
-    </div>
+    </div>`}
   `;
 
   wireHelpButtons(root);
@@ -238,7 +268,23 @@ function paint(root, brandId, state, refresh) {
     });
   });
 
-  qs("#search").addEventListener(
+  if (pickPlatform && state.pfAnimate) {
+    state.pfAnimate = false;
+    qsa("[data-count]", root).forEach(countUp);
+  }
+  qsa("[data-pf]", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.pf = btn.dataset.pf;
+      paint(root, brandId, state, refresh);
+    });
+  });
+  qs("#pf-back")?.addEventListener("click", () => {
+    state.pf = "";
+    state.pfAnimate = true;
+    paint(root, brandId, state, refresh);
+  });
+
+  qs("#search")?.addEventListener(
     "input",
     debounce((e) => {
       state.search = e.target.value;
@@ -249,6 +295,10 @@ function paint(root, brandId, state, refresh) {
   );
   qsa("[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (state.view !== btn.dataset.view) {
+        state.pf = "";
+        state.pfAnimate = true;
+      }
       state.view = btn.dataset.view;
       paint(root, brandId, state, refresh);
     });
@@ -431,7 +481,7 @@ function sampleContentIdeas(brand) {
   ];
 }
 
-function rowHTML({ c, perf, m }, campaignsById) {
+function rowHTML({ c, perf, m }, campaignsById, showFcr) {
   // Views/Engagement only mean anything once something has actually been
   // posted — showing them for an idea or draft implies data that isn't there.
   const isPublished = c.status === "published";
@@ -439,7 +489,7 @@ function rowHTML({ c, perf, m }, campaignsById) {
   return `
     <tr data-id="${c.id}" role="row">
       <td class="cell-title">${escapeText(c.title || t("common.untitled"))}${isPublished && m.erRating === "excellent" ? `<span class="er-flame" role="img" title="${escapeText(t("contentList.erExcellentMark"))}" aria-label="${escapeText(t("contentList.erExcellentMark"))}">${icon("flame", { size: 13 })}</span>` : ""}</td>
-      <td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>
+      ${showFcr ? fcrCellHTML(c, m) : `<td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>`}
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaignDisplayName(campaign.name) || t("common.untitled"))}</span>` : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${escapeText(c.status)}"><span class="status-dot"></span>${escapeText(STATUS_LABELS[c.status] || c.status)}</span></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
@@ -453,6 +503,86 @@ function rowHTML({ c, perf, m }, campaignsById) {
       </td>
     </tr>
   `;
+}
+
+// Follower conversion = new followers ÷ reach (the formula in Settings).
+// TikTok prints no reach, so there it falls back to ÷ views.
+function followerConversion(c, m) {
+  if (m.followerConversionRate !== null && m.followerConversionRate !== undefined) return m.followerConversionRate;
+  const p = c.performance || {};
+  return p.followersGained !== null && p.followersGained !== undefined && p.followersGained !== "" && Number(p.views) ? (Number(p.followersGained) / Number(p.views)) * 100 : null;
+}
+
+function fcrCellHTML(c, m) {
+  const label = escapeText(t("contentList.th.fcr"));
+  if (c.status !== "published") return `<td class="cell-muted" data-label="${label}">—</td>`;
+  const v = followerConversion(c, m);
+  const rated = m.followerConversionRate !== null && m.followerConversionRate !== undefined && m.fcrRating;
+  return `<td data-label="${label}">${rated ? `<span class="health-badge health-${m.fcrRating}" title="${escapeText(HEALTH_LABEL[m.fcrRating])}"><span class="health-dot"></span>${formatPercent(v)}</span>` : `<span class="cell-muted">${formatPercent(v)}</span>`}</td>`;
+}
+
+// The numbers on each platform card: what went out there, its views and
+// its average engagement. "Lainnya" drops out when nothing went elsewhere.
+function platformCardData(published) {
+  return PLATFORM_CARDS.map((card) => {
+    const list = published.filter((x) => card.test(x.c.platform));
+    const ers = list.map((x) => x.m.engagementRate).filter((v) => v !== null && v !== undefined);
+    const names = [...new Set(list.map((x) => x.c.platform).filter(Boolean))];
+    return {
+      card,
+      count: list.length,
+      views: list.reduce((sum, x) => sum + (Number(x.perf?.views) || 0), 0),
+      er: ers.length ? ers.reduce((a, b) => a + b, 0) / ers.length : null,
+      sub: card.key === "other" ? names.join(", ") || t("contentList.pf.sub.other") : t(`contentList.pf.sub.${card.key}`),
+    };
+  }).filter((d) => d.card.key !== "other" || d.count);
+}
+
+function platformName(card) {
+  return card.name || t("contentList.pf.other");
+}
+
+function platformCardsHTML(cards, animate) {
+  return `
+    <p class="cl-pf-hint">${t("contentList.pf.hint")}</p>
+    <div class="cl-pf${animate ? " is-entering" : ""}">
+      ${cards.map(({ card, count, views, er, sub }) => `
+        <button type="button" class="lh-card" data-pf="${card.key}" style="--app:${card.app};--app2:${card.app2}" aria-label="${escapeText(`${platformName(card)} — ${t("contentList.pf.count", { count })}`)}">
+          <span class="lh-card-name">${platformName(card)}</span>
+          <span class="lh-card-sub">${escapeText(sub)}</span>
+          <span class="cl-pf-num"><b data-count="${count}" data-fmt="num">${formatNumber(count)}</b><span>${t("contentList.pf.countLabel")}</span></span>
+          <span class="cl-pf-stats">
+            <span class="lh-card-status"><b data-count="${views}" data-fmt="num">${formatNumber(views)}</b>&nbsp;views</span>
+            <span class="lh-card-status">ER&nbsp;<b ${er === null ? "" : `data-count="${er}" data-fmt="pct"`}>${formatPercent(er)}</b></span>
+          </span>
+          <span class="lh-card-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>
+          <span class="lh-card-art" aria-hidden="true">${appIconSVG(card.art)}</span>
+        </button>`).join("")}
+    </div>`;
+}
+
+function platformHeadHTML(card) {
+  return `
+    <div class="cl-pf-head">
+      <span class="cl-pf-chip" style="--app:${card.app};--app2:${card.app2}"><i>${appIconSVG(card.art)}</i>${platformName(card)}</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="pf-back">${icon("chevronLeft", { size: 13 })}${t("contentList.pf.back")}</button>
+    </div>`;
+}
+
+// The card numbers run up from zero as the cards come in.
+function countUp(el) {
+  const target = Number(el.dataset.count) || 0;
+  const fmt = el.dataset.fmt === "pct" ? (n) => formatPercent(n) : (n) => formatNumber(Math.round(n));
+  const final = el.textContent;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const t0 = performance.now();
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / 1000);
+    el.textContent = k >= 1 ? final : fmt(target * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  el.textContent = fmt(0);
+  requestAnimationFrame(step);
 }
 
 // "Update Engagement" opens this list first — every published piece that's

@@ -47,6 +47,7 @@ export default {
   "nw.fmt.long": { en: "Long video", id: "Video panjang" },
   "nw.fmt.long.sub": { en: "YouTube, over a minute", id: "YouTube, lebih dari 1 menit" },
   "nw.where": { en: "Where?", id: "Di mana?" },
+  "nw.where.multi": { en: "Uploading the same video to several platforms? Pick more than one: each gets its own piece, written once.", id: "Upload video yang sama ke beberapa platform? Pilih lebih dari satu: tiap platform dapat kontennya sendiri, naskahnya cukup ditulis sekali." },
   "nw.next": { en: "Next", id: "Lanjut" },
   "nw.back": { en: "Back", id: "Kembali" },
   "nw.ideaAria": { en: "The idea, in your words", id: "Idenya, pakai kata-katamu" },
@@ -62,6 +63,7 @@ export default {
   "nw.start": { en: "Start", id: "Mulai" },
   "nw.startEmpty": { en: "Find an idea with the AI", id: "Cari ide bareng AI" },
   "nw.created": { en: "Created. Now shape the idea.", id: "Konten dibuat. Yuk matengin idenya." },
+  "nw.createdMany": { en: "{count} pieces created, one per platform. Now shape the idea.", id: "{count} konten dibuat, satu per platform. Yuk matengin idenya." },
 
   "cw.step.idea": { en: "Idea", id: "Ide" },
   "cw.step.script": { en: "Script", id: "Script" },

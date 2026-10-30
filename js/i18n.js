@@ -306,6 +306,19 @@ const CORE = {
   "contentList.th.date": { en: "Date", id: "Tanggal" },
   "contentList.th.views": { en: "Views", id: "Views" },
   "contentList.th.engagement": { en: "Engagement", id: "Engagement" },
+  "contentList.th.fcr": { en: "Follower conversion", id: "Follower conversion" },
+  "contentList.th.fcrHint": { en: "New followers ÷ reach. Without a reach number (TikTok): ÷ views.", id: "Followers baru ÷ reach. Kalau tidak ada angka reach (TikTok): ÷ views." },
+  // Terbit opens on one card per platform (js/views/content-list.js).
+  "contentList.pf.hint": { en: "Where do you want to see your published content?", id: "Mau lihat konten yang sudah tayang di mana?" },
+  "contentList.pf.countLabel": { en: "published", id: "konten tayang" },
+  "contentList.pf.count": { en: "{count} published", id: "{count} konten tayang" },
+  "contentList.pf.back": { en: "Pick another platform", id: "Pilih platform lagi" },
+  "contentList.pf.other": { en: "Other", id: "Lainnya" },
+  "contentList.pf.sub.instagram": { en: "Reels, carousel, post", id: "Reels, carousel, post" },
+  "contentList.pf.sub.facebook": { en: "Reels, post", id: "Reels, post" },
+  "contentList.pf.sub.tiktok": { en: "Short video", id: "Video pendek" },
+  "contentList.pf.sub.youtube": { en: "Shorts & long video", id: "Shorts & video panjang" },
+  "contentList.pf.sub.other": { en: "Other platforms", id: "Platform lain" },
   // ── Empty content list — two cases: nothing at all (with ready-to-click
   // starter ideas) vs. a filter/search that just has no match (js/views/
   // content-list.js, UI polish: empty states).

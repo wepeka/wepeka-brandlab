@@ -2,7 +2,12 @@
 // (owner's ask, 2026-10-26: "jangan satu form panjang, maksimal 2 langkah").
 //
 //   1. Mau bikin apa?   — a colour card per kind of piece (its own picture,
-//                         js/create-art.js), and where it goes out.
+//                         js/create-art.js), and where it goes out — one
+//                         platform or several (owner, 2026-10-30: the same
+//                         video uploaded to more than one). Several = one
+//                         piece per platform, linked as mirror twins
+//                         (content.mirrorGroupId), so Creator keeps their
+//                         writing in step and Terbit counts each platform.
 //   2. Idenya apa?      — the idea in the owner's own words (or nothing:
 //                         it gets found with the AI next), when it goes out,
 //                         and the campaign it is for, if there is one.
@@ -90,10 +95,11 @@ function step1HTML(s, kinds, platforms, extraFormats) {
     ${platforms.length ? `
     <div class="nw-row">
       <span class="nw-label" id="nw-where">${t("nw.where")}</span>
-      <div class="nw-chips" role="radiogroup" aria-labelledby="nw-where">
-        ${platforms.map((p) => `<button type="button" class="nw-chip${s.platform === p.name ? " is-on" : ""}" role="radio" aria-checked="${s.platform === p.name}" data-platform="${escapeHtml(p.name)}">${platformIcon(p.id || p.name)}<span>${escapeHtml(p.name)}</span></button>`).join("")}
+      <div class="nw-chips" role="group" aria-labelledby="nw-where">
+        ${platforms.map((p) => { const on = s.platforms.includes(p.name); return `<button type="button" class="nw-chip${on ? " is-on" : ""}" role="checkbox" aria-checked="${on}" data-platform="${escapeHtml(p.name)}">${platformIcon(p.id || p.name)}<span>${escapeHtml(p.name)}</span></button>`; }).join("")}
       </div>
-    </div>` : ""}`;
+    </div>
+    <p class="nw-hint nw-where-hint">${icon("layers", { size: 12 })}${t("nw.where.multi")}</p>` : ""}`;
 }
 
 function step2HTML(s, campaigns) {
@@ -138,7 +144,7 @@ export function openNewContentWizard({ brandId, defaults = {}, onSaved, stay = f
   const s = {
     step: 1,
     kind: presetKind,
-    platform: defaults.platform || platforms.find((p) => /instagram/i.test(p.name))?.name || platforms[0]?.name || "",
+    platforms: [defaults.platform || platforms.find((p) => /instagram/i.test(p.name))?.name || platforms[0]?.name || ""].filter(Boolean),
     text: [defaults.title, defaults.idea].filter(Boolean).join("\n"),
     date: defaults.scheduleDate || "",
     campaignId: defaults.campaignId || "",
@@ -195,8 +201,12 @@ export function openNewContentWizard({ brandId, defaults = {}, onSaved, stay = f
     }
     const plat = e.target.closest("[data-platform]");
     if (plat) {
-      s.platform = plat.dataset.platform;
-      body.querySelectorAll("[data-platform]").forEach((b) => { const on = b === plat; b.classList.toggle("is-on", on); b.setAttribute("aria-checked", String(on)); });
+      // Toggle, keeping at least one — a piece has to go out somewhere.
+      const name = plat.dataset.platform;
+      if (!s.platforms.includes(name)) s.platforms = platforms.map((p) => p.name).filter((n) => n === name || s.platforms.includes(n));
+      else if (s.platforms.length > 1) s.platforms = s.platforms.filter((n) => n !== name);
+      body.querySelectorAll("[data-platform]").forEach((b) => { const on = s.platforms.includes(b.dataset.platform); b.classList.toggle("is-on", on); b.setAttribute("aria-checked", String(on)); });
+      plat.classList.remove("is-pop"); void plat.offsetWidth; plat.classList.add("is-pop");
       return;
     }
     const when = e.target.closest("[data-when]");
@@ -243,15 +253,18 @@ export function openNewContentWizard({ brandId, defaults = {}, onSaved, stay = f
     }
     if (s.date && s.date < localISODate()) { toast(t("calendar.pastDate"), "error"); return; }
     const { title, idea } = titleAndIdea(s.text);
-    const format = formatForKind(s.kind, s.platform, formats) || defaults.format || "";
     const campaign = s.campaignId ? getCampaign(s.campaignId) : null;
-    const made = createContent(brandId, {
+    const targets = s.platforms.length ? s.platforms : [""];
+    const mirrorGroupId = targets.length > 1 ? crypto.randomUUID() : "";
+    const pieces = targets.map((platform) => createContent(brandId, {
       funnel: "TOFU",
       ...defaults,
       title,
       idea,
-      format,
-      platform: s.platform,
+      // Per platform: a short video is Reels on Instagram, Short Video on TikTok.
+      format: formatForKind(s.kind, platform, formats) || defaults.format || "",
+      platform,
+      mirrorGroupId,
       status: "idea",
       scheduleDate: s.date,
       campaignId: campaign?.id || "",
@@ -259,10 +272,11 @@ export function openNewContentWizard({ brandId, defaults = {}, onSaved, stay = f
       campaignPhaseId: campaign && campaign.id === defaults.campaignId ? defaults.campaignPhaseId || "" : "",
       seriesId: defaults.seriesId || "",
       ...(s.kind === "pov" ? { videoStyle: "pov" } : {}),
-    });
+    })).filter(Boolean);
+    const made = pieces[0];
     if (!made) return;
     closeOverlay(overlay);
-    toast(t("nw.created"));
+    toast(pieces.length > 1 ? t("nw.createdMany", { count: pieces.length }) : t("nw.created"));
     onSaved?.(made);
     if (!stay) location.hash = `#/brand/${brandId}/content/creator/${made.id}`;
   });
