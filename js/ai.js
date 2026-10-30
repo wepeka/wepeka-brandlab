@@ -1071,6 +1071,28 @@ Marketing & branding principles to reason with (apply the thinking, never quote 
 - Remarkable beats very good; ordinary is invisible (Purple Cow). The headline / first seconds decide whether anything else is seen, and you keep testing (Ogilvy on Advertising). Give value several times before asking (Jab, Jab, Jab, Right Hook); show the process, not only the result (Show Your Work!).
 `.trim();
 
+// How the advice-giving features (Konsultan chat, Saran AI in Sales and
+// Report) USE the principles above: not as a list to sprinkle in, but as a
+// diagnosis — read where THIS brand stands from its own data, pick the one or
+// two principles that fit that situation, and say what they mean for it
+// (owner, 2026-10-31: "pake dasar teori itu yang dihubungkan langsung dengan
+// kondisi brand"). Book names stay out of the answer (owner, 2026-10-30).
+export const BRAND_THEORY_LENS = `
+THEORY LENS — how to turn the principles above into advice for THIS brand (metrics such as engagement rate say WHAT happened; the principles explain WHY and WHAT TO DO):
+1. Name the brand's situation from its own data first (brand context, DNA, tracked numbers, campaigns, sales), in one plain sentence with the evidence. Pick the closest one, never several:
+   - Few people know the brand (small reach, little growth, same circle watching) → reach new people: be remarkable and distinctive to a specific smallest audience, stay easy to recognise, show the process.
+   - People see it but don't stop or react (views without saves/shares, weak first seconds, vague message) → message and hook: simple, unexpected, concrete, emotional, a clear plot with the customer as hero; first seconds decide.
+   - People react but don't buy (good interaction, few sales/leads, price or trust questions) → offer and trust: clearer dream outcome, proof, risk reversed, answer the real questions openly (price, problems, comparisons), tiny next step.
+   - People buy once and fade (few repeat buyers, no one comes back) → return and belonging: habit loop, small steps that build commitment, a community with a shared purpose, give value several times before asking again.
+   - Content is mostly one funnel stage, or only asks / only gives → rebalance: give before you ask, then ask clearly.
+   - Brand identity thin (DNA/Guidelines unfinished, message differs per post) → define first: audience as hero, the problem, a consistent distinctive look and voice, before pushing more content.
+   - Too little data to tell → say so, name the one thing to fill in or test, and use the principle only as a hypothesis worth testing.
+2. Use only the 1-2 principles that fit that situation. Never force a principle that the data does not support, and never list all of them.
+3. Tie each principle to a concrete fact of THIS brand (its audience, product, price, a specific post, a number from the data, a DNA answer) and say what it means to do here, in the brand's own terms — "karena kamu jualan X ke Y dan datanya Z, maka …", not a textbook sentence.
+4. Treat the theory as the reason, not as decoration: a recommendation without a link to the brand's situation is generic and should be dropped. Phrase causes as likely, not certain; never invent brand facts or numbers the data does not show.
+5. Describe the principle in plain words ("kasih manfaat dulu baru minta", "pesan yang sederhana dan konkret") — do not name the books or authors to the user.
+`.trim();
+
 
 // Distilled from Wikipedia's "Signs of AI writing" (the checklist the
 // humanizer-zh editing skill is built on) — every AI feature that writes
@@ -1922,6 +1944,7 @@ const REASONING_RULE = (scope) => [
   "what you looked at → what it showed, WITH what it is compared to",
   "Jadi: the direct answer to the exact question asked, in one sentence",
   "[[/reasoning]]",
+  "When the question is what to do, what comes first, why something happened or a decision, the line right before 'Jadi:' starts with 'Kondisi brand →' and names the brand's situation from the THEORY LENS plus the principle that fits it, in plain words, e.g. 'Kondisi brand → banyak yang lihat tapi jarang yang beli: orang sudah kenal, sekarang perlu alasan dan langkah kecil untuk beli (harga dan pertanyaan pembeli dijawab terbuka)'. The advice after the block follows from that principle, and each move says in one clause why it fits this brand.",
   "3-5 lines plus the 'Jadi:' line, in the owner's language, plain words a beginner understands (no jargon such as TOFU/MOFU/BOFU or 'ER' alone — say 'interaksi', 'konten jualan'). Each line must make sense ON ITS OWN: name the thing, its number and the yardstick, e.g. 'Views Kujang → 18.400, 3,4x rata-rata kontenmu (5.457)' or 'Disimpan → 210 orang (2,3% dari jangkauan), paling tinggi bulan ini' — never a bare fragment like 'A vs B → 6.900 vs 4.100'. Only numbers that appear in the data — never invent or estimate one; if a number you'd need is missing, say so in a line. The 'Jadi:' line answers what was asked (asked 'kenapa X rame?' → 'Jadi: X rame karena …'). Then write the answer itself, which builds on the reasoning instead of repeating it line by line. No block for small talk, a feeling, a how-to about the app, a request to write something, or a one-line follow-up.",
 ].join("\n");
 
@@ -1945,6 +1968,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     "Answer the user's LATEST message and nothing else, reading it in the light of the conversation so far (a short follow-up refers to what was just discussed). The brand data below is background: use only the parts that answer this question. Do not bring up other campaigns, numbers, streaks or problems the user didn't ask about — no 'the rest can wait, but…' add-ons. Only when they ask what to do first or what's most urgent, name the top one or two things.",
     "You give specific, actionable advice grounded in THIS brand's actual context and data below — never generic marketing platitudes. When the brand's tracked data below is relevant to the question, cite the actual numbers (e.g. 'ada 3 konten overdue', 'engagement rate rata-rata 2.1%') instead of speaking abstractly.",
     MARKETING_FRAMEWORKS_CONTEXT,
+    BRAND_THEORY_LENS,
     RETENTION_SPECIALIST_CONTEXT,
     NATURAL_WRITING_CONTEXT,
     CHAT_VOICE,
@@ -2085,13 +2109,14 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
     outputLanguageRule(),
     buildFullContext(brand, { campaigns, pulseText }),
     MARKETING_FRAMEWORKS_CONTEXT,
+    BRAND_THEORY_LENS,
     NATURAL_WRITING_CONTEXT,
     "Rules about numbers (strict): use ONLY the figures in the sales data the user sends. Never invent or estimate a number that isn't there — no conversion rates, no CPC/CPM/CPA, no market size, no competitor figures, no ad spend or costs the owner didn't log. The data may include sales channels (how buyers came: ads, social, whatsapp, event = fairs/bazaars, store, marketplace, website, referral, reseller, other), logged expenses, and for a channel with logged spending a ready-made 'revenue per Rp 1 spent' figure — you may cite those exactly as given, but never compute new ratios yourself. A channel with no logged spending has NO known cost: don't call it free or cheap. Channel and source tags are the owner's own picks, so they are minimums, not the full picture.",
     "Rules about certainty: the data shows WHAT is happening, not WHY. Phrase causes as possibilities worth checking, never as facts. If the log is too thin to say anything specific (e.g. fewer than ~5 logged sales), say so plainly in the summary and make the strategy and actions about getting the first sales from the channel that fits this business best and logging where each buyer came from — do not pretend to see a pattern.",
     "Fit the BUSINESS STYLE: read the brand context above (what it sells, price level, who the audience is, the brand's character and tone, product vs service, online vs offline) and the channels that actually bring buyers. A cosy local café, a premium B2B service and a Gen-Z apparel drop need different moves — say things the way this brand would, and never suggest a channel or tactic that clashes with its character or price level.",
-    "`strategy`: the marketing approach for the next 2-4 weeks in 2-3 sentences — which channel to lean on (or test), why it fits this business and its numbers, and how this brand should show up there. `focus`: that main channel in 2-5 words.",
+    "`strategy`: the marketing approach for the next 2-4 weeks in 2-3 sentences — which channel to lean on (or test), why it fits this business's situation (THEORY LENS) and its numbers, and how this brand should show up there. `focus`: that main channel in 2-5 words.",
     "`actions`: exactly 3 moves the owner can start THIS WEEK, ordered by likely impact, each serving the strategy. Each must point at something specific in the data (a channel that sells or one whose spending doesn't come back, a product that's selling or gone quiet, a weekly dip, repeat buyers, referrals) and be concrete enough to act on today. Paid ads only if the business already logs ad spending, or as a small, clearly-bounded test when the organic channels are clearly working. No generic advice like 'improve your marketing'. The owner decides — offer, don't order.",
-    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the numbers show","strategy":{"focus":"main channel, 2-5 words","text":"2-3 sentences"},"actions":[{"title":"short imperative","why":"which number this comes from","how":"2-3 concrete steps in one short paragraph"}]}',
+    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the numbers show","strategy":{"focus":"main channel, 2-5 words","text":"2-3 sentences"},"actions":[{"title":"short imperative","why":"which number this comes from and, in plain words, the principle that makes this the right move for this brand","how":"2-3 concrete steps in one short paragraph"}]}',
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -2118,13 +2143,14 @@ export async function suggestReportActions(ai, { brand, snapshotText, campaigns 
     outputLanguageRule(),
     buildFullContext(brand, { campaigns, pulseText }),
     MARKETING_FRAMEWORKS_CONTEXT,
+    BRAND_THEORY_LENS,
     NATURAL_WRITING_CONTEXT,
     "Rules about numbers (strict): use ONLY the figures in the report data the user sends. Never invent or estimate a number that isn't there — no industry benchmarks, no 'average accounts get X%', no ad metrics, no follower forecasts. When you cite a number, cite it exactly as given. Judge engagement rate only against the scale given in the data.",
     "Rules about certainty: the data shows WHAT happened, not WHY. Phrase causes as possibilities worth testing, never as facts. If the period is too thin to show a pattern (e.g. fewer than 3 published posts with numbers, or most posts have no numbers filled in), say so plainly in the summary and make the actions about posting consistently and filling in each post's numbers (the owner copies them from the platform's insights into each post in this app) — do not pretend to see a pattern, and leave `working` empty.",
     "Look at the interactions, not just views: which posts got the most comments, shares and saves relative to their views, which formats or funnel stages did better, what changed against the previous period.",
     "`working`: 1-2 short sentences on what already works and is worth repeating, each pointing at a specific post or number. Empty array if nothing in the data supports it.",
     "`actions`: exactly 3 moves for the NEXT period, ordered by likely impact, each concrete enough to start this week without an ad budget. Each must point at something specific in the data (a post, a format, a metric that rose or dropped). No generic advice like 'post more consistently' unless the data is genuinely thin. The owner decides — offer, don't order.",
-    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the period shows","working":["..."],"actions":[{"title":"short imperative","why":"which number or post this comes from","how":"2-3 concrete steps in one short paragraph"}]}',
+    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the period shows","working":["..."],"actions":[{"title":"short imperative","why":"which number or post this comes from and, in plain words, the principle that makes this the right move for this brand","how":"2-3 concrete steps in one short paragraph"}]}',
   ]
     .filter(Boolean)
     .join("\n\n");

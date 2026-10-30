@@ -554,6 +554,11 @@ function buildSnapshot(brandId) {
     return `- ${c.name} (id=${c.id}): ${where}, ${met}/${total} milestone tercapai${headLine ? `, ${headLine}` : ""}. Langkah berikutnya: ${acts.length ? acts.join("; ") : "-"}.`;
   });
 
+  // Which funnel stages the published content covers — the theory lens
+  // (ai.js BRAND_THEORY_LENS) reads "only gives / only asks" from this.
+  const funnelMix = {};
+  content.filter((c) => c.status === "published").forEach((c) => { funnelMix[c.funnel || "?"] = (funnelMix[c.funnel || "?"] || 0) + 1; });
+
   const dna = brandDnaCompleteness(brand.brandDNA);
   const g = brand.brandGuidelines || {};
   const guidelinesStarted = !!g.colors?.primary || !!g.fonts?.primary || g.logo?.hasLogo != null;
@@ -563,6 +568,7 @@ function buildSnapshot(brandId) {
     `Brand Guidelines: ${guidelinesStarted ? "udah mulai diisi" : "belum mulai diisi sama sekali"}.`,
     `Konten overdue (lewat jadwal, belum terbit): ${brandOverdue}.`,
     `Total konten: ${content.length}, sudah terbit: ${published.length}.`,
+    Object.keys(funnelMix).length ? `Tahap funnel konten yang sudah terbit (TOFU = menarik orang baru, MOFU = membangun percaya, BOFU = mengajak beli; ? = tidak diisi): ${Object.entries(funnelMix).map(([k, v]) => `${k} ${v}`).join(", ")}.` : "",
     avgER !== null ? `Rata-rata engagement rate dari konten yang udah terbit dan ada data performanya: ${formatPercent(avgER)}.` : "Belum ada data engagement rate (belum ada konten terbit dengan data performa diisi).",
     // Same scale the app paints content with (ER_SCALE, js/store.js), so the
     // AI never calls a 5% post "bagus" while the list shows it as Sedang.
