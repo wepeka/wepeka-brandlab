@@ -26,6 +26,7 @@ import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml as esc, avatarHTML, loadingHTML } from "../dom.js";
 import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
+import { PLATFORM_CARDS, platformCard, platformCardName, contentOnPlatform } from "../platforms.js";
 
 const DAY = 86400000;
 export const OVERALL_START = "2000-01-01";
@@ -50,16 +51,25 @@ export function rangeFor(key, today = new Date()) {
 }
 export const rangeLabel = (start, end) => (start === OVERALL_START ? t("rep.range.overall") : `${formatDate(start)} – ${formatDate(end)}`);
 
+// The report's platform pick (owner, 2026-10-31): "all" = Gabungan, every
+// platform added up; or one platform card's key (js/platforms.js).
+export const REPORT_PLATFORMS = ["all", ...PLATFORM_CARDS.filter((x) => x.key !== "other").map((x) => x.key)];
+export const reportPlatformName = (key) => (key && key !== "all" ? platformCardName(platformCard(key)) : t("rep.pf.all"));
+const uniqueCount = (list) => new Set(list.map((x) => x.c.id)).size;
+
 // ---------- The numbers ----------
 
-export function computeReportData(brand, start, end) {
+// `platform`: "all" counts a reel ticked as uploaded to Instagram and
+// TikTok on both (its TikTok numbers from crossPostPerformance); a card key
+// counts only what went out there, with that platform's numbers.
+export function computeReportData(brand, start, end, platform = "all") {
   const settings = getSettings();
   const content = listContent(brand.id);
   const inRange = content.filter((c) => {
     const d = c.publishedDate || c.scheduleDate;
     return d && d >= start && d <= end;
   });
-  const withMetrics = inRange.map((c) => ({ c, m: computeContentMetrics(c, settings) }));
+  const withMetrics = contentOnPlatform(inRange, platform).map((c) => ({ c, m: computeContentMetrics(c, settings) }));
   const published = withMetrics.filter((x) => x.c.status === "published");
   const views = published.map((x) => organicViews(x.c)).filter((v) => v != null);
   const reach = published.map((x) => x.c.performance?.reach).filter((v) => v != null);
@@ -94,7 +104,9 @@ export function computeReportData(brand, start, end) {
   });
   const endMs = new Date(end + "T23:59:59").getTime();
   const startMs = new Date(start + "T00:00:00").getTime();
+  const card = platformCard(platform);
   for (const [platform, list] of byPlatform) {
+    if (card && !card.test(platform)) continue;
     const sorted = [...list].sort((a, b) => a.at - b.at);
     const now = [...sorted].reverse().find((h) => h.at <= endMs);
     const before = [...sorted].reverse().find((h) => h.at < startMs);
@@ -160,9 +172,19 @@ export function computeReportData(brand, start, end) {
   const lessons = lessonsOf(brand).slice(0, 2);
 
   const top1 = brandTopAction({ brand, campaigns, content, settings });
+  // Gabungan: how much each platform added (published posts, views).
+  const byPlatformSplit = platform === "all"
+    ? PLATFORM_CARDS.map((pc) => {
+      const list = contentOnPlatform(inRange.filter((c) => c.status === "published"), pc.key);
+      return { key: pc.key, name: platformCardName(pc), count: list.length, views: list.reduce((a, c) => a + (organicViews(c) || 0), 0) };
+    }).filter((x) => x.count)
+    : [];
+
   return {
-    totalContent: inRange.length,
-    publishedCount: published.length,
+    platform,
+    platformSplit: byPlatformSplit,
+    totalContent: uniqueCount(withMetrics),
+    publishedCount: uniqueCount(published),
     totalViews: views.reduce((a, b) => a + b, 0),
     totalReach: reach.reduce((a, b) => a + b, 0),
     avgER: avg(ers),
@@ -251,10 +273,10 @@ function postsShown(d, max = MAX_POST_ROWS) {
 
 // `advice`: the period's "Saran AI" ({ at, summary, working, actions }), or
 // null — then the section is left out.
-function reportBlocks(brand, start, end, advice = null) {
-  const d = computeReportData(brand, start, end);
+function reportBlocks(brand, start, end, advice = null, platform = "all") {
+  const d = computeReportData(brand, start, end, platform);
   const prevR = previousRange(start, end);
-  const p = prevR ? computeReportData(brand, prevR.start, prevR.end) : null;
+  const p = prevR ? computeReportData(brand, prevR.start, prevR.end, platform) : null;
   const accent = accentOf(brand);
   const days = prevR ? prevR.days : null;
   const blocks = [];
@@ -274,7 +296,8 @@ function reportBlocks(brand, start, end, advice = null) {
         <div class="rp2-hero-text">
           <div class="rp2-eyebrow">${t("rep.sheetTitle")}</div>
           <h1 class="rp2-brand">${esc(brand.name)}</h1>
-          <div class="rp2-period">${icon("calendar", { size: 13 })}${esc(rangeLabel(start, end))}${days ? ` · ${t("rep2.days", { n: days })}` : ""}</div>
+          <div class="rp2-period">${icon("calendar", { size: 13 })}${esc(rangeLabel(start, end))}${days ? ` · ${t("rep2.days", { n: days })}` : ""} · ${esc(reportPlatformName(platform))}</div>
+          ${d.platformSplit.length > 1 ? `<div class="rp2-period">${d.platformSplit.map((x) => `${esc(x.name)} ${shortNum(x.views)} views`).join(" · ")}</div>` : ""}
         </div>
         <div class="rp2-hero-avatar">${avatarHTML(brand, `width:92px;height:92px;border-radius:22px;font-size:36px;${brand.avatar ? "" : `background:${accent};color:#fff;display:grid;place-items:center;font-weight:800;`}`)}</div>
       </div>
@@ -503,6 +526,7 @@ export function reportSnapshotText(brand, start, end, d, p = null, prevR = null)
   const num = (v) => (v === null || v === undefined ? "?" : String(Math.round(v * 10) / 10));
   const pct = (v) => (Number.isFinite(v) ? `${Number(v).toFixed(1)}%` : "?");
   const lines = [`Brand: ${brand.name}`];
+  lines.push(d.platform && d.platform !== "all" ? `Platform: ${reportPlatformName(d.platform)} only (numbers from that platform)` : `Platforms: all together${d.platformSplit?.length ? ` (${d.platformSplit.map((x) => `${x.name}: ${x.count} posts, ${x.views} views`).join("; ")})` : ""}`);
   if (start === OVERALL_START) lines.push(`Period: everything up to ${end}`);
   else lines.push(`Period: ${start} to ${end}${prevR ? ` (${prevR.days} days)` : ""}`);
   if (p && prevR) lines.push(`Previous period, for comparison: ${prevR.start} to ${prevR.end}`);
@@ -551,11 +575,11 @@ export function adviceSig(text, lang = getLang()) {
 // The period's "Saran AI", shared by the panel below and the Report page:
 // the snapshot the AI reads, its fingerprint, and the saved advice made for
 // exactly these numbers (null when there is none yet).
-export function reportAdviceState(brandId, start, end) {
+export function reportAdviceState(brandId, start, end, platform = "all") {
   const b = getBrand(brandId);
-  const d = computeReportData(b, start, end);
+  const d = computeReportData(b, start, end, platform);
   const prevR = previousRange(start, end);
-  const snapshot = reportSnapshotText(b, start, end, d, prevR ? computeReportData(b, prevR.start, prevR.end) : null, prevR);
+  const snapshot = reportSnapshotText(b, start, end, d, prevR ? computeReportData(b, prevR.start, prevR.end, platform) : null, prevR);
   const sig = adviceSig(snapshot);
   const saved = b.reportAdvice;
   return { snapshot, sig, advice: saved && saved.sig === sig && saved.actions?.length ? saved : null };
@@ -586,7 +610,7 @@ function reportSummaryText(brand, start, end, d, advice = null) {
   const recapLine = ["likes", "comments", "shares", "saves", "reposts"].filter((k) => d.recap[k].n).map((k) => `${t(`store.metric.${k}`)} ${formatNumber(d.recap[k].total)}`).join(" · ");
   return [
     t("rep.shareTitle", { brand: brand.name }),
-    rangeLabel(start, end),
+    `${rangeLabel(start, end)} · ${reportPlatformName(d.platform)}`,
     "",
     `${t("rep.stat.published")}: ${d.publishedCount}`,
     `${t("rep.stat.totalViews")}: ${formatNumber(d.totalViews)}`,
@@ -601,7 +625,7 @@ function reportSummaryText(brand, start, end, d, advice = null) {
 // Lays the blocks into A4 pages off-screen (a block never splits across
 // pages), puts the footer on each, rasterizes them, saves the PDF.
 const FOOT_H = 58;
-async function downloadReportPdf(brand, start, end, blocks) {
+async function downloadReportPdf(brand, start, end, blocks, platform = "all") {
   await ensurePdfLibs();
   const host = document.createElement("div");
   host.className = "rp-pdf-host";
@@ -644,7 +668,7 @@ async function downloadReportPdf(brand, start, end, blocks) {
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297, undefined, "FAST");
     }
     const slug = brand.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "brand";
-    pdf.save(`${slug}-report-${start === OVERALL_START ? "semua" : start}-${end}.pdf`);
+    pdf.save(`${slug}-report${platform !== "all" ? `-${platform}` : ""}-${start === OVERALL_START ? "semua" : start}-${end}.pdf`);
   } finally {
     host.remove();
   }
@@ -663,17 +687,17 @@ const reportActionsHTML = () => `
 
 // `start`/`end`: the dates of a custom period (range "custom"), so the
 // Report page's own period opens as is.
-export function openReportModal(brandId, { range = "week", start = null, end = null } = {}) {
+export function openReportModal(brandId, { range = "week", start = null, end = null, platform = "all" } = {}) {
   if (!getBrand(brandId)) return;
   const overlay = openModal({ title: t("rep.title"), wide: true, bodyHTML: reportBodyHTML(), footHTML: reportActionsHTML() });
-  wireReportPanel(overlay, brandId, { range, start, end });
+  wireReportPanel(overlay, brandId, { range, start, end, platform });
   return overlay;
 }
 
-function wireReportPanel(root, brandId, { range = "week", start = null, end = null } = {}) {
+function wireReportPanel(root, brandId, { range = "week", start = null, end = null, platform = "all" } = {}) {
   const brand = getBrand(brandId);
   const dates = range === "custom" && start && end ? { start, end } : rangeFor(range) || rangeFor("week");
-  const st = { key: range, ...dates, busy: false, aiBusy: false, aiError: "" };
+  const st = { key: range, ...dates, platform: REPORT_PLATFORMS.includes(platform) ? platform : "all", busy: false, aiBusy: false, aiError: "" };
   // Advice made in this sitting, per period + numbers (switching periods
   // back and forth keeps it); the latest one is also kept on the brand.
   const made = new Map();
@@ -682,6 +706,9 @@ function wireReportPanel(root, brandId, { range = "week", start = null, end = nu
   const pickerHTML = () => `
     <div class="chip-select rp-range">
       ${["week", "month", "overall", "custom"].map((k) => `<button type="button" data-range="${k}" class="${st.key === k ? "active" : ""}" aria-pressed="${st.key === k}">${t(`rep.range.${k}`)}</button>`).join("")}
+    </div>
+    <div class="chip-select rp-range" style="margin-top:8px;">
+      ${REPORT_PLATFORMS.map((k) => `<button type="button" data-platform="${k}" class="${st.platform === k ? "active" : ""}" aria-pressed="${st.platform === k}">${esc(reportPlatformName(k))}</button>`).join("")}
     </div>
     ${st.key === "custom" ? `<div class="row-2" style="margin-top:10px;"><div class="field" style="margin-bottom:0;"><label>${t("rep.range.start")}</label><input class="input" type="date" id="rp-start" value="${st.start}" /></div><div class="field" style="margin-bottom:0;"><label>${t("rep.range.end")}</label><input class="input" type="date" id="rp-end" value="${st.end}" /></div></div>` : ""}`;
   qs("#rp-picker", root).innerHTML = pickerHTML();
@@ -692,7 +719,7 @@ function wireReportPanel(root, brandId, { range = "week", start = null, end = nu
   let snapshot = "";
   // The numbers decide which advice fits: one made for exactly these.
   const adviceFor = () => {
-    const now = reportAdviceState(brandId, st.start, st.end);
+    const now = reportAdviceState(brandId, st.start, st.end, st.platform);
     snapshot = now.snapshot;
     sig = now.sig;
     return made.get(sig) || now.advice;
@@ -725,7 +752,7 @@ function wireReportPanel(root, brandId, { range = "week", start = null, end = nu
   };
   const paint = () => {
     advice = adviceFor();
-    current = reportBlocks(getBrand(brandId), st.start, st.end, advice);
+    current = reportBlocks(getBrand(brandId), st.start, st.end, advice, st.platform);
     qs("#report-sheet", root).innerHTML = sheetHTML(getBrand(brandId), current.blocks);
     paintAi();
   };
@@ -756,6 +783,12 @@ function wireReportPanel(root, brandId, { range = "week", start = null, end = nu
       wirePicker();
       paint();
     }));
+    qsa("[data-platform]", root).forEach((b) => b.addEventListener("click", () => {
+      st.platform = b.dataset.platform;
+      qs("#rp-picker", root).innerHTML = pickerHTML();
+      wirePicker();
+      paint();
+    }));
     const onDate = () => { st.start = qs("#rp-start", root)?.value || st.start; st.end = qs("#rp-end", root)?.value || st.end; paint(); };
     qs("#rp-start", root)?.addEventListener("change", onDate);
     qs("#rp-end", root)?.addEventListener("change", onDate);
@@ -780,7 +813,7 @@ function wireReportPanel(root, brandId, { range = "week", start = null, end = nu
     }
     dl.innerHTML = `<div class="spinner" style="width:14px;height:14px;"></div>${t("rep.making")}`;
     try {
-      await downloadReportPdf(getBrand(brandId), st.start, st.end, current.blocks);
+      await downloadReportPdf(getBrand(brandId), st.start, st.end, current.blocks, st.platform);
       // The weekly reminder on Home counts from here.
       updateBrand(brandId, { lastReportAt: Date.now() });
       toast(t("rep.downloaded"));

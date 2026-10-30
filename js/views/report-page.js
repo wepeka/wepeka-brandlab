@@ -15,7 +15,8 @@
 // and the PDF always agree; nothing is estimated or compared with made-up
 // benchmarks, and a brand with no numbers gets a friendly empty state.
 import { getBrand, getSettings, listContent, onChange, organicViews, localISODate, followersSinceStart, setFollowersStart, FUNNELS, ER_SCALE } from "../store.js";
-import { computeReportData, previousRange, rangeFor, rangeLabel, openReportModal, reportAdviceState, requestReportAdvice, OVERALL_START } from "./report.js";
+import { computeReportData, previousRange, rangeFor, rangeLabel, openReportModal, reportAdviceState, requestReportAdvice, OVERALL_START, REPORT_PLATFORMS, reportPlatformName } from "./report.js";
+import { platformCard } from "../platforms.js";
 import { interactionsOf, interactionsTotal, trendSeries, formatMix, postingRhythm, erSeries, healthMix, HEALTH_ORDER, erBy, engagementMix } from "../report-journey.js";
 import { trendChartSVG, erChartSVG, ringSVG, sparkSVG, compactNum } from "./report-charts.js";
 import { isHealthy, computeContentMetrics } from "../formulas.js";
@@ -46,18 +47,20 @@ const TOUR_STEPS = [
 ];
 
 // The period last looked at (this browser only); "week" the first time.
+// Also which platform (Gabungan = "all" the first time).
 function loadRange() {
   try {
     const saved = JSON.parse(localStorage.getItem(RANGE_KEY) || "null");
+    const platform = REPORT_PLATFORMS.includes(saved?.platform) ? saved.platform : "all";
     if (saved && RANGES.includes(saved.key)) {
-      if (saved.key === "custom" && saved.start && saved.end) return saved;
-      if (saved.key !== "custom") return { key: saved.key, ...rangeFor(saved.key) };
+      if (saved.key === "custom" && saved.start && saved.end) return { ...saved, platform };
+      if (saved.key !== "custom") return { key: saved.key, ...rangeFor(saved.key), platform };
     }
   } catch { /* storage off: start from the default */ }
-  return { key: "week", ...rangeFor("week") };
+  return { key: "week", ...rangeFor("week"), platform: "all" };
 }
 function saveRange(st) {
-  try { localStorage.setItem(RANGE_KEY, JSON.stringify({ key: st.key, start: st.start, end: st.end })); } catch { /* fine */ }
+  try { localStorage.setItem(RANGE_KEY, JSON.stringify({ key: st.key, start: st.start, end: st.end, platform: st.platform })); } catch { /* fine */ }
 }
 
 // ---------- Small pieces ----------
@@ -117,7 +120,13 @@ function heroHTML(brand, st, d, p, prevR) {
   // Followers: what the account gained since the owner started with Brandlab
   // (saved starting count vs the latest, as of the period's end); brands with
   // only one follower count so far fall back to the per-post "new followers".
-  const fs = followersSinceStart(brand, new Date(st.end + "T23:59:59").getTime());
+  // One platform picked: only its accounts' followers.
+  let fs = followersSinceStart(brand, new Date(st.end + "T23:59:59").getTime());
+  const card = platformCard(st.platform);
+  if (fs && card) {
+    const parts = fs.parts.filter((x) => card.test(x.platform));
+    fs = parts.length ? { gain: parts.reduce((a, x) => a + x.now - x.start, 0), parts } : null;
+  }
   if (fs) kpis.push({ label: t("rl.kpi.followersSince"), html: countHTML(fs.gain, "gain", FMT.gain(fs.gain)), delta: "", edit: fs.parts });
   else if (d.recap.followersGained.n) kpis.push({ label: t("rl.kpi.followers"), html: countHTML(d.recap.followersGained.total, "num", formatNumber(d.recap.followersGained.total)), delta: p?.recap.followersGained.n ? deltaHTML(d.recap.followersGained.total, p.recap.followersGained.total) : "" });
   if (views.n && (d.sales.count || p?.sales.count)) kpis.push({ label: t("rl.kpi.sales"), html: countHTML(d.sales.revenue, "rp", rp(d.sales.revenue)), delta: p ? deltaHTML(d.sales.revenue, p.sales.revenue) : "" });
@@ -131,7 +140,9 @@ function heroHTML(brand, st, d, p, prevR) {
   const healthy = rated.filter((x) => isHealthy(x.health)).length;
   const scale = getSettings().erScale || ER_SCALE;
   const ring = rated.length
-    ? { pct: (healthy / rated.length) * 100, label: t("rl.ring.healthy"), sub: t("rl.ring.of", { n: healthy, total: rated.length }), note: t("rl.ring.healthyNote", { er: scale.good }) }
+    // Gabungan counts a reel posted on Instagram and TikTok twice here (once
+    // per platform), so it says uploads rather than pieces.
+    ? { pct: (healthy / rated.length) * 100, label: t("rl.ring.healthy"), sub: t(d.posts.length > d.publishedCount ? "rl.ring.ofUploads" : "rl.ring.of", { n: healthy, total: rated.length }), note: t("rl.ring.healthyNote", { er: scale.good }) }
     : d.publishedCount
     ? { pct: (d.postsWithNumbers / d.publishedCount) * 100, label: t("rl.ring.filled"), sub: t("rl.ring.of", { n: d.postsWithNumbers, total: d.publishedCount }), note: "" }
     : null;
@@ -142,11 +153,12 @@ function heroHTML(brand, st, d, p, prevR) {
       <div class="rl-hero-main">
         <div class="rl-hero-brand">
           <span class="rl-hero-avatar">${avatarHTML(brand)}</span>
-          <span><b>${esc(brand.name)}</b><small>${esc(rangeLabel(st.start, st.end))}</small></span>
+          <span><b>${esc(brand.name)}</b><small>${esc(rangeLabel(st.start, st.end))} · ${esc(reportPlatformName(st.platform))}</small></span>
         </div>
         <div class="rl-hero-fig">${countHTML(fig.value, fig.fmt, fig.text)}</div>
         <p class="rl-hero-sub">${esc(fig.sub)}${fig.delta ? ` ${fig.delta}` : ""}</p>
         ${fig.delta ? vsLine : ""}
+        ${d.platformSplit.length > 1 ? `<p class="rl-hero-split">${d.platformSplit.map((x) => `<span><b>${esc(x.name)}</b> ${esc(compactNum(x.views))} views · ${esc(t(x.count === 1 ? "rl.posts.one" : "rl.posts", { n: x.count }))}</span>`).join("")}</p>` : ""}
         ${kpis.length ? `<div class="rl-kpis rl-stagger">${kpis.slice(0, 4).map((k, i) => `
           <div class="rl-kpi" style="--i:${i}"><span class="rl-kpi-label">${esc(k.label)}</span>${k.html}${k.delta ? `<span class="rl-kpi-delta">${k.delta}</span>` : ""}${k.edit ? `<button type="button" class="rl-kpi-edit" data-edit-start>${esc(t("rl.kpi.startFrom", { n: formatNumber(k.edit.reduce((a, x) => a + x.start, 0)) }))} · ${esc(t("rl.kpi.startEdit"))}</button>` : ""}</div>`).join("")}</div>` : ""}
         ${missing > 0 ? `<a class="rl-hero-fill" href="${appByKey("content-os").path(brand.id)}">${icon("edit", { size: 14 })}${esc(t(missing === 1 ? "rl.hero.missing.one" : "rl.hero.missing", { n: missing }))}</a>` : ""}
@@ -308,7 +320,7 @@ function bestStop(n, d, brand) {
   const max = organicViews(first.c) || 1;
   const link = (x) => `#/brand/${brand.id}/content/list/${encodeURIComponent(x.c.id)}`;
   const inter = (x) => {
-    const post = d.posts.find((p) => p.c.id === x.c.id);
+    const post = d.posts.find((p) => p.c === x.c);
     return post ? interactionsOf(post.nums) : null;
   };
   const meta = (x) => [x.c.format, x.c.funnel ? funnelShort(x.c.funnel) : "", dayMonth(x.c.publishedDate || x.c.scheduleDate)].filter(Boolean).map((s) => `<span>${esc(s)}</span>`).join("");
@@ -582,6 +594,9 @@ export function render(root, { brandId }) {
     <div class="chip-select rl-range-chips" role="group" aria-label="${esc(t("rpage.tour.range.title"))}">
       ${RANGES.map((k) => `<button type="button" data-range="${k}" class="${st.key === k ? "active" : ""}" aria-pressed="${st.key === k}">${t(`rep.range.${k}`)}</button>`).join("")}
     </div>
+    <div class="chip-select rl-range-chips rl-pf-chips" role="group" aria-label="${esc(t("rep.pf.aria"))}">
+      ${REPORT_PLATFORMS.map((k) => `<button type="button" data-report-pf="${k}" class="${st.platform === k ? "active" : ""}" aria-pressed="${st.platform === k}">${esc(reportPlatformName(k))}</button>`).join("")}
+    </div>
     ${st.key === "custom" ? `<div class="rl-dates"><label>${t("rep.range.start")}<input class="input" type="date" id="rl-start" value="${st.start}" /></label><label>${t("rep.range.end")}<input class="input" type="date" id="rl-end" value="${st.end}" /></label></div>` : ""}`;
 
   const setRange = (key) => {
@@ -594,6 +609,12 @@ export function render(root, { brandId }) {
   function paintRange() {
     rangeBox.innerHTML = rangeHTML();
     qsa("[data-range]", rangeBox).forEach((b) => b.addEventListener("click", () => setRange(b.dataset.range)));
+    qsa("[data-report-pf]", rangeBox).forEach((b) => b.addEventListener("click", () => {
+      st.platform = b.dataset.reportPf;
+      saveRange(st);
+      paintRange();
+      paint();
+    }));
     const onDate = () => {
       const s = qs("#rl-start", rangeBox)?.value;
       const e = qs("#rl-end", rangeBox)?.value;
@@ -721,10 +742,10 @@ export function render(root, { brandId }) {
     if (!quiet) seen.clear();
     const b = getBrand(brandId);
     if (!b) return;
-    const d = computeReportData(b, st.start, st.end);
+    const d = computeReportData(b, st.start, st.end, st.platform);
     const prevR = previousRange(st.start, st.end);
-    const p = prevR ? computeReportData(b, prevR.start, prevR.end) : null;
-    const now = reportAdviceState(brandId, st.start, st.end);
+    const p = prevR ? computeReportData(b, prevR.start, prevR.end, st.platform) : null;
+    const now = reportAdviceState(brandId, st.start, st.end, st.platform);
     ai.state = now;
     lastSig = sigNow(b, now);
     ai.advice = ai.made.get(now.sig) || now.advice;
@@ -807,13 +828,13 @@ export function render(root, { brandId }) {
     const n = Number(qs(".rl-node", old)?.textContent) || 1;
     const b = getBrand(brandId);
     const tmp = document.createElement("div");
-    tmp.innerHTML = aiStop(n, computeReportData(b, st.start, st.end), ai);
+    tmp.innerHTML = aiStop(n, computeReportData(b, st.start, st.end, st.platform), ai);
     const next = tmp.firstElementChild;
     if (next) { next.classList.add("is-in", "rl-quiet"); old.replaceWith(next); }
   }
 
   function openPdf() {
-    openReportModal(brandId, { range: st.key, start: st.start, end: st.end });
+    openReportModal(brandId, { range: st.key, start: st.start, end: st.end, platform: st.platform });
   }
   qs("#rl-download", root).addEventListener("click", openPdf);
 
@@ -846,7 +867,7 @@ export function render(root, { brandId }) {
   const offChange = onChange(() => {
     if (!root.isConnected || ai.busy) return;
     const b = getBrand(brandId);
-    if (b && sigNow(b, reportAdviceState(brandId, st.start, st.end)) !== lastSig) paint({ quiet: true });
+    if (b && sigNow(b, reportAdviceState(brandId, st.start, st.end, st.platform)) !== lastSig) paint({ quiet: true });
   });
 
   paintRange();

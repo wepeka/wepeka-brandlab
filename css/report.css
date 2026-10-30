@@ -56,6 +56,10 @@
 
 /* The period: a pill row like the reference's Day / Week / Month / Year. */
 .rl-range{ margin:0 0 20px; }
+/* Gabungan / Reels / TikTok / YouTube under the period (2026-10-31). */
+.rl-pf-chips{ margin-top:8px; }
+.rl-hero-split{ display:flex; flex-wrap:wrap; gap:6px 14px; margin:10px 0 0; font-size:13px; font-weight:600; color: rgba(27,26,23,.72); }
+.rl-hero-split b{ color: rgba(27,26,23,.92); }
 .rl-range .chip-select button{ padding:9px 16px; font-size:13.5px; }
 .rl-range .chip-select button.active{ background: linear-gradient(135deg, var(--rl-a), var(--rl-b)); color: var(--ink); border-color:transparent; box-shadow: 0 8px 20px -12px var(--rl-card-glow); }
 .rl-dates{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }

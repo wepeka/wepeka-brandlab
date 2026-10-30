@@ -32,6 +32,7 @@ export default {
   "rl.ring.healthy": { en: "healthy posts", id: "konten sehat" },
   "rl.ring.filled": { en: "numbers filled", id: "angka terisi" },
   "rl.ring.of": { en: "{n} of {total} posts", id: "{n} dari {total} konten" },
+  "rl.ring.ofUploads": { en: "{n} of {total} uploads", id: "{n} dari {total} unggahan" },
   "rl.ring.healthyNote": { en: "Healthy = ER {er}% or more", id: "Sehat = ER {er}% ke atas" },
 
   "rl.empty.title": { en: "No numbers yet", id: "Belum ada angka" },

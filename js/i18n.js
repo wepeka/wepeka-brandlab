@@ -314,6 +314,9 @@ const CORE = {
   "contentList.pf.count": { en: "{count} published", id: "{count} konten tayang" },
   "contentList.pf.back": { en: "Pick another platform", id: "Pilih platform lagi" },
   "contentList.pf.other": { en: "Other", id: "Lainnya" },
+  // The report's platform pick (js/views/report.js, report-page.js).
+  "rep.pf.all": { en: "All platforms", id: "Gabungan" },
+  "rep.pf.aria": { en: "Platform", id: "Platform" },
   "contentList.pf.sub.reels": { en: "Instagram & Facebook", id: "Instagram & Facebook" },
   "contentList.pf.sub.tiktok": { en: "Short video", id: "Video pendek" },
   "contentList.pf.sub.youtube": { en: "Shorts & long video", id: "Shorts & video panjang" },

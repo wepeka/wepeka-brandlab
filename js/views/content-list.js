@@ -20,6 +20,7 @@ import { funnelShort } from "../funnel-field.js";
 import { aiReportButtonHTML } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
 import { appIconSVG } from "../app-icons.js";
+import { PLATFORM_CARDS, platformLink, platformCardName as platformName } from "../platforms.js";
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -35,31 +36,7 @@ const VIEWS = [
 ];
 
 // Daftar Konten opens on one card per platform before any list (owner,
-// 2026-10-30): Reels (Instagram and Facebook together — the same reel
-// usually goes to both), TikTok and YouTube always, "Lainnya" only when
-// something went out elsewhere. Platform names are user-editable, so
-// they're matched loosely. Colours are the cards' own, like the Beranda
-// app cards.
-const KNOWN_PLATFORM = /instagram|facebook|tik\s*tok|youtube/i;
-const PLATFORM_CARDS = [
-  { key: "reels", name: "Reels", app: "#FF6F91", app2: "#9B3CF0", art: "reels", test: (p) => /instagram|facebook/i.test(p || "") },
-  { key: "tiktok", name: "TikTok", app: "#3BE8E2", app2: "#FF3D6E", art: "tiktok", test: (p) => /tik\s*tok/i.test(p || "") },
-  { key: "youtube", name: "YouTube", app: "#FF7A6B", app2: "#D42A2A", art: "youtube", test: (p) => /youtube/i.test(p || "") },
-  { key: "other", app: "#F2C46D", app2: "#D9822B", art: "other-platforms", test: (p) => !KNOWN_PLATFORM.test(p || "") },
-];
-
-// Where a piece went out: its own platform plus every "sudah diupload"
-// tick in Creator (uploadedPlatforms, keyed by platform id) — one reel is
-// often ticked as uploaded to Instagram AND TikTok rather than made into
-// twins. Returns the tick's key when the piece is on this card only
-// through a tick (its numbers there live in crossPostPerformance[key]),
-// "" when it is the piece's own platform, null when it isn't on the card.
-function platformLink(c, card) {
-  const ticks = Object.entries(c.uploadedPlatforms || {}).filter(([, on]) => on).map(([k]) => k);
-  if (card.key === "other") return c.platform && card.test(c.platform) ? "" : null;
-  if (card.test(c.platform)) return "";
-  return ticks.find((k) => card.test(k)) ?? null;
-}
+// 2026-10-30) — the cards and how a piece lands on one: js/platforms.js.
 
 // A piece's numbers on one card: its own platform's in `performance`, a
 // ticked crosspost's in `crossPostPerformance[key]` (empty until filled).
@@ -558,9 +535,6 @@ function platformCardData(published, settings) {
   }).filter((d) => d.card.key !== "other" || d.count);
 }
 
-function platformName(card) {
-  return card.name || t("contentList.pf.other");
-}
 
 function platformCardsHTML(cards, animate) {
   return `
