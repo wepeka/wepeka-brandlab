@@ -25,6 +25,6 @@ export const APPS = [
 
 // How many slides the Pitch Deck has (js/views/deck.js SLIDES), for its
 // launcher card — kept here so Beranda doesn't load the deck to count them.
-export const DECK_SLIDE_COUNT = 10;
+export const DECK_SLIDE_COUNT = 26;
 
 export const appByKey = (key) => APPS.find((a) => a.key === key) || null;
