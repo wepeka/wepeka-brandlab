@@ -74,7 +74,7 @@ import { openIdeaSearch } from "./idea-search.js";
 import { mergeInsightsIntoPerformance, retentionSnapshotText } from "./retention.js";
 import { getMode } from "./mode.js";
 import { pulseTextFor, computeSignals, topSignal, greetingKey } from "./brand-pulse.js";
-import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply } from "./ai-directives.js";
+import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply, renderMoves, movesAsText } from "./ai-directives.js";
 import { routeByRules, isWriteRequest, movesToBrainstorm, movesToConsultant, movesToCompanion, isContentTalk } from "./chat-router.js";
 import { computeWidgets, widgetHTML, widgetMenuText, widgetFactsText } from "./chat-widgets.js";
 import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
@@ -201,6 +201,7 @@ let streamShown = ""; // the answer so far, kept across a re-render mid-answer
 // "Cara aku nyimpulin" while it is being written: { steps, live } — and when
 // the question went out, for the "Lagi mikir · 6 dtk" line before any word.
 let streamSteps = null;
+let streamMoves = [];
 let askedAt = 0;
 let thinkTick = 0;
 let renderedCount = -1; // messages drawn last time (new one => scroll down)
@@ -393,7 +394,7 @@ function threadEntries(th, engine) {
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], searches: b.searches || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], searches: b.searches || [], moves: b.moves || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
       weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
       // A reply that stopped before the end: "Coba lagi" re-asks the same
@@ -1080,7 +1081,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     } else if (h.handoff && h.handoff !== h.engine) switchHTML = switchChipHTML(h.handoff, h.question, { fromModel: true });
     else if (hint && hint.question === h.question) switchHTML = switchChipHTML(hint.to, h.question, { fromModel: false });
   }
-  const body = h.text ? `<div class="consultant-md">${renderLightMarkdown(h.text)}</div>` : "";
+  const body = h.text ? `<div class="consultant-md">${mdWithMoves(h.text, h.moves)}</div>` : "";
   // The model doesn't know it and won't guess: a card that opens the search
   // and reads the results back (js/idea-search.js + js/web-read.js).
   const searchHTML = (h.searches || []).map((x) => `<div class="cp-search-card"><span class="cp-search-ic">${icon("search", { size: 18 })}</span><div class="cp-search-text"><b>${t("chat.web.card.title")}</b><span class="cp-search-q">${esc(x.q)}</span><small>${t("chat.web.card.body")}</small></div><button type="button" class="btn btn-primary btn-sm" data-chat-search="${esc(x.q)}">${icon("search", { size: 13 })}${t("chat.web.card.btn")}</button></div>`).join("");
@@ -1757,7 +1758,7 @@ function wire(host, brandId, input, history) {
   // "Salin": the answer's text, without the buttons under it.
   on("[data-chat-copy]", async (btn) => {
     const h = history[Number(btn.dataset.chatCopy)];
-    const copyText = [h?.text, h?.partial?.text].filter(Boolean).join("\n\n");
+    const copyText = [movesAsText(h?.text, h?.moves), h?.partial?.text].filter(Boolean).join("\n\n");
     if (!copyText) return;
     try {
       await navigator.clipboard.writeText(copyText);
@@ -2500,8 +2501,18 @@ function pendingInnerHTML(shown = streamShown) {
     const sec = askedAt ? Math.floor((Date.now() - askedAt) / 1000) : 0;
     return `<span class="cp-thinking" role="status" aria-label="${t("cons.typing")}"><span class="typing-dots"><i></i><i></i><i></i></span><span class="cp-thinking-label">${esc(sec >= 2 ? t("chat.thinking.secs", { n: sec }) : t("chat.thinking"))}</span></span>`;
   }
-  return `${steps}${shown ? `<div class="consultant-md">${renderLightMarkdown(shown)}</div>` : ""}`;
+  return `${steps}${shown ? `<div class="consultant-md">${mdWithMoves(shown, streamMoves)}</div>` : ""}`;
 }
+
+// A recommended move ([[move:…]], js/ai-directives.js) — a numbered card
+// in its place in the answer: what to do, why it fits this brand, how.
+// Each card takes one of the launcher apps' gradients (js/apps.js), in turn.
+const MOVE_COLORS = [["#FFA52B", "#FF5F2E"], ["#3B9BFF", "#4F55F5"], ["#30D97D", "#0FA3A3"], ["#A974FF", "#E04FD8"]];
+const moveCardHTML = (m, i) => {
+  const [c1, c2] = MOVE_COLORS[i % MOVE_COLORS.length];
+  return `<div class="cp-move" style="--i:${i};--app:${c1};--app2:${c2}"><div class="cp-move-head"><span class="cp-move-n">${i + 1}</span><b class="cp-move-title">${esc(m.title)}</b></div>${m.why ? `<div class="cp-move-why">${icon("bulb", { size: 14 })}<span>${esc(m.why)}</span></div>` : ""}${m.how ? `<p class="cp-move-how">${icon("arrowRight", { size: 14 })}<span>${esc(m.how)}</span></p>` : ""}</div>`;
+};
+const mdWithMoves = (text, moves) => renderMoves(renderLightMarkdown(text), moves, moveCardHTML);
 function pendingBubble(shown = "") {
   const messagesEl = qs("#consultant-messages");
   if (!messagesEl || qs("#consultant-pending", messagesEl)) return;
@@ -2533,6 +2544,7 @@ function finishReply(brandId, { streamed }) {
   pending = false;
   streamShown = "";
   streamSteps = null;
+  streamMoves = [];
   clearInterval(thinkTick);
   qs("#consultant-messages")?.setAttribute("aria-busy", "false");
   persistChat(brandId);
@@ -2888,6 +2900,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   pending = true;
   streamShown = "";
   streamSteps = null;
+  streamMoves = [];
   askedAt = Date.now();
   renderPanel(brandId, { keep: false });
   qs(`[data-consultant-msg="${historyFor(brandId).length - 1}"]`)?.classList.add("is-new");
@@ -2913,6 +2926,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       const live = parseDirectives(streamRaw);
       let shown = live.cleanText;
       if (!firstWordsAt) firstWordsAt = Date.now();
+      streamMoves = live.moves;
       streamSteps = live.reasoning.length ? { steps: live.reasoning, live: false } : live.reasoningLive ? { steps: live.reasoningLive, live: true } : null;
       const open = shown.lastIndexOf("[[");
       if (open !== -1 && !shown.slice(open).includes("]]")) shown = shown.slice(0, open);
@@ -3169,7 +3183,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           removeBrainstormMessage(thread.id, asked?.id);
           askedRef = null;
           reroute = handoff;
-        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(widgets.length ? { widgets } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(widgets.length ? { widgets } : {}), ...(parsed.moves.length ? { moves: parsed.moves } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
       }
       if (!reroute) break;
     }

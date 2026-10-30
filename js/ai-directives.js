@@ -21,6 +21,13 @@ export const MAX_MOMENTS = 2;
 export const MAX_SAVES = 2;
 export const MAX_SCRIPTS = 1;
 export const MAX_SEARCHES = 1;
+// A recommended move in a Konsultan answer ([[move:Title|why|how]]), shown
+// as a numbered card right where the model wrote it (owner, 2026-10-31:
+// "saran AI yang bagus di highlight"). The line becomes a marker in the
+// text, so the card keeps its place between the paragraphs.
+export const MAX_MOVES = 4;
+const moveMark = (i) => `\u27E6move:${i}\u27E7`;
+const MOVE_MARK_RE = /\u27E6move:(\d+)\u27E7/g;
 // Numbers the consultant read off a screenshot the user sent
 // ([[metrics:views=12300;hookPct=62]]) — become a "save to a post" card.
 export const METRIC_DIRECTIVE_KEYS = ["views", "reach", "likes", "comments", "shares", "saves", "reposts", "profileVisits", "followersGained", "videoLengthSec", "avgWatchTimeSec", "hookPct", "completionPct", "skipRatePct"];
@@ -69,6 +76,7 @@ export function parseDirectives(rawText) {
   const scripts = [];
   const widgets = [];
   const searches = [];
+  const moves = [];
   let reasoning = [];
   // An unclosed [[reasoning]] (still streaming): the steps so far, shown live.
   let reasoningLive = null;
@@ -222,6 +230,13 @@ export function parseDirectives(rawText) {
       if (clean && searches.length < MAX_SEARCHES && !searches.some((x) => x.q === clean)) searches.push({ q: clean, why: (why || "").trim().slice(0, 160) });
       return "";
     })
+    .replace(/\[\[move:([^\]\n]+)\]\]/gi, (_, body) => {
+      const [title = "", why = "", how = ""] = body.split("|").map((x) => x.trim());
+      const clean = title.replace(/\*\*/g, "").slice(0, 120);
+      if (!clean || moves.length >= MAX_MOVES || moves.some((m) => m.title === clean)) return "";
+      moves.push({ title: clean, why: why.slice(0, 400), how: how.slice(0, 600) });
+      return `\n${moveMark(moves.length - 1)}\n`;
+    })
     .replace(/\[\[widget:([a-z_-]+)(?:\|([^\]\n]*))?\]\]/gi, (_, kind, arg) => {
       const w = widgetRequest(kind, arg);
       if (w && widgets.length < MAX_WIDGETS && !widgets.some((x) => x.kind === w.kind && x.arg === w.arg)) widgets.push(w);
@@ -241,7 +256,7 @@ export function parseDirectives(rawText) {
     .replace(/\[\[[^\]]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, widgets, searches, reasoning, reasoningLive, handoff, metrics, partial };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, widgets, searches, moves, reasoning, reasoningLive, handoff, metrics, partial };
 }
 
 // Nothing the owner could see or use came back: no text, no card, no
@@ -250,7 +265,7 @@ export function parseDirectives(rawText) {
 export function isEmptyReply(p) {
   if (!p) return true;
   return !p.cleanText && !p.partial && !p.handoff && !p.metrics
-    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts", "widgets", "searches", "reasoning"].some((k) => (p[k] || []).length);
+    && !["nav", "drafts", "asks", "ideas", "tasks", "revisions", "moments", "saves", "scripts", "widgets", "searches", "moves", "reasoning"].some((k) => (p[k] || []).length);
 }
 
 // What the model wrote last time, as it wrote it: the reply's text plus its
@@ -263,7 +278,7 @@ export function serializeDirectives(text, blocks = {}) {
   const b = blocks || {};
   const out = [];
   if ((b.reasoning || []).length) out.push(`[[reasoning]]\n${b.reasoning.map((x) => (x.kind === "conclusion" ? `Jadi: ${x.text}` : `${x.check}${x.found ? ` → ${x.found}` : ""}`)).join("\n")}\n[[/reasoning]]`);
-  out.push(String(text || "").trim());
+  out.push(expandMoves(text, b.moves, (m) => `[[move:${m.title}|${m.why || ""}|${m.how || ""}]]`).trim());
   (b.ideas || []).forEach((i) => i?.title && out.push(`[[idea:${i.title}|${i.why || ""}]]`));
   (b.scripts || []).forEach((sc) => {
     if (!sc?.script) return;
@@ -280,6 +295,18 @@ export function serializeDirectives(text, blocks = {}) {
   (b.moments || []).forEach((m) => m?.title && out.push(`[[moment:${m.kind || "other"}|${m.title}|${m.detail || ""}]]`));
   if (b.weekPlan?.items?.length) out.push(`(Week plan shown as a card:)\n${b.weekPlan.items.map((it) => `- ${it.date}: ${it.title}${it.angle ? ` — ${it.angle}` : ""}`).join("\n")}`);
   return out.filter(Boolean).join("\n");
+}
+
+// The move markers in a stored answer, written back out: as the directive
+// line (history for the model), as plain text (copy), or dropped.
+export function expandMoves(text, moves = [], fmt = () => "") {
+  return String(text || "").replace(MOVE_MARK_RE, (_, i) => (moves?.[i] ? fmt(moves[i], Number(i)) : ""));
+}
+export const movesAsText = (text, moves) => expandMoves(text, moves, (m, i) => `${i + 1}. ${m.title}${m.why ? `\n${m.why}` : ""}${m.how ? `\n${m.how}` : ""}`);
+// Rendered answer HTML (renderLightMarkdown) with each marker paragraph
+// swapped for its card; `cardHTML(move, index)` draws one.
+export function renderMoves(html, moves = [], cardHTML) {
+  return String(html || "").replace(/<p>\u27E6move:(\d+)\u27E7<\/p>/g, (_, i) => (moves?.[i] ? cardHTML(moves[i], Number(i)) : "")).replace(MOVE_MARK_RE, "");
 }
 
 // The model answers in light markdown (bold, italics, numbered/bulleted

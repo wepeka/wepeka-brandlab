@@ -3608,6 +3608,29 @@ body > div > img[width="1"][height="1"]{ display:inline !important; }
 .consultant-md p:last-child{ margin-bottom:0; }
 .consultant-md ol, .consultant-md ul{ margin:4px 0 8px; padding-left:20px; }
 .consultant-md li{ margin-bottom:4px; }
+/* A recommended move in a Konsultan answer: a numbered gradient card in the
+   launcher's style (Beranda .lh-card) — its own colour, dark ink, lifts and
+   glows on hover. */
+.cp-move{ --ink:#1b1a17; position:relative; overflow:hidden; isolation:isolate; margin:10px 0; padding:16px 16px 15px; border-radius:22px; color: var(--ink);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app) 72%, #fff) 0%, var(--app) 38%, var(--app2) 100%); background-size:150% 150%; background-position:0% 0%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 10px 26px -18px color-mix(in srgb, var(--app) 85%, transparent);
+  transition: transform .45s cubic-bezier(.2,.8,.2,1.25), box-shadow .45s ease, background-position .8s cubic-bezier(.22,1,.36,1);
+  animation: cpMoveIn .5s cubic-bezier(.34,1.56,.64,1) both; animation-delay: calc(var(--i, 0) * 110ms); }
+.cp-move::after{ content:""; position:absolute; z-index:0; inset:-20% -60%; pointer-events:none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.38) 50%, transparent 62%); transform: translateX(-75%); }
+.cp-move:hover::after{ animation: lh-sweep .9s cubic-bezier(.22,1,.36,1); }
+.cp-move:hover{ transform: translateY(-4px) scale(1.01); background-position:100% 100%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 0 1px color-mix(in srgb, var(--app) 55%, transparent), 0 20px 40px -18px color-mix(in srgb, var(--app) 80%, transparent), 0 0 30px -6px color-mix(in srgb, var(--app) 60%, transparent); }
+.cp-move > *{ position:relative; z-index:1; }
+.cp-move-head{ display:flex; align-items:center; gap:12px; }
+.cp-move-n{ flex:none; width:38px; height:38px; border-radius:50%; background:#fff; color: var(--ink); font-family: var(--font-display); font-size:19px; line-height:1;
+  display:grid; place-items:center; box-shadow: 0 4px 12px -4px rgba(0,0,0,.35); }
+.cp-move-title{ font-family: var(--font-display); font-size:17px; line-height:1.2; letter-spacing:-.005em; }
+.cp-move-why{ display:flex; gap:7px; align-items:flex-start; margin-top:12px; padding:9px 11px; border-radius:14px; background: rgba(255,255,255,.78); font-size:12.5px; font-weight:600; line-height:1.45; }
+.cp-move-why svg, .cp-move-how svg{ flex:none; margin-top:2px; }
+.cp-move-how{ display:flex; gap:7px; align-items:flex-start; margin:10px 2px 0; font-size:13px; font-weight:600; line-height:1.5; color: rgba(27,26,23,.86); }
+@keyframes cpMoveIn{ from{ opacity:0; transform: translateY(10px) scale(.96); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){ .cp-move{ animation:none; transition:none; } .cp-move:hover{ transform:none; } .cp-move:hover::after{ animation:none; } }
 .consultant-starters{ display:flex; flex-wrap:wrap; gap:6px; padding:0 0 8px 0; }
 .consultant-starter{ border:1px solid var(--border); background:var(--surface-2); color:var(--text); border-radius:999px; padding:6px 11px; font-size:12px; cursor:pointer; font-family:inherit; }
 .consultant-starter:hover{ border-color:var(--accent); color:var(--accent); }
