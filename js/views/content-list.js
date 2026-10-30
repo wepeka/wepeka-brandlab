@@ -35,14 +35,14 @@ const VIEWS = [
 ];
 
 // Terbit opens on one card per platform before any list (owner,
-// 2026-10-30): the four platforms the new-content wizard offers always,
-// "Lainnya" only when something went out elsewhere. Platform names are
-// user-editable, so they're matched loosely. Colours are the cards' own,
-// like the Beranda app cards.
+// 2026-10-30): Reels (Instagram and Facebook together — the same reel
+// usually goes to both), TikTok and YouTube always, "Lainnya" only when
+// something went out elsewhere. Platform names are user-editable, so
+// they're matched loosely. Colours are the cards' own, like the Beranda
+// app cards.
 const KNOWN_PLATFORM = /instagram|facebook|tik\s*tok|youtube/i;
 const PLATFORM_CARDS = [
-  { key: "instagram", name: "Instagram", app: "#FF6F91", app2: "#9B3CF0", art: "instagram", test: (p) => /instagram/i.test(p || "") },
-  { key: "facebook", name: "Facebook", app: "#5B9BFF", app2: "#2F55E4", art: "facebook", test: (p) => /facebook/i.test(p || "") },
+  { key: "reels", name: "Reels", app: "#FF6F91", app2: "#9B3CF0", art: "reels", test: (p) => /instagram|facebook/i.test(p || "") },
   { key: "tiktok", name: "TikTok", app: "#3BE8E2", app2: "#FF3D6E", art: "tiktok", test: (p) => /tik\s*tok/i.test(p || "") },
   { key: "youtube", name: "YouTube", app: "#FF7A6B", app2: "#D42A2A", art: "youtube", test: (p) => /youtube/i.test(p || "") },
   { key: "other", app: "#F2C46D", app2: "#D9822B", art: "other-platforms", test: (p) => !KNOWN_PLATFORM.test(p || "") },
@@ -214,7 +214,7 @@ function paint(root, brandId, state, refresh) {
             </tr>
           </thead>
           <tbody>
-            ${items.length ? items.map((x) => rowHTML(x, campaignsById, showFcr)).join("") : ""}
+            ${items.length ? items.map((x) => rowHTML(x, campaignsById, showFcr, pfCard?.key === "reels")).join("") : ""}
           </tbody>
         </table>
       </div>
@@ -481,14 +481,16 @@ function sampleContentIdeas(brand) {
   ];
 }
 
-function rowHTML({ c, perf, m }, campaignsById, showFcr) {
+// markPlatform: the Reels list holds Instagram and Facebook together, so
+// each title carries its platform's icon.
+function rowHTML({ c, perf, m }, campaignsById, showFcr, markPlatform) {
   // Views/Engagement only mean anything once something has actually been
   // posted — showing them for an idea or draft implies data that isn't there.
   const isPublished = c.status === "published";
   const campaign = c.campaignId ? campaignsById.get(c.campaignId) : null;
   return `
     <tr data-id="${c.id}" role="row">
-      <td class="cell-title">${escapeText(c.title || t("common.untitled"))}${isPublished && m.erRating === "excellent" ? `<span class="er-flame" role="img" title="${escapeText(t("contentList.erExcellentMark"))}" aria-label="${escapeText(t("contentList.erExcellentMark"))}">${icon("flame", { size: 13 })}</span>` : ""}</td>
+      <td class="cell-title">${markPlatform ? `<span class="platform-pill" title="${escapeText(c.platform || "")}" style="margin-right:6px;vertical-align:-2px;">${platformIcon(c.platform)}</span>` : ""}${escapeText(c.title || t("common.untitled"))}${isPublished && m.erRating === "excellent" ? `<span class="er-flame" role="img" title="${escapeText(t("contentList.erExcellentMark"))}" aria-label="${escapeText(t("contentList.erExcellentMark"))}">${icon("flame", { size: 13 })}</span>` : ""}</td>
       ${showFcr ? fcrCellHTML(c, m) : `<td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>`}
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaignDisplayName(campaign.name) || t("common.untitled"))}</span>` : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${escapeText(c.status)}"><span class="status-dot"></span>${escapeText(STATUS_LABELS[c.status] || c.status)}</span></td>
