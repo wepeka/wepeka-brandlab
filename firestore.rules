@@ -344,15 +344,17 @@ service cloud.firestore {
     }
     // Sales log (js/sales-tracker.js): one doc per month,
     // { ownerId, brandId, month, entries: [...] } — doc id "YYYY-MM" (or
-    // "undated"). Old inline entries move here as they are, so the entries
-    // themselves aren't shape-checked; Firestore's 1 MiB caps the doc.
+    // "undated"); a month that outgrows one doc continues in "YYYY-MM_2",
+    // "_3"… (js/store.js salesDocFor). Old inline entries move here as they
+    // are, so the entries themselves aren't shape-checked; Firestore's 1 MiB
+    // caps each doc.
     match /brands/{brandId}/sales/{month} {
       allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
       allow create, update: if ((isOwner(request.resource.data) && accountActive() && ownsBrandAfter(brandId))
             || editorWritesUnder(brandId))
         && (resource == null || keepsOwner())
         && request.resource.data.brandId == brandId
-        && month.matches('[0-9]{4}-[0-9]{2}|undated')
+        && month.matches('([0-9]{4}-[0-9]{2}|undated)(_[0-9]{1,3})?')
         && request.resource.data.get('month', month) == month
         && request.resource.data.keys().hasOnly(['ownerId', 'brandId', 'month', 'entries'])
         && request.resource.data.entries is list;

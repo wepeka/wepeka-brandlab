@@ -103,6 +103,11 @@ describe("owner vs stranger", () => {
     await assertSucceeds(setDoc(ref, { ownerId: "alice", brandId: "a1", month: "2026-10", entries: arrayRemove(entry("s1")) }, { merge: true }));
     await assertSucceeds(setDoc(doc(alice, "brands/a1/sales/undated"), month("alice", "a1", "undated")));
     await assertFails(setDoc(doc(alice, "brands/a1/sales/s3"), month("alice", "a1", "s3")), "doc id is a month");
+    // A busy month continues in overflow docs (js/store.js salesDocFor).
+    await assertSucceeds(setDoc(doc(alice, "brands/a1/sales/2026-10_2"), month("alice", "a1", "2026-10_2")));
+    await assertSucceeds(setDoc(doc(alice, "brands/a1/sales/2026-10_12"), month("alice", "a1", "2026-10_12")));
+    await assertFails(setDoc(doc(alice, "brands/a1/sales/2026-10_x"), month("alice", "a1", "2026-10_x")), "overflow suffix is a number");
+    await assertFails(setDoc(doc(alice, "brands/a1/sales/2026-10_2"), month("alice", "a1", "2026-10")), "month field = doc id, suffix included");
     await assertFails(setDoc(doc(alice, "brands/a1/sales/2026-11"), month("alice", "a1", "2026-12")), "month field = doc id");
     await assertFails(setDoc(doc(alice, "brands/a1/sales/2026-11"), { ...month("alice", "a1", "2026-11"), extra: 1 }));
     const bob = as("bob");

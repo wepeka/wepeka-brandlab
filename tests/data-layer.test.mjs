@@ -509,7 +509,7 @@ describe("brand files out of the brand doc (goal 5, review fixes 2/3/6/8)", () =
 });
 
 // ---------------------------------------------------------------------------
-import { getTracker, logSale, deleteSale, clearAllSales, trackerTotals, addProduct } from "../js/sales-tracker.js";
+import { getTracker, logSale, updateSale, deleteSale, clearAllSales, trackerTotals, addProduct } from "../js/sales-tracker.js";
 
 const monthDocs = (id) => [...__docs.keys()].filter((k) => k.startsWith(`brands/${id}/sales/`)).sort();
 const entry = (id, date, qty = 1, at = 1) => ({ id, productId: "p1", qty, amount: qty * 10000, date, repeat: false, referral: false, note: "", eventId: null, at });
@@ -600,6 +600,48 @@ describe("sales log in month docs (goal 6, review fixes 6/8)", () => {
     addProduct("toko5", { name: "Teh", price: 8000 });
     await flush();
     assert.deepEqual(__writes.map((w) => w.op), ["update"], "one brand update, no month doc");
+  });
+
+  test("a busy month continues in YYYY-MM_2; deletes and edits hit the doc the entry lives in", async () => {
+    __reset();
+    seedSalesBrand("ramai");
+    await store.initStore(OLD_UID);
+    await store.watchBrandScope("ramai");
+    store.__setSalesDocLimit(1200); // ~5 entries per doc
+    try {
+      for (let i = 0; i < 12; i++) logSale("ramai", { productId: "p1", qty: i + 1, date: "2026-10-15", note: `n${i}` });
+      await flush();
+      const docs = monthDocs("ramai");
+      assert.ok(docs.includes("brands/ramai/sales/2026-10_2"), docs.join());
+      assert.ok(!docs.some((p) => p.includes("2026-09_")), "September's single sale stays in one doc");
+      const ids = docs.flatMap((p) => __docs.get(p).entries.map((e) => e.id));
+      assert.equal(ids.length, new Set(ids).size, "no entry stored twice");
+      assert.equal(ids.length, 14);
+      const size = (p) => JSON.stringify(__docs.get(p).entries).length;
+      assert.ok(monthDocs("ramai").every((p) => size(p) <= 1300), "no doc past the limit");
+      assert.equal(__docs.get("brands/ramai/sales/2026-10_2").month, "2026-10_2", "month field = doc id (rules check it)");
+      // Reading back: every doc merges into the one log.
+      await store.watchBrandScope("elsewhere");
+      await store.watchBrandScope("ramai");
+      assert.equal(getTracker(store.getBrand("ramai")).entries.length, 14);
+      // Delete one that lives in the last overflow doc: it leaves that doc.
+      const lastDoc = monthDocs("ramai").at(-1);
+      const in3 = __docs.get(lastDoc).entries[0];
+      deleteSale("ramai", in3.id);
+      await flush();
+      assert.ok(!__docs.get(lastDoc).entries.some((e) => e.id === in3.id));
+      assert.equal(monthDocs("ramai").reduce((a, p) => a + __docs.get(p).entries.length, 0), 13);
+      // Edit one in _2 (replace = remove + add): the old copy leaves _2, the new one lands where there's room.
+      const in2 = __docs.get("brands/ramai/sales/2026-10_2").entries.find((e) => e.id !== in3.id);
+      const edited = updateSale("ramai", in2.id, { qty: 99 });
+      await flush();
+      const all = monthDocs("ramai").flatMap((p) => __docs.get(p).entries);
+      assert.ok(!all.some((e) => e.id === in2.id));
+      assert.equal(all.filter((e) => e.id === edited.id).length, 1);
+      assert.equal(all.length, 13);
+    } finally {
+      store.__setSalesDocLimit(700_000);
+    }
   });
 
   test("a brand without the Sales Tracker never reads sales; one with it says it's loading until then", async () => {

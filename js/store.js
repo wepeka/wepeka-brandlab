@@ -1463,17 +1463,61 @@ export async function sweepBrandAssets(brandId, { now = Date.now(), force = fals
 // month, a removed one arrayRemove'd — safe from a stale cache or a second
 // device, and idempotent. Old inline entries move to their months when the
 // owner next saves the Sales Tracker (never from an unrelated save).
+// A busy month can outgrow one doc (Firestore caps a doc at 1 MiB — about
+// 3,000 rich sales): once "YYYY-MM" is near SALES_DOC_LIMIT, new entries of
+// that month go to "YYYY-MM_2", "YYYY-MM_3"… Reads already take every doc in
+// the subcollection, so nothing else changes; a removal goes to the doc the
+// entry actually lives in (salesDocOf), not to the doc its date suggests.
 // salesData: brandId → Map(entryId → entry) from the month docs.
 // serverSales: brandId → entries the stored brand doc still holds inline.
+// salesDocOf: brandId → Map(entryId → doc id); salesDocBytes: brandId →
+// Map(doc id → estimated size), both refreshed by every read of the docs.
 const salesData = new Map();
 const serverSales = new Map();
 const salesLoads = new Map();
+const salesDocOf = new Map();
+const salesDocBytes = new Map();
+let SALES_DOC_LIMIT = 700_000;
+// Tests only: a small limit to exercise the overflow docs.
+export function __setSalesDocLimit(n) { SALES_DOC_LIMIT = n; }
+const entryBytes = (e) => JSON.stringify(e).length;
 export const salesMonthOf = (entry) => (/^\d{4}-\d{2}-\d{2}/.test(String(entry?.date || "")) ? String(entry.date).slice(0, 7) : "undated");
+const mapOf = (store, brandId) => store.get(brandId) || store.set(brandId, new Map()).get(brandId);
 function rememberSalesDocs(brandId, docs) {
   const entries = new Map();
-  docs.forEach((d) => (d.data()?.entries || []).forEach((e, i) => { if (e) entries.set(e.id || `${d.id}#${i}`, e); }));
+  const where = new Map();
+  const bytes = new Map();
+  docs.forEach((d) => (d.data()?.entries || []).forEach((e, i) => {
+    if (!e) return;
+    const id = e.id || `${d.id}#${i}`;
+    entries.set(id, e);
+    where.set(id, d.id);
+    bytes.set(d.id, (bytes.get(d.id) || 0) + entryBytes(e));
+  }));
   salesData.set(brandId, entries);
+  salesDocOf.set(brandId, where);
+  salesDocBytes.set(brandId, bytes);
   hydrateInPlace(brandId);
+}
+// The doc a new entry goes to: its month, or the month's first overflow doc
+// that still has room.
+function salesDocFor(brandId, entry) {
+  // Already placed (an inline entry re-sent until the brand doc stops
+  // holding it, or a repeat of the same write): same doc, or it would be
+  // stored twice.
+  const known = salesDocOf.get(brandId)?.get(entry.id);
+  if (known) return known;
+  const month = salesMonthOf(entry);
+  const bytes = mapOf(salesDocBytes, brandId);
+  const size = entryBytes(entry);
+  for (let n = 1; ; n++) {
+    const id = n === 1 ? month : `${month}_${n}`;
+    if ((bytes.get(id) || 0) + size <= SALES_DOC_LIMIT || n >= 999) {
+      bytes.set(id, (bytes.get(id) || 0) + size);
+      mapOf(salesDocOf, brandId).set(entry.id, id);
+      return id;
+    }
+  }
 }
 function mergedEntries(brandId, inline) {
   const sub = salesData.get(brandId);
@@ -1555,11 +1599,21 @@ function salesWritePlan(b, prev, { fresh = false } = {}) {
   const add = [...inline.filter((e) => e && nextIds.has(e.id)), ...next.filter((e) => fresh || !beforeIds.has(e.id))];
   const remove = before.filter((e) => !nextIds.has(e.id));
   const ownerId = b.ownerId || ownerUid;
-  const byMonth = (list) => list.reduce((m, e) => m.set(salesMonthOf(e), [...(m.get(salesMonthOf(e)) || []), e]), new Map());
-  const ref = (month) => doc(fdb, "brands", b.id, "sales", month);
+  const group = (list, docOf) => list.reduce((m, e) => { const id = docOf(e); return m.set(id, [...(m.get(id) || []), e]); }, new Map());
+  const ref = (id) => doc(fdb, "brands", b.id, "sales", id);
+  // Removals first (they free room), then each add to a doc with room.
+  const removeBy = group(remove, (e) => {
+    const id = salesDocOf.get(b.id)?.get(e.id) || salesMonthOf(e);
+    const bytes = mapOf(salesDocBytes, b.id);
+    bytes.set(id, Math.max(0, (bytes.get(id) || 0) - entryBytes(e)));
+    salesDocOf.get(b.id)?.delete(e.id);
+    return id;
+  });
+  const addBy = group(add, (e) => salesDocFor(b.id, e));
+  // `month` = the doc's own id (firestore.rules checks they match).
   const ops = [
-    ...[...byMonth(add)].map(([month, list]) => ({ type: "set", ref: ref(month), data: { ownerId, brandId: b.id, month, entries: arrayUnion(...list) }, options: { merge: true } })),
-    ...[...byMonth(remove)].map(([month, list]) => ({ type: "set", ref: ref(month), data: { ownerId, brandId: b.id, month, entries: arrayRemove(...list) }, options: { merge: true } })),
+    ...[...addBy].map(([id, list]) => ({ type: "set", ref: ref(id), data: { ownerId, brandId: b.id, month: id, entries: arrayUnion(...list) }, options: { merge: true } })),
+    ...[...removeBy].map(([id, list]) => ({ type: "set", ref: ref(id), data: { ownerId, brandId: b.id, month: id, entries: arrayRemove(...list) }, options: { merge: true } })),
   ];
   const { entries, ...rest } = tracker;
   return { ops, stored: rest };
