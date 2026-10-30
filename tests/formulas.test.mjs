@@ -159,6 +159,18 @@ describe("resolveThresholds / computeContentMetrics", () => {
     assert.equal(result.health, "excellent");
   });
 
+  test("TikTok without reach divides by views; other platforms don't", () => {
+    const perf = { likes: 70, comments: 5, shares: 3, saves: 2, views: 1000, followersGained: 5 };
+    const tt = computeContentMetrics({ platform: "TikTok", funnel: "TOFU", performance: perf }, settings);
+    assert.equal(tt.engagementRate, 8);
+    assert.equal(tt.followerConversionRate, 0.5);
+    const ig = computeContentMetrics({ platform: "Instagram", funnel: "TOFU", performance: perf }, settings);
+    assert.equal(ig.engagementRate, null);
+    // A reach number, when there is one, still wins.
+    const withReach = computeContentMetrics({ platform: "TikTok", funnel: "TOFU", performance: { ...perf, reach: 500 } }, settings);
+    assert.equal(withReach.engagementRate, 16);
+  });
+
   test("the ER scale is the same for every funnel and platform", () => {
     const perf = { likes: 70, comments: 5, shares: 3, saves: 2, reach: 1000 }; // 8%
     for (const funnel of ["TOFU", "MOFU", "BOFU", undefined]) {

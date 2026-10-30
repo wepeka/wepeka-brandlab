@@ -142,7 +142,7 @@ function paint(root, brandId, state, refresh) {
       case "date": av = a.c.scheduleDate || a.c.publishedDate || ""; bv = b.c.scheduleDate || b.c.publishedDate || ""; break;
       case "views": av = a.perf.views || 0; bv = b.perf.views || 0; break;
       case "er": av = a.m.engagementRate ?? -1; bv = b.m.engagementRate ?? -1; break;
-      case "fcr": av = followerConversion(a.c, a.m) ?? -1; bv = followerConversion(b.c, b.m) ?? -1; break;
+      case "fcr": av = a.m.followerConversionRate ?? -1; bv = b.m.followerConversionRate ?? -1; break;
       default: av = a.c.updatedAt; bv = b.c.updatedAt;
     }
     if (av < bv) return state.dir === "asc" ? -1 : 1;
@@ -507,20 +507,13 @@ function rowHTML({ c, perf, m }, campaignsById, showFcr, markPlatform) {
   `;
 }
 
-// Follower conversion = new followers ÷ reach (the formula in Settings).
-// TikTok prints no reach, so there it falls back to ÷ views.
-function followerConversion(c, m) {
-  if (m.followerConversionRate !== null && m.followerConversionRate !== undefined) return m.followerConversionRate;
-  const p = c.performance || {};
-  return p.followersGained !== null && p.followersGained !== undefined && p.followersGained !== "" && Number(p.views) ? (Number(p.followersGained) / Number(p.views)) * 100 : null;
-}
-
+// Follower conversion = new followers ÷ reach (the formula in Settings;
+// ÷ views for TikTok, which has no reach — formulas.js).
 function fcrCellHTML(c, m) {
   const label = escapeText(t("contentList.th.fcr"));
   if (c.status !== "published") return `<td class="cell-muted" data-label="${label}">—</td>`;
-  const v = followerConversion(c, m);
-  const rated = m.followerConversionRate !== null && m.followerConversionRate !== undefined && m.fcrRating;
-  return `<td data-label="${label}">${rated ? `<span class="health-badge health-${m.fcrRating}" title="${escapeText(HEALTH_LABEL[m.fcrRating])}"><span class="health-dot"></span>${formatPercent(v)}</span>` : `<span class="cell-muted">${formatPercent(v)}</span>`}</td>`;
+  const v = m.followerConversionRate;
+  return `<td data-label="${label}">${m.fcrRating ? `<span class="health-badge health-${m.fcrRating}" title="${escapeText(HEALTH_LABEL[m.fcrRating])}"><span class="health-dot"></span>${formatPercent(v)}</span>` : `<span class="cell-muted">${formatPercent(v)}</span>`}</td>`;
 }
 
 // The numbers on each platform card: what went out there, its views and

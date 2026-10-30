@@ -147,8 +147,14 @@ export function resolveThresholds(settings, funnel, platform) {
 // set — ER_SCALE in store.js); follower conversion only stands in when ER
 // can't be worked out. It used to be the worse of the two, which painted a
 // 12% ER post red just because it gained no followers.
+//
+// TikTok prints no reach (owner, 2026-10-30: "pakai views"): a TikTok post
+// without a reach number divides by its views instead, so its ER and
+// follower conversion still show.
 export function computeContentMetrics(content, settings) {
-  const m = content.performance || {};
+  const perf = content.performance || {};
+  const noReach = perf.reach === null || perf.reach === undefined || perf.reach === "";
+  const m = noReach && Number(perf.views) && /tik\s*tok/i.test(content.platform || "") ? { ...perf, reach: perf.views } : perf;
   const er = evaluateFormula(settings.formulas.engagementRate, m);
   const fcr = evaluateFormula(settings.formulas.followerConversionRate, m);
   const th = resolveThresholds(settings, content.funnel, content.platform);
