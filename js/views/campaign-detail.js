@@ -215,7 +215,8 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       // The community identity milestone stays editable after it's met —
       // unlike a checkbox, a name/nickname someone might want to revisit —
       // so it needs an action even once readMilestone() stops handing one out.
-      if (r?.action) run({ ...r.action, milestoneId: r.milestone.id });
+      const act = r && msEditAction(r);
+      if (act) run({ ...act, milestoneId: r.milestone.id });
       else if (r?.milestone.key === "concept" && r.milestone.track === "community") run({ type: "manual", milestoneId: r.milestone.id });
     })
   );
@@ -240,6 +241,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
   );
   wireGoalTree(root, { onSelect: (i) => { if (stage) { state.treeSel = state.treeSel || {}; state.treeSel[stage.id] = i; } } });
   qs("[data-cd-insights]", root)?.addEventListener("click", () => run({ type: "insights" }));
+  qsa("[data-cd-hero-act]", root).forEach((btn) => btn.addEventListener("click", () => run({ type: btn.dataset.cdHeroAct, milestoneId: btn.dataset.cdHeroMs })));
   qs("#cd-manual-all", root)?.addEventListener("click", () => openManualSheet({ campaign, stage, ctx, refresh }));
   qsa("[data-cd-brainstorm]", root).forEach((btn) => btn.addEventListener("click", () => goBrainstorm({ brandId, campaign, stage, ctxLabel })));
   qs("#cd-new-content", root)?.addEventListener("click", () => run({ type: "new-content" }));
@@ -330,6 +332,7 @@ function guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind }) {
       : r ? t("camp.m.home.manual") : "";
     foot = [hasTarget ? `${Math.round(pct * 100)}%` : "", left, src].filter(Boolean).join(" · ");
     if (r?.home === "insights") extra = `<button type="button" class="gd-mini" data-cd-insights>${icon("refresh", { size: 12 })}${r.logged ? t("camp.m.update") : t("camp.m.fillInsights")}</button>`;
+    else if (head) extra = heroActionHTML(r, head.milestone.id, "gd-mini");
     if (head) big = `<span class="gd-big-label">${esc(head.milestone.label)}</span>${big}`;
   }
   const levelChip = stage?.kind === "level" ? `<span class="gd-chip">${esc(t("camp.levelOf", { n: autoIndex + 1, total: stages.length }))} · ${esc(stage.name)}</span>` : "";
@@ -358,13 +361,29 @@ function guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind }) {
     </section>`;
 }
 
+// What a target's button does. A met manual number keeps an edit button
+// (readMilestone() hands out no action once met) so a count typed wrong, or
+// one that has since moved, can still be corrected.
+function msEditAction(r) {
+  return r.action || (!r.auto && !r.isCheck && r.update?.type === "manual" ? r.update : null);
+}
+// The headline number's own button: type it (manual) or log a sale (Sales Tracker).
+function heroActionHTML(r, milestoneId, cls) {
+  if (!r || r.isCheck) return "";
+  const act = r.home === "insights" ? null : msEditAction(r) || (r.home === "sales" || r.home === "salesSum" ? r.update || r.improve : null);
+  if (!act || act.type === "info") return "";
+  const kind = act.type === "sales" ? "sales" : "manual";
+  return `<button type="button" class="${cls}" data-cd-hero-act="${kind}" data-cd-hero-ms="${esc(milestoneId)}">${icon(kind === "sales" ? "plus" : "edit", { size: 12 })}${esc(act.label || t("camp.m.update"))}</button>`;
+}
+
 // A target's one button: its posts (per-post targets), else its action.
 function msActionHTML(r, i, stage) {
   const m = r.milestone;
   const isIdentity = m.key === "concept" && m.track === "community";
   if (PER_POST_METRICS.includes(m.metric)) return `<button type="button" class="gd-mini" data-cd-ms-posts="${i}">${t("camp.posts.button")}</button>`;
-  const label = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : r.action?.label;
-  return (r.action && r.action.type !== "info") || isIdentity ? `<button type="button" class="gd-mini" data-cd-ms-action="${i}">${esc(label)}</button>` : "";
+  const label = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : msEditAction(r)?.label;
+  const act = msEditAction(r);
+  return (act && act.type !== "info") || isIdentity ? `<button type="button" class="gd-mini" data-cd-ms-action="${i}">${esc(label || act?.label || "")}</button>` : "";
 }
 
 // One tile per number of the level/phase on view. Index = the reading's
@@ -989,7 +1008,7 @@ function headlineHTML({ milestone, reading }, stageRead, stage) {
       <div class="cd-bar"><span style="width:${barPct}%"></span></div>
       <div class="cd-headline-foot">
         <span>${footPct}${source}${remaining ? ` · ${remaining}` : ""}</span>
-        ${reading.home === "insights" ? `<button type="button" class="btn btn-secondary btn-sm" data-cd-insights>${icon("refresh", { size: 12 })}${reading.logged ? t("camp.m.update") : t("camp.m.fillInsights")}</button>` : ""}
+        ${reading.home === "insights" ? `<button type="button" class="btn btn-secondary btn-sm" data-cd-insights>${icon("refresh", { size: 12 })}${reading.logged ? t("camp.m.update") : t("camp.m.fillInsights")}</button>` : heroActionHTML(reading, milestone.id, "btn btn-secondary btn-sm")}
       </div>
     </div>`;
 }
@@ -1661,8 +1680,9 @@ function milestoneRowHTML(r, i, stage, guided) {
   // The community's identity (name + member nickname) is real text, not a
   // checkbox — its action button reads as "name it" rather than "mark done".
   const isIdentity = m.key === "concept" && m.track === "community";
-  const actionLabel = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : r.action?.label;
-  const showAction = !locked && ((r.action && r.action.type !== "info") || isIdentity);
+  const actionLabel = isIdentity ? t(r.met ? "camp.identity.editBtn" : "camp.identity.fillBtn") : msEditAction(r)?.label;
+  const rowAct = msEditAction(r);
+  const showAction = !locked && ((rowAct && rowAct.type !== "info") || isIdentity);
   const action = posts || (showAction ? `<button type="button" class="btn btn-ghost btn-sm cd-ms-btn" data-cd-ms-action="${i}">${esc(actionLabel)}</button>` : "");
   return `
     <div class="cd-row cd-row-${r.status}" data-milestone-index="${i}">
