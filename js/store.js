@@ -1972,7 +1972,9 @@ export function followersSinceStart(brand, endMs = Date.now()) {
     const saved = brand.insightsStart?.[platform];
     const start = saved && Number.isFinite(saved.followers) ? saved : list[0];
     const now = list[list.length - 1];
-    if (now.at <= start.at) continue;
+    // A saved start counts even when it is the only count so far (+0 / the gap
+    // the owner typed); the oldest-row fallback needs a later count to compare.
+    if (saved && Number.isFinite(saved.followers) ? now.at < start.at : now.at <= start.at) continue;
     gain += now.followers - start.followers;
     found = true;
     parts.push({ platform, start: start.followers, now: now.followers });

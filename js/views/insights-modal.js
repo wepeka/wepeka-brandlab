@@ -3,7 +3,7 @@
 // Insights screen). Saved to brand.insights + a short history; every
 // campaign milestone that reads profile.* updates on its own from there.
 // Accounts with the Instagram API can pull followers with one click.
-import { getBrand, getBrandInsights, updateBrandInsights, localISODate } from "../store.js";
+import { getBrand, getBrandInsights, updateBrandInsights, setFollowersStart, localISODate } from "../store.js";
 import { openModal, closeOverlay } from "../modals.js";
 import { icon } from "../icons.js";
 import { qs, toast, formatNumber, escapeHtml } from "../dom.js";
@@ -19,6 +19,8 @@ export function openInsightsModal({ brandId, onSaved, reason = "", platform = "i
   // The Instagram API fetch only exists for Instagram — every other
   // platform (TikTok, Facebook, Other) falls back to manual entry in this
   // same form, same as Instagram did before the API integration existed.
+  const savedStart = brand.insightsStart?.[platform]?.followers;
+  const startNow = Number.isFinite(savedStart) ? savedStart : (brand.insightsHistory || []).filter((h) => h.platform === platform && Number.isFinite(h.followers)).sort((a, b) => a.at - b.at)[0]?.followers;
   const igApi = platform === "instagram" && canUseInstagramApi() && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
   const overlay = openModal({
     title: platform === "instagram" ? t("ins.title") : t("ins.titleFor", { platform: t(`goal.launch.platform.${platform}`) }),
@@ -39,6 +41,11 @@ export function openInsightsModal({ brandId, onSaved, reason = "", platform = "i
           <label for="ins-visits">${t("ins.visits30")} <span class="copy-optional">${t("ins.optional")}</span></label>
           <input class="input" id="ins-visits" type="number" min="0" inputmode="numeric" value="${ins?.profileVisits30d ?? ""}" placeholder="${t("ins.visitsPlaceholder")}" />
         </div>
+      </div>
+      <div class="field">
+        <label for="ins-start">${t("ins.start")} <span class="copy-optional">${t("ins.optional")}</span></label>
+        <input class="input" id="ins-start" type="number" min="0" inputmode="numeric" value="${startNow ?? ""}" placeholder="${t("ins.startPlaceholder")}" />
+        <small class="text-muted">${t("ins.startHint")}</small>
       </div>
       <div class="field">
         <label for="ins-date">${t("ins.date")}</label>
@@ -82,6 +89,8 @@ export function openInsightsModal({ brandId, onSaved, reason = "", platform = "i
       at,
       source: "manual",
     });
+    const start = qs("#ins-start", overlay).value.trim();
+    if (start !== "" && Number(start) >= 0 && Number(start) !== startNow) setFollowersStart(brandId, platform, start);
     closeOverlay(overlay);
     toast(t("ins.savedToast"));
     onSaved?.();

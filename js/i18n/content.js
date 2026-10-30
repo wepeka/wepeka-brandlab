@@ -57,6 +57,9 @@ export default {
   "ins.title": { en: "Update Instagram insights", id: "Perbarui Insights Instagram" },
   // #1: same modal, generalized for any Social Media Growth campaign's
   // platform (TikTok/Facebook/Other have no API fetch — manual entry only).
+  "ins.start": { en: "Starting followers", id: "Followers awal" },
+  "ins.startPlaceholder": { en: "e.g. 5,800", id: "misal: 5.800" },
+  "ins.startHint": { en: "Followers when you started with Brandlab. The Report counts your gain from it.", id: "Followers saat kamu mulai pakai Brandlab. Report menghitung kenaikan dari angka ini." },
   "ins.titleFor": { en: "Update {platform} insights", id: "Perbarui Insights {platform}" },
   "ins.intro": { en: "Open Instagram → your profile → <b>Professional dashboard</b> → <b>Account insights</b>, then copy the numbers here.", id: "Buka Instagram → profil → <b>Dasbor profesional</b> → <b>Insight akun</b>, lalu salin angkanya ke sini." },
   "ins.lastRecorded": { en: "Last recorded <b>{age}</b>{source}.", id: "Terakhir dicatat <b>{age}</b>{source}." },
