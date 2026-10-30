@@ -182,10 +182,11 @@ describe("followersSinceStart", () => {
       insightsStart: { instagram: { followers: 1000, at: 1 } },
       insightsHistory: [h("instagram", 1200, 5), h("instagram", 1350, 9), h("tiktok", 50, 2), h("tiktok", 80, 8)],
     };
-    assert.deepEqual(followersSinceStart(brand), { gain: 380 });
+    assert.equal(followersSinceStart(brand).gain, 380);
+    assert.deepEqual(followersSinceStart(brand).parts.find((x) => x.platform === "instagram"), { platform: "instagram", start: 1000, now: 1350 });
   });
   test("falls back to the oldest history row; null with a single count", () => {
-    assert.deepEqual(followersSinceStart({ insightsHistory: [h("instagram", 100, 1), h("instagram", 90, 2)] }), { gain: -10 });
+    assert.deepEqual(followersSinceStart({ insightsHistory: [h("instagram", 100, 1), h("instagram", 90, 2)] }), { gain: -10, parts: [{ platform: "instagram", start: 100, now: 90 }] });
     assert.equal(followersSinceStart({ insightsHistory: [h("instagram", 100, 1)] }), null);
   });
 });

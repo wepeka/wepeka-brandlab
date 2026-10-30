@@ -21,6 +21,11 @@ export default {
   "rl.kpi.er": { en: "Average ER", id: "Rata-rata ER" },
   "rl.kpi.followers": { en: "New followers", id: "Followers baru" },
   "rl.kpi.followersSince": { en: "Followers gained with Brandlab", id: "Followers naik sejak Brandlab" },
+  "rl.kpi.startFrom": { en: "From {n}", id: "Dari {n}" },
+  "rl.kpi.startEdit": { en: "edit", id: "ubah" },
+  "rl.start.title": { en: "Starting followers", id: "Followers awal" },
+  "rl.start.intro": { en: "The follower count when you started with Brandlab. The gain is counted from it.", id: "Jumlah followers saat kamu mulai pakai Brandlab. Kenaikan dihitung dari angka ini." },
+  "rl.start.saved": { en: "Starting followers saved", id: "Followers awal disimpan" },
   "rl.kpi.sales": { en: "Sales", id: "Penjualan" },
   "rl.kpi.posts": { en: "Posts", id: "Konten tayang" },
 

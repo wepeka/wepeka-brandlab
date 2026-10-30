@@ -1966,6 +1966,7 @@ export function followersSinceStart(brand, endMs = Date.now()) {
     byPlatform.get(h.platform).push(h);
   });
   let gain = 0, found = false;
+  const parts = [];
   for (const [platform, list] of byPlatform) {
     list.sort((a, b) => a.at - b.at);
     const saved = brand.insightsStart?.[platform];
@@ -1974,8 +1975,19 @@ export function followersSinceStart(brand, endMs = Date.now()) {
     if (now.at <= start.at) continue;
     gain += now.followers - start.followers;
     found = true;
+    parts.push({ platform, start: start.followers, now: now.followers });
   }
-  return found ? { gain } : null;
+  return found ? { gain, parts } : null;
+}
+// The owner correcting the starting follower count of one platform.
+export function setFollowersStart(brandId, platform, followers) {
+  const b = getBrand(brandId);
+  const n = Number(followers);
+  if (!b || !platform || followers === "" || !Number.isFinite(n) || n < 0) return null;
+  const prev = b.insightsStart?.[platform];
+  const first = (b.insightsHistory || []).filter((h) => h.platform === platform && Number.isFinite(h.followers)).sort((x, y) => x.at - y.at)[0];
+  const at = prev?.at ?? first?.at ?? Date.now();
+  return updateBrand(brandId, { insightsStart: { ...(b.insightsStart || {}), [platform]: { followers: Math.round(n), at } } });
 }
 // Follower count closest to (at or before) `atMs`, else the earliest one
 // after it — the baseline for "followers gained since this campaign began".

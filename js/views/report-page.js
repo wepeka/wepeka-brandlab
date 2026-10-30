@@ -14,7 +14,7 @@
 // Every number comes from computeReportData (the PDF's own), so the page
 // and the PDF always agree; nothing is estimated or compared with made-up
 // benchmarks, and a brand with no numbers gets a friendly empty state.
-import { getBrand, getSettings, listContent, onChange, organicViews, localISODate, followersSinceStart, FUNNELS, ER_SCALE } from "../store.js";
+import { getBrand, getSettings, listContent, onChange, organicViews, localISODate, followersSinceStart, setFollowersStart, FUNNELS, ER_SCALE } from "../store.js";
 import { computeReportData, previousRange, rangeFor, rangeLabel, openReportModal, reportAdviceState, requestReportAdvice, OVERALL_START } from "./report.js";
 import { interactionsOf, interactionsTotal, trendSeries, formatMix, postingRhythm, erSeries, healthMix, HEALTH_ORDER, erBy, engagementMix } from "../report-journey.js";
 import { trendChartSVG, erChartSVG, ringSVG, sparkSVG, compactNum } from "./report-charts.js";
@@ -118,7 +118,7 @@ function heroHTML(brand, st, d, p, prevR) {
   // (saved starting count vs the latest, as of the period's end); brands with
   // only one follower count so far fall back to the per-post "new followers".
   const fs = followersSinceStart(brand, new Date(st.end + "T23:59:59").getTime());
-  if (fs) kpis.push({ label: t("rl.kpi.followersSince"), html: countHTML(fs.gain, "gain", FMT.gain(fs.gain)), delta: "" });
+  if (fs) kpis.push({ label: t("rl.kpi.followersSince"), html: countHTML(fs.gain, "gain", FMT.gain(fs.gain)), delta: "", edit: fs.parts });
   else if (d.recap.followersGained.n) kpis.push({ label: t("rl.kpi.followers"), html: countHTML(d.recap.followersGained.total, "num", formatNumber(d.recap.followersGained.total)), delta: p?.recap.followersGained.n ? deltaHTML(d.recap.followersGained.total, p.recap.followersGained.total) : "" });
   if (views.n && (d.sales.count || p?.sales.count)) kpis.push({ label: t("rl.kpi.sales"), html: countHTML(d.sales.revenue, "rp", rp(d.sales.revenue)), delta: p ? deltaHTML(d.sales.revenue, p.sales.revenue) : "" });
   if (d.recap.reach.n) kpis.push({ label: t("store.metric.reach"), html: countHTML(d.recap.reach.total, "short", compactNum(d.recap.reach.total)), delta: p?.recap.reach.n ? deltaHTML(d.recap.reach.total, p.recap.reach.total) : "" });
@@ -148,7 +148,7 @@ function heroHTML(brand, st, d, p, prevR) {
         <p class="rl-hero-sub">${esc(fig.sub)}${fig.delta ? ` ${fig.delta}` : ""}</p>
         ${fig.delta ? vsLine : ""}
         ${kpis.length ? `<div class="rl-kpis rl-stagger">${kpis.slice(0, 4).map((k, i) => `
-          <div class="rl-kpi" style="--i:${i}"><span class="rl-kpi-label">${esc(k.label)}</span>${k.html}${k.delta ? `<span class="rl-kpi-delta">${k.delta}</span>` : ""}</div>`).join("")}</div>` : ""}
+          <div class="rl-kpi" style="--i:${i}"><span class="rl-kpi-label">${esc(k.label)}</span>${k.html}${k.delta ? `<span class="rl-kpi-delta">${k.delta}</span>` : ""}${k.edit ? `<button type="button" class="rl-kpi-edit" data-edit-start>${esc(t("rl.kpi.startFrom", { n: formatNumber(k.edit.reduce((a, x) => a + x.start, 0)) }))} · ${esc(t("rl.kpi.startEdit"))}</button>` : ""}</div>`).join("")}</div>` : ""}
         ${missing > 0 ? `<a class="rl-hero-fill" href="${appByKey("content-os").path(brand.id)}">${icon("edit", { size: 14 })}${esc(t(missing === 1 ? "rl.hero.missing.one" : "rl.hero.missing", { n: missing }))}</a>` : ""}
       </div>
       ${ring ? `
@@ -756,12 +756,29 @@ export function render(root, { brandId }) {
     }
     qsa("[data-range-go]", body).forEach((el) => el.addEventListener("click", () => setRange(el.dataset.rangeGo)));
     qsa("[data-open-pdf]", body).forEach((el) => el.addEventListener("click", openPdf));
+    qs("[data-edit-start]", body)?.addEventListener("click", editStart);
     qs("#rl-ai-go", body)?.addEventListener("click", makeAdvice);
     drawTrend();
     drawEr();
     wireHover("#rl-trend", trend, trendRows);
     wireHover("#rl-er", er, erRows);
     undoMotion = mountMotion(body, seen);
+  }
+
+  function editStart() {
+    const parts = followersSinceStart(getBrand(brandId), Date.now())?.parts || [];
+    if (!parts.length) return;
+    const overlay = openModal({
+      title: t("rl.start.title"),
+      bodyHTML: `<p class="text-muted" style="font-size:13px;margin:0 0 14px;">${esc(t("rl.start.intro"))}</p>
+        ${parts.map((x, i) => `<div class="field"><label for="rl-start-${i}">${esc(t("rl.aud.followersOn", { platform: platformName(x.platform) }))}</label><input class="input" id="rl-start-${i}" type="number" min="0" inputmode="numeric" value="${x.start}" /></div>`).join("")}`,
+      footHTML: `<button type="button" class="btn btn-primary" id="rl-start-save">${esc(t("common.save"))}</button>`,
+    });
+    qs("#rl-start-save", overlay).addEventListener("click", () => {
+      parts.forEach((x, i) => setFollowersStart(brandId, x.platform, qs(`#rl-start-${i}`, overlay).value.trim()));
+      closeOverlay(overlay);
+      toast(t("rl.start.saved"));
+    });
   }
 
   async function makeAdvice() {

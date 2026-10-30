@@ -108,6 +108,7 @@
 .rl-kpi-label{ font-size:12px; font-weight:800; color: rgba(27,26,23,.62); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .rl-kpi .rl-num{ font: 800 24px/1.1 var(--font-body); letter-spacing:-.01em; white-space:nowrap; }
 .rl-kpi-delta{ margin-top:2px; }
+.rl-kpi-edit{ align-self:flex-start; margin-top:2px; padding:0; border:0; background:none; font:700 11px/1.2 var(--font-body); color: rgba(27,26,23,.62); text-decoration:underline; cursor:pointer; }
 .rl-hero-fill{ display:inline-flex; align-items:center; gap:7px; margin-top:16px; padding:8px 14px; border-radius:999px; background: var(--ink); color:#fff; font-size:13px; font-weight:800; text-decoration:none; transition: transform .3s var(--ease-spring, ease); }
 .rl-hero-fill:hover{ transform: translateY(-2px); }
 .rl-hero-ring{ display:flex; flex-direction:column; align-items:center; gap:12px; padding-right:6px; }
