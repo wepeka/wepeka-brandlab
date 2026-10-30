@@ -1948,7 +1948,34 @@ export function updateBrandInsights(brandId, platform, { followers = null, reach
   };
   const history = [...(b.insightsHistory || []), entry].sort((x, y) => x.at - y.at).slice(-INSIGHTS_HISTORY_CAP);
   if (source === "manual" && entry.followers !== null) emitStep("numbers_logged", { brandId, kind: "followers" });
-  return updateBrand(brandId, { insights, insightsHistory: history });
+  // The very first follower count per platform is kept for good (the history
+  // is capped and drops its oldest rows): it is the "before Brandlab" number.
+  const patch = { insights, insightsHistory: history };
+  if (entry.followers !== null && !b.insightsStart?.[platform]) patch.insightsStart = { ...(b.insightsStart || {}), [platform]: { followers: entry.followers, at } };
+  return updateBrand(brandId, patch);
+}
+// Followers gained since the owner started with Brandlab, all platforms
+// together, as of `endMs`: latest count minus the saved starting count (older
+// brands without one fall back to their oldest history row). Null until a
+// second, later count exists.
+export function followersSinceStart(brand, endMs = Date.now()) {
+  const byPlatform = new Map();
+  (brand?.insightsHistory || []).forEach((h) => {
+    if (!h.platform || !Number.isFinite(h.followers) || h.at > endMs) return;
+    if (!byPlatform.has(h.platform)) byPlatform.set(h.platform, []);
+    byPlatform.get(h.platform).push(h);
+  });
+  let gain = 0, found = false;
+  for (const [platform, list] of byPlatform) {
+    list.sort((a, b) => a.at - b.at);
+    const saved = brand.insightsStart?.[platform];
+    const start = saved && Number.isFinite(saved.followers) ? saved : list[0];
+    const now = list[list.length - 1];
+    if (now.at <= start.at) continue;
+    gain += now.followers - start.followers;
+    found = true;
+  }
+  return found ? { gain } : null;
 }
 // Follower count closest to (at or before) `atMs`, else the earliest one
 // after it — the baseline for "followers gained since this campaign began".

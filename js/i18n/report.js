@@ -20,6 +20,7 @@ export default {
   "rl.kpi.inter": { en: "Interactions", id: "Interaksi" },
   "rl.kpi.er": { en: "Average ER", id: "Rata-rata ER" },
   "rl.kpi.followers": { en: "New followers", id: "Followers baru" },
+  "rl.kpi.followersSince": { en: "Followers gained with Brandlab", id: "Followers naik sejak Brandlab" },
   "rl.kpi.sales": { en: "Sales", id: "Penjualan" },
   "rl.kpi.posts": { en: "Posts", id: "Konten tayang" },
 

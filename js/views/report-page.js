@@ -14,7 +14,7 @@
 // Every number comes from computeReportData (the PDF's own), so the page
 // and the PDF always agree; nothing is estimated or compared with made-up
 // benchmarks, and a brand with no numbers gets a friendly empty state.
-import { getBrand, getSettings, listContent, onChange, organicViews, localISODate, FUNNELS, ER_SCALE } from "../store.js";
+import { getBrand, getSettings, listContent, onChange, organicViews, localISODate, followersSinceStart, FUNNELS, ER_SCALE } from "../store.js";
 import { computeReportData, previousRange, rangeFor, rangeLabel, openReportModal, reportAdviceState, requestReportAdvice, OVERALL_START } from "./report.js";
 import { interactionsOf, interactionsTotal, trendSeries, formatMix, postingRhythm, erSeries, healthMix, HEALTH_ORDER, erBy, engagementMix } from "../report-journey.js";
 import { trendChartSVG, erChartSVG, ringSVG, sparkSVG, compactNum } from "./report-charts.js";
@@ -81,6 +81,7 @@ function deltaHTML(now, before, { points = false } = {}) {
 const countHTML = (value, fmt, text) => `<b class="rl-num" data-count="${Number(value) || 0}" data-fmt="${fmt}">${text}</b>`;
 const FMT = {
   num: (v) => formatNumber(Math.round(v)),
+  gain: (v) => `${v > 0 ? "+" : ""}${formatNumber(Math.round(v))}`,
   short: (v) => compactNum(v),
   pct: (v) => formatPercent(v),
   pct0: (v) => `${Math.round(v)}%`,
@@ -113,7 +114,12 @@ function heroHTML(brand, st, d, p, prevR) {
   const kpis = [];
   if (inter.n) kpis.push({ label: t("rl.kpi.inter"), html: countHTML(inter.total, "short", compactNum(inter.total)), delta: pInter?.n ? deltaHTML(inter.total, pInter.total) : "" });
   if (d.avgER !== null) kpis.push({ label: t("rl.kpi.er"), html: countHTML(d.avgER, "pct", formatPercent(d.avgER)), delta: p && p.avgER !== null ? deltaHTML(d.avgER, p.avgER, { points: true }) : "" });
-  if (d.recap.followersGained.n) kpis.push({ label: t("rl.kpi.followers"), html: countHTML(d.recap.followersGained.total, "num", formatNumber(d.recap.followersGained.total)), delta: p?.recap.followersGained.n ? deltaHTML(d.recap.followersGained.total, p.recap.followersGained.total) : "" });
+  // Followers: what the account gained since the owner started with Brandlab
+  // (saved starting count vs the latest, as of the period's end); brands with
+  // only one follower count so far fall back to the per-post "new followers".
+  const fs = followersSinceStart(brand, new Date(st.end + "T23:59:59").getTime());
+  if (fs) kpis.push({ label: t("rl.kpi.followersSince"), html: countHTML(fs.gain, "gain", FMT.gain(fs.gain)), delta: "" });
+  else if (d.recap.followersGained.n) kpis.push({ label: t("rl.kpi.followers"), html: countHTML(d.recap.followersGained.total, "num", formatNumber(d.recap.followersGained.total)), delta: p?.recap.followersGained.n ? deltaHTML(d.recap.followersGained.total, p.recap.followersGained.total) : "" });
   if (views.n && (d.sales.count || p?.sales.count)) kpis.push({ label: t("rl.kpi.sales"), html: countHTML(d.sales.revenue, "rp", rp(d.sales.revenue)), delta: p ? deltaHTML(d.sales.revenue, p.sales.revenue) : "" });
   if (d.recap.reach.n) kpis.push({ label: t("store.metric.reach"), html: countHTML(d.recap.reach.total, "short", compactNum(d.recap.reach.total)), delta: p?.recap.reach.n ? deltaHTML(d.recap.reach.total, p.recap.reach.total) : "" });
   if (views.n || d.sales.count) kpis.push({ label: t("rl.kpi.posts"), html: countHTML(d.publishedCount, "num", formatNumber(d.publishedCount)), delta: p ? deltaHTML(d.publishedCount, p.publishedCount) : "" });
