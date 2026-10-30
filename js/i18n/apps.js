@@ -83,6 +83,7 @@ export default {
   "mb.step": { en: "Step {n}", id: "Langkah {n}" },
   "mb.dna.sub": { en: "Who your customers are, their problem, and why they'd pick you.", id: "Siapa pelangganmu, masalahnya, dan kenapa mereka pilih kamu." },
   "mb.book.sub": { en: "Logo, colours, fonts and your brand's style.", id: "Logo, warna, font, dan gaya brand kamu." },
+  "mb.book.left": { en: "left: {name}", id: "tinggal: {name}" },
   "mb.cta.start": { en: "Start", id: "Mulai" },
   "mb.cta.continue": { en: "Continue", id: "Lanjutkan" },
   "mb.cta.edit": { en: "View & edit", id: "Lihat & ubah" },

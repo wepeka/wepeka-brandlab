@@ -105,6 +105,14 @@ export function brandBookProgress(brand = {}) {
   return { filled, total: BOOK_PROGRESS_SECTIONS.length };
 }
 
+// Which of the six are still open, in book order — the My Brand card names
+// the first one and links straight to it, instead of a bare "5/6" with no
+// way to tell what is left (Esensi Warna sits at the bottom of the colour
+// page and was easy to scroll past).
+export function brandBookMissing(brand = {}) {
+  return BOOK_PROGRESS_SECTIONS.filter((k) => !guidelineSectionDone(k, brand));
+}
+
 // The gate for the Tujuan tab (Konten is open from day one, not gated by
 // this): Brand DNA saved and the visual basics set. Both halves, because
 // "give this brand an identity" is one job.

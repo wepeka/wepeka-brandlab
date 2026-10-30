@@ -6,7 +6,7 @@ import { guideVideoButtonHTML } from "../guide-videos.js";
 import { setPageGuide } from "../section-guide.js";
 import { runSpotlightTour } from "../tour.js";
 import { t } from "../i18n.js";
-import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress } from "../brand-progress.js";
+import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, brandBookMissing } from "../brand-progress.js";
 export { visualBasicsDone } from "../brand-progress.js";
 import { getMode } from "../mode.js";
 import { appByKey } from "../apps.js";
@@ -221,15 +221,18 @@ function dnaCardHTML(brand, current) {
 // Same count as the Brand Book page's own bar and Beranda
 // (brandBookProgress) in both modes. Pemula's "done" is colours + fonts —
 // all My Goals waits for.
+const BOOK_MISSING_TAB = { copy: "color" };
 function bookCardHTML(brand, current, { book, bookDone }) {
+  const [next] = brandBookMissing(brand);
+  const left = next ? t(next === "copy" ? "bg.review.missing.copy.short" : `guidelines.step.${next}`) : "";
   return partCardHTML({
     part: "book",
-    href: `#/brand/${brand.id}/guidelines/color`,
+    href: `#/brand/${brand.id}/guidelines/${next ? BOOK_MISSING_TAB[next] || next : "color"}`,
     step: t("mb.step", { n: 2 }),
     name: "Brand Book",
     sub: t("mb.book.sub"),
     pct: Math.round((book.filled / book.total) * 100),
-    progress: t("builder.progress.stages", { done: book.filled, total: book.total }),
+    progress: t("builder.progress.stages", { done: book.filled, total: book.total }) + (left ? ` · ${t("mb.book.left", { name: left })}` : ""),
     done: bookDone,
     current,
     cta: bookDone ? t("mb.cta.edit") : book.filled ? t("mb.cta.continue") : t("mb.cta.start"),

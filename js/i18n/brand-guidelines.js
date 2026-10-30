@@ -461,6 +461,7 @@ export default {
   "bg.review.sub": { en: "Check everything below (it looks exactly like the PDF), then download it.", id: "Cek semuanya di bawah (persis seperti tampilan PDF-nya), lalu download." },
   "bg.review.titlePending": { en: "{n} of {total} sections still to fill", id: "Tinggal {n} dari {total} bagian lagi" },
   "bg.review.subPending": { en: "What's filled in shows below exactly like the PDF. Still empty:", id: "Yang sudah terisi tampil di bawah persis seperti PDF-nya. Yang masih kosong:" },
+  "bg.review.missing.copy.short": { en: "Colour Essence", id: "Esensi Warna" },
   "bg.review.missing.copy": { en: "Value Proposition & Colour Essence", id: "Value Proposition & Esensi Warna" },
   "bg.review.downloadPdf": { en: "Download PDF", id: "Download PDF" },
   "bg.teamReview.title": { en: "Want the Wepeka team to check it?", id: "Mau dicek tim Wepeka?" },

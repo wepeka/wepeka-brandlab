@@ -102,7 +102,7 @@
 .mb-card .lh-card-name{ font-size:34px; }
 .mb-card .lh-card-sub{ max-width:60%; font-size:14px; }
 .mb-card-progress{ position:relative; z-index:1; display:flex; align-items:center; gap:10px; width:min(60%, 320px); margin-top:auto; padding-top:20px; font-size:12.5px; font-weight:800; }
-.mb-card-progress b{ display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.mb-card-progress b{ display:inline-flex; flex-wrap:wrap; align-items:center; gap:0 4px; line-height:1.3; }
 .mb-bar{ flex:1; height:10px; border-radius:999px; background: rgba(255,255,255,.45); overflow:hidden; }
 .mb-bar i{ display:block; height:100%; border-radius:inherit; background: var(--ink); transition: width .8s cubic-bezier(.22,1,.36,1); }
 .mb-card-cta{ position:relative; z-index:1; display:inline-flex; align-items:center; gap:10px; margin-top:14px; min-height:46px; padding:0 6px 0 18px;
