@@ -2669,6 +2669,10 @@ function emptyContent(brandId) {
     // Raw per-platform numbers behind the combined `performance` total below —
     // kept so a future per-platform breakdown view doesn't need new data.
     performanceByPlatform: { instagram: {}, facebook: {} },
+    // Numbers on a platform it was also ticked as uploaded to in Creator
+    // (uploadedPlatforms), keyed the same: { tiktok: { views, likes, … } }.
+    // `performance` stays the piece's own platform's.
+    crossPostPerformance: {},
     performance: {
       views: null, reach: null, likes: null, comments: null,
       shares: null, saves: null, reposts: null, profileVisits: null, followersGained: null,
@@ -2744,8 +2748,8 @@ export function updateContent(id, patch) {
   const wasPublished = item.status === "published";
   // Numbers count as "typed in" only when they change — a Save that writes
   // the same performance back isn't someone filling numbers.
-  const numbersBefore = JSON.stringify([item.performance || {}, item.performanceByPlatform || {}]);
-  const numbersPatched = hasNumber(patch.performance) || hasNumber(patch.performanceByPlatform);
+  const numbersBefore = JSON.stringify([item.performance || {}, item.performanceByPlatform || {}, item.crossPostPerformance || {}]);
+  const numbersPatched = hasNumber(patch.performance) || hasNumber(patch.performanceByPlatform) || Object.values(patch.crossPostPerformance || {}).some(hasNumber);
   const fields = [...Object.keys(patch), "updatedAt"];
   if (patch.performance) {
     item.performance = { ...item.performance, ...patch.performance };
@@ -2756,7 +2760,7 @@ export function updateContent(id, patch) {
   Object.assign(item, patch, { updatedAt: Date.now() }, by);
   persist(() => updateFields("content", item.id, item, [...fields, ...Object.keys(by)]));
   if (!wasPublished && item.status === "published") emitStep("content_published", { brandId: item.brandId });
-  if (numbersPatched && JSON.stringify([item.performance || {}, item.performanceByPlatform || {}]) !== numbersBefore) emitStep("numbers_logged", { brandId: item.brandId, kind: "content" });
+  if (numbersPatched && JSON.stringify([item.performance || {}, item.performanceByPlatform || {}, item.crossPostPerformance || {}]) !== numbersBefore) emitStep("numbers_logged", { brandId: item.brandId, kind: "content" });
   return item;
 }
 export function archiveContent(id, archived = true) {

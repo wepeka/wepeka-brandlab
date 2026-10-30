@@ -309,7 +309,7 @@ const CORE = {
   "contentList.th.fcr": { en: "Follower conversion", id: "Follower conversion" },
   "contentList.th.fcrHint": { en: "New followers ÷ reach (TikTok, which has no reach: ÷ views).", id: "Followers baru ÷ reach (TikTok yang tidak punya reach: ÷ views)." },
   // Terbit opens on one card per platform (js/views/content-list.js).
-  "contentList.pf.hint": { en: "Where do you want to see your published content?", id: "Mau lihat konten yang sudah tayang di mana?" },
+  "contentList.pf.hint": { en: "Which platform's content do you want to see?", id: "Mau lihat konten di platform mana?" },
   "contentList.pf.countLabel": { en: "published", id: "konten tayang" },
   "contentList.pf.count": { en: "{count} published", id: "{count} konten tayang" },
   "contentList.pf.back": { en: "Pick another platform", id: "Pilih platform lagi" },

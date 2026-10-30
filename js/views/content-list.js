@@ -34,7 +34,7 @@ const VIEWS = [
   { key: "archived", labelKey: "contentList.views.archived", archived: true, test: () => true },
 ];
 
-// Terbit opens on one card per platform before any list (owner,
+// Daftar Konten opens on one card per platform before any list (owner,
 // 2026-10-30): Reels (Instagram and Facebook together — the same reel
 // usually goes to both), TikTok and YouTube always, "Lainnya" only when
 // something went out elsewhere. Platform names are user-editable, so
@@ -47,6 +47,30 @@ const PLATFORM_CARDS = [
   { key: "youtube", name: "YouTube", app: "#FF7A6B", app2: "#D42A2A", art: "youtube", test: (p) => /youtube/i.test(p || "") },
   { key: "other", app: "#F2C46D", app2: "#D9822B", art: "other-platforms", test: (p) => !KNOWN_PLATFORM.test(p || "") },
 ];
+
+// Where a piece went out: its own platform plus every "sudah diupload"
+// tick in Creator (uploadedPlatforms, keyed by platform id) — one reel is
+// often ticked as uploaded to Instagram AND TikTok rather than made into
+// twins. Returns the tick's key when the piece is on this card only
+// through a tick (its numbers there live in crossPostPerformance[key]),
+// "" when it is the piece's own platform, null when it isn't on the card.
+function platformLink(c, card) {
+  const ticks = Object.entries(c.uploadedPlatforms || {}).filter(([, on]) => on).map(([k]) => k);
+  if (card.key === "other") return c.platform && card.test(c.platform) ? "" : null;
+  if (card.test(c.platform)) return "";
+  return ticks.find((k) => card.test(k)) ?? null;
+}
+
+// A piece's numbers on one card: its own platform's in `performance`, a
+// ticked crosspost's in `crossPostPerformance[key]` (empty until filled).
+function onCard(x, card, settings) {
+  const key = platformLink(x.c, card);
+  if (key === null) return null;
+  if (!key) return x;
+  const perf = x.c.crossPostPerformance?.[key] || {};
+  const platform = card.key === "reels" ? (key === "facebook" ? "Facebook" : "Instagram") : card.name;
+  return { ...x, perf, crossKey: key, m: computeContentMetrics({ ...x.c, platform, performance: perf }, settings) };
+}
 
 // Set once the server says it has no AI that can read a picture (api/ai.js
 // "vision"): screenshots go straight to OCR for the rest of this visit.
@@ -116,10 +140,16 @@ function paint(root, brandId, state, refresh) {
 
   items = items.filter((x) => activeView.test(x.c.status));
   const isPublishedView = state.view === "published";
-  const pickPlatform = isPublishedView && !state.pf;
-  const platformCards = isPublishedView ? platformCardData(items) : [];
-  const pfCard = isPublishedView ? PLATFORM_CARDS.find((x) => x.key === state.pf) : null;
-  if (pfCard) items = items.filter((x) => pfCard.test(x.c.platform));
+  const allContentCount = listContent(brandId, { includeArchived: true }).length;
+  // Every tab but Arsip starts on the platform cards (the numbers on them
+  // are always what went out); a brand with no content yet gets the
+  // starter ideas instead.
+  const pickPlatform = !activeView.archived && !state.pf && allContentCount > 0;
+  const platformCards = pickPlatform
+    ? platformCardData(listContent(brandId).filter((c) => !isArchived(c) && c.status === "published").map((c) => ({ c, perf: c.performance, m: computeContentMetrics(c, settings) })), settings)
+    : [];
+  const pfCard = activeView.archived ? null : PLATFORM_CARDS.find((x) => x.key === state.pf) || null;
+  if (pfCard) items = items.map((x) => onCard(x, pfCard, settings)).filter(Boolean);
   // One platform at a time: the Platform/Format column says the same thing
   // on every row, so it makes room for follower conversion.
   const showFcr = !!pfCard;
@@ -140,7 +170,7 @@ function paint(root, brandId, state, refresh) {
     switch (state.sort) {
       case "title": av = a.c.title.toLowerCase(); bv = b.c.title.toLowerCase(); break;
       case "date": av = a.c.scheduleDate || a.c.publishedDate || ""; bv = b.c.scheduleDate || b.c.publishedDate || ""; break;
-      case "views": av = a.perf.views || 0; bv = b.perf.views || 0; break;
+      case "views": av = a.perf?.views || 0; bv = b.perf?.views || 0; break;
       case "er": av = a.m.engagementRate ?? -1; bv = b.m.engagementRate ?? -1; break;
       case "fcr": av = a.m.followerConversionRate ?? -1; bv = b.m.followerConversionRate ?? -1; break;
       default: av = a.c.updatedAt; bv = b.c.updatedAt;
@@ -159,7 +189,6 @@ function paint(root, brandId, state, refresh) {
   const igAllowed = canUseInstagramApi();
   const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
   const igUnavailableNote = t("contentList.connectInEditBrand");
-  const allContentCount = listContent(brandId, { includeArchived: true }).length;
   const staleQueue = listContent(brandId).filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
 
   root.innerHTML = `
@@ -295,10 +324,6 @@ function paint(root, brandId, state, refresh) {
   );
   qsa("[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (state.view !== btn.dataset.view) {
-        state.pf = "";
-        state.pfAnimate = true;
-      }
       state.view = btn.dataset.view;
       paint(root, brandId, state, refresh);
     });
@@ -363,7 +388,7 @@ function paint(root, brandId, state, refresh) {
         // Once a piece is published there's nothing left to write — the one
         // thing someone clicking it almost always wants is to fill in how it
         // performed. Metadata is one click away via the row's "..." menu.
-        openQuickFillModal({ c: item, onSaved: refresh });
+        openQuickFillModal({ c: item, platformKey: items.find((x) => x.c.id === tr.dataset.id)?.crossKey, onSaved: refresh });
       } else if (item.status !== "archived") {
         // Still-in-progress content is written and moved forward in Creator.
         location.hash = `#/brand/${brandId}/content/creator/${tr.dataset.id}`;
@@ -382,8 +407,8 @@ function paint(root, brandId, state, refresh) {
   qsa("[data-quick-fill]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const c = items.find((x) => x.c.id === btn.dataset.quickFill)?.c;
-      if (c) openQuickFillModal({ c, onSaved: refresh });
+      const x = items.find((it) => it.c.id === btn.dataset.quickFill);
+      if (x) openQuickFillModal({ c: x.c, platformKey: x.crossKey, onSaved: refresh });
     });
   });
 
@@ -483,19 +508,19 @@ function sampleContentIdeas(brand) {
 
 // markPlatform: the Reels list holds Instagram and Facebook together, so
 // each title carries its platform's icon.
-function rowHTML({ c, perf, m }, campaignsById, showFcr, markPlatform) {
+function rowHTML({ c, perf, m, crossKey }, campaignsById, showFcr, markPlatform) {
   // Views/Engagement only mean anything once something has actually been
   // posted — showing them for an idea or draft implies data that isn't there.
   const isPublished = c.status === "published";
   const campaign = c.campaignId ? campaignsById.get(c.campaignId) : null;
   return `
     <tr data-id="${c.id}" role="row">
-      <td class="cell-title">${markPlatform ? `<span class="platform-pill" title="${escapeText(c.platform || "")}" style="margin-right:6px;vertical-align:-2px;">${platformIcon(c.platform)}</span>` : ""}${escapeText(c.title || t("common.untitled"))}${isPublished && m.erRating === "excellent" ? `<span class="er-flame" role="img" title="${escapeText(t("contentList.erExcellentMark"))}" aria-label="${escapeText(t("contentList.erExcellentMark"))}">${icon("flame", { size: 13 })}</span>` : ""}</td>
+      <td class="cell-title">${markPlatform ? `<span class="platform-pill" title="${escapeText(crossKey || c.platform || "")}" style="margin-right:6px;vertical-align:-2px;">${platformIcon(crossKey || c.platform)}</span>` : ""}${escapeText(c.title || t("common.untitled"))}${isPublished && m.erRating === "excellent" ? `<span class="er-flame" role="img" title="${escapeText(t("contentList.erExcellentMark"))}" aria-label="${escapeText(t("contentList.erExcellentMark"))}">${icon("flame", { size: 13 })}</span>` : ""}</td>
       ${showFcr ? fcrCellHTML(c, m) : `<td class="cell-muted" data-label="${escapeText(t("contentList.th.platformFormat"))}"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span><div class="text-faint" style="font-size:11.5px;margin-top:2px;">${escapeText(c.format || "—")}</div></td>`}
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.campaign"))}">${campaign ? `<span class="tag" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeText(campaignDisplayName(campaign.name) || t("common.untitled"))}</span>` : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.status"))}"><span class="status-pill status-${escapeText(c.status)}"><span class="status-dot"></span>${escapeText(STATUS_LABELS[c.status] || c.status)}</span></td>
       <td class="cell-muted" data-label="${escapeText(t("contentList.th.date"))}">${formatDate(c.scheduleDate || c.publishedDate)}</td>
-      <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf.views) : "—"}</td>
+      <td class="cell-muted" data-label="${escapeText(t("contentList.th.views"))}">${isPublished ? formatNumber(perf?.views) : "—"}</td>
       <td data-label="${escapeText(t("contentList.th.engagement"))}">${isPublished && m.health ? `<span class="health-badge health-${m.health}" title="${escapeText(HEALTH_LABEL[m.health])}">${m.health === "excellent" ? icon("flame", { size: 13 }) : `<span class="health-dot"></span>`}${formatPercent(m.engagementRate)}</span>` : `<span class="cell-muted">${isPublished ? formatPercent(m.engagementRate) : "—"}</span>`}</td>
       <td data-row-actions>
         <div class="flex gap-4">
@@ -518,9 +543,9 @@ function fcrCellHTML(c, m) {
 
 // The numbers on each platform card: what went out there, its views and
 // its average engagement. "Lainnya" drops out when nothing went elsewhere.
-function platformCardData(published) {
+function platformCardData(published, settings) {
   return PLATFORM_CARDS.map((card) => {
-    const list = published.filter((x) => card.test(x.c.platform));
+    const list = published.map((x) => onCard(x, card, settings)).filter(Boolean);
     const ers = list.map((x) => x.m.engagementRate).filter((v) => v !== null && v !== undefined);
     const names = [...new Set(list.map((x) => x.c.platform).filter(Boolean))];
     return {
@@ -654,8 +679,14 @@ function retentionSectionHTML(ret) {
     </div>`;
 }
 
-export function openQuickFillModal({ c, onSaved, onBack }) {
-  const perf = c.performance || {};
+// platformKey: fill a crosspost's numbers — a platform ticked as uploaded
+// in Creator that isn't the piece's own (TikTok on an Instagram reel, say).
+// Those live in crossPostPerformance[platformKey]; `performance` stays the
+// piece's own platform's.
+export function openQuickFillModal({ c, onSaved, onBack, platformKey = "" }) {
+  const perf = (platformKey ? c.crossPostPerformance?.[platformKey] : c.performance) || {};
+  const shownPlatform = platformKey ? (platformKey === "tiktok" ? "TikTok" : platformKey.charAt(0).toUpperCase() + platformKey.slice(1)) : c.platform;
+  const metricsOf = (performance) => computeContentMetrics({ ...c, platform: shownPlatform, performance }, getSettings());
   const isPro = getMode() === "advanced";
   const savedRet = normalizeRetention(perf.retention || {});
   // The curve read off a graph screenshot (not editable by hand) rides
@@ -668,7 +699,7 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     bodyHTML: `
       <div style="margin-bottom:14px;">
         <div style="font-weight:700;font-size:14px;">${escapeText(c.title || t("common.untitled"))}</div>
-        <div class="text-faint" style="font-size:12px;"><span class="platform-pill">${platformIcon(c.platform)} ${escapeText(c.platform || "—")}</span> · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}</div>
+        <div class="text-faint" style="font-size:12px;"><span class="platform-pill">${platformIcon(platformKey || c.platform)} ${escapeText(shownPlatform || "—")}</span> · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}</div>
       </div>
       <div class="field">
         <label>${t("contentList.qf.screenshotLabel")}</label>
@@ -735,7 +766,7 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
       a.avgWatchPct !== null ? chip("watch", formatPercent(a.avgWatchPct, 0), a.ratings.watch) : "",
       a.completionPct !== null ? chip("completion", formatPercent(a.completionPct, 0), a.ratings.completion) : "",
     ].filter(Boolean).join("");
-    const lines = retentionVerdict(a, computeContentMetrics({ ...c, performance: readPerformance() }, getSettings()));
+    const lines = retentionVerdict(a, metricsOf(readPerformance()));
     box.innerHTML = `<div class="qe-ret-chips">${chips}</div>${lines.map((l) => `<p>${escapeText(l)}</p>`).join("")}`;
   };
   RET_INPUTS.forEach((k) => retInput(k)?.addEventListener("input", renderVerdict));
@@ -812,11 +843,10 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     onBack();
   });
   qs("#qe-save", overlay).addEventListener("click", () => {
-    const settings = getSettings();
     // #12: an ad-hoc "big win" celebration when this save is what pushes
     // the content's ER rating into "good" (or past 10% into "excellent") —
     // compare before/after so a re-save doesn't celebrate every time.
-    const before = computeContentMetrics(c, settings).erRating;
+    const before = metricsOf(perf).erRating;
     const performance = readPerformance();
     if (isPro) {
       const raw = readRetention();
@@ -826,10 +856,10 @@ export function openQuickFillModal({ c, onSaved, onBack }) {
     // Only a save with real numbers counts as a check — an empty form keeps
     // the post in the queue instead of silently marking it done.
     if (performanceHasNumbers(performance)) performance.confirmedAt = Date.now();
-    updateContent(c.id, { performance });
+    updateContent(c.id, platformKey ? { crossPostPerformance: { ...(c.crossPostPerformance || {}), [platformKey]: performance } } : { performance });
     closeOverlay(overlay);
     toast(t("contentList.qf.updatedToast", { title: c.title || t("common.untitled") }));
-    const updated = computeContentMetrics({ ...c, performance }, settings);
+    const updated = metricsOf(performance);
     if (updated.erRating === "excellent" && before !== "excellent") {
       toast(t("celebrate.erExcellentTitle"));
     } else if (!isHealthy(before) && updated.erRating === "good") {
