@@ -248,7 +248,7 @@ describe("Beranda renders the new shape", () => {
     const r = root();
     render(r, { brandId: b.id })?.();
     const html = r.innerHTML;
-    assert.deepEqual(APPS.map((a) => a.key), ["builder", "campaigns", "content-os", "report", "papan", "deck"]);
+    assert.deepEqual(APPS.map((a) => a.key), ["builder", "campaigns", "content-os", "report", "papan", "sales", "deck"]);
     for (const a of APPS) assert.ok(html.includes(`data-app="${a.key}"`), a.key);
     assert.ok(html.includes('id="journey-hero"'), "today's step");
     assert.ok(!html.includes('id="home-week"') && !html.includes("home-more") && !html.includes("recent-strip"), "no dashboard widgets");

@@ -22,6 +22,7 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML, videoRefForGuide, canShowVideo, guideVideosReady } from "../guide-videos.js";
 import { APPS, appByKey, DECK_SLIDE_COUNT } from "../apps.js";
 import { appIconSVG } from "../app-icons.js";
+import { getTracker, periodSummary, periodRange } from "../sales-tracker.js";
 import { getUserFirstName } from "../auth.js";
 import { computeSignals, topSignal, greetingKey } from "../brand-pulse.js";
 import { openBrandMemoryModal, savedMoments, momentKindLabel, unrecappedMessages } from "../brand-memory.js";
@@ -1353,6 +1354,12 @@ function appStatus(app, { brand, campaigns, content, journey, locked, reportIsDu
     if (reportIsDue) return { text: t("lh.status.reportReady"), tone: "good" };
     if (week) return { text: t("lh.status.reportWeek", { n: week }), tone: "" };
     return { text: t("lh.status.reportNone"), tone: "" };
+  }
+  if (app.key === "sales") {
+    const tracker = getTracker(brand);
+    if (!tracker.products.length) return { text: t("lh.status.salesNone"), tone: "" };
+    const month = tracker.loading ? null : periodSummary(tracker, periodRange("month", now));
+    return month?.count ? { text: t("lh.status.salesMonth", { amount: `Rp ${formatNumber(month.revenue)}` }), tone: "good" } : { text: t("lh.status.salesLog"), tone: "" };
   }
   if (app.key === "deck") return { text: t("lh.status.deck", { n: DECK_SLIDE_COUNT }), tone: "" };
   return { text: t("lh.status.boardNone"), tone: "" };

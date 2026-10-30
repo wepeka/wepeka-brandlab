@@ -6,6 +6,8 @@
 // kartunya", with an animation on hover). Colours and motion live in
 // css/styles.css (.lh-card-art): `i-main` = the tint, `i-ink` = the shade,
 // the other classes are the parts that move.
+import { salesArtSVG } from "./sales-art.js";
+
 function seal() {
   // A scalloped badge: twelve bumps round a disc, a star in the middle.
   const bumps = Array.from({ length: 12 }, (_, i) => {
@@ -81,6 +83,7 @@ const DRAW = {
 };
 
 export function appIconSVG(appKey) {
+  if (appKey === "sales") return salesArtSVG("app");
   const draw = DRAW[appKey];
   return draw ? `<svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">${draw()}</svg>` : "";
 }

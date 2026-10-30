@@ -2048,21 +2048,24 @@ export async function suggestSalesActions(ai, { brand, snapshotText, campaigns =
     buildFullContext(brand, { campaigns, pulseText }),
     MARKETING_FRAMEWORKS_CONTEXT,
     NATURAL_WRITING_CONTEXT,
-    "Rules about numbers (strict): use ONLY the figures in the sales data the user sends. Never invent or estimate a number that isn't there — no conversion rates, no ROAS/CPC/CPM/CPA, no ad spend, no market size, no competitor figures. This business has no ads or traffic data at all, so never assume any. When you cite a number, cite it exactly as given.",
-    "Rules about certainty: the data shows WHAT is happening, not WHY. Phrase causes as possibilities worth checking, never as facts. If the log is too thin to say anything specific (e.g. fewer than ~5 logged sales), say so plainly in the summary and make the actions about getting the first sales and logging them — do not pretend to see a pattern.",
-    "Give exactly 3 actions the owner can start THIS WEEK without a budget for ads, ordered by likely impact. Each must point at something specific in the data (a product that's selling, one that has gone quiet, a weekly dip, repeat buyers, referrals) and be concrete enough to act on today. No generic advice like 'improve your marketing'.",
-    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the numbers show","actions":[{"title":"short imperative","why":"which number this comes from","how":"2-3 concrete steps in one short paragraph"}]}',
+    "Rules about numbers (strict): use ONLY the figures in the sales data the user sends. Never invent or estimate a number that isn't there — no conversion rates, no CPC/CPM/CPA, no market size, no competitor figures, no ad spend or costs the owner didn't log. The data may include sales channels (how buyers came: ads, social, whatsapp, event = fairs/bazaars, store, marketplace, website, referral, reseller, other), logged expenses, and for a channel with logged spending a ready-made 'revenue per Rp 1 spent' figure — you may cite those exactly as given, but never compute new ratios yourself. A channel with no logged spending has NO known cost: don't call it free or cheap. Channel and source tags are the owner's own picks, so they are minimums, not the full picture.",
+    "Rules about certainty: the data shows WHAT is happening, not WHY. Phrase causes as possibilities worth checking, never as facts. If the log is too thin to say anything specific (e.g. fewer than ~5 logged sales), say so plainly in the summary and make the strategy and actions about getting the first sales from the channel that fits this business best and logging where each buyer came from — do not pretend to see a pattern.",
+    "Fit the BUSINESS STYLE: read the brand context above (what it sells, price level, who the audience is, the brand's character and tone, product vs service, online vs offline) and the channels that actually bring buyers. A cosy local café, a premium B2B service and a Gen-Z apparel drop need different moves — say things the way this brand would, and never suggest a channel or tactic that clashes with its character or price level.",
+    "`strategy`: the marketing approach for the next 2-4 weeks in 2-3 sentences — which channel to lean on (or test), why it fits this business and its numbers, and how this brand should show up there. `focus`: that main channel in 2-5 words.",
+    "`actions`: exactly 3 moves the owner can start THIS WEEK, ordered by likely impact, each serving the strategy. Each must point at something specific in the data (a channel that sells or one whose spending doesn't come back, a product that's selling or gone quiet, a weekly dip, repeat buyers, referrals) and be concrete enough to act on today. Paid ads only if the business already logs ad spending, or as a small, clearly-bounded test when the organic channels are clearly working. No generic advice like 'improve your marketing'. The owner decides — offer, don't order.",
+    'Respond ONLY with valid JSON, no markdown fences, exactly this shape: {"summary":"2-3 sentences on what the numbers show","strategy":{"focus":"main channel, 2-5 words","text":"2-3 sentences"},"actions":[{"title":"short imperative","why":"which number this comes from","how":"2-3 concrete steps in one short paragraph"}]}',
   ]
     .filter(Boolean)
     .join("\n\n");
-  const raw = await callModel(ai, system, `Sales data:\n${snapshotText}`, 1400, { countUsage: !free, json: true, feature: "sales" });
+  const raw = await callModel(ai, system, `Sales data:\n${snapshotText}`, 1700, { countUsage: !free, json: true, feature: "sales" });
   const parsed = parseJsonObject(raw);
   const actions = (parsed?.actions || [])
     .map((a) => ({ title: String(a?.title || "").trim(), why: String(a?.why || "").trim(), how: String(a?.how || "").trim() }))
     .filter((a) => a.title)
     .slice(0, 3);
   if (!actions.length) throw new AiApiError(t("ai.error.unreadable"));
-  return { summary: String(parsed.summary || "").trim(), actions };
+  const strategy = { focus: String(parsed?.strategy?.focus || "").trim().slice(0, 60), text: String(parsed?.strategy?.text || "").trim() };
+  return { summary: String(parsed.summary || "").trim(), ...(strategy.text ? { strategy } : {}), actions };
 }
 
 // The brand report's "Saran AI" (js/views/report.js): what the period's

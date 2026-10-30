@@ -10,6 +10,11 @@ export default {
   "app.create.sub": { en: "Write, schedule, publish", id: "Tulis, jadwalkan, upload" },
   "app.report.name": { en: "Report", id: "Report" },
   "app.report.sub": { en: "Results & PDF", id: "Hasil konten & PDF" },
+  "app.sales.name": { en: "Sales", id: "Sales" },
+  "app.sales.sub": { en: "Money in & out, where buyers come from", id: "Uang masuk & keluar, pembeli dari mana" },
+  "lh.status.salesNone": { en: "Add what you sell", id: "Tambah produk yang kamu jual" },
+  "lh.status.salesLog": { en: "Log today's sales", id: "Catat penjualan hari ini" },
+  "lh.status.salesMonth": { en: "{amount} this month", id: "{amount} bulan ini" },
   "app.board.name": { en: "Board", id: "Board" },
   "app.board.sub": { en: "Ideas with your team", id: "Corat-coret ide bareng tim" },
 

@@ -35,7 +35,7 @@ import { startCampaignDetailGuide } from "../guides/campaign-guide.js";
 import { getMode } from "../mode.js";
 import { isTourDemo, DEMO_TOAST } from "../tour-demo.js";
 import { STATUS_LABELS_GUIDED, funnelShort } from "../funnel-field.js";
-import { t, campaignDisplayName } from "../i18n.js";
+import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { attachMic } from "../voice-input.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import { eventTabsHTML, goalForCampaign } from "../event-tabs.js";
@@ -187,6 +187,7 @@ export function paintDetail(root, brandId, brand, campaign, state, refresh, { op
       refresh();
     })
   );
+  qs("[data-gd-log-sale]", root)?.addEventListener("click", () => go(`#/brand/${brandId}/sales`, { fromLabel: campaignDisplayName(campaign.name), campaignId: campaign.id, intent: "log-sale" }));
   qs("#cd-more", root)?.addEventListener("click", (e) => openMoreMenu(e.currentTarget, { brandId, brand, campaign, stage, stages, ctx, refresh, state, guided, openEdit }));
   qs("#cd-add-milestone", root)?.addEventListener("click", async () => {
     const isNumber = await confirmDialog({ title: t("camp.detail.addMilestone"), message: t("camp.detail.addMilestoneKindQ"), confirmLabel: t("camp.detail.addNumber"), cancelLabel: t("camp.detail.addCheck") });
@@ -678,11 +679,40 @@ function guidedPageHTML({ brandId, campaign, stages, autoIndex, state, stageRead
       </div>
       ${eventTabsHTML(brandId, goal, campaign.id)}
       ${guidedHeroHTML({ campaign, stages, autoIndex, ctx, kind })}
+      ${guidedMoneyHTML(brandId, campaign)}
       ${celebrate}
       ${perfSectionHTML({ campaign, stages, state, stageRead, autoIndex, ctx })}
       ${playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kind })}
       ${todoSectionHTML({ campaign, todo, state, guided: true })}
     </div>`;
+}
+
+// ---------- Money linked to this goal / event (Sales app) ----------
+// Pemula's page: one card with what the sales linked to this event or goal
+// brought in (from any channel — an ad, a post, the fair itself) and what was
+// logged as spent for it, plus "Catat penjualan" opening the Sales wizard
+// with this goal already picked. Only once something is linked, or for an
+// event (where selling on the day is the point).
+function guidedMoneyHTML(brandId, campaign) {
+  const brand = getBrand(brandId);
+  const s = campaign.eventPlan ? eventSalesStats(brand, campaign.id) : campaignSalesStats(brand, campaign.id);
+  if (!s.count && !s.spend && !campaign.eventPlan) return "";
+  const rp = (n) => `Rp ${formatNumber(Math.round(n))}`;
+  const per = s.spend ? (Math.round((s.revenue / s.spend) * 10) / 10).toLocaleString(getLang() === "en" ? "en-US" : "id-ID") : null;
+  return `
+    <section class="gd-sec gd-money">
+      <div class="gd-money-card">
+        <div class="gd-money-nums">
+          <span><small>${t("gd.money.in")}</small><b class="is-in">${rp(s.revenue)}</b><em>${t("gd.money.count", { count: s.count })}</em></span>
+          <span><small>${t("gd.money.out")}</small><b class="is-out">${rp(s.spend)}</b><em>${per ? t("gd.money.back", { per }) : t("gd.money.noSpend")}</em></span>
+        </div>
+        <div class="gd-money-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-gd-log-sale>${icon("plus", { size: 13 })}${t("gd.money.log")}</button>
+          <a class="btn btn-ghost btn-sm" href="#/brand/${brandId}/sales">${t("gd.money.open")}${icon("arrowRight", { size: 13 })}</a>
+        </div>
+      </div>
+      <p class="gd-sec-note">${t(campaign.eventPlan ? "gd.money.noteEvent" : "gd.money.note")}</p>
+    </section>`;
 }
 
 // ---------- "Cara mencapainya": what to DO for the target (js/goal-playbook.js) ----------
@@ -1085,6 +1115,7 @@ function eventSalesWidgetHTML(brandId, campaign, brand) {
             </div>`).join("")}</div>
            <div class="cd-sales-total"><span>${t("camp.eventSales.total")}</span><b>${formatNumber(stats.qty)}</b></div>`
         : `<p class="text-muted" style="font-size:13px;margin:0 0 10px;">${t("camp.eventSales.empty")}</p>`}
+      ${moneyLineHTML(stats)}
       <a class="btn btn-secondary btn-sm" href="#/brand/${brandId}/sales" style="margin-top:12px;">${icon("arrowRight", { size: 13 })}${t("camp.eventSales.openTracker")}</a>
     `, { sub: t("camp.eventSales.sub") });
 }
@@ -1096,8 +1127,17 @@ function eventSalesWidgetHTML(brandId, campaign, brand) {
 function sourceSalesHTML(brandId, campaign, brand) {
   if (campaign.eventPlan) return "";
   const s = campaignSalesStats(brand, campaign.id);
-  if (!s.count) return "";
-  return `<a class="card glass-card card-tight st-campaign cd-source-sales" href="#/brand/${brandId}/sales">${icon("target", { size: 16 })}<span>${t("sales.source.campaignLine", { qty: formatNumber(s.qty), revenue: `Rp ${formatNumber(Math.round(s.revenue))}`, count: s.count })}</span>${icon("arrowRight", { size: 14 })}</a>`;
+  if (!s.count && !s.spend) return "";
+  const spend = s.spend ? ` · ${t("sales.source.spendPart", { spend: `Rp ${formatNumber(Math.round(s.spend))}`, per: (Math.round((s.revenue / s.spend) * 10) / 10).toLocaleString(getLang() === "en" ? "en-US" : "id-ID") })}` : "";
+  return `<a class="card glass-card card-tight st-campaign cd-source-sales" href="#/brand/${brandId}/sales">${icon("target", { size: 16 })}<span>${t("sales.source.campaignLine", { qty: formatNumber(s.qty), revenue: `Rp ${formatNumber(Math.round(s.revenue))}`, count: s.count })}${spend}</span>${icon("arrowRight", { size: 14 })}</a>`;
+}
+// Under an event's sales: the money it brought in, what was logged as spent
+// FOR it (booth fee, ads…, linked in the Sales app) and how much came back.
+function moneyLineHTML(stats) {
+  if (!stats.revenue && !stats.spend) return "";
+  const rp = (n) => `Rp ${formatNumber(Math.round(n))}`;
+  const per = stats.spend ? (Math.round((stats.revenue / stats.spend) * 10) / 10).toLocaleString(getLang() === "en" ? "en-US" : "id-ID") : null;
+  return `<p class="cd-sales-money">${t("camp.eventSales.money", { revenue: rp(stats.revenue) })}${stats.spend ? ` · ${t("camp.eventSales.spend", { spend: rp(stats.spend), per })}` : ""}</p>`;
 }
 
 // ---------- Ide Campaign (bubble idea board) ----------
