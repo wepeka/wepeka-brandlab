@@ -169,7 +169,24 @@ export function playView(play) {
   return { id: play.k, type: play.ty, icon: play.ic, title: v.t, why: v.w, steps: v.s };
 }
 
-export const findPlay = (id) => playView(PLAYS[id]);
+// Plays the AI wrote for this brand ("Bikin ide baru"): kept for the session so
+// Jalankan / Simpan can find them by id like a fixed play. Saved ones keep
+// their steps on the idea itself, so nothing here has to outlive a reload.
+const MADE = new Map();
+export function addMadePlays(list = []) {
+  return list.map((m, n) => {
+    const title = String(m.title || "").trim();
+    const steps = (m.steps || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 3);
+    if (!title || steps.length < 2) return null;
+    let h = 0;
+    for (const ch of title + steps.join("|")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const v = { id: `ai-${h.toString(36)}-${n}`, type: ["content", "campaign", "event"].includes(m.type) ? m.type : "campaign", icon: "sparkle", title, why: String(m.why || "").trim(), steps, made: true };
+    MADE.set(v.id, v);
+    return v;
+  }).filter(Boolean);
+}
+
+export const findPlay = (id) => MADE.get(id) || playView(PLAYS[id]);
 export const groupLabel = (id) => (GROUPS[id] ? (getLang() === "en" ? GROUPS[id].en : GROUPS[id].short) : "");
 export const playsOfGroup = (id) => (GROUPS[id]?.plays || []).map((k) => playView(PLAYS[k])).filter(Boolean);
 

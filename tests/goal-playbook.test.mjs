@@ -81,3 +81,17 @@ describe("what to do on the tree card", () => {
     assert.equal(whatToDo("social", "nope"), "");
   });
 });
+
+describe("AI-made plays", () => {
+  test("addMadePlays registers plays that findPlay can resolve and drops broken ones", async () => {
+    const { addMadePlays } = await import("../js/goal-playbook.js");
+    const out = addMadePlays([
+      { title: "Challenge foto kopi pagi", why: "Member punya alasan balik.", steps: ["Tentukan tema", "Ajak posting", "Repost terbaik"], type: "campaign" },
+      { title: "", steps: ["a", "b", "c"] },
+      { title: "Kurang langkah", steps: ["cuma satu"] },
+    ]);
+    assert.equal(out.length, 1);
+    assert.equal(findPlay(out[0].id).title, "Challenge foto kopi pagi");
+    assert.equal(findPlay(out[0].id).steps.length, 3);
+  });
+});

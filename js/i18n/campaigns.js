@@ -1718,6 +1718,8 @@ export default {
   "pb.runToast": { en: "{n} steps added to \"To do\"", id: "{n} langkah masuk ke \"Yang perlu dikerjakan\"" },
   "pb.foot": { en: "None fit?", id: "Belum ada yang cocok?" },
   "pb.another": { en: "Show other ideas", id: "Tampilkan ide lain" },
+  "pb.ai": { en: "Make new ideas with AI (1 credit)", id: "Bikin ide baru dengan AI (1 credit)" },
+  "pb.thinking": { en: "Thinking up ideas… (±15 s)", id: "Lagi mikirin ide… (±15 detik)" },
   "pb.or": { en: " ·", id: " ·" },
   "pb.more": { en: "Talk ideas over with Wepeka", id: "Diskusi ide di chat Wepeka" },
   "pb.allTargets": { en: "All targets & numbers", id: "Semua target & angka" },

@@ -1497,6 +1497,37 @@ export async function generateIdeaBubbles(ai, { brand, campaign, track, existing
   };
 }
 
+// "Cara mencapainya" → "Bikin ide baru": once the fixed plays for a target have
+// all been shown, two fresh ones written for THIS brand and THIS target. Same
+// shape as a fixed play (title, why, three plain steps) so Jalankan / Simpan
+// treat them alike. One charged call per press.
+export async function generatePlayIdeas(ai, { brand, campaign, track, targetLine = "", avoid = [], pulseText = "" }) {
+  const kindLine = {
+    social: "The goal is growing a social media account.",
+    community: "The goal is growing an active community around the brand.",
+    sales: "The goal is selling more. Never suggest paid ads or anything needing ad spend.",
+    event: "The goal is promoting and running an event.",
+  }[track] || "The goal is moving the campaign forward.";
+  const system = [
+    `You write NEW "how to reach this target" plays for a brand owner who is a beginner. ${kindLine}`,
+    buildBrandContext(brand),
+    pulseText || "",
+    NATURAL_WRITING_CONTEXT,
+    campaignSummaryLine(campaign, brand),
+    targetLine ? `The target to push right now: ${targetLine}` : "",
+    avoid.length ? `Plays already shown (do NOT repeat or reword these):\n${avoid.map((a) => `- ${a}`).join("\n")}` : "",
+    "Write 2 NEW plays. Each play is ONE concrete marketing move the owner can start this week with what they already have, fitted to this brand (not generic advice). Fields: title = under 8 words; why = ONE short sentence on why it moves the target; steps = EXACTLY 3 plain steps, each under 16 words, starting with a verb; type = \"content\" (one piece of content), \"campaign\" (a small run of steps) or \"event\".",
+    outputLanguageRule({ brand }),
+    'Respond ONLY with valid JSON, no markdown fences: {"plays": [{"title": "...", "why": "...", "steps": ["...", "...", "..."], "type": "campaign"}, ...]}',
+  ].filter(Boolean).join("\n\n");
+  const raw = await callModel(ai, system, "Write the plays now.", 1200, { json: true, feature: "campaign" });
+  const parsed = parseJsonObject(raw);
+  if (!parsed) throw new AiApiError(t("ai.error.readIdeas"));
+  const plays = (parsed.plays || []).filter((x) => x && x.title && Array.isArray(x.steps) && x.steps.length >= 2).slice(0, 2);
+  if (!plays.length) throw new AiApiError(t("ai.error.readIdeas"));
+  return { plays };
+}
+
 // Papan (js/papan/bridge.js → the canvas in papan/src): the board's AI
 // buttons — ideas, rewrite, themes, meeting recap wording, brand check,
 // campaign draft, slide polish. The canvas writes the whole request (it knows

@@ -22,7 +22,7 @@ import { go } from "../nav-context.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay, confirmDialog, promptDialog } from "../modals.js";
 import { toast, formatNumber, formatDate, qs, qsa, openMenu, closeMenu, escapeHtml as esc, emptyInlineHTML, loadingHTML } from "../dom.js";
-import { generateCampaignPlaybook, generateIdeaBubbles, generateCampaignContentPlan, AiApiError, hasAiKey } from "../ai.js";
+import { generateCampaignPlaybook, generateIdeaBubbles, generatePlayIdeas, generateCampaignContentPlan, AiApiError, hasAiKey } from "../ai.js";
 import { staleBecause, mayAutoRefresh, refreshStamp } from "../ai-autorefresh.js";
 import { postingLine, bestPostsLine } from "../brand-learning.js";
 import { pulseTextFor } from "../brand-pulse.js";
@@ -44,7 +44,7 @@ import { goalArtSVG, goalKindByKey } from "../goal-art.js";
 import { goalTreeSVG, wireGoalTree } from "../goal-tree.js";
 import { addGoalTask, goalTaskPlaces, addGoalRoutine, toggleGoalRoutineWeek, removeGoalRoutine } from "../goal-actions.js";
 import { draftFromIdea } from "../idea-draft.js";
-import { openGroups, playsPage, playsOfGroup, groupLabel, findPlay, whatToDo } from "../goal-playbook.js";
+import { openGroups, playsPage, playsOfGroup, groupLabel, findPlay, whatToDo, addMadePlays } from "../goal-playbook.js";
 import { openGoalIdeasChat } from "../consultant-panel.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
 import { aiReportButtonHTML } from "../ai-report.js";
@@ -727,8 +727,15 @@ function playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kin
   const opts = openGroups(kind.key, read.readings);
   const cur = opts.find((o) => o.group === state.pbGroup) || opts[0];
   state.pbRound = state.pbRound || {};
-  const { plays, pages } = playsPage(kind.key, cur.group, state.pbRound[cur.group] || 0);
+  const round = state.pbRound[cur.group] || 0;
+  const page = playsPage(kind.key, cur.group, round);
+  const { pages } = page;
+  // Past the last fixed page the cards are the AI's own, written for this brand.
+  const made = state.pbMade?.[cur.group] || [];
+  const showMade = round >= pages && made.length > 0;
+  const plays = showMade ? made : page.plays;
   if (!plays.length) return "";
+  const lastFixed = round >= pages - 1;
   const mine = new Map(listBrandIdeas(brandId, { campaignId: campaign.id }).filter((i) => i.playId).map((i) => [i.playId, i]));
   const r = cur.reading;
   const left = r && r.target && !r.isCheck && r.current < r.target ? ` · ${esc(t("camp.detail.remaining", { count: formatNumber(r.target - r.current), unit: r.unit }))}` : "";
@@ -762,7 +769,9 @@ function playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kin
       <p class="gd-play-lead">${lead}</p>
       ${chips}
       <div class="gd-plays">${plays.map(card).join("")}</div>
-      <p class="gd-play-foot">${t("pb.foot")} ${pages > 1 ? `<button type="button" class="gd-play-link" data-gd-pb-more="${cur.group}">${icon("refresh", { size: 13 })}${t("pb.another")}</button>${t("pb.or")} ` : ""}<button type="button" class="gd-play-link" data-gd-ideas>${icon("bulb", { size: 13 })}${t("pb.more")}</button></p>
+      <p class="gd-play-foot">${t("pb.foot")} ${lastFixed
+        ? `<button type="button" class="gd-play-link" data-gd-pb-ai="${cur.group}"${state.pbBusy ? " disabled" : ""}>${icon("sparkle", { size: 13 })}${state.pbBusy ? t("pb.thinking") : t("pb.ai")}</button>`
+        : `<button type="button" class="gd-play-link" data-gd-pb-more="${cur.group}">${icon("refresh", { size: 13 })}${t("pb.another")}</button>`}${t("pb.or")} <button type="button" class="gd-play-link" data-gd-ideas>${icon("bulb", { size: 13 })}${t("pb.more")}</button></p>
     </section>`;
 }
 
@@ -867,6 +876,33 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
     else openGoalTaskDialog({ campaign, onDone: refresh });
   }));
   qsa("[data-gd-pb-more]", root).forEach((b) => b.addEventListener("click", () => { state.pbRound = state.pbRound || {}; state.pbRound[b.dataset.gdPbMore] = (state.pbRound[b.dataset.gdPbMore] || 0) + 1; refresh(); }));
+  qsa("[data-gd-pb-ai]", root).forEach((b) => b.addEventListener("click", async () => {
+    if (isTourDemo()) return toast(DEMO_TOAST);
+    const group = b.dataset.gdPbAi;
+    const ai = getSettings().ai || {};
+    if (!hasAiKey(ai)) return toast(t("camp.bs.noKey"), "error");
+    state.pbBusy = true;
+    refresh();
+    try {
+      const reading = openGroups(kindOf(campaign).key, readStage(stage, ctx).readings).find((o) => o.group === group)?.reading;
+      const shown = [...playsPage(kindOf(campaign).key, group, 0).plays, ...(state.pbMade?.[group] || [])];
+      const pulseText = pulseTextFor(brand, { content: listContent(brand.id), campaigns: listCampaigns(brand.id), settings: getSettings() });
+      const { plays } = await generatePlayIdeas(ai, {
+        brand, campaign, track: campaign.eventPlan ? "event" : campaign.goalPlan?.track, pulseText,
+        targetLine: reading ? `${reading.milestone.label}${reading.target && !reading.isCheck ? ` (${reading.current} / ${reading.target})` : ""}` : groupLabel(group),
+        avoid: [...new Set([...shown.map((p) => p.title), ...listBrandIdeas(brand.id, { campaignId: campaign.id }).map((i) => i.text)])],
+      });
+      state.pbMade = state.pbMade || {};
+      state.pbMade[group] = addMadePlays(plays);
+      state.pbRound = state.pbRound || {};
+      state.pbRound[group] = 999; // past the fixed pages → show the AI cards
+    } catch (e) {
+      toast(e instanceof AiApiError ? e.message : t("camp.aiFailed"), "error");
+    } finally {
+      state.pbBusy = false;
+      refresh();
+    }
+  }));
   qsa("[data-gd-pb]", root).forEach((b) => b.addEventListener("click", () => { state.pbGroup = b.dataset.gdPb; refresh(); }));
   qsa("[data-gd-play-save]", root).forEach((b) => b.addEventListener("click", () => {
     if (isTourDemo()) return toast(DEMO_TOAST);
