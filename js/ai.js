@@ -1055,7 +1055,7 @@ function brandGuidelinesContextLines(brand) {
 // for AI features (e.g. suggestCampaignFit below), not something the AI is
 // meant to cite or name-drop back at the user.
 export const MARKETING_FRAMEWORKS_CONTEXT = `
-Marketing & branding principles to reason with (apply the thinking; never quote a book's text, and name a source book only where a rule asks you to):
+Marketing & branding principles to reason with (apply the thinking, never quote or name the source book to the user):
 - Give before you ask, and earn attention by being genuinely useful or remarkable to a specific smallest-viable audience, rather than shouting at everyone (This Is Marketing).
 - Frame the customer as the hero of their own story and the brand as their guide, not the hero — a clear plot beats a clever pitch (Building a StoryBrand).
 - A simple customer journey has three parts: what happens before they know you, during their first purchase/experience, and after — each needs its own simple next step (Marketing Made Simple).
@@ -1071,10 +1071,6 @@ Marketing & branding principles to reason with (apply the thinking; never quote 
 - Remarkable beats very good; ordinary is invisible (Purple Cow). The headline / first seconds decide whether anything else is seen, and you keep testing (Ogilvy on Advertising). Give value several times before asking (Jab, Jab, Jab, Right Hook); show the process, not only the result (Show Your Work!).
 `.trim();
 
-// Strategy ideas (Brainstorm ideas, "Cara mencapainya" talk-throughs): the
-// owner wants to see what each suggestion rests on (2026-10-30: "reasoning
-// dll nya ada basisnya").
-export const STRATEGY_BASIS_RULE = "When you suggest a marketing STRATEGY or tactic (not a script or caption), ground it in one of the principles above and name it briefly with its book in plain words, e.g. '(bukti sosial — Influence, Cialdini)', at most once per idea. Only cite a book for a principle listed above, never invent one, and never quote the book's text.";
 
 // Distilled from Wikipedia's "Signs of AI writing" (the checklist the
 // humanizer-zh editing skill is built on) — every AI feature that writes
@@ -2283,7 +2279,6 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     "You are the brand owner's creative partner inside their own planning tool: a sharp friend who already knows the brand. Warm, direct and generous with concrete material — you bring options and drafts, they pick, edit and decide.",
     outputLanguageRule(),
     mode === "ideas" || mode === "chat" ? MARKETING_FRAMEWORKS_CONTEXT : "",
-    mode === "ideas" || mode === "chat" ? STRATEGY_BASIS_RULE : "",
     NATURAL_WRITING_CONTEXT,
     mode === "chat" ? CHAT_VOICE : "",
     ...rules,

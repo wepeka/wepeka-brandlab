@@ -755,7 +755,6 @@ function playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kin
         <div class="gd-play-top"><span class="gd-play-ic">${icon(p.icon, { size: 16 })}</span><span class="gd-play-type">${t(`pb.type.${p.type}`)}</span></div>
         <h3>${esc(p.title)}</h3>
         <p class="gd-play-why">${esc(p.why)}</p>
-        ${p.basis.length ? `<div class="gd-play-basis"><span class="gd-play-basis-k">${icon("book", { size: 12 })}${t("pb.basis")}</span>${p.basis.map((x) => `<span class="gd-play-basis-i"><b>${esc(x.principle)}</b> · <i>${esc(x.book)}</i>, ${esc(x.author)}</span>`).join("")}</div>` : ""}
         <ol class="gd-play-steps">${p.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
         <div class="gd-play-acts">
           ${running
@@ -783,7 +782,7 @@ function savePlayIdea(brandId, campaign, play, status = "") {
     if (status) updateBrandIdea(brandId, had.id, { status });
     return had;
   }
-  const idea = addBrandIdea(brandId, { text: play.title, description: play.why, source: "playbook", campaignId: campaign.id, notes: [...play.steps.map((s, i) => `${i + 1}. ${s}`), ...play.basis.map((x) => `${t("pb.basis")}: ${x.principle} (${x.book}, ${x.author})`)].join("\n") });
+  const idea = addBrandIdea(brandId, { text: play.title, description: play.why, source: "playbook", campaignId: campaign.id, notes: play.steps.map((s, i) => `${i + 1}. ${s}`).join("\n") });
   if (idea) updateBrandIdea(brandId, idea.id, { playId: play.id, ...(status ? { status } : {}) });
   return idea;
 }

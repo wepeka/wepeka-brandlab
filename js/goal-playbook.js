@@ -12,8 +12,9 @@ import { getLang } from "./i18n.js";
 
 // Every play rests on a named principle from a well-known marketing book
 // (owner, 2026-10-30: "berkaca ke buku2 marketing ternama … jadi reasoning
-// dll nya ada basisnya"). `b` = [book, principle id, principle en]; the card
-// shows it under the play, and the play's own "why" is that principle
+// dll nya ada basisnya"). `b` = [book, principle id, principle en] — kept
+// here as the play's source, NOT shown on the card (owner, same day:
+// "gausah dikasi dasar teorinya"); the play's "why" is that principle
 // applied in plain words. Ideas only — no wording copied from the books.
 export const BOOKS = {
   influence: { t: "Influence", a: "Robert Cialdini" },
@@ -296,9 +297,7 @@ const pick = (o) => (getLang() === "en" ? o.en : o.id);
 export function playView(play) {
   if (!play) return null;
   const v = pick(play);
-  const en = getLang() === "en";
-  const basis = (play.b || []).map((x) => ({ book: BOOKS[x.src]?.t || "", author: BOOKS[x.src]?.a || "", principle: en ? x.en : x.id })).filter((x) => x.book);
-  return { id: play.k, type: play.ty, icon: play.ic, title: v.t, why: v.w, steps: v.s, basis };
+  return { id: play.k, type: play.ty, icon: play.ic, title: v.t, why: v.w, steps: v.s };
 }
 
 // Plays the AI wrote for this brand ("Bikin ide baru"): kept for the session so
