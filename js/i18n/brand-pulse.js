@@ -38,6 +38,8 @@ export default {
   "pulse.log.auto": { en: "auto", id: "otomatis" },
   "pulse.log.moment": { en: "moment", id: "momentum" },
   "pulse.log.legacy": { en: "old note (no longer read by AI)", id: "catatan lama (tidak dibaca AI lagi)" },
+  "pulse.memory.header": { en: "BRAND MEMORY — facts the owner told us and confirmed (true, treat as known):", id: "MEMORI BRAND — hal yang dikasih tahu & dikonfirmasi pemilik (benar, anggap sudah diketahui):" },
+  "pulse.memory.footer": { en: "Use these actively: when the question touches any of them, build the answer on them and mention them naturally. Never say you don't know something that is listed here.", id: "Pakai ini aktif: kalau pertanyaan menyentuh salah satunya, bangun jawaban dari situ dan sebut secara natural. Jangan bilang tidak tahu soal yang tertulis di sini." },
   "pulse.header": { en: "What's happening in this brand (most recent first):", id: "Yang sedang terjadi di brand ini (terbaru dulu):" },
   "pulse.footer": { en: "Use this when recommending anything; favor what's already in motion.", id: "Pakai ini saat merekomendasikan; utamakan yang sedang jalan." },
 

@@ -401,22 +401,29 @@ export function computeSignals({ brand, content = [], campaigns = [], settings, 
 // even before the owner deletes them from Brand memory. "" when there's
 // nothing to say — callers skip the section entirely then.
 const PULSE_SOURCES = new Set(["auto", "moment"]);
-export function buildPulseText(signals = [], log = [], { limit = 8 } = {}) {
+export function buildPulseText(signals = [], log = [], { limit = 8, momentLimit = 12 } = {}) {
   const byKey = new Map();
   (log || []).forEach((entry) => { if (entry?.key && PULSE_SOURCES.has(entry.source || "auto")) byKey.set(entry.key, entry); });
   (signals || []).forEach((s) => { if (s?.key) byKey.set(s.key, { ...s, source: s.source || "auto" }); });
-  const merged = [...byKey.values()].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, limit);
-  if (!merged.length) return "";
+  const newest = (list) => list.sort((a, b) => (b.at || 0) - (a.at || 0));
+  const all = [...byKey.values()];
+  // What the owner told the brand (Memori Brand) gets its own slots: auto
+  // signals are recomputed fresh every time, so sharing one newest-first list
+  // let them push every saved moment out of the prompt and the chat looked
+  // like it had no memory.
+  const moments = newest(all.filter((e) => (e.source || "auto") === "moment")).slice(0, momentLimit);
+  const autos = newest(all.filter((e) => (e.source || "auto") !== "moment")).slice(0, limit);
+  if (!moments.length && !autos.length) return "";
   const now = new Date();
-  const lines = merged.map((entry) => {
-    if ((entry.source || "auto") === "auto") {
-      const when = daysAgoLabel(entry.at, now);
-      return `[${t("pulse.log.auto")}] ${when}: ${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
-    }
-    const iso = localISODate(new Date(entry.at));
-    return `[${t("pulse.log.moment")}] ${iso}: ${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
-  });
-  return [t("pulse.header"), ...lines, t("pulse.footer")].join("\n");
+  const fmt = (entry) => `${entry.title}${entry.detail ? ` — ${entry.detail}` : ""}`;
+  const parts = [];
+  if (moments.length) {
+    parts.push([t("pulse.memory.header"), ...moments.map((e) => `- ${localISODate(new Date(e.at))}: ${fmt(e)}`), t("pulse.memory.footer")].join("\n"));
+  }
+  if (autos.length) {
+    parts.push([t("pulse.header"), ...autos.map((e) => `[${t("pulse.log.auto")}] ${daysAgoLabel(e.at, now)}: ${fmt(e)}`), t("pulse.footer")].join("\n"));
+  }
+  return parts.join("\n\n");
 }
 
 // One-call convenience for the many AI call sites that just want "this
