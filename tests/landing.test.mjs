@@ -106,6 +106,7 @@ describe("front page", () => {
     assert.deepEqual([founderNow(15).wave.price, founderNow(15).left, founderNow(15).takenInWave, founderNow(15).wave.people, founderNow(15).nextWave.price], [499000, 1, 15, 16, 599000]);
     assert.deepEqual([founderNow(16).wave.price, founderNow(16).left, founderNow(16).takenInWave, founderNow(16).wave.people], [499000, 1, 16, 17]);
     assert.deepEqual([founderNow(17).wave.price, founderNow(17).left, founderNow(17).nextWave], [599000, 33, null]);
+    assert.equal(founderNow(17).takenInWave, 2, "the 2 re-opened seats count inside wave 2's 35");
     assert.equal(founderNow(50).soldOut, true);
   });
 });

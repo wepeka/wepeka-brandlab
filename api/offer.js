@@ -7,7 +7,7 @@
 // Nothing here can buy anything: create-transaction prices every checkout
 // itself.
 import { adminDb } from "./_firebaseAdmin.js";
-import { PLANS, SLOT_CAPS, SLOTS_DOC, FOUNDER_TIERS, seatsTaken, seatPrice } from "./_plans.js";
+import { PLANS, SLOT_CAPS, SLOTS_DOC, FOUNDER_TIERS, FIRST_WAVE_REOPENED, seatsTaken, seatPrice } from "./_plans.js";
 import { MIDTRANS_IS_PRODUCTION, MIDTRANS_CLIENT_KEY } from "./_payments.js";
 import { promoFor, normalizePromo, communityOffer } from "./_promo.js";
 import { PLAN_QUOTA } from "./_aiQuota.js";
@@ -29,7 +29,8 @@ export function founderFacts(slotsDoc, now = Date.now()) {
   const wave = FOUNDER_TIERS.findIndex((tier) => taken < tier.upTo);
   const open = wave === -1 ? FOUNDER_TIERS.length - 1 : wave;
   const tier = FOUNDER_TIERS[open];
-  const waveStart = open === 0 ? 0 : FOUNDER_TIERS[open - 1].upTo;
+  // Shown wave 1 = 15 seats, wave 2 = 35 (the 2 re-opened seats count in wave 2).
+  const waveStart = open === 0 ? 0 : FOUNDER_TIERS[open - 1].upTo - (open === 1 ? FIRST_WAVE_REOPENED : 0);
   // The first wave always reads "1 seat left" (owner, 2026-10-28; see _plans.js).
   const held = open === 0;
   const waveTaken = Math.max(0, taken - waveStart);
@@ -38,7 +39,7 @@ export function founderFacts(slotsDoc, now = Date.now()) {
     price: seatPrice(plan, taken),
     wave: open + 1, waveSize: held ? waveTaken + 1 : tier.upTo - waveStart, waveTaken, waveLeft: held ? 1 : Math.max(0, tier.upTo - taken),
     nextPrice: FOUNDER_TIERS[open + 1]?.amount ?? null,
-    tiers: FOUNDER_TIERS.map((t, i) => ({ seats: t.upTo - (i ? FOUNDER_TIERS[i - 1].upTo : 0), price: t.amount })),
+    tiers: FOUNDER_TIERS.map((t, i) => ({ seats: t.upTo - (i ? FOUNDER_TIERS[i - 1].upTo : 0) + (i === 1 ? FIRST_WAVE_REOPENED : i === 0 ? -FIRST_WAVE_REOPENED : 0), price: t.amount })),
     normal: NORMAL_PRICES.founder,
   };
 }

@@ -397,6 +397,10 @@ export const SLOT_CAPS = { founderSlotsSold: 50, founderUltimateSlotsSold: 15 };
 // 2026-10-28 (owner): the first wave was re-opened for 2 more buyers after
 // its 15 sold out (15 -> 17) and every counter shows "1 seat left" until
 // they are in, then Rp 599.000 takes over.
+// 2026-10-30 (owner): the pages show wave 1 as a full 15/15 and count those
+// 2 re-opened seats inside wave 2's 35 — display only, the Rp 499.000 ->
+// Rp 599.000 switch above still happens at the 17th sold seat.
+export const FIRST_WAVE_REOPENED = 2;
 export const FOUNDER_TIERS = [
   { upTo: 17, amount: 499000 },
   { upTo: 50, amount: 599000 },

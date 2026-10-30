@@ -8,7 +8,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 const { PROMO_CODES, normalizePromo, promoFor, applyPromo, communityOffer } = await import("../api/_promo.js");
-const { FOUNDER_TIERS, PLANS, MIN_CHARGE } = await import("../api/_plans.js");
+const { FOUNDER_TIERS, FIRST_WAVE_REOPENED, PLANS, MIN_CHARGE } = await import("../api/_plans.js");
 const { founderFacts, agencyFacts, youtubeId, otherPlans, NORMAL_PRICES, PRO_MONTHLY } = await import("../api/offer.js");
 const { composePaidEmail } = await import("../api/_community.js");
 const { composeSaleNote } = await import("../api/_ownerNotify.js");
@@ -106,7 +106,7 @@ describe("offer facts (api/offer.js)", () => {
     assert.equal(one.price, FOUNDER_TIERS[0].amount);
     assert.deepEqual([one.wave, one.waveTaken, one.waveSize, one.waveLeft, one.nextPrice], [1, 4, 5, 1, FOUNDER_TIERS[1].amount]);
     const two = founderFacts({ founderSlotsSold: 20 });
-    assert.deepEqual([two.wave, two.waveTaken, two.waveSize, two.waveLeft, two.nextPrice, two.price], [2, 3, 33, 30, null, FOUNDER_TIERS[1].amount]);
+    assert.deepEqual([two.wave, two.waveTaken, two.waveSize, two.waveLeft, two.nextPrice, two.price], [2, 5, 35, 30, null, FOUNDER_TIERS[1].amount]);
     assert.equal(founderFacts({ founderSlotsSold: 50 }).soldOut, true);
     assert.equal(agencyFacts({ founderUltimateSlotsSold: 15 }).soldOut, true);
   });
@@ -131,7 +131,8 @@ describe("Founder's Deal page (founder/founder.js)", () => {
   });
 
   test("its fallback numbers are the server's", async () => {
-    assert.deepEqual(page.FALLBACK.tiers, FOUNDER_TIERS.map((t, i) => ({ seats: t.upTo - (i ? FOUNDER_TIERS[i - 1].upTo : 0), price: t.amount })));
+    // Shown as 15 + 35: the 2 re-opened wave-1 seats count inside wave 2.
+    assert.deepEqual(page.FALLBACK.tiers, FOUNDER_TIERS.map((t, i) => ({ seats: t.upTo - (i ? FOUNDER_TIERS[i - 1].upTo : 0) + (i === 0 ? -FIRST_WAVE_REOPENED : FIRST_WAVE_REOPENED), price: t.amount })));
     assert.equal(page.FALLBACK.normal, NORMAL_PRICES.founder);
     assert.equal(page.FALLBACK.proMonthly, PRO_MONTHLY);
     assert.equal(page.FALLBACK.agency.price, PLANS["founder-ultimate"].amount);
@@ -189,7 +190,7 @@ describe("Founder's Deal page (founder/founder.js)", () => {
     const v = page.offerView(null);
     assert.equal(v.known, false);
     assert.equal(v.canBuy, true);
-    assert.match(v.text.tiersNote.replace(/ /g, " "), /^17 kursi pertama Rp 499\.000, 33 berikutnya Rp 599\.000\./);
+    assert.match(v.text.tiersNote.replace(/ /g, " "), /^15 kursi pertama Rp 499\.000, 35 berikutnya Rp 599\.000\./);
   });
 
   test("payments closed: the trial is the door", () => {
