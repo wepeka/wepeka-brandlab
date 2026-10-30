@@ -44,7 +44,7 @@ import { goalArtSVG, goalKindByKey } from "../goal-art.js";
 import { goalTreeSVG, wireGoalTree } from "../goal-tree.js";
 import { addGoalTask, goalTaskPlaces, addGoalRoutine, toggleGoalRoutineWeek, removeGoalRoutine } from "../goal-actions.js";
 import { draftFromIdea } from "../idea-draft.js";
-import { openGroups, playsOfGroup, groupLabel, findPlay, whatToDo } from "../goal-playbook.js";
+import { openGroups, playsPage, playsOfGroup, groupLabel, findPlay, whatToDo } from "../goal-playbook.js";
 import { openGoalIdeasChat } from "../consultant-panel.js";
 import { openContentCadenceSetup } from "../cadence-setup.js";
 import { aiReportButtonHTML } from "../ai-report.js";
@@ -726,7 +726,8 @@ function playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kin
   const read = stage ? readStage(stage, ctx) : { readings: [] };
   const opts = openGroups(kind.key, read.readings);
   const cur = opts.find((o) => o.group === state.pbGroup) || opts[0];
-  const plays = playsOfGroup(cur.group);
+  state.pbRound = state.pbRound || {};
+  const { plays, pages } = playsPage(kind.key, cur.group, state.pbRound[cur.group] || 0);
   if (!plays.length) return "";
   const mine = new Map(listBrandIdeas(brandId, { campaignId: campaign.id }).filter((i) => i.playId).map((i) => [i.playId, i]));
   const r = cur.reading;
@@ -761,7 +762,7 @@ function playSectionHTML({ brandId, campaign, stages, autoIndex, state, ctx, kin
       <p class="gd-play-lead">${lead}</p>
       ${chips}
       <div class="gd-plays">${plays.map(card).join("")}</div>
-      <p class="gd-play-foot">${t("pb.foot")} <button type="button" class="gd-play-link" data-gd-ideas>${icon("bulb", { size: 13 })}${t("pb.more")}</button></p>
+      <p class="gd-play-foot">${t("pb.foot")} ${pages > 1 ? `<button type="button" class="gd-play-link" data-gd-pb-more="${cur.group}">${icon("refresh", { size: 13 })}${t("pb.another")}</button>${t("pb.or")} ` : ""}<button type="button" class="gd-play-link" data-gd-ideas>${icon("bulb", { size: 13 })}${t("pb.more")}</button></p>
     </section>`;
 }
 
@@ -865,6 +866,7 @@ function wireTodo(root, { brandId, brand, campaign, stages, stage, ctx, refresh,
     if (b.dataset.gdAdd === "content") runAction({ type: "new-content" }, { brandId, brand, campaign, stage, stages, ctx, refresh, ctxLabel });
     else openGoalTaskDialog({ campaign, onDone: refresh });
   }));
+  qsa("[data-gd-pb-more]", root).forEach((b) => b.addEventListener("click", () => { state.pbRound = state.pbRound || {}; state.pbRound[b.dataset.gdPbMore] = (state.pbRound[b.dataset.gdPbMore] || 0) + 1; refresh(); }));
   qsa("[data-gd-pb]", root).forEach((b) => b.addEventListener("click", () => { state.pbGroup = b.dataset.gdPb; refresh(); }));
   qsa("[data-gd-play-save]", root).forEach((b) => b.addEventListener("click", () => {
     if (isTourDemo()) return toast(DEMO_TOAST);
@@ -1780,7 +1782,7 @@ function goalTreeSectionHTML({ stage, stageRead, state, kind }) {
         <span class="gt-card-n">${r.met ? icon("check", { size: 14 }) : k + 1}</span>
         <span class="gt-card-main"><b>${esc(r.milestone.label)}</b><small>${esc(src)}${r.milestone.required === false ? ` · ${esc(t("camp.optional").replace(/[()]/g, ""))}` : ""}</small></span>
         <span class="gt-card-val">${esc(value)}</span>
-        <span class="gt-card-act">${locked ? "" : msActionHTML(r, i, stage)}</span>
+        <span class="gt-card-act">${locked ? "" : msActionHTML(r, i, stage)}${!locked && (r.milestone.custom || r.milestone.legacy?.custom) ? `<button type="button" class="icon-btn gt-card-del" data-cd-ms-del="${i}" aria-label="${t("roadmap.ms.remove")}" title="${t("roadmap.ms.remove")}">${icon("trash", { size: 14 })}</button>` : ""}</span>
         ${how(r) ? `<span class="gt-card-how">${esc(how(r))}</span>` : ""}
         <span class="gt-card-bar"><span style="width:${Math.round((r.met ? 1 : Math.min(1, r.pct || 0)) * 100)}%"></span></span>
       </div>`;

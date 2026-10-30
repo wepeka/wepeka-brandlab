@@ -190,6 +190,19 @@ export function openGroups(kind, readings = []) {
   return out;
 }
 
+// "Ide lain": the target's own plays first, then the other plays of the same
+// kind of goal, deduped, shown a page at a time (page = the group's own count).
+export function playsPage(kind, group, round = 0) {
+  const own = GROUPS[group]?.plays || [];
+  const ids = [...own];
+  if (kind !== "event") Object.values(KEY_GROUP[kind] || {}).forEach((g) => (GROUPS[g]?.plays || []).forEach((k) => { if (!ids.includes(k)) ids.push(k); }));
+  const size = Math.max(2, own.length);
+  const pages = Math.max(1, Math.ceil(ids.length / size));
+  const start = (((round % pages) + pages) % pages) * size;
+  const ring = [...ids, ...ids];
+  return { plays: ring.slice(start, start + Math.min(size, ids.length)).map((k) => playView(PLAYS[k])).filter(Boolean), pages };
+}
+
 export const PLAY_IDS = Object.keys(PLAYS);
 
 // One plain sentence per target: what the owner actually DOES to move it
