@@ -687,7 +687,9 @@ export function openQuickFillModal({ c, onSaved, onBack, platformKey = "" }) {
   const perf = (platformKey ? c.crossPostPerformance?.[platformKey] : c.performance) || {};
   const shownPlatform = platformKey ? (platformKey === "tiktok" ? "TikTok" : platformKey.charAt(0).toUpperCase() + platformKey.slice(1)) : c.platform;
   const metricsOf = (performance) => computeContentMetrics({ ...c, platform: shownPlatform, performance }, getSettings());
-  const isPro = getMode() === "advanced";
+  // The Pemula/Pro choice is hidden (everyone is "guided"), so gating the
+  // retention section on Pro left it unreachable. Show it to everyone.
+  const isPro = true;
   const savedRet = normalizeRetention(perf.retention || {});
   // The curve read off a graph screenshot (not editable by hand) rides
   // along with the typed numbers on save.
