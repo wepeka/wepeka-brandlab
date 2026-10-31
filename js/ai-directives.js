@@ -20,6 +20,7 @@ export const MAX_TASKS = 3;
 export const MAX_MOMENTS = 2;
 export const MAX_SAVES = 2;
 export const MAX_SCRIPTS = 1;
+export const MAX_REPLOTS = 1;
 export const MAX_SEARCHES = 1;
 // A recommended move in a Konsultan answer ([[move:Title|why|how]]), shown
 // as a numbered card right where the model wrote it (owner, 2026-10-31:
@@ -74,6 +75,7 @@ export function parseDirectives(rawText) {
   const moments = [];
   const saves = [];
   const scripts = [];
+  const replots = [];
   const widgets = [];
   const searches = [];
   const moves = [];
@@ -155,6 +157,23 @@ export function parseDirectives(rawText) {
       const text = partialBody(body);
       const f = funnel.toUpperCase();
       if (text) partial = { kind: "script", target: "script", title: title.slice(0, 140), format: format.slice(0, 40), funnel: (FUNNELS || []).includes(f) ? f : "", text };
+      return "";
+    })
+    // A change to a goal's roadmap the owner asked for:
+    // [[replot:goal=ID;date=YYYY-MM-DD;seats=50;capacity=3;push=2;name=…]]
+    // (every key optional). Only becomes a "Terapkan" card — never applied here.
+    .replace(/\[\[replot:([^\]\n]+)\]\]/gi, (_, body) => {
+      const change = {};
+      let goal = "";
+      body.split(";").forEach((pair) => {
+        const i = pair.indexOf("=");
+        if (i < 1) return;
+        const k = pair.slice(0, i).trim().toLowerCase();
+        const v = pair.slice(i + 1).trim();
+        if (k === "goal") goal = v.replace(/[^A-Za-z0-9_-]/g, "");
+        else if (["date", "seats", "capacity", "push", "name"].includes(k)) change[k] = v;
+      });
+      if (Object.keys(change).length && replots.length < MAX_REPLOTS) replots.push({ goalId: goal, change, applied: false, skipped: false });
       return "";
     })
     .replace(/\[\[goto:campaign:([A-Za-z0-9_-]+)\]\]/g, (_, id) => {
@@ -256,7 +275,7 @@ export function parseDirectives(rawText) {
     .replace(/\[\[[^\]]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, widgets, searches, moves, reasoning, reasoningLive, handoff, metrics, partial };
+  return { cleanText, nav, drafts, asks, ideas, tasks, revisions, moments, saves, scripts, replots, widgets, searches, moves, reasoning, reasoningLive, handoff, metrics, partial };
 }
 
 // Nothing the owner could see or use came back: no text, no card, no
@@ -290,6 +309,8 @@ export function serializeDirectives(text, blocks = {}) {
   (b.tasks || []).forEach((x) => x?.title && out.push(`[[task:${x.title}|${x.why || ""}]]`));
   (b.widgets || []).forEach((w) => w?.kind && out.push(widgetHistoryLine(w)));
   (b.searches || []).forEach((x) => x?.q && out.push(`[[search:${x.q}]]`));
+  // A roadmap change shown as a card: the model must know whether the owner already tapped Terapkan, so it never re-proposes or claims it is done.
+  (b.replots || []).forEach((r) => out.push(`[[replot:${r.goalId ? `goal=${r.goalId};` : ""}${Object.entries(r.change || {}).map(([k, v]) => `${k}=${v}`).join(";")}]] (${r.applied ? "APPLIED by the owner" : r.skipped ? "skipped by the owner" : "waiting for the owner to tap Terapkan, NOT applied yet"})`));
   // Moments already offered for Memori Brand — so the next reply doesn't
   // offer the same news again.
   (b.moments || []).forEach((m) => m?.title && out.push(`[[moment:${m.kind || "other"}|${m.title}|${m.detail || ""}]]`));

@@ -1159,6 +1159,17 @@ function goalLine(g) {
   const flags = (r.warnings || []).filter((w) => w.level === "warn").map((w) => w.code).join(",");
   return `- id=${g.id} | ${g.name} | date=${g.targetDate} | days left=${Math.max(0, daysUntil(g.targetDate))} | status=${g.status} | expected attendees=${g.inputs?.expectedAudience ?? "?"} | weekly post capacity=${r.capacity?.perWeek ?? "?"} | lanes: ${lanes || "(none)"}${flags ? ` | plan flags: ${flags}` : ""}`;
 }
+// How a chat changes a goal's roadmap. The model only writes the request; the
+// app shows a before/after card and the owner's tap applies it
+// (js/goal-actions.js applyGoalChange). Empty when the brand has no goal to change.
+function replotRule(brand) {
+  const goals = (brand?.goals || []).filter((g) => ["draft", "active", "partial"].includes(g.status));
+  if (!goals.length) return "";
+  return [
+    `CHANGING A GOAL'S ROADMAP. Today is ${new Date().toLocaleDateString("en-CA")}. "Re-plot" can change exactly these things on a goal: date (the target date), seats (expected attendees), capacity (posts per week the owner can make), push (extra posts per week on top), name. When the owner asks for one of them to change — or agrees to a change you proposed — answer in one or two sentences and add ONE line [[replot:goal=GOAL_ID;date=YYYY-MM-DD;seats=N;capacity=N;push=N;name=New name]] with the exact goal id from the goals list above and ONLY the keys that change (numbers without dots or units; the date as a full future YYYY-MM-DD, resolved from today's date, e.g. "18 Desember" → the next 18 December).`,
+    `The app turns that line into a card showing before → after with a "Terapkan" button; the roadmap and the calendar are re-plotted only when the owner taps it, so say "aku siapkan perubahannya, tinggal tekan Terapkan" and NEVER say it is already changed. Write the line ONLY for a change the owner asked for or agreed to in this conversation — never as a suggestion, a "to be helpful" extra, for a number you only discussed, or for a "what if" question (answer those, and offer the change instead) — and only one line per reply; and do not write one for something Re-plot cannot change (lane names, descriptions, the date of a single post): say honestly that the owner edits that part themselves, and for a real-world step of an event use [[task:…]] instead.`,
+  ].join(" ");
+}
 function goalsContextBlock(brand) {
   const goals = (brand?.goals || []).filter((g) => ["draft", "installing", "partial", "active"].includes(g.status)).slice(0, 3);
   return goals.length ? `Goals (dated targets the owner is working toward; each has a roadmap of lanes and weekly posts):\n${goals.map(goalLine).join("\n")}` : "";
@@ -1990,6 +2001,7 @@ export async function askBrandConsultant(ai, { brand, snapshotText, pulseText = 
     `Today is ${new Date().toLocaleDateString("en-CA")}.`,
     pulseText || "",
     snapshotText ? `Live tracked data for this brand right now (background: quote a number only when the latest message is about performance, these numbers or what to do first):\n${snapshotText}` : "",
+    replotRule(brand) ? `${goalsContextBlock(brand)}\n\n${replotRule(brand)}` : "",
     hasPhoto
       ? [
           images.length
@@ -2239,7 +2251,7 @@ export async function recapCompanion(ai, { brand, pulseText = "", messages = [],
 export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = "", campaign = null, stageText = "", content = null, goalId = null, eventCampaign = null, series = null, seriesEpisodes = [], seriesOverview = "", savedIdeas = [], history = [], message, mode = "chat", turns = 1, onText = null }) {
   const goal = goalId ? (brand?.goals || []).find((g) => g.id === goalId) : null;
   const scope = [
-    goal ? `This conversation is about ONE goal the owner is working toward — help them think about how to get there:\n${goalLine(goal)}\nYou cannot change the roadmap yourself. When something should change (the date, the weekly posting rhythm, the expected attendance), say exactly what and why, and tell the owner to use "Re-plot" on the roadmap page. Never say the plan has been changed.` : "",
+    goal ? `This conversation is about ONE goal the owner is working toward — help them think about how to get there:\n${goalLine(goal)}\nYou cannot change the roadmap yourself: when something should change (the date, the weekly posting rhythm, the expected attendance), say exactly what and why, then follow the CHANGING A GOAL'S ROADMAP rule so the owner can apply it with one tap. Never say the plan has been changed until they tap.` : "",
     eventCampaign ? `EVENT the owner is preparing (its phases; use these exact phase names when you file a step under a phase):\n${campaignSummaryLine(eventCampaign, brand)}\nPhases: ${(eventCampaign.eventPlan?.phases || []).map((p) => `${p.name} (${p.dateFrom}..${p.dateTo})`).join("; ")}\nMilestones already in it (never suggest these again): ${(eventCampaign.eventPlan?.phases || []).flatMap((p) => (p.milestones || []).map((m) => m.label)).slice(0, 40).join("; ")}` : "",
     campaign ? `This conversation is about ONE campaign of the brand:\n${campaignSummaryLine(campaign, brand)}${stageText ? `\nCurrent focus: ${stageText}` : ""}` : "",
     content ? `This conversation is about ONE piece of content the owner is working on: title="${content.title || "(untitled)"}", funnel=${content.funnel || "?"}, format=${content.format || "?"}, platform=${content.platform || "?"}${content.idea ? `, current idea note: "${content.idea}"` : ""}.${isPovContent(content) ? `\n${POV_STYLE_RULE}` : ""}` : "",
@@ -2316,6 +2328,7 @@ export async function chatBrainstorm(ai, { brand, campaigns = [], pulseText = ""
     // ---- DYNAMIC last.
     buildFullContext(brand, { campaigns: campaignsForContext, pulseText }),
     scope,
+    mode === "ideas" ? "" : replotRule(brand),
   ]
     .filter(Boolean)
     .join("\n\n");

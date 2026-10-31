@@ -241,6 +241,71 @@ export function applyReplan(brandId, goalId, { plan, diff, over = {} }) {
   return { ok: true };
 }
 
+// ---------- Re-plot asked for in a chat ----------
+
+// What a chat may ask a Re-plot to change — the same four numbers/dates the
+// Re-plot dialog has, plus the goal's name. { date, seats, capacity, push, name }
+export const REPLOT_KEYS = ["date", "seats", "capacity", "push", "name"];
+const POS_INT = (v, max) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 && n <= max ? n : null; };
+
+// Cleans what the model wrote down to values Re-plot can take.
+export function cleanGoalChange(raw = {}) {
+  const out = {};
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(raw.date || "")) && localISODate(new Date(`${raw.date}T00:00:00`)) === raw.date) out.date = raw.date;
+  const seats = POS_INT(raw.seats, 100000); if (seats) out.seats = seats;
+  const capacity = POS_INT(raw.capacity, 21); if (capacity) out.capacity = capacity;
+  const push = POS_INT(raw.push, 21); if (push) out.push = push;
+  const name = String(raw.name || "").replace(/\s+/g, " ").trim().slice(0, 120); if (name) out.name = name;
+  return out;
+}
+
+// A chat's proposed change against a live goal, nothing written:
+// { ok:false, error } | { ok:true, goal, change, rows:[{key,from,to}], draft, errors, diff, warnings }
+// `rows` only holds what really differs from the goal today.
+export function proposeGoalChange(brandId, goalId, rawChange) {
+  const goal = getGoal(brandId, goalId);
+  if (!goal || !["draft", "active", "partial"].includes(goal.status)) return { ok: false, error: "gone" };
+  const change = cleanGoalChange(rawChange);
+  const cap = goal.roadmap?.capacity || {};
+  const now = {
+    date: goal.targetDate, seats: goal.inputs?.expectedAudience ?? null, capacity: goal.inputs?.capacityPerWeek ?? cap.perWeek ?? null,
+    push: goal.inputs?.pushPerWeek ?? null, name: goal.inputs?.eventName || goal.name || "",
+  };
+  const rows = REPLOT_KEYS.filter((k) => change[k] != null && change[k] !== now[k]).map((k) => ({ key: k, from: now[k], to: change[k] }));
+  if (!rows.length) return { ok: false, error: "same" };
+  const over = overFromChange(goal, change);
+  const prev = previewReplan(brandId, goalId, over);
+  const errors = prev?.errors || (prev ? [] : ["generic"]);
+  return { ok: true, goal, change, rows, draft: goal.status === "draft", errors, diff: prev?.diff || null, warnings: (prev?.plan?.warnings || []).filter((w) => w.level === "warn"), over, plan: prev?.plan || null };
+}
+
+function overFromChange(goal, change) {
+  const inputs = {};
+  if (change.seats != null) inputs.expectedAudience = change.seats;
+  if (change.capacity != null) inputs.capacityPerWeek = change.capacity;
+  if (change.push != null) inputs.pushPerWeek = change.push;
+  if (change.name) inputs.eventName = change.name;
+  return { targetDate: change.date || goal.targetDate, inputs };
+}
+
+// Applies a chat's proposal the way the Re-plot dialog's "Terapkan" does —
+// owner-touched slots stay put, a draft is simply re-planned — and renames
+// the goal and its live Event campaign when the name changed.
+export function applyGoalChange(brandId, goalId, rawChange) {
+  const p = proposeGoalChange(brandId, goalId, rawChange);
+  if (!p.ok) return { ok: false, error: p.error };
+  if (p.errors.length) return { ok: false, error: p.errors[0] };
+  const { goal, change, over, plan, diff } = p;
+  if (p.draft) updateGoal(brandId, goalId, { targetDate: over.targetDate, inputs: { ...(goal.inputs || {}), ...over.inputs }, roadmap: plan });
+  else if (!applyReplan(brandId, goalId, { plan, diff, over }).ok) return { ok: false, error: "generic" };
+  if (change.name) {
+    updateGoal(brandId, goalId, { name: change.name });
+    const live = getGoal(brandId, goalId)?.installed?.campaigns?.event?.id ? getCampaign(getGoal(brandId, goalId).installed.campaigns.event.id) : null;
+    if (live) updateCampaign(live.id, { name: change.name, ...(live.eventPlan ? { eventPlan: { ...live.eventPlan, setup: { ...(live.eventPlan.setup || {}), eventName: change.name } } } : {}) });
+  }
+  return { ok: true, draft: p.draft, rows: p.rows };
+}
+
 // ---------- Milestones the owner shapes by hand ----------
 
 const labelKey = (m) => m.label;

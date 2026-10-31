@@ -55,7 +55,7 @@ import {
   getCampaign, updateCampaign, getContent, updateContent, getSeries, listSeries, findSeriesByNameInText, getGoal, listGoals, formatEventDate, phaseNameLabel, onChange,
   ER_SCALE, chatSessionsOf, setChatSessions, companionStateOf, setCompanionState, scriptThreadId,
 } from "./store.js";
-import { eventCampaignFor, openEventPhases, addEventMilestone, addGoalTask, goalTaskPlaces } from "./goal-actions.js";
+import { eventCampaignFor, openEventPhases, addEventMilestone, addGoalTask, goalTaskPlaces, proposeGoalChange, applyGoalChange, cleanGoalChange } from "./goal-actions.js";
 import { aiLimitReached, aiQuotaPeriod } from "./ai-usage.js";
 import { isAdmin, currentUid, getCachedAccount, isReadOnly } from "./account.js";
 import { confirmDialog, openModal, closeOverlay } from "./modals.js";
@@ -397,7 +397,7 @@ function threadEntries(th, engine) {
     out.push({
       role: "assistant", engine, text: m.text || "", at: m.at,
       nav: b.nav || [], drafts: b.drafts || [], asks: b.asks || [], ideas: b.ideas || [], tasks: b.tasks || [], revisions: b.revisions || [],
-      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], widgets: b.widgets || [], searches: b.searches || [], moves: b.moves || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
+      moments: b.moments || [], saves: b.saves || [], scripts: b.scripts || [], replots: b.replots || [], widgets: b.widgets || [], searches: b.searches || [], moves: b.moves || [], reasoning: b.reasoning || [], thinkMs: b.thinkMs || null, recap: b.recap || null, handoff: b.handoff || null, metrics: b.metrics || null,
       weekPlan: b.weekPlan || null, planTalk: !!b.planTalk, sessionId: m.sessionId || null,
       question: lastQuestion, questionId: lastQuestionId, threadId: th.id, msgId: m.id, rated: !!m.rated,
       // A reply that stopped before the end: "Coba lagi" re-asks the same
@@ -734,6 +734,51 @@ function taskCardHTML(task, ref) {
     </div>`;
 }
 
+// A change to a goal's roadmap the owner asked for in the chat. The AI only
+// proposed it: nothing is re-plotted until "Terapkan" is tapped, and the same
+// before → after + what-moves summary the Re-plot dialog shows comes first.
+function replotValue(key, v) {
+  if (v == null || v === "") return esc(t("roadmap.chat.auto"));
+  return key === "date" ? esc(formatEventDate(v)) : key === "name" ? `“${esc(v)}”` : esc(String(v));
+}
+function replotCardHTML(r, ref) {
+  const brandId = hostBrand() || mountedBrandId;
+  const goal = brandId ? getGoal(brandId, r.goalId) : null;
+  if (!goal) return "";
+  const link = `<a class="btn btn-secondary btn-sm" href="#/brand/${esc(brandId)}/goals/${esc(r.goalId)}">${t("roadmap.chat.open")}</a>`;
+  const head = `<div class="bs-task-tag">${icon("target", { size: 11 })}${t("roadmap.chat.tag")}</div><div class="cp-idea-title">${esc(goal.name || t("roadmap.defaultName"))}</div>`;
+  const rowsHTML = (rows) => `<ul class="cp-replot-rows">${rows.map((x) => `<li><span class="cp-replot-key">${t(`roadmap.chat.key.${x.key}`)}</span><span class="cp-replot-from">${replotValue(x.key, x.from)}</span><span class="cp-replot-arrow">${icon("arrowRight", { size: 11 })}</span><b>${replotValue(x.key, x.to)}</b></li>`).join("")}</ul>`;
+  if (r.applied) return `<div class="cp-idea bs-task">${head}${r.rows ? rowsHTML(r.rows) : ""}<div class="cp-idea-actions"><span class="bs-done">${icon("check", { size: 12 })} ${t("roadmap.chat.applied")}</span>${link}</div></div>`;
+  if (r.skipped) return `<div class="cp-idea bs-task">${head}<div class="cp-idea-actions"><span class="text-faint" style="font-size:12px;">${t("roadmap.chat.skipped")}</span></div></div>`;
+  const p = proposeGoalChange(brandId, r.goalId, r.change);
+  if (!p.ok) return `<div class="cp-idea bs-task">${head}<div class="cp-idea-why">${t("roadmap.chat.same")}</div></div>`;
+  const d = p.diff;
+  const line = (n, key) => (n ? `<li>${esc(t(key, { n }))}</li>` : "");
+  const diffHTML = p.errors.length
+    ? `<p class="rg-bad" style="font-size:12.5px;margin:6px 0 0;">${esc(t(`roadmap.err.${p.errors[0]}`))}</p>`
+    : p.draft
+      ? `<div class="cp-idea-why">${esc(t("roadmap.chat.draftNote"))}</div>`
+      : d && !d.empty
+        ? `<ul class="cp-replot-diff">${line(d.moved.length, "roadmap.diff.moved")}${line(d.added.length, "roadmap.diff.added")}${line(d.removed.length, "roadmap.diff.removed")}${line(d.dueChanges.length, "roadmap.diff.due")}${line(d.kept.filter((k) => k.reason === "touched").length, "roadmap.diff.kept")}${line(d.lanesAdded.length, "roadmap.diff.lanesAdded")}${line(d.lanesRemoved.length, "roadmap.diff.lanesRemoved")}</ul>`
+        : "";
+  return `<div class="cp-idea bs-task">${head}${rowsHTML(p.rows)}${diffHTML}<div class="cp-idea-actions">
+    <button type="button" class="btn btn-primary btn-sm" data-chat-replot-apply="${ref}" ${p.errors.length ? "disabled" : ""}>${icon("check", { size: 12 })}${t("roadmap.chat.apply")}</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-chat-replot-skip="${ref}">${t("roadmap.chat.skip")}</button></div></div>`;
+}
+
+// What the model wrote → proposals this brand can really act on: the goal it
+// names (or the one the chat is about / the only open one) must exist and the
+// change must actually differ from it.
+function resolveReplots(brandId, replots, scopeGoalId) {
+  const open = listGoals(brandId).filter((g) => ["draft", "active", "partial"].includes(g.status));
+  return (replots || []).flatMap((r) => {
+    const goal = open.find((g) => g.id === scopeGoalId) || open.find((g) => g.id === r.goalId) || (open.length === 1 ? open[0] : null);
+    const change = cleanGoalChange(r.change);
+    if (!goal || !proposeGoalChange(brandId, goal.id, change).ok) return [];
+    return [{ goalId: goal.id, change, applied: false, skipped: false }];
+  });
+}
+
 // Something the owner just told the Teman that happened to the brand — one
 // tap puts it in brand memory, where every AI feature reads it from then
 // on. "Jadikan konten" hands it to Brainstorm as a seed.
@@ -1038,6 +1083,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
     ? `<div class="disc-regen"><button type="button" class="btn btn-primary btn-sm" data-script-regen="script">${icon("refresh", { size: 12 })}${t("cr.disc.regenScript")}</button><button type="button" class="btn btn-secondary btn-sm" data-script-regen="hook">${icon("refresh", { size: 12 })}${t("cr.disc.regenHook")}</button></div>`
     : "");
   const cardsHTML =
+    (h.replots || []).map((r, j) => replotCardHTML(r, `${index}:${j}`)).join("") +
     tasks.map((task, j) => taskCardHTML(task, `${index}:${j}`)).join("") +
     ideas.map((idea, j) => ideaCardHTML(idea, `${index}:${j}`, info, full)).join("") +
     moments.map((m, j) => momentCardHTML(m, `${index}:${j}`)).join("") +
@@ -1063,7 +1109,7 @@ function messageHTML(h, index, { isLast, info, full, hint, auto, brand, isLatest
   // script from it, or three ideas. "Diskusi lalu langsung jadi", without
   // copying anything out to another app. Only when the reply brought no
   // follow-up chips of its own (those already offer the same next step).
-  const forkHTML = isLast && isBs && h.question && isContentTalk(h.question) && !ideas.length && !tasks.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan && !h.revisions?.length && !h.asks?.length && getBrainstorm(h.threadId)?.mode !== "script"
+  const forkHTML = isLast && isBs && h.question && isContentTalk(h.question) && !ideas.length && !tasks.length && !h.replots?.length && !h.drafts?.length && !h.scripts?.length && !h.weekPlan && !h.revisions?.length && !h.asks?.length && getBrainstorm(h.threadId)?.mode !== "script"
     ? `<div class="bs-fork"><button type="button" class="btn btn-primary btn-sm" data-chat-make-script>${icon("teleprompter", { size: 13 })}${t("chat.make.script")}</button><button type="button" class="btn btn-secondary btn-sm" data-chat-go-ideas>${icon("sparkle", { size: 13 })}${t("chat.make.ideas")}</button></div>`
     : "";
   // The recap offer (Teman, un-recapped chat from before today).
@@ -1327,7 +1373,7 @@ function chatCoreHTML(brandId, full) {
   const quotaOut = aiLimitReached();
   const info = chatScopeInfo(brandId);
   const last = history[history.length - 1];
-  const forkShown = last?.role === "assistant" && last.engine === "brainstorm" && last.question && !(last.ideas || []).length && !(last.tasks || []).length && !last.drafts?.length && !last.scripts?.length;
+  const forkShown = last?.role === "assistant" && last.engine === "brainstorm" && last.question && !(last.ideas || []).length && !(last.tasks || []).length && !(last.replots || []).length && !last.drafts?.length && !last.scripts?.length;
   // A disabled box says why it's disabled instead of still inviting typing.
   // A script talk asks for changes to that script, not "what content?".
   const scriptTalk = currentThread(brandId)?.mode === "script";
@@ -2041,6 +2087,28 @@ function wire(host, brandId, input, history) {
     rerender();
   });
 
+  // A roadmap change the AI prepared: apply = the Re-plot dialog's "Terapkan".
+  on("[data-chat-replot-apply]", (btn) => {
+    const { h, j } = refAt(btn.dataset.chatReplotApply);
+    const r = h?.replots?.[j];
+    if (!r || r.applied) return;
+    const res = applyGoalChange(brandId, r.goalId, r.change);
+    if (!res.ok) { toast(res.error && res.error !== "same" ? t(`roadmap.err.${res.error}`) : t("bs.failed"), "error"); return; }
+    r.applied = true;
+    r.rows = res.rows;
+    syncThreadBlocks(h);
+    toast(t("roadmap.chat.toast"));
+    rerender();
+  });
+  on("[data-chat-replot-skip]", (btn) => {
+    const { h, j } = refAt(btn.dataset.chatReplotSkip);
+    const r = h?.replots?.[j];
+    if (!r || r.applied) return;
+    r.skipped = true;
+    syncThreadBlocks(h);
+    rerender();
+  });
+
   // Event steps.
   on("[data-chat-task-add]", (btn) => {
     const { h, j } = refAt(btn.dataset.chatTaskAdd);
@@ -2488,7 +2556,7 @@ function syncThreadBlocks(h) {
   if (!msg) return;
   const copy = (list) => (list || []).map((x) => ({ ...x }));
   updateBrainstormMessage(h.threadId, h.msgId, {
-    blocks: { ...(msg.blocks || {}), ideas: copy(h.ideas), drafts: copy(h.drafts), ...(h.tasks ? { tasks: copy(h.tasks) } : {}), ...(h.moments ? { moments: copy(h.moments) } : {}), ...(h.saves ? { saves: copy(h.saves) } : {}), ...(h.scripts?.length ? { scripts: copy(h.scripts) } : {}), ...(h.weekPlan ? { weekPlan: { ...h.weekPlan, items: copy(h.weekPlan.items) } } : {}) },
+    blocks: { ...(msg.blocks || {}), ideas: copy(h.ideas), drafts: copy(h.drafts), ...(h.tasks ? { tasks: copy(h.tasks) } : {}), ...(h.moments ? { moments: copy(h.moments) } : {}), ...(h.saves ? { saves: copy(h.saves) } : {}), ...(h.scripts?.length ? { scripts: copy(h.scripts) } : {}), ...(h.replots?.length ? { replots: (h.replots || []).map((x) => ({ ...x, change: { ...x.change }, rows: x.rows ? x.rows.map((r) => ({ ...r })) : undefined })) } : {}), ...(h.weekPlan ? { weekPlan: { ...h.weekPlan, items: copy(h.weekPlan.items) } } : {}) },
   });
 }
 
@@ -3149,6 +3217,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         });
         const parsed = parseDirectives(raw.trim());
         const { cleanText, ideas, drafts, asks, tasks, handoff, saves, scripts } = parsed;
+        const replotCards = resolveReplots(brandId, parsed.replots, scope.goalId);
         // A step is filed under the event; without one it is kept as an idea.
         const filed = eventCampaign ? tasks.map((x) => ({ ...x, campaignId: eventCampaign.id })) : [];
         const allIdeas = [...ideas, ...(eventCampaign ? [] : tasks.map((x) => ({ title: x.title, why: x.why })))];
@@ -3162,7 +3231,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
         } else {
           // Only the clean text, never the raw [[…]] lines (cutBlocks covers a
           // reply with nothing readable in it).
-          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(scripts.length ? { scripts } : {}), ...(parsed.searches.length ? { searches: parsed.searches } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...cutBlocks(parsed, streamCut) }, sessionId });
+          appendBrainstormMessage(th.id, { role: "assistant", text: cleanText, blocks: { ideas: allIdeas, drafts, asks, tasks: filed, handoff, saves, ...(replotCards.length ? { replots: replotCards } : {}), ...(scripts.length ? { scripts } : {}), ...(parsed.searches.length ? { searches: parsed.searches } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...cutBlocks(parsed, streamCut) }, sessionId });
         }
       } else if (picked === "companion") {
         const thread = ensureCompanionThread(brandId);
@@ -3214,7 +3283,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
           removeBrainstormMessage(thread.id, asked?.id);
           askedRef = null;
           reroute = handoff;
-        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(widgets.length ? { widgets } : {}), ...(parsed.moves.length ? { moves: parsed.moves } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
+        } else appendBrainstormMessage(thread.id, { role: "assistant", text: cleanText, blocks: { nav, asks, handoff, moments, ...(resolveReplots(brandId, parsed.replots, null).length ? { replots: resolveReplots(brandId, parsed.replots, null) } : {}), ...(widgets.length ? { widgets } : {}), ...(parsed.moves.length ? { moves: parsed.moves } : {}), ...reasoningBlocks(parsed, thinkMsNow()), ...(metrics ? { metrics } : {}), ...cutBlocks(parsed, streamCut) }, sessionId });
       }
       if (!reroute) break;
     }

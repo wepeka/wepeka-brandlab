@@ -4743,6 +4743,12 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .bs-task{ border-color: color-mix(in srgb, var(--track-community) 55%, var(--border)); }
 .bs-task-tag{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color: var(--track-community); margin-bottom:4px; }
 .bs-task-target{ font-size:12px; color: var(--text-muted); margin-top:6px; }
+.cp-replot-rows{ list-style:none; margin:8px 0 0; padding:0; display:grid; gap:5px; }
+.cp-replot-rows li{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; font-size:13px; }
+.cp-replot-key{ font-size:11px; font-weight:700; color: var(--text-muted); min-width:96px; }
+.cp-replot-from{ color: var(--text-muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-muted) 50%, transparent); }
+.cp-replot-arrow{ display:inline-flex; color: var(--text-muted); }
+.cp-replot-diff{ margin:8px 0 0; padding:0 0 0 18px; font-size:12.5px; color: var(--text-muted); }
 .bs-task-phase{ height:32px; padding:0 10px; font-size:12px; min-width:0; max-width:100%; width:auto; }
 .cd-ms-del{ color: var(--text-faint); } .cd-ms-del:hover{ color: var(--health-poor); }
 
