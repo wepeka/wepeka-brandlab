@@ -4,6 +4,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sectionEvent, faqEvent } from "../founder/founder.js";
@@ -43,5 +44,16 @@ describe("Founder's Deal page: asking before buying", () => {
     const doors = [...html.matchAll(/<a\b[^>]*\bdata-wa\b[^>]*>/g)].map((m) => m[0]);
     assert.ok(doors.length >= 3);
     for (const a of doors) assert.match(a, /data-wa-at="[a-z-]+"/, a);
+  });
+});
+
+describe("Founder's Deal page: pictures", () => {
+  test("every clip and still it points at ships with the app", () => {
+    const clips = values("data-clip");
+    assert.ok(clips.includes("/assets/landing/clips/ai-evaluasi"), "the AI evaluation clip");
+    for (const clip of clips) for (const ext of ["mp4", "jpg"]) assert.ok(existsSync(path.join(ROOT, `${clip}.${ext}`)), `${clip}.${ext}`);
+    const stills = [...html.matchAll(/<img [^>]*src="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
+    assert.ok(stills.length >= 12, "the AI answer's stills + the app cards");
+    for (const src of stills) assert.ok(existsSync(path.join(ROOT, src)), src);
   });
 });

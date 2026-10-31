@@ -155,21 +155,13 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-tag-ai{ color:#a5b4fc !important; }
 .fd-chips{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
 .fd-chips span{ padding:5px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); font-size:12.5px; font-weight:700; color:#e9e4f0; white-space:nowrap; }
-.fd-ai{ margin-top:30px; padding:16px; border-radius:18px; border:1.5px solid transparent; background:linear-gradient(180deg,#1a1621,#141119) padding-box, linear-gradient(100deg,#a855f7,#ec4899) border-box; }
 .fd-ai-title{ margin:0 0 10px; font-weight:800; font-size:16px; }
 .fd-chips--ai{ margin:0; }
 .fd-chips--ai span{ background:rgba(168,85,247,.12); border-color:rgba(168,85,247,.3); }
 .fd-ai-note{ margin:10px 0 0; font-size:13.5px; color:var(--muted); }
-.fd-plus{ margin:16px 0 0; font-size:14px; color:var(--muted); }
-.fd-plus b{ color:var(--text); }
 .fd-system{ text-align:center; }
 .fd-system .fd-h2{ font-size:clamp(28px,8vw,40px); }
 .fd-system .fd-h2{ background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
-.fd-loop{ position:relative; margin:18px 0 18px; padding:0; list-style:none; display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left; counter-reset:loop; }
-.fd-loop li{ position:relative; display:flex; flex-direction:column; gap:2px; padding:12px 13px; border-radius:14px; border:1.5px solid transparent; background:linear-gradient(180deg,#1a1621,#141119) padding-box, var(--grad) border-box; counter-increment:loop; }
-.fd-loop li::before{ content:counter(loop); font:900 13px/1 "Grift Black",sans-serif; color:var(--faint); }
-.fd-loop b{ font-size:15.5px; }
-.fd-loop span{ font-size:13px; line-height:1.35; color:var(--muted); }
 .fd-system .fd-lead{ max-width:30em; margin-left:auto; margin-right:auto; }
 .fd-system .fd-note{ text-align:left; }
 .fd-fig{ margin:0 0 10px; }
@@ -338,7 +330,6 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-sticky-sub{ font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 @media (min-width:720px){
-  .fd-loop{ grid-template-columns:repeat(4,1fr); }
   .fd-hero{ padding-top:44px; gap:16px; }
   .fd-trust{ flex-direction:row; flex-wrap:wrap; justify-content:center; gap:6px 18px; }
   .fd-guide-steps{ display:grid; grid-template-columns:1fr 1fr; }
@@ -376,3 +367,48 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-trust-text{ display:flex; flex-direction:column; align-items:flex-start; line-height:1.25; }
 .fd-trust-text small{ font-size:11.5px; font-weight:700; color:#ffe08a; }
 .fd-trust-glow{ border-radius:18px; }
+
+/* ---------- the AI that evaluates the brand (2026-10-31) ----------
+   A real Tanya Brandlab answer for the demo brand: the phone-size clip, then
+   its three parts as stills of the real app (numbers card, "Cara aku
+   nyimpulin", the numbered move cards), assets/landing/ai. */
+.fd-eval{ background:radial-gradient(460px 300px at 50% 0%, rgba(236,72,153,.16), transparent 72%), radial-gradient(420px 320px at 100% 60%, rgba(168,85,247,.12), transparent 70%); }
+.fd-eval .fd-h2{ font-size:clamp(27px,7.6vw,40px); }
+.fd-show--phone{ max-width:340px; margin:6px auto 0; }
+.fd-show--phone .fd-show-shot{ border-radius:16px; }
+.fd-eval-ask{ width:min(88%,320px); height:auto; margin:22px 0 0 auto; filter:drop-shadow(0 10px 22px rgba(236,72,153,.35)); }
+.fd-eval-steps{ margin:18px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:34px; }
+.fd-eval-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:14px; }
+.fd-eval-head h3{ margin:3px 0 4px; font-size:20px; font-weight:800; line-height:1.2; }
+.fd-eval-head p{ margin:0; font-size:15px; color:var(--muted); }
+.fd-eval-n{ flex:none; display:grid; place-items:center; width:38px; height:38px; border-radius:50%; background:#fff; color:#1b1a17; font:900 18px/1 "Grift Black",sans-serif; box-shadow:0 0 0 4px rgba(236,72,153,.28), 0 8px 18px -6px rgba(236,72,153,.7); }
+.fd-eval-shot{ width:100%; max-width:360px; height:auto; margin:0 auto; border-radius:14px; box-shadow:0 24px 50px -24px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.06); }
+.fd-eval-states{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; padding:0; list-style:none; }
+.fd-eval-states li{ padding:6px 11px; border-radius:999px; border:1px dashed rgba(255,255,255,.18); font-size:12.5px; font-weight:700; color:var(--faint); white-space:nowrap; }
+.fd-eval-states li.is-hit{ border:0; padding:7px 12px; color:#fff; background:var(--grad); box-shadow:0 8px 20px -8px rgba(236,72,153,.8); }
+.fd-eval-states li.is-hit::after{ content:" ← brand demo ini"; font-weight:600; opacity:.85; }
+.fd-eval-moves{ display:flex; flex-direction:column; gap:10px; max-width:360px; margin:0 auto; }
+.fd-eval-moves img{ width:100%; height:auto; border-radius:20px; transition:transform .45s cubic-bezier(.2,.8,.2,1.25), filter .45s; }
+.fd-eval-moves img:nth-child(1){ filter:drop-shadow(0 16px 26px rgba(255,140,40,.35)); }
+.fd-eval-moves img:nth-child(2){ filter:drop-shadow(0 16px 26px rgba(59,130,246,.35)); }
+.fd-eval-moves img:nth-child(3){ filter:drop-shadow(0 16px 26px rgba(48,217,125,.3)); }
+@media (hover:hover){ .fd-eval-moves img:hover{ transform:translateY(-4px) scale(1.01); } }
+.fd-eval-more{ margin-top:34px; padding:16px; border-radius:18px; border:1.5px solid transparent; background:linear-gradient(180deg,#1a1621,#141119) padding-box, linear-gradient(100deg,#a855f7,#ec4899) border-box; }
+.fd-ai-title--sub{ margin-top:18px; }
+.fd-eval-where{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0; padding:0; list-style:none; }
+.fd-eval-where li{ display:flex; flex-direction:column; gap:2px; padding:11px 12px; border-radius:14px; background:color-mix(in srgb,var(--m) 12%,transparent); border:1px solid color-mix(in srgb,var(--m) 40%,transparent); }
+.fd-eval-where b{ font-size:14.5px; color:var(--m); }
+.fd-eval-where span{ font-size:12.5px; line-height:1.35; color:#e9e4f0; }
+.fd-plus{ margin:28px 0 0; }
+.fd-plus .fd-chips{ margin:0; }
+
+/* the connected system as the real Beranda app cards (assets/landing/apps) */
+.fd-apps{ display:grid; grid-template-columns:1fr 1fr; gap:14px 10px; margin:20px 0 18px; padding:0; list-style:none; text-align:left; }
+.fd-apps li{ display:flex; flex-direction:column; gap:7px; }
+.fd-apps img{ width:100%; height:auto; border-radius:18px; transition:transform .45s cubic-bezier(.2,.8,.2,1.25), filter .45s; filter:drop-shadow(0 12px 22px rgba(0,0,0,.45)); }
+@media (hover:hover){ .fd-apps img:hover{ transform:translateY(-4px) rotate(-.6deg); filter:drop-shadow(0 18px 30px rgba(236,72,153,.35)); } }
+.fd-apps span{ display:flex; align-items:flex-start; gap:7px; padding:0 2px; font-size:13px; line-height:1.35; color:var(--muted); }
+.fd-apps span b{ flex:none; display:grid; place-items:center; width:20px; height:20px; border-radius:50%; background:rgba(255,255,255,.1); color:#fff; font:900 11px/1 "Grift Black",sans-serif; }
+.fd-apps .is-plus span b{ background:var(--grad); }
+@media (min-width:720px){ .fd-apps{ grid-template-columns:repeat(3,1fr); } }
+.fd-nowrap{ white-space:nowrap; }
