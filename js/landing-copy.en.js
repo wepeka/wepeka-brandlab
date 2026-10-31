@@ -333,7 +333,7 @@ export default {
         },
         {
           "name": "Founder Circle",
-          "desc": "A WhatsApp group with the Wepeka team and the other Founders, one live mentoring call a month, one Brand Book review, a vote on what we build next."
+          "desc": "A WhatsApp group with the Wepeka team and the other Founders, a live mentoring session every week, one Brand Book review, a vote on what we build next."
         },
         {
           "name": "All 3 premium Brand Book styles",
@@ -388,13 +388,13 @@ export default {
       "founder": {
         "pill": "Founder Circle · {cap} seats",
         "title": "Founder Lifetime",
-        "body": "Pay once, use Brandlab forever, and join the Founder Circle: the group, monthly mentoring, and a brand review with the Wepeka team.",
+        "body": "Pay once, use Brandlab forever, and join the Founder Circle: the group, weekly mentoring, and a brand review with the Wepeka team.",
         "contrast": "A year of subscribing is {proYearly}. This is {price}, forever.",
         "features": [
           "{brands} brands, AI Consultant, every feature — forever",
           "≈{credits} AI pieces of content / day, forever (top up when you need more)",
           "All 3 premium Brand Book styles (worth {styleValue})",
-          "Founder Circle: WhatsApp group + monthly live mentoring",
+          "Founder Circle: WhatsApp group + weekly live mentoring",
           "One Brand Book review with the Wepeka team",
           "Every new feature, no upgrade fee",
           "Founder Batch 1 badge — permanent"
@@ -433,7 +433,7 @@ export default {
             "{agencyBrands} brands in one account, for good",
             "≈{agencyCredits} AI pieces of content / day",
             "About {perBrand} per brand, paid once",
-            "Joins the Founder Circle: the group, monthly mentoring, the Brand Book review"
+            "Joins the Founder Circle: the group, weekly mentoring, the Brand Book review"
           ],
           "seats": "Only {ultimateCap} seats · {n} left",
           "cta": "Claim an Agency seat"
@@ -482,7 +482,7 @@ export default {
         },
         {
           "q": "What is the Founder Circle?",
-          "a": "The {cap} people who paid once. You get a WhatsApp group with the Wepeka team and the other Founders, one live mentoring call a month (recorded if you miss it), one Brand Book review with us, a vote on what we build next, and a Batch 1 badge nobody after you can get."
+          "a": "The {cap} people who paid once. You get a WhatsApp group with the Wepeka team and the other Founders, a live mentoring session every week (recorded if you miss it), one Brand Book review with us, a vote on what we build next, and a Batch 1 badge nobody after you can get."
         },
         {
           "q": "How do I claim a Founder seat?",

@@ -333,7 +333,7 @@ export default {
         },
         {
           "name": "Founder Circle",
-          "desc": "Grup WhatsApp bareng tim Wepeka dan Founder lain, mentoring live 1× sebulan, 1× review Brand Book, ikut vote fitur berikutnya."
+          "desc": "Grup WhatsApp bareng tim Wepeka dan Founder lain, mentoring live tiap minggu, 1× review Brand Book, ikut vote fitur berikutnya."
         },
         {
           "name": "3 gaya Brand Book premium",
@@ -388,13 +388,13 @@ export default {
       "founder": {
         "pill": "Founder Circle · {cap} kursi",
         "title": "Founder Lifetime",
-        "body": "Bayar sekali, pakai Brandlab selamanya, dan masuk Founder Circle: grup, mentoring bulanan, dan review brand bareng tim Wepeka.",
+        "body": "Bayar sekali, pakai Brandlab selamanya, dan masuk Founder Circle: grup, mentoring mingguan, dan review brand bareng tim Wepeka.",
         "contrast": "Setahun langganan {proYearly}. Ini {price}, selamanya.",
         "features": [
           "{brands} brand, AI Consultant, semua fitur — selamanya",
           "±{credits} konten AI / hari, selamanya (bisa top-up kalau lagi butuh lebih)",
           "3 gaya Brand Book premium (senilai {styleValue})",
-          "Founder Circle: grup WhatsApp + mentoring live bulanan",
+          "Founder Circle: grup WhatsApp + mentoring live mingguan",
           "1× review Brand Book bareng tim Wepeka",
           "Semua fitur baru tanpa biaya upgrade",
           "Lencana Founder Batch 1 — permanen"
@@ -433,7 +433,7 @@ export default {
             "{agencyBrands} brand dalam satu akun, selamanya",
             "±{agencyCredits} konten AI / hari",
             "Sekitar {perBrand} per brand, sekali bayar",
-            "Masuk Founder Circle: grup, mentoring bulanan, review Brand Book"
+            "Masuk Founder Circle: grup, mentoring mingguan, review Brand Book"
           ],
           "seats": "Cuma {ultimateCap} kursi · sisa {n}",
           "cta": "Ambil kursi Agency"
@@ -482,7 +482,7 @@ export default {
         },
         {
           "q": "Founder Circle itu apa?",
-          "a": "{cap} orang yang bayar sekali. Isinya: grup WhatsApp bareng tim Wepeka dan Founder lain, 1 mentoring live per bulan (direkam kalau kamu nggak sempat), 1× review Brand Book bareng kami, ikut vote fitur berikutnya, dan lencana Batch 1 yang nggak bisa didapat orang setelah kamu."
+          "a": "{cap} orang yang bayar sekali. Isinya: grup WhatsApp bareng tim Wepeka dan Founder lain, mentoring live tiap minggu (direkam kalau kamu nggak sempat), 1× review Brand Book bareng kami, ikut vote fitur berikutnya, dan lencana Batch 1 yang nggak bisa didapat orang setelah kamu."
         },
         {
           "q": "Gimana cara ambil kursi Founder?",
