@@ -4748,6 +4748,8 @@ button.bs-see-saved{ cursor:pointer; text-decoration:underline; text-underline-o
 .cp-replot-key{ font-size:11px; font-weight:700; color: var(--text-muted); min-width:96px; }
 .cp-replot-from{ color: var(--text-muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-muted) 50%, transparent); }
 .cp-replot-arrow{ display:inline-flex; color: var(--text-muted); }
+.rg-desc{ margin:6px 0 0; max-width:62ch; font-size:13.5px; line-height:1.5; color: var(--text-muted); white-space:pre-line; }
+.cp-replot-rows .cp-replot-text{ flex-basis:100%; font-size:12.5px; line-height:1.45; white-space:pre-line; }
 .cp-replot-diff{ margin:8px 0 0; padding:0 0 0 18px; font-size:12.5px; color: var(--text-muted); }
 .bs-task-phase{ height:32px; padding:0 10px; font-size:12px; min-width:0; max-width:100%; width:auto; }
 .cd-ms-del{ color: var(--text-faint); } .cd-ms-del:hover{ color: var(--health-poor); }

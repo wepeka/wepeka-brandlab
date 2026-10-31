@@ -314,6 +314,7 @@ function paintDetail(root, brandId, goalId, state, refresh) {
       <div>
         <div class="page-eyebrow flex items-center gap-6">${backLinkHTML(`#/brand/${brandId}/campaigns`, t("nav.campaigns"))}${guideVideoButtonHTML("event")}</div>
         <h1>${esc(goal.name || t("roadmap.defaultName"))}</h1>
+        ${goal.inputs?.description ? `<p class="rg-desc">${esc(goal.inputs.description)}</p>` : ""}
         <p class="page-sub">${esc(withYear(goal.targetDate))} · ${days > 0 ? t("roadmap.days.left", { n: days }) : days === 0 ? t("roadmap.days.today") : t("roadmap.days.passed")} ${statusPill(goal.status)} <span class="rg-pill" title="${esc(t(`roadmap.scale.${plan.scale?.level ?? 0}.sub`))}">${esc(t(`roadmap.scale.${plan.scale?.level ?? 0}`))}</span></p>
       </div>
       <div class="flex gap-8">

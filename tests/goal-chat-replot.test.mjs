@@ -21,6 +21,18 @@ describe("[[replot:…]] directive", () => {
   });
 });
 
+describe("description in [[replot:…]]", () => {
+  test("runs to the end of the line, even with ; and = inside", () => {
+    const p = parseDirectives("Siap.\n[[replot:goal=g1;seats=50;description=Hybrid: nonton bareng di Surabaya; mulai 19.30 WIB; target 120-150 pendaftar (A=B).]]");
+    assert.equal(p.replots[0].goalId, "g1");
+    assert.equal(p.replots[0].change.seats, "50");
+    assert.equal(p.replots[0].change.description, "Hybrid: nonton bareng di Surabaya; mulai 19.30 WIB; target 120-150 pendaftar (A=B).");
+  });
+  test("description alone is a valid change", () => {
+    assert.equal(parseDirectives("[[replot:description=Halo]]").replots.length, 1);
+  });
+});
+
 describe("cleanGoalChange", () => {
   test("keeps only values Re-plot can take", () => {
     assert.deepEqual(cleanGoalChange({ date: "18 Desember", seats: "abc", capacity: "3", push: "0", name: "  X  Y " }), { capacity: 3, name: "X Y" });
@@ -50,6 +62,15 @@ describe("proposeGoalChange / applyGoalChange", () => {
     assert.equal(p.ok, true);
     assert.deepEqual(p.rows.map((r) => r.key), ["date", "seats"]);
     assert.equal(getGoal(brandId, goalId).inputs.expectedAudience, 40);
+  });
+
+  test("a description is stored on the goal and shown as a change", async () => {
+    const { brandId, goalId } = await setup("draft");
+    const p = proposeGoalChange(brandId, goalId, { description: "Hybrid, mulai 19.30 WIB" });
+    assert.deepEqual(p.rows.map((r) => r.key), ["description"]);
+    assert.equal(applyGoalChange(brandId, goalId, { description: "Hybrid, mulai 19.30 WIB" }).ok, true);
+    assert.equal(getGoal(brandId, goalId).inputs.description, "Hybrid, mulai 19.30 WIB");
+    assert.equal(proposeGoalChange(brandId, goalId, { description: "Hybrid, mulai 19.30 WIB" }).ok, false);
   });
 
   test("a past date comes back as an error, not an apply", async () => {

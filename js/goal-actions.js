@@ -245,7 +245,7 @@ export function applyReplan(brandId, goalId, { plan, diff, over = {} }) {
 
 // What a chat may ask a Re-plot to change — the same four numbers/dates the
 // Re-plot dialog has, plus the goal's name. { date, seats, capacity, push, name }
-export const REPLOT_KEYS = ["date", "seats", "capacity", "push", "name"];
+export const REPLOT_KEYS = ["date", "seats", "capacity", "push", "name", "description"];
 const POS_INT = (v, max) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 && n <= max ? n : null; };
 
 // Cleans what the model wrote down to values Re-plot can take.
@@ -256,6 +256,7 @@ export function cleanGoalChange(raw = {}) {
   const capacity = POS_INT(raw.capacity, 21); if (capacity) out.capacity = capacity;
   const push = POS_INT(raw.push, 21); if (push) out.push = push;
   const name = String(raw.name || "").replace(/\s+/g, " ").trim().slice(0, 120); if (name) out.name = name;
+  const description = String(raw.description || "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 700); if (description) out.description = description;
   return out;
 }
 
@@ -269,7 +270,7 @@ export function proposeGoalChange(brandId, goalId, rawChange) {
   const cap = goal.roadmap?.capacity || {};
   const now = {
     date: goal.targetDate, seats: goal.inputs?.expectedAudience ?? null, capacity: goal.inputs?.capacityPerWeek ?? cap.perWeek ?? null,
-    push: goal.inputs?.pushPerWeek ?? null, name: goal.inputs?.eventName || goal.name || "",
+    push: goal.inputs?.pushPerWeek ?? null, name: goal.inputs?.eventName || goal.name || "", description: goal.inputs?.description || "",
   };
   const rows = REPLOT_KEYS.filter((k) => change[k] != null && change[k] !== now[k]).map((k) => ({ key: k, from: now[k], to: change[k] }));
   if (!rows.length) return { ok: false, error: "same" };
@@ -285,6 +286,7 @@ function overFromChange(goal, change) {
   if (change.capacity != null) inputs.capacityPerWeek = change.capacity;
   if (change.push != null) inputs.pushPerWeek = change.push;
   if (change.name) inputs.eventName = change.name;
+  if (change.description) inputs.description = change.description;
   return { targetDate: change.date || goal.targetDate, inputs };
 }
 

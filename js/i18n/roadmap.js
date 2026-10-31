@@ -345,6 +345,7 @@ export default {
   "roadmap.chat.key.seats": { en: "Expected attendees", id: "Perkiraan peserta" },
   "roadmap.chat.key.capacity": { en: "Posts per week", id: "Konten per minggu" },
   "roadmap.chat.key.push": { en: "Posts per week (last 2 weeks)", id: "Konten per minggu (2 minggu terakhir)" },
+  "roadmap.chat.key.description": { en: "Description", id: "Deskripsi" },
   "roadmap.chat.key.name": { en: "Name", id: "Nama" },
   "roadmap.chat.auto": { en: "automatic", id: "otomatis" },
   "roadmap.chat.apply": { en: "Apply (re-plot)", id: "Terapkan (atur ulang)" },

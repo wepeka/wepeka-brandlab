@@ -165,6 +165,14 @@ export function parseDirectives(rawText) {
     .replace(/\[\[replot:([^\]\n]+)\]\]/gi, (_, body) => {
       const change = {};
       let goal = "";
+      // The description is free text (it may hold ";"), so it is always the
+      // last key and runs to the end of the line.
+      const di = body.search(/(?:^|;)\s*description\s*=/i);
+      if (di >= 0) {
+        const eq = body.indexOf("=", di);
+        change.description = body.slice(eq + 1).trim();
+        body = body.slice(0, di);
+      }
       body.split(";").forEach((pair) => {
         const i = pair.indexOf("=");
         if (i < 1) return;

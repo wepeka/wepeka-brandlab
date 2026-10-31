@@ -738,8 +738,8 @@ function taskCardHTML(task, ref) {
 // proposed it: nothing is re-plotted until "Terapkan" is tapped, and the same
 // before → after + what-moves summary the Re-plot dialog shows comes first.
 function replotValue(key, v) {
-  if (v == null || v === "") return esc(t("roadmap.chat.auto"));
-  return key === "date" ? esc(formatEventDate(v)) : key === "name" ? `“${esc(v)}”` : esc(String(v));
+  if (v == null || v === "") return key === "description" ? "—" : esc(t("roadmap.chat.auto"));
+  return key === "date" ? esc(formatEventDate(v)) : key === "name" ? `“${esc(v)}”` : key === "description" ? `<span class="cp-replot-text">${esc(v)}</span>` : esc(String(v));
 }
 function replotCardHTML(r, ref) {
   const brandId = hostBrand() || mountedBrandId;
