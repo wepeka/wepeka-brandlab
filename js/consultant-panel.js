@@ -202,6 +202,9 @@ let streamShown = ""; // the answer so far, kept across a re-render mid-answer
 // the question went out, for the "Lagi mikir · 6 dtk" line before any word.
 let streamSteps = null;
 let streamMoves = [];
+// When each reasoning step and move card first showed up in the answer being
+// written ("step:2", "move:0" → performance.now()), see keepEntrances.
+const streamShownAt = new Map();
 let askedAt = 0;
 let thinkTick = 0;
 let renderedCount = -1; // messages drawn last time (new one => scroll down)
@@ -2513,11 +2516,29 @@ const moveCardHTML = (m, i) => {
   return `<div class="cp-move" style="--i:${i};--app:${c1};--app2:${c2}"><div class="cp-move-head"><span class="cp-move-n">${i + 1}</span><b class="cp-move-title">${esc(m.title)}</b></div>${m.why ? `<div class="cp-move-why">${icon("bulb", { size: 14 })}<span>${esc(m.why)}</span></div>` : ""}${m.how ? `<p class="cp-move-how">${icon("arrowRight", { size: 14 })}<span>${esc(m.how)}</span></p>` : ""}</div>`;
 };
 const mdWithMoves = (text, moves) => renderMoves(renderLightMarkdown(text), moves, moveCardHTML);
+// Every streamed chunk rewrites the pending bubble, so the entrance animation
+// of the steps' list, each step and each move card used to start over each
+// time — they stayed half-faded (the list nearly invisible) until the answer
+// was done. Each keeps the moment it first appeared; a negative delay carries
+// its animation on from there, so it plays once.
+function keepEntrances(bubble) {
+  if (!bubble) return;
+  const now = performance.now();
+  // the steps' list (it rises in as an open <details>), each step, each card
+  for (const [sel, kind] of [[".cp-why > :not(summary)", "list"], [".cp-why li", "step"], [".cp-move", "move"]]) {
+    bubble.querySelectorAll(sel).forEach((el, i) => {
+      const key = `${kind}:${i}`;
+      if (!streamShownAt.has(key)) streamShownAt.set(key, now);
+      el.style.animationDelay = `${Math.round(streamShownAt.get(key) - now)}ms`;
+    });
+  }
+}
 function pendingBubble(shown = "") {
   const messagesEl = qs("#consultant-messages");
   if (!messagesEl || qs("#consultant-pending", messagesEl)) return;
   const inner = pendingInnerHTML(shown);
   messagesEl.insertAdjacentHTML("beforeend", `<div class="consultant-msg consultant-msg-assistant consultant-msg-pending is-new" id="consultant-pending">${inner}</div>`);
+  keepEntrances(qs("#consultant-pending", messagesEl));
   // The answer is rewritten on every streamed chunk; a screen reader would
   // read each half-sentence again. Busy until finishReply: then the whole
   // answer is announced once.
@@ -2545,6 +2566,7 @@ function finishReply(brandId, { streamed }) {
   streamShown = "";
   streamSteps = null;
   streamMoves = [];
+  streamShownAt.clear();
   clearInterval(thinkTick);
   qs("#consultant-messages")?.setAttribute("aria-busy", "false");
   persistChat(brandId);
@@ -2555,9 +2577,16 @@ function finishReply(brandId, { streamed }) {
   const history = historyFor(brandId);
   const newest = qs(`[data-consultant-msg="${history.length - 1}"]`);
   if (newest) {
-    newest.classList.add("is-new");
-    // Already visible if it streamed in — only retype a reply that arrived whole.
-    if (!streamed) typewriterReveal(newest, { onTick: scrollToBottom });
+    if (streamed) {
+      // Already on screen word by word, steps and cards included: no second
+      // entrance (the whole answer used to blink out and fade back in).
+      // Charts drawn only now still rise in.
+      newest.querySelectorAll(".cp-why > :not(summary), .cp-why li, .cp-move").forEach((el) => { el.style.animation = "none"; });
+    } else {
+      // A reply that arrived whole is retyped.
+      newest.classList.add("is-new");
+      typewriterReveal(newest, { onTick: scrollToBottom });
+    }
   }
   scrollToBottom();
 }
@@ -2901,6 +2930,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
   streamShown = "";
   streamSteps = null;
   streamMoves = [];
+  streamShownAt.clear();
   askedAt = Date.now();
   renderPanel(brandId, { keep: false });
   qs(`[data-consultant-msg="${historyFor(brandId).length - 1}"]`)?.classList.add("is-new");
@@ -2938,6 +2968,7 @@ async function sendMessage(brandId, text, { view = null, engine = null, bsMode =
       const bubble = qs("#consultant-pending");
       if (!bubble) return;
       bubble.innerHTML = pendingInnerHTML(shown);
+      keepEntrances(bubble);
       scrollToBottom();
     }, 40);
   };
