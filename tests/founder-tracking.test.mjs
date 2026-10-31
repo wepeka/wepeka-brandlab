@@ -53,7 +53,10 @@ describe("Founder's Deal page: pictures", () => {
     assert.ok(clips.includes("/assets/landing/clips/ai-evaluasi"), "the AI evaluation clip");
     for (const clip of clips) for (const ext of ["mp4", "jpg"]) assert.ok(existsSync(path.join(ROOT, `${clip}.${ext}`)), `${clip}.${ext}`);
     const stills = [...html.matchAll(/<img [^>]*src="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
-    assert.ok(stills.length >= 12, "the AI answer's stills + the app cards");
-    for (const src of stills) assert.ok(existsSync(path.join(ROOT, src)), src);
+    assert.ok(stills.length >= 6, "the AI answer's stills");
+    // every lazy video (clips and the moving app cards): its file and poster
+    const lazy = [...html.matchAll(/data-(?:src|poster)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
+    assert.ok(lazy.filter((f) => f.startsWith("/assets/landing/apps/")).length === 12, "six app cards, file + poster each");
+    for (const src of [...stills, ...lazy]) assert.ok(existsSync(path.join(ROOT, src)), src);
   });
 });

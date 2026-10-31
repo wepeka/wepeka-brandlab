@@ -400,6 +400,25 @@ function start() {
     }, { threshold: 0.2 });
     clips.forEach((v) => onScreen.observe(v));
   }
+
+  // ---- the Beranda app cards (assets/landing/apps), their real hover motion ----
+  // Small loops that play while the grid is on screen, each a beat after the
+  // one before so the cards light up in turn rather than all at once.
+  const cards = all(".fd-apps video");
+  if (still) cards.forEach(load);
+  else {
+    const cardsSeen = new IntersectionObserver((entries) => {
+      for (const { target: v, isIntersecting } of entries) {
+        if (!isIntersecting) { v.pause(); continue; }
+        load(v);
+        v.muted = true;
+        const wait = v.dataset.started ? 0 : cards.indexOf(v) * 550;
+        v.dataset.started = "1";
+        setTimeout(() => v.play().catch(() => {}), wait);
+      }
+    }, { threshold: 0.3 });
+    cards.forEach((v) => cardsSeen.observe(v));
+  }
   document.addEventListener("click", (e) => {
     const shot = e.target.closest("[data-clip]");
     if (!shot) return;

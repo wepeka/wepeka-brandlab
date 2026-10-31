@@ -405,8 +405,13 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 /* the connected system as the real Beranda app cards (assets/landing/apps) */
 .fd-apps{ display:grid; grid-template-columns:1fr 1fr; gap:14px 10px; margin:20px 0 18px; padding:0; list-style:none; text-align:left; }
 .fd-apps li{ display:flex; flex-direction:column; gap:7px; }
-.fd-apps img{ width:100%; height:auto; border-radius:18px; transition:transform .45s cubic-bezier(.2,.8,.2,1.25), filter .45s; filter:drop-shadow(0 12px 22px rgba(0,0,0,.45)); }
-@media (hover:hover){ .fd-apps img:hover{ transform:translateY(-4px) rotate(-.6deg); filter:drop-shadow(0 18px 30px rgba(236,72,153,.35)); } }
+/* each card is a short loop of the real Beranda card under the pointer (lift,
+   glow, shine, arrow turn), recorded on this page's colour with room for the
+   glow around it: pulled out a little so the card itself fills its column */
+.fd-apps video{ display:block; width:108%; max-width:none; height:auto; margin:-11% -4% -9%; background:transparent; pointer-events:none;
+  /* the recording's backdrop fades out at its edges, so no box shows on the page's gradients */
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%),linear-gradient(180deg,transparent 0,#000 11%,#000 90%,transparent 100%);
+  -webkit-mask-composite:source-in; mask-image:linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%),linear-gradient(180deg,transparent 0,#000 11%,#000 90%,transparent 100%); mask-composite:intersect; }
 .fd-apps span{ display:flex; align-items:flex-start; gap:7px; padding:0 2px; font-size:13px; line-height:1.35; color:var(--muted); }
 .fd-apps span b{ flex:none; display:grid; place-items:center; width:20px; height:20px; border-radius:50%; background:rgba(255,255,255,.1); color:#fff; font:900 11px/1 "Grift Black",sans-serif; }
 .fd-apps .is-plus span b{ background:var(--grad); }

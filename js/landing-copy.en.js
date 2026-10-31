@@ -506,7 +506,7 @@ export default {
       "note": "The real Brandlab, Beginner mode. This is how it feels to use.",
       "marks": [
         "Today's step",
-        "5 apps, 1 home"
+        "Every app, 1 home"
       ]
     }
   }

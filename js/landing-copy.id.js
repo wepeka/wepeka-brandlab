@@ -506,7 +506,7 @@ export default {
       "note": "Tampilan asli Brandlab, mode Pemula. Begini rasanya dipakai.",
       "marks": [
         "Langkah hari ini",
-        "5 aplikasi, 1 Beranda"
+        "Semua aplikasi, 1 Beranda"
       ]
     }
   }

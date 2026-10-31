@@ -361,15 +361,15 @@ function fitHTML() {
 const CLIP_DIR = "assets/landing/clips";
 const MODULES = [
   { color: "#FFA52B", color2: "#FF6B3D", videos: ["dna", "book"], clips: [{ src: "my-brand", w: 1440, h: 862, notes: 2, marks: [[16, 34, 12], [42, 82, 15]] }] },
-  { color: "#30D97D", color2: "#14B8A6", videos: ["grow", "goal", "event"], duo: true, clips: [{ src: "pohon", w: 1440, h: 782, notes: 2, marks: [[73.5, 31.6, 7], [52.9, 19.8, 7]] }, { src: "goals", w: 1440, h: 920, notes: 1 }] },
+  { color: "#30D97D", color2: "#14B8A6", videos: ["grow", "goal", "event"], duo: true, clips: [{ src: "pohon", w: 1440, h: 822, notes: 2, marks: [[73.4, 34.8, 8], [53.3, 23.4, 7]] }, { src: "goals", w: 1440, h: 920, notes: 1 }] },
   { color: "#3B9BFF", color2: "#6366F1", videos: ["script", "flow", "series"], duo: true, clips: [{ src: "create", w: 1200, h: 1162, notes: 1 }, { src: "teleprompter", w: 1440, h: 890, notes: 1 }] },
   { color: "#22C3EE", color2: "#3B9BFF", videos: ["calendar"], clips: [{ src: "kalender", w: 1440, h: 890, notes: 2 }] },
   { color: "#A974FF", color2: "#D946EF", videos: ["list"], clips: [{ src: "report", w: 1440, h: 986, notes: 2 }] },
   { color: "#FF6FAE", color2: "#A974FF", videos: ["aiIntro", "ask", "credits"], clips: [{ src: "tanya-brandlab", w: 1100, h: 1040, notes: 1 }] },
   { color: "#FF6FAE", color2: "#FF8A3D", videos: ["sales", "quick"], clips: [{ src: "tulisan-cepat", w: 1440, h: 936, notes: 2 }] },
 ];
-// The hero's showreel: Beranda, the five apps lighting up under the pointer.
-const REEL = { src: "beranda", w: 1440, h: 924 };
+// The hero's showreel: Beranda, every app card lighting up under the pointer.
+const REEL = { src: "beranda", w: 1440, h: 998 };
 const APPS = [["My Brand", "#FFA52B"], ["My Goals", "#30D97D"], ["Create", "#3B9BFF"], ["Report", "#A974FF"], ["Board", "#FF6FAE"]];
 
 // A clip on its stage (lp-show): muted, looping, played only while on screen
