@@ -26,7 +26,9 @@ export const FALLBACK = {
 // What Founders say about Brandlab, word for word and with their OK — the
 // owner collects them ({ quote, name, business }). While the list is empty
 // the block stays hidden: never a made-up quote.
-export const TESTIMONIALS = [];
+export const TESTIMONIALS = [
+  { name: "Nia", business: "Content Creator", quote: "Jujur nggak expect BrandLab bakal ngebantu banget, especially buat aku yang content creator. Sekarang aku bisa planning konten sebulan full, atur jadwal shooting, sampai punya ide konten sesuai goals dan prioritasku. Jadi nggak perlu bingung tiap hari mau bikin konten apa lagi 😭 Semuanya lebih terukur dan organized. Belum apa-apa aja followers-ku udah nambah 200! Love this sih!! ❤️" },
+];
 
 // A non-breaking space keeps "Rp" and its number on one line.
 export const rp = (n) => `Rp\u00a0${Math.round(Number(n) || 0).toLocaleString("id-ID")}`;
