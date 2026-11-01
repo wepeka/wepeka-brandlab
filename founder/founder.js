@@ -292,6 +292,9 @@ function start() {
   else if (promo) confirmCode(promo.code, false);
 
 
+  const openGuarantee = () => { const d = document.getElementById("garansi"); if (d) d.open = true; };
+  if (location.hash === "#garansi") openGuarantee();
+
   // ---- buttons ----
   const go = (href) => setTimeout(() => { location.href = href; }, 160);
   document.addEventListener("click", (e) => {
@@ -317,6 +320,12 @@ function start() {
     if (e.target.closest("[data-guide-link]")) gaEvent("guide_click", {});
     const site = e.target.closest("[data-site]");
     if (site) gaEvent("website_click", { cta_location: site.dataset.site });
+    // "Garansi" links jump to its FAQ answer: opened, not just scrolled to.
+    const garansi = e.target.closest('a[href="#garansi"]');
+    if (garansi) {
+      openGuarantee();
+      gaEvent("guarantee_click", { cta_location: garansi.dataset.garansi || "" });
+    }
     const wa = e.target.closest("[data-wa]");
     if (wa) {
       gaEvent("whatsapp_click", { cta_location: wa.dataset.waAt || "other" });

@@ -610,6 +610,7 @@ export default {
   "pricing.hero.subShort": { en: "Pick how you continue. Founder Lifetime is one payment — every feature, forever.", id: "Pilih cara lanjut. Founder Lifetime cukup sekali bayar — semua fitur, selamanya." },
   "pricing.lifetime.normal": { en: "Normal price {price}", id: "Harga normal {price}" },
   "pricing.lifetime.save": { en: "Save {pct}%", id: "Hemat {pct}%" },
+  "pricing.lifetime.guarantee": { en: "Money back if a feature is broken and unusable · {terms}", id: "Garansi: fitur rusak dan tidak bisa dipakai, uang kembali · {terms}" },
   "pricing.lifetime.normalNote": { en: "The Founder price is only for the first {cap} people. After that, Lifetime goes back to its normal price of {price}.", id: "Harga Founder cuma untuk {cap} orang pertama. Setelah itu Lifetime kembali ke harga normal {price}." },
   "pricing.sub.badge": { en: "Stop anytime", id: "Bisa berhenti kapan aja" },
   // Wepeka Community code field under the plans (js/views/pricing.js promoHTML, api/_promo.js).
@@ -702,6 +703,7 @@ export default {
   "legal.terms": { en: "Terms & Conditions", id: "Syarat & Ketentuan" },
   "legal.privacy": { en: "Privacy Policy", id: "Kebijakan Privasi" },
   "legal.refund": { en: "refund policy", id: "kebijakan refund" },
+  "legal.guaranteeTerms": { en: "see the conditions", id: "lihat syaratnya" },
   "legal.agreeLogin": { en: "By logging in, you agree to Wepeka's {terms} and {privacy}.", id: "Dengan masuk, kamu menyetujui {terms} dan {privacy} Wepeka." },
   "legal.agreePay": { en: "By paying, you agree to Wepeka's {terms}, including the {refund}. Your data is handled under the {privacy}.", id: "Dengan membayar, kamu menyetujui {terms} Wepeka, termasuk {refund}. Datamu dikelola sesuai {privacy}." },
   // js/layout.js showModeSwitched: what changed right after the Pemula/Pro switch.

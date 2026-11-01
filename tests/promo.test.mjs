@@ -44,9 +44,10 @@ describe("community code (api/_promo.js)", () => {
     assert.ok(!JSON.stringify(communityOffer()).includes(CODE));
   });
 
-  test("the page names no payment method that isn't live (QRIS is off, 2026-10-15)", async () => {
+  test("the page names the payment methods that are live (QRIS went live 2026-11-01, owner)", async () => {
     const html = await readFile(path.join(ROOT, "founder/index.html"), "utf8");
-    assert.doesNotMatch(html, /QRIS/i);
+    assert.match(html, /QRIS/);
+    assert.doesNotMatch(html, /OVO|DANA|ShopeePay|kartu kredit/i);
   });
 
   test("Founders are guided over chat, never promised a 1-on-1 session (owner 2026-10-24)", async () => {
