@@ -23,6 +23,7 @@ import { mountAiReport } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
 import { createArtSVG } from "../create-art.js";
 import { stageColor, stepOfStatus } from "../stage-colors.js";
+import { postingBadgeHTML, postingDotHTML, postingMenuItemHTML, uploadMenuItemHTML, openPosting, uploadForDate, handleFileDrop, reviewButtonHTML, wirePosting } from "../posting.js";
 
 // Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
 // episode, date -> series. Only the rest of the visible range from today.
@@ -80,6 +81,7 @@ function pieceCardHTML(c, campaignById, state) {
       <span class="calx-card-main">
         <span class="calx-card-title">${escapeHtml(c.title || t("common.untitled"))}</span>
         <span class="calx-step">${done ? icon("check", { size: 11 }) : `<i aria-hidden="true"></i>`}${escapeHtml(stageLabel(c))}</span>
+        ${postingBadgeHTML(c)}
       </span>
     </div>`;
   }
@@ -89,6 +91,7 @@ function pieceCardHTML(c, campaignById, state) {
       <span class="calx-card-main">
         <span class="calx-card-title">${done ? icon("check", { size: 13 }) : ""}${escapeHtml(c.title || t("common.untitled"))}</span>
         ${meta ? `<span class="calx-card-meta">${c.platform ? platformIcon(c.platform) : ""}${meta}</span>` : ""}
+        ${postingBadgeHTML(c)}
       </span>
       <span class="calx-stage">${escapeHtml(stageLabel(c))}</span>
     </div>`;
@@ -677,6 +680,7 @@ function paint(root, brandId, state, refresh) {
   // the ⋯ beside the view switch.
   const actions = `
       <div class="flex gap-8 cal-head-actions">
+        ${reviewButtonHTML()}
         <button class="btn btn-secondary ${state.bankOpen ? "is-active" : ""}" id="toggle-bank" aria-pressed="${state.bankOpen}" title="${escapeHtml(t("calendar.contentBankBtn"))}">${icon("layers", { size: 15 })}<span class="calx-bank-label">${t("calendar.contentBankBtn")}</span>${bankCount(brandId) ? `<span class="bank-count">${bankCount(brandId)}</span>` : ""}</button>
         ${guided ? "" : `<button class="btn btn-secondary" id="cal-schedule" aria-haspopup="menu">${icon("calendar", { size: 15 })}${t("cal.schedule.btn")}${icon("chevronDown", { size: 13 })}</button>`}
         ${guided
@@ -729,6 +733,7 @@ function paint(root, brandId, state, refresh) {
   // The header button has no date, so the new piece wouldn't show on the
   // grid — it opens in Creator instead (a date cell keeps you here).
   qs("#new-content").addEventListener("click", () => openContentEditor({ brandId, onSaved: refresh }));
+  wirePosting(root, { brandId, onChange: refresh });
   // "Atur jadwal": every way to fill the calendar in one place, each with
   // what it does and what it costs. "Rencanakan minggu ini" used to be its
   // own button and the other two hid in a ⋯ menu, so it read as four
@@ -859,6 +864,7 @@ function renderMonth(body, brandId, state, items, campaigns, campaignById, refre
             ${guidedNow() ? "" : `<span class="swatch" style="background:${FUNNEL_COLOR[c.funnel]}"></span>`}
             ${campaign && !guidedNow() ? `<span class="cal-item-campaign-dot" title="${escapeHtml(campaignDisplayName(campaign.name))}" ${c.goalLane ? `style="background:${GOAL_LANE_COLOR[c.goalLane] || "var(--brand-tint)"}"` : ""}></span>` : ""}
             <span class="calx-chip-t">${done ? icon("check", { size: 11 }) : ""}${escapeHtml(c.title || t("common.untitled"))}</span>
+            ${postingDotHTML(c)}
           </div>`;
         }).join("")}
         ${ghost ? seriesGhostHTML(iso(day), ghost, { short: true }) : ""}
@@ -1106,8 +1112,9 @@ function renderAgenda(body, brandId, state, items, campaignById, refresh, deadli
     sec.addEventListener("dragover", (e) => { if (isPast()) return; e.preventDefault(); sec.classList.add("drag-over"); });
     sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) sec.classList.remove("drag-over"); });
     sec.addEventListener("drop", (e) => {
-      e.preventDefault();
       sec.classList.remove("drag-over");
+      if (!isPast() && handleFileDrop(e, { brandId, dateISO: sec.dataset.date, onChange: refresh })) return;
+      e.preventDefault();
       page.classList.remove("is-cal-dragging");
       const id = e.dataTransfer.getData("text/plain");
       if (id) assignToDate(brandId, id, sec.dataset.date);
@@ -1168,8 +1175,9 @@ function wireDragAndOpen(body, brandId, refresh, state = {}) {
     });
     cell.addEventListener("dragleave", () => cell.classList.remove("drag-over"));
     cell.addEventListener("drop", (e) => {
-      e.preventDefault();
       cell.classList.remove("drag-over");
+      if (!isPast() && handleFileDrop(e, { brandId, dateISO: cell.dataset.date, onChange: refresh })) return;
+      e.preventDefault();
       page.classList.remove("is-cal-dragging");
       const id = e.dataTransfer.getData("text/plain");
       if (!id) return;
@@ -1237,6 +1245,7 @@ function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
   const menu = openMenu(anchorEl, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
   if (!menu) return;
   menu.innerHTML = `
+    ${postingMenuItemHTML()}
     <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
     <button data-act="remove" class="danger">${icon("x", { size: 15 })}${t("calendar.removeFromCalendar")}</button>
   `;
@@ -1244,7 +1253,9 @@ function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
     e.stopPropagation();
     const act = e.target.closest("[data-act]")?.dataset.act;
     closeMenu();
-    if (act === "edit") {
+    if (act === "posting") {
+      openPosting({ contentId, onChange: refresh });
+    } else if (act === "edit") {
       openContentEditor({ brandId, contentId, onSaved: refresh });
     } else if (act === "remove") {
       const ok = await confirmDialog({
@@ -1289,6 +1300,7 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
       }
     </div>
     <div class="menu-divider"></div>
+    ${uploadMenuItemHTML()}
     <button data-create>${icon("plus", { size: 15 })}${t("calendar.createNewContent")}</button>
   `;
   menu.addEventListener("click", (e) => {
@@ -1302,6 +1314,11 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
       closeMenu();
       assignToDate(brandId, assignId, dateISO);
       refresh();
+      return;
+    }
+    if (e.target.closest("[data-posting-upload]")) {
+      closeMenu();
+      uploadForDate({ brandId, dateISO, onChange: refresh });
       return;
     }
     if (e.target.closest("[data-create]")) {
