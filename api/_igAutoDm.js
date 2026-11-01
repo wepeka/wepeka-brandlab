@@ -48,7 +48,7 @@ export const COPY = {
     "Cek inbox kak, linknya udah meluncur 🚀",
     "Siap kak, cek DM ya 👀",
   ],
-  opener: "Hii kak 👋 Ini BrandLab yaa 😆 Makasih udah komen Branding!\n\nJujur deh, brand kakak masih diurus pakai cara lama? Ide di Notes, jadwal di Excel, desain di Canva, penjualan dicatat manual… capek & kepisah-pisah 😵‍💫\n\nUdah waktunya upgrade cara kerja brand kakak 🚀\n\nMau aku kirim linknya?",
+  opener: "Hai kak! Ini ya, tools yang tadi kakak tanyain, namanya Wepeka BrandLab. 👋\n\nPernah nggak sih kak, ngerasa ngurus brand tuh banyak banget yang harus dipikirin? Mulai dari strategi, konten, marketing, evaluasi performa, sampai bingung sebenarnya next step yang harus dilakukan apa.\n\nNah, what if semuanya bisa dikelola dalam satu tempat, bahkan ada sistem yang bisa kasih saran apa yang harus kakak lakukan selanjutnya berdasarkan data dan kondisi brand kakak sendiri?\n\nPlus bisa kerja bareng tim, siapa ngerjain apa langsung kepantau 🤝\n\nYes, Wepeka BrandLab bakal temenin dan bantu perjalanan brand kakak!\nMau aku kasih linknya kah kak?",
   openerButton: "Mau dong 👀",
   pitch: [
     "Ini dia kak 👇",
@@ -137,7 +137,7 @@ export function openerMessage() {
 // When Instagram refuses the button (private replies are picky): the whole
 // thing in one text, link included.
 export function openerFallback() {
-  return { text: `${COPY.opener.replace(/\n\nMau aku kirim linknya\?$/, "")}\n\nCek detailnya di sini 👇\n${LINK}` };
+  return { text: `${COPY.opener.replace(/\n[^\n]*\?\s*$/, "")}\n\nCek detailnya di sini 👇\n${LINK}` };
 }
 export function linkMessage() {
   return buttonTemplate(COPY.linkText, { type: "web_url", url: LINK, title: COPY.linkButton });
