@@ -76,7 +76,11 @@ export default async function handler(req, res) {
   const events = readEvents(payload, keywords());
   // One line per delivery, so Vercel's logs show what Meta sent (account +
   // field) and what came of it — a quiet success is otherwise invisible.
-  const seen = (payload.entry || []).map((e) => `${e.id}:${[...(e.changes || []).map((c) => c.field), ...(e.messaging || []).length ? ["messaging"] : []].join("+")}`);
+  const who = (e, id) => (String(id || "") === String(e.id) ? "self" : "other");
+  const seen = (payload.entry || []).map((e) => `${e.id}:${[
+    ...(e.changes || []).map((c) => `${c.field}(${who(e, c.value?.from?.id)} ${JSON.stringify(String(c.value?.text || "").slice(0, 40))})`),
+    ...(e.messaging || []).map((m) => `dm(${who(e, m.sender?.id)}${m.message?.is_echo ? " echo" : ""} ${m.postback ? "tap" : JSON.stringify(String(m.message?.text || "").slice(0, 40))})`),
+  ].join("+")}`);
   console.log("[ig-auto-dm] received", seen.join(" "), "→", events.length ? events.map((e) => e.kind).join(",") : "nothing for us");
   if (!events.length) return res.status(200).json({ ok: true, events: 0 });
 
