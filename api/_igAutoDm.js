@@ -3,20 +3,31 @@
 // button → tapping it sends the pitch and the /founder link. Runs on the
 // official Instagram API with Instagram Login (graph.instagram.com), fed by
 // api/instagram/webhook.js. Off (every call a silent no-op) until the env
-// vars below are set in Vercel:
+// vars below are set in Vercel. It answers comments on ONE account (the
+// Meta app "wepeka" also holds wepeka.id and pinter.mandarin): @winkhsin
+// unless IG_AUTODM_ACCOUNT_ID says otherwise.
 //   IG_APP_SECRET     Meta app → Instagram → API setup → "Instagram app secret"
 //                     (checks every webhook really came from Meta)
-//   IG_VERIFY_TOKEN   any string; typed again in the app's webhook settings
 //   IG_ACCESS_TOKEN   the long-lived token generated for @wepeka there. It
 //                     lives 60 days; the daily cron refreshes it into
 //                     igAutoDm/token, which wins over the env value after that.
-// Optional: IG_AUTODM_KEYWORDS ("branding,brandlab"), META_GRAPH_VERSION.
+// Optional: IG_AUTODM_KEYWORDS ("branding,brandlab"), IG_VERIFY_TOKEN (the
+// webhook's handshake word, not a secret — the app secret guards every POST),
+// META_GRAPH_VERSION.
 // Everything else here is pure and takes its Firestore/fetch from the caller
 // (tests/ig-auto-dm.test.mjs).
 import crypto from "crypto";
 
 const GRAPH_VERSION = (process.env.META_GRAPH_VERSION || "").trim() || "v23.0";
 const GRAPH = `https://graph.instagram.com/${GRAPH_VERSION}`;
+
+// @winkhsin's Instagram account id (Meta app "wepeka" → Instagram → API setup).
+export const WINKHSIN_ACCOUNT_ID = "17841400566996586";
+export const DEFAULT_VERIFY_TOKEN = "wepeka-branding";
+
+export function autoDmAccountId(env = process.env) {
+  return String(env.IG_AUTODM_ACCOUNT_ID || "").trim() || WINKHSIN_ACCOUNT_ID;
+}
 
 export const LINK = "https://brandlab.wepeka.com/founder?utm_source=instagram&utm_medium=dm&utm_campaign=komen_branding";
 export const LINK_PAYLOAD = "IGDM_LINK";
@@ -97,11 +108,12 @@ export function verifySignature(rawBody, header, secret) {
 //   { kind: "comment", accountId, commentId, fromId, username, text }
 //   { kind: "wantsLink", accountId, senderId, via }  (button tap / keyword DM)
 // Our own comments and DMs (echoes) are never in it.
-export function readEvents(payload, list = keywords()) {
+export function readEvents(payload, list = keywords(), onlyAccount = autoDmAccountId()) {
   const out = [];
   if (payload?.object !== "instagram") return out;
   for (const entry of payload.entry || []) {
     const accountId = String(entry.id || "");
+    if (onlyAccount && accountId !== onlyAccount) continue;
     for (const change of entry.changes || []) {
       if (change.field !== "comments") continue;
       const v = change.value || {};

@@ -12,6 +12,7 @@ import {
 import handler, { metaJson, rawBody } from "../api/instagram/webhook.js";
 
 const ACCOUNT = "17841400000000001";
+process.env.IG_AUTODM_ACCOUNT_ID = ACCOUNT;
 const commentPayload = (text, { from = "555", id = "c1" } = {}) => ({
   object: "instagram",
   entry: [{ id: ACCOUNT, time: 1, changes: [{ field: "comments", value: { id, text, from: { id: from, username: "rani.store" }, media: { id: "m1" } } }] }],
@@ -58,6 +59,11 @@ describe("reading Meta's webhook", () => {
     assert.deepEqual(readEvents(commentPayload("Branding"), ["branding"]), [
       { kind: "comment", accountId: ACCOUNT, commentId: "c1", fromId: "555", username: "rani.store", text: "Branding" },
     ]);
+  });
+  test("only the auto-DM account: @winkhsin by default", async () => {
+    const { autoDmAccountId, WINKHSIN_ACCOUNT_ID } = await import("../api/_igAutoDm.js");
+    assert.equal(autoDmAccountId({}), WINKHSIN_ACCOUNT_ID);
+    assert.deepEqual(readEvents(commentPayload("Branding"), ["branding"], "17841449658853647"), []);
   });
   test("our own comments and other words are ignored", () => {
     assert.deepEqual(readEvents(commentPayload("Branding", { from: ACCOUNT }), ["branding"]), []);
@@ -167,6 +173,9 @@ describe("the endpoint", () => {
   }
 
   test("Meta's verification GET echoes the challenge only with the right token", async () => {
+    delete process.env.IG_VERIFY_TOKEN;
+    const dflt = await call({ method: "GET", query: { "hub.mode": "subscribe", "hub.verify_token": "wepeka-branding", "hub.challenge": "9" } });
+    assert.deepEqual([dflt.status, dflt.body], [200, "9"]);
     process.env.IG_VERIFY_TOKEN = "wepeka-verify";
     const ok = await call({ method: "GET", query: { "hub.mode": "subscribe", "hub.verify_token": "wepeka-verify", "hub.challenge": "123" } });
     assert.deepEqual([ok.status, ok.body], [200, "123"]);

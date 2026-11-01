@@ -1,9 +1,9 @@
 // Instagram's webhook for the comment → DM automation (api/_igAutoDm.js).
 // GET = Meta checking the callback URL once (hub.challenge); POST = a new
-// comment on a @wepeka post or a DM event. Every POST is signed with the
+// comment on a @winkhsin post or a DM event. Every POST is signed with the
 // Instagram app secret over the raw body, so the body is read unparsed.
 import { adminDb } from "../_firebaseAdmin.js";
-import { verifySignature, readEvents, handleEvents, graphClient, currentToken, keywords } from "../_igAutoDm.js";
+import { verifySignature, readEvents, handleEvents, graphClient, currentToken, keywords, DEFAULT_VERIFY_TOKEN } from "../_igAutoDm.js";
 
 export const config = { api: { bodyParser: false } };
 
@@ -48,7 +48,7 @@ export function firestoreDeps(db) {
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const q = req.query || {};
-    const verifyToken = String(process.env.IG_VERIFY_TOKEN || "").trim();
+    const verifyToken = String(process.env.IG_VERIFY_TOKEN || "").trim() || DEFAULT_VERIFY_TOKEN;
     if (verifyToken && q["hub.mode"] === "subscribe" && q["hub.verify_token"] === verifyToken) {
       return res.status(200).send(String(q["hub.challenge"] || ""));
     }
