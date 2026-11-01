@@ -14,6 +14,7 @@
 import { adminDb } from "../_firebaseAdmin.js";
 import { dueSchedulePatch } from "../_plans.js";
 import { reconcileSeats, teamDeps } from "../team.js";
+import { refreshToken as refreshIgToken } from "../_igAutoDm.js";
 
 export default async function handler(req, res) {
   // An unset CRON_SECRET used to leave this endpoint open to anyone who
@@ -61,6 +62,10 @@ export default async function handler(req, res) {
       }
     }
   }
+
+  // Instagram comment → DM (api/_igAutoDm.js): its 60-day token, renewed
+  // weekly. Never throws; a no-op until IG_ACCESS_TOKEN is set.
+  if (req.query?.dryRun !== "1") await refreshIgToken(db);
 
   const [lapsedSubs, endedTrials] = await Promise.all([
     accounts.where("subscriptionExpiresAt", "<", now).get(),
