@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import {
-  hasKeyword, dmTrigger, DEFAULT_KEYWORDS, REPLY_WINDOW_MS, keywords, verifySignature, readEvents, handleEvents, publicReply, refreshToken,
+  hasKeyword, dmTrigger, findMissedComments, answerMissedComments, DEFAULT_KEYWORDS, REPLY_WINDOW_MS, keywords, verifySignature, readEvents, handleEvents, publicReply, refreshToken,
   COPY, LINK, LINK_PAYLOAD, openerMessage, openerFallback, linkMessage, DM_COOLDOWN_MS,
 } from "../api/_igAutoDm.js";
 import handler, { metaJson, rawBody } from "../api/instagram/webhook.js";
@@ -263,5 +263,45 @@ describe("the token", () => {
     assert.deepEqual(db.store.data, { value: "new", refreshedAt: now, expiresAt: now + 5184000000 });
     const bad = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: "expired" } }) });
     assert.equal(await refreshToken(fakeDb({ value: "t", refreshedAt: 0 }), { env: {}, fetchImpl: bad, now }), "failed");
+  });
+});
+
+describe("comments the webhook never answered", () => {
+  const NOW = Date.parse("2026-11-01T08:00:00Z");
+  const ago = (h) => new Date(NOW - h * 3600000).toISOString().replace(".000Z", "+0000");
+  const OWNER = { id: ACCOUNT, username: "winkhsin" };
+  const comments = {
+    m1: [
+      { id: "a", text: "Brandlab", timestamp: ago(5), username: "rani.store", from: { id: "1", username: "rani.store" } },
+      { id: "b", text: "BRANDING dong", timestamp: ago(30), username: "budi", from: { id: "2", username: "budi" }, replies: { data: [{ username: "winkhsin", from: OWNER }] } },
+      { id: "c", text: "keren kak", timestamp: ago(2), username: "sari", from: { id: "3" } },
+      { id: "d", text: "brandlab", timestamp: ago(24 * 8), username: "lama", from: { id: "4" } },
+      { id: "e", text: "Brandlab ya", timestamp: ago(1), username: "winkhsin", from: OWNER },
+    ],
+    m2: [
+      { id: "f", text: "mau dong kak", timestamp: ago(48), username: "tono" },
+      { id: "g", text: "brandlab", timestamp: ago(3), username: "udah.dikirim", from: { id: "6" } },
+    ],
+  };
+  const graph = async (path) => {
+    if (path.startsWith("me?")) return { user_id: ACCOUNT, username: "winkhsin" };
+    if (path.startsWith("me/media")) return { data: [{ id: "m1", permalink: "https://instagram.com/p/1" }, { id: "m2", permalink: "https://instagram.com/p/2" }] };
+    const media = path.split("/")[0];
+    return { data: comments[media] || [] };
+  };
+  test("only unanswered keyword comments from others, within 7 days, newest first", async () => {
+    const found = await findMissedComments({ graph, isClaimed: async (id) => id === "g", now: NOW });
+    assert.equal(found.ownerId, ACCOUNT);
+    assert.deepEqual(found.comments.map((c) => c.commentId), ["a", "f"]);
+    assert.equal(found.comments[1].fromId, "");
+  });
+  test("answering them: message 1 + public reply each, a missing writer read first", async () => {
+    const found = await findMissedComments({ graph, isClaimed: async () => false, now: NOW });
+    const d = fakeDeps();
+    const base = d.graph;
+    d.graph = async (path, body) => (body === undefined ? (d.calls.push({ path }), { text: "mau dong kak", from: { id: "5", username: "tono" } }) : base(path, body));
+    const results = await answerMissedComments({ ...found, comments: found.comments.filter((c) => ["a", "f"].includes(c.commentId)) }, d);
+    assert.deepEqual(results.map((r) => r.sent), ["button", "button"]);
+    assert.deepEqual(d.calls.map((c) => c.path), ["me/messages", "a/replies", "f?fields=text,username,from", "me/messages", "f/replies"]);
   });
 });

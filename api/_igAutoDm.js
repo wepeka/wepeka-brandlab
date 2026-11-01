@@ -246,6 +246,50 @@ async function onWantsLink(ev, { graph, person, savePerson, now = Date.now() }) 
   return { kind: "wantsLink", sent: true };
 }
 
+// ---- comments the webhook never answered ----------------------------------
+
+// Instagram takes a private reply only within 7 days of the comment; a little
+// margin so a send started at the edge doesn't fail halfway.
+export const PRIVATE_REPLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000;
+const MEDIA_SCAN = 50;
+const COMMENT_PAGES = 4;
+
+// Keyword comments on the account's recent posts that nobody answered yet:
+// within the private-reply window, not by the owner, no reply from the owner
+// underneath, not already handled by the bot (isClaimed). Newest first.
+export async function findMissedComments({ graph, isClaimed, now = Date.now(), list = keywords() }) {
+  const me = await graph("me?fields=user_id,username");
+  const ownerId = String(me.user_id || me.id || "");
+  const ownerName = String(me.username || "").toLowerCase();
+  const isOwner = (c) => (c?.from?.id && String(c.from.id) === ownerId) || String(c?.username || c?.from?.username || "").toLowerCase() === ownerName;
+  const media = (await graph(`me/media?fields=id,timestamp,permalink,caption&limit=${MEDIA_SCAN}`)).data || [];
+  const out = [];
+  for (const m of media) {
+    let after = "";
+    for (let page = 0; page < COMMENT_PAGES; page++) {
+      const res = await graph(`${m.id}/comments?fields=id,text,timestamp,username,from,replies{username,from}&limit=50${after ? `&after=${after}` : ""}`);
+      for (const c of res.data || []) {
+        const at = Date.parse(c.timestamp);
+        if (!(now - at < PRIVATE_REPLY_WINDOW_MS)) continue;
+        if (isOwner(c) || !hasKeyword(c.text, list)) continue;
+        if ((c.replies?.data || []).some(isOwner)) continue;
+        if (await isClaimed(String(c.id))) continue;
+        out.push({ commentId: String(c.id), username: c.username || c.from?.username || "", fromId: String(c.from?.id || ""), text: String(c.text || ""), at, mediaId: String(m.id), permalink: m.permalink || "", caption: String(m.caption || "").slice(0, 60) });
+      }
+      after = res.paging?.next ? res.paging?.cursors?.after || "" : "";
+      if (!after) break;
+    }
+  }
+  return { ownerId, comments: out.sort((a, b) => b.at - a.at) };
+}
+
+// Sends message 1 (+ the public reply) for each, exactly as if the webhook had
+// caught it; claimComment keeps every comment to one DM.
+export async function answerMissedComments(found, deps) {
+  const events = found.comments.map((c) => ({ kind: "comment", accountId: found.ownerId, commentId: c.commentId, fromId: c.fromId, username: c.username, text: c.text, ...(c.fromId ? {} : { incomplete: true }) }));
+  return handleEvents(events, deps);
+}
+
 // ---- the token -------------------------------------------------------------
 
 export async function currentToken(db, env = process.env) {
