@@ -100,7 +100,7 @@ describe("the messages", () => {
     assert.equal(openerMessage().attachment.payload.buttons[0].payload, LINK_PAYLOAD);
     assert.equal(linkMessage().attachment.payload.buttons[0].url, LINK);
     assert.match(LINK, /^https:\/\/brandlab\.wepeka\.com\/founder\?utm_source=instagram&utm_medium=dm&utm_campaign=komen_branding$/);
-    assert.ok(openerFallback().text.includes(LINK) && !openerFallback().text.includes("Mau aku kasih linknya kak?"));
+    assert.ok(openerFallback().text.includes(LINK) && !openerFallback().text.includes("Mau aku kasih linknya kah kak?"));
   });
   test("public replies rotate but stay the same for one comment", () => {
     assert.equal(publicReply("c1"), publicReply("c1"));
