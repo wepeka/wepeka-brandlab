@@ -48,25 +48,21 @@ export const COPY = {
     "Cek inbox kak, linknya udah meluncur 🚀",
     "Siap kak, cek DM ya 👀",
   ],
-  opener: "Hai kak! Ini ya, tools yang tadi kakak tanyain, namanya Wepeka BrandLab. 👋\n\nPernah nggak sih kak, ngerasa ngurus brand tuh banyak banget yang harus dipikirin? Mulai dari strategi, konten, marketing, evaluasi performa, sampai bingung sebenarnya next step yang harus dilakukan apa.\n\nNah, what if semuanya bisa dikelola dalam satu tempat, bahkan ada sistem yang bisa kasih saran apa yang harus kakak lakukan selanjutnya berdasarkan data dan kondisi brand kakak sendiri?\n\nPlus bisa kerja bareng tim, siapa ngerjain apa langsung kepantau 🤝\n\nYes, Wepeka BrandLab bakal temenin dan bantu perjalanan brand kakak!\nMau aku kasih linknya kah kak?",
+  opener: "Hai kak! 👋 Ini ya, tools yang tadi kakak tanyain, namanya Wepeka BrandLab ✨\n\nPernah nggak sih kak, ngerasa ngurus brand tuh banyak banget yang harus dipikirin? 🤯 Mulai dari strategi, konten, marketing, evaluasi performa, sampai bingung next step-nya apa 🤔\n\nNah, what if semuanya bisa dikelola dalam satu tempat, bahkan ada sistem yang bisa kasih saran apa yang harus kakak lakukan selanjutnya berdasarkan data dan kondisi brand kakak sendiri? 📊💡\n\nPlus bisa kerja bareng tim, siapa ngerjain apa langsung kepantau 🤝\n\nYes, Wepeka BrandLab bakal temenin dan bantu perjalanan brand kakak! 🚀\nMau aku kasih linknya kah kak? 😆",
   openerButton: "Mau dong 👀",
   pitch: [
-    "Ini dia kak 👇",
+    "🔥 ‼️ Special Offer - FOUNDER'S LIFETIME ACCESS ‼️ 🔥",
+    "Sekarang masih ada kesempatan join dengan slot terbatas. Cukup sekali bayar Rp599.000 dan bisa pakai BrandLab seumur hidup!",
+    "Kalau dibagi setahun, jatuhnya cuma sekitar Rp1.641 per hari. Bayangin, punya sistem dan AI consultant pribadi untuk bantu manage dan grow brand setiap hari dengan biaya segitu. 😭",
     "",
-    "BrandLab bantu kakak ngurus branding, bikin campaign marketing, planning konten, sampai tracking penjualan dalam SATU platform. Semua nyambung, jadi kakak selalu tau langkah berikutnya tanpa nebak-nebak.",
+    "Selain itu, kakak juga dapat:",
+    "• Weekly Founder's Session: Sharing, evaluasi penggunaan BrandLab, diskusi bareng founder lain, sampai cari solusi untuk permasalahan bisnis bersama.",
+    "• Continuous Development: Fitur dan kemampuan BrandLab akan terus dikembangkan supaya makin lengkap dan bermanfaat.",
     "",
-    "Upgrade yang kakak dapet:",
-    "✅ Brand DNA & Brand Book → brand punya arah yang jelas",
-    "✅ Campaign & goals → target yang bisa diukur",
-    "✅ Planning konten + script → dibantu AI yang kasih ide sesuai brand kakak",
-    "✅ Tracking penjualan → tau konten mana yang beneran bikin jualan",
-    "",
-    "Dari kerja manual yang kepisah-pisah, jadi satu sistem yang rapi & terukur 📈 Ini cara kerja brand ke depan.",
-    "",
-    "🔥 Sekarang juga ada Founders Lifetime! Nggak cuma dapet akses seumur hidup, tapi juga ada weekly session buat belajar pakai BrandLab dan sharing bareng founder lainnya.",
+    "Yuk kak, join sekarang sebelum slot Founder's Lifetime habis. Kita grow bareng-bareng! 🚀❤️",
   ].join("\n"),
-  linkText: "Seat Founders-nya terbatas yaa, amankan seat kakak sebelum habis 👇",
-  linkButton: "Cek detailnya 👉",
+  linkText: "Amankan slot Founder's Lifetime kakak di sini 👇",
+  linkButton: "Join sekarang 🚀",
 };
 
 export function keywords(env = process.env) {
@@ -137,7 +133,7 @@ export function openerMessage() {
 // When Instagram refuses the button (private replies are picky): the whole
 // thing in one text, link included.
 export function openerFallback() {
-  return { text: `${COPY.opener.replace(/\n[^\n]*\?\s*$/, "")}\n\nCek detailnya di sini 👇\n${LINK}` };
+  return { text: `${COPY.opener.replace(/\n[^\n]*$/, "")}\n\nCek detailnya di sini 👇\n${LINK}` };
 }
 export function linkMessage() {
   return buttonTemplate(COPY.linkText, { type: "web_url", url: LINK, title: COPY.linkButton });
