@@ -124,11 +124,6 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-team-facts li{ display:flex; flex-direction:column; gap:2px; padding:12px 10px; border-radius:14px; border:1px solid var(--line); background:var(--card); text-align:center; }
 .fd-team-facts b{ font-family:"Grift Black","JUST Sans",sans-serif; font-size:18px; line-height:1.1; background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
 .fd-team-facts span{ font-size:12px; line-height:1.3; color:var(--muted); }
-.fd-quotes{ display:flex; flex-direction:column; gap:10px; margin:0 0 18px; }
-.fd-quote{ margin:0; padding:14px 16px; border-radius:16px; border:1px solid var(--line); background:var(--card); }
-.fd-quote blockquote{ margin:0 0 8px; font-size:15px; line-height:1.5; color:var(--text); }
-.fd-quote figcaption{ font-size:13px; color:var(--muted); }
-.fd-quote figcaption b{ color:var(--text); }
 .fd-chip{ align-self:center; display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:14px; border:1px dashed rgba(236,72,153,.55); background:rgba(236,72,153,.08); color:#fbcfe8; font-size:13.5px; font-weight:700; text-decoration:none; text-align:left; }
 .fd-chip svg{ color:#f472b6; }
 .fd-alt{ margin:2px 0 0; font-size:14px; color:var(--muted); }
@@ -418,3 +413,22 @@ main{ max-width:640px; margin:0 auto; padding:0 var(--gutter); }
 .fd-apps .is-plus span b{ background:var(--grad); }
 @media (min-width:720px){ .fd-apps{ grid-template-columns:repeat(3,1fr); } }
 .fd-nowrap{ white-space:nowrap; }
+
+/* ---------- what Founders say (above the AI block) ---------- */
+.fd-voices{ background:radial-gradient(440px 280px at 0% 0%, rgba(255,140,40,.14), transparent 70%), radial-gradient(440px 320px at 100% 90%, rgba(168,85,247,.16), transparent 72%); }
+.fd-voices-track{ display:flex; gap:12px; margin:18px calc(-1 * var(--gutter)) 0; padding:8px var(--gutter) 18px; overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-inline:var(--gutter); scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.fd-voices-track::-webkit-scrollbar{ display:none; }
+.fd-voice{ position:relative; flex:0 0 min(84%,330px); scroll-snap-align:start; margin:0; padding:46px 18px 18px; border-radius:22px; background:linear-gradient(165deg, rgba(255,255,255,.085), rgba(255,255,255,.025)); box-shadow:0 18px 40px -22px rgba(236,72,153,.55); display:flex; flex-direction:column; }
+.fd-voice::after{ content:""; position:absolute; inset:0; border-radius:inherit; padding:1px; background:var(--grad); opacity:.5; pointer-events:none; -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; }
+.fd-voice::before{ content:"\201C"; position:absolute; top:6px; left:16px; font:900 72px/1 "Grift Black","JUST Sans",sans-serif; background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.fd-voice blockquote{ margin:0 0 18px; flex:1; font-size:15.5px; line-height:1.55; color:var(--text); }
+.fd-voice figcaption{ display:flex; align-items:center; gap:10px; }
+.fd-voice-av{ flex:none; width:38px; height:38px; border-radius:50%; display:grid; place-items:center; font:900 16px/1 "Grift Black","JUST Sans",sans-serif; color:#fff; background:linear-gradient(135deg,#ff9a1f,#ec4899); }
+.fd-voice:nth-child(4n+2) .fd-voice-av{ background:linear-gradient(135deg,#ec4899,#a855f7); }
+.fd-voice:nth-child(4n+3) .fd-voice-av{ background:linear-gradient(135deg,#a855f7,#6366f1); }
+.fd-voice:nth-child(4n+4) .fd-voice-av{ background:linear-gradient(135deg,#34d399,#06b6d4); }
+.fd-voice-who{ display:flex; flex-direction:column; min-width:0; flex:1; }
+.fd-voice-who b{ font-size:14.5px; color:var(--text); }
+.fd-voice-who small{ font-size:12.5px; color:var(--muted); }
+.fd-voice-tag{ flex:none; padding:3px 9px; border-radius:999px; font-size:11px; font-weight:800; color:var(--muted); background:rgba(255,255,255,.08); }
+@media (min-width:700px){ .fd-voice{ flex-basis:340px; } }

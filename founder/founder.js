@@ -247,10 +247,11 @@ function start() {
     history.replaceState(null, "", location.pathname + (qs ? `?${qs}` : "") + location.hash);
   }
 
+  // Founder quotes: a swipe row above the AI block. Hidden while TESTIMONIALS is empty.
   const quotes = document.querySelector("[data-quotes]");
   if (quotes && TESTIMONIALS.length) {
-    quotes.innerHTML = TESTIMONIALS.map((q) => `<figure class="fd-quote"><blockquote>“${esc(q.quote)}”</blockquote><figcaption><b>${esc(q.name)}</b>${q.business ? ` · ${esc(q.business)}` : ""}</figcaption></figure>`).join("");
-    quotes.hidden = false;
+    quotes.innerHTML = TESTIMONIALS.map((q) => `<figure class="fd-voice" role="listitem"><blockquote>${esc(q.quote)}</blockquote><figcaption><span class="fd-voice-av" aria-hidden="true">${esc(String(q.name).trim().charAt(0).toUpperCase())}</span><span class="fd-voice-who"><b>${esc(q.name)}</b>${q.business ? `<small>${esc(q.business)}</small>` : ""}</span>${q.tag ? `<span class="fd-voice-tag">${esc(q.tag)}</span>` : ""}</figcaption></figure>`).join("");
+    quotes.closest("section").hidden = false;
   }
 
   gaEvent("page_view", { page_location: location.href.split("#")[0], page_path: "/founder", page_title: document.title });
