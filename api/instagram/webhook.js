@@ -74,6 +74,10 @@ export default async function handler(req, res) {
   }
 
   const events = readEvents(payload, keywords());
+  // One line per delivery, so Vercel's logs show what Meta sent (account +
+  // field) and what came of it — a quiet success is otherwise invisible.
+  const seen = (payload.entry || []).map((e) => `${e.id}:${[...(e.changes || []).map((c) => c.field), ...(e.messaging || []).length ? ["messaging"] : []].join("+")}`);
+  console.log("[ig-auto-dm] received", seen.join(" "), "→", events.length ? events.map((e) => e.kind).join(",") : "nothing for us");
   if (!events.length) return res.status(200).json({ ok: true, events: 0 });
 
   const db = adminDb();
@@ -86,5 +90,6 @@ export default async function handler(req, res) {
   // response is out. Always 200 — a non-2xx makes Meta resend the batch, and
   // a comment it already handled is skipped anyway.
   const results = await handleEvents(events, { graph: graphClient(token), ...firestoreDeps(db) });
+  console.log("[ig-auto-dm] done", JSON.stringify(results));
   return res.status(200).json({ ok: true, results });
 }
