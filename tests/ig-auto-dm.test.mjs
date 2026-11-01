@@ -175,6 +175,23 @@ describe("what goes out", () => {
     stale.people.set("777", { dmAt: stale.now - REPLY_WINDOW_MS - 1 });
     assert.equal((await handleEvents(ev, stale))[0].skipped, "no-opener");
   });
+  test("Meta leaves out the writer: the comment is read from Instagram first", async () => {
+    const payload = { object: "instagram", entry: [{ id: ACCOUNT, changes: [{ field: "comments", value: { id: "c9", text: "BRANDLAB", media: { id: "m1" } } }] }] };
+    const [ev] = readEvents(payload);
+    assert.equal(ev.incomplete, true);
+    const d = fakeDeps();
+    const graph = d.graph;
+    d.graph = async (path, body) => (body === undefined ? (d.calls.push({ path }), { text: "BRANDLAB", from: { id: "555", username: "rani.store" } }) : graph(path, body));
+    assert.equal((await handleEvents([ev], d))[0].sent, "button");
+    assert.deepEqual(d.calls.map((c) => c.path), ["c9?fields=text,username,from", "me/messages", "c9/replies"]);
+    assert.equal(d.people.get("555").dmAt, d.now);
+    const own = fakeDeps();
+    own.graph = async () => ({ text: "brandlab", from: { id: ACCOUNT } });
+    assert.equal((await handleEvents(readEvents(payload), own))[0].skipped, "self");
+    const other = fakeDeps();
+    other.graph = async () => ({ text: "keren kak", from: { id: "1" } });
+    assert.equal((await handleEvents(readEvents(payload), other))[0].skipped, "no-keyword");
+  });
   test("a comment 'Brandlab' or 'mau dong' sends message 1", async () => {
     for (const text of ["BRANDLAB", "mau dong kak"]) {
       const d = fakeDeps();

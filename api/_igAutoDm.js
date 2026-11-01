@@ -122,9 +122,12 @@ export function readEvents(payload, list = keywords(), onlyAccount = autoDmAccou
       if (change.field !== "comments") continue;
       const v = change.value || {};
       const fromId = String(v.from?.id || "");
-      if (!v.id || !fromId || fromId === accountId) continue;
-      if (!hasKeyword(v.text, list)) continue;
-      out.push({ kind: "comment", accountId, commentId: String(v.id), fromId, username: v.from?.username || "", text: v.text || "" });
+      if (!v.id || fromId === accountId) continue;
+      // Meta may leave out who wrote it (or the text) for people without a
+      // role on the app; onComment then reads the comment itself.
+      const incomplete = !fromId || typeof v.text !== "string";
+      if (!incomplete && !hasKeyword(v.text, list)) continue;
+      out.push({ kind: "comment", accountId, commentId: String(v.id), fromId, username: v.from?.username || "", text: v.text || "", ...(incomplete ? { incomplete: true } : {}) });
     }
     for (const m of entry.messaging || []) {
       const senderId = String(m.sender?.id || "");
@@ -161,14 +164,13 @@ export function publicReply(commentId) {
   return COPY.publicReplies[n % COPY.publicReplies.length];
 }
 
-// graph(path, body) → parsed JSON; throws with Instagram's error message.
+// graph(path, body) → parsed JSON (POST; a GET without body); throws with
+// Instagram's error message.
 export function graphClient(token, fetchImpl = fetch) {
   return async (path, body) => {
-    const res = await fetchImpl(`${GRAPH}/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
+    const res = await fetchImpl(`${GRAPH}/${path}`, body === undefined
+      ? { headers: { Authorization: `Bearer ${token}` } }
+      : { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
       const err = new Error(data.error?.message || `Instagram ${res.status}`);
@@ -195,11 +197,17 @@ export async function handleEvents(events, deps) {
 }
 
 async function onComment(ev, { graph, claimComment, person, savePerson, now = Date.now() }) {
+  if (ev.incomplete) {
+    const c = await graph(`${ev.commentId}?fields=text,username,from`);
+    ev = { ...ev, text: c.text || ev.text, fromId: String(c.from?.id || ev.fromId || ""), username: c.from?.username || c.username || ev.username };
+    if (ev.fromId && ev.fromId === ev.accountId) return { kind: "comment", skipped: "self" };
+    if (!hasKeyword(ev.text)) return { kind: "comment", skipped: "no-keyword", text: ev.text.slice(0, 40) };
+  }
   // Meta repeats a webhook it thinks we missed; one comment = one DM, ever.
   if (!(await claimComment(ev.commentId, { fromId: ev.fromId, username: ev.username, text: ev.text.slice(0, 300), at: now }))) {
     return { kind: "comment", skipped: "duplicate" };
   }
-  const known = await person(ev.fromId);
+  const known = ev.fromId ? await person(ev.fromId) : null;
   if (known?.dmAt && now - known.dmAt < DM_COOLDOWN_MS) return { kind: "comment", skipped: "recent" };
 
   let sent = "button";
@@ -212,7 +220,7 @@ async function onComment(ev, { graph, claimComment, person, savePerson, now = Da
     await graph("me/messages", { recipient: { comment_id: ev.commentId }, message: openerFallback() });
     sent = "text";
   }
-  await savePerson(ev.fromId, { username: ev.username, dmAt: now, lastCommentId: ev.commentId, ...(sent === "text" ? { linkAt: now } : {}) });
+  if (ev.fromId) await savePerson(ev.fromId, { username: ev.username, dmAt: now, lastCommentId: ev.commentId, ...(sent === "text" ? { linkAt: now } : {}) });
   // Only after the DM really went out — "cek DM" with nothing in it is worse
   // than silence. A failed public reply doesn't undo the DM.
   try {
