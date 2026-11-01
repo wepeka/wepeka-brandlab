@@ -1,5 +1,5 @@
-// Instagram comment → DM, our own (no ManyChat): someone comments "Branding"
-// on a @wepeka post → a public reply under the comment + a DM with one
+// Instagram comment → DM, our own (no ManyChat): someone comments "Branding",
+// "Brandlab" or "mau dong" on a @winkhsin post → a public reply under the comment + a DM with one
 // button → tapping it sends the pitch and the /founder link. Runs on the
 // official Instagram API with Instagram Login (graph.instagram.com), fed by
 // api/instagram/webhook.js. Off (every call a silent no-op) until the env
@@ -11,7 +11,7 @@
 //   IG_ACCESS_TOKEN   the long-lived token generated for @wepeka there. It
 //                     lives 60 days; the daily cron refreshes it into
 //                     igAutoDm/token, which wins over the env value after that.
-// Optional: IG_AUTODM_KEYWORDS ("branding,brandlab"), IG_VERIFY_TOKEN (the
+// Optional: IG_AUTODM_KEYWORDS (comma list, replaces DEFAULT_KEYWORDS), IG_VERIFY_TOKEN (the
 // webhook's handshake word, not a secret — the app secret guards every POST),
 // META_GRAPH_VERSION.
 // Everything else here is pure and takes its Firestore/fetch from the caller
@@ -36,6 +36,8 @@ export const LINK_PAYLOAD = "IGDM_LINK";
 export const DM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 // Two taps on the button (or the button + typing "branding") send the link once.
 export const LINK_COOLDOWN_MS = 10 * 60 * 1000;
+// A typed "mau dong" counts as the button only this long after message 1.
+export const REPLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 // Instagram only takes a refresh once the token is a day old; weekly is plenty
 // for a 60-day token.
 export const TOKEN_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
@@ -65,25 +67,37 @@ export const COPY = {
   linkButton: "Join sekarang 🚀",
 };
 
+// What a comment (or a short DM) must say. Any case: "Brandlab", "BRANDLAB".
+export const DEFAULT_KEYWORDS = ["branding", "brandlab", "brand lab", "mau dong"];
+// Typed instead of tapping "Mau dong 👀" — only for someone who got message 1
+// (REPLY_WINDOW_MS), so "mau dong" in an ordinary chat stays Winson's.
+export const REPLY_KEYWORDS = ["mau dong", "mau"];
+// A DM longer than this is a real conversation, never answered by the bot.
+const DM_MAX_WORDS = 4;
+
 export function keywords(env = process.env) {
-  const list = String(env.IG_AUTODM_KEYWORDS || "branding")
-    .split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
-  return list.length ? list : ["branding"];
+  const list = String(env.IG_AUTODM_KEYWORDS || "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean);
+  return list.length ? list : DEFAULT_KEYWORDS;
 }
 
-// "Branding", "branding!!", "#branding", "mau BRANDING kak" — the keyword as
-// a word anywhere; "rebranding" or "brandingnya" are not it.
-export function hasKeyword(text, list = keywords()) {
-  const words = String(text || "").toLowerCase().split(/[^\p{L}\p{N}]+/u);
-  return list.some((k) => words.includes(k));
-}
+const words = (text) => String(text || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
-// A DM that is nothing but the keyword ("branding", "Branding 🙏") — someone
-// who typed it instead of commenting. Any longer DM is a real conversation
-// and stays Winson's.
-export function isKeywordOnly(text, list = keywords()) {
-  const words = String(text || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  return words.length === 1 && list.includes(words[0]);
+// The first keyword the text contains as whole word(s): "Branding!!",
+// "#brandlab", "Mau dong kak" — but not "rebranding" or "brandingnya".
+export function matchKeyword(text, list = keywords()) {
+  const padded = ` ${words(text).join(" ")} `;
+  return list.find((k) => padded.includes(` ${words(k).join(" ")} `)) || null;
+}
+export const hasKeyword = (text, list = keywords()) => matchKeyword(text, list) !== null;
+
+// A short DM ("Brandlab", "mau dong kak 🙏") → { keyword, reply } or null.
+// Longer DMs are real conversations and stay Winson's.
+export function dmTrigger(text, list = keywords()) {
+  if (words(text).length > DM_MAX_WORDS) return null;
+  const reply = matchKeyword(text, REPLY_KEYWORDS);
+  if (reply) return { keyword: reply, reply: true };
+  const keyword = matchKeyword(text, list);
+  return keyword ? { keyword, reply: false } : null;
 }
 
 export function verifySignature(rawBody, header, secret) {
@@ -117,7 +131,10 @@ export function readEvents(payload, list = keywords(), onlyAccount = autoDmAccou
       if (!senderId || senderId === accountId || m.message?.is_echo) continue;
       if (m.postback?.payload === LINK_PAYLOAD) out.push({ kind: "wantsLink", accountId, senderId, via: "button" });
       else if (m.message?.quick_reply?.payload === LINK_PAYLOAD) out.push({ kind: "wantsLink", accountId, senderId, via: "button" });
-      else if (m.message?.text && isKeywordOnly(m.message.text, list)) out.push({ kind: "wantsLink", accountId, senderId, via: "dm" });
+      else if (m.message?.text) {
+        const hit = dmTrigger(m.message.text, list);
+        if (hit) out.push({ kind: "wantsLink", accountId, senderId, via: hit.reply ? "reply" : "dm" });
+      }
     }
   }
   return out;
@@ -208,6 +225,7 @@ async function onComment(ev, { graph, claimComment, person, savePerson, now = Da
 
 async function onWantsLink(ev, { graph, person, savePerson, now = Date.now() }) {
   const known = await person(ev.senderId);
+  if (ev.via === "reply" && !(known?.dmAt && now - known.dmAt < REPLY_WINDOW_MS)) return { kind: "wantsLink", skipped: "no-opener" };
   if (known?.linkAt && now - known.linkAt < LINK_COOLDOWN_MS) return { kind: "wantsLink", skipped: "recent" };
   await graph("me/messages", { recipient: { id: ev.senderId }, message: { text: COPY.pitch } });
   try {

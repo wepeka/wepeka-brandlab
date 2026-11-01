@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import {
-  hasKeyword, isKeywordOnly, keywords, verifySignature, readEvents, handleEvents, publicReply, refreshToken,
+  hasKeyword, dmTrigger, DEFAULT_KEYWORDS, REPLY_WINDOW_MS, keywords, verifySignature, readEvents, handleEvents, publicReply, refreshToken,
   COPY, LINK, LINK_PAYLOAD, openerMessage, openerFallback, linkMessage, DM_COOLDOWN_MS,
 } from "../api/_igAutoDm.js";
 import handler, { metaJson, rawBody } from "../api/instagram/webhook.js";
@@ -44,13 +44,21 @@ describe("what counts as the keyword", () => {
   test("not inside another word", () => {
     for (const t of ["rebranding", "brandingnya keren", "brand", ""]) assert.equal(hasKeyword(t, ["branding"]), false, t);
   });
-  test("IG_AUTODM_KEYWORDS adds more", () => {
-    assert.deepEqual(keywords({ IG_AUTODM_KEYWORDS: " Branding, BrandLab ," }), ["branding", "brandlab"]);
-    assert.deepEqual(keywords({}), ["branding"]);
+  test("default: Branding, Brandlab (any case, also 'Brand Lab') and 'mau dong'", () => {
+    assert.deepEqual(keywords({}), DEFAULT_KEYWORDS);
+    for (const t of ["brandlab", "Brandlab", "BRANDLAB", "BrandLab!", "#brandlab", "Brand Lab", "branding", "Mau dong kak 🙏", "MAU DONG"]) assert.ok(hasKeyword(t), t);
+    for (const t of ["mau", "dong", "brandlabnya", "keren kak"]) assert.equal(hasKeyword(t), false, t);
   });
-  test("a DM triggers only when it is the keyword alone", () => {
-    assert.ok(isKeywordOnly("Branding 🙏", ["branding"]));
-    assert.equal(isKeywordOnly("kak aku mau tanya soal branding", ["branding"]), false);
+  test("IG_AUTODM_KEYWORDS replaces the list", () => {
+    assert.deepEqual(keywords({ IG_AUTODM_KEYWORDS: " Branding, BrandLab ," }), ["branding", "brandlab"]);
+  });
+  test("a short DM triggers; 'mau'/'mau dong' count as a reply to message 1", () => {
+    assert.deepEqual(dmTrigger("Branding 🙏"), { keyword: "branding", reply: false });
+    assert.deepEqual(dmTrigger("BRANDLAB"), { keyword: "brandlab", reply: false });
+    assert.deepEqual(dmTrigger("Mau dong kak"), { keyword: "mau dong", reply: true });
+    assert.deepEqual(dmTrigger("mau"), { keyword: "mau", reply: true });
+    assert.equal(dmTrigger("kak aku mau tanya soal branding"), null);
+    assert.equal(dmTrigger("halo kak"), null);
   });
 });
 
@@ -154,6 +162,24 @@ describe("what goes out", () => {
     assert.deepEqual(d.calls[0].body.recipient, { id: "777" });
     assert.equal((await handleEvents(ev, d))[0].skipped, "recent");
     assert.equal(d.calls.length, 2);
+  });
+  test("typed 'mau dong': the link only after message 1 (within 7 days)", async () => {
+    const d = fakeDeps();
+    const ev = readEvents(messagingPayload({ message: { mid: "x", text: "Mau dong kak" } }));
+    assert.equal(ev[0].via, "reply");
+    assert.equal((await handleEvents(ev, d))[0].skipped, "no-opener");
+    assert.equal(d.calls.length, 0);
+    d.people.set("777", { dmAt: d.now - 60_000 });
+    assert.equal((await handleEvents(ev, d))[0].sent, true);
+    const stale = fakeDeps();
+    stale.people.set("777", { dmAt: stale.now - REPLY_WINDOW_MS - 1 });
+    assert.equal((await handleEvents(ev, stale))[0].skipped, "no-opener");
+  });
+  test("a comment 'Brandlab' or 'mau dong' sends message 1", async () => {
+    for (const text of ["BRANDLAB", "mau dong kak"]) {
+      const d = fakeDeps();
+      assert.equal((await handleEvents(readEvents(commentPayload(text)), d))[0].sent, "button", text);
+    }
   });
 });
 
