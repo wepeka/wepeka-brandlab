@@ -273,7 +273,7 @@ describe("comments the webhook never answered", () => {
   const comments = {
     m1: [
       { id: "a", text: "Brandlab", timestamp: ago(5), username: "rani.store", from: { id: "1", username: "rani.store" } },
-      { id: "b", text: "BRANDING dong", timestamp: ago(30), username: "budi", from: { id: "2", username: "budi" }, replies: { data: [{ username: "winkhsin", from: OWNER }] } },
+      { id: "b", text: "BRANDING dong", timestamp: ago(30), username: "budi", from: { id: "2", username: "budi" } },
       { id: "c", text: "keren kak", timestamp: ago(2), username: "sari", from: { id: "3" } },
       { id: "d", text: "brandlab", timestamp: ago(24 * 8), username: "lama", from: { id: "4" } },
       { id: "e", text: "Brandlab ya", timestamp: ago(1), username: "winkhsin", from: OWNER },
@@ -286,8 +286,9 @@ describe("comments the webhook never answered", () => {
   const graph = async (path) => {
     if (path.startsWith("me?")) return { user_id: ACCOUNT, username: "winkhsin" };
     if (path.startsWith("me/media")) return { data: [{ id: "m1", permalink: "https://instagram.com/p/1" }, { id: "m2", permalink: "https://instagram.com/p/2" }] };
-    const media = path.split("/")[0];
-    return { data: comments[media] || [] };
+    const [id, edge] = path.split("?")[0].split("/");
+    if (edge === "replies") return { data: id === "b" ? [{ id: "r1", username: "winkhsin" }] : [] };
+    return { data: comments[id] || [] };
   };
   test("only unanswered keyword comments from others, within 7 days, newest first", async () => {
     const found = await findMissedComments({ graph, isClaimed: async (id) => id === "g", now: NOW });

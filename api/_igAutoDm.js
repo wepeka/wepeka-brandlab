@@ -267,13 +267,16 @@ export async function findMissedComments({ graph, isClaimed, now = Date.now(), l
   for (const m of media) {
     let after = "";
     for (let page = 0; page < COMMENT_PAGES; page++) {
-      const res = await graph(`${m.id}/comments?fields=id,text,timestamp,username,from,replies{username,from}&limit=50${after ? `&after=${after}` : ""}`);
+      const res = await graph(`${m.id}/comments?fields=id,text,timestamp,username,from&limit=50${after ? `&after=${after}` : ""}`);
       for (const c of res.data || []) {
         const at = Date.parse(c.timestamp);
         if (!(now - at < PRIVATE_REPLY_WINDOW_MS)) continue;
         if (isOwner(c) || !hasKeyword(c.text, list)) continue;
-        if ((c.replies?.data || []).some(isOwner)) continue;
         if (await isClaimed(String(c.id))) continue;
+        // Asked separately: nested replies{…} on the comments list came back
+        // empty, which made every answered comment look unanswered.
+        const replies = (await graph(`${c.id}/replies?fields=id,username,from&limit=50`)).data || [];
+        if (replies.some(isOwner)) continue;
         out.push({ commentId: String(c.id), username: c.username || c.from?.username || "", fromId: String(c.from?.id || ""), text: String(c.text || ""), at, mediaId: String(m.id), permalink: m.permalink || "", caption: String(m.caption || "").slice(0, 60) });
       }
       after = res.paging?.next ? res.paging?.cursors?.after || "" : "";
