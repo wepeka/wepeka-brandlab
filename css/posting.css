@@ -323,6 +323,9 @@
 .pq-g-state{ position:absolute; left:8px; bottom:8px; z-index:1; display:inline-flex; align-items:center; gap:6px; max-width:calc(100% - 16px); padding:4px 10px 4px 8px; border-radius:999px; background: rgba(0,0,0,.62); color:#fff; font-size:12px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; backdrop-filter: blur(6px); }
 .pq-g-state i{ flex:none; width:8px; height:8px; border-radius:50%; background: var(--pst); }
 .pq-g-n{ position:absolute; top:8px; right:8px; z-index:1; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px; background: rgba(0,0,0,.62); color:#fff; font-size:12px; font-weight:800; }
+.pq-g-ok{ position:absolute; top:7px; right:7px; z-index:1; display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background: rgba(0,0,0,.45); backdrop-filter: blur(6px); filter: drop-shadow(0 2px 6px rgba(0,0,0,.35)); }
+.pq-g.is-posted .pq-g-media{ box-shadow: 0 0 0 2px #0095F6; }
+.pq-g.is-posted .pq-g-media:hover{ box-shadow: 0 0 0 3px #0095F6; }
 .pq-g-views{ position:absolute; bottom:40px; left:8px; z-index:1; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px; background: rgba(0,0,0,.62); color:#fff; font-size:12px; font-weight:800; font-variant-numeric: tabular-nums; }
 .pq-g-code{ position:absolute; top:8px; left:8px; z-index:2; padding:3px 9px; border-radius:8px; border:0; background:#fff; color:#1b1a17; font:inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; font-weight:800; cursor:copy; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 .pq-g-code:hover{ background: var(--pst); }

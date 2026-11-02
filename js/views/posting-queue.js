@@ -55,6 +55,10 @@ function whenLabel(c) {
   return `${d.toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { weekday: "short", day: "numeric", month: "short" })}${time}`;
 }
 const TYPE_ICON = { reels: "play", carousel: "layers", foto: "image", story: "clock" };
+// Posted: Instagram's own "verified" seal in the frame's corner (owner, 2026-11-02:
+// "tanda centang verified di pojok kanan framenya"), so a piece that went out
+// still sits in its week but reads as done at a glance.
+const SEAL = `<svg viewBox="0 0 40 40" width="26" height="26" aria-hidden="true"><path fill="#0095F6" d="M19.998 3.094 14.638 0l-2.972 5.15H5.432v6.354L0 14.64 3.094 20 0 25.359l5.432 3.137v5.905h5.975L14.638 40l5.36-3.094L25.358 40l3.232-5.6h6.162v-6.01L40 25.359 36.905 20 40 14.641l-5.248-3.03v-6.46h-6.419L25.358 0l-5.36 3.094Z"/><path fill="#fff" d="m17.2 27.5-6.6-6.6 2.4-2.4 4.2 4.2 9.8-9.8 2.4 2.4z"/></svg>`;
 
 function thumbHTML(c, cls = "pq-tile-img") {
   return `<span class="${cls}" data-thumb="${escapeHtml(c.id)}">${icon(TYPE_ICON[c.posting?.type] || "play", { size: 18 })}</span>`;
@@ -72,11 +76,12 @@ function tileHTML({ c, state, sub }) {
   // At the editor (Claude), or its revision just in: said instead of the state.
   const ed = editorChip(c);
   // Posted: how it did, on the tile (owner: "dibuka bisa juga lihat ada views").
-  const views = state === "published" ? organicViews(c) : null;
-  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""}" style="--pst:${stateColor(state)}">
+  const posted = state === "published";
+  const views = posted ? organicViews(c) : null;
+  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${posted ? "is-posted" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
         <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon("upload", { size: 22 })}<small>${t("post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
-        ${n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
+        ${posted ? `<span class="pq-g-ok" title="${escapeHtml(t("pq.posted.seal"))}">${SEAL}</span>` : n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
         ${views !== null && views !== undefined && views !== "" ? `<span class="pq-g-views" title="${escapeHtml(t("pq.views"))}">${icon("eye", { size: 12 })}${formatNumber(views)}</span>` : ""}
         ${empty ? "" : ed ? `<span class="pq-g-state is-editor" style="--pst:${ed.color}"><i></i>${escapeHtml(ed.label)}</span>` : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
       </button>
@@ -98,9 +103,13 @@ function ordered(list) {
 }
 
 function listHTML(items, ui) {
-  const counts = Object.fromEntries(FILTERS.map((f) => [f, f === "all" ? items.filter((x) => x.state !== "published").length : items.filter((x) => filterOf(x.state) === f).length]));
+  // "Semua" in a week or month keeps what already went out, sealed (owner,
+  // 2026-11-02: "yang sudah tayang tetap bisa dilihat di antrean minggu ini");
+  // over all time it stays under its own chip, or every old post would fill it.
+  const inAll = (x) => ui.period !== "all" || x.state !== "published";
+  const counts = Object.fromEntries(FILTERS.map((f) => [f, f === "all" ? items.filter(inAll).length : items.filter((x) => filterOf(x.state) === f).length]));
   const chips = `<div class="pq-filters" role="group" aria-label="${escapeHtml(t("pq.filterLabel"))}">${FILTERS.map((f) => `<button type="button" class="pq-filter ${ui.status === f ? "is-on" : ""}" data-status="${f}" aria-pressed="${ui.status === f}" style="--pst:${f === "all" ? "var(--text)" : stateColor(f)}">${f === "all" ? "" : "<i></i>"}${t(`pq.f.${f}`)}<b>${counts[f]}</b></button>`).join("")}</div>`;
-  const shown = items.filter((x) => (ui.status === "all" ? x.state !== "published" : filterOf(x.state) === ui.status));
+  const shown = items.filter((x) => (ui.status === "all" ? inAll(x) : filterOf(x.state) === ui.status));
   if (!shown.length) return `${chips}<div class="pq-empty">${icon("check", { size: 20 })}<span>${t(ui.status === "all" ? "pq.emptyAll" : "pq.emptyFilter")}</span></div>`;
   const rows = (list) => ordered(list).map(tileHTML).join("");
   if (ui.status === "published") {
@@ -110,7 +119,7 @@ function listHTML(items, ui) {
   // One gallery, soonest first (no date last); what's past its date and
   // still not up waits folded underneath.
   const today = localISODate();
-  const late = shown.filter((x) => x.c.scheduleDate && x.c.scheduleDate < today);
+  const late = shown.filter((x) => x.c.scheduleDate && x.c.scheduleDate < today && x.state !== "published");
   const main = shown.filter((x) => !late.includes(x));
   return `${chips}
     ${main.length ? `<div class="pq-gal">${rows(main)}</div>` : ""}

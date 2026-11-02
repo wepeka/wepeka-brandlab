@@ -29,6 +29,7 @@ import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter } from "./video-codes.js";
 import { outboxFile } from "./outbox.js";
 import { brandReviewLink, sendToClient, cleanPreviews, reviewURL } from "./review-share.js";
+import { postToInstagram, cancelInstagramPost } from "./ig-post.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "./dom.js";
 import { confirmDialog } from "./modals.js";
@@ -37,10 +38,12 @@ import { t, getLang } from "./i18n.js";
 
 export const canUsePosting = () => isAdmin(currentUid());
 
-// Instagram publishing by itself needs the server worker (Fase 2). Until it
-// exists, "schedule" only books the slot on the calendar and says so, and
-// the person marks the piece posted after posting it by hand.
-const AUTO_POST = false;
+// Instagram publishing by itself (owner, 2026-11-02: "bisa upload dari
+// brandlab ke akunku … tinggal click2"): a piece whose cuts are in the Mac
+// folder goes up through the server (js/ig-post.js → api/_igPost.js), at
+// the hour or right away. Anything else still books the slot and is marked
+// posted by hand.
+const autoPost = (c) => canUsePosting() && !!postingOf(c).local?.key;
 
 // Wepeka's own account works from a folder on the Mac (js/outbox.js) instead
 // of Google Drive (owner, 2026-11-01): Claude edits there, the results flow
@@ -760,7 +763,14 @@ function dayLabel(dateISO) {
   const d = new Date(`${dateISO}T00:00:00`);
   return d.toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID", { weekday: "short", day: "numeric", month: "short" });
 }
-const igHandleOf = (brand) => (brand?.instagram?.username || "").replace(/^@/, "");
+const igHandleOf = (brand) => {
+  const own = (brand?.instagram?.username || "").replace(/^@/, "");
+  if (own || !brand) return own;
+  // A brand made later for an account another brand is connected to (winkhsin) — same rule as api/_igPost.js accountFor.
+  const name = String(brand.name || "").trim().toLowerCase();
+  const other = listBrands().find((b) => b.id !== brand.id && b.instagram?.accessToken && String(b.instagram.username || "").replace(/^@/, "").toLowerCase() === name);
+  return other ? String(other.instagram.username).replace(/^@/, "") : "";
+};
 
 // One piece = one page (owner, 2026-11-02: "terlalu banyak dan redundant …
 // enaknya diapakan"): the video, its revisions and its posting live on the
@@ -865,7 +875,7 @@ function paint(root, contentId, ui, repaint) {
 
   // Upload step: only the posting — the day, hour, caption, posted.
   if (ui.part === "post") {
-    root.innerHTML = postHTML(c, p, key, handle);
+    root.innerHTML = postHTML(c, p, key, handle, POSTING.get(contentId));
     wire(root, contentId, ui, repaint);
     return;
   }
@@ -1168,14 +1178,29 @@ export function igPermalink(s) {
 }
 const igLinkFieldHTML = (value = "") => `<div class="field pst-ig-link"><label for="pst-ig-link">${t("post.ig.linkLabel")}</label><input class="input" id="pst-ig-link" inputmode="url" placeholder="https://www.instagram.com/reel/…" value="${escapeHtml(value)}"></div>`;
 
-function postHTML(c, p, key, handle) {
+// Uploads to Instagram running in this tab, by piece: { pct }.
+const POSTING = new Map();
+
+function postHTML(c, p, key, handle, posting = null) {
+  const AUTO_POST = autoPost(c);
   const acct = `<div class="pst-acct">${icon("instagram", { size: 18 })}<b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(getBrand(c.brandId)?.name || "")}</b><span class="pst-pill ${handle ? "is-on" : ""}">${handle ? t("post.ig.connected") : t("post.ig.notConnected")}</span></div>`;
+  if (posting) {
+    return `<section class="pst-block pst-post">${acct}
+      <div class="pst-progress" role="status"><div class="pst-progress-row">${icon("instagram", { size: 14 })}<span>${t("post.ig.uploading")}</span><b id="pst-ig-pct">${Math.round(posting.pct * 100)}%</b></div><div class="pst-progress-bar"><i id="pst-ig-fill" style="width:${Math.round(posting.pct * 100)}%"></i></div></div>
+      <p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.keepOpen")}</p></section>`;
+  }
+  if (key === "scheduled" && p.ig?.auto) {
+    const going = Date.parse(p.ig.at || "") <= Date.now() + 5 * 60 * 1000;
+    return `<section class="pst-block pst-post">${acct}
+      <div class="pst-live"><span class="pst-live-ic">${icon(going ? "instagram" : "clock", { size: 20 })}</span><div><b>${going ? t("post.ig.goingTitle") : t("post.ig.scheduledTitle", { when: `${escapeHtml(dayLabel(c.scheduleDate))}, ${escapeHtml(p.time || "")}` })}</b><small>${t(going ? "post.ig.goingBody" : "post.ig.scheduledBody")}</small></div></div>
+      ${going ? "" : `<div class="pst-decide"><button type="button" class="btn btn-ghost btn-sm" id="pst-unschedule">${t("post.ig.cancel")}</button></div>`}</section>`;
+  }
   if (key === "scheduled") {
     return `<section class="pst-block pst-post">${acct}
-      <div class="pst-live"><span class="pst-live-ic">${icon("clock", { size: 20 })}</span><div><b>${t(AUTO_POST ? "post.ig.scheduledTitle" : "post.ig.markedTitle", { when: `${escapeHtml(dayLabel(c.scheduleDate))}, ${escapeHtml(p.time || "")}` })}</b><small>${t(AUTO_POST ? "post.ig.scheduledBody" : "post.ig.markedBody")}</small></div></div>
-      ${AUTO_POST ? "" : igLinkFieldHTML()}
+      <div class="pst-live"><span class="pst-live-ic">${icon("clock", { size: 20 })}</span><div><b>${t("post.ig.markedTitle", { when: `${escapeHtml(dayLabel(c.scheduleDate))}, ${escapeHtml(p.time || "")}` })}</b><small>${t("post.ig.markedBody")}</small></div></div>
+      ${igLinkFieldHTML()}
       <div class="pst-decide">
-        ${AUTO_POST ? "" : `<button type="button" class="cl-cta pst-cta" id="pst-posted"><span>${t("post.ig.postedByHand")}</span><span class="cl-cta-dot pst-dot-ok">${icon("check", { size: 16 })}</span></button>`}
+        <button type="button" class="cl-cta pst-cta" id="pst-posted"><span>${t("post.ig.postedByHand")}</span><span class="cl-cta-dot pst-dot-ok">${icon("check", { size: 16 })}</span></button>
         <button type="button" class="btn btn-ghost btn-sm" id="pst-unschedule">${t("post.ig.cancel")}</button>
       </div></section>`;
   }
@@ -1188,7 +1213,7 @@ function postHTML(c, p, key, handle) {
   if (key === "failed") {
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-live is-fail"><span class="pst-live-ic">${icon("x", { size: 20 })}</span><div><b>${t("post.ig.failedTitle")}</b><small>${escapeHtml(p.ig?.error || "")}</small></div></div>
-      <button type="button" class="btn btn-secondary btn-sm" id="pst-retry">${icon("refresh", { size: 14 })}${t("post.ig.retry")}</button></section>`;
+      <div class="pst-decide"><button type="button" class="btn btn-secondary btn-sm" id="pst-retry">${icon("refresh", { size: 14 })}${t("post.ig.retry")}</button>${p.ig?.auto ? `<button type="button" class="btn btn-ghost btn-sm" id="pst-unschedule">${t("post.ig.cancel")}</button>` : ""}</div></section>`;
   }
   // Until a video is approved and the account is connected, this step is
   // one line saying what unlocks it — no greyed-out form to puzzle over.
@@ -1208,7 +1233,11 @@ function postHTML(c, p, key, handle) {
       ${when}
       ${caption}
       ${AUTO_POST ? "" : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.manualNote")}</p>`}
-      <button type="button" class="cl-cta pst-cta pst-go" id="pst-schedule"><span>${t(AUTO_POST ? "post.ig.cta" : "post.ig.ctaMark")}</span><span class="cl-cta-dot pst-dot-ig">${icon(AUTO_POST ? "instagram" : "calendar", { size: 16 })}</span></button>
+      ${AUTO_POST ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.autoNote")}</p>` : ""}
+      <div class="pst-decide">
+        <button type="button" class="cl-cta pst-cta pst-go" id="pst-schedule"><span>${t(AUTO_POST ? "post.ig.cta" : "post.ig.ctaMark")}</span><span class="cl-cta-dot pst-dot-ig">${icon(AUTO_POST ? "instagram" : "calendar", { size: 16 })}</span></button>
+        ${AUTO_POST ? `<button type="button" class="btn btn-secondary" id="pst-post-now">${icon("send", { size: 15 })}${t("post.ig.now")}</button>` : ""}
+      </div>
     </section>`;
 }
 
@@ -1452,9 +1481,51 @@ function wire(root, contentId, ui, repaint) {
   qs("#pst-date", root)?.addEventListener("change", (e) => { updateContent(contentId, { scheduleDate: e.target.value }); repaint(); });
   qs("#pst-time-in", root)?.addEventListener("change", (e) => { save({ time: e.target.value }); repaint(); });
 
-  // Seam: Fase 2 sends this to the server worker (it creates the Instagram
-  // container a few minutes early and publishes on the minute).
+  // From the Mac folder: the server posts it (at the hour, or now).
+  const goInstagram = async (now) => {
+    if (POSTING.has(contentId)) return;
+    const cur = getContent(contentId);
+    const cp = postingOf(cur);
+    const v = cp.versions.find((x) => x.id === cp.finalId);
+    if (!v?.local || !cp.local?.key || !OUT.connected) { toast(t("post.client.needFolder"), "error"); return; }
+    const date = now ? localISODate() : qs("#pst-date", root).value;
+    const hhmm = now ? new Date().toTimeString().slice(0, 5) : qs("#pst-time-in", root).value || "19:00";
+    const at = now ? Date.now() : Date.parse(`${date}T${hhmm}:00+07:00`);
+    if (!now && (!date || !(at > Date.now()))) { toast(t("post.ig.past"), "error"); return; }
+    if (now && !(await confirmDialog({ title: t("post.ig.nowTitle"), message: t("post.ig.nowBody", { handle: escapeHtml(igHandleOf(getBrand(cur.brandId)) || "Instagram") }), confirmLabel: t("post.ig.now") }))) return;
+    updateContent(contentId, { scheduleDate: date, caption: cap?.value ?? cur.caption, posting: { ...cp, time: hhmm } });
+    POSTING.set(contentId, { pct: 0 });
+    repaint();
+    try {
+      const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
+      const files = await Promise.all(names.map((n) => outboxFile(cp.local.key, n)));
+      const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
+      const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;
+      const r = await postToInstagram({
+        contentId, kind: v.kind || "video", files, cover, at,
+        onProgress: (f) => {
+          const s = POSTING.get(contentId);
+          if (s) s.pct = f;
+          const fill = document.getElementById("pst-ig-fill");
+          const num = document.getElementById("pst-ig-pct");
+          if (fill) fill.style.width = `${Math.round(f * 100)}%`;
+          if (num) num.textContent = `${Math.round(f * 100)}%`;
+        },
+      });
+      if (r.state === "done") toast(t("post.toast.igPosted"));
+      else if (r.state === "failed") toast(r.error || t("post.ig.err.server"), "error");
+      else toast(now ? t("post.toast.igProcessing") : t("post.toast.scheduled", { when: `${dayLabel(date)}, ${hhmm}` }));
+    } catch (e) {
+      console.warn("[posting] instagram", e);
+      toast(t(`post.ig.err.${["account", "type", "size", "busy", "slides"].includes(e.code) ? e.code : "server"}`), "error");
+    } finally {
+      POSTING.delete(contentId);
+      repaint();
+    }
+  };
+  qs("#pst-post-now", root)?.addEventListener("click", () => goInstagram(true));
   qs("#pst-schedule", root)?.addEventListener("click", () => {
+    if (autoPost(getContent(contentId))) { goInstagram(false); return; }
     const date = qs("#pst-date", root).value;
     const hhmm = qs("#pst-time-in", root).value || "19:00";
     if (!date || new Date(`${date}T${hhmm}:00`) <= new Date()) { toast(t("post.ig.past"), "error"); return; }
@@ -1462,7 +1533,7 @@ function wire(root, contentId, ui, repaint) {
       scheduleDate: date, caption: cap?.value ?? c.caption, status: "scheduled",
       posting: { ...postingOf(getContent(contentId)), time: hhmm, ig: { state: "scheduled", at: `${date}T${hhmm}:00+07:00` } },
     });
-    toast(t(AUTO_POST ? "post.toast.scheduled" : "post.toast.marked", { when: `${dayLabel(date)}, ${hhmm}` }));
+    toast(t("post.toast.marked", { when: `${dayLabel(date)}, ${hhmm}` }));
     repaint();
   });
   // Posted: with the Reels link, the client's copies go and the link shows instead.
@@ -1500,12 +1571,16 @@ function wire(root, contentId, ui, repaint) {
     try { await navigator.clipboard.writeText(reviewURL(token)); } catch { /* shown below */ }
     toast(t("post.client.copied"));
   });
-  qs("#pst-unschedule", root)?.addEventListener("click", () => {
+  qs("#pst-unschedule", root)?.addEventListener("click", async () => {
+    if (postingOf(getContent(contentId)).ig?.auto) {
+      try { await cancelInstagramPost(contentId); } catch (e) { toast(t(e.code === "busy" ? "post.ig.err.busy" : "post.ig.err.server"), "error"); return; }
+    }
     updateContent(contentId, { status: "editing", posting: { ...postingOf(getContent(contentId)), ig: null } });
     toast(t("post.toast.unscheduled"));
     repaint();
   });
   qs("#pst-retry", root)?.addEventListener("click", () => {
+    if (p.ig?.auto) { goInstagram(true); return; }
     updateContent(contentId, { status: "scheduled", posting: { ...postingOf(getContent(contentId)), ig: { ...p.ig, state: "scheduled", error: "" } } });
     repaint();
   });
