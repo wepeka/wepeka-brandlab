@@ -51,10 +51,12 @@ export const editorVersionIndex = (versions, version) => versions.findIndex((v) 
 
 // A note as Claude reads it (brandlab.json, permintaan-editor.json): the
 // file and second it is about, who wrote it. id goes into post.json "done".
+// A note for the whole video (t null) goes out as at: null, seconds: null.
 const clock = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, "0")}`;
 export function noteForEditor(p, n) {
   const file = (p.versions || []).find((v) => v.id === n.versionId)?.local?.file || "";
-  return { id: n.id, file, at: clock(n.t), seconds: n.t, text: n.text, done: !!n.done, from: n.by === "client" ? "klien" : "winson", ...(n.name ? { name: n.name } : {}) };
+  const whole = n.t == null;
+  return { id: n.id, file, at: whole ? null : clock(n.t), seconds: whole ? null : n.t, text: n.text, done: !!n.done, from: n.by === "client" ? "klien" : "winson", ...(n.name ? { name: n.name } : {}) };
 }
 
 // "Ask editor to make thumbnail" (posting.thumb): Claude drops an image named

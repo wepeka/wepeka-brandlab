@@ -143,6 +143,9 @@ test("Send to editor: a newer cut in the folder closes the request; the queue li
     notes: [{ id: "n1", file: "v1.mp4", at: "0:12", seconds: 12, text: "Logo kepotong", done: false, from: "klien", name: "Bu Rina" }],
     requestedAt: "2026-11-02T10:00:00.000Z",
   }] });
+  // A note for the whole video goes to the editor without a second.
+  const whole = { posting: { ...existing.posting, editor: { ...editor, noteIds: ["w"] }, notes: [{ id: "w", versionId: v1.id, t: null, text: "Speed 1.15x semua", done: false }] } };
+  assert.deepEqual(editorQueue([{ c: whole, brand: "Kopi Pagi", code: "KP-1" }]).requests[0].notes, [{ id: "w", file: "v1.mp4", at: null, seconds: null, text: "Speed 1.15x semua", done: false, from: "winson" }]);
 });
 
 test("Ask editor to make thumbnail: queued with its frame, closed by a new thumbnail-N image only", async () => {

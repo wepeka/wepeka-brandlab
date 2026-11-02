@@ -335,7 +335,7 @@ export function editorChip(c) {
   return null;
 }
 
-const openNotesOf = (p, v) => (p.notes || []).filter((n) => n.versionId === v.id && !n.done).sort((a, b) => a.t - b.t);
+const openNotesOf = (p, v) => (p.notes || []).filter((n) => n.versionId === v.id && !n.done).sort(byTime);
 
 // Under the newest cut's notes: the button, its small form (a message, the
 // open notes ticked), or — once sent — where it stands and "Batalkan".
@@ -360,7 +360,7 @@ export function editorBlockHTML(c, ui = {}) {
       <label class="pst-sub" for="pst-ed-msg">${t("post.editor.msg")}</label>
       <textarea class="textarea" id="pst-ed-msg" rows="2" placeholder="${escapeHtml(t("post.editor.msgPh"))}">${escapeHtml(draft.msg)}</textarea>
       ${open.length ? `<span class="pst-sub">${t("post.editor.notes")}</span>
-      <div class="pst-ed-notes">${open.map((n) => `<label class="pst-ed-note"><input type="checkbox" data-ed-note="${escapeHtml(n.id)}" ${draft.off.includes(n.id) ? "" : "checked"}><b>${clock(n.t)}</b><span>${escapeHtml(n.text)}</span></label>`).join("")}</div>`
+      <div class="pst-ed-notes">${open.map((n) => `<label class="pst-ed-note"><input type="checkbox" data-ed-note="${escapeHtml(n.id)}" ${draft.off.includes(n.id) ? "" : "checked"}><b>${noteWhen(n)}</b><span>${escapeHtml(n.text)}</span></label>`).join("")}</div>`
         : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.editor.noNotes")}</p>`}
       <div class="pst-decide">${send("post.editor.confirm", "pst-ed-send")}<button type="button" class="btn btn-ghost btn-sm" id="pst-ed-close">${t("common.cancel")}</button></div>
     </div>`;
@@ -758,6 +758,11 @@ export function handleFileDrop(e, { brandId, dateISO, onChange }) {
 
 const two = (n) => String(n).padStart(2, "0");
 const clock = (s) => `${Math.floor((s || 0) / 60)}:${two(Math.floor((s || 0) % 60))}`;
+// A note for the whole video (owner, 2026-11-02: "speed 1.15x semua") has no
+// second: t is null. It comes first in the list and never moves the player.
+const isWhole = (n) => n.t == null;
+const byTime = (a, b) => (isWhole(a) ? -1 : a.t) - (isWhole(b) ? -1 : b.t);
+const noteWhen = (n) => (isWhole(n) ? t("post.note.whole") : clock(n.t));
 function dayLabel(dateISO) {
   if (!dateISO) return "";
   const d = new Date(`${dateISO}T00:00:00`);
@@ -1036,10 +1041,11 @@ function keepPlayers(root) {
   });
 }
 
-// Each note as a dot on the timeline; a tap jumps there.
+// Each note as a dot on the timeline; a tap jumps there. Whole-video notes
+// have no spot on it.
 function marksHTML(p, v) {
   const dur = v.dur || 0;
-  const mine = (p.notes || []).filter((n) => n.versionId === v.id);
+  const mine = (p.notes || []).filter((n) => n.versionId === v.id && !isWhole(n));
   if (!mine.length) return "";
   return `<div class="pst-marks" data-dur="${dur}">${mine.map((n) => `<button type="button" class="pst-mark ${n.done ? "is-done" : ""} ${n.by === "client" ? "is-client" : ""}" data-seek="${n.t}" data-mark-t="${n.t}" style="--at:${dur ? Math.min(1, n.t / dur) : 0}" title="${escapeHtml(`${clock(n.t)} · ${n.text}`)}" aria-label="${escapeHtml(`${clock(n.t)} · ${n.text}`)}"></button>`).join("")}</div>`;
 }
@@ -1066,14 +1072,21 @@ function whereHTML(brand, c, v) {
 // separate "Minta revisi" step any more.
 function decideHTML(p, v, prev, ui, editor = "", timed = true) {
   const label = versionLabel(v);
-  const mine = p.notes.filter((n) => n.versionId === v.id).sort((a, b) => a.t - b.t);
+  const mine = p.notes.filter((n) => n.versionId === v.id).sort(byTime);
   // The last cut's notes still open, and the ones Claude says this cut fixed.
   const fixedInCut = (n) => n.doneBy === "editor";
-  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || fixedInCut(n))).sort((a, b) => a.t - b.t) : [];
+  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || fixedInCut(n))).sort(byTime) : [];
   const who = (n) => (n.by === "client" ? `<em class="pst-note-who is-client">${escapeHtml(n.name ? t("post.note.clientNamed", { name: n.name }) : t("post.note.client"))}</em>` : "") + (fixedInCut(n) ? `<em class="pst-note-who">${t("post.note.fixedInCut")}</em>` : "");
-  const note = (n, here) => `<div class="pst-note ${n.done ? "is-done" : ""}" ${here ? `data-note-at="${n.t}"` : ""}><button type="button" class="pst-note-t" data-seek="${n.t}" title="${escapeHtml(t("post.note.jump"))}">${icon("play", { size: 10 })}${clock(n.t)}</button><span>${who(n)}${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
+  const chip = (n) => (isWhole(n)
+    ? `<span class="pst-note-t is-whole">${icon("expand", { size: 10 })}${t("post.note.whole")}</span>`
+    : `<button type="button" class="pst-note-t" data-seek="${n.t}" title="${escapeHtml(t("post.note.jump"))}">${icon("play", { size: 10 })}${clock(n.t)}</button>`);
+  const note = (n, here) => `<div class="pst-note ${n.done ? "is-done" : ""}" ${here && !isWhole(n) ? `data-note-at="${n.t}"` : ""}>${chip(n)}<span>${who(n)}${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
   const final = p.versions.find((x) => x.id === p.finalId);
   const writing = ["pending", "revision"].includes(v.status);
+  // A video note is pinned to the second on screen, or — picked here — goes
+  // for the whole video.
+  const whole = timed && !!ui.noteWhole;
+  const scope = (key, on, ic, label) => `<button type="button" class="pst-type ${on ? "is-on" : ""}" data-note-scope="${key}" aria-pressed="${on}">${icon(ic, { size: 13 })}${label}</button>`;
   const open = mine.filter((n) => !n.done).length;
   let head;
   if (v.status === "pending") {
@@ -1096,9 +1109,10 @@ function decideHTML(p, v, prev, ui, editor = "", timed = true) {
       ${mine.length ? `<div class="pst-notes">${mine.map((n) => note(n, true)).join("")}</div>` : writing ? `<p class="pst-rev-empty">${t(timed ? "post.rev.empty" : "post.rev.emptyPlain")}</p>` : ""}
       ${writing ? `
         <div class="pst-compose">
-          <label class="pst-compose-top" for="pst-note-text">${timed ? `<span class="pst-compose-t" id="pst-compose-t">${clock(ui.t)}</span>` : ""}<b>${t(timed ? "post.note.label" : "post.note.labelPlain")}</b></label>
-          <textarea class="textarea" id="pst-note-text" rows="2" placeholder="${escapeHtml(t("post.note.ph"))}">${escapeHtml(ui.noteDraft || "")}</textarea>
-          <div class="pst-compose-foot"><small>${t(timed ? "post.note.hint" : "post.note.hintPlain")}</small><button type="button" class="btn btn-primary btn-sm" id="pst-note-send">${timed ? t("post.note.send", { time: clock(ui.t) }) : t("post.note.sendPlain")}</button></div>
+          ${timed ? `<div class="pst-types pst-note-scope" role="group" aria-label="${escapeHtml(t("post.note.scope"))}">${scope("here", !whole, "clock", t("post.note.scopeHere"))}${scope("whole", whole, "expand", t("post.note.whole"))}</div>` : ""}
+          <label class="pst-compose-top" for="pst-note-text">${timed && !whole ? `<span class="pst-compose-t" id="pst-compose-t">${clock(ui.t)}</span>` : ""}<b>${t(whole ? "post.note.labelWhole" : timed ? "post.note.label" : "post.note.labelPlain")}</b></label>
+          <textarea class="textarea" id="pst-note-text" rows="2" placeholder="${escapeHtml(t(whole ? "post.note.phWhole" : "post.note.ph"))}">${escapeHtml(ui.noteDraft || "")}</textarea>
+          <div class="pst-compose-foot"><small>${t(whole ? "post.note.hintWhole" : timed ? "post.note.hint" : "post.note.hintPlain")}</small><button type="button" class="btn btn-primary btn-sm" id="pst-note-send">${whole ? t("post.note.sendWhole") : timed ? t("post.note.send", { time: clock(ui.t) }) : t("post.note.sendPlain")}</button></div>
         </div>` : ""}
       ${older.length ? `<div class="pst-notes is-prev"><div class="pst-sub">${t("post.note.prev", { label: escapeHtml(versionLabel(prev)) })}</div>${older.map((n) => note(n, false)).join("")}</div>` : ""}
       ${editor}
@@ -1400,14 +1414,21 @@ function wire(root, contentId, ui, repaint) {
   qs("#pst-use", root)?.addEventListener("click", () => { markFinalInDrive(p, p.finalId, ui.vid); save({ finalId: ui.vid }); repaint(); });
   qs("#pst-undo", root)?.addEventListener("click", () => { setV((x) => ({ ...x, status: "pending" })); repaint(); });
   // A note is pinned to the second on screen; the video stays there after
-  // it's added (the player is kept), so pressing play carries on.
+  // it's added (the player is kept), so pressing play carries on. A
+  // whole-video note has no second (t: null).
   const timed = !!qs("#pst-compose-t", root);
+  const whole = !!qs('[data-note-scope="whole"].is-on', root);
   const noteBox = qs("#pst-note-text", root);
+  qsa("[data-note-scope]", root).forEach((b) => b.addEventListener("click", () => {
+    ui.noteWhole = b.dataset.noteScope === "whole";
+    repaint();
+    qs("#pst-note-text", root)?.focus();
+  }));
   const sendNote = () => {
     const text = noteBox?.value.trim();
     if (!text) { noteBox?.focus(); return; }
     // Read off the player itself: right after a seek, ui.t still waits for timeupdate.
-    const at = timed ? Math.floor(main ? main.currentTime : ui.t || 0) : 0;
+    const at = whole ? null : timed ? Math.floor(main ? main.currentTime : ui.t || 0) : 0;
     const cur = postingOf(getContent(contentId));
     // A note on an unchecked cut is asking for changes.
     save({
@@ -1415,12 +1436,15 @@ function wire(root, contentId, ui, repaint) {
       notes: [...cur.notes, { id: `n${Date.now().toString(36)}`, versionId: ui.vid, t: at, text, at: Date.now(), done: false }],
     });
     ui.noteDraft = "";
-    toast(timed ? t("post.note.added", { time: clock(at) }) : t("post.note.addedPlain"));
+    // Back to "at this second", so the next note isn't filed for the whole video by mistake.
+    ui.noteWhole = false;
+    toast(whole ? t("post.note.addedWhole") : timed ? t("post.note.added", { time: clock(at) }) : t("post.note.addedPlain"));
     repaint();
   };
   qs("#pst-note-send", root)?.addEventListener("click", sendNote);
-  // Typing stops the video, so the second doesn't run on while writing.
-  const hold = () => { if (main && !main.paused) vids.forEach((x) => x.pause()); };
+  // Typing stops the video, so the second doesn't run on while writing (a
+  // whole-video note can be written while it plays).
+  const hold = () => { if (!whole && main && !main.paused) vids.forEach((x) => x.pause()); };
   ["focus", "pointerdown"].forEach((ev) => noteBox?.addEventListener(ev, hold));
   noteBox?.addEventListener("input", () => { hold(); ui.noteDraft = noteBox.value; });
   noteBox?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNote(); } });

@@ -49,7 +49,7 @@ test("brandlab.json tells Claude the decision, the cut, the cover and every note
     posting: {
       type: "reels", time: "19:00", cover: "cover-2.jpg", finalId: null,
       versions: [{ id: "a", n: 0, status: "revision", local: { file: "v1.mp4" } }, { id: "b", n: 1, status: "pending", local: { file: "v2.mp4" } }],
-      notes: [{ id: "n", versionId: "a", t: 12, text: "Logo kepotong", done: false }],
+      notes: [{ id: "n", versionId: "a", t: 12, text: "Logo kepotong", done: false }, { id: "w", versionId: "b", t: null, text: "Speed 1.15x semua", done: false }],
     },
   };
   const d = decisionsFor(c);
@@ -57,7 +57,10 @@ test("brandlab.json tells Claude the decision, the cut, the cover and every note
   assert.equal(d.final, "");
   assert.equal(d.cover, "cover-2.jpg");
   assert.deepEqual(d.versions, [{ file: "v1.mp4", status: "revision" }, { file: "v2.mp4", status: "pending" }]);
-  assert.deepEqual(d.notes, [{ id: "n", file: "v1.mp4", at: "0:12", seconds: 12, text: "Logo kepotong", done: false, from: "winson" }]);
+  assert.deepEqual(d.notes, [
+    { id: "n", file: "v1.mp4", at: "0:12", seconds: 12, text: "Logo kepotong", done: false, from: "winson" },
+    { id: "w", file: "v2.mp4", at: null, seconds: null, text: "Speed 1.15x semua", done: false, from: "winson" },
+  ], "a whole-video note has no second");
 });
 
 test("an Instagram post link is tidied to its permalink, anything else refused", async () => {
