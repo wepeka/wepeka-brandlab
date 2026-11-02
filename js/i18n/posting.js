@@ -61,7 +61,7 @@ export default {
   "post.note.done": { en: "Fixed", id: "Sudah" },
   "post.note.client": { en: "Client", id: "Klien" },
   "post.note.clientNamed": { en: "Client · {name}", id: "Klien · {name}" },
-  "post.note.fixedByClaude": { en: "Fixed by Claude", id: "Diperbaiki Claude" },
+  "post.note.fixedInCut": { en: "Fixed in the new cut", id: "Sudah diperbaiki" },
   "post.change.title": { en: "What changed in {label}:", id: "Yang diubah di {label}:" },
   "post.note.prev": { en: "Notes from {label}: fixed?", id: "Catatan dari {label}: sudah diperbaiki?" },
   "post.note.added": { en: "Note saved at {time}", id: "Catatan tersimpan di {time}" },
@@ -125,7 +125,7 @@ export default {
 
   // Folder di Mac (js/outbox.js) — Wepeka's own account
   "post.local.title": { en: "Connect your work folder on this Mac", id: "Hubungkan folder kerja di Mac" },
-  "post.local.body": { en: "Pick the Brandlab Outbox folder. Everything Claude edits there shows up here by itself, and your decisions go back into it.", id: "Pilih folder Brandlab Outbox. Semua hasil edit Claude di sana muncul sendiri di sini, dan keputusanmu ditulis balik ke folder itu." },
+  "post.local.body": { en: "Pick the Brandlab Outbox folder. Every edit saved there shows up here by itself, and your decisions go back into it.", id: "Pilih folder Brandlab Outbox. Semua hasil edit di sana muncul sendiri di sini, dan keputusanmu ditulis balik ke folder itu." },
   "post.local.cta": { en: "Connect folder on Mac", id: "Hubungkan folder di Mac" },
   "post.local.againTitle": { en: "Let Brandlab open the folder again", id: "Izinkan Brandlab membuka folder lagi" },
   "post.local.againBody": { en: "Chrome asks once after the page reloads.", id: "Chrome menanyakannya sekali setelah halaman dimuat ulang." },
@@ -149,7 +149,7 @@ export default {
   // Video codes and trial cuts (js/video-codes.js)
   // Creator's Edit step (posting.js editStepVideoHTML)
   "post.edit.title": { en: "Video & revisions", id: "Video & revisi" },
-  "post.edit.none": { en: "No video yet. Tell Claude \"edit {code}\": the result lands here by itself.", id: "Belum ada video. Bilang ke Claude \"edit {code}\": hasilnya masuk ke sini sendiri." },
+  "post.edit.none": { en: "No video yet. The edit for {code} lands here by itself.", id: "Belum ada video. Hasil edit untuk {code} masuk ke sini sendiri." },
   "post.edit.cuts": { en: "{n} versions · newest: {label}", id: "{n} versi · terbaru: {label}" },
   "post.edit.open": { en: "Open video & revisions", id: "Buka video & revisi" },
   "post.edit.openEmpty": { en: "Open", id: "Buka" },
@@ -159,7 +159,7 @@ export default {
   "post.client.intro": { en: "Send this cut to the client through one link. They watch it, approve it or ask for changes, no account needed.", id: "Kirim versi ini ke klien lewat satu link. Mereka bisa menonton, setuju, atau minta revisi tanpa akun." },
   "post.client.waiting": { en: "{label} is with the client · sent {when}", id: "{label} sedang dicek klien · dikirim {when}" },
   "post.client.approved": { en: "{who} approved {label} · {when}", id: "{who} setuju dengan {label} · {when}" },
-  "post.client.revise": { en: "{who} asked for changes on {label}. The notes are above and go to Claude too.", id: "{who} minta revisi untuk {label}. Catatannya ada di atas dan ikut terkirim ke Claude." },
+  "post.client.revise": { en: "{who} asked for changes on {label}. The notes are above.", id: "{who} minta revisi untuk {label}. Catatannya ada di atas." },
   "post.client.theClient": { en: "The client", id: "Klien" },
   "post.client.st.waiting": { en: "Waiting for the client", id: "Menunggu klien" },
   "post.client.st.approved": { en: "Client approved", id: "Disetujui klien" },
@@ -181,8 +181,8 @@ export default {
   "post.ig.linkBad": { en: "That isn't an Instagram post link.", id: "Itu bukan link postingan Instagram." },
   "post.ig.linkSaved": { en: "Instagram link saved.", id: "Link Instagram disimpan." },
 
-  "post.code.copy": { en: "Copy the code for Claude", id: "Salin kode untuk Claude" },
-  "post.code.copied": { en: "{code} copied. Paste it to Claude.", id: "{code} disalin. Tempel ke Claude." },
+  "post.code.copy": { en: "Copy the code", id: "Salin kode" },
+  "post.code.copied": { en: "{code} copied.", id: "{code} disalin." },
   "post.trial.label": { en: "Trials", id: "Trial" },
   "post.trial.main": { en: "Main", id: "Utama" },
   "post.trial.add": { en: "Make a trial video", id: "Buat video trial" },
@@ -195,7 +195,7 @@ export default {
   // Antrean Video (js/views/posting-queue.js)
   "pq.title": { en: "Video Queue", id: "Antrean Video" },
   "cl.cat.antrean.sub": { en: "Check, approve, schedule", id: "Cek, setujui, jadwalkan" },
-  "pq.lead": { en: "Every Instagram piece from Creator. Tell Claude its code (e.g. KP-12), check the video, then schedule it.", id: "Semua konten Instagram dari Creator. Sebut kodenya ke Claude (mis. KP-12), cek videonya, lalu jadwalkan." },
+  "pq.lead": { en: "Every Instagram piece from Creator. Use its code (e.g. KP-12) when you ask for an edit, check the video, then schedule it.", id: "Semua konten Instagram dari Creator. Sebut kodenya (mis. KP-12) saat minta edit, cek videonya, lalu jadwalkan." },
   "pq.st.review": { en: "{n} to review", id: "{n} perlu dicek" },
   "pq.st.none": { en: "Nothing waiting", id: "Tidak ada yang menunggu" },
   "pq.review": { en: "Start review ({n})", id: "Mulai review ({n})" },
@@ -239,7 +239,7 @@ export default {
   "pq.openPage": { en: "Open Video Queue", id: "Buka Antrean Video" },
   "pq.reviewTitle": { en: "Review", id: "Review" },
   "pq.reviewDone": { en: "All checked", id: "Semua sudah dicek" },
-  "pq.reviewDoneBody": { en: "{n} videos. Decisions are saved in their folders for Claude.", id: "{n} video. Keputusannya sudah tersimpan di foldernya untuk Claude." },
+  "pq.reviewDoneBody": { en: "{n} videos. Decisions are saved in their folders.", id: "{n} video. Keputusannya sudah tersimpan di foldernya." },
   "pq.sendNote": { en: "Send note", id: "Kirim catatan" },
   "pq.prev": { en: "Previous", id: "Sebelumnya" },
   "pq.skip": { en: "Skip", id: "Lewati" },

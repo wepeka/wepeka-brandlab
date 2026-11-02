@@ -100,7 +100,7 @@ test("Claude's side of a revision: what changed in a cut, and which notes it fix
   const { update } = planSync([post], brands, () => existing);
   const p = update[0].patch.posting;
   assert.equal(p.versions[1].changeNote, "Logo dipindah");
-  assert.deepEqual(p.notes.map((n) => [n.id, n.done, n.doneBy || ""]), [["n1", true, "claude"], ["n2", false, ""]]);
+  assert.deepEqual(p.notes.map((n) => [n.id, n.done, n.doneBy || ""]), [["n1", true, "editor"], ["n2", false, ""]]);
   // Nothing new the second time round.
   const after = { ...existing, posting: p };
   assert.equal(planSync([post], brands, () => after).update.length, 0);

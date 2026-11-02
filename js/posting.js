@@ -858,8 +858,9 @@ function decideHTML(p, v, prev, ui) {
   const label = versionLabel(v);
   const mine = p.notes.filter((n) => n.versionId === v.id).sort((a, b) => a.t - b.t);
   // The last cut's notes still open, and the ones Claude says this cut fixed.
-  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || n.doneBy === "claude")) : [];
-  const who = (n) => (n.by === "client" ? `<em class="pst-note-who is-client">${escapeHtml(n.name ? t("post.note.clientNamed", { name: n.name }) : t("post.note.client"))}</em>` : "") + (n.doneBy === "claude" ? `<em class="pst-note-who">${t("post.note.fixedByClaude")}</em>` : "");
+  const fixedInCut = (n) => n.doneBy === "editor";
+  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || fixedInCut(n))) : [];
+  const who = (n) => (n.by === "client" ? `<em class="pst-note-who is-client">${escapeHtml(n.name ? t("post.note.clientNamed", { name: n.name }) : t("post.note.client"))}</em>` : "") + (fixedInCut(n) ? `<em class="pst-note-who">${t("post.note.fixedInCut")}</em>` : "");
   const note = (n) => `<div class="pst-note ${n.done ? "is-done" : ""}"><button type="button" class="pst-note-t" data-seek="${n.t}">${clock(n.t)}</button><span>${who(n)}${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
   const final = p.versions.find((x) => x.id === p.finalId);
   let head;

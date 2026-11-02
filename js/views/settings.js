@@ -200,7 +200,7 @@ function renderBrands(content, refresh) {
 // provider is active, mainly so vision-dependent features know DeepSeek
 // can't read images.
 const AI_PROVIDERS = [
-  { key: "anthropic", label: "Anthropic (Claude)" },
+  { key: "anthropic", label: "Anthropic" },
   { key: "gemini", label: "Google (Gemini)" },
   { key: "deepseek", label: "DeepSeek" },
 ];

@@ -36,7 +36,7 @@ export function pickBrand(folderName, brandId) {
 // Same file name → same id, so a re-scan never doubles a version.
 export const versionIdOf = (file) => `l-${Array.from(file).reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36)}`;
 
-const toVersion = (v, n, changes = {}) => ({ id: versionIdOf(v.file), n, status: "pending", at: Date.now(), by: "claude", kind: v.kind, local: { file: v.file, ...(v.slides ? { slides: v.slides } : {}) }, ...(changes[v.file] ? { changeNote: changes[v.file] } : {}) });
+const toVersion = (v, n, changes = {}) => ({ id: versionIdOf(v.file), n, status: "pending", at: Date.now(), by: "editor", kind: v.kind, local: { file: v.file, ...(v.slides ? { slides: v.slides } : {}) }, ...(changes[v.file] ? { changeNote: changes[v.file] } : {}) });
 
 // The pure part: what to create and what to update for these posts.
 // find = { byKey(folder key), byCode("KP-12") } — or one function for byKey.
@@ -85,7 +85,7 @@ export function planSync(posts, brands, find, picks = {}) {
     if (!linking && !fresh.length && !coversChanged && !noteChanged && !fixed.size && (c.caption || !post.caption)) continue;
     const versions = p.versions.map((v) => (changes[v.local?.file] && changes[v.local.file] !== v.changeNote ? { ...v, changeNote: changes[v.local.file] } : v));
     const patch = { posting: { ...p, versions: [...versions, ...fresh.map((v, i) => toVersion(v, p.versions.length + i, changes))], covers: post.covers, cover: p.cover || post.covers[0] || "" } };
-    if (fixed.size) patch.posting.notes = p.notes.map((n) => (fixed.has(n.id) ? { ...n, done: true, doneBy: "claude" } : n));
+    if (fixed.size) patch.posting.notes = p.notes.map((n) => (fixed.has(n.id) ? { ...n, done: true, doneBy: "editor" } : n));
     // A piece from Creator meets its folder for the first time.
     if (linking) Object.assign(patch.posting, { local: { key: post.key }, type: p.type || post.type, time: p.time || post.time || "" });
     if (linking && post.type && !c.format) patch.format = FORMAT_OF[post.type];

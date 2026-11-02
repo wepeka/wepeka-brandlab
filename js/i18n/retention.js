@@ -80,6 +80,6 @@ export default {
   "chat.metrics.pickOpenContent": { en: "Open Content", id: "Buka Konten" },
 
   // AI (js/ai.js)
-  "ai.error.noVision": { en: "{provider} can't read images. Switch to Claude or Gemini in Settings → AI.", id: "{provider} nggak bisa membaca gambar. Ganti ke Claude atau Gemini di Pengaturan → AI." },
+  "ai.error.noVision": { en: "{provider} can't read images. Switch to a provider that can in Settings → AI.", id: "{provider} nggak bisa membaca gambar. Ganti ke penyedia AI yang bisa membaca gambar di Pengaturan → AI." },
   "ai.error.badExtract": { en: "The screenshot couldn't be read as insight numbers.", id: "Screenshot itu tidak terbaca sebagai angka insight." },
 };
