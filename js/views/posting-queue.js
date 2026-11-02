@@ -10,7 +10,7 @@
 // Private to Wepeka's own account (canUsePosting), like the rest of it.
 import { listBrands, listContent, getBrand, getContent, onChange, localISODate } from "../store.js";
 import { icon } from "../icons.js";
-import { qs, qsa, escapeHtml } from "../dom.js";
+import { qs, qsa, escapeHtml, toast } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
@@ -315,35 +315,63 @@ function openReview(queue, onClose) {
         <button type="button" class="pq-rv-nav is-next" id="pq-rv-next" aria-label="${escapeHtml(t("pq.skip"))}">${icon("chevronRight", { size: 22 })}</button>
       </div>
       ${c.caption ? `<p class="pq-rv-cap">${escapeHtml(c.caption)}</p>` : ""}
+      <div class="pq-rv-sent" id="pq-rv-sent"></div>
       <div class="pq-rv-note" id="pq-rv-note" hidden><input class="input" id="pq-rv-text" placeholder="${escapeHtml(t("post.note.ph"))}"><button type="button" class="btn btn-primary btn-sm" id="pq-rv-send">${t("pq.sendNote")}</button></div>
-      <div class="pq-rv-actions">
-        <button type="button" class="pq-rv-btn is-rev" id="pq-rv-rev">${icon("edit", { size: 20 })}<span>${t("post.decide.revise")}</span></button>
-        <button type="button" class="pq-rv-btn is-ok" id="pq-rv-ok">${icon("check", { size: 22 })}<span>${t("post.decide.ok")}</span></button>
-      </div>`;
+      <div class="pq-rv-actions" id="pq-rv-actions"></div>`;
     if (key && outboxInfo().connected) {
       if (isVideo) outboxFileURL(key, v.local.file).then((u) => { const m = media(); if (m) { m.src = u; m.play().catch(() => {}); } });
       qsa("img[data-f]", el).forEach((img) => outboxFileURL(key, img.dataset.f).then((u) => { img.src = u; }));
     } else if (v.url) media()?.play().catch(() => {});
     const strip = qs(".pq-rv-slides", el);
     strip?.addEventListener("scroll", () => { const n = qs(".pq-rv-slide-n", el); if (n) n.textContent = `${Math.round(strip.scrollLeft / strip.clientWidth) + 1}/${files.length}`; }, { passive: true });
+    // Tap the video to pause or carry on; a mark says it's paused.
+    const m = media();
+    if (m) {
+      const stage = qs(".pq-rv-stage", el);
+      stage.insertAdjacentHTML("beforeend", `<span class="pq-rv-paused" aria-hidden="true">${icon("play", { size: 30 })}</span>`);
+      const mark = () => stage.classList.toggle("is-paused", m.paused && !!m.currentSrc);
+      ["play", "pause", "loadeddata"].forEach((ev) => m.addEventListener(ev, mark));
+      m.addEventListener("click", () => (m.paused ? m.play().catch(() => {}) : m.pause()));
+    }
     qs("#pq-rv-x", el).addEventListener("click", close);
     qs("#pq-rv-prev", el).addEventListener("click", () => { if (i) { i--; show(); } });
     qs("#pq-rv-next", el).addEventListener("click", () => { i++; show(); });
-    qs("#pq-rv-ok", el).addEventListener("click", () => { decide(c.id, v.id, "approve"); i++; show(); });
-    qs("#pq-rv-rev", el).addEventListener("click", () => {
-      noting = true;
-      media()?.pause();
-      const row = qs("#pq-rv-note", el);
-      row.hidden = false;
-      qs("#pq-rv-send", el).textContent = t("post.note.send", { time: clock(now()) });
-      qs("#pq-rv-text", el).focus();
-    });
+
+    // Notes stay on this cut (owner, 2026-11-02: after a note the video
+    // doesn't go back to 0:00 or jump to the next one). Once it has notes,
+    // the buttons are "another note" and "next video".
+    const notesHere = () => (getContent(c.id)?.posting?.notes || []).filter((n) => n.versionId === v.id && !n.done).sort((a, b) => a.t - b.t);
+    const paintNotes = () => {
+      const ns = notesHere();
+      qs("#pq-rv-sent", el).innerHTML = ns.map((n) => `<button type="button" class="pq-rv-chip" data-t="${n.t}"><b>${clock(n.t)}</b><span>${escapeHtml(n.text)}</span></button>`).join("");
+      qsa(".pq-rv-chip", el).forEach((b) => b.addEventListener("click", () => { const mm = media(); if (mm) mm.currentTime = +b.dataset.t; }));
+      qs("#pq-rv-actions", el).innerHTML = ns.length
+        ? `<button type="button" class="pq-rv-btn is-rev" id="pq-rv-rev">${icon("edit", { size: 20 })}<span>${t("pq.addNote")}</span></button>
+           <button type="button" class="pq-rv-btn is-next" id="pq-rv-go"><span>${t("pq.nextCut")}</span>${icon("chevronRight", { size: 20 })}</button>`
+        : `<button type="button" class="pq-rv-btn is-rev" id="pq-rv-rev">${icon("edit", { size: 20 })}<span>${t("post.decide.revise")}</span></button>
+           <button type="button" class="pq-rv-btn is-ok" id="pq-rv-ok">${icon("check", { size: 22 })}<span>${t("post.decide.ok")}</span></button>`;
+      qs("#pq-rv-ok", el)?.addEventListener("click", () => { decide(c.id, v.id, "approve"); i++; show(); });
+      qs("#pq-rv-go", el)?.addEventListener("click", () => { i++; show(); });
+      qs("#pq-rv-rev", el).addEventListener("click", () => {
+        noting = true;
+        media()?.pause();
+        const row = qs("#pq-rv-note", el);
+        row.hidden = false;
+        qs("#pq-rv-send", el).textContent = t("post.note.send", { time: clock(now()) });
+        qs("#pq-rv-text", el).focus();
+      });
+    };
+    paintNotes();
     const send = () => {
       const text = qs("#pq-rv-text", el).value.trim();
       if (!text) { qs("#pq-rv-text", el).focus(); return; }
-      decide(c.id, v.id, "revise", { t: now(), text });
-      i++;
-      show();
+      const at = now();
+      decide(c.id, v.id, "revise", { t: at, text });
+      noting = false;
+      qs("#pq-rv-text", el).value = "";
+      qs("#pq-rv-note", el).hidden = true;
+      paintNotes();
+      toast(t("post.note.added", { time: clock(at) }));
     };
     qs("#pq-rv-send", el).addEventListener("click", send);
     qs("#pq-rv-text", el).addEventListener("keydown", (e) => { if (e.key === "Enter") send(); e.stopPropagation(); });

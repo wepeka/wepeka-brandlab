@@ -57,23 +57,40 @@ export function noteForEditor(p, n) {
   return { id: n.id, file, at: clock(n.t), seconds: n.t, text: n.text, done: !!n.done, from: n.by === "client" ? "klien" : "winson", ...(n.name ? { name: n.name } : {}) };
 }
 
+// "Ask editor to make thumbnail" (posting.thumb): Claude drops an image named
+// thumbnail-N.jpg in the post folder. Only those count as the answer — a
+// cover he takes from a frame himself ("cover-…") never closes the request.
+export const THUMB_RE = /^thumb(nail)?[-_ .]/i;
+export const nextThumbName = (covers = []) => `thumbnail-${covers.filter((f) => THUMB_RE.test(f)).length + 1}.jpg`;
+
 // permintaan-editor.json: every piece, across brands, sent to the editor and
 // not delivered yet. entries = [{ c, brand: "Kopi Pagi", code: "KP-12" }].
+// kind "revisi" = the next cut; kind "thumbnail" = a cover image.
 export function editorQueue(entries) {
-  return {
-    requests: entries.filter(({ c }) => c.posting?.editor?.status === "requested").map(({ c, brand, code }) => {
-      const p = { versions: [], notes: [], ...c.posting };
-      const ed = p.editor;
-      const ids = Array.isArray(ed.noteIds) ? ed.noteIds : [];
-      return {
-        code: code || "", brand: brand || "", folder: p.local?.key || "", type: p.type || "reels",
-        version: ed.version || "", message: ed.message || "", noteIds: ids,
-        notes: ids.map((id) => (p.notes || []).find((n) => n.id === id)).filter(Boolean).map((n) => noteForEditor(p, n)),
-        requestedAt: ed.requestedAt || "",
-      };
-    }).sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)),
-  };
+  const base = ({ c, brand, code }) => ({ code: code || "", brand: brand || "", folder: c.posting?.local?.key || "", type: c.posting?.type || "reels" });
+  const revisions = entries.filter(({ c }) => c.posting?.editor?.status === "requested").map((e) => {
+    const p = { versions: [], notes: [], ...e.c.posting };
+    const ed = p.editor;
+    const ids = Array.isArray(ed.noteIds) ? ed.noteIds : [];
+    return {
+      kind: "revisi", ...base(e),
+      version: ed.version || "", message: ed.message || "", noteIds: ids,
+      notes: ids.map((id) => (p.notes || []).find((n) => n.id === id)).filter(Boolean).map((n) => noteForEditor(p, n)),
+      requestedAt: ed.requestedAt || "",
+    };
+  });
+  const thumbs = entries.filter(({ c }) => c.posting?.thumb?.status === "requested").map((e) => {
+    const th = e.c.posting.thumb;
+    const at = typeof th.at === "number" ? th.at : null;
+    return {
+      kind: "thumbnail", ...base(e),
+      version: th.version || "", at: at === null ? "" : clock(at), seconds: at, message: th.message || "",
+      file: nextThumbName(e.c.posting.covers), requestedAt: th.requestedAt || "",
+    };
+  });
+  return { requests: [...revisions, ...thumbs].sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)) };
 }
+const askedEditor = (c) => c.posting?.editor?.status === "requested" || c.posting?.thumb?.status === "requested";
 
 // Written at the top of the folder whenever the list changes — after every
 // sync, so a request sent from the phone reaches Claude the next time the
@@ -81,7 +98,7 @@ export function editorQueue(entries) {
 let lastQueue = "";
 export async function writeEditorQueue() {
   if (!outboxState().connected) return;
-  const data = editorQueue(listBrands().flatMap((b) => listContent(b.id).filter((c) => c.posting?.editor?.status === "requested").map((c) => ({ c, brand: b.name, code: videoCode(c) }))));
+  const data = editorQueue(listBrands().flatMap((b) => listContent(b.id).filter(askedEditor).map((c) => ({ c, brand: b.name, code: videoCode(c) }))));
   const sig = JSON.stringify(data);
   if (sig === lastQueue) return;
   lastQueue = sig;
@@ -141,11 +158,15 @@ export function planSync(posts, brands, find, picks = {}) {
     const cuts = [...p.versions, ...fresh.map((v) => ({ local: { file: v.file } }))];
     const asked = p.editor?.status === "requested" ? editorVersionIndex(cuts, p.editor.version) : null;
     const delivered = asked !== null && (asked >= 0 ? asked < cuts.length - 1 : fresh.length > 0);
-    if (!linking && !fresh.length && !coversChanged && !noteChanged && !fixed.size && !delivered && (c.caption || !post.caption)) continue;
+    // Asked for a thumbnail and a new thumbnail-N image is in the folder.
+    const thumb = p.thumb?.status === "requested" ? post.covers.find((f) => THUMB_RE.test(f) && !(p.thumb.had || []).includes(f)) : null;
+    if (!linking && !fresh.length && !coversChanged && !noteChanged && !fixed.size && !delivered && !thumb && (c.caption || !post.caption)) continue;
     const versions = p.versions.map((v) => (changes[v.local?.file] && changes[v.local.file] !== v.changeNote ? { ...v, changeNote: changes[v.local.file] } : v));
     const patch = { posting: { ...p, versions: [...versions, ...fresh.map((v, i) => toVersion(v, p.versions.length + i, changes))], covers: post.covers, cover: p.cover || post.covers[0] || "" } };
     if (fixed.size) patch.posting.notes = p.notes.map((n) => (fixed.has(n.id) ? { ...n, done: true, doneBy: "editor" } : n));
     if (delivered) patch.posting.editor = { ...p.editor, status: "done", doneAt: new Date().toISOString() };
+    // The editor's thumbnail becomes the chosen cover right away.
+    if (thumb) Object.assign(patch.posting, { thumb: { ...p.thumb, status: "done", doneAt: new Date().toISOString(), file: thumb }, cover: thumb });
     // A piece from Creator meets its folder for the first time.
     if (linking) Object.assign(patch.posting, { local: { key: post.key }, type: p.type || post.type, time: p.time || post.time || "" });
     if (linking && post.type && !c.format) patch.format = FORMAT_OF[post.type];

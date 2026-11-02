@@ -116,3 +116,36 @@ test("Send to editor: only the owner's account gets the button, and only for a c
     auth.currentUser = was;
   }
 });
+
+test("Ask editor to make thumbnail: owner only, for a video cut in the Mac folder", async () => {
+  const { auth } = await import("../js/firebase.js");
+  const { ADMIN_UIDS } = await import("../js/account.js");
+  const { thumbBlockHTML, decisionsFor } = await import("../js/posting.js");
+  const c = {
+    id: "c1", title: "WA", status: "editing",
+    posting: { local: { key: "Kopi Pagi/KP-1 2026-11-03 WA" }, type: "reels", covers: [], versions: [{ id: "a", n: 0, status: "pending", kind: "video", local: { file: "v1.mp4" } }], notes: [] },
+  };
+  const asked = { ...c, posting: { ...c.posting, thumb: { status: "requested", requestedAt: "2026-11-02T10:00:00.000Z", version: "v1.mp4", at: 4, message: "", had: [] } } };
+  const was = auth.currentUser;
+  try {
+    for (const who of [{ uid: "member-uid" }, null]) {
+      auth.currentUser = who;
+      assert.equal(thumbBlockHTML(c), "");
+      assert.equal(thumbBlockHTML(asked), "");
+    }
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    assert.match(thumbBlockHTML(c), /id="pst-th-open"[\s\S]*Ask editor to make thumbnail/);
+    const form = thumbBlockHTML(c, { thumbOpen: true, t: 4.2 });
+    assert.match(form, /id="pst-th-msg"/);
+    assert.match(form, /id="pst-th-frame" checked/);
+    assert.match(form, /0:04/, "the frame on screen");
+    assert.match(thumbBlockHTML(asked), /id="pst-th-undo"/);
+    assert.doesNotMatch(thumbBlockHTML(asked), /pst-th-open/);
+    assert.equal(thumbBlockHTML({ ...c, posting: { ...c.posting, local: null } }), "", "no Mac folder, no button");
+    assert.equal(thumbBlockHTML({ ...c, posting: { ...c.posting, versions: [{ id: "s", n: 0, status: "pending", kind: "set", local: { file: "slides", slides: ["01.jpg"] } }] } }), "", "carousels have no thumbnail");
+    assert.deepEqual(decisionsFor(asked).thumbnail, asked.posting.thumb);
+    assert.equal(decisionsFor(c).thumbnail, null);
+  } finally {
+    auth.currentUser = was;
+  }
+});

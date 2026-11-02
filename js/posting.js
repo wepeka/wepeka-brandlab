@@ -13,6 +13,7 @@
 //     time: "19:00",           // WIB, the day is the piece's scheduleDate
 //     ig: { state: "scheduled"|"published"|"failed", at, error, permalink },
 //     editor: { status: "requested"|"done"|"cancelled", requestedAt, version, message, noteIds },  // "Send to editor"
+//     thumb: { status: "requested"|"done"|"cancelled", requestedAt, version, at, message, had, file },  // "Ask editor to make thumbnail"
 //   }
 // The files live in the person's OWN Google Drive (js/drive.js), in
 // Brandlab / brand / month / piece folders — Brandlab keeps no copy (owner
@@ -91,6 +92,9 @@ export function decisionsFor(c) {
     // "Send to editor": { status, requestedAt, version, message, noteIds } — the same
     // request permintaan-editor.json lists while it is "requested".
     editor: p.editor || null,
+    // "Ask editor to make thumbnail": { status, requestedAt, version, at (seconds), message } —
+    // answered by a thumbnail-N.jpg in this folder.
+    thumbnail: p.thumb || null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -113,7 +117,7 @@ function writeBackChanged() {
       const { updatedAt, ...data } = decisionsFor(c);
       // As it was when this tab started — except a request for the editor
       // sent from the phone, which the folder may not have yet.
-      if (!written.has(c.id) && c.posting.editor?.status !== "requested") { written.set(c.id, JSON.stringify(data)); continue; }
+      if (!written.has(c.id) && c.posting.editor?.status !== "requested" && c.posting.thumb?.status !== "requested") { written.set(c.id, JSON.stringify(data)); continue; }
       if (written.get(c.id) !== JSON.stringify(data)) writeBack(c.id);
     }
   }
@@ -380,6 +384,52 @@ function cancelEditor(contentId) {
   updateContent(contentId, { posting: { ...p, editor: { ...p.editor, status: "cancelled", cancelledAt: new Date().toISOString() } } });
   writeEditorQueue();
   toast(t("post.editor.cancelled"));
+}
+
+// "Ask editor to make thumbnail" (owner, 2026-11-02), next to the covers:
+// the same queue as Send to editor, answered by a thumbnail-N.jpg in the
+// folder, which becomes the chosen cover (js/outbox-sync.js planSync).
+export function thumbBlockHTML(c, ui = {}) {
+  if (!canUsePosting() || !c) return "";
+  const p = postingOf(c);
+  const last = latestOf(p);
+  if (!p.local?.key || last?.kind !== "video" || postingState(c) === "published") return "";
+  if (p.thumb?.status === "requested") {
+    return `<div class="pst-editor is-thumb">
+        <span class="pst-badge" style="--pst:${EDITOR_COLOR.pending}">${icon("clock", { size: 11 })}${t("post.thumb.pending")}</span>
+        <button type="button" class="pst-link" id="pst-th-undo">${t("post.editor.cancel")}</button>
+        ${OUT.connected ? "" : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.editor.phoneHint")}</p>`}
+      </div>`;
+  }
+  if (!ui.thumbOpen) return `<button type="button" class="btn btn-secondary btn-sm pst-th-ask" id="pst-th-open">${icon("image", { size: 14 })}${t("post.thumb.ask")}</button>`;
+  const draft = ui.thDraft || { msg: "", frame: true };
+  return `<div class="pst-editor-form">
+      <label class="pst-sub" for="pst-th-msg">${t("post.editor.msg")}</label>
+      <textarea class="textarea" id="pst-th-msg" rows="2" placeholder="${escapeHtml(t("post.thumb.msgPh"))}">${escapeHtml(draft.msg)}</textarea>
+      <label class="pst-ed-note"><input type="checkbox" id="pst-th-frame" ${draft.frame ? "checked" : ""}><span>${t("post.thumb.useFrame", { time: `<b id="pst-th-time">${clock(ui.t)}</b>` })}</span></label>
+      <div class="pst-decide"><button type="button" class="cl-cta pst-cta" id="pst-th-send"><span>${t("post.editor.confirm")}</span><span class="cl-cta-dot pst-dot-editor">${icon("send", { size: 16 })}</span></button><button type="button" class="btn btn-ghost btn-sm" id="pst-th-close">${t("common.cancel")}</button></div>
+    </div>`;
+}
+
+function askThumbnail(contentId, { message, at, vid }) {
+  const p = postingOf(getContent(contentId));
+  const last = latestOf(p);
+  if (!canUsePosting() || !p.local?.key || !last?.local) return false;
+  // The frame is from the cut on screen; without one, the newest.
+  const from = p.versions.find((x) => x.id === vid && x.local && x.kind === "video") || last;
+  const thumb = { status: "requested", requestedAt: new Date().toISOString(), version: editorVersionOf(from), at, message, had: [...(p.covers || [])] };
+  updateContent(contentId, { posting: { ...p, thumb } });
+  writeEditorQueue();
+  toast(t(OUT.connected ? "post.thumb.sent" : "post.editor.phoneHint"));
+  return true;
+}
+
+function cancelThumbnail(contentId) {
+  const p = postingOf(getContent(contentId));
+  if (!canUsePosting() || p.thumb?.status !== "requested") return;
+  updateContent(contentId, { posting: { ...p, thumb: { ...p.thumb, status: "cancelled", cancelledAt: new Date().toISOString() } } });
+  writeEditorQueue();
+  toast(t("post.thumb.cancelled"));
 }
 
 // One decision on one cut — the review mode's buttons. Same rules as the
@@ -717,7 +767,7 @@ const igHandleOf = (brand) => (brand?.instagram?.username || "").replace(/^@/, "
 export function openPosting({ contentId, onChange }) {
   if (!canUsePosting() || !getContent(contentId)) return;
   const c0 = getContent(contentId);
-  const ui = { vid: (postingOf(c0).versions.find((v) => v.id === postingOf(c0).finalId) || latestOf(postingOf(c0)))?.id || null, compare: false, noteOpen: false, t: 0, onChange };
+  const ui = { vid: (postingOf(c0).versions.find((v) => v.id === postingOf(c0).finalId) || latestOf(postingOf(c0)))?.id || null, compare: false, t: 0, onChange };
   const overlay = openDrawer({ title: t("post.title"), bodyHTML: `<div class="pst" id="pst-root"></div>` });
   overlay.classList.add("pst-overlay");
   const root = qs("#pst-root", overlay);
@@ -745,7 +795,7 @@ export function openPosting({ contentId, onChange }) {
   uploadWatchers.add(watch);
   // A decision from elsewhere (the client's link, Claude's next cut, another
   // device) shows up in the open drawer — unless the person is typing.
-  const sig = () => { const p = postingOf(getContent(contentId)); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId, p.editor?.status]); };
+  const sig = () => { const p = postingOf(getContent(contentId)); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId, p.editor?.status, p.thumb?.status, p.cover, (p.covers || []).length]); };
   let seen = sig();
   const offStore = onStoreChange(() => {
     if (!overlay.isConnected) { offStore(); return; }
@@ -790,6 +840,10 @@ function paint(root, contentId, ui, repaint) {
   if (!isVideo) ui.compare = false;
   const code = videoCode(c);
   const ed = editorChip(c);
+  const restorePlayers = keepPlayers(root);
+  // Listeners on a kept <video> belong to one paint only.
+  ui.ac?.abort();
+  ui.ac = new AbortController();
 
   root.innerHTML = `
     <header class="pst-head">
@@ -804,6 +858,7 @@ function paint(root, contentId, ui, repaint) {
       ${["video", "check", "post"].map((s, i) => `<li class="${i < stepNow ? "is-done" : i === stepNow ? "is-now" : ""}"><span>${i < stepNow ? icon("check", { size: 12 }) : i + 1}</span>${t(`post.step.${s}`)}</li>`).join("")}
     </ol>
 
+    <div class="pst-grid ${v ? "has-video" : ""}">
     <section class="pst-block pst-video" id="pst-drop">
       ${needSource ? (local ? localConnectHTML() : connectHTML()) : v ? `
         <div class="pst-players ${ui.compare ? "is-compare" : ""}">
@@ -811,16 +866,12 @@ function paint(root, contentId, ui, repaint) {
         </div>
         ${isVideo ? `<div class="pst-ctl">
           <button type="button" class="pst-play" id="pst-play" aria-label="${t("post.play")}">${icon("play", { size: 16 })}</button>
-          <input type="range" id="pst-seek" min="0" max="${Math.max(1, v.dur || 10)}" step="0.05" value="0" aria-label="${t("post.play")}">
+          <div class="pst-seek-wrap"><input type="range" id="pst-seek" min="0" max="${Math.max(1, v.dur || 10)}" step="0.05" value="0" aria-label="${t("post.play")}">${marksHTML(p, v)}</div>
           <span class="pst-time" id="pst-time">0:00 / ${clock(v.dur)}</span>
         </div>
         <div id="pst-format">${formatLineHTML(v)}</div>` : ""}
         ${up ? progressHTML(up) : ""}
-        ${versionsHTML(p, v, up)}
-        ${v.changeNote ? `<p class="pst-change">${icon("edit", { size: 13 })}<span><b>${t("post.change.title", { label: escapeHtml(versionLabel(v)) })}</b> ${escapeHtml(v.changeNote)}</span></p>` : ""}
         ${prev && isVideo ? `<button type="button" class="pst-link" id="pst-compare">${icon(ui.compare ? "x" : "layers", { size: 13 })}${ui.compare ? t("post.compare.off") : t("post.compare.on", { label: versionLabel(prev) })}</button>` : ""}
-        ${extrasHTML(p, v)}
-        ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
       ` : up ? progressHTML(up) : `
         <div class="pst-empty">
           <span class="pst-empty-art">${icon("upload", { size: 26 })}</span>
@@ -830,10 +881,19 @@ function paint(root, contentId, ui, repaint) {
         </div>`}
     </section>
 
-    ${v ? decideHTML(p, v, prev, ui, v.id === latestOf(p).id ? editorBlockHTML(c, ui) : "") : ""}
+    <div class="pst-side">
+    ${v ? decideHTML(p, v, prev, ui, v.id === latestOf(p).id ? editorBlockHTML(c, ui) : "", isVideo && !needSource) : ""}
+    ${v && !needSource ? `<section class="pst-block pst-more">
+      ${versionsHTML(p, v, up)}
+      ${extrasHTML(p, v, c, ui)}
+      ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
+    </section>` : ""}
     ${v ? clientHTML(c, p, v, key) : ""}
     ${postHTML(c, p, key, handle)}
+    </div>
+    </div>
   `;
+  restorePlayers();
   wire(root, contentId, ui, repaint);
 }
 
@@ -876,21 +936,23 @@ function formatLineHTML(v) {
 // The post's kind and, for a video, its cover — both picked here and
 // written back to the folder for Claude.
 const TYPES = ["reels", "carousel", "foto", "story"];
-function extrasHTML(p, v) {
+function extrasHTML(p, v, c, ui = {}) {
   const covers = p.covers || [];
   const videoPost = (v?.kind === "video" || !v?.local) && ["reels", "story", ""].includes(p.type || "");
   // New covers go into the folder, so only with the folder at hand.
   const canAdd = !!(v?.local && p.local?.key && OUT.connected);
-  const showCovers = videoPost && (covers.length || canAdd);
+  const thumb = videoPost ? thumbBlockHTML(c, ui) : "";
+  const showCovers = videoPost && (covers.length || canAdd || thumb);
+  const fromEditor = (f) => p.thumb?.file === f ? `<em class="pst-cover-ed">${t("post.thumb.done")}</em>` : "";
   return `
     <div class="pst-types" role="group" aria-label="${escapeHtml(t("post.type.label"))}">
       ${TYPES.map((k) => `<button type="button" class="pst-type ${(p.type || "reels") === k ? "is-on" : ""}" data-type="${k}" aria-pressed="${(p.type || "reels") === k}">${icon(k === "carousel" ? "layers" : k === "foto" ? "image" : k === "story" ? "clock" : "play", { size: 13 })}${t(`post.type.${k}`)}</button>`).join("")}
     </div>
     ${(p.type || "reels") === "reels" ? `<label class="pst-switch"><input type="checkbox" id="pst-trialreel" ${p.trialReel ? "checked" : ""}><span><b>${t("post.trialReel.label")}</b><small>${t("post.trialReel.hint")}</small></span></label>` : ""}
-    ${showCovers ? `<div class="pst-covers"><span class="pst-sub">${t("post.cover.label")}</span><div class="pst-cover-row">${covers.map((f) => `<button type="button" class="pst-cover ${p.cover === f ? "is-on" : ""}" data-cover="${escapeHtml(f)}" aria-pressed="${p.cover === f}" title="${escapeHtml(f)}"><img data-local-img="${escapeHtml(f)}" alt=""></button>`).join("")}
+    ${showCovers ? `<div class="pst-covers"><span class="pst-sub">${t("post.cover.label")}</span><div class="pst-cover-row">${covers.map((f) => `<button type="button" class="pst-cover ${p.cover === f ? "is-on" : ""}" data-cover="${escapeHtml(f)}" aria-pressed="${p.cover === f}" title="${escapeHtml(f)}"><img data-local-img="${escapeHtml(f)}" alt="">${fromEditor(f)}</button>`).join("")}
       ${canAdd && v?.kind === "video" ? `<button type="button" class="pst-cover is-add" id="pst-cover-frame">${icon("image", { size: 16 })}<span>${t("post.cover.frame")}</span></button>` : ""}
       ${canAdd ? `<button type="button" class="pst-cover is-add" id="pst-cover-file">${icon("upload", { size: 16 })}<span>${t("post.cover.file")}</span></button>` : ""}
-    </div></div>` : ""}`;
+    </div>${thumb}</div>` : ""}`;
 }
 
 function localWhereHTML(p, v) {
@@ -916,7 +978,7 @@ function localPlayerHTML(v, tag, c) {
     const files = v.kind === "image" ? [v.local.file] : (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`));
     return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${files.length > 1 ? `<span class="pst-slide-n">1/${files.length}</span>` : ""}</div>`;
   }
-  return `<div class="pst-player" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video></div>`;
+  return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video></div>`;
 }
 
 // A Drive video is fetched into the tab first (js/drive.js driveVideoURL);
@@ -924,7 +986,31 @@ function localPlayerHTML(v, tag, c) {
 function playerHTML(v, tag, c) {
   if (v.local) return localPlayerHTML(v, tag, c);
   const fromDrive = !v.url && v.drive?.id;
-  return `<div class="pst-player" ${fromDrive ? `data-drive="${escapeHtml(v.drive.id)}"` : ""}>${tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : ""}<video ${v.url ? `src="${escapeHtml(v.url)}"` : ""} playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video>${fromDrive ? `<span class="pst-loading">${icon("folder", { size: 16 })}<span>${t("post.load")}</span><b>0%</b></span>` : ""}</div>`;
+  return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" ${v.url ? "data-ready" : ""} ${fromDrive ? `data-drive="${escapeHtml(v.drive.id)}"` : ""}>${tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : ""}<video ${v.url ? `src="${escapeHtml(v.url)}"` : ""} playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video>${fromDrive ? `<span class="pst-loading">${icon("folder", { size: 16 })}<span>${t("post.load")}</span><b>0%</b></span>` : ""}</div>`;
+}
+
+// A repaint keeps the players it already has (owner, 2026-11-02: after a
+// note "detiknya gak balik ke 0:00, tinggal aku lanjutin"): same cut, same
+// <video>, still at its second — paused or playing. Called around innerHTML.
+function keepPlayers(root) {
+  const old = new Map(qsa(".pst-player[data-pv][data-ready]", root).map((el) => [el.dataset.pv, el]));
+  return () => qsa(".pst-player[data-pv]", root).forEach((el) => {
+    const was = old.get(el.dataset.pv);
+    if (!was || !qs("video", was)) return;
+    qs(".pst-tag", was)?.remove();
+    const tag = qs(".pst-tag", el);
+    if (tag) was.prepend(tag);
+    qs("video", was).muted = qs("video", el)?.hasAttribute("muted") || false;
+    el.replaceWith(was);
+  });
+}
+
+// Each note as a dot on the timeline; a tap jumps there.
+function marksHTML(p, v) {
+  const dur = v.dur || 0;
+  const mine = (p.notes || []).filter((n) => n.versionId === v.id);
+  if (!mine.length) return "";
+  return `<div class="pst-marks" data-dur="${dur}">${mine.map((n) => `<button type="button" class="pst-mark ${n.done ? "is-done" : ""} ${n.by === "client" ? "is-client" : ""}" data-seek="${n.t}" data-mark-t="${n.t}" style="--at:${dur ? Math.min(1, n.t / dur) : 0}" title="${escapeHtml(`${clock(n.t)} · ${n.text}`)}" aria-label="${escapeHtml(`${clock(n.t)} · ${n.text}`)}"></button>`).join("")}</div>`;
 }
 
 function connectHTML() {
@@ -942,21 +1028,27 @@ function whereHTML(brand, c, v) {
   return `<p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.drive.where")}</b> ${driveFolderPath(brand, c).map(escapeHtml).join(" › ")}</span>${v.drive.link ? `<a href="${escapeHtml(v.drive.link)}" target="_blank" rel="noopener">${t("post.drive.open")}</a>` : ""}</p>`;
 }
 
-function decideHTML(p, v, prev, ui, editor = "") {
+// The revision column (owner, 2026-11-02: "lebih clear dilihat kolom
+// revisinya"): what changed in this cut, approve, then the notes by second
+// and the box to write the next one — sitting right next to the video.
+// Writing a note on an unchecked cut is asking for changes, so there's no
+// separate "Minta revisi" step any more.
+function decideHTML(p, v, prev, ui, editor = "", timed = true) {
   const label = versionLabel(v);
   const mine = p.notes.filter((n) => n.versionId === v.id).sort((a, b) => a.t - b.t);
   // The last cut's notes still open, and the ones Claude says this cut fixed.
   const fixedInCut = (n) => n.doneBy === "editor";
-  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || fixedInCut(n))) : [];
+  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || fixedInCut(n))).sort((a, b) => a.t - b.t) : [];
   const who = (n) => (n.by === "client" ? `<em class="pst-note-who is-client">${escapeHtml(n.name ? t("post.note.clientNamed", { name: n.name }) : t("post.note.client"))}</em>` : "") + (fixedInCut(n) ? `<em class="pst-note-who">${t("post.note.fixedInCut")}</em>` : "");
-  const note = (n) => `<div class="pst-note ${n.done ? "is-done" : ""}"><button type="button" class="pst-note-t" data-seek="${n.t}">${clock(n.t)}</button><span>${who(n)}${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
+  const note = (n, here) => `<div class="pst-note ${n.done ? "is-done" : ""}" ${here ? `data-note-at="${n.t}"` : ""}><button type="button" class="pst-note-t" data-seek="${n.t}" title="${escapeHtml(t("post.note.jump"))}">${icon("play", { size: 10 })}${clock(n.t)}</button><span>${who(n)}${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
   const final = p.versions.find((x) => x.id === p.finalId);
+  const writing = ["pending", "revision"].includes(v.status);
+  const open = mine.filter((n) => !n.done).length;
   let head;
   if (v.status === "pending") {
-    head = `<h4>${t("post.decide.title", { label: escapeHtml(label) })}</h4>
-      <div class="pst-decide">
+    head = `<div class="pst-rev-ask">
+        <h4>${t("post.decide.title", { label: escapeHtml(label) })}</h4>
         <button type="button" class="cl-cta pst-cta" id="pst-ok"><span>${t("post.decide.ok")}</span><span class="cl-cta-dot pst-dot-ok">${icon("check", { size: 16 })}</span></button>
-        <button type="button" class="btn btn-secondary" id="pst-revise">${icon("refresh", { size: 15 })}${t("post.decide.revise")}</button>
       </div>`;
   } else if (v.status === "approved") {
     head = v.id === p.finalId
@@ -966,15 +1058,18 @@ function decideHTML(p, v, prev, ui, editor = "") {
     head = `<p class="pst-result is-rev">${icon("refresh", { size: 15 })}<span>${t("post.decide.revising")} <button type="button" class="pst-link" id="pst-undo">${t("post.decide.undo")}</button></span></p>`;
   }
   return `
-    <section class="pst-block">
+    <section class="pst-block pst-rev">
+      ${v.changeNote ? `<p class="pst-change">${icon("edit", { size: 13 })}<span><b>${t("post.change.title", { label: escapeHtml(label) })}</b> ${escapeHtml(v.changeNote)}</span></p>` : ""}
       ${head}
-      ${older.length ? `<div class="pst-notes"><div class="pst-sub">${t("post.note.prev", { label: escapeHtml(versionLabel(prev)) })}</div>${older.map(note).join("")}</div>` : ""}
-      ${mine.length ? `<div class="pst-notes">${mine.map(note).join("")}</div>` : ""}
-      ${ui.noteOpen || v.status === "revision" ? `
-        <div class="pst-note-new">
-          <label class="pst-sub" for="pst-note-text">${t("post.note.label")}</label>
-          <div class="pst-note-row"><input class="input" id="pst-note-text" placeholder="${escapeHtml(t("post.note.ph"))}"><button type="button" class="btn btn-primary btn-sm" id="pst-note-send">${t("post.note.send", { time: clock(ui.t) })}</button></div>
+      ${mine.length || writing ? `<div class="pst-rev-title">${icon("edit", { size: 15 })}<b>${t("post.rev.title", { label: escapeHtml(label) })}</b>${mine.length ? `<span class="pst-rev-n ${open ? "" : "is-clear"}">${open ? t("post.rev.open", { n: open }) : t("post.rev.allDone")}</span>` : ""}</div>` : ""}
+      ${mine.length ? `<div class="pst-notes">${mine.map((n) => note(n, true)).join("")}</div>` : writing ? `<p class="pst-rev-empty">${t(timed ? "post.rev.empty" : "post.rev.emptyPlain")}</p>` : ""}
+      ${writing ? `
+        <div class="pst-compose">
+          <label class="pst-compose-top" for="pst-note-text">${timed ? `<span class="pst-compose-t" id="pst-compose-t">${clock(ui.t)}</span>` : ""}<b>${t(timed ? "post.note.label" : "post.note.labelPlain")}</b></label>
+          <textarea class="textarea" id="pst-note-text" rows="2" placeholder="${escapeHtml(t("post.note.ph"))}">${escapeHtml(ui.noteDraft || "")}</textarea>
+          <div class="pst-compose-foot"><small>${t(timed ? "post.note.hint" : "post.note.hintPlain")}</small><button type="button" class="btn btn-primary btn-sm" id="pst-note-send">${timed ? t("post.note.send", { time: clock(ui.t) }) : t("post.note.sendPlain")}</button></div>
         </div>` : ""}
+      ${older.length ? `<div class="pst-notes is-prev"><div class="pst-sub">${t("post.note.prev", { label: escapeHtml(versionLabel(prev)) })}</div>${older.map((n) => note(n, false)).join("")}</div>` : ""}
       ${editor}
     </section>`;
 }
@@ -1102,50 +1197,73 @@ function wire(root, contentId, ui, repaint) {
   const save = (patch) => updateContent(contentId, { posting: { ...postingOf(getContent(contentId)), ...patch } });
   const setV = (fn) => save({ versions: postingOf(getContent(contentId)).versions.map((x) => (x.id === ui.vid ? fn(x) : x)) });
 
-  // Players: the newest drives, the older one follows (compare view).
+  // Players: the newest drives, the older one follows (compare view). A
+  // player kept from the last paint (keepPlayers) may already be loaded and
+  // even playing; its listeners from that paint are gone (ui.ac).
+  const { signal } = ui.ac;
   const vids = qsa("video", root);
   const main = vids[vids.length - 1];
   const play = qs("#pst-play", root), seek = qs("#pst-seek", root), time = qs("#pst-time", root);
   if (main) {
+    const marks = qsa(".pst-mark", root);
+    const here = qsa("[data-note-at]", root);
+    const showPlaying = () => {
+      const on = !main.paused;
+      play.innerHTML = icon(on ? "pause" : "play", { size: 16 });
+      play.setAttribute("aria-label", on ? t("post.pause") : t("post.play"));
+    };
     const sync = () => {
       ui.t = main.currentTime;
       seek.value = main.currentTime;
       time.textContent = `${clock(main.currentTime)} / ${clock(main.duration || 0)}`;
       vids.forEach((x) => { if (x !== main && Math.abs(x.currentTime - main.currentTime) > 0.25) x.currentTime = Math.min(main.currentTime, x.duration || 0); });
-      const send = qs("#pst-note-send", root);
-      if (send) send.textContent = t("post.note.send", { time: clock(main.currentTime) });
+      const at = clock(main.currentTime);
+      const stamp = qs("#pst-compose-t", root);
+      if (stamp) {
+        stamp.textContent = at;
+        const send = qs("#pst-note-send", root);
+        if (send) send.textContent = t("post.note.send", { time: at });
+      }
+      const frame = qs("#pst-th-time", root);
+      if (frame) frame.textContent = at;
+      // The note being looked at lights up while the video passes it.
+      here.forEach((n) => n.classList.toggle("is-now", Math.abs(+n.dataset.noteAt - main.currentTime) < 1.5));
     };
-    main.addEventListener("loadedmetadata", () => {
+    const meta = () => {
       seek.max = main.duration || 1;
+      marks.forEach((m) => m.style.setProperty("--at", Math.min(1, +m.dataset.markT / (main.duration || 1))));
       sync();
       // A cut from the folder carries no size yet: check it once it's read.
       const cur = p.versions.find((x) => x.id === ui.vid);
       const line = qs("#pst-format", root);
       if (cur && line) line.innerHTML = formatLineHTML({ ...cur, w: main.videoWidth, h: main.videoHeight, dur: main.duration });
-    });
-    main.addEventListener("timeupdate", sync);
-    main.addEventListener("ended", () => { vids.forEach((x) => x.pause()); play.innerHTML = icon("play", { size: 16 }); });
+    };
+    if (main.readyState >= 1) meta();
+    main.addEventListener("loadedmetadata", meta, { signal });
+    main.addEventListener("timeupdate", sync, { signal });
+    main.addEventListener("play", showPlaying, { signal });
+    main.addEventListener("pause", showPlaying, { signal });
+    main.addEventListener("ended", () => vids.forEach((x) => x.pause()), { signal });
+    showPlaying();
     play.addEventListener("click", () => {
       const go = main.paused;
       vids.forEach((x) => (go ? x.play().catch(() => {}) : x.pause()));
-      play.innerHTML = icon(go ? "pause" : "play", { size: 16 });
-      play.setAttribute("aria-label", go ? t("post.pause") : t("post.play"));
     });
     seek.addEventListener("input", () => { vids.forEach((x) => { x.currentTime = Math.min(+seek.value, x.duration || +seek.value); }); });
-    vids.forEach((x) => x.addEventListener("click", () => play.click()));
+    vids.forEach((x) => x.addEventListener("click", () => play.click(), { signal }));
   }
-  qsa(".pst-player[data-drive]", root).forEach((box) => {
+  qsa(".pst-player[data-drive]:not([data-ready])", root).forEach((box) => {
     const video = qs("video", box), loading = qs(".pst-loading", box), pct = qs(".pst-loading b", box);
     driveVideoURL(box.dataset.drive, { onProgress: (f) => { if (pct) pct.textContent = `${Math.round(f * 100)}%`; } })
-      .then((url) => { video.src = url; loading?.remove(); })
+      .then((url) => { video.src = url; box.dataset.ready = "1"; loading?.remove(); })
       .catch(() => { if (loading) loading.innerHTML = `${icon("info", { size: 16 })}<span>${t("post.loadFailed")}</span>`; });
   });
   qs("#pst-connect", root)?.addEventListener("click", () => goConnect(contentId));
   qs("#pst-local", root)?.addEventListener("click", async () => { await linkOutbox(); repaint(); });
   const key = p.local?.key;
   if (key && OUT.connected) {
-    qsa(".pst-player[data-local]", root).forEach((box) => {
-      outboxFileURL(key, box.dataset.local).then((url) => { qs("video", box).src = url; }).catch(() => { box.insertAdjacentHTML("beforeend", `<span class="pst-loading">${icon("info", { size: 16 })}<span>${t("post.local.missing")}</span></span>`); });
+    qsa(".pst-player[data-local]:not([data-ready])", root).forEach((box) => {
+      outboxFileURL(key, box.dataset.local).then((url) => { qs("video", box).src = url; box.dataset.ready = "1"; }).catch(() => { box.insertAdjacentHTML("beforeend", `<span class="pst-loading">${icon("info", { size: 16 })}<span>${t("post.local.missing")}</span></span>`); });
     });
     qsa("img[data-local-img]", root).forEach((img) => { outboxFileURL(key, img.dataset.localImg).then((url) => { img.src = url; }).catch(() => {}); });
     qsa("[data-vthumb]", root).forEach((el) => {
@@ -1197,8 +1315,14 @@ function wire(root, contentId, ui, repaint) {
   });
   qsa("[data-seek]", root).forEach((b) => b.addEventListener("click", () => { vids.forEach((x) => { x.currentTime = +b.dataset.seek; }); }));
 
-  qsa("[data-vid]", root).forEach((b) => b.addEventListener("click", () => { ui.vid = b.dataset.vid; ui.noteOpen = false; paint(root, contentId, ui, repaint); }));
-  qs(".pst-vcard.is-on", root)?.scrollIntoView({ block: "nearest", inline: "center" });
+  qsa("[data-vid]", root).forEach((b) => b.addEventListener("click", () => { ui.vid = b.dataset.vid; paint(root, contentId, ui, repaint); }));
+  // Centre the chosen cut in its row, sideways only: the drawer itself
+  // stays where it was scrolled (scrollIntoView jumped it to the cards).
+  const onCard = qs(".pst-vcard.is-on", root);
+  if (onCard) {
+    const row = onCard.parentElement;
+    row.scrollLeft += onCard.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - onCard.offsetWidth) / 2;
+  }
   qs("#pst-compare", root)?.addEventListener("click", () => { ui.compare = !ui.compare; paint(root, contentId, ui, repaint); });
   // The drawer follows the upload through its watcher (openPosting).
   qs("#pst-add", root)?.addEventListener("click", () => pickFile((f) => addVersion(contentId, f, ui.onChange)));
@@ -1221,35 +1345,36 @@ function wire(root, contentId, ui, repaint) {
     setV((x) => ({ ...x, status: "approved" }));
     markFinalInDrive(p, p.finalId, ui.vid);
     save({ finalId: ui.vid });
-    ui.noteOpen = false;
     toast(t("post.toast.approved", { label: versionLabel(v) }));
     repaint();
   });
   qs("#pst-use", root)?.addEventListener("click", () => { markFinalInDrive(p, p.finalId, ui.vid); save({ finalId: ui.vid }); repaint(); });
-  qs("#pst-revise", root)?.addEventListener("click", () => {
-    setV((x) => ({ ...x, status: "revision" }));
-    if (postingOf(getContent(contentId)).finalId === ui.vid) {
-      const was = p.versions.find((x) => x.id === ui.vid);
-      if (was?.drive?.id) renameDriveFile(was.drive.id, driveFileName(was, was.drive.ext, false)).catch(() => {});
-      save({ finalId: null });
-    }
-    ui.noteOpen = true;
-    toast(t("post.toast.revise"));
-    repaint();
-    setTimeout(() => qs("#pst-note-text", root)?.focus(), 30);
-  });
-  qs("#pst-undo", root)?.addEventListener("click", () => { setV((x) => ({ ...x, status: "pending" })); ui.noteOpen = false; repaint(); });
+  qs("#pst-undo", root)?.addEventListener("click", () => { setV((x) => ({ ...x, status: "pending" })); repaint(); });
+  // A note is pinned to the second on screen; the video stays there after
+  // it's added (the player is kept), so pressing play carries on.
+  const timed = !!qs("#pst-compose-t", root);
+  const noteBox = qs("#pst-note-text", root);
   const sendNote = () => {
-    const input = qs("#pst-note-text", root);
-    const text = input?.value.trim();
-    if (!text) { input?.focus(); return; }
-    const at = Math.floor(ui.t || 0);
-    save({ notes: [...postingOf(getContent(contentId)).notes, { id: `n${Date.now().toString(36)}`, versionId: ui.vid, t: at, text, at: Date.now(), done: false }] });
-    toast(t("post.note.added", { time: clock(at) }));
+    const text = noteBox?.value.trim();
+    if (!text) { noteBox?.focus(); return; }
+    // Read off the player itself: right after a seek, ui.t still waits for timeupdate.
+    const at = timed ? Math.floor(main ? main.currentTime : ui.t || 0) : 0;
+    const cur = postingOf(getContent(contentId));
+    // A note on an unchecked cut is asking for changes.
+    save({
+      versions: cur.versions.map((x) => (x.id === ui.vid && x.status === "pending" ? { ...x, status: "revision" } : x)),
+      notes: [...cur.notes, { id: `n${Date.now().toString(36)}`, versionId: ui.vid, t: at, text, at: Date.now(), done: false }],
+    });
+    ui.noteDraft = "";
+    toast(timed ? t("post.note.added", { time: clock(at) }) : t("post.note.addedPlain"));
     repaint();
   };
   qs("#pst-note-send", root)?.addEventListener("click", sendNote);
-  qs("#pst-note-text", root)?.addEventListener("keydown", (e) => { if (e.key === "Enter") sendNote(); });
+  // Typing stops the video, so the second doesn't run on while writing.
+  const hold = () => { if (main && !main.paused) vids.forEach((x) => x.pause()); };
+  ["focus", "pointerdown"].forEach((ev) => noteBox?.addEventListener(ev, hold));
+  noteBox?.addEventListener("input", () => { hold(); ui.noteDraft = noteBox.value; });
+  noteBox?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNote(); } });
   qsa("[data-note]", root).forEach((box) => box.addEventListener("change", () => {
     save({ notes: postingOf(getContent(contentId)).notes.map((n) => (n.id === box.dataset.note ? { ...n, done: box.checked } : n)) });
     repaint();
@@ -1280,6 +1405,26 @@ function wire(root, contentId, ui, repaint) {
     repaint();
   });
   qs("#pst-ed-undo", root)?.addEventListener("click", () => { cancelEditor(contentId); repaint(); });
+
+  // Ask editor to make thumbnail: same pattern, a message and the frame on screen.
+  qs("#pst-th-open", root)?.addEventListener("click", () => {
+    ui.thumbOpen = true;
+    ui.thDraft = { msg: "", frame: true };
+    paint(root, contentId, ui, repaint);
+    setTimeout(() => qs("#pst-th-msg", root)?.focus(), 30);
+  });
+  qs("#pst-th-close", root)?.addEventListener("click", () => { ui.thumbOpen = false; paint(root, contentId, ui, repaint); });
+  qs("#pst-th-msg", root)?.addEventListener("input", (e) => { ui.thDraft.msg = e.target.value; });
+  qs("#pst-th-frame", root)?.addEventListener("change", (e) => { ui.thDraft.frame = e.target.checked; });
+  qs("#pst-th-send", root)?.addEventListener("click", () => {
+    const message = qs("#pst-th-msg", root)?.value.trim() || "";
+    const frame = !!qs("#pst-th-frame", root)?.checked && !!main;
+    if (!askThumbnail(contentId, { message, at: frame ? Math.floor(main.currentTime) : null, vid: ui.vid })) return;
+    ui.thumbOpen = false;
+    ui.thDraft = null;
+    repaint();
+  });
+  qs("#pst-th-undo", root)?.addEventListener("click", () => { cancelThumbnail(contentId); repaint(); });
 
   const cap = qs("#pst-caption", root);
   cap?.addEventListener("input", () => { qs("#pst-count", root).textContent = `${cap.value.length}/2200`; });

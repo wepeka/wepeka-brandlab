@@ -139,8 +139,35 @@ test("Send to editor: a newer cut in the folder closes the request; the queue li
   const cancelled = { posting: { ...existing.posting, local: { key: "Kopi Pagi/KP-2 Lain" }, editor: { ...editor, status: "cancelled" } } };
   const q = editorQueue([{ c: existing, brand: "Kopi Pagi", code: "KP-1" }, { c: cancelled, brand: "Kopi Pagi", code: "KP-2" }]);
   assert.deepEqual(q, { requests: [{
-    code: "KP-1", brand: "Kopi Pagi", folder: "Kopi Pagi/KP-1 Judul", type: "reels", version: "v1.mp4", message: "Hook lebih cepat", noteIds: ["n1"],
+    kind: "revisi", code: "KP-1", brand: "Kopi Pagi", folder: "Kopi Pagi/KP-1 Judul", type: "reels", version: "v1.mp4", message: "Hook lebih cepat", noteIds: ["n1"],
     notes: [{ id: "n1", file: "v1.mp4", at: "0:12", seconds: 12, text: "Logo kepotong", done: false, from: "klien", name: "Bu Rina" }],
     requestedAt: "2026-11-02T10:00:00.000Z",
   }] });
+});
+
+test("Ask editor to make thumbnail: queued with its frame, closed by a new thumbnail-N image only", async () => {
+  const { editorQueue, nextThumbName } = await import("../js/outbox-sync.js");
+  const brands = [{ id: "b1", name: "Kopi Pagi" }];
+  const v1 = { id: versionIdOf("v1.mp4"), n: 0, status: "revision", kind: "video", local: { file: "v1.mp4" } };
+  const thumb = { status: "requested", requestedAt: "2026-11-02T09:00:00.000Z", version: "v1.mp4", at: 3, message: "Teks besar", had: ["cover-1.jpg"] };
+  const existing = { id: "c1", brandId: "b1", caption: "x", posting: { local: { key: "Kopi Pagi/KP-1 Judul" }, type: "reels", covers: ["cover-1.jpg"], cover: "cover-1.jpg", versions: [v1], notes: [], thumb } };
+  const post = { key: "Kopi Pagi/KP-1 Judul", brand: "Kopi Pagi", title: "Judul", date: "", time: "", caption: "", type: "reels", covers: ["cover-1.jpg"], versions: [{ file: "v1.mp4", kind: "video" }], changes: {}, done: [] };
+
+  const q = editorQueue([{ c: existing, brand: "Kopi Pagi", code: "KP-1" }]);
+  assert.deepEqual(q.requests, [{ kind: "thumbnail", code: "KP-1", brand: "Kopi Pagi", folder: "Kopi Pagi/KP-1 Judul", type: "reels", version: "v1.mp4", at: "0:03", seconds: 3, message: "Teks besar", file: "thumbnail-1.jpg", requestedAt: "2026-11-02T09:00:00.000Z" }]);
+  assert.equal(editorQueue([{ c: { posting: { ...existing.posting, thumb: { ...thumb, at: null } } }, brand: "Kopi Pagi", code: "KP-1" }]).requests[0].at, "", "no frame picked");
+  assert.equal(nextThumbName(["cover-1.jpg", "thumbnail-1.jpg", "thumb_2.png"]), "thumbnail-3.jpg");
+
+  assert.equal(planSync([post], brands, () => existing).update.length, 0, "nothing new: still waiting");
+  // A cover he took from a frame himself doesn't answer the request.
+  const own = planSync([{ ...post, covers: ["cover-1.jpg", "cover-frame-0m03s.jpg"] }], brands, () => existing).update[0].patch.posting;
+  assert.equal(own.thumb.status, "requested");
+  const done = planSync([{ ...post, covers: ["cover-1.jpg", "thumbnail-1.jpg"] }], brands, () => existing).update[0].patch.posting;
+  assert.equal(done.thumb.status, "done");
+  assert.equal(done.thumb.file, "thumbnail-1.jpg");
+  assert.equal(done.cover, "thumbnail-1.jpg", "the editor's thumbnail becomes the cover");
+  assert.match(done.thumb.doneAt, /^\d{4}-\d{2}-\d{2}T/);
+  // Revisions and thumbnails share the queue, oldest first.
+  const both = { ...existing, posting: { ...existing.posting, editor: { status: "requested", requestedAt: "2026-11-02T10:00:00.000Z", version: "v1.mp4", message: "", noteIds: [] } } };
+  assert.deepEqual(editorQueue([{ c: both, brand: "Kopi Pagi", code: "KP-1" }]).requests.map((r) => r.kind), ["thumbnail", "revisi"]);
 });
