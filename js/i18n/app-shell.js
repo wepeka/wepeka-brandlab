@@ -6,6 +6,9 @@ export default {
   // Under the boot loader's logo after ~12s (js/main.js showLoading).
   "app.loading.slow": { en: "Still getting Brandlab ready… If it takes too long, check your connection and reload.", id: "Masih menyiapkan Brandlab… Kalau kelamaan, cek koneksi internetmu lalu muat ulang." },
   "app.done": { en: "Done", id: "Selesai" },
+  // A tab opened before the latest deploy (js/update-notice.js).
+  "app.update.title": { en: "Brandlab has been updated", id: "Brandlab sudah diperbarui" },
+  "app.update.reload": { en: "Reload", id: "Muat ulang" },
   "community.menu": { en: "Community", id: "Komunitas" },
   "circle.menu": { en: "Founder Circle", id: "Founder Circle" },
   "circle.title": { en: "Founder Circle", id: "Founder Circle" },

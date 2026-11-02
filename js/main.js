@@ -53,6 +53,7 @@ import { getMode, hasChosenMode } from "./mode.js";
 import { setPlainLanguageResolver } from "./i18n.js";
 import { renderModePicker } from "./mode-picker.js";
 import { noteError } from "./error-log.js";
+import { initUpdateNotice } from "./update-notice.js";
 
 // Pemula reads plain words everywhere (js/i18n.js plainWords).
 setPlainLanguageResolver(() => getMode() === "guided");
@@ -1152,6 +1153,7 @@ consumeWepekaToken();
 initAnalytics();
 initActivation();
 initMetaPixel();
+initUpdateNotice();
 window.addEventListener("hashchange", () => {
   if (!lastUser) { boot(lastUser); return; } // toggle pricing <-> login while logged out
   renderRoute();
