@@ -1237,6 +1237,7 @@ function postHTML(c, p, key, handle, posting = null) {
       <div class="pst-decide">
         <button type="button" class="cl-cta pst-cta pst-go" id="pst-schedule"><span>${t(AUTO_POST ? "post.ig.cta" : "post.ig.ctaMark")}</span><span class="cl-cta-dot pst-dot-ig">${icon(AUTO_POST ? "instagram" : "calendar", { size: 16 })}</span></button>
         ${AUTO_POST ? `<button type="button" class="btn btn-secondary" id="pst-post-now">${icon("send", { size: 15 })}${t("post.ig.now")}</button>` : ""}
+        ${AUTO_POST ? `<button type="button" class="btn btn-ghost" id="pst-posted">${icon("check", { size: 15 })}${t("post.ig.alreadyPosted")}</button>` : ""}
       </div>
     </section>`;
 }
