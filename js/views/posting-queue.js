@@ -117,13 +117,14 @@ function listHTML(items, ui) {
     return `${chips}<div class="pq-gal">${list.map(tileHTML).join("")}</div>`;
   }
   // One gallery, soonest first (no date last); what's past its date and
-  // still not up waits folded underneath.
+  // still not up waits folded on top of it (owner, 2026-11-03: folded under
+  // ~90 tiles, Winson Wrapped #4 read as "hilang" the day after its date).
   const today = localISODate();
   const late = shown.filter((x) => x.c.scheduleDate && x.c.scheduleDate < today && x.state !== "published");
   const main = shown.filter((x) => !late.includes(x));
   return `${chips}
-    ${main.length ? `<div class="pq-gal">${rows(main)}</div>` : ""}
-    ${late.length ? `<details class="pq-day is-fold" data-fold="late" ${ui.open.late || !main.length ? "open" : ""}><summary><h3>${t("pq.group.late")}<span>${late.length}</span></h3>${icon("chevronDown", { size: 14 })}</summary><div class="pq-gal">${rows(late)}</div></details>` : ""}`;
+    ${late.length ? `<details class="pq-day is-fold" data-fold="late" ${ui.open.late || !main.length ? "open" : ""}><summary><h3>${t("pq.group.late")}<span>${late.length}</span></h3>${icon("chevronDown", { size: 14 })}</summary><div class="pq-gal">${rows(late)}</div></details>` : ""}
+    ${main.length ? `<div class="pq-gal">${rows(main)}</div>` : ""}`;
 }
 
 function sourceHTML() {
