@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { postingState, formatIssues, driveFolderPath, driveFileName } from "../js/posting.js";
+import { postingState, formatIssues, driveFolderPath, driveFileName, cleanName } from "../js/posting.js";
 
 const v = (id, status, extra = {}) => ({ id, n: 0, status, w: 540, h: 960, dur: 10, size: 1e6, type: "video/mp4", ...extra });
 
@@ -24,6 +24,14 @@ test("videos land in the owner's Drive as Brandlab / brand / month / piece, the 
   assert.equal(driveFolderPath({ name: "X" }, { title: "Promo 1/2" }, "id")[2], "Tanpa tanggal");
   assert.equal(driveFileName({ n: 0 }, "mov"), "Original.mov");
   assert.equal(driveFileName({ n: 2 }, "mp4", true), "Revisi 2 (FINAL).mp4");
+});
+
+test("Outbox folder names never end in a dot or a space (Chrome skips those folders)", () => {
+  assert.equal(cleanName('WIN-25 2026-11-04 "Logo itu harus ngejelasin bisnismu." Nggak.'), "WIN-25 2026-11-04 -Logo itu harus ngejelasin bisnismu.- Nggak");
+  assert.equal(cleanName("KP-3 2026-11-03 Tunggu dulu..."), "KP-3 2026-11-03 Tunggu dulu");
+  // cut at 90 characters right after a dot or a space
+  assert.equal(cleanName(`${"a".repeat(88)}. b`), "a".repeat(88));
+  assert.equal(cleanName("KP-12 2026-11-03 Cara pesan lewat WA"), "KP-12 2026-11-03 Cara pesan lewat WA");
 });
 
 test("format check only speaks up about what Instagram would refuse or crop", () => {

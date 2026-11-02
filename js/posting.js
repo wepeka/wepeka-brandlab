@@ -121,7 +121,9 @@ function writeBackChanged() {
 
 // Where a piece's files go in the folder: the one it already has, or
 // "<brand>/<code> <date> <title>" for Claude to make.
-const cleanName = (s) => String(s || "").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 90);
+// Chrome's folder reader skips a name ending in "." or a space, so a title
+// like '"Logo itu…" Nggak.' made a folder Brandlab never saw: those go too.
+export const cleanName = (s) => String(s || "").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 90).replace(/[.\s]+$/, "");
 export function folderKeyOf(c) {
   const p = postingOf(c);
   if (p.local?.key) return p.local.key;
