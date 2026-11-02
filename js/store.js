@@ -2763,6 +2763,15 @@ export function updateContent(id, patch) {
   if (numbersPatched && JSON.stringify([item.performance || {}, item.performanceByPlatform || {}, item.crossPostPerformance || {}]) !== numbersBefore) emitStep("numbers_logged", { brandId: item.brandId, kind: "content" });
   return item;
 }
+// Bookkeeping that isn't an edit (the private video codes, js/video-codes.js):
+// saved without touching updatedAt, so lists sorted by "last changed" stay put.
+export function setContentQuiet(id, patch) {
+  const item = getContent(id);
+  if (!item || !writableBrand(item.brandId)) return null;
+  Object.assign(item, patch);
+  persist(() => updateFields("content", item.id, item, Object.keys(patch)));
+  return item;
+}
 export function archiveContent(id, archived = true) {
   return updateContent(id, { archived });
 }

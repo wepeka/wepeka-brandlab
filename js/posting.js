@@ -19,9 +19,14 @@
 // Scheduling still only marks the piece until the server worker exists; that
 // worker will copy the final cut to a short-lived spot for Instagram to
 // fetch (.claude/social-hub/ARSITEKTUR.md).
-import { listBrands, getBrand, listContent, getContent, createContent, updateContent, localISODate } from "./store.js";
+import { listBrands, getBrand, listContent, getContent, createContent, updateContent, localISODate, onChange as onStoreChange } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
+import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
+import { syncOutbox, versionIdOf, FORMAT_OF } from "./outbox-sync.js";
+import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter } from "./video-codes.js";
+import { outboxFile } from "./outbox.js";
+import { brandReviewLink, sendToClient, cleanPreviews, reviewURL } from "./review-share.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "./dom.js";
 import { openDrawer, confirmDialog } from "./modals.js";
@@ -33,6 +38,164 @@ export const canUsePosting = () => isAdmin(currentUid());
 // exists, "schedule" only books the slot on the calendar and says so, and
 // the person marks the piece posted after posting it by hand.
 const AUTO_POST = false;
+
+// Wepeka's own account works from a folder on the Mac (js/outbox.js) instead
+// of Google Drive (owner, 2026-11-01): Claude edits there, the results flow
+// in by themselves (js/outbox-sync.js), and every decision is written back
+// to the folder for Claude to read. Drive stays the way for everyone else
+// once Video & posting opens up.
+export const usesOutbox = () => canUsePosting() && outboxSupported();
+const OUT = { checked: false, connected: false, needsPermission: false, name: "" };
+let outboxCheck = null;
+export function ensureOutbox(force = false) {
+  if (!outboxCheck || force) outboxCheck = restoreOutbox().then((s) => { Object.assign(OUT, s, { checked: true }); watchIndex(); return OUT; });
+  return outboxCheck;
+}
+export const outboxInfo = () => ({ ...OUT });
+// Both open a Chrome prompt, so both come straight from a click.
+export async function linkOutbox() {
+  try {
+    Object.assign(OUT, OUT.needsPermission ? await grantOutbox() : await connectOutbox(), { checked: true });
+  } catch { return OUT; }
+  watchIndex();
+  if (OUT.connected) {
+    const r = await syncOutbox();
+    toast(t("post.local.synced", { n: r.posts }));
+  }
+  return OUT;
+}
+
+// The decisions, as Claude reads them in the post's folder (brandlab.json).
+export function decisionsFor(c) {
+  const p = postingOf(c);
+  const fileOf = (id) => p.versions.find((v) => v.id === id)?.local?.file || "";
+  return {
+    about: "Ditulis oleh Brandlab: keputusan Winson untuk post ini. Baca sebelum membuat versi berikutnya.",
+    code: videoCode(c),
+    trialOf: c.trialOf ? videoCode(getContent(c.trialOf)) : "",
+    trialReel: !!p.trialReel,
+    status: postingState(c),
+    statusLabel: stateLabel(c),
+    title: c.title || "",
+    date: c.scheduleDate || "",
+    time: p.time || "",
+    type: p.type || "",
+    caption: c.caption || "",
+    cover: p.cover || "",
+    final: fileOf(p.finalId),
+    versions: p.versions.map((v) => ({ file: v.local?.file || v.name || "", status: v.status })),
+    // id: put it in post.json "done" once fixed. from: "winson" or "klien".
+    notes: (p.notes || []).map((n) => ({ id: n.id, file: fileOf(n.versionId), at: clock(n.t), seconds: n.t, text: n.text, done: !!n.done, from: n.by === "client" ? "klien" : "winson", ...(n.name ? { name: n.name } : {}) })),
+    client: p.client ? { file: fileOf(p.client.versionId), status: p.client.status, name: p.client.name || "" } : null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+// Written after every decision here, and — through the store watcher below —
+// whenever one arrives from elsewhere (the client's review link, another
+// device), each folder only when its content changed.
+const written = new Map(); // contentId → what brandlab.json last said
+export function writeBack(contentId) {
+  const c = getContent(contentId);
+  const key = c?.posting?.local?.key;
+  if (!key || !OUT.connected) return;
+  const { updatedAt, ...data } = decisionsFor(c);
+  written.set(contentId, JSON.stringify(data));
+  writeDecisions(key, { ...data, updatedAt }).catch((e) => { written.delete(contentId); console.warn("[posting] brandlab.json not written", e); });
+}
+function writeBackChanged() {
+  for (const b of listBrands()) {
+    for (const c of listContent(b.id)) {
+      if (!c.posting?.local?.key) continue;
+      const { updatedAt, ...data } = decisionsFor(c);
+      if (!written.has(c.id)) { written.set(c.id, JSON.stringify(data)); continue; } // as it was when this tab started
+      if (written.get(c.id) !== JSON.stringify(data)) writeBack(c.id);
+    }
+  }
+}
+
+// Where a piece's files go in the folder: the one it already has, or
+// "<brand>/<code> <date> <title>" for Claude to make.
+const cleanName = (s) => String(s || "").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 90);
+export function folderKeyOf(c) {
+  const p = postingOf(c);
+  if (p.local?.key) return p.local.key;
+  const brand = getBrand(c.brandId);
+  const used = listContent(c.brandId).map((x) => x.posting?.local?.key).find(Boolean);
+  const brandFolder = used ? used.split("/")[0] : cleanName(brand?.name) || "Brand";
+  return `${brandFolder}/${cleanName([videoCode(c), c.scheduleDate, c.title || t("common.untitled")].filter(Boolean).join(" "))}`;
+}
+
+// daftar-video.json at the top of the folder: every coded piece, so the
+// owner can say "KP-12" to Claude and Claude knows what and where.
+export function videoIndex() {
+  const items = [];
+  for (const b of listBrands()) {
+    for (const c of listContent(b.id).filter((x) => x.videoNo && codedPiece(x))) {
+      const p = postingOf(c);
+      const parent = c.trialOf ? getContent(c.trialOf) : null;
+      items.push({
+        code: videoCode(c), brand: b.name, title: c.title || "",
+        date: c.scheduleDate || "", time: p.time || "", type: p.type || (c.format || "").toLowerCase(),
+        status: postingState(c), statusLabel: stateLabel(c), step: c.status,
+        caption: c.caption || "", script: (parent || c).script || "", idea: (parent || c).idea || "",
+        folder: folderKeyOf(c), hasFolder: !!p.local?.key,
+        trialOf: parent ? videoCode(parent) : "",
+        trials: listContent(b.id).filter((x) => x.trialOf === c.id).map(videoCode).filter(Boolean),
+        trialReel: !!p.trialReel,
+        versions: p.versions.map((v) => ({ file: v.local?.file || v.name || "", status: v.status })),
+        final: p.versions.find((v) => v.id === p.finalId)?.local?.file || "",
+        cover: p.cover || "",
+      });
+    }
+  }
+  items.sort((a, b) => `${a.date || "9999"}${a.time}${a.code}`.localeCompare(`${b.date || "9999"}${b.time}${b.code}`));
+  return {
+    about: "Ditulis oleh Brandlab. Semua konten Instagram dari Creator dengan kodenya. Winson menyebut kode (mis. KP-12): cari di sini, lalu taruh hasil edit di 'folder' (buat kalau belum ada). Huruf di belakang (KP-12B) = video trial.",
+    items,
+  };
+}
+let lastIndex = "";
+let indexTimer = null;
+let indexWatch = null;
+function writeIndexSoon() {
+  clearTimeout(indexTimer);
+  indexTimer = setTimeout(() => {
+    if (!OUT.connected || !canUsePosting()) return;
+    writeBackChanged();
+    const data = videoIndex();
+    const sig = JSON.stringify(data);
+    if (sig === lastIndex) return;
+    lastIndex = sig;
+    writeRootFile("daftar-video.json", JSON.stringify({ ...data, updatedAt: new Date().toISOString() }, null, 2))
+      .catch((e) => { lastIndex = ""; console.warn("[posting] daftar-video.json not written", e); });
+  }, 1200);
+}
+function watchIndex() {
+  if (!OUT.connected || !canUsePosting()) return;
+  writeIndexSoon();
+  if (!indexWatch) indexWatch = onStoreChange(writeIndexSoon);
+}
+
+// One more cut of the same piece to try as an Instagram trial reel: KP-12B,
+// KP-12C … Its own videos, cover, caption and time; same day to start.
+export function createTrial(contentId) {
+  const base = getContent(contentId);
+  const parent = base?.trialOf ? getContent(base.trialOf) || base : base;
+  if (!parent || !canUsePosting()) return null;
+  ensureCodes();
+  const letter = nextTrialLetter(parent.id, listContent(parent.brandId, { includeArchived: true, includeDeleted: true }));
+  if (!letter) return null;
+  const c = createContent(parent.brandId, { ...trialFields(parent, letter, parent.title || t("common.untitled")), posting: { versions: [], notes: [], type: "reels", time: postingOf(parent).time || "", trialReel: true } });
+  if (c) toast(t("post.trial.made", { code: videoCode(c) }));
+  return c;
+}
+
+// Copies a code for the chat with Claude.
+export async function copyCode(code) {
+  if (!code) return;
+  try { await navigator.clipboard.writeText(code); } catch { /* the toast still shows it */ }
+  toast(t("post.code.copied", { code }));
+}
 
 // Is this person's Google Drive connected? Asked once, then kept for the tab.
 const DRIVE = { checked: false, connected: false, email: "", reason: "" };
@@ -78,10 +241,10 @@ if (typeof window !== "undefined") {
 }
 
 const STATE_COLOR = {
-  none: "var(--text-faint)", review: "#3B9BFF", revision: "#FF9F3D", ready: "#A974FF",
+  none: "var(--text-faint)", review: "#3B9BFF", client: "#2EC4B6", revision: "#FF9F3D", ready: "#A974FF",
   scheduled: "#FFC83D", published: "#36D27F", failed: "#FF5F57",
 };
-const STATE_ICON = { none: "upload", review: "eye", revision: "refresh", ready: "check", scheduled: "clock", published: "instagram", failed: "x" };
+const STATE_ICON = { none: "upload", review: "eye", client: "users", revision: "refresh", ready: "check", scheduled: "clock", published: "instagram", failed: "x" };
 
 const postingOf = (c) => c?.posting || { versions: [], notes: [] };
 const latestOf = (p) => p.versions[p.versions.length - 1] || null;
@@ -94,6 +257,8 @@ export function postingState(c) {
   if (p.ig?.state === "scheduled") return "scheduled";
   const last = latestOf(p);
   if (!last) return "none";
+  // Sent to the client's review link and not answered yet.
+  if (p.client?.status === "waiting" && p.client.versionId === last.id) return "client";
   if (last.status === "pending") return "review";
   if (p.finalId && p.versions.some((v) => v.id === p.finalId && v.status === "approved")) return "ready";
   return "revision";
@@ -112,7 +277,8 @@ export function postingBadgeHTML(c) {
   if (UPLOADS.has(c.id)) return `<span class="pst-badge is-uploading" style="--pst:${STATE_COLOR.review}">${icon("upload", { size: 11 })}${t("post.state.uploading")}</span>`;
   const key = postingState(c);
   const n = postingOf(c).versions.length;
-  return `<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}${n > 1 ? `<b>${n}</b>` : ""}</span>`;
+  const code = videoCode(c);
+  return `<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${code ? `<em class="pst-badge-code">${escapeHtml(code)}</em>` : ""}${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}${n > 1 ? `<b>${n}</b>` : ""}</span>`;
 }
 
 // Month grid chip: just the coloured mark, the title says the rest.
@@ -121,6 +287,29 @@ export function postingDotHTML(c) {
   const key = postingState(c);
   if (key === "none") return "";
   return `<span class="pst-dot" style="--pst:${STATE_COLOR[key]}" title="${escapeHtml(stateLabel(c, key))}">${icon(STATE_ICON[key], { size: 9 })}</span>`;
+}
+
+// For the Antrean Video page (js/views/posting-queue.js).
+export const versionLabelOf = (v) => (v ? versionLabel(v) : "");
+export const latestVersion = (c) => latestOf(postingOf(c));
+export const stateColor = (key) => STATE_COLOR[key];
+export const stateLabelOf = (c) => stateLabel(c);
+
+// One decision on one cut — the review mode's buttons. Same rules as the
+// drawer: approving makes it the cut that gets posted; asking for changes
+// can carry a note at a moment of the video. Written back for Claude.
+export function decide(contentId, vid, verdict, note) {
+  const c = getContent(contentId);
+  if (!c) return;
+  const p = postingOf(c);
+  const next = { ...p, versions: p.versions.map((x) => (x.id === vid ? { ...x, status: verdict === "approve" ? "approved" : "revision" } : x)) };
+  if (verdict === "approve") {
+    markFinalInDrive(p, p.finalId, vid);
+    next.finalId = vid;
+  } else if (p.finalId === vid) next.finalId = null;
+  if (note?.text) next.notes = [...(p.notes || []), { id: `n${Date.now().toString(36)}`, versionId: vid, t: Math.floor(note.t || 0), text: note.text, at: Date.now(), done: false }];
+  updateContent(contentId, { posting: next });
+  writeBack(contentId);
 }
 
 // Menu rows the calendar adds to its own menus.
@@ -142,8 +331,14 @@ export function reviewButtonHTML() {
 // The calendar's hook: the review list, and — once per page load — picking
 // up where the person was after Google's Drive consent screen.
 let resumed = false;
+let lastSync = 0;
 export function wirePosting(root, { brandId, onChange } = {}) {
   if (!canUsePosting()) return;
+  ensureCodes();
+  if (usesOutbox() && Date.now() - lastSync > 30_000) {
+    lastSync = Date.now();
+    ensureOutbox().then((o) => { if (o.connected) syncOutbox().catch(() => {}); });
+  }
   if (!resumed) {
     resumed = true;
     let note = null;
@@ -169,8 +364,9 @@ export function wirePosting(root, { brandId, onChange } = {}) {
         <span class="pst-review-av" style="background:${escapeHtml(brand.color || "var(--accent)")}">${escapeHtml((brand.name || "?")[0])}</span>
         <span class="pst-review-text"><b>${escapeHtml(c.title || t("common.untitled"))}</b><small>${escapeHtml(brand.name)} · ${escapeHtml(versionLabel(last))} · ${escapeHtml(dayLabel(c.scheduleDate))}</small></span>
       </button>`;
-    }).join("") : `<div class="pst-review-empty">${t("post.review.empty")}</div>`}`;
+    }).join("") : `<div class="pst-review-empty">${t("post.review.empty")}</div>`}<div class="menu-divider"></div><button data-pst-queue>${icon("layers", { size: 15 })}${t("pq.openPage")}</button>`;
     menu.addEventListener("click", (ev) => {
+      if (ev.target.closest("[data-pst-queue]")) { closeMenu(); location.hash = `#/brand/${brandId}/content/antrean`; return; }
       const id = ev.target.closest("[data-pst-open]")?.dataset.pstOpen;
       if (!id) return;
       closeMenu();
@@ -252,12 +448,67 @@ export function formatIssues(v) {
 
 const fileProblem = (f) => (!isVideoFile(f) ? t("post.toast.notVideo") : f.size > MAX_BYTES ? t("post.check.big") : "");
 
+// A video dropped into Brandlab on the owner's account is copied into the
+// Outbox folder, next to Claude's cuts, so the folder stays the one place.
+async function addLocalVersion(contentId, file, onChange) {
+  const c = getContent(contentId);
+  const p = postingOf(c);
+  const key = folderKeyOf(c);
+  const [brandFolder, folder] = key.split("/");
+  const name = `v${p.versions.length + 1}.${extOf(file.name)}`;
+  const label = versionLabel({ n: p.versions.length });
+  UPLOADS.set(contentId, { label, pct: 0 });
+  tellWatchers(contentId, true);
+  onChange?.();
+  try {
+    const meta = await probe(file);
+    await addToOutbox({ brandFolder, folder, file, name, manifest: p.local ? null : { code: videoCode(c), title: c.title || "", date: c.scheduleDate || "", time: p.time || "19:00", type: p.type || "reels", caption: c.caption || "" } });
+    const fresh = getContent(contentId);
+    const fp = postingOf(fresh);
+    const v = { id: versionIdOf(name), n: fp.versions.length, status: "pending", at: Date.now(), by: "you", kind: "video", local: { file: name }, ...meta, name: file.name, size: file.size, type: file.type };
+    const status = ["idea", "draft", "production", "scheduled"].includes(fresh.status) ? "editing" : fresh.status;
+    updateContent(contentId, { status, posting: { ...fp, local: { key }, type: fp.type || "reels", versions: [...fp.versions, v], ig: fp.ig?.state === "scheduled" ? null : fp.ig } });
+    toast(t("post.toast.uploaded", { label }));
+    return v;
+  } catch (e) {
+    console.warn("[posting] copy to folder failed", e);
+    toast(t("post.toast.uploadFailed"), "error");
+    return null;
+  } finally {
+    UPLOADS.delete(contentId);
+    tellWatchers(contentId, true);
+    onChange?.();
+  }
+}
+
+// A cover picked from the video or from an image: into the post's folder,
+// then chosen.
+async function addCover(contentId, blob, name, repaint) {
+  const key = postingOf(getContent(contentId)).local?.key;
+  if (!key) return;
+  const [brandFolder, folder] = key.split("/");
+  try {
+    await addToOutbox({ brandFolder, folder, file: blob, name });
+    const p = postingOf(getContent(contentId));
+    updateContent(contentId, { posting: { ...p, covers: [...new Set([...(p.covers || []), name])], cover: name } });
+    toast(t("post.cover.saved"));
+    repaint();
+  } catch (e) {
+    console.warn("[posting] cover not saved", e);
+    toast(t("post.toast.uploadFailed"), "error");
+  }
+}
+
 async function addVersion(contentId, file, onChange) {
   const problem = fileProblem(file);
   if (problem) { toast(problem, "error"); return null; }
   if (UPLOADS.has(contentId)) { toast(t("post.toast.busy"), "error"); return null; }
   const c = getContent(contentId);
   if (!c) return null;
+  if (usesOutbox()) {
+    if (!(await ensureOutbox()).connected) { toast(t("post.local.needFolder"), "error"); return null; }
+    return addLocalVersion(contentId, file, onChange);
+  }
   if (!(await checkDrive()).connected) { askConnect(contentId); return null; }
   const n = postingOf(c).versions.length;
   const versionId = `v${Date.now().toString(36)}`;
@@ -300,7 +551,11 @@ export function uploadForDate({ brandId, dateISO, file, onChange }) {
   const go = async (f) => {
     const problem = fileProblem(f);
     if (problem) { toast(problem, "error"); return; }
-    if (!(await checkDrive()).connected) { askConnect(""); return; }
+    if (usesOutbox() ? !(await ensureOutbox()).connected : !(await checkDrive()).connected) {
+      if (usesOutbox()) toast(t("post.local.needFolder"), "error");
+      else askConnect("");
+      return;
+    }
     const title = (f.name || "").replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || t("common.untitled");
     const c = createContent(brandId, { title, scheduleDate: dateISO, status: "editing", platform: "Instagram", format: "Reels" });
     if (!c) return;
@@ -338,7 +593,7 @@ export function openPosting({ contentId, onChange }) {
   const overlay = openDrawer({ title: t("post.title"), bodyHTML: `<div class="pst" id="pst-root"></div>` });
   overlay.classList.add("pst-overlay");
   const root = qs("#pst-root", overlay);
-  const repaint = () => { if (overlay.isConnected) paint(root, contentId, ui, repaint); onChange?.(); };
+  const repaint = () => { if (overlay.isConnected) paint(root, contentId, ui, repaint); writeBack(contentId); onChange?.(); };
   // Upload progress: the bar moves in place (a playing video keeps playing);
   // start and finish repaint, and a finished upload is shown next to the
   // one before it.
@@ -360,8 +615,21 @@ export function openPosting({ contentId, onChange }) {
     paint(root, contentId, ui, repaint);
   };
   uploadWatchers.add(watch);
+  // A decision from elsewhere (the client's link, Claude's next cut, another
+  // device) shows up in the open drawer — unless the person is typing.
+  const sig = () => { const p = postingOf(getContent(contentId)); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId]); };
+  let seen = sig();
+  const offStore = onStoreChange(() => {
+    if (!overlay.isConnected) { offStore(); return; }
+    const now = sig();
+    if (now === seen) return;
+    seen = now;
+    if (root.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    paint(root, contentId, ui, repaint);
+  });
   paint(root, contentId, ui, repaint);
-  if (!DRIVE.checked) checkDrive().then(() => { if (overlay.isConnected) paint(root, contentId, ui, repaint); });
+  if (usesOutbox()) { if (!OUT.checked) ensureOutbox().then(() => { if (overlay.isConnected) paint(root, contentId, ui, repaint); }); }
+  else if (!DRIVE.checked) checkDrive().then(() => { if (overlay.isConnected) paint(root, contentId, ui, repaint); });
   return overlay;
 }
 
@@ -388,38 +656,42 @@ function paint(root, contentId, ui, repaint) {
   const stepNow = key === "none" ? 0 : ["review", "revision"].includes(key) ? 1 : 2;
   const handle = igHandleOf(brand);
   const up = UPLOADS.get(contentId);
+  const local = usesOutbox();
+  const needSource = !up && (local ? OUT.checked && !OUT.connected : DRIVE.checked && !DRIVE.connected);
+  const isVideo = !!v && (!v.local || v.kind === "video");
+  if (!isVideo) ui.compare = false;
+  const code = videoCode(c);
 
   root.innerHTML = `
     <header class="pst-head">
       <div class="pst-head-text">
+        ${code ? `<button type="button" class="pst-code" data-copy-code="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}${icon("copy", { size: 12 })}</button>` : ""}
         <h3>${escapeHtml(c.title || t("common.untitled"))}</h3>
-        <div class="pst-head-meta">${icon("calendar", { size: 12 })}${escapeHtml(dayLabel(c.scheduleDate))}${p.time ? ` · ${escapeHtml(p.time)}` : ""}<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span></div>
+        <div class="pst-head-meta">${icon("calendar", { size: 12 })}${escapeHtml(dayLabel(c.scheduleDate) || t("pq.noDate"))}${p.time ? ` · ${escapeHtml(p.time)}` : ""}<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span></div>
       </div>
     </header>
+    ${trialsHTML(c)}
     <ol class="pst-steps" aria-label="${escapeHtml(t("post.title"))}">
       ${["video", "check", "post"].map((s, i) => `<li class="${i < stepNow ? "is-done" : i === stepNow ? "is-now" : ""}"><span>${i < stepNow ? icon("check", { size: 12 }) : i + 1}</span>${t(`post.step.${s}`)}</li>`).join("")}
     </ol>
 
     <section class="pst-block pst-video" id="pst-drop">
-      ${DRIVE.checked && !DRIVE.connected && !up ? connectHTML() : v ? `
+      ${needSource ? (local ? localConnectHTML() : connectHTML()) : v ? `
         <div class="pst-players ${ui.compare ? "is-compare" : ""}">
-          ${ui.compare ? playerHTML(prev, "A") : ""}${playerHTML(v, ui.compare ? "B" : "")}
+          ${ui.compare ? playerHTML(prev, "A", c) : ""}${playerHTML(v, ui.compare ? "B" : "", c)}
         </div>
-        <div class="pst-ctl">
+        ${isVideo ? `<div class="pst-ctl">
           <button type="button" class="pst-play" id="pst-play" aria-label="${t("post.play")}">${icon("play", { size: 16 })}</button>
           <input type="range" id="pst-seek" min="0" max="${Math.max(1, v.dur || 10)}" step="0.05" value="0" aria-label="${t("post.play")}">
           <span class="pst-time" id="pst-time">0:00 / ${clock(v.dur)}</span>
         </div>
-        ${formatIssues(v).length ? `<p class="pst-warn">${icon("info", { size: 13 })}${formatIssues(v).map(escapeHtml).join(" · ")}</p>` : `<p class="pst-ok">${icon("check", { size: 13 })}${t("post.check.ok")} · ${clock(v.dur)} · 9:16</p>`}
+        <div id="pst-format">${formatLineHTML(v)}</div>` : ""}
         ${up ? progressHTML(up) : ""}
-        <div class="pst-versions" role="list">
-          ${p.versions.map((x) => `<button type="button" role="listitem" class="pst-v ${x.id === v.id ? "is-on" : ""}" data-vid="${x.id}" style="--pst:${STATE_COLOR[x.status === "pending" ? "review" : x.status === "revision" ? "revision" : "ready"]}">
-              <i aria-hidden="true"></i><span>${escapeHtml(versionLabel(x))}</span>${x.id === p.finalId ? `<em>${icon("instagram", { size: 10 })}</em>` : ""}
-            </button>`).join("")}
-          <button type="button" class="pst-v is-add" id="pst-add" ${up ? "disabled" : ""}>${icon("plus", { size: 13 })}${t("post.v.upload")}</button>
-        </div>
-        ${prev ? `<button type="button" class="pst-link" id="pst-compare">${icon(ui.compare ? "x" : "layers", { size: 13 })}${ui.compare ? t("post.compare.off") : t("post.compare.on", { label: versionLabel(prev) })}</button>` : ""}
-        ${v.drive ? whereHTML(brand, c, v) : ""}
+        ${versionsHTML(p, v, up)}
+        ${v.changeNote ? `<p class="pst-change">${icon("edit", { size: 13 })}<span><b>${t("post.change.title", { label: escapeHtml(versionLabel(v)) })}</b> ${escapeHtml(v.changeNote)}</span></p>` : ""}
+        ${prev && isVideo ? `<button type="button" class="pst-link" id="pst-compare">${icon(ui.compare ? "x" : "layers", { size: 13 })}${ui.compare ? t("post.compare.off") : t("post.compare.on", { label: versionLabel(prev) })}</button>` : ""}
+        ${extrasHTML(p, v)}
+        ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
       ` : up ? progressHTML(up) : `
         <div class="pst-empty">
           <span class="pst-empty-art">${icon("upload", { size: 26 })}</span>
@@ -430,14 +702,98 @@ function paint(root, contentId, ui, repaint) {
     </section>
 
     ${v ? decideHTML(p, v, prev, ui) : ""}
+    ${v ? clientHTML(c, p, v, key) : ""}
     ${postHTML(c, p, key, handle)}
   `;
   wire(root, contentId, ui, repaint);
 }
 
+// Every cut so far as a row of cards, oldest first (owner, 2026-11-02:
+// "kalau di-click hasil revisian videonya ada semua"); tap one to play it.
+function versionsHTML(p, v, up) {
+  return `<div class="pst-vgal-wrap">
+      <span class="pst-sub">${t("post.v.all", { n: p.versions.length })}</span>
+      <div class="pst-vgal" role="list">
+        ${p.versions.map((x) => `<button type="button" role="listitem" class="pst-vcard ${x.id === v.id ? "is-on" : ""}" data-vid="${x.id}" aria-pressed="${x.id === v.id}" style="--pst:${STATE_COLOR[x.status === "pending" ? "review" : x.status === "revision" ? "revision" : "ready"]}">
+            <span class="pst-vcard-img" data-vthumb="${x.id}">${icon(x.kind === "set" ? "layers" : x.kind === "image" ? "image" : "play", { size: 18 })}</span>
+            ${x.id === p.finalId ? `<em class="pst-vcard-final" title="${escapeHtml(t("post.v.final"))}">${icon("instagram", { size: 11 })}</em>` : ""}
+            <span class="pst-vcard-l">${escapeHtml(versionLabel(x))}</span>
+            <small><i aria-hidden="true"></i>${t(`post.v.st.${x.status}`)}</small>
+          </button>`).join("")}
+        <button type="button" class="pst-vcard is-add" id="pst-add" ${up ? "disabled" : ""}><span class="pst-vcard-img">${icon("plus", { size: 20 })}</span><span class="pst-vcard-l">${t("post.v.upload")}</span></button>
+      </div>
+    </div>`;
+}
+
+// The piece and its trial cuts (KP-12, KP-12B …), one tap apart.
+function trialsHTML(c) {
+  const main = c.trialOf ? getContent(c.trialOf) || c : c;
+  const family = [main, ...listContent(main.brandId).filter((x) => x.trialOf === main.id).sort((a, b) => (a.trial || "").localeCompare(b.trial || ""))];
+  const add = `<button type="button" class="pst-trial-add" id="pst-trial-add">${icon("plus", { size: 13 })}${t(family.length > 1 ? "post.trial.addMore" : "post.trial.add")}</button>`;
+  if (family.length < 2) return `<div class="pst-trials is-solo">${add}<span class="pst-trials-hint">${t("post.trial.hint")}</span></div>`;
+  return `<div class="pst-trials" role="group" aria-label="${escapeHtml(t("post.trial.label"))}">
+      <span class="pst-trials-l">${icon("target", { size: 13 })}${t("post.trial.label")}</span>
+      ${family.map((x) => `<button type="button" class="pst-trial ${x.id === c.id ? "is-on" : ""}" data-trial-open="${escapeHtml(x.id)}" ${x.id === c.id ? 'aria-current="true"' : ""} style="--pst:${STATE_COLOR[postingState(x)]}"><i></i>${escapeHtml(videoCode(x) || (x.trial ? `Trial ${x.trial}` : t("post.trial.main")))}</button>`).join("")}
+      ${add}
+    </div>`;
+}
+
+function formatLineHTML(v) {
+  const issues = formatIssues(v);
+  if (issues.length) return `<p class="pst-warn">${icon("info", { size: 13 })}${issues.map(escapeHtml).join(" · ")}</p>`;
+  return `<p class="pst-ok">${icon("check", { size: 13 })}${t("post.check.ok")}${v.dur ? ` · ${clock(v.dur)}` : ""}${v.w ? " · 9:16" : ""}</p>`;
+}
+
+// The post's kind and, for a video, its cover — both picked here and
+// written back to the folder for Claude.
+const TYPES = ["reels", "carousel", "foto", "story"];
+function extrasHTML(p, v) {
+  const covers = p.covers || [];
+  const videoPost = (v?.kind === "video" || !v?.local) && ["reels", "story", ""].includes(p.type || "");
+  // New covers go into the folder, so only with the folder at hand.
+  const canAdd = !!(v?.local && p.local?.key && OUT.connected);
+  const showCovers = videoPost && (covers.length || canAdd);
+  return `
+    <div class="pst-types" role="group" aria-label="${escapeHtml(t("post.type.label"))}">
+      ${TYPES.map((k) => `<button type="button" class="pst-type ${(p.type || "reels") === k ? "is-on" : ""}" data-type="${k}" aria-pressed="${(p.type || "reels") === k}">${icon(k === "carousel" ? "layers" : k === "foto" ? "image" : k === "story" ? "clock" : "play", { size: 13 })}${t(`post.type.${k}`)}</button>`).join("")}
+    </div>
+    ${(p.type || "reels") === "reels" ? `<label class="pst-switch"><input type="checkbox" id="pst-trialreel" ${p.trialReel ? "checked" : ""}><span><b>${t("post.trialReel.label")}</b><small>${t("post.trialReel.hint")}</small></span></label>` : ""}
+    ${showCovers ? `<div class="pst-covers"><span class="pst-sub">${t("post.cover.label")}</span><div class="pst-cover-row">${covers.map((f) => `<button type="button" class="pst-cover ${p.cover === f ? "is-on" : ""}" data-cover="${escapeHtml(f)}" aria-pressed="${p.cover === f}" title="${escapeHtml(f)}"><img data-local-img="${escapeHtml(f)}" alt=""></button>`).join("")}
+      ${canAdd && v?.kind === "video" ? `<button type="button" class="pst-cover is-add" id="pst-cover-frame">${icon("image", { size: 16 })}<span>${t("post.cover.frame")}</span></button>` : ""}
+      ${canAdd ? `<button type="button" class="pst-cover is-add" id="pst-cover-file">${icon("upload", { size: 16 })}<span>${t("post.cover.file")}</span></button>` : ""}
+    </div></div>` : ""}`;
+}
+
+function localWhereHTML(p, v) {
+  return `<p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.local.where")}</b> ${[OUT.name || "Outbox", ...p.local.key.split("/")].map(escapeHtml).join(" › ")} › ${escapeHtml(v.local.file)}</span></p>`;
+}
+
+function localConnectHTML() {
+  const again = OUT.needsPermission;
+  return `<div class="pst-empty pst-connect">
+      <span class="pst-empty-art is-mac">${icon("folder", { size: 26 })}</span>
+      <b>${t(again ? "post.local.againTitle" : "post.local.title")}</b>
+      <span>${t(again ? "post.local.againBody" : "post.local.body")}</span>
+      <button type="button" class="cl-cta pst-cta" id="pst-local"><span>${t(again ? "post.local.againCta" : "post.local.cta")}</span><span class="cl-cta-dot pst-dot-drive">${icon("folder", { size: 16 })}</span></button>
+    </div>`;
+}
+
+// A local cut plays straight from the Mac folder; a carousel is a row of
+// slides to swipe, a photo just the photo.
+function localPlayerHTML(v, tag, c) {
+  const key = postingOf(c).local?.key || "";
+  const label = tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : "";
+  if (v.kind === "set" || v.kind === "image") {
+    const files = v.kind === "image" ? [v.local.file] : (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`));
+    return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${files.length > 1 ? `<span class="pst-slide-n">1/${files.length}</span>` : ""}</div>`;
+  }
+  return `<div class="pst-player" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video></div>`;
+}
+
 // A Drive video is fetched into the tab first (js/drive.js driveVideoURL);
 // the player says so while it loads.
-function playerHTML(v, tag) {
+function playerHTML(v, tag, c) {
+  if (v.local) return localPlayerHTML(v, tag, c);
   const fromDrive = !v.url && v.drive?.id;
   return `<div class="pst-player" ${fromDrive ? `data-drive="${escapeHtml(v.drive.id)}"` : ""}>${tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : ""}<video ${v.url ? `src="${escapeHtml(v.url)}"` : ""} playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video>${fromDrive ? `<span class="pst-loading">${icon("folder", { size: 16 })}<span>${t("post.load")}</span><b>0%</b></span>` : ""}</div>`;
 }
@@ -460,8 +816,10 @@ function whereHTML(brand, c, v) {
 function decideHTML(p, v, prev, ui) {
   const label = versionLabel(v);
   const mine = p.notes.filter((n) => n.versionId === v.id).sort((a, b) => a.t - b.t);
-  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && !n.done) : [];
-  const note = (n) => `<div class="pst-note ${n.done ? "is-done" : ""}"><button type="button" class="pst-note-t" data-seek="${n.t}">${clock(n.t)}</button><span>${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
+  // The last cut's notes still open, and the ones Claude says this cut fixed.
+  const older = prev ? p.notes.filter((n) => n.versionId === prev.id && (!n.done || n.doneBy === "claude")) : [];
+  const who = (n) => (n.by === "client" ? `<em class="pst-note-who is-client">${escapeHtml(n.name ? t("post.note.clientNamed", { name: n.name }) : t("post.note.client"))}</em>` : "") + (n.doneBy === "claude" ? `<em class="pst-note-who">${t("post.note.fixedByClaude")}</em>` : "");
+  const note = (n) => `<div class="pst-note ${n.done ? "is-done" : ""}"><button type="button" class="pst-note-t" data-seek="${n.t}">${clock(n.t)}</button><span>${who(n)}${escapeHtml(n.text)}</span><label><input type="checkbox" data-note="${n.id}" ${n.done ? "checked" : ""}>${t("post.note.done")}</label></div>`;
   const final = p.versions.find((x) => x.id === p.finalId);
   let head;
   if (v.status === "pending") {
@@ -490,11 +848,85 @@ function decideHTML(p, v, prev, ui) {
     </section>`;
 }
 
+// ---------------------------------------------------------------- client
+// The brand's client review link (api/_review.js): send this cut, see what
+// the client said. Only for cuts in the Mac folder, which this tab can read.
+const SENDING = new Map(); // contentId → { pct }
+const timeLabel = (ms) => new Date(ms).toLocaleString(getLang() === "en" ? "en-US" : "id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+function clientHTML(c, p, v, key) {
+  if (["scheduled", "published", "failed"].includes(key) && !p.client) return "";
+  const cl = p.client;
+  const sent = cl ? p.versions.find((x) => x.id === cl.versionId) : null;
+  const token = getBrand(c.brandId)?.clientReview?.token;
+  const sending = SENDING.get(c.id);
+  const canSend = !!(v.local && p.local?.key && OUT.connected) && !["scheduled", "published"].includes(key);
+  let line;
+  if (!cl || !sent) line = t("post.client.intro");
+  else if (cl.status === "waiting") line = t("post.client.waiting", { label: escapeHtml(versionLabel(sent)), when: escapeHtml(timeLabel(cl.sentAt)) });
+  else if (cl.status === "approved") line = t("post.client.approved", { label: escapeHtml(versionLabel(sent)), who: escapeHtml(cl.name || t("post.client.theClient")), when: escapeHtml(timeLabel(cl.decidedAt)) });
+  else line = t("post.client.revise", { label: escapeHtml(versionLabel(sent)), who: escapeHtml(cl.name || t("post.client.theClient")) });
+  const tone = !cl ? "" : cl.status === "approved" ? "is-ok" : cl.status === "revision" ? "is-rev" : "is-wait";
+  const resend = canSend && (!sent || sent.id !== v.id || cl.status === "revision");
+  return `
+    <section class="pst-block pst-client ${tone}">
+      <div class="pst-client-head"><span class="pst-client-ic">${icon("users", { size: 15 })}</span><b>${t("post.client.title")}</b>${cl ? `<span class="pst-badge" style="--pst:${cl.status === "approved" ? STATE_COLOR.ready : cl.status === "revision" ? STATE_COLOR.revision : STATE_COLOR.client}">${t(`post.client.st.${cl.status}`)}</span>` : ""}</div>
+      <p class="pst-client-line">${line}</p>
+      ${sending ? `<div class="pst-progress" role="status"><div class="pst-progress-row">${icon("upload", { size: 14 })}<span>${t("post.client.sending")}</span><b id="pst-client-pct">${Math.round(sending.pct * 100)}%</b></div><div class="pst-progress-bar"><i id="pst-client-fill" style="width:${Math.round(sending.pct * 100)}%"></i></div></div>` : `
+      <div class="pst-decide">
+        ${resend ? `<button type="button" class="cl-cta pst-cta" id="pst-client-send"><span>${t(sent ? "post.client.sendThis" : "post.client.send", { label: escapeHtml(versionLabel(v)) })}</span><span class="cl-cta-dot pst-dot-client">${icon("send", { size: 16 })}</span></button>` : ""}
+        ${token ? `<button type="button" class="btn btn-secondary btn-sm" id="pst-client-copy">${icon("link", { size: 14 })}${t("post.client.copy")}</button><a class="btn btn-ghost btn-sm" id="pst-client-wa" href="https://wa.me/?text=${encodeURIComponent(t("post.client.waText", { brand: getBrand(c.brandId)?.name || "", url: reviewURL(token) }))}" target="_blank" rel="noopener">${icon("chat", { size: 14 })}WhatsApp</a>` : ""}
+      </div>`}
+      ${!canSend && !cl && v.local ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.client.needFolder")}</p>` : ""}
+      ${cl && !["scheduled", "published"].includes(key) ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.client.afterPost")}</p>` : ""}
+    </section>`;
+}
+
+async function sendCut(contentId, versionId, repaint) {
+  const c = getContent(contentId);
+  const p = postingOf(c);
+  const v = p.versions.find((x) => x.id === versionId);
+  if (!v?.local || !p.local?.key || !OUT.connected) { toast(t("post.client.needFolder"), "error"); return; }
+  SENDING.set(contentId, { pct: 0 });
+  repaint();
+  try {
+    const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
+    const files = await Promise.all(names.map((n) => outboxFile(p.local.key, n)));
+    const token = getBrand(c.brandId)?.clientReview?.token || (await brandReviewLink(c.brandId));
+    await sendToClient({
+      contentId, versionId, kind: v.kind || "video", code: videoCode(c), files,
+      onProgress: (f) => {
+        const s = SENDING.get(contentId);
+        if (s) s.pct = f;
+        const fill = document.getElementById("pst-client-fill"), num = document.getElementById("pst-client-pct");
+        if (fill) fill.style.width = `${Math.round(f * 100)}%`;
+        if (num) num.textContent = `${Math.round(f * 100)}%`;
+      },
+    });
+    try { await navigator.clipboard.writeText(reviewURL(token)); } catch { /* the buttons still have it */ }
+    toast(t("post.client.sent", { label: versionLabel(v) }));
+  } catch (e) {
+    console.warn("[posting] send to client failed", e);
+    toast(t(e.code === "setup" || e.status === 503 ? "post.client.setup" : "post.client.failed"), "error");
+  } finally {
+    SENDING.delete(contentId);
+    repaint();
+  }
+}
+
+// "instagram.com/reel/ABC/?igsh=…" → https://www.instagram.com/reel/ABC/
+export function igPermalink(s) {
+  const m = /instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(reels?|p|tv)\/([A-Za-z0-9_-]{5,})/.exec(String(s || ""));
+  return m ? `https://www.instagram.com/${m[1] === "reels" ? "reel" : m[1]}/${m[2]}/` : "";
+}
+const igLinkFieldHTML = (value = "") => `<div class="field pst-ig-link"><label for="pst-ig-link">${t("post.ig.linkLabel")}</label><input class="input" id="pst-ig-link" inputmode="url" placeholder="https://www.instagram.com/reel/…" value="${escapeHtml(value)}"></div>`;
+
 function postHTML(c, p, key, handle) {
   const acct = `<div class="pst-acct">${icon("instagram", { size: 18 })}<b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(getBrand(c.brandId)?.name || "")}</b><span class="pst-pill ${handle ? "is-on" : ""}">${handle ? t("post.ig.connected") : t("post.ig.notConnected")}</span></div>`;
   if (key === "scheduled") {
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-live"><span class="pst-live-ic">${icon("clock", { size: 20 })}</span><div><b>${t(AUTO_POST ? "post.ig.scheduledTitle" : "post.ig.markedTitle", { when: `${escapeHtml(dayLabel(c.scheduleDate))}, ${escapeHtml(p.time || "")}` })}</b><small>${t(AUTO_POST ? "post.ig.scheduledBody" : "post.ig.markedBody")}</small></div></div>
+      ${AUTO_POST ? "" : igLinkFieldHTML()}
       <div class="pst-decide">
         ${AUTO_POST ? "" : `<button type="button" class="cl-cta pst-cta" id="pst-posted"><span>${t("post.ig.postedByHand")}</span><span class="cl-cta-dot pst-dot-ok">${icon("check", { size: 16 })}</span></button>`}
         <button type="button" class="btn btn-ghost btn-sm" id="pst-unschedule">${t("post.ig.cancel")}</button>
@@ -502,7 +934,9 @@ function postHTML(c, p, key, handle) {
   }
   if (key === "published") {
     return `<section class="pst-block pst-post">${acct}
-      <div class="pst-live is-pub"><span class="pst-live-ic">${icon("check", { size: 20 })}</span><div><b>${t("post.ig.publishedTitle", { when: escapeHtml(dayLabel(c.publishedDate || c.scheduleDate)) })}</b>${p.ig?.permalink ? `<small>${escapeHtml(p.ig.permalink)}</small>` : ""}</div></div></section>`;
+      <div class="pst-live is-pub"><span class="pst-live-ic">${icon("check", { size: 20 })}</span><div><b>${t("post.ig.publishedTitle", { when: escapeHtml(dayLabel(c.publishedDate || c.scheduleDate)) })}</b>${p.ig?.permalink ? `<small><a href="${escapeHtml(p.ig.permalink)}" target="_blank" rel="noopener">${escapeHtml(p.ig.permalink)}</a></small>` : ""}</div></div>
+      ${p.ig?.permalink ? "" : `${igLinkFieldHTML()}<button type="button" class="btn btn-secondary btn-sm" id="pst-ig-save">${t("post.ig.linkSave")}</button>`}
+      ${p.client && !p.ig?.permalink ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.client.needLink")}</p>` : ""}</section>`;
   }
   if (key === "failed") {
     return `<section class="pst-block pst-post">${acct}
@@ -511,17 +945,21 @@ function postHTML(c, p, key, handle) {
   }
   // Until a video is approved and the account is connected, this step is
   // one line saying what unlocks it — no greyed-out form to puzzle over.
+  const caption = `<div class="field"><label for="pst-caption">${t("post.ig.caption")} <span class="pst-count" id="pst-count">${(c.caption || "").length}/2200</span></label><textarea class="textarea" id="pst-caption" rows="4" maxlength="2200" placeholder="${escapeHtml(t("post.ig.captionPh"))}">${escapeHtml(c.caption || "")}</textarea></div>`;
+  // The day and hour it goes up, settable from the start (the slot on
+  // Instagram is only booked once a cut is approved).
+  const when = `<div class="pst-when">
+      <div class="field"><label for="pst-date">${t("post.ig.date")}</label><input class="input" type="date" id="pst-date" value="${escapeHtml(c.scheduleDate || "")}"></div>
+      <div class="field"><label for="pst-time-in">${t("post.ig.time")}</label><input class="input" type="time" id="pst-time-in" value="${escapeHtml(p.time || "")}"></div>
+    </div>`;
   if (key !== "ready" || !handle) {
-    return `<section class="pst-block pst-post is-locked">${acct}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p></section>`;
+    return `<section class="pst-block pst-post is-locked">${acct}${when}${caption}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p></section>`;
   }
   return `
     <section class="pst-block pst-post">
       ${acct}
-      <div class="pst-when">
-        <div class="field"><label for="pst-date">${t("post.ig.date")}</label><input class="input" type="date" id="pst-date" value="${escapeHtml(c.scheduleDate || localISODate())}" min="${localISODate()}"></div>
-        <div class="field"><label for="pst-time-in">${t("post.ig.time")}</label><input class="input" type="time" id="pst-time-in" value="${escapeHtml(p.time || "19:00")}"></div>
-      </div>
-      <div class="field"><label for="pst-caption">${t("post.ig.caption")} <span class="pst-count" id="pst-count">${(c.caption || "").length}/2200</span></label><textarea class="textarea" id="pst-caption" rows="4" maxlength="2200" placeholder="${escapeHtml(t("post.ig.captionPh"))}">${escapeHtml(c.caption || "")}</textarea></div>
+      ${when}
+      ${caption}
       ${AUTO_POST ? "" : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.manualNote")}</p>`}
       <button type="button" class="cl-cta pst-cta pst-go" id="pst-schedule"><span>${t(AUTO_POST ? "post.ig.cta" : "post.ig.ctaMark")}</span><span class="cl-cta-dot pst-dot-ig">${icon(AUTO_POST ? "instagram" : "calendar", { size: 16 })}</span></button>
     </section>`;
@@ -546,7 +984,14 @@ function wire(root, contentId, ui, repaint) {
       const send = qs("#pst-note-send", root);
       if (send) send.textContent = t("post.note.send", { time: clock(main.currentTime) });
     };
-    main.addEventListener("loadedmetadata", () => { seek.max = main.duration || 1; sync(); });
+    main.addEventListener("loadedmetadata", () => {
+      seek.max = main.duration || 1;
+      sync();
+      // A cut from the folder carries no size yet: check it once it's read.
+      const cur = p.versions.find((x) => x.id === ui.vid);
+      const line = qs("#pst-format", root);
+      if (cur && line) line.innerHTML = formatLineHTML({ ...cur, w: main.videoWidth, h: main.videoHeight, dur: main.duration });
+    });
     main.addEventListener("timeupdate", sync);
     main.addEventListener("ended", () => { vids.forEach((x) => x.pause()); play.innerHTML = icon("play", { size: 16 }); });
     play.addEventListener("click", () => {
@@ -565,9 +1010,64 @@ function wire(root, contentId, ui, repaint) {
       .catch(() => { if (loading) loading.innerHTML = `${icon("info", { size: 16 })}<span>${t("post.loadFailed")}</span>`; });
   });
   qs("#pst-connect", root)?.addEventListener("click", () => goConnect(contentId));
+  qs("#pst-local", root)?.addEventListener("click", async () => { await linkOutbox(); repaint(); });
+  const key = p.local?.key;
+  if (key && OUT.connected) {
+    qsa(".pst-player[data-local]", root).forEach((box) => {
+      outboxFileURL(key, box.dataset.local).then((url) => { qs("video", box).src = url; }).catch(() => { box.insertAdjacentHTML("beforeend", `<span class="pst-loading">${icon("info", { size: 16 })}<span>${t("post.local.missing")}</span></span>`); });
+    });
+    qsa("img[data-local-img]", root).forEach((img) => { outboxFileURL(key, img.dataset.localImg).then((url) => { img.src = url; }).catch(() => {}); });
+    qsa("[data-vthumb]", root).forEach((el) => {
+      const x = p.versions.find((y) => y.id === el.dataset.vthumb);
+      if (!x?.local) return;
+      outboxThumb(key, x).then((src) => { if (src && el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+    });
+    qsa(".pst-slides", root).forEach((row) => row.addEventListener("scroll", () => {
+      const n = qs(".pst-slide-n", row.parentElement);
+      if (n) n.textContent = `${Math.round(row.scrollLeft / row.clientWidth) + 1}/${row.children.length}`;
+    }, { passive: true }));
+  }
+  qsa("[data-type]", root).forEach((b) => b.addEventListener("click", () => {
+    updateContent(contentId, { format: FORMAT_OF[b.dataset.type], posting: { ...postingOf(getContent(contentId)), type: b.dataset.type } });
+    repaint();
+  }));
+  qsa("[data-cover]", root).forEach((b) => b.addEventListener("click", () => { save({ cover: b.dataset.cover }); repaint(); }));
+  qs("#pst-cover-frame", root)?.addEventListener("click", async () => {
+    if (!main?.videoWidth) { toast(t("post.cover.notReady"), "error"); return; }
+    const cv = document.createElement("canvas");
+    cv.width = main.videoWidth;
+    cv.height = main.videoHeight;
+    cv.getContext("2d").drawImage(main, 0, 0);
+    const blob = await new Promise((r) => cv.toBlob(r, "image/jpeg", 0.9));
+    if (blob) addCover(contentId, blob, `cover-frame-${clock(main.currentTime).replace(":", "m")}s.jpg`, repaint);
+  });
+  qs("#pst-cover-file", root)?.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp";
+    input.addEventListener("change", () => {
+      const f = input.files[0];
+      if (f) addCover(contentId, f, `cover-${Date.now().toString(36).slice(-4)}.${extOf(f.name) === "mp4" ? "jpg" : extOf(f.name)}`, repaint);
+    });
+    input.click();
+  });
+  qs("#pst-trialreel", root)?.addEventListener("change", (e) => { save({ trialReel: e.target.checked }); repaint(); });
+  qsa("[data-copy-code]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copyCode)));
+  qsa("[data-trial-open]", root).forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.trialOpen === contentId) return;
+    root.closest(".overlay")?.requestClose?.();
+    openPosting({ contentId: b.dataset.trialOpen, onChange: ui.onChange });
+  }));
+  qs("#pst-trial-add", root)?.addEventListener("click", () => {
+    const made = createTrial(contentId);
+    if (!made) return;
+    root.closest(".overlay")?.requestClose?.();
+    openPosting({ contentId: made.id, onChange: ui.onChange });
+  });
   qsa("[data-seek]", root).forEach((b) => b.addEventListener("click", () => { vids.forEach((x) => { x.currentTime = +b.dataset.seek; }); }));
 
   qsa("[data-vid]", root).forEach((b) => b.addEventListener("click", () => { ui.vid = b.dataset.vid; ui.noteOpen = false; paint(root, contentId, ui, repaint); }));
+  qs(".pst-vcard.is-on", root)?.scrollIntoView({ block: "nearest", inline: "center" });
   qs("#pst-compare", root)?.addEventListener("click", () => { ui.compare = !ui.compare; paint(root, contentId, ui, repaint); });
   // The drawer follows the upload through its watcher (openPosting).
   qs("#pst-add", root)?.addEventListener("click", () => pickFile((f) => addVersion(contentId, f, ui.onChange)));
@@ -626,7 +1126,10 @@ function wire(root, contentId, ui, repaint) {
 
   const cap = qs("#pst-caption", root);
   cap?.addEventListener("input", () => { qs("#pst-count", root).textContent = `${cap.value.length}/2200`; });
-  cap?.addEventListener("change", () => updateContent(contentId, { caption: cap.value }));
+  cap?.addEventListener("change", () => { updateContent(contentId, { caption: cap.value }); writeBack(contentId); });
+  // Locked or not, the day and hour save as soon as they're picked.
+  qs("#pst-date", root)?.addEventListener("change", (e) => { updateContent(contentId, { scheduleDate: e.target.value }); repaint(); });
+  qs("#pst-time-in", root)?.addEventListener("change", (e) => { save({ time: e.target.value }); repaint(); });
 
   // Seam: Fase 2 sends this to the server worker (it creates the Instagram
   // container a few minutes early and publishes on the minute).
@@ -641,10 +1144,40 @@ function wire(root, contentId, ui, repaint) {
     toast(t(AUTO_POST ? "post.toast.scheduled" : "post.toast.marked", { when: `${dayLabel(date)}, ${hhmm}` }));
     repaint();
   });
+  // Posted: with the Reels link, the client's copies go and the link shows instead.
+  const readLink = () => {
+    const raw = qs("#pst-ig-link", root)?.value.trim() || "";
+    const link = igPermalink(raw);
+    if (raw && !link) { toast(t("post.ig.linkBad"), "error"); return null; }
+    return link;
+  };
+  const afterLink = (link) => {
+    if (link && Object.keys(postingOf(getContent(contentId)).previews || {}).length) cleanPreviews(contentId).catch((e) => console.warn("[posting] previews not cleaned", e));
+  };
   qs("#pst-posted", root)?.addEventListener("click", () => {
-    updateContent(contentId, { status: "published", publishedDate: localISODate(), posting: { ...postingOf(getContent(contentId)), ig: { ...(p.ig || {}), state: "published", byHand: true, postedAt: Date.now() } } });
+    const link = readLink();
+    if (link === null) return;
+    const cur = postingOf(getContent(contentId));
+    updateContent(contentId, { status: "published", publishedDate: localISODate(), ...(link ? { publishedUrl: link } : {}), posting: { ...cur, ig: { ...(cur.ig || {}), state: "published", byHand: true, postedAt: Date.now(), ...(link ? { permalink: link } : {}) } } });
+    afterLink(link);
     toast(t("post.toast.posted"));
     repaint();
+  });
+  qs("#pst-ig-save", root)?.addEventListener("click", () => {
+    const link = readLink();
+    if (!link) { if (link === "") toast(t("post.ig.linkBad"), "error"); return; }
+    const cur = postingOf(getContent(contentId));
+    updateContent(contentId, { publishedUrl: link, posting: { ...cur, ig: { ...(cur.ig || {}), state: "published", permalink: link } } });
+    afterLink(link);
+    toast(t("post.ig.linkSaved"));
+    repaint();
+  });
+  qs("#pst-client-send", root)?.addEventListener("click", () => sendCut(contentId, ui.vid, repaint));
+  qs("#pst-client-copy", root)?.addEventListener("click", async () => {
+    const token = getBrand(c.brandId)?.clientReview?.token;
+    if (!token) return;
+    try { await navigator.clipboard.writeText(reviewURL(token)); } catch { /* shown below */ }
+    toast(t("post.client.copied"));
   });
   qs("#pst-unschedule", root)?.addEventListener("click", () => {
     updateContent(contentId, { status: "editing", posting: { ...postingOf(getContent(contentId)), ig: null } });

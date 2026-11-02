@@ -50,6 +50,13 @@ export function adminAuth() {
   return getAuth(adminApp());
 }
 
+// Cloud Storage, for the short-lived copies a client review link plays
+// (api/_review.js). Loaded on first use so no other function pays for it.
+export async function adminBucket() {
+  const { getStorage } = await import("firebase-admin/storage");
+  return getStorage(adminApp()).bucket(process.env.FIREBASE_STORAGE_BUCKET || "wepeka-ba996.firebasestorage.app");
+}
+
 // Kerja Tim: the Realtime Database, or null where it isn't set up (the live
 // project until it's created) — callers then skip what they'd write there.
 export function adminRtdb() {

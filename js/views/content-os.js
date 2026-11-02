@@ -8,6 +8,8 @@ import * as creatorView from "./creator.js";
 import * as calendarView from "./calendar.js";
 import * as copyStudioView from "./copy-studio.js";
 import * as seriesView from "./series.js";
+import * as postingQueueView from "./posting-queue.js";
+import { canUsePosting, reviewQueue } from "../posting.js";
 import { openContentEditor } from "./content-editor.js";
 import { t, getLang } from "../i18n.js";
 import { getMode } from "../mode.js";
@@ -37,7 +39,10 @@ const SUB_TABS = [
   { key: "list", labelKey: "contentOs.tab.list", color: "#FF9F3D", color2: "#FF4F4F", path: (id) => `#/brand/${id}/content/list` },
   { key: "copy", labelKey: "contentOs.tab.copy", color: "#FF6FAE", color2: "#B65CF0", path: (id) => `#/brand/${id}/content/copy` },
   { key: "series", labelKey: "contentOs.tab.series", color: "#F2C46D", color2: "#D9822B", path: (id) => `#/brand/${id}/content/series` },
+  // Antrean Video (js/views/posting-queue.js): Wepeka's own account only.
+  { key: "antrean", labelKey: "pq.title", color: "#FF5F57", color2: "#FF2E93", art: "video", path: (id) => `#/brand/${id}/content/antrean`, private: true },
 ];
+const tabsHere = () => SUB_TABS.filter((tab) => !tab.private || canUsePosting());
 
 // The Konten tab bar. (The chat, which used to sit here as "Brainstorm",
 // has its own page now: js/views/chat.js.) Wrapped in .cos-tabs-wrap so a
@@ -46,7 +51,7 @@ const SUB_TABS = [
 export function contentTabsHTML(brandId, activeSub) {
   return `<div class="cos-tabs-wrap" style="margin:-4px 0 20px;">
       <nav class="tabs cos-tabs" aria-label="${t("nav.content")}">
-        ${SUB_TABS.map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}" ${activeSub === tab.key ? `aria-current="page"` : ""}>${t(tab.labelKey)}</a>`).join("")}
+        ${tabsHere().map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}" ${activeSub === tab.key ? `aria-current="page"` : ""}>${t(tab.labelKey)}</a>`).join("")}
       </nav>
     </div>`;
 }
@@ -54,10 +59,10 @@ export function contentTabsHTML(brandId, activeSub) {
 // Pemula, inside one of the five: a round back button wearing that part's
 // colour and character, back to the cards. The page's own title follows.
 function backPillHTML(brandId, activeSub) {
-  const tab = SUB_TABS.find((x) => x.key === activeSub) || SUB_TABS[0];
+  const tab = tabsHere().find((x) => x.key === activeSub) || SUB_TABS[0];
   return `<a class="cl-backpill" href="#/brand/${brandId}/content" style="--cat:${tab.color};--cat2:${tab.color2};" aria-label="${escapeHtml(t("cl.back"))}">
       ${icon("chevronLeft", { size: 16 })}
-      <span class="cl-backpill-art cl-pic">${createArtSVG(tab.key)}</span>
+      <span class="cl-backpill-art cl-pic">${createArtSVG(tab.art || tab.key)}</span>
       <span>${t("app.create.name")}</span>
     </a>`;
 }
@@ -91,6 +96,10 @@ function cardStatus(key, brandId) {
     return { text: n ? t("cl.st.calWeek", { n }) : t("cl.st.calEmpty") };
   }
   if (key === "list") return { text: content.length ? t("cl.st.listN", { n: content.length }) : t("cl.st.listNone") };
+  if (key === "antrean") {
+    const n = reviewQueue().length;
+    return { text: n ? t("pq.st.review", { n }) : t("pq.st.none"), warn: n > 0 };
+  }
   if (key === "series") {
     const n = listSeries(brandId).length;
     return { text: n ? t("cl.st.seriesN", { n }) : t("cl.st.seriesNone") };
@@ -122,6 +131,7 @@ function peekItems(key, brandId) {
       .map((c) => ({ title: untitled(c), meta: c.scheduleDate === today ? t("nw.when.today") : new Date(`${c.scheduleDate}T00:00:00`).toLocaleDateString(loc, { weekday: "short", day: "numeric" }) }));
   }
   if (key === "list") return content.slice(0, PEEK_MAX).map((c) => ({ title: untitled(c), meta: statusLabel(c.status, STATUS_LABELS) }));
+  if (key === "antrean") return reviewQueue().slice(0, PEEK_MAX).map(({ c, brand }) => ({ title: untitled(c), meta: brand.name }));
   if (key === "series") return listSeries(brandId).slice(0, PEEK_MAX).map((s) => ({ title: s.name || t("common.untitled"), meta: "" }));
   return t("cl.peek.copyItems").split(" · ").map((title) => ({ title, meta: "", chip: true }));
 }
@@ -134,7 +144,7 @@ function peekHTML(key, brandId) {
 }
 
 function landingHTML(brandId, brand, { animate }) {
-  const cards = SUB_TABS.map((tab, i) => {
+  const cards = tabsHere().map((tab, i) => {
     const st = cardStatus(tab.key, brandId);
     return `
       <a class="cl-card" data-cat="${tab.key}" href="${tab.path(brandId)}" style="--cat:${tab.color};--cat2:${tab.color2};--i:${i};">
@@ -142,7 +152,7 @@ function landingHTML(brandId, brand, { animate }) {
         <span class="cl-sub">${t(`cl.cat.${tab.key}.sub`)}</span>
         <span class="cl-status${st.warn ? " is-warn" : ""}">${escapeHtml(st.text)}</span>
         ${peekHTML(tab.key, brandId)}
-        <span class="cl-art cl-pic">${createArtSVG(tab.key)}</span>
+        <span class="cl-art cl-pic">${createArtSVG(tab.art || tab.key)}</span>
         <span class="cl-go" aria-hidden="true">${icon("arrowRight", { size: 16 })}</span>
       </a>`;
   }).join("");
@@ -202,7 +212,7 @@ export function render(root, { brandId, sub, contentId }) {
   // Pro land on Creator, as before.)
   if (guided && !sub) return renderLanding(root, brandId);
   // The bare URL (and any old /dashboard link) lands on the first tab.
-  const activeSub = SUB_TABS.some((x) => x.key === sub) ? sub : "creator";
+  const activeSub = tabsHere().some((x) => x.key === sub) ? sub : "creator";
   // Creator, Kalender, Konten and Tulisan Cepat draw their own "?" and
   // "Panduan" next to their title — the ones up here only for Series, which
   // has none, so a page never shows the same guide twice.
@@ -233,6 +243,8 @@ export function render(root, { brandId, sub, contentId }) {
     cleanup = copyStudioView.render(mount, { brandId });
   } else if (activeSub === "series") {
     cleanup = seriesView.render(mount, { brandId });
+  } else if (activeSub === "antrean") {
+    cleanup = postingQueueView.render(mount, { brandId });
   } else {
     cleanup = creatorView.render(mount, { brandId, initialContentId: contentId });
   }

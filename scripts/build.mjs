@@ -317,6 +317,7 @@ async function main() {
 
   await buildFounderPage();
   await buildPapanPage();
+  await buildReviewPage();
 
   const gz = async (f) => zlib.gzipSync(await fs.readFile(path.join(DIST_JS, f)), { level: 9 }).length;
   console.log(`i18n: ${i18nReport.keys} keys → js/${i18nChunks.en} (${i18nReport["i18n-en"]} B, ${await gz(i18nChunks.en)} B gzip), js/${i18nChunks.id} (${i18nReport["i18n-id"]} B, ${await gz(i18nChunks.id)} B gzip); only the active one loads`);
@@ -382,6 +383,32 @@ async function buildFounderPage() {
   // Its pictures are the front page's motion clips (assets/landing/clips), served from /assets.
   const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
   console.log(`founder/: index.html ${kb(Buffer.byteLength(html))} (CSS inlined), ${jsFile} ${kb((await fs.stat(path.join(OUT, jsFile))).size)}`);
+}
+
+// The client review page (review/ → brandlab.wepeka.com/review/<token>,
+// api/_review.js): one small script with no app imports and its stylesheet
+// inlined, served from /review/ like /founder.
+async function buildReviewPage() {
+  const SRC = path.join(ROOT, "review");
+  const OUT = path.join(DIST, "review");
+  await fs.mkdir(OUT, { recursive: true });
+  const js = await build({
+    absWorkingDir: ROOT, entryPoints: [path.join(SRC, "review.js")], bundle: true, format: "esm", minify: true, sourcemap: false,
+    outdir: OUT, entryNames: "[name]-[hash]", metafile: true, logLevel: "warning",
+  });
+  const jsFile = path.basename(Object.keys(js.metafile.outputs).find((f) => f.endsWith(".js")));
+  const css = (await transform(await fs.readFile(path.join(SRC, "review.css"), "utf8"), { loader: "css", minify: true, sourcefile: "review.css", logLevel: "warning" })).code;
+  let html = await fs.readFile(path.join(SRC, "index.html"), "utf8");
+  for (const [from, to] of [
+    ['<!-- build.mjs inlines this file into a <style> tag for production. -->\n', ""],
+    ['<link rel="stylesheet" href="/review/review.css">', `<style>${css.trim()}</style>`],
+    ['<script type="module" src="/review/review.js"></script>', `<script type="module" src="/review/${jsFile}"></script>`],
+  ]) {
+    if (!html.includes(from)) throw new Error(`build.mjs: review/index.html no longer contains ${from} — update buildReviewPage()`);
+    html = html.replace(from, to);
+  }
+  await fs.writeFile(path.join(OUT, "index.html"), html);
+  console.log(`review/: index.html (CSS inlined), ${jsFile}`);
 }
 
 main().catch((err) => {

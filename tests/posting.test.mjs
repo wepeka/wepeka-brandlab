@@ -33,3 +33,29 @@ test("format check only speaks up about what Instagram would refuse or crop", ()
   assert.equal(formatIssues(v("a", "pending", { size: 301 * 1048576 })).length, 1);
   assert.equal(formatIssues(v("a", "pending", { type: "video/webm" })).length, 1);
 });
+
+test("brandlab.json tells Claude the decision, the cut, the cover and every note by file", async () => {
+  const { decisionsFor } = await import("../js/posting.js");
+  const c = {
+    title: "WA", scheduleDate: "2026-11-03", caption: "Cap", status: "editing",
+    posting: {
+      type: "reels", time: "19:00", cover: "cover-2.jpg", finalId: null,
+      versions: [{ id: "a", n: 0, status: "revision", local: { file: "v1.mp4" } }, { id: "b", n: 1, status: "pending", local: { file: "v2.mp4" } }],
+      notes: [{ id: "n", versionId: "a", t: 12, text: "Logo kepotong", done: false }],
+    },
+  };
+  const d = decisionsFor(c);
+  assert.equal(d.status, "review");
+  assert.equal(d.final, "");
+  assert.equal(d.cover, "cover-2.jpg");
+  assert.deepEqual(d.versions, [{ file: "v1.mp4", status: "revision" }, { file: "v2.mp4", status: "pending" }]);
+  assert.deepEqual(d.notes, [{ id: "n", file: "v1.mp4", at: "0:12", seconds: 12, text: "Logo kepotong", done: false, from: "winson" }]);
+});
+
+test("an Instagram post link is tidied to its permalink, anything else refused", async () => {
+  const { igPermalink } = await import("../js/posting.js");
+  assert.equal(igPermalink("https://www.instagram.com/reel/DAbc_12-x/?igsh=abc"), "https://www.instagram.com/reel/DAbc_12-x/");
+  assert.equal(igPermalink("instagram.com/reels/DAbc123"), "https://www.instagram.com/reel/DAbc123/");
+  assert.equal(igPermalink("https://www.instagram.com/kopipagi/p/CxYz987/"), "https://www.instagram.com/p/CxYz987/");
+  assert.equal(igPermalink("https://tiktok.com/@x/video/1"), "");
+});

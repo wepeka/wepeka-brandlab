@@ -209,6 +209,7 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/copy\/?$/))) return { view: "content-os", brandId: m[1], sub: "copy" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/series\/?$/))) return { view: "content-os", brandId: m[1], sub: "series" };
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/antrean\/?$/))) return { view: "content-os", brandId: m[1], sub: "antrean" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/?$/))) return { view: "content-os", brandId: m[1] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/([^/]+)\/?$/))) return { view: "campaigns", brandId: m[1], campaignId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/campaigns\/?$/))) return { view: "campaigns", brandId: m[1] };
