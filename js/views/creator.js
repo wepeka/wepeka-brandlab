@@ -35,6 +35,7 @@ import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
+import { canUsePosting, editStepVideoHTML, wireEditStepVideo } from "../posting.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -1414,6 +1415,7 @@ function paint(root, brandId, state, refresh) {
       notify(t("cr.notify.toEditing"), t("cr.notify.toEditingBody", { title: selected.title || t("common.untitled") }));
     });
   }
+  wireEditStepVideo(root);
   const markEditedBig = qs("#mark-edited-big", root);
   if (markEditedBig) {
     markEditedBig.addEventListener("click", () => {
@@ -1934,7 +1936,7 @@ function editingPanel(c) {
     <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:20px;">${escapeHtml(c.title || t("common.untitled"))}</div>
-      ${editingAppsHTML()}
+      ${canUsePosting() ? editStepVideoHTML(c) : editingAppsHTML()}
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-edited-big">${icon("check", { size: 20 })}${t("cr.doneEditing")}</button>
     </div>
   `;
@@ -2425,9 +2427,11 @@ function editAppsSimpleHTML() {
     <p class="cw-hint">${icon("bulb", { size: 13 })}<span>${t("cr.editApps.hint")}</span></p>`;
 }
 
+// Wepeka's own account edits with Claude: the step shows the piece's video
+// (Video & posting) instead of the editing-app tips.
 function editStepHTML(c, { review }) {
   return `
-    ${editAppsSimpleHTML()}
+    ${canUsePosting() ? editStepVideoHTML(c) : editAppsSimpleHTML()}
     ${review ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
 }
 

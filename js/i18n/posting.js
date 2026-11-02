@@ -147,6 +147,13 @@ export default {
   "post.cover.saved": { en: "Cover saved in the folder.", id: "Cover disimpan di folder." },
 
   // Video codes and trial cuts (js/video-codes.js)
+  // Creator's Edit step (posting.js editStepVideoHTML)
+  "post.edit.title": { en: "Video & revisions", id: "Video & revisi" },
+  "post.edit.none": { en: "No video yet. Tell Claude \"edit {code}\": the result lands here by itself.", id: "Belum ada video. Bilang ke Claude \"edit {code}\": hasilnya masuk ke sini sendiri." },
+  "post.edit.cuts": { en: "{n} versions · newest: {label}", id: "{n} versi · terbaru: {label}" },
+  "post.edit.open": { en: "Open video & revisions", id: "Buka video & revisi" },
+  "post.edit.openEmpty": { en: "Open", id: "Buka" },
+
   // Client review link (js/review-share.js, api/_review.js)
   "post.client.title": { en: "Client", id: "Klien" },
   "post.client.intro": { en: "Send this cut to the client through one link. They watch it, approve it or ask for changes, no account needed.", id: "Kirim versi ini ke klien lewat satu link. Mereka bisa menonton, setuju, atau minta revisi tanpa akun." },

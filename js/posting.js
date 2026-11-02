@@ -312,6 +312,47 @@ export function decide(contentId, vid, verdict, note) {
   writeBack(contentId);
 }
 
+// Creator's Edit step (owner, 2026-11-02: "di Creator fase edit diarahkan
+// ke sana juga, biar gak bingung"): one card for this piece's video — its
+// code to tell Claude, where it stands, how many cuts — that opens the same
+// drawer as the Kalender and Antrean Video. Admin only, like the rest.
+export function editStepVideoHTML(c) {
+  if (!canUsePosting() || !c) return "";
+  ensureCodes();
+  const fresh = getContent(c.id) || c;
+  const key = postingState(fresh);
+  const p = postingOf(fresh);
+  const code = videoCode(fresh);
+  const last = latestOf(p);
+  const line = key === "none"
+    ? t("post.edit.none", { code: escapeHtml(code || "") })
+    : [t("post.edit.cuts", { n: p.versions.length, label: escapeHtml(versionLabel(last)) }), last?.changeNote ? escapeHtml(last.changeNote) : ""].filter(Boolean).join(" · ");
+  return `<div class="pst-edit" style="--pst:${STATE_COLOR[key]}">
+      <span class="pst-edit-img" data-pst-edit-thumb="${escapeHtml(fresh.id)}">${icon(key === "none" ? "upload" : "play", { size: 20 })}</span>
+      <div class="pst-edit-text">
+        <div class="pst-edit-top">${code ? `<button type="button" class="pst-code is-small" data-copy-code="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}${icon("copy", { size: 11 })}</button>` : ""}<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(fresh, key))}</span></div>
+        <b>${t("post.edit.title")}</b>
+        <small>${line}</small>
+      </div>
+      <button type="button" class="cl-cta pst-cta pst-edit-go" data-pst-edit-open="${escapeHtml(fresh.id)}"><span>${t(key === "none" ? "post.edit.openEmpty" : "post.edit.open")}</span><span class="cl-cta-dot">${icon("arrowRight", { size: 16 })}</span></button>
+    </div>`;
+}
+export function wireEditStepVideo(root, { onChange } = {}) {
+  if (!canUsePosting()) return;
+  qsa("[data-pst-edit-open]", root).forEach((b) => b.addEventListener("click", () => openPosting({ contentId: b.dataset.pstEditOpen, onChange })));
+  qsa(".pst-edit [data-copy-code]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copyCode)));
+  qsa("[data-pst-edit-thumb]", root).forEach((el) => {
+    const c = getContent(el.dataset.pstEditThumb);
+    const key = c?.posting?.local?.key;
+    const last = latestOf(postingOf(c));
+    if (key && last?.local && OUT.connected) {
+      outboxThumb(key, last, c.posting.cover).then((src) => { if (src && el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+    } else if (usesOutbox() && key && !OUT.checked) {
+      ensureOutbox().then(() => { if (OUT.connected && el.isConnected) wireEditStepVideo(root, { onChange }); });
+    }
+  });
+}
+
 // Menu rows the calendar adds to its own menus.
 export const postingMenuItemHTML = () => (canUsePosting() ? `<button data-act="posting">${icon("play", { size: 15 })}${t("post.menu.open")}</button>` : "");
 export const uploadMenuItemHTML = () => (canUsePosting() ? `<button data-posting-upload>${icon("upload", { size: 15 })}${t("post.menu.upload")}</button>` : "");

@@ -34,6 +34,16 @@
 .pst-head-meta .pst-badge{ margin-left:4px; }
 .pst-code{ display:inline-flex; align-items:center; gap:6px; margin-bottom:8px; padding:3px 9px; border-radius:8px; border:0; background: var(--text); color: var(--bg); font:inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; font-weight:800; cursor:copy; }
 .pst-code svg{ opacity:.7; }
+/* Creator's Edit step: this piece's video, one tap from the drawer. */
+.pst-edit{ display:grid; grid-template-columns:auto minmax(0, 1fr); align-items:center; gap:12px 14px; margin-bottom:16px; padding:14px; border-radius:22px; background: var(--surface); border:1px solid color-mix(in srgb, var(--pst) 40%, var(--border)); }
+.pst-edit-img{ display:grid; place-items:center; width:64px; aspect-ratio:9/16; border-radius:12px; color: rgba(255,255,255,.8); background: linear-gradient(150deg, color-mix(in srgb, var(--pst) 55%, #222), #141414); background-size:cover; background-position:center; }
+.pst-edit-img.has-img svg{ display:none; }
+.pst-edit-text{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+.pst-edit-top{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.pst-edit-text b{ font-size:16px; }
+.pst-edit-text small{ font-size:13px; line-height:1.45; color: var(--text-muted); }
+.pst-edit-go{ grid-column:1 / -1; justify-self:stretch; }
+.pst-code.is-small{ margin:0; padding:2px 7px; font-size:12px; }
 .pst-badge-code{ font-style:normal; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:800; margin-right:2px; }
 .pst-trials{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:-6px; }
 .pst-trials-l{ display:inline-flex; align-items:center; gap:5px; margin-right:2px; font-size:12px; font-weight:800; color: var(--text-muted); }
