@@ -1,9 +1,7 @@
 // Video & posting on the Kalender (js/posting.js) — private to Wepeka's own
 // account for now (2026-11-01).
 export default {
-  "post.menu.open": { en: "Video & posting", id: "Video & posting" },
   "post.menu.upload": { en: "Upload video", id: "Upload video" },
-  "post.title": { en: "Video & posting", id: "Video & posting" },
 
   "post.state.none": { en: "No video yet", id: "Belum ada video" },
   "post.state.review": { en: "To review", id: "Perlu dicek" },
@@ -14,9 +12,6 @@ export default {
   "post.state.published": { en: "Posted", id: "Sudah tayang" },
   "post.state.failed": { en: "Failed to post", id: "Gagal tayang" },
 
-  "post.step.video": { en: "Video", id: "Video" },
-  "post.step.check": { en: "Check", id: "Cek" },
-  "post.step.post": { en: "Post", id: "Posting" },
 
   "post.v.original": { en: "Original", id: "Original" },
   "post.v.revision": { en: "Revision {n}", id: "Revisi {n}" },
@@ -226,6 +221,7 @@ export default {
 
   // Antrean Video (js/views/posting-queue.js)
   "pq.title": { en: "Video Queue", id: "Antrean Video" },
+  "pq.views": { en: "Views", id: "Views" },
   "cl.cat.antrean.sub": { en: "Check, approve, schedule", id: "Cek, setujui, jadwalkan" },
   "pq.lead": { en: "Every Instagram piece from Creator. Use its code (e.g. KP-12) when you ask for an edit, check the video, then schedule it.", id: "Semua konten Instagram dari Creator. Sebut kodenya (mis. KP-12) saat minta edit, cek videonya, lalu jadwalkan." },
   "pq.st.review": { en: "{n} to review", id: "{n} perlu dicek" },

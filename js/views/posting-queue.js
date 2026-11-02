@@ -8,9 +8,9 @@
 //   Feed    — the Instagram profile grid, to see the feed before it posts.
 //   Review  — the waiting cuts full screen, one after another, like Reels.
 // Private to Wepeka's own account (canUsePosting), like the rest of it.
-import { listBrands, listContent, getBrand, getContent, onChange, localISODate } from "../store.js";
+import { listBrands, listContent, getBrand, getContent, onChange, localISODate, organicViews } from "../store.js";
 import { icon } from "../icons.js";
-import { qs, qsa, escapeHtml, toast } from "../dom.js";
+import { qs, qsa, escapeHtml, toast, formatNumber } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
@@ -71,10 +71,13 @@ function tileHTML({ c, state, sub }) {
   const empty = state === "none";
   // At the editor (Claude), or its revision just in: said instead of the state.
   const ed = editorChip(c);
+  // Posted: how it did, on the tile (owner: "dibuka bisa juga lihat ada views").
+  const views = state === "published" ? organicViews(c) : null;
   return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
         <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon("upload", { size: 22 })}<small>${t("post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
         ${n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
+        ${views !== null && views !== undefined && views !== "" ? `<span class="pq-g-views" title="${escapeHtml(t("pq.views"))}">${icon("eye", { size: 12 })}${formatNumber(views)}</span>` : ""}
         ${empty ? "" : ed ? `<span class="pq-g-state is-editor" style="--pst:${ed.color}"><i></i>${escapeHtml(ed.label)}</span>` : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
       </button>
       ${code ? `<button type="button" class="pq-g-code" data-copy="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}</button>` : ""}
@@ -243,7 +246,11 @@ export function render(root, { brandId }) {
   };
 
   const wire = () => {
-    qsa("[data-open]", root).forEach((b) => b.addEventListener("click", () => openPosting({ contentId: b.dataset.open })));
+    // A tile opens the piece's page on its video, with a way back here.
+    qsa("[data-open]", root).forEach((b) => b.addEventListener("click", () => {
+      const c = getContent(b.dataset.open);
+      openPosting({ contentId: b.dataset.open, step: postingState(c) === "published" ? "done" : "edit", from: t("pq.title") });
+    }));
     qsa("[data-view]", root).forEach((b) => b.addEventListener("click", () => { ui.view = b.dataset.view; try { localStorage.setItem(VIEW_KEY, ui.view); } catch { /* per tab */ } paint(); }));
     qsa("[data-period]", root).forEach((b) => b.addEventListener("click", () => { ui.period = b.dataset.period; paint(); }));
     qsa("[data-status]", root).forEach((b) => b.addEventListener("click", () => { ui.status = b.dataset.status; paint(); }));

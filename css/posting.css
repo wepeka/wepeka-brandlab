@@ -27,11 +27,13 @@
 .pst-review-empty{ padding:8px; font-size:13px; color: var(--text-muted); }
 
 /* ---- the drawer ---- */
-.pst-overlay .drawer{ width:min(560px, 100vw); }
 .pst{ --ink:#1b1a17; display:flex; flex-direction:column; gap:16px; }
-.pst-head h3{ margin:0; font-family: var(--font-display); font-size:24px; line-height:1.1; text-wrap:balance; }
-.pst-head-meta{ display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; margin-top:8px; font-size:13px; font-weight:700; color: var(--text-muted); }
-.pst-head-meta .pst-badge{ margin-left:4px; }
+/* In the piece's page (Creator → Edit): the code, where the video stands. */
+.pst-embed{ container-type:inline-size; }
+.pst-embed-top{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.pst-embed-top .pst-code{ margin:0; }
+.pst-embed-top .pst-badge{ align-self:center; }
+.pst-embed-when{ display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:800; color: var(--text-muted); }
 .pst-code{ display:inline-flex; align-items:center; gap:6px; margin-bottom:8px; padding:3px 9px; border-radius:8px; border:0; background: var(--text); color: var(--bg); font:inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; font-weight:800; cursor:copy; }
 .pst-code svg{ opacity:.7; }
 /* Creator's Edit step: this piece's video, one tap from the drawer. */
@@ -55,15 +57,6 @@
 .pst-trials.is-solo{ gap:10px; }
 .pst-trials-hint{ font-size:12px; color: var(--text-faint); }
 
-.pst-steps{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin:0; padding:0; list-style:none; }
-.pst-steps li{ display:flex; align-items:center; gap:7px; padding-top:12px; position:relative; font-size:12.5px; font-weight:800; color: var(--text-faint); }
-.pst-steps li::before{ content:""; position:absolute; left:0; right:0; top:0; height:6px; border-radius:999px; background: var(--surface-2); }
-.pst-steps li span{ display:grid; place-items:center; width:20px; height:20px; border-radius:50%; background: var(--surface-2); font-size:11px; }
-.pst-steps li.is-done{ color: var(--text-muted); }
-.pst-steps li.is-done::before, .pst-steps li.is-done span{ background:#36D27F; color: var(--ink); }
-.pst-steps li.is-now{ color: var(--text); }
-.pst-steps li.is-now::before{ background: linear-gradient(90deg, #3B9BFF, #4F55F5); }
-.pst-steps li.is-now span{ background: var(--text); color: var(--bg); }
 
 .pst-block{ display:flex; flex-direction:column; gap:12px; padding:16px; border-radius:22px; background: var(--surface); border:1px solid var(--border); }
 .pst-block h4{ margin:0; font-size:16px; }
@@ -191,13 +184,14 @@
   .pst-note{ display:grid; grid-template-columns:auto minmax(0, 1fr); gap:4px 10px; }
   .pst-note label{ grid-column:2; justify-self:start; padding-top:0; }
 }
-/* Wide screen: video left (stays in view while the column scrolls), the
-   revision column and the rest on the right. */
-@media (min-width: 1100px){
-  .pst-overlay .drawer{ width:min(1060px, 100vw); }
-  .pst-grid.has-video{ display:grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); align-items:start; }
-  .pst-grid.has-video > .pst-video{ position:sticky; top:0; }
-  .pst-grid.has-video .pst-player{ width:auto; max-width:100%; height:min(52vh, 600px); max-height:none; }
+/* Room for two columns: video left (stays in view under the top bar while
+   the column scrolls), the revision column and the rest on the right. */
+@container (min-width: 760px){
+  .pst-grid.has-video{ display:grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); align-items:start; }
+  .pst-grid.has-video > .pst-video{ position:sticky; top: calc(var(--header-h, 64px) + 12px); }
+  /* Under the "Kembali ke Antrean Video" bar too, when it's there. */
+  :root:has(.nav-return) .pst-grid.has-video > .pst-video{ top: calc(var(--header-h, 64px) + 54px); }
+  .pst-grid.has-video .pst-player{ width:auto; max-width:100%; height:min(56vh, 600px); max-height:none; }
   .pst-grid.has-video .pst-players.is-compare .pst-player{ width:calc(50% - 5px); height:auto; }
   .pst-grid.has-video .pst-player.is-slides{ width:100%; height:auto; }
 }
@@ -329,6 +323,7 @@
 .pq-g-state{ position:absolute; left:8px; bottom:8px; z-index:1; display:inline-flex; align-items:center; gap:6px; max-width:calc(100% - 16px); padding:4px 10px 4px 8px; border-radius:999px; background: rgba(0,0,0,.62); color:#fff; font-size:12px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; backdrop-filter: blur(6px); }
 .pq-g-state i{ flex:none; width:8px; height:8px; border-radius:50%; background: var(--pst); }
 .pq-g-n{ position:absolute; top:8px; right:8px; z-index:1; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px; background: rgba(0,0,0,.62); color:#fff; font-size:12px; font-weight:800; }
+.pq-g-views{ position:absolute; bottom:40px; left:8px; z-index:1; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px; background: rgba(0,0,0,.62); color:#fff; font-size:12px; font-weight:800; font-variant-numeric: tabular-nums; }
 .pq-g-code{ position:absolute; top:8px; left:8px; z-index:2; padding:3px 9px; border-radius:8px; border:0; background:#fff; color:#1b1a17; font:inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; font-weight:800; cursor:copy; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 .pq-g-code:hover{ background: var(--pst); }
 .pq-g-info{ display:flex; flex-direction:column; gap:3px; min-width:0; padding:0 2px; }

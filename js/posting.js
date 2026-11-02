@@ -31,7 +31,8 @@ import { outboxFile } from "./outbox.js";
 import { brandReviewLink, sendToClient, cleanPreviews, reviewURL } from "./review-share.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "./dom.js";
-import { openDrawer, confirmDialog } from "./modals.js";
+import { confirmDialog } from "./modals.js";
+import { go } from "./nav-context.js";
 import { t, getLang } from "./i18n.js";
 
 export const canUsePosting = () => isAdmin(currentUid());
@@ -490,8 +491,7 @@ export function wireEditStepVideo(root, { onChange } = {}) {
   });
 }
 
-// Menu rows the calendar adds to its own menus.
-export const postingMenuItemHTML = () => (canUsePosting() ? `<button data-act="posting">${icon("play", { size: 15 })}${t("post.menu.open")}</button>` : "");
+// The row the calendar adds to a day's menu.
 export const uploadMenuItemHTML = () => (canUsePosting() ? `<button data-posting-upload>${icon("upload", { size: 15 })}${t("post.menu.upload")}</button>` : "");
 
 // ---------------------------------------------------------------- review
@@ -548,9 +548,7 @@ export function wirePosting(root, { brandId, onChange } = {}) {
       const id = ev.target.closest("[data-pst-open]")?.dataset.pstOpen;
       if (!id) return;
       closeMenu();
-      const c = getContent(id);
-      if (c && c.brandId !== brandId) location.hash = `#/brand/${c.brandId}/content/calendar`;
-      openPosting({ contentId: id, onChange });
+      openPosting({ contentId: id });
     });
   });
 }
@@ -764,20 +762,42 @@ function dayLabel(dateISO) {
 }
 const igHandleOf = (brand) => (brand?.instagram?.username || "").replace(/^@/, "");
 
-export function openPosting({ contentId, onChange }) {
+// One piece = one page (owner, 2026-11-02: "terlalu banyak dan redundant …
+// enaknya diapakan"): the video, its revisions and its posting live on the
+// piece's own page in Creator — the Edit step holds the video, the Upload
+// step the posting — instead of a drawer of their own. Every way in (the
+// Antrean gallery, the Kalender, the review list, a video dropped on a day)
+// opens that page.
+export function openPosting({ contentId, step = "edit", from = "" } = {}) {
+  const c = getContent(contentId);
+  if (!canUsePosting() || !c) return;
+  go(`#/brand/${c.brandId}/content/creator/${c.id}`, { contentId: c.id, step, ...(from ? { fromLabel: from } : {}) });
+}
+
+// The slot the piece's page leaves for it: part "video" (Edit) or "post"
+// (Upload). Only Wepeka's own account gets one.
+export const postingMountHTML = (c, part = "video") => (canUsePosting() && c ? `<div class="pst pst-embed" data-pst-mount="${escapeHtml(c.id)}" data-part="${part}"></div>` : "");
+export function wirePostingMounts(root, { onChange } = {}) {
+  if (!canUsePosting()) return;
+  qsa("[data-pst-mount]:not(.is-mounted)", root).forEach((el) => {
+    el.classList.add("is-mounted");
+    mountPosting(el, { contentId: el.dataset.pstMount, part: el.dataset.part, onChange });
+  });
+}
+
+// The panel, live inside its slot until the slot leaves the page: an
+// upload's progress, the client's answer, the editor's next cut.
+function mountPosting(root, { contentId, part = "video", onChange } = {}) {
   if (!canUsePosting() || !getContent(contentId)) return;
   const c0 = getContent(contentId);
-  const ui = { vid: (postingOf(c0).versions.find((v) => v.id === postingOf(c0).finalId) || latestOf(postingOf(c0)))?.id || null, compare: false, t: 0, onChange };
-  const overlay = openDrawer({ title: t("post.title"), bodyHTML: `<div class="pst" id="pst-root"></div>` });
-  overlay.classList.add("pst-overlay");
-  const root = qs("#pst-root", overlay);
-  const repaint = () => { if (overlay.isConnected) paint(root, contentId, ui, repaint); writeBack(contentId); onChange?.(); };
+  const ui = { vid: (postingOf(c0).versions.find((v) => v.id === postingOf(c0).finalId) || latestOf(postingOf(c0)))?.id || null, compare: false, t: 0, part, onChange };
+  const repaint = () => { if (root.isConnected) paint(root, contentId, ui, repaint); writeBack(contentId); onChange?.(); };
   // Upload progress: the bar moves in place (a playing video keeps playing);
   // start and finish repaint, and a finished upload is shown next to the
   // one before it.
   let count = postingOf(c0).versions.length;
   const watch = (id, done) => {
-    if (!overlay.isConnected) { uploadWatchers.delete(watch); return; }
+    if (!root.isConnected) { uploadWatchers.delete(watch); return; }
     if (id !== contentId) return;
     if (!done) {
       const u = UPLOADS.get(contentId);
@@ -794,11 +814,11 @@ export function openPosting({ contentId, onChange }) {
   };
   uploadWatchers.add(watch);
   // A decision from elsewhere (the client's link, Claude's next cut, another
-  // device) shows up in the open drawer — unless the person is typing.
-  const sig = () => { const p = postingOf(getContent(contentId)); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId, p.editor?.status, p.thumb?.status, p.cover, (p.covers || []).length]); };
+  // device) shows up here — unless the person is typing.
+  const sig = () => { const c = getContent(contentId); const p = postingOf(c); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId, p.editor?.status, p.thumb?.status, p.cover, (p.covers || []).length, p.time, c?.scheduleDate, c?.caption]); };
   let seen = sig();
   const offStore = onStoreChange(() => {
-    if (!overlay.isConnected) { offStore(); return; }
+    if (!root.isConnected) { offStore(); return; }
     const now = sig();
     if (now === seen) return;
     seen = now;
@@ -806,9 +826,8 @@ export function openPosting({ contentId, onChange }) {
     paint(root, contentId, ui, repaint);
   });
   paint(root, contentId, ui, repaint);
-  if (usesOutbox()) { if (!OUT.checked) ensureOutbox().then(() => { if (overlay.isConnected) paint(root, contentId, ui, repaint); }); }
-  else if (!DRIVE.checked) checkDrive().then(() => { if (overlay.isConnected) paint(root, contentId, ui, repaint); });
-  return overlay;
+  if (usesOutbox()) { if (!OUT.checked) ensureOutbox().then(() => { if (root.isConnected) paint(root, contentId, ui, repaint); }); }
+  else if (!DRIVE.checked) checkDrive().then(() => { if (root.isConnected) paint(root, contentId, ui, repaint); });
 }
 
 function progressHTML(up) {
@@ -831,7 +850,6 @@ function paint(root, contentId, ui, repaint) {
   const idx = v ? p.versions.indexOf(v) : -1;
   const prev = idx > 0 ? p.versions[idx - 1] : null;
   if (!prev) ui.compare = false;
-  const stepNow = key === "none" ? 0 : ["review", "revision"].includes(key) ? 1 : 2;
   const handle = igHandleOf(brand);
   const up = UPLOADS.get(contentId);
   const local = usesOutbox();
@@ -845,18 +863,22 @@ function paint(root, contentId, ui, repaint) {
   ui.ac?.abort();
   ui.ac = new AbortController();
 
+  // Upload step: only the posting — the day, hour, caption, posted.
+  if (ui.part === "post") {
+    root.innerHTML = postHTML(c, p, key, handle);
+    wire(root, contentId, ui, repaint);
+    return;
+  }
+
+  // Edit step: the page above already says the title, day and step; this
+  // starts with the code to tell the editor, where the video stands, trials.
   root.innerHTML = `
-    <header class="pst-head">
-      <div class="pst-head-text">
-        ${code ? `<button type="button" class="pst-code" data-copy-code="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}${icon("copy", { size: 12 })}</button>` : ""}
-        <h3>${escapeHtml(c.title || t("common.untitled"))}</h3>
-        <div class="pst-head-meta">${icon("calendar", { size: 12 })}${escapeHtml(dayLabel(c.scheduleDate) || t("pq.noDate"))}${p.time ? ` · ${escapeHtml(p.time)}` : ""}${ed ? `<span class="pst-badge is-editor" style="--pst:${ed.color}">${icon(ed.icon, { size: 11 })}${escapeHtml(ed.label)}</span>` : `<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span>`}</div>
-      </div>
-    </header>
+    <div class="pst-embed-top">
+      ${code ? `<button type="button" class="pst-code" data-copy-code="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}${icon("copy", { size: 12 })}</button>` : ""}
+      ${ed ? `<span class="pst-badge is-editor" style="--pst:${ed.color}">${icon(ed.icon, { size: 11 })}${escapeHtml(ed.label)}</span>` : `<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span>`}
+      ${p.time ? `<span class="pst-embed-when">${icon("clock", { size: 12 })}${escapeHtml(p.time)}</span>` : ""}
+    </div>
     ${trialsHTML(c)}
-    <ol class="pst-steps" aria-label="${escapeHtml(t("post.title"))}">
-      ${["video", "check", "post"].map((s, i) => `<li class="${i < stepNow ? "is-done" : i === stepNow ? "is-now" : ""}"><span>${i < stepNow ? icon("check", { size: 12 }) : i + 1}</span>${t(`post.step.${s}`)}</li>`).join("")}
-    </ol>
 
     <div class="pst-grid ${v ? "has-video" : ""}">
     <section class="pst-block pst-video" id="pst-drop">
@@ -889,7 +911,6 @@ function paint(root, contentId, ui, repaint) {
       ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
     </section>` : ""}
     ${v ? clientHTML(c, p, v, key) : ""}
-    ${postHTML(c, p, key, handle)}
     </div>
     </div>
   `;
@@ -1304,14 +1325,12 @@ function wire(root, contentId, ui, repaint) {
   qsa("[data-copy-code]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copyCode)));
   qsa("[data-trial-open]", root).forEach((b) => b.addEventListener("click", () => {
     if (b.dataset.trialOpen === contentId) return;
-    root.closest(".overlay")?.requestClose?.();
-    openPosting({ contentId: b.dataset.trialOpen, onChange: ui.onChange });
+    openPosting({ contentId: b.dataset.trialOpen });
   }));
   qs("#pst-trial-add", root)?.addEventListener("click", () => {
     const made = createTrial(contentId);
     if (!made) return;
-    root.closest(".overlay")?.requestClose?.();
-    openPosting({ contentId: made.id, onChange: ui.onChange });
+    openPosting({ contentId: made.id });
   });
   qsa("[data-seek]", root).forEach((b) => b.addEventListener("click", () => { vids.forEach((x) => { x.currentTime = +b.dataset.seek; }); }));
 
@@ -1329,9 +1348,9 @@ function wire(root, contentId, ui, repaint) {
 
   // Drop a new version anywhere on the video block.
   const drop = qs("#pst-drop", root);
-  drop.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); drop.classList.add("is-over"); } });
-  drop.addEventListener("dragleave", (e) => { if (!drop.contains(e.relatedTarget)) drop.classList.remove("is-over"); });
-  drop.addEventListener("drop", (e) => {
+  drop?.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); drop.classList.add("is-over"); } });
+  drop?.addEventListener("dragleave", (e) => { if (!drop.contains(e.relatedTarget)) drop.classList.remove("is-over"); });
+  drop?.addEventListener("drop", (e) => {
     drop.classList.remove("is-over");
     const f = [...(e.dataTransfer?.files || [])][0];
     if (!f) return;

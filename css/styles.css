@@ -6544,6 +6544,11 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .cr-published{ margin:0 0 18px; border:1px solid color-mix(in srgb, var(--health-good, #16a34a) 40%, transparent); }
 .cr-published-head{ display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:13px; }
 .cr-published-head svg{ color: var(--health-good, #16a34a); }
+.cr-pub-stats{ display:grid; grid-template-columns:repeat(auto-fit, minmax(92px, 1fr)); gap:8px; margin-top:14px; }
+.cr-pub-stat{ display:flex; flex-direction:column; gap:2px; padding:10px 12px; border-radius:14px; background: var(--surface-2); }
+.cr-pub-stat b{ font-family: var(--font-display); font-size:22px; line-height:1.1; font-variant-numeric: tabular-nums; }
+.cr-pub-stat span{ font-size:12px; font-weight:700; color: var(--text-muted); }
+.cr-pub-stat.is-main{ background: color-mix(in srgb, var(--health-good, #16a34a) 16%, var(--surface-2)); }
 /* Script talk opened from Creator's AI writer dialog: the chat sits above it. */
 .consultant-panel.is-above-modal{ z-index:80; }
 /* Beranda · Jadwal berikutnya: the one place late pieces are listed and moved. */

@@ -1,4 +1,4 @@
-import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, updateSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases } from "../store.js";
+import { getBrand, listContent, getContent, createContent, updateContent as storeUpdateContent, deleteContent, getSettings, updateSettings, onChange, listCampaigns, listSeries, getSeries, STATUS_LABELS, STATUSES, FUNNELS, localISODate, TRASH_DAYS, campaignHasOwnPhases, organicViews } from "../store.js";
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, formatNumber, toast, qs, qsa, wireClickableCards, openMenu, closeMenu } from "../dom.js";
@@ -35,7 +35,7 @@ import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
-import { canUsePosting, editStepVideoHTML, wireEditStepVideo } from "../posting.js";
+import { canUsePosting, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -733,7 +733,9 @@ export function render(root, { brandId, initialContentId }) {
     if (ctx.contentId) {
       state.selectedId = ctx.contentId;
       state.revealEditor = true;
-      state.viewStep = null;
+      // From the Antrean or the Kalender: straight to the video (Edit).
+      state.viewStep = ctx.step && STEP_KEYS.includes(ctx.step) ? ctx.step : null;
+      state.toVideo = ctx.step === "edit";
       state.phoneOpen = true;
       state.arrive = true;
     }
@@ -851,7 +853,10 @@ function paint(root, brandId, state, refresh) {
   const selected = !overview && state.selectedId ? getContent(state.selectedId) : null;
   if (guided && selected) {
     const cur = currentStep(selected);
-    if (state.viewStep && STEP_KEYS.indexOf(state.viewStep) >= STEP_KEYS.indexOf(cur)) state.viewStep = null;
+    // Only an earlier step opens to look back — and, on Wepeka's own
+    // account, Edit (the video) any time, to drop in a cut early.
+    const ahead = STEP_KEYS.indexOf(state.viewStep) >= STEP_KEYS.indexOf(cur);
+    if (state.viewStep && ahead && !(state.viewStep === "edit" && cur !== "edit" && canUsePosting())) state.viewStep = null;
     state.stepChanged = state.stepChanged || (state.lastStep !== null && state.lastStep !== `${selected.id}:${cur}`);
     state.lastStep = `${selected.id}:${cur}`;
   }
@@ -869,7 +874,11 @@ function paint(root, brandId, state, refresh) {
       return;
     }
     state.lastHTML = stable;
+    // The piece's video panel lives on through this repaint: a playing or
+    // paused video stays where it is (js/posting.js mounts it once).
+    const kept = new Map(qsa("[data-pst-mount].is-mounted", root).map((el) => [`${el.dataset.pstMount}:${el.dataset.part}`, el]));
     root.innerHTML = html;
+    qsa("[data-pst-mount]", root).forEach((slot) => { const old = kept.get(`${slot.dataset.pstMount}:${slot.dataset.part}`); if (old) slot.replaceWith(old); });
   } else root.innerHTML = `
     <div class="page-head">
       <div>
@@ -1415,7 +1424,16 @@ function paint(root, brandId, state, refresh) {
       notify(t("cr.notify.toEditing"), t("cr.notify.toEditingBody", { title: selected.title || t("common.untitled") }));
     });
   }
-  wireEditStepVideo(root);
+  wirePostingMounts(root);
+  // Arrived for the video (Antrean, Kalender): the page opens on it, not on
+  // the header above it.
+  if (state.toVideo) {
+    state.toVideo = false;
+    const panel = qs("[data-pst-mount]", root);
+    // Below the top bar and the "Kembali ke …" bar, whichever ends lower.
+    const under = () => Math.max(0, ...[".topbar", ".nav-return"].map((sel) => document.querySelector(sel)?.getBoundingClientRect().bottom || 0));
+    if (panel) setTimeout(() => window.scrollTo({ top: Math.max(0, panel.getBoundingClientRect().top + window.scrollY - under() - 12) }), 60);
+  }
   const markEditedBig = qs("#mark-edited-big", root);
   if (markEditedBig) {
     markEditedBig.addEventListener("click", () => {
@@ -1854,6 +1872,9 @@ function channelFieldsHTML(c) {
       <input class="input" type="date" id="f-schedule" value="${c.scheduleDate || ""}" min="${localISODate()}" />
     </div>`}`;
 }
+// The numbers, big, when a piece is opened after it's out (owner,
+// 2026-11-02: "draft konten kalau dibuka bisa juga lihat ada views").
+const PUB_STATS = ["views", "likes", "comments", "shares", "saves"];
 // After "Selesai": the piece is out — what's left is where it went and how
 // it did. The link and the numbers used to live only in the side drawer and
 // Daftar Konten, with nothing here pointing at them.
@@ -1873,9 +1894,10 @@ function publishedCardHTML(c) {
           <input class="input" id="f-url" placeholder="https://..." value="${escapeHtml(c.publishedUrl || "")}" />
         </div>
       </div>
+      ${has ? `<div class="cr-pub-stats">${PUB_STATS.filter((k) => k === "views" || (p[k] !== null && p[k] !== undefined && p[k] !== "")).map((k) => `<div class="cr-pub-stat${k === "views" ? " is-main" : ""}"><b>${formatNumber((k === "views" ? organicViews(c) : p[k]) ?? 0)}</b><span>${t(`cr.pub.stat.${k}`)}</span></div>`).join("")}</div>` : ""}
       <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:12px;">
         <button type="button" class="btn ${has ? "btn-secondary" : "btn-primary"} btn-sm" id="cr-fill-performance">${icon("chart", { size: 13 })}${has ? t("cr.pub.updatePerf") : t("cr.pub.fillPerf")}</button>
-        <span class="text-faint" style="font-size:12px;">${has ? t("cr.pub.perfSummary", { views: formatNumber(p.views ?? 0), likes: formatNumber(p.likes ?? 0), comments: formatNumber(p.comments ?? 0) }) : t("cr.pub.perfHint")}</span>
+        ${has ? "" : `<span class="text-faint" style="font-size:12px;">${t("cr.pub.perfHint")}</span>`}
       </div>
     </div>`;
 }
@@ -2427,15 +2449,19 @@ function editAppsSimpleHTML() {
     <p class="cw-hint">${icon("bulb", { size: 13 })}<span>${t("cr.editApps.hint")}</span></p>`;
 }
 
-// Wepeka's own account edits with Claude: the step shows the piece's video
-// (Video & posting) instead of the editing-app tips.
+// Wepeka's own account: the step IS the piece's video — every cut, the
+// revision notes, the client, the cover (js/posting.js) — instead of the
+// editing-app tips. One piece, one page (owner, 2026-11-02).
 function editStepHTML(c, { review }) {
   return `
-    ${canUsePosting() ? editStepVideoHTML(c) : editAppsSimpleHTML()}
+    ${canUsePosting() ? postingMountHTML(c, "video") : editAppsSimpleHTML()}
     ${review ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
 }
 
 function uploadStepHTML(c, { review }) {
+  // Wepeka's own account, a piece with a video: day, hour, caption and
+  // "posted" in one place, the same panel as its video.
+  if (canUsePosting() && c.posting?.versions?.length) return postingMountHTML(c, "post");
   const up = c.uploadedPlatforms || {};
   return `
     ${c.thumbnail ? `<img class="thumb-preview" src="${c.thumbnail}" alt="" />` : ""}

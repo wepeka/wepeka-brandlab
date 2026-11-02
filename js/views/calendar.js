@@ -23,7 +23,7 @@ import { mountAiReport } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
 import { createArtSVG } from "../create-art.js";
 import { stageColor, stepOfStatus } from "../stage-colors.js";
-import { postingBadgeHTML, postingDotHTML, postingMenuItemHTML, uploadMenuItemHTML, openPosting, uploadForDate, handleFileDrop, reviewButtonHTML, wirePosting } from "../posting.js";
+import { postingBadgeHTML, postingDotHTML, uploadMenuItemHTML, uploadForDate, handleFileDrop, reviewButtonHTML, wirePosting } from "../posting.js";
 
 // Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
 // episode, date -> series. Only the rest of the visible range from today.
@@ -1244,8 +1244,8 @@ function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
   const rect = anchorEl.getBoundingClientRect();
   const menu = openMenu(anchorEl, { top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 190) });
   if (!menu) return;
+  // One piece, one page: "Edit" opens it in Creator, video included.
   menu.innerHTML = `
-    ${postingMenuItemHTML()}
     <button data-act="edit">${icon("edit", { size: 15 })}${t("common.edit")}</button>
     <button data-act="remove" class="danger">${icon("x", { size: 15 })}${t("calendar.removeFromCalendar")}</button>
   `;
@@ -1253,9 +1253,7 @@ function openCalItemMenu(anchorEl, { brandId, contentId, refresh }) {
     e.stopPropagation();
     const act = e.target.closest("[data-act]")?.dataset.act;
     closeMenu();
-    if (act === "posting") {
-      openPosting({ contentId, onChange: refresh });
-    } else if (act === "edit") {
+    if (act === "edit") {
       openContentEditor({ brandId, contentId, onSaved: refresh });
     } else if (act === "remove") {
       const ok = await confirmDialog({
