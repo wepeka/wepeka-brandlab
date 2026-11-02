@@ -47,7 +47,9 @@ function stageHTML(item) {
   if (v.kind === "set" || v.kind === "image") {
     return `<div class="rv-stage is-photo"><div class="rv-slides">${item.files.map((u) => `<img src="${esc(u)}" alt="" loading="lazy">`).join("")}</div>${item.files.length > 1 ? `<span class="rv-slide-n">1/${item.files.length}</span>` : ""}</div>`;
   }
-  return `<div class="rv-stage"><video src="${esc(item.files[0])}" controls playsinline preload="metadata"></video></div>`;
+  // "#t=0.1" shows the first frame instead of a black box before play (the
+  // fragment never reaches Storage, so the signed URL stays valid).
+  return `<div class="rv-stage"><video src="${esc(item.files[0])}#t=0.1" controls playsinline preload="metadata"></video></div>`;
 }
 
 function cardHTML(item) {
