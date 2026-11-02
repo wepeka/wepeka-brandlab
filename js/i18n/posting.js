@@ -181,6 +181,21 @@ export default {
   "post.ig.linkBad": { en: "That isn't an Instagram post link.", id: "Itu bukan link postingan Instagram." },
   "post.ig.linkSaved": { en: "Instagram link saved.", id: "Link Instagram disimpan." },
 
+  // Send to editor (posting.js editorBlockHTML) — the owner wrote the button in English
+  "post.editor.send": { en: "Send to editor", id: "Send to editor" },
+  "post.editor.msg": { en: "Message for the editor", id: "Pesan buat editor" },
+  "post.editor.msgPh": { en: "Optional, e.g. make the hook faster", id: "Opsional, mis. hook-nya dipercepat" },
+  "post.editor.notes": { en: "Notes that go along", id: "Catatan yang ikut dikirim" },
+  "post.editor.noNotes": { en: "No open notes on this version. Say what to change in the message.", id: "Belum ada catatan terbuka di versi ini. Tulis yang perlu diubah di pesan." },
+  "post.editor.confirm": { en: "Send", id: "Kirim" },
+  "post.editor.empty": { en: "Write a message or tick a note first.", id: "Tulis pesan atau centang catatan dulu." },
+  "post.editor.sent": { en: "Sent to the editor. The next version lands here by itself.", id: "Terkirim ke editor. Versi berikutnya masuk ke sini sendiri." },
+  "post.editor.phoneHint": { en: "Reaches the editor once Video Queue is open in Chrome on the Mac", id: "Masuk ke editor begitu Antrean terbuka di Chrome Mac" },
+  "post.editor.pending": { en: "With the editor · waiting for the revision", id: "Di editor · menunggu revisi" },
+  "post.editor.delivered": { en: "Revision {n} is in", id: "Revisi {n} masuk" },
+  "post.editor.cancel": { en: "Cancel", id: "Batalkan" },
+  "post.editor.cancelled": { en: "Request to the editor cancelled.", id: "Permintaan ke editor dibatalkan." },
+
   "post.code.copy": { en: "Copy the code", id: "Salin kode" },
   "post.code.copied": { en: "{code} copied.", id: "{code} disalin." },
   "post.trial.label": { en: "Trials", id: "Trial" },

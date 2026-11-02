@@ -12,6 +12,7 @@
 //     notes: [{ id, versionId, t, text, at, done }],
 //     time: "19:00",           // WIB, the day is the piece's scheduleDate
 //     ig: { state: "scheduled"|"published"|"failed", at, error, permalink },
+//     editor: { status: "requested"|"done"|"cancelled", requestedAt, version, message, noteIds },  // "Send to editor"
 //   }
 // The files live in the person's OWN Google Drive (js/drive.js), in
 // Brandlab / brand / month / piece folders — Brandlab keeps no copy (owner
@@ -23,7 +24,7 @@ import { listBrands, getBrand, listContent, getContent, createContent, updateCon
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
-import { syncOutbox, versionIdOf, FORMAT_OF } from "./outbox-sync.js";
+import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex, noteForEditor, writeEditorQueue } from "./outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter } from "./video-codes.js";
 import { outboxFile } from "./outbox.js";
 import { brandReviewLink, sendToClient, cleanPreviews, reviewURL } from "./review-share.js";
@@ -85,8 +86,11 @@ export function decisionsFor(c) {
     final: fileOf(p.finalId),
     versions: p.versions.map((v) => ({ file: v.local?.file || v.name || "", status: v.status })),
     // id: put it in post.json "done" once fixed. from: "winson" or "klien".
-    notes: (p.notes || []).map((n) => ({ id: n.id, file: fileOf(n.versionId), at: clock(n.t), seconds: n.t, text: n.text, done: !!n.done, from: n.by === "client" ? "klien" : "winson", ...(n.name ? { name: n.name } : {}) })),
+    notes: (p.notes || []).map((n) => noteForEditor(p, n)),
     client: p.client ? { file: fileOf(p.client.versionId), status: p.client.status, name: p.client.name || "" } : null,
+    // "Send to editor": { status, requestedAt, version, message, noteIds } — the same
+    // request permintaan-editor.json lists while it is "requested".
+    editor: p.editor || null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -107,7 +111,9 @@ function writeBackChanged() {
     for (const c of listContent(b.id)) {
       if (!c.posting?.local?.key) continue;
       const { updatedAt, ...data } = decisionsFor(c);
-      if (!written.has(c.id)) { written.set(c.id, JSON.stringify(data)); continue; } // as it was when this tab started
+      // As it was when this tab started — except a request for the editor
+      // sent from the phone, which the folder may not have yet.
+      if (!written.has(c.id) && c.posting.editor?.status !== "requested") { written.set(c.id, JSON.stringify(data)); continue; }
       if (written.get(c.id) !== JSON.stringify(data)) writeBack(c.id);
     }
   }
@@ -162,6 +168,7 @@ function writeIndexSoon() {
   indexTimer = setTimeout(() => {
     if (!OUT.connected || !canUsePosting()) return;
     writeBackChanged();
+    writeEditorQueue();
     const data = videoIndex();
     const sig = JSON.stringify(data);
     if (sig === lastIndex) return;
@@ -294,6 +301,84 @@ export const versionLabelOf = (v) => (v ? versionLabel(v) : "");
 export const latestVersion = (c) => latestOf(postingOf(c));
 export const stateColor = (key) => STATE_COLOR[key];
 export const stateLabelOf = (c) => stateLabel(c);
+
+// ---------------------------------------------------------------- editor
+// "Send to editor" (owner, 2026-11-02): his notes on the newest cut go to
+// Claude, who edits the piece and drops the next version in the Mac folder.
+// Stored as posting.editor = { status: "requested"|"done"|"cancelled",
+// requestedAt, version, message, noteIds, doneAt|cancelledAt }; Claude reads
+// it from permintaan-editor.json and brandlab.json (js/outbox-sync.js).
+// Only his account ever sees any of it — checked here again, on its own.
+const EDITOR_COLOR = { pending: "#FF2E93", delivered: "#3B9BFF" };
+
+// The chip for the drawer and the gallery tile, in place of the state:
+// waiting at the editor, then "Revisi N masuk" until that cut is decided.
+export function editorChip(c) {
+  if (!canUsePosting()) return null;
+  const p = postingOf(c);
+  const ed = p.editor;
+  if (ed?.status === "requested") return { key: "pending", label: t("post.editor.pending"), color: EDITOR_COLOR.pending, icon: "clock" };
+  const last = latestOf(p);
+  if (ed?.status === "done" && last?.status === "pending" && p.versions.indexOf(last) > editorVersionIndex(p.versions, ed.version)) {
+    return { key: "delivered", label: t("post.editor.delivered", { n: last.n }), color: EDITOR_COLOR.delivered, icon: "check" };
+  }
+  return null;
+}
+
+const openNotesOf = (p, v) => (p.notes || []).filter((n) => n.versionId === v.id && !n.done).sort((a, b) => a.t - b.t);
+
+// Under the newest cut's notes: the button, its small form (a message, the
+// open notes ticked), or — once sent — where it stands and "Batalkan".
+// Only for cuts in the Mac folder, which is where Claude delivers.
+export function editorBlockHTML(c, ui = {}) {
+  if (!canUsePosting() || !c) return "";
+  const p = postingOf(c);
+  const last = latestOf(p);
+  if (!p.local?.key || !last?.local || postingState(c) === "published") return "";
+  if (p.editor?.status === "requested") {
+    return `<div class="pst-editor">
+        <span class="pst-badge" style="--pst:${EDITOR_COLOR.pending}">${icon("clock", { size: 11 })}${t("post.editor.pending")}</span>
+        <button type="button" class="pst-link" id="pst-ed-undo">${t("post.editor.cancel")}</button>
+        ${OUT.connected ? "" : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.editor.phoneHint")}</p>`}
+      </div>`;
+  }
+  const send = (key, id) => `<button type="button" class="cl-cta pst-cta" id="${id}"><span>${t(key)}</span><span class="cl-cta-dot pst-dot-editor">${icon("send", { size: 16 })}</span></button>`;
+  if (!ui.editorOpen) return `<div class="pst-editor">${send("post.editor.send", "pst-ed-open")}</div>`;
+  const draft = ui.edDraft || { msg: "", off: [] };
+  const open = openNotesOf(p, last);
+  return `<div class="pst-editor-form">
+      <label class="pst-sub" for="pst-ed-msg">${t("post.editor.msg")}</label>
+      <textarea class="textarea" id="pst-ed-msg" rows="2" placeholder="${escapeHtml(t("post.editor.msgPh"))}">${escapeHtml(draft.msg)}</textarea>
+      ${open.length ? `<span class="pst-sub">${t("post.editor.notes")}</span>
+      <div class="pst-ed-notes">${open.map((n) => `<label class="pst-ed-note"><input type="checkbox" data-ed-note="${escapeHtml(n.id)}" ${draft.off.includes(n.id) ? "" : "checked"}><b>${clock(n.t)}</b><span>${escapeHtml(n.text)}</span></label>`).join("")}</div>`
+        : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.editor.noNotes")}</p>`}
+      <div class="pst-decide">${send("post.editor.confirm", "pst-ed-send")}<button type="button" class="btn btn-ghost btn-sm" id="pst-ed-close">${t("common.cancel")}</button></div>
+    </div>`;
+}
+
+// Saved like every other decision (Firestore, brandlab.json through the
+// drawer's repaint) and listed for Claude at once when the folder is here;
+// from the phone, the Mac lists it on its next look at the folder.
+function sendToEditor(contentId, { message, noteIds }) {
+  const p = postingOf(getContent(contentId));
+  const last = latestOf(p);
+  if (!canUsePosting() || !p.local?.key || !last?.local) return false;
+  const editor = { status: "requested", requestedAt: new Date().toISOString(), version: editorVersionOf(last), message, noteIds };
+  // Asking for a new cut is asking for changes: an unchecked cut stops waiting in "Perlu dicek".
+  const versions = p.versions.map((x) => (x.id === last.id && x.status === "pending" ? { ...x, status: "revision" } : x));
+  updateContent(contentId, { posting: { ...p, versions, editor } });
+  writeEditorQueue();
+  toast(t(OUT.connected ? "post.editor.sent" : "post.editor.phoneHint"));
+  return true;
+}
+
+function cancelEditor(contentId) {
+  const p = postingOf(getContent(contentId));
+  if (!canUsePosting() || p.editor?.status !== "requested") return;
+  updateContent(contentId, { posting: { ...p, editor: { ...p.editor, status: "cancelled", cancelledAt: new Date().toISOString() } } });
+  writeEditorQueue();
+  toast(t("post.editor.cancelled"));
+}
 
 // One decision on one cut — the review mode's buttons. Same rules as the
 // drawer: approving makes it the cut that gets posted; asking for changes
@@ -658,7 +743,7 @@ export function openPosting({ contentId, onChange }) {
   uploadWatchers.add(watch);
   // A decision from elsewhere (the client's link, Claude's next cut, another
   // device) shows up in the open drawer — unless the person is typing.
-  const sig = () => { const p = postingOf(getContent(contentId)); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId]); };
+  const sig = () => { const p = postingOf(getContent(contentId)); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId, p.editor?.status]); };
   let seen = sig();
   const offStore = onStoreChange(() => {
     if (!overlay.isConnected) { offStore(); return; }
@@ -702,13 +787,14 @@ function paint(root, contentId, ui, repaint) {
   const isVideo = !!v && (!v.local || v.kind === "video");
   if (!isVideo) ui.compare = false;
   const code = videoCode(c);
+  const ed = editorChip(c);
 
   root.innerHTML = `
     <header class="pst-head">
       <div class="pst-head-text">
         ${code ? `<button type="button" class="pst-code" data-copy-code="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}${icon("copy", { size: 12 })}</button>` : ""}
         <h3>${escapeHtml(c.title || t("common.untitled"))}</h3>
-        <div class="pst-head-meta">${icon("calendar", { size: 12 })}${escapeHtml(dayLabel(c.scheduleDate) || t("pq.noDate"))}${p.time ? ` · ${escapeHtml(p.time)}` : ""}<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span></div>
+        <div class="pst-head-meta">${icon("calendar", { size: 12 })}${escapeHtml(dayLabel(c.scheduleDate) || t("pq.noDate"))}${p.time ? ` · ${escapeHtml(p.time)}` : ""}${ed ? `<span class="pst-badge is-editor" style="--pst:${ed.color}">${icon(ed.icon, { size: 11 })}${escapeHtml(ed.label)}</span>` : `<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span>`}</div>
       </div>
     </header>
     ${trialsHTML(c)}
@@ -742,7 +828,7 @@ function paint(root, contentId, ui, repaint) {
         </div>`}
     </section>
 
-    ${v ? decideHTML(p, v, prev, ui) : ""}
+    ${v ? decideHTML(p, v, prev, ui, v.id === latestOf(p).id ? editorBlockHTML(c, ui) : "") : ""}
     ${v ? clientHTML(c, p, v, key) : ""}
     ${postHTML(c, p, key, handle)}
   `;
@@ -854,7 +940,7 @@ function whereHTML(brand, c, v) {
   return `<p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.drive.where")}</b> ${driveFolderPath(brand, c).map(escapeHtml).join(" › ")}</span>${v.drive.link ? `<a href="${escapeHtml(v.drive.link)}" target="_blank" rel="noopener">${t("post.drive.open")}</a>` : ""}</p>`;
 }
 
-function decideHTML(p, v, prev, ui) {
+function decideHTML(p, v, prev, ui, editor = "") {
   const label = versionLabel(v);
   const mine = p.notes.filter((n) => n.versionId === v.id).sort((a, b) => a.t - b.t);
   // The last cut's notes still open, and the ones Claude says this cut fixed.
@@ -887,6 +973,7 @@ function decideHTML(p, v, prev, ui) {
           <label class="pst-sub" for="pst-note-text">${t("post.note.label")}</label>
           <div class="pst-note-row"><input class="input" id="pst-note-text" placeholder="${escapeHtml(t("post.note.ph"))}"><button type="button" class="btn btn-primary btn-sm" id="pst-note-send">${t("post.note.send", { time: clock(ui.t) })}</button></div>
         </div>` : ""}
+      ${editor}
     </section>`;
 }
 
@@ -1165,6 +1252,32 @@ function wire(root, contentId, ui, repaint) {
     save({ notes: postingOf(getContent(contentId)).notes.map((n) => (n.id === box.dataset.note ? { ...n, done: box.checked } : n)) });
     repaint();
   }));
+
+  // Send to editor: the form keeps what's typed and unticked across repaints.
+  qs("#pst-ed-open", root)?.addEventListener("click", () => {
+    ui.editorOpen = true;
+    ui.edDraft = { msg: "", off: [] };
+    paint(root, contentId, ui, repaint);
+    setTimeout(() => qs("#pst-ed-msg", root)?.focus(), 30);
+  });
+  qs("#pst-ed-close", root)?.addEventListener("click", () => { ui.editorOpen = false; paint(root, contentId, ui, repaint); });
+  qs("#pst-ed-msg", root)?.addEventListener("input", (e) => { ui.edDraft.msg = e.target.value; });
+  qsa("[data-ed-note]", root).forEach((box) => box.addEventListener("change", () => {
+    const off = new Set(ui.edDraft.off);
+    if (box.checked) off.delete(box.dataset.edNote);
+    else off.add(box.dataset.edNote);
+    ui.edDraft.off = [...off];
+  }));
+  qs("#pst-ed-send", root)?.addEventListener("click", () => {
+    const message = qs("#pst-ed-msg", root)?.value.trim() || "";
+    const noteIds = qsa("[data-ed-note]", root).filter((b) => b.checked).map((b) => b.dataset.edNote);
+    if (!message && !noteIds.length) { toast(t("post.editor.empty"), "error"); qs("#pst-ed-msg", root)?.focus(); return; }
+    if (!sendToEditor(contentId, { message, noteIds })) return;
+    ui.editorOpen = false;
+    ui.edDraft = null;
+    repaint();
+  });
+  qs("#pst-ed-undo", root)?.addEventListener("click", () => { cancelEditor(contentId); repaint(); });
 
   const cap = qs("#pst-caption", root);
   cap?.addEventListener("input", () => { qs("#pst-count", root).textContent = `${cap.value.length}/2200`; });

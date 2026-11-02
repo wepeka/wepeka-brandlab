@@ -202,6 +202,19 @@
 .pst-client-ic{ display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background: color-mix(in srgb, #2EC4B6 22%, transparent); color: color-mix(in srgb, #2EC4B6 70%, var(--text)); }
 .pst-client-line{ margin:0; font-size:13.5px; line-height:1.5; color: var(--text-muted); }
 .pst-dot-client{ background: linear-gradient(135deg, #2EC4B6, #3B9BFF); color:#fff; }
+/* "Send to editor": under the newest cut's notes, owner only. */
+.pst-editor{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); }
+.pst-editor .pst-badge{ align-self:center; }
+.pst-editor .pst-link{ align-self:center; }
+.pst-editor .pst-hint{ flex-basis:100%; }
+.pst-editor-form{ display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:16px; background: color-mix(in srgb, #FF2E93 8%, var(--surface-2)); }
+.pst-editor-form .textarea{ min-height:0; resize:vertical; }
+.pst-ed-notes{ display:flex; flex-direction:column; gap:6px; }
+.pst-ed-note{ display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border-radius:12px; background: var(--surface); font-size:13px; cursor:pointer; }
+.pst-ed-note input{ flex:none; margin-top:2px; accent-color:#FF2E93; }
+.pst-ed-note b{ flex:none; font-variant-numeric: tabular-nums; }
+.pst-ed-note span{ flex:1; min-width:0; overflow-wrap:anywhere; }
+.pst-dot-editor{ background: linear-gradient(135deg, #FF2E93, #A974FF); color:#fff; }
 .pst-ig-link{ margin:0; }
 .pst-switch{ display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:14px; background: var(--surface-2); cursor:pointer; }
 .pst-switch input{ margin-top:3px; width:16px; height:16px; accent-color:#A974FF; }

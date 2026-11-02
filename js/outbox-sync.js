@@ -5,8 +5,11 @@
 // ever removed because a file went away. A folder named with a piece's code
 // ("KP-12 …", js/video-codes.js) joins that piece from Creator instead of
 // making a new one; "KP-12C …" with no such trial yet makes trial C of KP-12.
+// "Send to editor" (posting.editor) rides along: every sync rewrites the
+// queue for Claude (permintaan-editor.json) and closes a request once a
+// newer cut is in the folder.
 import { listBrands, listContent, createContent, updateContent } from "./store.js";
-import { scanOutbox } from "./outbox.js";
+import { scanOutbox, outboxState, writeRootFile } from "./outbox.js";
 import { ensureCodes, videoCode, parseCode, trialFields } from "./video-codes.js";
 
 export const FORMAT_OF = { reels: "Reels", carousel: "Carousel", foto: "Static Post", story: "Story" };
@@ -37,6 +40,58 @@ export function pickBrand(folderName, brandId) {
 export const versionIdOf = (file) => `l-${Array.from(file).reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36)}`;
 
 const toVersion = (v, n, changes = {}) => ({ id: versionIdOf(v.file), n, status: "pending", at: Date.now(), by: "editor", kind: v.kind, local: { file: v.file, ...(v.slides ? { slides: v.slides } : {}) }, ...(changes[v.file] ? { changeNote: changes[v.file] } : {}) });
+
+// ---- Send to editor ------------------------------------------------------------
+// A version as the editor request names it: the file ("v2.mp4", "01.jpg"),
+// or a carousel's folder with a slash ("v2/"); "slides" = the images loose
+// in the post folder itself.
+export const editorVersionOf = (v) => (!v?.local ? "" : v.kind === "set" && v.local.file !== "slides" ? `${v.local.file}/` : v.local.file);
+// Where in the list of cuts the requested one sits (-1: not there anymore).
+export const editorVersionIndex = (versions, version) => versions.findIndex((v) => v.local?.file === String(version || "").replace(/\/$/, ""));
+
+// A note as Claude reads it (brandlab.json, permintaan-editor.json): the
+// file and second it is about, who wrote it. id goes into post.json "done".
+const clock = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, "0")}`;
+export function noteForEditor(p, n) {
+  const file = (p.versions || []).find((v) => v.id === n.versionId)?.local?.file || "";
+  return { id: n.id, file, at: clock(n.t), seconds: n.t, text: n.text, done: !!n.done, from: n.by === "client" ? "klien" : "winson", ...(n.name ? { name: n.name } : {}) };
+}
+
+// permintaan-editor.json: every piece, across brands, sent to the editor and
+// not delivered yet. entries = [{ c, brand: "Kopi Pagi", code: "KP-12" }].
+export function editorQueue(entries) {
+  return {
+    requests: entries.filter(({ c }) => c.posting?.editor?.status === "requested").map(({ c, brand, code }) => {
+      const p = { versions: [], notes: [], ...c.posting };
+      const ed = p.editor;
+      const ids = Array.isArray(ed.noteIds) ? ed.noteIds : [];
+      return {
+        code: code || "", brand: brand || "", folder: p.local?.key || "", type: p.type || "reels",
+        version: ed.version || "", message: ed.message || "", noteIds: ids,
+        notes: ids.map((id) => (p.notes || []).find((n) => n.id === id)).filter(Boolean).map((n) => noteForEditor(p, n)),
+        requestedAt: ed.requestedAt || "",
+      };
+    }).sort((a, b) => a.requestedAt.localeCompare(b.requestedAt)),
+  };
+}
+
+// Written at the top of the folder whenever the list changes — after every
+// sync, so a request sent from the phone reaches Claude the next time the
+// Antrean (or the Kalender) is open in Chrome on the Mac.
+let lastQueue = "";
+export async function writeEditorQueue() {
+  if (!outboxState().connected) return;
+  const data = editorQueue(listBrands().flatMap((b) => listContent(b.id).filter((c) => c.posting?.editor?.status === "requested").map((c) => ({ c, brand: b.name, code: videoCode(c) }))));
+  const sig = JSON.stringify(data);
+  if (sig === lastQueue) return;
+  lastQueue = sig;
+  try {
+    await writeRootFile("permintaan-editor.json", JSON.stringify({ updatedAt: new Date().toISOString(), ...data }, null, 2));
+  } catch (e) {
+    lastQueue = "";
+    console.warn("[outbox] permintaan-editor.json not written", e);
+  }
+}
 
 // The pure part: what to create and what to update for these posts.
 // find = { byKey(folder key), byCode("KP-12") } — or one function for byKey.
@@ -82,10 +137,15 @@ export function planSync(posts, brands, find, picks = {}) {
     const changes = post.changes || {};
     const noteChanged = p.versions.some((v) => changes[v.local?.file] && changes[v.local.file] !== v.changeNote);
     const fixed = new Set((post.done || []).filter((id) => (p.notes || []).some((n) => n.id === id && !n.done)));
-    if (!linking && !fresh.length && !coversChanged && !noteChanged && !fixed.size && (c.caption || !post.caption)) continue;
+    // Sent to the editor and a newer cut is in the folder: Claude delivered.
+    const cuts = [...p.versions, ...fresh.map((v) => ({ local: { file: v.file } }))];
+    const asked = p.editor?.status === "requested" ? editorVersionIndex(cuts, p.editor.version) : null;
+    const delivered = asked !== null && (asked >= 0 ? asked < cuts.length - 1 : fresh.length > 0);
+    if (!linking && !fresh.length && !coversChanged && !noteChanged && !fixed.size && !delivered && (c.caption || !post.caption)) continue;
     const versions = p.versions.map((v) => (changes[v.local?.file] && changes[v.local.file] !== v.changeNote ? { ...v, changeNote: changes[v.local.file] } : v));
     const patch = { posting: { ...p, versions: [...versions, ...fresh.map((v, i) => toVersion(v, p.versions.length + i, changes))], covers: post.covers, cover: p.cover || post.covers[0] || "" } };
     if (fixed.size) patch.posting.notes = p.notes.map((n) => (fixed.has(n.id) ? { ...n, done: true, doneBy: "editor" } : n));
+    if (delivered) patch.posting.editor = { ...p.editor, status: "done", doneAt: new Date().toISOString() };
     // A piece from Creator meets its folder for the first time.
     if (linking) Object.assign(patch.posting, { local: { key: post.key }, type: p.type || post.type, time: p.time || post.time || "" });
     if (linking && post.type && !c.format) patch.format = FORMAT_OF[post.type];
@@ -114,6 +174,7 @@ export function syncOutbox() {
     plan.create.forEach(({ brandId, data }) => createContent(brandId, data));
     plan.update.forEach(({ id, patch }) => updateContent(id, patch));
     if (plan.create.length) ensureCodes();
+    await writeEditorQueue();
     return { created: plan.create.length, added: plan.update.reduce((n, u) => n + u.added, 0), unmatched: plan.unmatched, posts: posts.length };
   })().finally(() => { running = null; });
   return running;

@@ -105,3 +105,42 @@ test("Claude's side of a revision: what changed in a cut, and which notes it fix
   const after = { ...existing, posting: p };
   assert.equal(planSync([post], brands, () => after).update.length, 0);
 });
+
+test("Send to editor: a newer cut in the folder closes the request; the queue lists only open ones", async () => {
+  const { editorQueue, editorVersionOf } = await import("../js/outbox-sync.js");
+  const brands = [{ id: "a", name: "Kopi Pagi" }];
+  const v1 = { id: versionIdOf("v1.mp4"), n: 0, status: "revision", kind: "video", local: { file: "v1.mp4" } };
+  const editor = { status: "requested", requestedAt: "2026-11-02T10:00:00.000Z", version: "v1.mp4", message: "Hook lebih cepat", noteIds: ["n1"] };
+  const existing = { id: "c1", caption: "x", status: "editing", posting: {
+    local: { key: "Kopi Pagi/KP-1 Judul" }, type: "reels", covers: [], versions: [v1], editor,
+    notes: [{ id: "n1", versionId: v1.id, t: 12, text: "Logo kepotong", done: false, by: "client", name: "Bu Rina" }, { id: "n2", versionId: v1.id, t: 3, text: "Musik", done: false }],
+  } };
+  const post = { key: "Kopi Pagi/KP-1 Judul", brand: "Kopi Pagi", covers: [], caption: "", type: "reels", changes: {}, done: [], versions: [{ file: "v1.mp4", kind: "video" }] };
+  assert.equal(planSync([post], brands, () => existing).update.length, 0, "the same cut: still waiting");
+
+  const withV2 = { ...post, versions: [...post.versions, { file: "v2.mp4", kind: "video" }], changes: { "v2.mp4": "Hook dipercepat" }, done: ["n1"] };
+  const p = planSync([withV2], brands, () => existing).update[0].patch.posting;
+  assert.equal(p.editor.status, "done");
+  assert.match(p.editor.doneAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(p.editor.message, "Hook lebih cepat", "the request itself stays as sent");
+  assert.deepEqual(p.notes.map((n) => [n.id, n.done]), [["n1", true], ["n2", false]], "post.json done still ticks the fixed notes");
+  // The new cut came in before this sync saw the request (another tab): closed all the same.
+  const already = { ...existing, posting: { ...existing.posting, versions: [v1, { id: versionIdOf("v2.mp4"), n: 1, status: "pending", local: { file: "v2.mp4" } }] } };
+  assert.equal(planSync([withV2], brands, () => already).update[0].patch.posting.editor.status, "done");
+  // A carousel asks for "v1/"; its folder v2/ answers.
+  const set = (dir) => ({ file: dir, kind: "set", slides: ["01.jpg"] });
+  const car = { ...existing, posting: { ...existing.posting, type: "carousel", versions: [{ id: versionIdOf("v1"), n: 0, status: "revision", kind: "set", local: { file: "v1", slides: ["01.jpg"] } }], editor: { ...editor, version: editorVersionOf({ kind: "set", local: { file: "v1" } }) } } };
+  assert.equal(car.posting.editor.version, "v1/");
+  assert.equal(planSync([{ ...post, type: "carousel", versions: [set("v1")] }], brands, () => car).update.length, 0);
+  assert.equal(planSync([{ ...post, type: "carousel", versions: [set("v1"), set("v2")] }], brands, () => car).update[0].patch.posting.editor.status, "done");
+  assert.equal(editorVersionOf({ kind: "set", local: { file: "slides" } }), "slides");
+  assert.equal(editorVersionOf({ kind: "image", local: { file: "01.jpg" } }), "01.jpg");
+
+  const cancelled = { posting: { ...existing.posting, local: { key: "Kopi Pagi/KP-2 Lain" }, editor: { ...editor, status: "cancelled" } } };
+  const q = editorQueue([{ c: existing, brand: "Kopi Pagi", code: "KP-1" }, { c: cancelled, brand: "Kopi Pagi", code: "KP-2" }]);
+  assert.deepEqual(q, { requests: [{
+    code: "KP-1", brand: "Kopi Pagi", folder: "Kopi Pagi/KP-1 Judul", type: "reels", version: "v1.mp4", message: "Hook lebih cepat", noteIds: ["n1"],
+    notes: [{ id: "n1", file: "v1.mp4", at: "0:12", seconds: 12, text: "Logo kepotong", done: false, from: "klien", name: "Bu Rina" }],
+    requestedAt: "2026-11-02T10:00:00.000Z",
+  }] });
+});

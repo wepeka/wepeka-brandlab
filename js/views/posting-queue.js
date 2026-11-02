@@ -14,7 +14,7 @@ import { qs, qsa, escapeHtml } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode } from "../posting.js";
+import { canUsePosting, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece } from "../video-codes.js";
@@ -69,11 +69,13 @@ function tileHTML({ c, state, sub }) {
   const code = videoCode(c);
   const time = c.posting?.time;
   const empty = state === "none";
+  // At the editor (Claude), or its revision just in: said instead of the state.
+  const ed = editorChip(c);
   return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
         <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon("upload", { size: 22 })}<small>${t("post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
         ${n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
-        ${empty ? "" : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
+        ${empty ? "" : ed ? `<span class="pq-g-state is-editor" style="--pst:${ed.color}"><i></i>${escapeHtml(ed.label)}</span>` : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
       </button>
       ${code ? `<button type="button" class="pq-g-code" data-copy="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}</button>` : ""}
       <div class="pq-g-info">
