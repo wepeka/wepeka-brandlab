@@ -1,8 +1,8 @@
 // Runs Instagram posting jobs (api/_igPost.js) against Firestore + Storage:
 // shared by the owner's "Posting sekarang" request and the minute cron.
-import { accountFor, step, graphClient, SIGNED_FOR } from "./_igPost.js";
+import { accountFor, facebookFor, step, graphClient, fbClient, SIGNED_FOR } from "./_igPost.js";
 
-export const LIVE = ["waiting", "children", "container", "publishing"];
+export const LIVE = ["waiting", "children", "container", "publishing", "facebook"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // What a job's end writes on the piece: its Instagram state, and once it's
@@ -15,8 +15,8 @@ async function writePiece(db, contentId, piece) {
     if (!snap.exists) return [];
     const c = snap.data();
     const p = c.posting || {};
-    const posted = piece.ig.state === "published";
-    const patch = { posting: { ...p, ig: piece.ig, ...(posted ? { previews: {} } : {}) }, updatedAt: Date.now() };
+    const posted = piece.ig?.state === "published";
+    const patch = { posting: { ...p, ...(piece.ig ? { ig: piece.ig } : {}), ...(piece.fb ? { fb: piece.fb } : {}), ...(posted ? { previews: {} } : {}) }, updatedAt: Date.now() };
     if (posted) Object.assign(patch, { status: "published", publishedDate: piece.publishedDate, ...(piece.permalink ? { publishedUrl: piece.permalink } : {}) });
     tx.update(ref, patch);
     return posted ? Object.values(p.previews || {}).flatMap((pv) => pv.paths || []) : [];
@@ -35,9 +35,12 @@ export async function runJob(db, bucket, contentId, { budgetMs = 0 } = {}) {
     const job = snap.data();
     if (!LIVE.includes(job.state)) return job.state;
     const [cSnap, bSnap] = await Promise.all([db.collection("content").doc(contentId).get(), db.collection("brands").where("ownerId", "==", job.ownerId).get()]);
-    const account = accountFor(bSnap.docs.map((d) => ({ id: d.id, ...d.data() })), job.brandId);
+    const brands = bSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const account = accountFor(brands, job.brandId);
     const graph = account ? graphClient(account.token) : null;
-    let out = await step(job, { graph, sign, caption: cSnap.data()?.caption || "", account, now: Date.now() });
+    const page = job.fb ? facebookFor(brands, job.brandId, account) : null;
+    const fbGraph = page ? fbClient(page.token) : null;
+    let out = await step(job, { graph, sign, caption: cSnap.data()?.caption || "", account, fbGraph, page, now: Date.now() });
     if (out.job) await ref.update(out.job);
     if (out.next) {
       out = await out.next().catch((e) => ({ job: { state: "failed", error: String(e.ig?.message || e.message || "error").slice(0, 300), updatedAt: Date.now() }, piece: { ig: { state: "failed", error: String(e.ig?.message || e.message || "error").slice(0, 300), auto: true } } }));

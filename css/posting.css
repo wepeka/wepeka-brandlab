@@ -176,6 +176,20 @@
 .pst-live small{ font-size:12.5px; line-height:1.45; color: var(--text-muted); overflow-wrap:anywhere; }
 .pst-live-ic{ flex:none; display:grid; place-items:center; width:38px; height:38px; border-radius:50%; background:#FFC83D; color: var(--ink); }
 .pst-live.is-pub .pst-live-ic{ background:#36D27F; }
+/* The Facebook Page under the Instagram status (2026-11-07). */
+.pst-fb{ display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:14px; background: var(--surface-2); }
+.pst-fb > div{ flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.pst-fb b{ font-size:13.5px; }
+.pst-fb small{ font-size:12px; line-height:1.45; color: var(--text-muted); overflow-wrap:anywhere; }
+.pst-fb-ic{ flex:none; display:grid; place-items:center; width:30px; height:30px; border-radius:50%; background:#1877F2; color:#fff; }
+.pst-fb.is-going{ background: color-mix(in srgb, #1877F2 10%, var(--surface-2)); }
+.pst-fb.is-pub{ background: color-mix(in srgb, #36D27F 14%, var(--surface-2)); }
+.pst-fb.is-fail{ background: color-mix(in srgb, #FF5F57 14%, var(--surface-2)); }
+.pst-fb.is-off .pst-fb-ic{ background: var(--surface-3, #8a8f98); }
+.pst-fb .btn{ flex:none; }
+.pst-fb-switch b{ display:inline-flex; align-items:center; gap:6px; }
+.pst-fb-switch b svg{ color:#1877F2; }
+@media (max-width: 560px){ .pst-fb{ flex-wrap:wrap; } .pst-fb .btn{ width:100%; } }
 .pst-live.is-fail .pst-live-ic{ background:#FF5F57; }
 .pst-post > .btn{ align-self:flex-start; }
 

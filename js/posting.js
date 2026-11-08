@@ -12,6 +12,7 @@
 //     notes: [{ id, versionId, t, text, at, done }],
 //     time: "19:00",           // WIB, the day is the piece's scheduleDate
 //     ig: { state: "scheduled"|"published"|"failed", at, error, permalink },
+//     fb: { state: "scheduled"|"waiting"|"sent"|"done"|"failed"|"skipped", page, permalink, error },  // the brand's Facebook Page, after Instagram
 //     editor: { status: "requested"|"done"|"cancelled", requestedAt, version, message, noteIds },  // "Send to editor"
 //     thumb: { status: "requested"|"done"|"cancelled", requestedAt, version, at, message, had, file },  // "Ask editor to make thumbnail"
 //   }
@@ -21,7 +22,7 @@
 // Scheduling still only marks the piece until the server worker exists; that
 // worker will copy the final cut to a short-lived spot for Instagram to
 // fetch (.claude/social-hub/ARSITEKTUR.md).
-import { listBrands, getBrand, listContent, getContent, createContent, updateContent, localISODate, onChange as onStoreChange } from "./store.js";
+import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, localISODate, onChange as onStoreChange } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
@@ -29,7 +30,7 @@ import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter } from "./video-codes.js";
 import { outboxFile } from "./outbox.js";
 import { brandReviewLink, sendToClient, cleanPreviews, reviewURL } from "./review-share.js";
-import { postToInstagram, cancelInstagramPost } from "./ig-post.js";
+import { postToInstagram, shareToFacebook, cancelInstagramPost } from "./ig-post.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "./dom.js";
 import { confirmDialog } from "./modals.js";
@@ -777,6 +778,21 @@ const igHandleOf = (brand) => {
   return other ? String(other.instagram.username).replace(/^@/, "") : "";
 };
 
+// The Facebook Page a post is also shared to (owner, 2026-11-07: "tiap aku
+// upload via brandlab … link ke facebook juga") — same rule as
+// api/_igPost.js facebookFor: the brand's own Page, or the one on the
+// owner's brand that holds the same Instagram. The switch is remembered per
+// brand (brand.shareFacebook, on unless turned off).
+const handleKey = (x) => String(x || "").replace(/^@/, "").trim().toLowerCase();
+export const fbPageOf = (brand) => {
+  if (!brand) return null;
+  const ok = (b) => (b?.facebook?.pageAccessToken && b.facebook.pageId ? { name: b.facebook.pageName || "Facebook", brandId: b.id } : null);
+  if (ok(brand)) return ok(brand);
+  const names = [brand.name, brand.instagram?.username, igHandleOf(brand)].map(handleKey).filter(Boolean);
+  return ok(listBrands().find((b) => b.id !== brand.id && b.ownerId === brand.ownerId && ok(b) && names.includes(handleKey(b.instagram?.username))));
+};
+const shareFb = (brand) => !!fbPageOf(brand) && brand.shareFacebook !== false;
+
 // One piece = one page (owner, 2026-11-02: "terlalu banyak dan redundant …
 // enaknya diapakan"): the video, its revisions and its posting live on the
 // piece's own page in Creator — the Edit step holds the video, the Upload
@@ -830,7 +846,7 @@ function mountPosting(root, { contentId, part = "video", onChange } = {}) {
   uploadWatchers.add(watch);
   // A decision from elsewhere (the client's link, Claude's next cut, another
   // device) shows up here — unless the person is typing.
-  const sig = () => { const c = getContent(contentId); const p = postingOf(c); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.finalId, p.editor?.status, p.thumb?.status, p.cover, (p.covers || []).length, p.time, c?.scheduleDate, c?.caption]); };
+  const sig = () => { const c = getContent(contentId); const p = postingOf(c); return JSON.stringify([p.client, p.versions.map((v) => [v.id, v.status, v.changeNote]), (p.notes || []).map((n) => [n.id, n.done]), p.ig?.state, p.ig?.permalink, p.fb?.state, p.fb?.permalink, p.finalId, p.editor?.status, p.thumb?.status, p.cover, (p.covers || []).length, p.time, c?.scheduleDate, c?.caption]); };
   let seen = sig();
   const offStore = onStoreChange(() => {
     if (!root.isConnected) { offStore(); return; }
@@ -1195,18 +1211,36 @@ const igLinkFieldHTML = (value = "") => `<div class="field pst-ig-link"><label f
 // Uploads to Instagram running in this tab, by piece: { pct }.
 const POSTING = new Map();
 
+// The Facebook side of a piece, under its Instagram status.
+function fbHTML(c, p, key) {
+  const page = fbPageOf(getBrand(c.brandId));
+  const fb = p.fb || null;
+  const name = escapeHtml(fb?.page || page?.name || "Facebook");
+  const row = (cls, title, body = "", action = "") => `<div class="pst-fb ${cls}"><span class="pst-fb-ic">${icon("facebook", { size: 16 })}</span><div><b>${title}</b>${body ? `<small>${body}</small>` : ""}</div>${action}</div>`;
+  const send = (label) => (autoPost(c) && page ? `<button type="button" class="btn btn-secondary btn-sm" id="pst-fb-send">${label}</button>` : "");
+  if (key === "scheduled") return fb?.state === "scheduled" ? row("", t("post.fb.with", { page: name })) : "";
+  if (key !== "published") return "";
+  if (!fb) return page && autoPost(c) ? row("is-off", t("post.fb.notShared", { page: escapeHtml(page.name) }), "", send(t("post.fb.send"))) : "";
+  if (fb.state === "waiting" || fb.state === "sent" || fb.state === "scheduled") return row("is-going", t("post.fb.going"), t("post.fb.goingBody", { page: name }));
+  if (fb.state === "done") return row("is-pub", t("post.fb.done", { page: name }), fb.permalink ? `<a href="${escapeHtml(fb.permalink)}" target="_blank" rel="noopener">${escapeHtml(fb.permalink)}</a>` : fb.slow ? t("post.fb.slow") : "");
+  if (fb.state === "skipped") return row("is-off", escapeHtml(fb.error || t("post.fb.skipped")));
+  const perm = /pages_manage_posts|permission|\(#(10|200)\)|OAuth|token/i.test(fb.error || "");
+  return row("is-fail", t("post.fb.failed"), `${escapeHtml(fb.error || "")}${perm ? `<br>${t("post.fb.permHint")}` : ""}`, send(t("post.fb.retry")));
+}
+
 function postHTML(c, p, key, handle, posting = null) {
   const AUTO_POST = autoPost(c);
   const acct = `<div class="pst-acct">${icon("instagram", { size: 18 })}<b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(getBrand(c.brandId)?.name || "")}</b><span class="pst-pill ${handle ? "is-on" : ""}">${handle ? t("post.ig.connected") : t("post.ig.notConnected")}</span></div>`;
   if (posting) {
     return `<section class="pst-block pst-post">${acct}
-      <div class="pst-progress" role="status"><div class="pst-progress-row">${icon("instagram", { size: 14 })}<span>${t("post.ig.uploading")}</span><b id="pst-ig-pct">${Math.round(posting.pct * 100)}%</b></div><div class="pst-progress-bar"><i id="pst-ig-fill" style="width:${Math.round(posting.pct * 100)}%"></i></div></div>
+      <div class="pst-progress" role="status"><div class="pst-progress-row">${icon(posting.fb ? "facebook" : "instagram", { size: 14 })}<span>${t(posting.fb ? "post.fb.uploading" : "post.ig.uploading")}</span><b id="pst-ig-pct">${Math.round(posting.pct * 100)}%</b></div><div class="pst-progress-bar"><i id="pst-ig-fill" style="width:${Math.round(posting.pct * 100)}%"></i></div></div>
       <p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.keepOpen")}</p></section>`;
   }
   if (key === "scheduled" && p.ig?.auto) {
     const going = Date.parse(p.ig.at || "") <= Date.now() + 5 * 60 * 1000;
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-live"><span class="pst-live-ic">${icon(going ? "instagram" : "clock", { size: 20 })}</span><div><b>${going ? t("post.ig.goingTitle") : t("post.ig.scheduledTitle", { when: `${escapeHtml(dayLabel(c.scheduleDate))}, ${escapeHtml(p.time || "")}` })}</b><small>${t(going ? "post.ig.goingBody" : "post.ig.scheduledBody")}</small></div></div>
+      ${fbHTML(c, p, key)}
       ${going ? "" : `<div class="pst-decide"><button type="button" class="btn btn-ghost btn-sm" id="pst-unschedule">${t("post.ig.cancel")}</button></div>`}</section>`;
   }
   if (key === "scheduled") {
@@ -1221,6 +1255,7 @@ function postHTML(c, p, key, handle, posting = null) {
   if (key === "published") {
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-live is-pub"><span class="pst-live-ic">${icon("check", { size: 20 })}</span><div><b>${t("post.ig.publishedTitle", { when: escapeHtml(dayLabel(c.publishedDate || c.scheduleDate)) })}</b>${p.ig?.permalink ? `<small><a href="${escapeHtml(p.ig.permalink)}" target="_blank" rel="noopener">${escapeHtml(p.ig.permalink)}</a></small>` : ""}</div></div>
+      ${fbHTML(c, p, key)}
       ${p.ig?.permalink ? "" : `${igLinkFieldHTML()}<button type="button" class="btn btn-secondary btn-sm" id="pst-ig-save">${t("post.ig.linkSave")}</button>`}
       ${p.client && !p.ig?.permalink ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.client.needLink")}</p>` : ""}</section>`;
   }
@@ -1241,11 +1276,18 @@ function postHTML(c, p, key, handle, posting = null) {
   if (key !== "ready" || !handle) {
     return `<section class="pst-block pst-post is-locked">${acct}${when}${caption}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p></section>`;
   }
+  // Facebook too (owner, 2026-11-07): one switch, remembered for the brand.
+  const brand = getBrand(c.brandId);
+  const page = AUTO_POST ? fbPageOf(brand) : null;
+  const fbSwitch = !AUTO_POST ? "" : page
+    ? `<label class="pst-switch pst-fb-switch"><input type="checkbox" id="pst-fb" ${shareFb(brand) ? "checked" : ""}><span><b>${icon("facebook", { size: 14 })}${t("post.fb.share")}</b><small>${t("post.fb.shareHint", { page: escapeHtml(page.name) })}</small></span></label>`
+    : `<p class="pst-hint">${icon("facebook", { size: 13 })}${t("post.fb.connectHint")}</p>`;
   return `
     <section class="pst-block pst-post">
       ${acct}
       ${when}
       ${caption}
+      ${fbSwitch}
       ${AUTO_POST ? "" : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.manualNote")}</p>`}
       ${AUTO_POST ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.ig.autoNote")}</p>` : ""}
       <div class="pst-decide">
@@ -1517,7 +1559,10 @@ function wire(root, contentId, ui, repaint) {
     const hhmm = now ? new Date().toTimeString().slice(0, 5) : qs("#pst-time-in", root).value || "19:00";
     const at = now ? Date.now() : Date.parse(`${date}T${hhmm}:00+07:00`);
     if (!now && (!date || !(at > Date.now()))) { toast(t("post.ig.past"), "error"); return; }
-    if (now && !(await confirmDialog({ title: t("post.ig.nowTitle"), message: t("post.ig.nowBody", { handle: escapeHtml(igHandleOf(getBrand(cur.brandId)) || "Instagram") }), confirmLabel: t("post.ig.now") }))) return;
+    const brand = getBrand(cur.brandId);
+    const facebook = shareFb(brand);
+    const handle = escapeHtml(igHandleOf(brand) || "Instagram");
+    if (now && !(await confirmDialog({ title: t("post.ig.nowTitle"), message: facebook ? t("post.ig.nowBodyFb", { handle, page: escapeHtml(fbPageOf(brand).name) }) : t("post.ig.nowBody", { handle }), confirmLabel: t("post.ig.now") }))) return;
     updateContent(contentId, { scheduleDate: date, caption: cap?.value ?? cur.caption, posting: { ...cp, time: hhmm } });
     POSTING.set(contentId, { pct: 0 });
     repaint();
@@ -1527,7 +1572,7 @@ function wire(root, contentId, ui, repaint) {
       const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
       const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;
       const r = await postToInstagram({
-        contentId, kind: v.kind || "video", files, cover, at,
+        contentId, kind: v.kind || "video", files, cover, at, facebook,
         onProgress: (f) => {
           const s = POSTING.get(contentId);
           if (s) s.pct = f;
@@ -1549,6 +1594,47 @@ function wire(root, contentId, ui, repaint) {
     }
   };
   qs("#pst-post-now", root)?.addEventListener("click", () => goInstagram(true));
+  qs("#pst-fb", root)?.addEventListener("change", (e) => { updateBrand(getContent(contentId).brandId, { shareFacebook: e.target.checked }); });
+
+  // Facebook only, for a piece already on Instagram: the approved cut again
+  // from the Mac folder, straight to the Page.
+  qs("#pst-fb-send", root)?.addEventListener("click", async () => {
+    if (POSTING.has(contentId)) return;
+    const cur = getContent(contentId);
+    const cp = postingOf(cur);
+    const v = cp.versions.find((x) => x.id === cp.finalId) || latestOf(cp);
+    if (!v?.local || !cp.local?.key || !OUT.connected) { toast(t("post.client.needFolder"), "error"); return; }
+    const page = fbPageOf(getBrand(cur.brandId));
+    if (!page) { toast(t("post.ig.err.page"), "error"); return; }
+    if (!(await confirmDialog({ title: t("post.fb.sendTitle"), message: t("post.fb.sendBody", { page: escapeHtml(page.name) }), confirmLabel: t("post.fb.send") }))) return;
+    POSTING.set(contentId, { pct: 0, fb: true });
+    repaint();
+    try {
+      const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
+      const files = await Promise.all(names.map((n) => outboxFile(cp.local.key, n)));
+      const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
+      const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;
+      const r = await shareToFacebook({
+        contentId, kind: v.kind || "video", files, cover,
+        onProgress: (f) => {
+          const s = POSTING.get(contentId);
+          if (s) s.pct = f;
+          const fill = document.getElementById("pst-ig-fill");
+          const num = document.getElementById("pst-ig-pct");
+          if (fill) fill.style.width = `${Math.round(f * 100)}%`;
+          if (num) num.textContent = `${Math.round(f * 100)}%`;
+        },
+      });
+      if (r.fb?.state === "failed") toast(r.fb.error || t("post.ig.err.server"), "error");
+      else toast(t("post.toast.fbSent"));
+    } catch (e) {
+      console.warn("[posting] facebook", e);
+      toast(t(`post.ig.err.${["page", "type", "size", "busy"].includes(e.code) ? e.code : "server"}`), "error");
+    } finally {
+      POSTING.delete(contentId);
+      repaint();
+    }
+  });
   qs("#pst-schedule", root)?.addEventListener("click", () => {
     if (autoPost(getContent(contentId))) { goInstagram(false); return; }
     const date = qs("#pst-date", root).value;
@@ -1600,7 +1686,7 @@ function wire(root, contentId, ui, repaint) {
     if (postingOf(getContent(contentId)).ig?.auto) {
       try { await cancelInstagramPost(contentId); } catch (e) { toast(t(e.code === "busy" ? "post.ig.err.busy" : "post.ig.err.server"), "error"); return; }
     }
-    updateContent(contentId, { status: "editing", posting: { ...postingOf(getContent(contentId)), ig: null } });
+    updateContent(contentId, { status: "editing", posting: { ...postingOf(getContent(contentId)), ig: null, fb: null } });
     toast(t("post.toast.unscheduled"));
     repaint();
   });

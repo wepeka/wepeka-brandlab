@@ -1,10 +1,12 @@
-// POST /api/instagram/post { action: upload | schedule | cancel, contentId, … }
-// The owner's side of posting to Instagram from Brandlab (api/_igPost.js).
+// POST /api/instagram/post { action: upload | schedule | facebook | cancel, contentId, … }
+// The owner's side of posting to Instagram from Brandlab (api/_igPost.js),
+// and to the brand's Facebook Page with it ("facebook": true, or the
+// "facebook" action for a piece already on Instagram).
 // Admin only, and only the caller's own pieces.
 import { adminDb, adminBucket, requireAuth } from "../_firebaseAdmin.js";
 import { isAdminUid } from "../_aiQuota.js";
 import { ownPiece } from "../_review.js";
-import { uploadPaths, newJob, scheduledIg, accountFor, fail } from "../_igPost.js";
+import { uploadPaths, newJob, facebookJob, scheduledIg, accountFor, facebookFor, fail } from "../_igPost.js";
 import { runJob, LIVE } from "../_igPostRun.js";
 
 const ORIGINS = /^https:\/\/(brandlab\.wepeka\.com|[a-z0-9-]+\.vercel\.app)$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
@@ -27,9 +29,12 @@ async function act(req, db, uid) {
     return { files };
   }
 
-  if (b.action === "schedule") {
+  if (b.action === "schedule" || b.action === "facebook") {
     const brands = (await db.collection("brands").where("ownerId", "==", uid).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (!accountFor(brands, c.brandId)) throw fail(409, "account");
+    const account = accountFor(brands, c.brandId);
+    const page = facebookFor(brands, c.brandId, account);
+    const fbOnly = b.action === "facebook";
+    if (fbOnly ? !page : !account) throw fail(409, fbOnly ? "page" : "account");
     const paths = [...(Array.isArray(b.paths) ? b.paths : []), ...(b.cover ? [b.cover] : [])];
     for (const p of paths) {
       const [exists] = await bucket.file(String(p)).exists();
@@ -37,16 +42,21 @@ async function act(req, db, uid) {
     }
     const old = await jobRef.get();
     if (old.exists && LIVE.includes(old.data().state) && old.data().state !== "waiting") throw fail(409, "busy"); // already going up
-    const job = newJob(c, { uid, paths: b.paths, cover: b.cover || "", kind: b.kind, at: Number(b.at) || Date.now() });
+    const job = fbOnly
+      ? facebookJob(c, { uid, paths: b.paths, cover: b.cover || "", kind: b.kind })
+      : newJob(c, { uid, paths: b.paths, cover: b.cover || "", kind: b.kind, at: Number(b.at) || Date.now(), facebook: !!b.facebook && !!page });
     // A new copy replaces an older scheduled one.
     const stale = old.exists ? [...(old.data().paths || []), old.data().cover].filter((x) => x && !paths.includes(x)) : [];
     await jobRef.set(job);
-    await ref.update({ status: "scheduled", posting: { ...(c.posting || {}), ig: scheduledIg(job) }, updatedAt: Date.now() });
+    const fb = job.fb ? { state: fbOnly ? "waiting" : "scheduled", page: page.name } : null;
+    await ref.update(fbOnly
+      ? { posting: { ...(c.posting || {}), fb }, updatedAt: Date.now() }
+      : { status: "scheduled", posting: { ...(c.posting || {}), ig: scheduledIg(job), fb }, updatedAt: Date.now() });
     await Promise.all(stale.map((p) => bucket.file(p).delete({ ignoreNotFound: true }).catch(() => {})));
     // "Posting sekarang": go as far as this request allows; the cron finishes.
     const state = job.at <= Date.now() + 60 * 1000 ? await runJob(db, bucket, contentId, { budgetMs: 50 * 1000 }) : job.state;
     const after = (await jobRef.get()).data() || {};
-    return { state, permalink: after.permalink || "", error: after.error || "" };
+    return { state, permalink: after.permalink || "", error: after.error || "", fb: after.fb || null };
   }
 
   if (b.action === "cancel") {
@@ -57,7 +67,7 @@ async function act(req, db, uid) {
       await jobRef.delete();
       await Promise.all([...(j.paths || []), j.cover].filter(Boolean).map((p) => bucket.file(p).delete({ ignoreNotFound: true }).catch(() => {})));
     }
-    await ref.update({ status: "editing", posting: { ...(c.posting || {}), ig: null }, updatedAt: Date.now() });
+    await ref.update({ status: "editing", posting: { ...(c.posting || {}), ig: null, fb: null }, updatedAt: Date.now() });
     return { ok: true };
   }
   throw fail(404, "action");

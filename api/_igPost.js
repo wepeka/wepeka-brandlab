@@ -21,6 +21,8 @@ export const SIGNED_FOR = 24 * 3600 * 1000; // a container may wait up to a day
 export const GRAPH = "https://graph.instagram.com/v23.0";
 export const STUCK_MS = 30 * 60 * 1000; // Instagram still "IN_PROGRESS" after this = give up
 export const EARLY_MS = 5 * 60 * 1000; // the container is made this early, so the post goes up on the minute
+export const FB_GRAPH = "https://graph.facebook.com/v23.0";
+export const FB_VIDEO = "https://graph-video.facebook.com/v23.0"; // video uploads go to this host
 
 export function fail(status, code) {
   const e = new Error(code);
@@ -57,6 +59,24 @@ export function accountFor(brands, brandId) {
   return ok(other);
 }
 
+// The Facebook Page a brand's posts are also shared to (owner, 2026-11-07:
+// "tiap aku upload via brandlab … link ke facebook juga"). Instagram's API
+// has no "share to Facebook" switch for posts made through it, so Brandlab
+// posts the same cut to the Page itself, with the Page token saved in the
+// brand's settings (Halaman Facebook). Its own, or — like accountFor — the
+// owner's brand that holds the same Instagram (the "wepeka" brand holds
+// @winkhsin and its Page).
+const handleOf = (x) => String(x || "").replace(/^@/, "").trim().toLowerCase();
+export function facebookFor(brands, brandId, account = null) {
+  const own = brands.find((b) => b.id === brandId);
+  if (!own) return null;
+  const ok = (b) => (b?.facebook?.pageAccessToken && /^\d{5,}$/.test(String(b.facebook.pageId || "")) ? { pageId: String(b.facebook.pageId), token: b.facebook.pageAccessToken, name: clean(b.facebook.pageName, 80), brandId: b.id } : null);
+  if (ok(own)) return ok(own);
+  const names = [own.name, own.instagram?.username, account?.username].map(handleOf).filter(Boolean);
+  const other = brands.find((b) => b.id !== brandId && b.ownerId === own.ownerId && ok(b) && names.includes(handleOf(b.instagram?.username)));
+  return ok(other);
+}
+
 // "2026-11-03" + "19:00" in WIB → epoch ms.
 export function atOf(date, time) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) return NaN;
@@ -66,7 +86,7 @@ export function atOf(date, time) {
 export const wibDate = (ms) => new Date(ms + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
 // The job written when the owner schedules (or posts now).
-export function newJob(c, { uid, paths, cover, kind, at, now = Date.now() }) {
+export function newJob(c, { uid, paths, cover, kind, at, facebook = false, now = Date.now() }) {
   const want = prefixOf(uid, c.id);
   const okPath = (x) => typeof x === "string" && x.startsWith(want) && !x.includes("..");
   if (!Array.isArray(paths) || !paths.length || !paths.every(okPath)) throw fail(400, "paths");
@@ -81,7 +101,15 @@ export function newJob(c, { uid, paths, cover, kind, at, now = Date.now() }) {
     ownerId: uid, brandId: c.brandId, contentId: c.id, type, kind: k, paths, cover: cover || "",
     trial: !!p.trialReel && type === "reels", at: Math.max(at, now), state: "waiting",
     children: [], creation: "", mediaId: "", permalink: "", error: "", createdAt: now, updatedAt: now, tries: 0,
+    fb: facebook ? { state: "waiting" } : null,
   };
+}
+
+// Only to the Facebook Page, for a piece already on Instagram ("Bagikan ke
+// Facebook" after the fact, or again after Facebook refused it).
+export function facebookJob(c, { uid, paths, cover, kind, now = Date.now() }) {
+  const job = newJob({ ...c, status: "editing", posting: { ...(c.posting || {}), ig: null } }, { uid, paths, cover, kind, at: now, facebook: true, now });
+  return { ...job, state: "facebook", fbOnly: true, trial: false };
 }
 
 const isVideoPath = (x) => /\.(mp4|mov)$/i.test(x);
@@ -118,19 +146,19 @@ export function igError(e) {
 // an Instagram error); `sign(path)` → a URL Instagram can fetch; `caption` is
 // the piece's caption NOW (edits after scheduling count). Returns the job's
 // new fields and, when it ends, what to write on the piece.
-export async function step(job, { graph, sign, caption, account, now = Date.now() }) {
+export async function step(job, { graph, sign, caption, account, fbGraph = null, page = null, now = Date.now() }) {
   const upd = (o) => ({ ...o, updatedAt: now });
   const failed = (error) => ({ job: upd({ state: "failed", error }), piece: { ig: { state: "failed", error, at: new Date(job.at).toISOString(), auto: true } } });
+  if (job.state === "facebook") return fbStep(job, { fbGraph, sign, caption, page, now });
   if (!account) return failed("Instagram brand ini belum terhubung.");
   const ig = account.igUserId;
   const finish = async (mediaId) => {
     let permalink = "";
     try { permalink = String((await graph("GET", `/${mediaId}`, { fields: "permalink" })).permalink || ""); } catch { /* the post is up; the link can be added later */ }
-    return {
-      job: upd({ state: "done", mediaId, permalink }),
-      piece: { ig: { state: "published", mediaId, permalink, postedAt: now, auto: true }, publishedDate: wibDate(now), permalink },
-      removePaths: [...job.paths, ...(job.cover ? [job.cover] : [])],
-    };
+    const piece = { ig: { state: "published", mediaId, permalink, postedAt: now, auto: true }, publishedDate: wibDate(now), permalink };
+    // The Facebook Page next: the copies stay until Facebook has fetched them.
+    if (job.fb?.state === "waiting") return { job: upd({ state: "facebook", mediaId, permalink }), piece: { ...piece, fb: { state: "waiting", page: page?.name || "" } } };
+    return { job: upd({ state: "done", mediaId, permalink }), piece, removePaths: [...job.paths, ...(job.cover ? [job.cover] : [])] };
   };
   try {
     if (job.state === "waiting") {
@@ -172,6 +200,96 @@ export async function step(job, { graph, sign, caption, account, now = Date.now(
   } catch (e) {
     return failed(igError(e));
   }
+}
+
+// What goes to the Page for each kind of post: a video (Facebook shows a
+// vertical one as a reel), a photo, or the photos of a carousel as one post.
+// Stories, and carousels made of videos only, stay on Instagram.
+export function facebookPlan(job, { urls, coverUrl = "", caption = "" }) {
+  const cap = clean(caption, 5000);
+  if (job.type === "story") return { skip: "Story tidak ikut ke Facebook." };
+  if (job.type === "carousel") {
+    const photos = job.paths.map((x, i) => (isVideoPath(x) ? "" : urls[i])).filter(Boolean);
+    if (!photos.length) return { skip: "Carousel video belum bisa ke Facebook." };
+    return { photos, message: cap };
+  }
+  if (job.type === "foto" || !isVideoPath(job.paths[0])) return { photo: { url: urls[0], caption: cap } };
+  return { video: { file_url: urls[0], description: cap, published: "true" }, thumbUrl: coverUrl };
+}
+
+const fbLink = (x) => (!x ? "" : /^https?:/.test(x) ? x : `https://www.facebook.com${x.startsWith("/") ? "" : "/"}${x}`);
+
+// One move on the Facebook side. Never touches the Instagram result: a
+// refusal here only shows on the piece as Facebook's own words.
+async function fbStep(job, { fbGraph, sign, caption, page, now }) {
+  const upd = (o) => ({ ...o, updatedAt: now });
+  const files = [...job.paths, ...(job.cover ? [job.cover] : [])];
+  const end = (fb) => ({ job: upd({ state: "done", fb }), piece: { fb: { ...fb, page: page?.name || "", at: now } }, removePaths: files });
+  const fb = job.fb || {};
+  try {
+    if (!page || !fbGraph) return end({ state: "failed", error: "Halaman Facebook brand ini belum terhubung." });
+    if (fb.state !== "sent") {
+      const urls = await Promise.all(job.paths.map(sign));
+      const coverUrl = job.cover ? await sign(job.cover) : "";
+      const plan = facebookPlan(job, { urls, coverUrl, caption });
+      if (plan.skip) return end({ state: "skipped", error: plan.skip });
+      if (plan.photo) {
+        const r = await fbGraph("POST", `/${page.pageId}/photos`, plan.photo);
+        return end({ state: "done", id: String(r.post_id || r.id || ""), permalink: fbLink(r.post_id ? `/${r.post_id}` : "") });
+      }
+      if (plan.photos) {
+        const ids = [];
+        for (const url of plan.photos) ids.push(String((await fbGraph("POST", `/${page.pageId}/photos`, { url, published: "false" })).id));
+        const r = await fbGraph("POST", `/${page.pageId}/feed`, { message: plan.message, attached_media: JSON.stringify(ids.map((media_fbid) => ({ media_fbid }))) });
+        return end({ state: "done", id: String(r.id || ""), permalink: fbLink(r.id ? `/${r.id}` : "") });
+      }
+      let r;
+      try {
+        r = await fbGraph("POST", `/${page.pageId}/videos`, plan.video, { video: true, thumbUrl: plan.thumbUrl });
+      } catch (e) {
+        if (!plan.thumbUrl) throw e;
+        r = await fbGraph("POST", `/${page.pageId}/videos`, plan.video, { video: true }); // the cover was the trouble: let Facebook pick a frame
+      }
+      return { job: upd({ fb: { state: "sent", id: String(r.id || ""), sentAt: now } }) };
+    }
+    // Facebook fetches the video from the copy, then processes it.
+    const v = await fbGraph("GET", `/${fb.id}`, { fields: "status,permalink_url" });
+    const st = v.status || {};
+    if (st.video_status === "error") return end({ state: "failed", id: fb.id, error: clean(st.processing_phase?.errors?.[0]?.message || st.uploading_phase?.errors?.[0]?.message || "Facebook gagal memproses video.", 300) });
+    if (st.video_status === "ready") return end({ state: "done", id: fb.id, permalink: fbLink(v.permalink_url) });
+    if (now - (fb.sentAt || job.updatedAt) > STUCK_MS) return end({ state: "done", id: fb.id, permalink: fbLink(v.permalink_url), slow: true }); // still processing on Facebook's side; it finishes by itself
+    return { job: null };
+  } catch (e) {
+    return end({ state: "failed", id: fb.id || "", error: igError(e) });
+  }
+}
+
+// The Graph API for the Page: same shape as graphClient. A video carries its
+// cover as raw bytes (multipart "thumb"), fetched from the copy's URL.
+export function fbClient(token, fetchImpl = globalThis.fetch) {
+  return async (method, path, params = {}, { video = false, thumbUrl = "" } = {}) => {
+    const base = video ? FB_VIDEO : FB_GRAPH;
+    let res;
+    if (method === "GET") {
+      res = await fetchImpl(`${base}${path}?${new URLSearchParams({ ...params, access_token: token })}`);
+    } else if (thumbUrl) {
+      const img = await fetchImpl(thumbUrl);
+      if (!img.ok) throw Object.assign(new Error("cover"), { ig: { message: "Cover tidak terbaca." } });
+      const form = new FormData();
+      for (const [k, v] of Object.entries({ ...params, access_token: token })) form.append(k, v);
+      form.append("thumb", new Blob([await img.arrayBuffer()], { type: "image/jpeg" }), "cover.jpg");
+      res = await fetchImpl(`${base}${path}`, { method, body: form });
+    } else {
+      res = await fetchImpl(`${base}${path}`, { method, headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...params, access_token: token }) });
+    }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) {
+      const e = new Error(json.error?.message || `facebook ${res.status}`);
+      e.ig = json.error || {};
+      throw e;
+    }
+    return json;
+  };
 }
 
 // The piece's posting.ig while the job waits.

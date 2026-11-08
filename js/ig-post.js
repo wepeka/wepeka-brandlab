@@ -36,8 +36,8 @@ function put(url, file, onProgress) {
 const typeOf = (f) => (/\.(mov|qt)$/i.test(f.name) ? "video/quicktime" : /\.(jpe?g)$/i.test(f.name) ? "image/jpeg" : /\.png$/i.test(f.name) ? "image/png" : f.type || "video/mp4");
 
 // files: the cut (a video, or the slides in order); cover: the picked cover
-// image for a reel, or null. at: epoch ms (now = post right away).
-export async function postToInstagram({ contentId, kind, files, cover, at, onProgress }) {
+// image for a reel, or null. Copied to Storage; returns their paths.
+async function upload({ contentId, files, cover, onProgress }) {
   const all = [...files, ...(cover ? [cover] : [])];
   const { files: slots } = await call({ action: "upload", contentId, files: all.map((f) => ({ name: f.name, type: typeOf(f), size: f.size })) });
   const total = all.reduce((n, f) => n + f.size, 0) || 1;
@@ -47,7 +47,20 @@ export async function postToInstagram({ contentId, kind, files, cover, at, onPro
     done += all[i].size;
   }
   const paths = slots.map((s) => s.path);
-  return call({ action: "schedule", contentId, kind, at, paths: cover ? paths.slice(0, -1) : paths, cover: cover ? paths[paths.length - 1] : "" });
+  return { paths: cover ? paths.slice(0, -1) : paths, cover: cover ? paths[paths.length - 1] : "" };
+}
+
+// at: epoch ms (now = post right away). facebook: also share to the brand's
+// Facebook Page once it's on Instagram.
+export async function postToInstagram({ contentId, kind, files, cover, at, facebook = false, onProgress }) {
+  const up = await upload({ contentId, files, cover, onProgress });
+  return call({ action: "schedule", contentId, kind, at, facebook: !!facebook, ...up });
+}
+
+// A piece already on Instagram, to the Facebook Page only.
+export async function shareToFacebook({ contentId, kind, files, cover, onProgress }) {
+  const up = await upload({ contentId, files, cover, onProgress });
+  return call({ action: "facebook", contentId, kind, ...up });
 }
 
 export const cancelInstagramPost = (contentId) => call({ action: "cancel", contentId });
