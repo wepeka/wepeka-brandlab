@@ -93,7 +93,7 @@ async function call(handler, action, uid, body = {}) {
 }
 
 // ---- Data: Wepeka's brand with a client (Rina) and a plain viewer (Sari) ----
-docs.set("brands/q", { ownerId: ADMIN, name: "Quatro (New)", members: { rina: { role: "viewer", klien: true, name: "Rina (Quatro)", email: "rina@q.id" }, sari: { role: "viewer", name: "Sari" } }, memberIds: ["rina", "sari"] });
+docs.set("brands/q", { ownerId: ADMIN, name: "Quatro (New)", members: { rina: { role: "viewer", klien: true, name: "Rina (Quatro)", email: "rina@q.id" }, sari: { role: "viewer", name: "Sari" }, dodi: { role: "editor", name: "Dodi" } }, memberIds: ["rina", "sari", "dodi"] });
 docs.set("content/c1", { ownerId: ADMIN, brandId: "q", title: "Kenalan Quatro", status: "editing", posting: { versions: [{ id: "a", n: 0, status: "pending", kind: "video" }, { id: "b", n: 1, status: "pending", kind: "video" }], notes: [] } });
 docs.set("memberships/rina", { ownerIds: [ADMIN], brands: { q: { ownerId: ADMIN, role: "viewer", klien: true } } });
 docs.set("memberships/sari", { ownerIds: [ADMIN], brands: { q: { ownerId: ADMIN, role: "viewer" } } });
@@ -159,6 +159,53 @@ test("end to end: connect, send two cuts, client notes, approves; older cut leav
   assert.equal((await call(review, "clean", ADMIN, { contentId: "c1" })).status, 200);
   assert.ok(drive.has(fb));
   assert.deepEqual(deleted, [], "no Cloud Storage involved");
+});
+
+test("footage: the crew sends raw clips into the piece's Footage folder in the client's Drive", async () => {
+  docs.set("content/c2", { ownerId: ADMIN, brandId: "q", title: "Mic'd Up Coach Andi", status: "production" });
+  const clips = [{ name: "IMG_0412.MOV", type: "video/quicktime", size: 3 * 1024 ** 3 }, { name: "IMG_0413.MOV", type: "video/quicktime", size: 1200 }, { name: "mic.wav", type: "audio/wav", size: 800 }];
+  // A plain viewer and an outsider may not; a PDF isn't footage.
+  assert.equal((await call(review, "footage-start", "sari", { contentId: "c2", code: "QN-2", files: clips })).error, "not-team");
+  assert.equal((await call(review, "footage-start", "stranger", { contentId: "c2", code: "QN-2", files: clips })).error, "not-team");
+  assert.equal((await call(review, "footage-start", "rina", { contentId: "c2", code: "QN-2", files: [{ name: "a.pdf", type: "application/pdf", size: 9 }] })).error, "type");
+
+  const st = await call(review, "footage-start", "rina", { contentId: "c2", code: "QN-2", files: clips });
+  assert.equal(st.status, 200);
+  assert.equal(st.accessToken, "tok");
+  assert.deepEqual(st.names, ["IMG_0412.MOV", "IMG_0413.MOV", "mic.wav"]);
+  const folder = drive.get(st.folderId);
+  assert.equal(folder.name, "Footage");
+  assert.equal(drive.get(folder.parents[0]).name, "QN-2 · Mic'd Up Coach Andi", "one folder per piece");
+  assert.equal(docs.get("content/c2").footage.folderId, st.folderId);
+  assert.equal(docs.get("content/c2").posting.clientFolder, folder.parents[0]);
+
+  const ids = st.names.map((name) => browserUpload(st.folderId, name));
+  assert.equal((await call(review, "footage-add", "rina", { contentId: "c2", ids: ids.slice(0, 2) })).added, 2);
+  assert.equal((await call(review, "footage-add", "rina", { contentId: "c2", ids })).added, 1, "a clip listed twice counts once");
+  let f = docs.get("content/c2").footage;
+  assert.deepEqual(f.files.map((x) => [x.name, x.by, x.who]), [["IMG_0412.MOV", "rina", "Rina (Quatro)"], ["IMG_0413.MOV", "rina", "Rina (Quatro)"], ["mic.wav", "rina", "Rina (Quatro)"]]);
+  // A file outside the Footage folder is refused.
+  const stray = browserUpload("root", "x.mov");
+  assert.equal((await call(review, "footage-add", "rina", { contentId: "c2", ids: [stray] })).error, "missing");
+
+  // The editor (Kerja Tim) can send more; the same camera name gets (2); same folder.
+  const st2 = await call(review, "footage-start", "dodi", { contentId: "c2", code: "QN-2", files: [{ name: "IMG_0412.MOV", type: "video/quicktime", size: 50 }] });
+  assert.deepEqual([st2.folderId, st2.names], [st.folderId, ["IMG_0412 (2).MOV"]]);
+  const extra = browserUpload(st2.folderId, st2.names[0]);
+  await call(review, "footage-add", "dodi", { contentId: "c2", ids: [extra] });
+  assert.equal(docs.get("content/c2").footage.files.at(-1).who, "Dodi");
+
+  // A wrong take goes from the list and from the client's Drive.
+  assert.equal((await call(review, "footage-remove", "rina", { contentId: "c2", id: extra })).status, 200);
+  assert.ok(!drive.has(extra));
+  assert.equal(docs.get("content/c2").footage.files.length, 3);
+
+  // The key to copy them to the Mac: Wepeka only.
+  assert.equal((await call(review, "footage-key", "rina", { contentId: "c2" })).error, "private");
+  const key = await call(review, "footage-key", ADMIN, { contentId: "c2" });
+  assert.deepEqual([key.accessToken, key.folderId], ["tok", st.folderId]);
+  // Wepeka itself may send clips too.
+  assert.equal((await call(review, "footage-start", ADMIN, { contentId: "c2", code: "QN-2", files: [clips[1]] })).names[0], "IMG_0413 (2).MOV");
 });
 
 test("access taken away in Google: the brand forgets the client's Drive", async () => {

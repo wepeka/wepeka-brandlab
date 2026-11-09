@@ -1,13 +1,16 @@
 // /api/review/{upload|send|clean|keep} — Wepeka's own side (admin only,
 // like the rest of Video & posting); /api/review/decide — a client invited
 // as "Klien" on the brand, signed in to Brandlab, notes or approves the cut
-// sent to them. The cuts live in the client's own Google Drive. See
-// api/_review.js and api/_clientDrive.js.
+// sent to them; /api/review/footage-{start|add|remove} — the crew (Klien or
+// editor) sends the shoot's raw clips, footage-key — Wepeka's Mac copies
+// them. The cuts and the clips live in the client's own Google Drive. See
+// api/_review.js, api/_footage.js and api/_clientDrive.js.
 import { adminDb, adminBucket, requireAuth } from "../_firebaseAdmin.js";
 import { isAdminUid } from "../_aiQuota.js";
 import { checkUploads, driveNames, finalName, applySend, applyDecision, applyClean, applyKeepFinal, ownPiece, clientOn, clientDriveOf, fail } from "../_review.js";
 import { driveConfigured, refreshAccess } from "../_drive.js";
-import { pieceFolder, checkFiles, deleteFiles, renameFile } from "../_clientDrive.js";
+import { pieceFolder, ensureFolder, checkFiles, deleteFiles, renameFile } from "../_clientDrive.js";
+import { FOOTAGE_FOLDER, footageMember, clipNames, applyFootageAdd, applyFootageRemove } from "../_footage.js";
 
 async function readDoc(db, path) {
   const snap = await db.doc(path).get();
@@ -80,6 +83,60 @@ async function forClient(req, db, uid) {
   return { ok: true };
 }
 
+// The shoot's raw clips (api/_footage.js). start: the piece's Footage
+// folder in the client's Drive, the names, and a key for this browser to
+// send the clips straight there; add: the ones that arrived; remove: a
+// wrong take; key (Wepeka only): to copy them to the Mac. The key only
+// reaches what Brandlab made in that Drive (scope drive.file).
+async function forFootage(action, req, db, uid) {
+  const b = req.body || {};
+  const contentId = String(b.contentId || "");
+  const c = await readDoc(db, `content/${contentId}`);
+  if (!c) throw fail(404, "content");
+  const brand = await readDoc(db, `brands/${c.brandId}`);
+  if (!brand || c.ownerId !== brand.ownerId) throw fail(404, "content");
+  if (action === "footage-key") {
+    if (!isAdminUid(uid) || uid !== brand.ownerId) throw fail(403, "private");
+    const { accessToken, expiresIn } = await driveAccess(db, brand);
+    return { accessToken, expiresIn, folderId: c.footage?.folderId || "" };
+  }
+  const member = footageMember(brand, uid, isAdminUid);
+  const who = member.name || member.email || "";
+  if (action === "footage-start") {
+    const taken = (c.footage?.files || []).map((f) => f.name);
+    const names = clipNames(b.files, taken);
+    const access = await driveAccess(db, brand);
+    const cache = brand.clientDrive.folders || {};
+    const code = String(b.code || "").slice(0, 16);
+    const folders = await pieceFolder(access.accessToken, { brandName: brand.name, code, title: c.title, cache: { ...cache, folderId: c.posting?.clientFolder } });
+    const folderId = await ensureFolder(access.accessToken, { name: FOOTAGE_FOLDER, parent: folders.folderId, known: c.footage?.folderId });
+    if (folders.rootId !== cache.rootId || folders.brandFolderId !== cache.brandFolderId) {
+      await db.doc(`brands/${brand.id}`).update({ "clientDrive.folders": { rootId: folders.rootId, brandFolderId: folders.brandFolderId } });
+    }
+    const patch = {};
+    if (folders.folderId !== c.posting?.clientFolder) patch["posting.clientFolder"] = folders.folderId;
+    if (folderId !== c.footage?.folderId) patch["footage.folderId"] = folderId;
+    if (Object.keys(patch).length) await db.doc(`content/${contentId}`).update(patch);
+    return { accessToken: access.accessToken, expiresIn: access.expiresIn, folderId, names };
+  }
+  if (action === "footage-add") {
+    const folderId = c.footage?.folderId;
+    if (!folderId) throw fail(400, "missing");
+    const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+    if (!ids.length || ids.length > 50) throw fail(400, "files");
+    const { accessToken } = await driveAccess(db, brand);
+    const files = await checkFiles(accessToken, ids, folderId);
+    const out = await changePiece(db, contentId, (cur) => applyFootageAdd(cur, { files, folderId, by: uid, who }));
+    return { ok: true, added: out.added.length };
+  }
+  if (action === "footage-remove") {
+    const out = await changePiece(db, contentId, (cur) => applyFootageRemove(cur, String(b.id || "")));
+    await tidy(db, brand, out);
+    return { ok: true };
+  }
+  throw fail(404, "action");
+}
+
 async function forOwner(action, req, db, uid) {
   const b = req.body || {};
   const contentId = String(b.contentId || "");
@@ -136,6 +193,7 @@ export default async function handler(req, res) {
   const db = adminDb();
   try {
     if (action === "decide") return res.status(200).json(await forClient(req, db, user.uid));
+    if (action.startsWith("footage-")) return res.status(200).json(await forFootage(action, req, db, user.uid));
     if (!isAdminUid(user.uid)) return res.status(403).json({ error: "private" });
     return res.status(200).json(await forOwner(action, req, db, user.uid));
   } catch (err) {

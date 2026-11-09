@@ -13,6 +13,8 @@
 //     cover*.jpg/png   cover options for a Reels
 //     *.jpg / *.png    a photo, or carousel slides in name order (01, 02 …)
 //     v1/, v2/ …       carousel versions: each folder is one set of slides
+//     footage/         written BY Brandlab: the shoot's raw clips the client's
+//                      crew sent (js/footage-mac.js) — never a cut
 //     brandlab.json    written BY Brandlab: the decisions and notes for Claude
 const DB = "brandlab-outbox";
 const VIDEO_RE = /\.(mp4|mov|m4v|webm)$/i;
@@ -20,6 +22,8 @@ const IMAGE_RE = /\.(jpe?g|png|webp|heic)$/i;
 const COVER_RE = /^(cover|thumb|thumbnail|sampul)/i;
 const DATED_RE = /^(\d{4}-\d{2}-\d{2})\s*[·\-–]?\s*(.*)$/;
 const CODED_RE = /^([A-Z][A-Z0-9]{0,5}-\d{1,4}[B-Z]?)(?:\s*[·\-–]\s*|\s+|$)(.*)$/;
+export const FOOTAGE_DIR = "footage";
+const FOOTAGE_RE = /^footage$/i;
 
 export const outboxSupported = () => typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
 
@@ -137,6 +141,7 @@ export async function scanOutbox() {
       if (postDir.kind !== "directory" || postDir.name.startsWith(".")) continue;
       const entries = [];
       for (const e of await list(postDir)) {
+        if (e.kind === "directory" && FOOTAGE_RE.test(e.name)) continue; // raw clips, not a cut
         if (e.kind === "directory") {
           const slides = (await list(e)).filter((x) => x.kind === "file" && IMAGE_RE.test(x.name)).map((x) => x.name);
           entries.push({ kind: "directory", name: e.name, slides });
@@ -247,4 +252,23 @@ export async function addToOutbox({ brandFolder, folder, file, name, manifest })
   await writeFile(dir, name, file);
   if (manifest) await writeFile(dir, "post.json", JSON.stringify(manifest, null, 2));
   return `${brandFolder}/${folder}`;
+}
+
+// The shoot's raw clips (js/footage-mac.js): <post folder>/footage/<name>.
+// Size of one already there (-1: not there), and a stream to write one.
+// Chrome only puts the file in place when the stream closes, so a copy cut
+// off halfway never shows up as a finished clip.
+async function footageDir(key, create) {
+  if (!root || !state.connected) throw new DOMException("no folder", "NotFoundError");
+  return (await postDir(key, { create })).getDirectoryHandle(FOOTAGE_DIR, { create });
+}
+export async function outboxClipSize(key, name) {
+  try {
+    return (await (await (await footageDir(key, false)).getFileHandle(name)).getFile()).size;
+  } catch {
+    return -1;
+  }
+}
+export async function outboxClipWriter(key, name) {
+  return (await (await footageDir(key, true)).getFileHandle(name, { create: true })).createWritable();
 }

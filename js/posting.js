@@ -22,13 +22,14 @@
 // Scheduling still only marks the piece until the server worker exists; that
 // worker will copy the final cut to a short-lived spot for Instagram to
 // fetch (.claude/social-hub/ARSITEKTUR.md).
-import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, localISODate, onChange as onStoreChange, isClientMember } from "./store.js";
+import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
 import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex, noteForEditor, writeEditorQueue } from "./outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter, brandCodePrefix } from "./video-codes.js";
 import { outboxFile } from "./outbox.js";
+import { syncFootageToMac, macName } from "./footage-mac.js";
 import { sendToClient, cleanPreviews, keepFinalOnly, clientDecide } from "./review-share.js";
 import { postToInstagram, shareToFacebook, cancelInstagramPost } from "./ig-post.js";
 import { icon } from "./icons.js";
@@ -148,6 +149,8 @@ export const cleanName = (s) => String(s || "").replace(/[\\/:*?"<>|]+/g, "-").r
 export function folderKeyOf(c) {
   const p = postingOf(c);
   if (p.local?.key) return p.local.key;
+  // Where its raw footage already landed (js/footage-mac.js): the cuts go there too.
+  if (c.footageMac) return c.footageMac;
   const brand = getBrand(c.brandId);
   const used = listContent(c.brandId).map((x) => x.posting?.local?.key).find(Boolean);
   const brandFolder = used ? used.split("/")[0] : cleanName(brand?.name) || "Brand";
@@ -174,12 +177,14 @@ export function videoIndex() {
         versions: p.versions.map((v) => ({ file: v.local?.file || v.name || "", status: v.status })),
         final: p.versions.find((v) => v.id === p.finalId)?.local?.file || "",
         cover: p.cover || "",
+        // The shoot's raw clips from the client's crew, copied into <folder>/footage/.
+        footage: (c.footage?.files || []).map((f) => macName(f.name)),
       });
     }
   }
   items.sort((a, b) => `${a.date || "9999"}${a.time}${a.code}`.localeCompare(`${b.date || "9999"}${b.time}${b.code}`));
   return {
-    about: "Ditulis oleh Brandlab. Semua konten Instagram dari Creator dengan kodenya. Winson menyebut kode (mis. KP-12): cari di sini, lalu taruh hasil edit di 'folder' (buat kalau belum ada). Huruf di belakang (KP-12B) = video trial.",
+    about: "Ditulis oleh Brandlab. Semua konten Instagram dari Creator dengan kodenya. Winson menyebut kode (mis. KP-12): cari di sini, lalu taruh hasil edit di 'folder' (buat kalau belum ada). Huruf di belakang (KP-12B) = video trial. 'footage' = video mentah hasil syuting tim klien, ada di '<folder>/footage/' (disalin Brandlab dari Google Drive klien): bahan editnya.",
     items,
   };
 }
@@ -192,6 +197,7 @@ function writeIndexSoon() {
     if (!OUT.connected || !canUsePosting()) return;
     writeBackChanged();
     writeEditorQueue();
+    copyFootageSoon();
     const data = videoIndex();
     const sig = JSON.stringify(data);
     if (sig === lastIndex) return;
@@ -199,6 +205,16 @@ function writeIndexSoon() {
     writeRootFile("daftar-video.json", JSON.stringify({ ...data, updatedAt: new Date().toISOString() }, null, 2))
       .catch((e) => { lastIndex = ""; console.warn("[posting] daftar-video.json not written", e); });
   }, 1200);
+}
+// The shoot's raw clips from the client's crew, into each piece's folder
+// (js/footage-mac.js) — whenever the folder is on and something arrives.
+const withFootage = () => listBrands().flatMap((b) => listContent(b.id).filter((c) => c.footage?.files?.length));
+function copyFootageSoon() {
+  if (!OUT.connected || !canUsePosting() || !withFootage().length) return;
+  syncFootageToMac(withFootage, {
+    keyOf: folderKeyOf,
+    remember: (c, key) => { if (!c.posting?.local?.key && c.footageMac !== key) setContentQuiet(c.id, { footageMac: key }); },
+  }).catch((e) => console.warn("[posting] footage to Mac", e));
 }
 function watchIndex() {
   if (!OUT.connected || !canUsePosting()) return;

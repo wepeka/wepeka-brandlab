@@ -672,6 +672,15 @@ function onAccountChange(user, account) {
           })
           .catch((e) => console.warn("Instagram auto-sync unavailable", e));
       }, 8000);
+      // Wepeka's own Mac: the Outbox folder picks up where it was — the
+      // video list for the editor, and the client crew's raw footage copied
+      // into each piece's folder (js/footage-mac.js) — without opening
+      // Antrean Video first. Nobody else loads any of it.
+      setTimeout(() => {
+        import("./account.js")
+          .then((a) => (a.isAdmin(a.currentUid()) ? import("./posting.js").then((m) => m.ensureOutbox()) : null))
+          .catch((e) => console.warn("Outbox folder unavailable", e));
+      }, 5000);
     });
   } else {
     // The plan changed while the app is open — a payment just landed: the
