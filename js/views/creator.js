@@ -36,7 +36,7 @@ import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
 import { canSeePosting, isClientView, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
-import { canSeePlan } from "./rencana.js";
+import { canSeePlan, shootPlanHTML, wireShootPlan } from "./rencana.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -1298,6 +1298,8 @@ function paint(root, brandId, state, refresh) {
     openIdeaSearch(words);
   });
 
+  wireShootPlan(root, () => getContent(selected.id) || selected);
+
   const tpBtn = qs("#open-teleprompter", root);
   if (tpBtn) {
     tpBtn.addEventListener("click", () => {
@@ -1921,6 +1923,7 @@ function executionPanel(c) {
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:4px;">${escapeHtml(c.title || t("common.untitled"))}</div>
       ${isPovContent(c) ? "" : `<button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>`}
+      ${canSeePlan(c.brandId) ? shootPlanHTML(c) : ""}
       ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-shot-big">${icon("check", { size: 20 })}${t("cr.doneShooting")}</button>
     </div>
@@ -2443,6 +2446,7 @@ function shootStepHTML(c, { review }) {
   const designed = isDesigned(c);
   return `
     ${designed || isPovContent(c) ? "" : `<button type="button" class="tp-cta" id="open-teleprompter">${icon("teleprompter", { size: 20 })}<span>${t("creator.teleprompterCta")}<small>${t("creator.teleprompterHint")}</small></span>${icon("arrowRight", { size: 14 })}</button>`}
+    ${canSeePlan(c.brandId) ? shootPlanHTML(c) : ""}
     ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
     ${review ? "" : nextBtnHTML("mark-shot-big", designed ? t("cw.doneDesign") : t("cr.doneShooting"), "edit", { check: true })}`;
 }

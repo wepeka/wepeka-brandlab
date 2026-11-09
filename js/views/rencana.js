@@ -63,17 +63,28 @@ function refCardHTML(r) {
     </a>`;
 }
 
-function refsHTML(c) {
+// The video cards and the lines around them ("" when the field is empty).
+function refsBodyHTML(c) {
   const { refs, notes } = parseRefs(c.reference);
   if (!refs.length && !notes.length) return "";
   const intro = notes.map(refNote).filter(Boolean);
   return `
+      ${refs.length ? `<div class="rc-refs">${refs.map(refCardHTML).join("")}</div>` : ""}
+      ${intro.map((n) => `<p class="rc-muted">${lines(n)}</p>`).join("")}`;
+}
+
+function refsHTML(c) {
+  const body = refsBodyHTML(c);
+  if (!body) return "";
+  return `
     <section class="rc-sec rc-sec-refs">
       <h5>${icon("play", { size: 13 })}${t("rc.sec.refs")}</h5>
-      ${refs.length ? `<div class="rc-refs">${refs.map(refCardHTML).join("")}</div>` : ""}
-      ${intro.map((n) => `<p class="rc-muted">${lines(n)}</p>`).join("")}
+      ${body}
     </section>`;
 }
+
+const gearSecHTML = (gear) => `<section class="rc-sec"><h5>${icon("box", { size: 13 })}${t("rc.sec.gear")}</h5><ul class="rc-gear">${gear.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul></section>`;
+const notesSecHTML = (c) => (String(c.notes || "").trim() ? `<section class="rc-sec"><h5>${icon("edit", { size: 13 })}${t("rc.sec.notes")}</h5><p class="rc-text">${lines(c.notes)}</p></section>` : "");
 
 function pieceHTML(c, { seriesName, canEdit, brandId }) {
   const code = videoCode(c);
@@ -98,8 +109,8 @@ function pieceHTML(c, { seriesName, canEdit, brandId }) {
           ${refsHTML(c)}
         </div>
         <div class="rc-col">
-          ${gear.length ? `<section class="rc-sec"><h5>${icon("box", { size: 13 })}${t("rc.sec.gear")}</h5><ul class="rc-gear">${gear.map((g) => `<li>${escapeHtml(g)}</li>`).join("")}</ul></section>` : ""}
-          ${String(c.notes || "").trim() ? `<section class="rc-sec"><h5>${icon("edit", { size: 13 })}${t("rc.sec.notes")}</h5><p class="rc-text">${lines(c.notes)}</p></section>` : ""}
+          ${gear.length ? gearSecHTML(gear) : ""}
+          ${notesSecHTML(c)}
         </div>
       </div>
       ${script || canEdit ? `<div class="rc-foot">
@@ -107,6 +118,49 @@ function pieceHTML(c, { seriesName, canEdit, brandId }) {
         ${canEdit ? `<a class="rc-open" href="#/brand/${escapeHtml(brandId)}/content/creator/${escapeHtml(c.id)}">${t("rc.open")}${icon("arrowRight", { size: 12 })}</a>` : ""}
       </div>` : ""}
     </article>`;
+}
+
+// ---- Creator's Syuting step -------------------------------------------------
+// The piece's plan, read-only, above its script (owner, 2026-11-09: "di ide
+// aja masukkannya, di syuting bisa previewnya sama download pdf aja"):
+// everything is filled on the Ide step. Gear shows; the reference videos and
+// the notes (a whole shooting brief on Quatro) fold, so the script stays near
+// the top. The piece downloads as its own PDF.
+const PLAN_OPEN = new Set();
+
+export function shootPlanHTML(c) {
+  const gear = gearItems(c.gear);
+  const refs = refsBodyHTML(c);
+  const notes = String(c.notes || "").trim();
+  const nRefs = parseRefs(c.reference).refs.length;
+  const fold = (key, iconName, label, body) => `
+        <details class="cw-plan-fold" data-plan-fold="${key}"${PLAN_OPEN.has(`${c.id}:${key}`) ? " open" : ""}>
+          <summary>${icon("chevronDown", { size: 13 })}${icon(iconName, { size: 13 })}<span>${label}</span></summary>
+          ${body}
+        </details>`;
+  const body = [
+    gear.length ? gearSecHTML(gear) : "",
+    refs ? fold("refs", "play", nRefs ? `${t("rc.sec.refs")} (${nRefs})` : t("rc.sec.refs"), refs) : "",
+    notes ? fold("notes", "edit", t("rc.sec.notes"), `<p class="rc-text">${lines(notes)}</p>`) : "",
+  ].join("");
+  return `
+    <section class="cw-plan">
+      <div class="cw-plan-head">
+        <b>${t("rc.shoot.title")}</b>
+        <button type="button" class="btn btn-secondary btn-sm" id="cw-plan-pdf">${icon("download", { size: 14 })}<span>${t("rc.pdf")}</span></button>
+      </div>
+      ${body.trim() ? `<div class="cw-plan-body">${body}</div>` : `<p class="rc-muted">${t("rc.shoot.empty")}</p>`}
+    </section>`;
+}
+
+// `getPiece`: the piece as it is now (the page may be older than the store).
+export function wireShootPlan(root, getPiece) {
+  const btn = qs("#cw-plan-pdf", root);
+  btn?.addEventListener("click", () => downloadPiecePdf(getPiece(), btn));
+  qsa("[data-plan-fold]", root).forEach((d) => d.addEventListener("toggle", () => {
+    const key = `${getPiece()?.id}:${d.dataset.planFold}`;
+    if (d.open) PLAN_OPEN.add(key); else PLAN_OPEN.delete(key);
+  }));
 }
 
 function weekNotesHTML(brand, week, canEdit) {
@@ -225,14 +279,7 @@ function pdfBlocks(brandId, week) {
   const notes = brand?.weekNotes?.[week] || "";
   const gear = weekGear(items, videoCode);
   const blocks = [`
-    <div class="report-header">
-      ${avatarHTML(brand || { name: "?" }, "width:44px;height:44px;border-radius:10px;font-size:16px;")}
-      <div>
-        <div class="report-brand">${escapeHtml(t("rc.pdf.cover", { range: rangeLabel(week) }))}</div>
-        <div class="report-title">${escapeHtml(brand?.name || "")}</div>
-      </div>
-      <div class="report-range"><div class="report-generated">${escapeHtml(t("rc.pdf.generated", { date: formatDate(new Date().toISOString()) }))}</div></div>
-    </div>
+    ${pdfHeaderHTML(brand, t("rc.pdf.cover", { range: rangeLabel(week) }))}
     <p class="sp-meta">${escapeHtml(t("rc.count", { n: items.length }))}</p>`];
   if (notes.trim()) blocks.push(...textBlocks(t("rc.notes.title"), notes));
   if (gear.length) {
@@ -250,54 +297,98 @@ function pdfBlocks(brandId, week) {
 
   items.forEach((c, i) => {
     blocks.push(PDF_PAGE_BREAK);
-    const meta = [t("rc.pdf.num", { i: i + 1, n: items.length }), dayLong(c.scheduleDate) + (c.posting?.time ? ` · ${c.posting.time}` : ""), videoCode(c), c.format, seriesById.get(c.seriesId)].filter(Boolean);
-    blocks.push(`
-      <p class="sp-meta">${meta.map(escapeHtml).join(" · ")}</p>
-      <div class="rc-pdf-title">${escapeHtml(c.title || t("common.untitled"))}</div>`);
-    if (String(c.idea || "").trim()) blocks.push(...textBlocks(t("rc.sec.idea"), c.idea));
-    const { refs, notes: refNotes } = parseRefs(c.reference);
-    if (refs.length) {
-      refs.forEach((r, k) => {
-        const thumb = r.kind === "youtube" ? youtubeThumb(r.id) : "";
-        blocks.push(`${k === 0 ? `${pdfTitle(t("rc.sec.refs"))}<p class="rc-pdf-tap">${escapeHtml(t("rc.pdf.tap"))}</p>` : ""}
-          <div class="rc-pdf-ref">
-            <a class="rc-pdf-thumb is-${r.kind}" href="${escapeHtml(r.url)}">${thumb ? `<img src="${escapeHtml(thumb)}" crossorigin="anonymous" alt="">` : `<span>${SITE[r.kind]}</span>`}</a>
-            <div class="rc-pdf-ref-body">
-              <b>${escapeHtml(r.title || t("rc.ref.untitled"))}</b>
-              ${r.notes.map((n) => `<p>${escapeHtml(n)}</p>`).join("")}
-              <a href="${escapeHtml(r.url)}">${escapeHtml(SITE[r.kind])} · ${escapeHtml(shortURL(r.url))}</a>
-            </div>
-          </div>`);
-      });
-      const extra = refNotes.map(refNote).filter(Boolean);
-      if (extra.length) blocks.push(extra.map((n) => `<p class="rc-pdf-tap">${lines(n)}</p>`).join(""));
-    } else if (refNotes.length) {
-      blocks.push(...textBlocks(t("rc.sec.refs"), refNotes.join("\n\n")));
-    }
-    const g = gearItems(c.gear);
-    if (g.length) blocks.push(`${pdfTitle(t("rc.sec.gear"))}<p class="sp-text">${g.map(escapeHtml).join(" · ")}</p>`);
-    if (String(c.notes || "").trim()) blocks.push(...textBlocks(t("rc.sec.notes"), c.notes));
-    if (String(c.script || "").trim()) blocks.push(...scriptPartBlocks(c, { heading: t(isCarouselContent(c) ? "rc.sec.slides" : "rc.sec.script") }));
+    blocks.push(...pieceBlocks(c, { lead: t("rc.pdf.num", { i: i + 1, n: items.length }), seriesName: seriesById.get(c.seriesId) }));
   });
   return blocks;
+}
+
+// One piece: its date, code and title, then concept, reference videos (the
+// links stay clickable), gear, notes and the script.
+function pieceBlocks(c, { lead = "", seriesName = "" } = {}) {
+  const blocks = [];
+  const when = c.scheduleDate ? dayLong(c.scheduleDate) + (c.posting?.time ? ` · ${c.posting.time}` : "") : "";
+  const meta = [lead, when, videoCode(c), c.format, seriesName].filter(Boolean);
+  blocks.push(`
+    <p class="sp-meta">${meta.map(escapeHtml).join(" · ")}</p>
+    <div class="rc-pdf-title">${escapeHtml(c.title || t("common.untitled"))}</div>`);
+  if (String(c.idea || "").trim()) blocks.push(...textBlocks(t("rc.sec.idea"), c.idea));
+  const { refs, notes: refNotes } = parseRefs(c.reference);
+  if (refs.length) {
+    refs.forEach((r, k) => {
+      const thumb = r.kind === "youtube" ? youtubeThumb(r.id) : "";
+      blocks.push(`${k === 0 ? `${pdfTitle(t("rc.sec.refs"))}<p class="rc-pdf-tap">${escapeHtml(t("rc.pdf.tap"))}</p>` : ""}
+        <div class="rc-pdf-ref">
+          <a class="rc-pdf-thumb is-${r.kind}" href="${escapeHtml(r.url)}">${thumb ? `<img src="${escapeHtml(thumb)}" crossorigin="anonymous" alt="">` : `<span>${SITE[r.kind]}</span>`}</a>
+          <div class="rc-pdf-ref-body">
+            <b>${escapeHtml(r.title || t("rc.ref.untitled"))}</b>
+            ${r.notes.map((n) => `<p>${escapeHtml(n)}</p>`).join("")}
+            <a href="${escapeHtml(r.url)}">${escapeHtml(SITE[r.kind])} · ${escapeHtml(shortURL(r.url))}</a>
+          </div>
+        </div>`);
+    });
+    const extra = refNotes.map(refNote).filter(Boolean);
+    if (extra.length) blocks.push(extra.map((n) => `<p class="rc-pdf-tap">${lines(n)}</p>`).join(""));
+  } else if (refNotes.length) {
+    blocks.push(...textBlocks(t("rc.sec.refs"), refNotes.join("\n\n")));
+  }
+  const g = gearItems(c.gear);
+  if (g.length) blocks.push(`${pdfTitle(t("rc.sec.gear"))}<p class="sp-text">${g.map(escapeHtml).join(" · ")}</p>`);
+  if (String(c.notes || "").trim()) blocks.push(...textBlocks(t("rc.sec.notes"), c.notes));
+  if (String(c.script || "").trim()) blocks.push(...scriptPartBlocks(c, { heading: t(isCarouselContent(c) ? "rc.sec.slides" : "rc.sec.script") }));
+  return blocks;
+}
+
+function pdfHeaderHTML(brand, label) {
+  return `
+    <div class="report-header">
+      ${avatarHTML(brand || { name: "?" }, "width:44px;height:44px;border-radius:10px;font-size:16px;")}
+      <div>
+        <div class="report-brand">${escapeHtml(label)}</div>
+        <div class="report-title">${escapeHtml(brand?.name || "")}</div>
+      </div>
+      <div class="report-range"><div class="report-generated">${escapeHtml(t("rc.pdf.generated", { date: formatDate(new Date().toISOString()) }))}</div></div>
+    </div>`;
 }
 
 const fileSlug = (text) => String(text || "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 40).toLowerCase();
 
 async function downloadWeekPdf(brandId, week, btn) {
-  const brand = getBrand(brandId);
   if (!weekPieces(listContent(brandId), week).length) { toast(t("rc.pdf.none"), "error"); return; }
+  const brand = getBrand(brandId);
+  await makePdf(btn, {
+    busyHTML: `<span>${t("rc.pdf.making", { done: 0, total: "…" })}</span><span class="cl-cta-dot rc-dot"><span class="spinner" style="width:14px;height:14px;"></span></span>`,
+    brand,
+    blocks: pdfBlocks(brandId, week),
+    filename: `rencana-minggu-${week}-${fileSlug(brand?.name) || "brand"}.pdf`,
+  });
+}
+
+// Creator's Syuting step: this piece alone.
+export async function downloadPiecePdf(c, btn) {
+  if (!c || btn.disabled) return;
+  const brand = getBrand(c.brandId);
+  const seriesName = listSeries(c.brandId).find((s) => s.id === c.seriesId)?.name || "";
+  await makePdf(btn, {
+    busyHTML: `<span class="spinner" style="width:13px;height:13px;"></span><span>${t("rc.pdf.making", { done: 0, total: "…" })}</span>`,
+    brand,
+    blocks: [pdfHeaderHTML(brand, t("rc.shoot.title")), ...pieceBlocks(c, { seriesName })],
+    filename: `rencana-syuting-${fileSlug([videoCode(c), c.title].filter(Boolean).join(" ")) || "konten"}.pdf`,
+  });
+}
+
+async function makePdf(btn, { busyHTML, brand, blocks, filename }) {
   const label = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span>${t("rc.pdf.making", { done: 0, total: "…" })}</span><span class="cl-cta-dot rc-dot"><span class="spinner" style="width:14px;height:14px;"></span></span>`;
+  btn.innerHTML = busyHTML;
+  const status = () => [...btn.querySelectorAll("span")].find((s) => !s.classList.contains("spinner") && !s.querySelector(".spinner"));
   try {
     await downloadPagedPdf({
-      blocks: pdfBlocks(brandId, week),
+      blocks,
       pageClass: "report-sheet script-sheet rc-pdf",
       footer: (n, total) => `Wepeka Brandlab — ${brand?.name || ""} · ${n}/${total}`,
-      filename: `rencana-minggu-${week}-${fileSlug(brand?.name) || "brand"}.pdf`,
+      filename,
       links: true,
-      onProgress: (done, total) => { const s = btn.querySelector("span"); if (s) s.textContent = t("rc.pdf.making", { done, total }); },
+      onProgress: (done, total) => { const s = status(); if (s) s.textContent = t("rc.pdf.making", { done, total }); },
     });
     toast(t("rc.pdf.saved"));
   } catch (e) {

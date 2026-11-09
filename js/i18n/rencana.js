@@ -45,6 +45,10 @@ export default {
   "rc.pdf.num": { en: "{i} of {n}", id: "{i} dari {n}" },
   "rc.pdf.tap": { en: "Tap a link to watch the video.", id: "Klik linknya untuk menonton videonya." },
 
+  // Creator's Syuting step: the piece's plan, read-only, and its PDF.
+  "rc.shoot.title": { en: "Shoot plan", id: "Rencana syuting" },
+  "rc.shoot.empty": { en: "No gear, reference videos or notes yet. Fill them in on the Idea step.", id: "Belum ada gear, referensi video, atau catatan. Isi di langkah Ide." },
+
   // The Gear field in Creator (only on brands that have the plan).
   "cr.f.gear": { en: "Gear", id: "Gear (alat syuting)" },
   "cr.f.gearPh": { en: "One per line, e.g. phone + tripod, clip-on mic, ring light", id: "Satu per baris, misal: HP + tripod, mic clip-on, ring light" },

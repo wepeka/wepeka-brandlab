@@ -537,3 +537,19 @@ body.pq-review-open{ overflow:hidden; }
 .pst-cl-file .pst-hint{ margin:0; }
 .pst-cap-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .pst-cap-head .pst-link{ margin:0; }
+
+/* Creator's Syuting step: the piece's plan, read-only, with its PDF
+   (js/views/rencana.js shootPlanHTML). */
+.cw-plan{ margin:0 0 16px; padding:14px 16px; border:1px solid var(--border); border-left:4px solid #9B6BFF; border-radius: var(--radius-lg); background: var(--surface); }
+.cw-plan-head{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; }
+.cw-plan-head b{ font-size:15px; font-weight:800; }
+.cw-plan-head .btn{ gap:6px; }
+.cw-plan-body{ display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+.cw-plan-fold{ padding-top:12px; border-top:1px solid var(--border); }
+.cw-plan-fold > summary{ display:flex; align-items:center; gap:6px; list-style:none; cursor:pointer; font-size:11.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color: var(--text-muted); }
+.cw-plan-fold > summary::-webkit-details-marker{ display:none; }
+.cw-plan-fold > summary svg{ color:#9B6BFF; }
+.cw-plan-fold > summary > svg:first-child{ color: var(--text-muted); transform: rotate(-90deg); transition: transform .2s ease; }
+.cw-plan-fold[open] > summary > svg:first-child{ transform:none; }
+.cw-plan-fold[open] > summary{ margin-bottom:10px; }
+.cw-plan-fold > summary:hover{ color: var(--text); }

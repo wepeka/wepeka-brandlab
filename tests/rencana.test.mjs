@@ -76,3 +76,23 @@ test("weekPieces: Monday to Sunday, in order, no trials, mirror twins once", () 
   assert.deepEqual(got.map((c) => c.id), ["c", "b", "a", "f"]);
   assert.deepEqual(byDay(got).map((d) => [d.date, d.items.length]), [["2026-11-09", 2], ["2026-11-12", 1], ["2026-11-13", 1]]);
 });
+
+// Creator's Syuting step (owner, 2026-11-09: "di ide aja masukkannya, di
+// syuting bisa previewnya sama download pdf aja"): the plan read-only, and
+// the PDF button — nothing to type there.
+test("Syuting step: the piece's gear, videos and notes read-only, with Unduh PDF", async () => {
+  globalThis.location ??= { hash: "#/", href: "http://localhost/", pathname: "/" };
+  const { shootPlanHTML } = await import("../js/views/rencana.js");
+  const html = shootPlanHTML({ gear: "HP + tripod\nMic clip-on", reference: QUATRO_REF, notes: "Rekam dari depan" });
+  assert.match(html, /id="cw-plan-pdf"/);
+  assert.match(html, /<li>HP \+ tripod<\/li><li>Mic clip-on<\/li>/);
+  assert.match(html, /href="https:\/\/www\.instagram\.com\/p\/DcH29w8zp7j\/"/);
+  assert.match(html, /Rekam dari depan/);
+  assert.doesNotMatch(html, /<textarea|<input/, "nothing to fill in on Syuting");
+  assert.match(html, /<details class="cw-plan-fold" data-plan-fold="refs">/, "videos fold (closed) so the script stays near the top");
+  assert.match(html, /<details class="cw-plan-fold" data-plan-fold="notes">/);
+  assert.match(html, /\(2\)/, "the fold says how many videos");
+  const empty = shootPlanHTML({ gear: "", reference: "", notes: "" });
+  assert.match(empty, /id="cw-plan-pdf"/, "the PDF still comes (title + script)");
+  assert.doesNotMatch(empty, /cw-plan-body/);
+});
