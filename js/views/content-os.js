@@ -9,7 +9,7 @@ import * as calendarView from "./calendar.js";
 import * as copyStudioView from "./copy-studio.js";
 import * as seriesView from "./series.js";
 import * as postingQueueView from "./posting-queue.js";
-import { canUsePosting, reviewQueue } from "../posting.js";
+import { canUsePosting, canSeePosting, isClientView, postingState, reviewQueue } from "../posting.js";
 import { openContentEditor } from "./content-editor.js";
 import { t, getLang } from "../i18n.js";
 import { getMode } from "../mode.js";
@@ -42,7 +42,8 @@ const SUB_TABS = [
   // Antrean Video (js/views/posting-queue.js): Wepeka's own account only.
   { key: "antrean", labelKey: "pq.title", color: "#FF5F57", color2: "#FF2E93", art: "video", path: (id) => `#/brand/${id}/content/antrean`, private: true },
 ];
-const tabsHere = () => SUB_TABS.filter((tab) => !tab.private || canUsePosting());
+// Antrean Video: Wepeka's own account, and a brand's client (Kerja Tim "Klien").
+const tabsHere = (brandId) => SUB_TABS.filter((tab) => !tab.private || canUsePosting() || canSeePosting(brandId));
 
 // The Konten tab bar. (The chat, which used to sit here as "Brainstorm",
 // has its own page now: js/views/chat.js.) Wrapped in .cos-tabs-wrap so a
@@ -51,7 +52,7 @@ const tabsHere = () => SUB_TABS.filter((tab) => !tab.private || canUsePosting())
 export function contentTabsHTML(brandId, activeSub) {
   return `<div class="cos-tabs-wrap" style="margin:-4px 0 20px;">
       <nav class="tabs cos-tabs" aria-label="${t("nav.content")}">
-        ${tabsHere().map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}" ${activeSub === tab.key ? `aria-current="page"` : ""}>${t(tab.labelKey)}</a>`).join("")}
+        ${tabsHere(brandId).map((tab) => `<a class="tab ${activeSub === tab.key ? "active" : ""}" href="${tab.path(brandId)}" ${activeSub === tab.key ? `aria-current="page"` : ""}>${t(tab.labelKey)}</a>`).join("")}
       </nav>
     </div>`;
 }
@@ -59,7 +60,7 @@ export function contentTabsHTML(brandId, activeSub) {
 // Pemula, inside one of the five: a round back button wearing that part's
 // colour and character, back to the cards. The page's own title follows.
 function backPillHTML(brandId, activeSub) {
-  const tab = tabsHere().find((x) => x.key === activeSub) || SUB_TABS[0];
+  const tab = tabsHere(brandId).find((x) => x.key === activeSub) || SUB_TABS[0];
   return `<a class="cl-backpill" href="#/brand/${brandId}/content" style="--cat:${tab.color};--cat2:${tab.color2};" aria-label="${escapeHtml(t("cl.back"))}">
       ${icon("chevronLeft", { size: 16 })}
       <span class="cl-backpill-art cl-pic">${createArtSVG(tab.art || tab.key)}</span>
@@ -97,6 +98,10 @@ function cardStatus(key, brandId) {
   }
   if (key === "list") return { text: content.length ? t("cl.st.listN", { n: content.length }) : t("cl.st.listNone") };
   if (key === "antrean") {
+    if (isClientView(brandId)) {
+      const mine = content.filter((c) => postingState(c) === "client").length;
+      return { text: mine ? t("pq.cl.st", { n: mine }) : t("pq.st.none"), warn: mine > 0 };
+    }
     const n = reviewQueue().length;
     return { text: n ? t("pq.st.review", { n }) : t("pq.st.none"), warn: n > 0 };
   }
@@ -131,6 +136,7 @@ function peekItems(key, brandId) {
       .map((c) => ({ title: untitled(c), meta: c.scheduleDate === today ? t("nw.when.today") : new Date(`${c.scheduleDate}T00:00:00`).toLocaleDateString(loc, { weekday: "short", day: "numeric" }) }));
   }
   if (key === "list") return content.slice(0, PEEK_MAX).map((c) => ({ title: untitled(c), meta: statusLabel(c.status, STATUS_LABELS) }));
+  if (key === "antrean" && isClientView(brandId)) return content.filter((c) => postingState(c) === "client").slice(0, PEEK_MAX).map((c) => ({ title: untitled(c), meta: "" }));
   if (key === "antrean") return reviewQueue().slice(0, PEEK_MAX).map(({ c, brand }) => ({ title: untitled(c), meta: brand.name }));
   if (key === "series") return listSeries(brandId).slice(0, PEEK_MAX).map((s) => ({ title: s.name || t("common.untitled"), meta: "" }));
   return t("cl.peek.copyItems").split(" · ").map((title) => ({ title, meta: "", chip: true }));
@@ -144,7 +150,7 @@ function peekHTML(key, brandId) {
 }
 
 function landingHTML(brandId, brand, { animate }) {
-  const cards = tabsHere().map((tab, i) => {
+  const cards = tabsHere(brandId).map((tab, i) => {
     const st = cardStatus(tab.key, brandId);
     return `
       <a class="cl-card" data-cat="${tab.key}" href="${tab.path(brandId)}" style="--cat:${tab.color};--cat2:${tab.color2};--i:${i};">
@@ -212,7 +218,7 @@ export function render(root, { brandId, sub, contentId }) {
   // Pro land on Creator, as before.)
   if (guided && !sub) return renderLanding(root, brandId);
   // The bare URL (and any old /dashboard link) lands on the first tab.
-  const activeSub = tabsHere().some((x) => x.key === sub) ? sub : "creator";
+  const activeSub = tabsHere(brandId).some((x) => x.key === sub) ? sub : "creator";
   // Creator, Kalender, Konten and Tulisan Cepat draw their own "?" and
   // "Panduan" next to their title — the ones up here only for Series, which
   // has none, so a page never shows the same guide twice.

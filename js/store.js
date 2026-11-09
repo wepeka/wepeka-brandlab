@@ -542,6 +542,13 @@ export function brandRole(brandOrId) {
   if (me?.role === "editor" && me.seatPaused) return "viewer";
   return me?.role === "editor" || me?.role === "viewer" ? me.role : null;
 }
+// This account is the brand's client ("Klien", Kerja Tim): reads like
+// "Lihat saja", and notes/approves the videos sent to it (js/posting.js).
+export function isClientMember(brandOrId) {
+  const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
+  const me = b && !isOwnBrand(b) ? b.members?.[ownerUid] : null;
+  return !!me?.klien && !me.disabled;
+}
 // This account is an editor here, paused because the team is over its seats.
 export function isSeatPaused(brandOrId) {
   const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;

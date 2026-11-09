@@ -108,6 +108,33 @@ async function googleToken(params, { fetchImpl = fetch, env = process.env } = {}
   return json;
 }
 
+// A fresh access token from a stored (sealed) refresh token — the server
+// uploading into a client's Drive (api/review/[action].js).
+export async function refreshAccess(sealed, { env = process.env, fetchImpl = fetch } = {}) {
+  const tok = await googleToken({ refresh_token: unseal(sealed, env), grant_type: "refresh_token" }, { fetchImpl, env });
+  return { accessToken: tok.access_token, expiresIn: tok.expires_in || 3600 };
+}
+
+// A client (owner, 2026-11-09: Quatro opens Brandlab itself) is a team
+// member invited as "Klien" on a brand of Wepeka's (memberships/{uid}
+// brands[id].klien). Their own Drive keeps the cuts sent to them, so the
+// brands they're a client on say whose Drive that is: clientDrive
+// { uid, email, at } on the brand doc (no secret in it).
+export function clientBrandIds(membership, isAdminUid) {
+  return Object.entries(membership?.brands || {}).filter(([, m]) => m?.klien && !m.disabled && isAdminUid(m.ownerId)).map(([id]) => id);
+}
+export async function markClientBrands(db, uid, info, isAdminUid) {
+  const snap = await db.doc(`memberships/${uid}`).get();
+  for (const id of clientBrandIds(snap.exists ? snap.data() : null, isAdminUid)) {
+    const ref = db.doc(`brands/${id}`);
+    if (info) await ref.update({ clientDrive: { uid, email: info.email || "", at: info.at } });
+    else {
+      const b = await ref.get();
+      if (b.exists && b.data().clientDrive?.uid === uid) await ref.update({ clientDrive: null });
+    }
+  }
+}
+
 // Read straight off Google's token response over TLS, so the id_token's
 // signature needs no second check here.
 export function emailFromIdToken(idToken) {
@@ -120,19 +147,21 @@ export function emailFromIdToken(idToken) {
 
 // Google → /api/drive/callback. Always ends in a redirect back into the app;
 // the app asks `token` afterwards whether it worked.
-export async function finishConnect({ code, state, error, redirect, db, env = process.env, fetchImpl = fetch, now = Date.now() }) {
+export async function finishConnect({ code, state, error, redirect, db, env = process.env, fetchImpl = fetch, now = Date.now(), isAdminUid = () => false }) {
   const s = readState(state, { now, env });
   const back = `/${s?.ret || "#/"}`;
   if (!s || error || !code) return { location: back, result: !s ? "expired" : "cancelled" };
   const tok = await googleToken({ code, redirect_uri: redirect, grant_type: "authorization_code" }, { fetchImpl, env });
   // Google's consent screen lets people untick Drive and still continue.
   if (!String(tok.scope || "").split(" ").includes(DRIVE_SCOPE) || !tok.refresh_token) return { location: back, result: "scope" };
-  await db.doc(`driveConnections/${s.uid}`).set({ refresh: seal(tok.refresh_token, env), email: emailFromIdToken(tok.id_token), scope: tok.scope, connectedAt: now });
+  const email = emailFromIdToken(tok.id_token);
+  await db.doc(`driveConnections/${s.uid}`).set({ refresh: seal(tok.refresh_token, env), email, scope: tok.scope, connectedAt: now });
+  await markClientBrands(db, s.uid, { email, at: now }, isAdminUid);
   return { location: back, result: "ok" };
 }
 
 // The signed-in person's own actions: start / token / disconnect.
-export async function runDrive({ action, uid, email, ret, redirect, db, env = process.env, fetchImpl = fetch }) {
+export async function runDrive({ action, uid, email, ret, redirect, db, env = process.env, fetchImpl = fetch, isAdminUid = () => false }) {
   const ref = db.doc(`driveConnections/${uid}`);
   if (action === "start") return { url: authUrl({ uid, ret, email, redirect }, { env }) };
   if (action === "token") {
@@ -144,7 +173,7 @@ export async function runDrive({ action, uid, email, ret, redirect, db, env = pr
       return { accessToken: tok.access_token, expiresIn: tok.expires_in || 3600, email: data.email || "" };
     } catch (e) {
       // Revoked in Google's settings, or expired: start over cleanly.
-      if (e.code === "reconnect") await ref.delete();
+      if (e.code === "reconnect") { await ref.delete(); await markClientBrands(db, uid, null, isAdminUid); }
       throw e;
     }
   }
@@ -156,6 +185,7 @@ export async function runDrive({ action, uid, email, ret, redirect, db, env = pr
       } catch { /* Google forgets it on its own; the stored copy goes either way */ }
       await ref.delete();
     }
+    await markClientBrands(db, uid, null, isAdminUid);
     return { ok: true };
   }
   throw new DriveError(404, "action");

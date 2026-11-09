@@ -250,6 +250,20 @@
 .pst-client-head b{ font-size:15px; }
 .pst-client-ic{ display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background: color-mix(in srgb, #2EC4B6 22%, transparent); color: color-mix(in srgb, #2EC4B6 70%, var(--text)); }
 .pst-client-line{ margin:0; font-size:13.5px; line-height:1.5; color: var(--text-muted); }
+/* Where the client's cuts are kept: their Google Drive (2026-11-09). */
+.pst-client-drive{ display:flex; align-items:flex-start; gap:8px; margin:0; font-size:13px; line-height:1.45; font-weight:700; color: var(--text-muted); }
+.pst-client-drive i{ flex:none; width:8px; height:8px; margin-top:6px; border-radius:50%; background: var(--text-faint); }
+.pst-client-drive.is-on i{ background:#36D27F; }
+.pst-client-drive.is-wait i{ background:#FF9F3D; }
+.pq-client-btn{ position:relative; }
+.pq-client-dot{ width:8px; height:8px; border-radius:50%; background: var(--text-faint); }
+.pq-client-dot.is-on{ background:#36D27F; }
+.pq-client-dot.is-wait{ background:#FF9F3D; }
+.pq-client-menu{ width:min(330px, calc(100vw - 16px)); padding:0 !important; }
+.pq-client-pop{ display:flex; flex-direction:column; gap:10px; padding:14px; }
+.pq-client-pop > b{ font-size:15px; }
+.pq-client-pop > p{ margin:0; font-size:13px; line-height:1.5; color: var(--text-muted); }
+.pq-client-row{ display:flex; flex-wrap:wrap; gap:8px; }
 .pst-dot-client{ background: linear-gradient(135deg, #2EC4B6, #3B9BFF); color:#fff; }
 /* "Send to editor": under the newest cut's notes, owner only. */
 .pst-editor{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); }

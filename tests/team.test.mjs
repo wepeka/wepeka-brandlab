@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, inviteState, seatsUsed, inviteLink,
   composeInviteEmail, composeCodeEmail, joinNames, CODE_MAX_ATTEMPTS, codeGuardId, guardToday, pausedMembers, CODE_DAY_MS,
-  takeMailSlot, teamMailDay, TEAM_MAIL_DAY_TOTAL, TEAM_MAIL_DAY_OWNER,
+  takeMailSlot, teamMailDay, TEAM_MAIL_DAY_TOTAL, TEAM_MAIL_DAY_OWNER, ROLES, memberRoleOf, roleShown,
 } from "../api/_team.js";
 import { TEAM_SEATS, teamSeatsFor, PLANS, ADDONS } from "../api/_plans.js";
 import { TEAM_SEAT_ADDON } from "../js/site-links.js";
@@ -138,6 +138,16 @@ describe("emails", () => {
     assert.match(m.text, /#\/undangan\/t/);
     assert.match(m.html, /Gabung ke tim/);
     assert.doesNotMatch(m.html, /<script/i);
+  });
+  test("a client (Klien) is a viewer on the brand, marked klien, and the invite says what they can do", () => {
+    assert.ok(ROLES.includes("klien"));
+    assert.deepEqual(memberRoleOf("klien"), { role: "viewer", klien: true }, "the rules read them as a viewer: nothing to edit");
+    assert.deepEqual(memberRoleOf("editor"), { role: "editor" });
+    assert.equal(roleShown({ role: "viewer", klien: true }), "klien");
+    assert.equal(roleShown({ role: "viewer" }), "viewer");
+    const m = composeInviteEmail({ ownerName: "Wepeka", brandNames: ["Quatro"], role: "klien", link: "https://brandlab.wepeka.com/#/undangan/t", email: "a@q.id" });
+    assert.match(m.text, /Klien/);
+    assert.match(m.text, /menyetujui video/);
   });
   test("names and links are escaped in the HTML", () => {
     const m = composeInviteEmail({ ownerName: "<b>x</b>", brandNames: ["A&B"], role: "viewer", link: "https://brandlab.wepeka.com/#/undangan/t", email: "a@b.id" });

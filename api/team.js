@@ -40,8 +40,7 @@ import { APP_URL } from "./_reminders.js";
 import {
   ROLES, INVITE_TTL_MS, CODE_TTL_MS, RESEND_GAP_MS, MAX_PENDING_INVITES, TEAM_EMAIL_FROM_DEFAULT, CODE_DAY_SENDS, CODE_DAY_WRONG,
   teamMailDay, takeMailSlot, normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, codeGuardId, guardToday, inviteState, seatsUsed,
-  pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail,
-} from "./_team.js";
+  pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail, memberRoleOf } from "./_team.js";
 
 export class TeamError extends Error {
   constructor(code, status, extra = {}) {
@@ -188,6 +187,7 @@ export async function invite(d, caller, body) {
   const email = normalizeEmail(body?.email);
   const role = body?.role;
   if (!brandIds || !email || !ROLES.includes(role)) fail("bad-request", 400);
+  if (role === "klien" && !isAdminUid(caller.uid)) fail("bad-request", 400);
   const owner = await d.auth.getUser(caller.uid);
   if (normalizeEmail(owner.email) === email) fail("self", 400);
   const now = d.now();
@@ -314,7 +314,7 @@ export async function accept(d, caller, body) {
     const targets = inv.brandIds.map((bid) => brands.find((b) => b.id === bid)).filter((b) => b && isActiveBrand(b));
     if (!targets.length) fail("not-found", 404);
     const name = String(user.displayName || inv.email.split("@")[0]).slice(0, 80);
-    const memberEntry = { role: inv.role, name, email: inv.email, addedAt: now };
+    const memberEntry = { ...memberRoleOf(inv.role), name, email: inv.email, addedAt: now };
     const membershipBrands = {};
     for (const b of targets) {
       const ref = d.db.doc(`brands/${b.id}`);
@@ -327,7 +327,7 @@ export async function accept(d, caller, body) {
       for (const [k, v] of Object.entries(scrub?.brandPatch || {})) updates.push(k, v);
       tx.update(ref, ...updates);
       // Invited again after their access was turned off: back on.
-      membershipBrands[b.id] = { ownerId: inv.ownerId, role: inv.role, brandName: String(b.name || "").slice(0, 80), ownerName: inv.ownerName, disabled: FieldValue.delete() };
+      membershipBrands[b.id] = { ownerId: inv.ownerId, ...memberRoleOf(inv.role), ...(inv.role === "klien" ? {} : { klien: FieldValue.delete() }), brandName: String(b.name || "").slice(0, 80), ownerName: inv.ownerName, disabled: FieldValue.delete() };
     }
     tx.set(d.db.doc(`memberships/${caller.uid}`), { ownerIds: FieldValue.arrayUnion(inv.ownerId), brands: membershipBrands }, { merge: true });
     tx.update(d.db.doc(`invites/${id}`), { status: "accepted", acceptedBy: caller.uid, acceptedAt: now });
@@ -430,6 +430,8 @@ export async function codeFinish(d, caller, body) {
 export async function changeRole(d, caller, body) {
   const { brandId, memberUid, role } = body || {};
   if (!idOk(brandId) || !idOk(memberUid) || !ROLES.includes(role)) fail("bad-request", 400);
+  if (role === "klien" && !isAdminUid(caller.uid)) fail("bad-request", 400);
+  const next = memberRoleOf(role);
   await d.db.runTransaction(async (tx) => {
     const ref = d.db.doc(`brands/${brandId}`);
     const snap = await tx.get(ref);
@@ -437,8 +439,8 @@ export async function changeRole(d, caller, body) {
     const b = snap.data();
     if (b.ownerId !== caller.uid) fail("not-owner", 403);
     if (!b.members?.[memberUid]) fail("not-found", 404);
-    tx.update(ref, new FieldPath("members", memberUid, "role"), role);
-    tx.set(d.db.doc(`memberships/${memberUid}`), { brands: { [brandId]: { role } } }, { merge: true });
+    tx.update(ref, new FieldPath("members", memberUid, "role"), next.role, new FieldPath("members", memberUid, "klien"), next.klien ? true : FieldValue.delete());
+    tx.set(d.db.doc(`memberships/${memberUid}`), { brands: { [brandId]: { role: next.role, klien: next.klien ? true : FieldValue.delete() } } }, { merge: true });
   });
   await mirrorTeams(d, [brandId]);
   return {};
@@ -465,7 +467,7 @@ export async function setAccess(d, caller, body) {
     if (!m) fail("not-found", 404);
     tx.update(ref, new FieldPath("members", memberUid, "disabled"), enabled ? FieldValue.delete() : true,
       "memberIds", enabled ? FieldValue.arrayUnion(memberUid) : FieldValue.arrayRemove(memberUid));
-    const entry = { ownerId: b.ownerId, role: m.role, brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "", ...(enabled ? {} : { disabled: true }) };
+    const entry = { ownerId: b.ownerId, role: m.role, ...(m.klien ? { klien: true } : {}), brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "", ...(enabled ? {} : { disabled: true }) };
     const brands = { ...(mSnap.exists ? mSnap.data().brands || {} : {}), [brandId]: entry };
     tx.set(mRef, { brands, ownerIds: [...new Set(Object.values(brands).map((x) => x.ownerId))] });
   });
@@ -538,7 +540,7 @@ export async function sync(d, caller) {
   for (const b of brands) {
     for (const [uid, m] of Object.entries(b.members || {})) {
       if (!byMember.has(uid)) byMember.set(uid, {});
-      byMember.get(uid)[b.id] = { ownerId: caller.uid, role: m.role, brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "", ...(m.disabled ? { disabled: true } : {}) };
+      byMember.get(uid)[b.id] = { ownerId: caller.uid, role: m.role, ...(m.klien ? { klien: true } : {}), brandName: String(b.name || "").slice(0, 80), ownerName: b.ownerName || "", ...(m.disabled ? { disabled: true } : {}) };
     }
   }
   for (const [uid, own] of byMember) {

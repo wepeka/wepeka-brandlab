@@ -10,11 +10,12 @@
 // Private to Wepeka's own account (canUsePosting), like the rest of it.
 import { listBrands, listContent, getBrand, getContent, onChange, localISODate, organicViews } from "../store.js";
 import { icon } from "../icons.js";
-import { qs, qsa, escapeHtml, toast, formatNumber } from "../dom.js";
+import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip } from "../posting.js";
+import { canUsePosting, canSeePosting, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine } from "../posting.js";
+import { driveVideoURL } from "../drive.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece } from "../video-codes.js";
@@ -23,6 +24,9 @@ import { canUseInstagramApi } from "../account.js";
 
 // The status chips over the list; "scheduled" also holds a failed post.
 const FILTERS = ["all", "none", "review", "client", "revision", "ready", "scheduled", "published"];
+// The client's own Antrean (Kerja Tim "Klien", 2026-11-09): the same page,
+// their states — waiting on them first, then being fixed, approved, …
+const CLIENT_FILTERS = ["all", "client", "revision", "ready", "scheduled", "published", "none"];
 const filterOf = (state) => (state === "failed" ? "scheduled" : state);
 const VIEW_KEY = "posting:queueView";
 
@@ -41,7 +45,8 @@ function pieces({ brandId, period }) {
   const range = rangeOf(period);
   const inRange = (d) => !range || (d && d >= range[0] && d <= range[1]);
   const brands = listBrands().filter((b) => brandId === "all" || b.id === brandId);
-  return brands.flatMap((brand) => listContent(brand.id).filter(codedPiece).map((c) => ({ brand, c, state: postingState(c) })))
+  // A client sees a trial cut only once it's sent to them.
+  return brands.flatMap((brand) => listContent(brand.id).filter(codedPiece).filter((c) => !c.trialOf || !isClientView(c) || c.posting?.client).map((c) => ({ brand, c, state: postingState(c) })))
     .filter(({ c }) => inRange(c.scheduleDate));
 }
 
@@ -68,7 +73,7 @@ function thumbHTML(c, cls = "pq-tile-img") {
 // galeri jadi gak pusing"): the cover big, its code, where it stands, and
 // under it only the title and the hour. Everything else is one tap away.
 function tileHTML({ c, state, sub }) {
-  const n = c.posting?.versions?.length || 0;
+  const n = isClientView(c) ? clientCutCount(c) : c.posting?.versions?.length || 0;
   const type = c.posting?.type || { Reels: "reels", Carousel: "carousel", "Static Post": "foto", Story: "story" }[c.format] || "reels";
   const code = videoCode(c);
   const time = c.posting?.time;
@@ -80,7 +85,7 @@ function tileHTML({ c, state, sub }) {
   const views = posted ? organicViews(c) : null;
   return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${posted ? "is-posted" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
-        <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon("upload", { size: 22 })}<small>${t("post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
+        <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon(isClientView(c) ? "clock" : "upload", { size: 22 })}<small>${t(isClientView(c) ? "post.cst.none" : "post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
         ${posted ? `<span class="pq-g-ok" title="${escapeHtml(t("pq.posted.seal"))}">${SEAL}</span>` : n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
         ${views !== null && views !== undefined && views !== "" ? `<span class="pq-g-views" title="${escapeHtml(t("pq.views"))}">${icon("eye", { size: 12 })}${formatNumber(views)}</span>` : ""}
         ${empty ? "" : ed ? `<span class="pq-g-state is-editor" style="--pst:${ed.color}"><i></i>${escapeHtml(ed.label)}</span>` : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
@@ -107,8 +112,9 @@ function listHTML(items, ui) {
   // 2026-11-02: "yang sudah tayang tetap bisa dilihat di antrean minggu ini");
   // over all time it stays under its own chip, or every old post would fill it.
   const inAll = (x) => ui.period !== "all" || x.state !== "published";
-  const counts = Object.fromEntries(FILTERS.map((f) => [f, f === "all" ? items.filter(inAll).length : items.filter((x) => filterOf(x.state) === f).length]));
-  const chips = `<div class="pq-filters" role="group" aria-label="${escapeHtml(t("pq.filterLabel"))}">${FILTERS.map((f) => `<button type="button" class="pq-filter ${ui.status === f ? "is-on" : ""}" data-status="${f}" aria-pressed="${ui.status === f}" style="--pst:${f === "all" ? "var(--text)" : stateColor(f)}">${f === "all" ? "" : "<i></i>"}${t(`pq.f.${f}`)}<b>${counts[f]}</b></button>`).join("")}</div>`;
+  const list = ui.client ? CLIENT_FILTERS : FILTERS;
+  const counts = Object.fromEntries(list.map((f) => [f, f === "all" ? items.filter(inAll).length : items.filter((x) => filterOf(x.state) === f).length]));
+  const chips = `<div class="pq-filters" role="group" aria-label="${escapeHtml(t("pq.filterLabel"))}">${list.map((f) => `<button type="button" class="pq-filter ${ui.status === f ? "is-on" : ""}" data-status="${f}" aria-pressed="${ui.status === f}" style="--pst:${f === "all" ? "var(--text)" : stateColor(f)}">${f === "all" ? "" : "<i></i>"}${t(ui.client && f !== "all" ? `post.cst.${f}` : `pq.f.${f}`)}<b>${counts[f]}</b></button>`).join("")}</div>`;
   const shown = items.filter((x) => (ui.status === "all" ? inAll(x) : filterOf(x.state) === ui.status));
   if (!shown.length) return `${chips}<div class="pq-empty">${icon("check", { size: 20 })}<span>${t(ui.status === "all" ? "pq.emptyAll" : "pq.emptyFilter")}</span></div>`;
   const rows = (list) => ordered(list).map(tileHTML).join("");
@@ -199,33 +205,74 @@ function feedHTML(brandId) {
     </div>`;
 }
 
+// "Klien": who the brand's client is, whether their Drive is on, and the
+// way in to send them (their Antrean in Brandlab).
+function openClientMenu(btn, brandId) {
+  const r = btn.getBoundingClientRect();
+  const menu = openMenu(btn, { className: "pq-client-menu", top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - 340)) });
+  if (!menu) return; // the same button again closes it
+  const brand = getBrand(brandId);
+  const people = clientsOf(brand);
+  const line = clientDriveLine(brand);
+  const url = clientQueueURL(brandId);
+  menu.innerHTML = `<div class="pq-client-pop">
+      <b>${t("pq.client.head")}</b>
+      <p>${t("pq.client.what")}</p>
+      <p class="pst-client-drive is-${line.tone}"><i></i>${line.text}</p>
+      <div class="pq-client-row">
+        ${people.length ? `<button type="button" class="btn btn-primary btn-sm" data-client-copy>${icon("link", { size: 14 })}${t("post.client.copy")}</button>
+        <a class="btn btn-secondary btn-sm" href="https://wa.me/?text=${encodeURIComponent(t("post.client.waText", { brand: brand?.name || "", url }))}" target="_blank" rel="noopener">${icon("chat", { size: 14 })}WhatsApp</a>` : ""}
+        <button type="button" class="btn ${people.length ? "btn-ghost" : "btn-primary"} btn-sm" data-client-invite>${icon("users", { size: 14 })}${t(people.length ? "pq.client.more" : "post.client.invite")}</button>
+      </div></div>`;
+  qs("[data-client-copy]", menu)?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(url); } catch { /* the WhatsApp button has it too */ }
+    toast(t("post.client.copied"));
+  });
+  qs("[data-client-invite]", menu)?.addEventListener("click", async () => {
+    closeMenu();
+    const { openShareDialog } = await import("./team-panel.js");
+    openShareDialog({ brandId, role: "klien" });
+  });
+}
+
+// The client's header: their Google Drive, where the videos land.
+function clientDriveHTML() {
+  const d = driveInfo();
+  if (!d.checked) return "";
+  if (d.connected) return `<span class="pq-source">${icon("folder", { size: 14 })}<span>${t("pq.cl.driveOn", { email: escapeHtml(d.email || "") })}</span></span>`;
+  return `<button type="button" class="cl-cta" id="pq-drive"><span>${t("post.cl.driveCta")}</span><span class="cl-cta-dot pq-dot">${icon("link", { size: 16 })}</span></button>`;
+}
+
 export function render(root, { brandId }) {
-  if (!canUsePosting()) { location.hash = `#/brand/${brandId}/content`; return () => {}; }
+  if (!canSeePosting(brandId)) { location.hash = `#/brand/${brandId}/content`; return () => {}; }
+  const client = !canUsePosting();
   let view = "list";
   try { view = localStorage.getItem(VIEW_KEY) || "list"; } catch { /* default */ }
   // The brand open in the app (its switcher, top left) — no second brand picker here.
-  const ui = { view, period: "all", status: "all", open: {}, unmatched: [] };
+  if (client) view = "list"; // the profile grid reads Wepeka's Instagram connection
+  const ui = { view, period: "all", status: "all", open: {}, unmatched: [], client };
 
   const paint = () => {
-    ensureCodes(); // a piece made in Creator since: it gets its number now
+    if (!client) ensureCodes(); // a piece made in Creator since: it gets its number now
     const items = pieces({ brandId, period: ui.period });
-    const reviewN = pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review").length;
+    const reviewN = client ? 0 : pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review").length;
     const brands = listBrands();
     root.innerHTML = `
       <div class="pq">
         <div class="calx-head">
           <div class="calx-head-title">
             <span class="calx-head-art cl-pic" style="--cat:#FF5F57;--cat2:#FF2E93">${createArtSVG("video")}</span>
-            <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t("pq.lead")}</p></div>
+            <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t(client ? "pq.cl.lead" : "pq.lead")}</p></div>
           </div>
           <div class="pq-actions">
-            ${sourceHTML()}
-            <button type="button" class="cl-cta" id="pq-review" ${reviewN ? "" : "disabled"}><span>${reviewN ? t("pq.review", { n: reviewN }) : t("pq.reviewNone")}</span><span class="cl-cta-dot pq-dot">${icon("play", { size: 16 })}</span></button>
+            ${client ? clientDriveHTML() : `${sourceHTML()}
+            <button type="button" class="btn btn-secondary pq-client-btn" id="pq-client" aria-haspopup="true">${icon("users", { size: 15 })}<span>${t("pq.client.btn")}</span><i class="pq-client-dot is-${clientDriveLine(getBrand(brandId)).tone}"></i></button>
+            <button type="button" class="cl-cta" id="pq-review" ${reviewN ? "" : "disabled"}><span>${reviewN ? t("pq.review", { n: reviewN }) : t("pq.reviewNone")}</span><span class="cl-cta-dot pq-dot">${icon("play", { size: 16 })}</span></button>`}
           </div>
         </div>
         ${ui.unmatched.length ? `<div class="pq-warn is-soft">${icon("folder", { size: 15 })}<b>${t("pq.unmatched")}</b><div class="pq-warn-list">${ui.unmatched.map((u) => `<label class="pq-pick"><span>${escapeHtml(u.brandFolder)}</span><select data-folder="${escapeHtml(u.brandFolder)}"><option value="">${t("pq.pickBrand")}</option>${brands.map((b) => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`).join("")}</select></label>`).join("")}</div></div>` : ""}
         <div class="pq-bar">
-          <div class="segmented pq-seg">${["list", "feed"].map((v) => `<button data-view="${v}" class="${ui.view === v ? "active" : ""}" aria-pressed="${ui.view === v}">${t(`pq.view.${v}`)}</button>`).join("")}</div>
+          ${client ? "" : `<div class="segmented pq-seg">${["list", "feed"].map((v) => `<button data-view="${v}" class="${ui.view === v ? "active" : ""}" aria-pressed="${ui.view === v}">${t(`pq.view.${v}`)}</button>`).join("")}</div>`}
           ${ui.view === "list" ? `<div class="segmented pq-seg">${["all", "week", "next", "month"].map((v) => `<button data-period="${v}" class="${ui.period === v ? "active" : ""}" aria-pressed="${ui.period === v}">${t(`pq.period.${v}`)}</button>`).join("")}</div>` : ""}
         </div>
         ${ui.view === "feed" ? feedHTML(brandId) : listHTML(items, ui)}
@@ -239,6 +286,15 @@ export function render(root, { brandId }) {
   };
 
   const loadThumbs = () => {
+    if (client) {
+      // The cover of the cut sent last, from the client's own Drive.
+      if (!driveInfo().connected) return;
+      qsa("[data-thumb]", root).forEach((el) => {
+        const poster = clientPosterOf(getContent(el.dataset.thumb));
+        if (poster) driveVideoURL(poster).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+      });
+      return;
+    }
     qsa("[data-thumb]", root).forEach((el) => {
       const c = getContent(el.dataset.thumb);
       const key = c?.posting?.local?.key;
@@ -268,6 +324,9 @@ export function render(root, { brandId }) {
     qsa("[data-copy]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copy)));
     qs("#pq-review", root)?.addEventListener("click", () => openReview(pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review"), paint));
     qs("#pq-link", root)?.addEventListener("click", async () => { await linkOutbox(); await sync(); });
+    // The brand's client (Kerja Tim "Klien", 2026-11-09).
+    qs("#pq-client", root)?.addEventListener("click", (e) => openClientMenu(e.currentTarget, brandId));
+    qs("#pq-drive", root)?.addEventListener("click", () => connectOwnDrive());
     qs("#pq-sync", root)?.addEventListener("click", () => sync(true));
     qsa("select[data-folder]", root).forEach((sel) => sel.addEventListener("change", () => { if (sel.value) { pickBrand(sel.dataset.folder, sel.value); sync(); } }));
   };
@@ -283,6 +342,7 @@ export function render(root, { brandId }) {
 
   paint();
   sync();
+  if (client) ensureDrive().then(() => { if (root.isConnected) paint(); });
   // New cuts from Claude show up by themselves while this page is open.
   const timer = setInterval(() => { if (document.visibilityState === "visible" && outboxInfo().connected) sync(); }, 15000);
   const off = onChange(() => { if (!document.querySelector(".pq-review")) paint(); });

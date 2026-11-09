@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { seal, unseal, signState, readState, authUrl, finishConnect, runDrive, redirectUri, driveConfigured, DRIVE_SCOPE } from "../api/_drive.js";
+import { seal, unseal, signState, readState, authUrl, finishConnect, runDrive, redirectUri, driveConfigured, DRIVE_SCOPE, clientBrandIds, refreshAccess } from "../api/_drive.js";
 
 const env = { GOOGLE_OAUTH_CLIENT_ID: "cid", GOOGLE_OAUTH_CLIENT_SECRET: "secret", TOKEN_VAULT_KEY: crypto.randomBytes(32).toString("base64") };
 
@@ -91,4 +91,26 @@ test("disconnect revokes at Google and forgets the token", async () => {
   await runDrive({ action: "disconnect", uid: "u1", db, env, fetchImpl: async (url) => { calls.push(url); return { ok: true }; } });
   assert.match(calls[0], /oauth2\.googleapis\.com\/revoke\?token=1%2F%2Fr/);
   assert.equal(db.docs.has("driveConnections/u1"), false);
+});
+
+// A brand's client ("Klien") connecting their own Drive (2026-11-09).
+test("a client's Drive: their brands say whose Drive gets the cuts, and forget it on disconnect", async () => {
+  const admin = (uid) => uid === "wepeka";
+  assert.deepEqual(clientBrandIds({ brands: { b1: { ownerId: "wepeka", role: "viewer", klien: true }, b2: { ownerId: "wepeka", role: "viewer" }, b3: { ownerId: "x", klien: true }, b4: { ownerId: "wepeka", klien: true, disabled: true } } }, admin), ["b1"]);
+  const db = fakeDb();
+  const updates = [];
+  const base = db.doc;
+  db.doc = (path) => ({ ...base(path), update: async (v) => { updates.push([path, v]); db.docs.set(path, { ...(db.docs.get(path) || {}), ...v }); } });
+  db.docs.set("memberships/rina", { brands: { b1: { ownerId: "wepeka", role: "viewer", klien: true } } });
+  db.docs.set("brands/b1", { ownerId: "wepeka" });
+  const fetchImpl = googleSays({ access_token: "a", refresh_token: "1//r", scope: `${DRIVE_SCOPE} openid email`, id_token: idToken("admin@quatro.test") });
+  const out = await finishConnect({ code: "c", state: signState({ uid: "rina", ret: "#/brand/b1/content/antrean" }, { env, now: 1000 }), redirect: "x", db, env, fetchImpl, now: 2000, isAdminUid: admin });
+  assert.equal(out.result, "ok");
+  assert.equal(out.location, "/#/brand/b1/content/antrean");
+  assert.deepEqual(db.docs.get("brands/b1").clientDrive, { uid: "rina", email: "admin@quatro.test", at: 2000 });
+  assert.ok(!JSON.stringify(updates).includes("1//r"), "the secret never lands on the brand");
+  await runDrive({ action: "disconnect", uid: "rina", db, env, fetchImpl: async () => ({ ok: true }), isAdminUid: admin });
+  assert.equal(db.docs.get("brands/b1").clientDrive, null);
+  const access = await refreshAccess(seal("1//r", env), { env, fetchImpl: googleSays({ access_token: "fresh", expires_in: 1200 }) });
+  assert.deepEqual(access, { accessToken: "fresh", expiresIn: 1200 });
 });

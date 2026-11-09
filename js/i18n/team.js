@@ -8,6 +8,8 @@ export default {
   "team.role.editor": { en: "Editor", id: "Editor" },
   "team.role.viewer": { en: "View only", id: "Lihat saja" },
   "team.role.editorHint": { en: "Can change everything in the brand: Brand DNA, Brand Book, content, campaigns and ideas. Uses your AI credits.", id: "Bisa mengubah semua isi brand: Brand DNA, Brand Book, konten, campaign, dan ide. Memakai kredit AI kamu." },
+  "team.role.klien": { en: "Client", id: "Klien" },
+  "team.role.klienHint": { en: "Sees the brand without changing it, and in Video Queue watches the videos you send, notes what to change and approves them. Can't upload or post. Videos are kept in their own Google Drive.", id: "Melihat brand tanpa bisa mengubah, dan di Antrean Video menonton video yang kamu kirim, memberi catatan revisi, lalu menyetujui. Tidak bisa upload atau posting. Video disimpan di Google Drive mereka sendiri." },
   "team.role.viewerHint": { en: "Can only look. Changes nothing and can't use AI.", id: "Hanya bisa melihat. Tidak bisa mengubah apa pun dan tidak bisa memakai AI." },
   "team.sharedBy": { en: "Shared by {name}", id: "Dibagikan oleh {name}" },
   "team.sharedCount": { en: "{n} brands", id: "{n} brand" },

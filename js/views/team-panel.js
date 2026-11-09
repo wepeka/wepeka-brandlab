@@ -19,7 +19,12 @@ import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { t, getLang } from "../i18n.js";
 
 const DAY = 86400000;
-const ROLES = ["editor", "viewer"];
+// "Klien" (2026-11-09): a client who opens Brandlab to check the videos
+// Wepeka sends (Antrean Video). Only Wepeka's own account invites one —
+// Video & posting is private to it. On the brand it's a viewer marked
+// klien: true (api/_team.js memberRoleOf).
+const rolesHere = () => (isAdmin(auth.currentUser?.uid) ? ["editor", "viewer", "klien"] : ["editor", "viewer"]);
+const roleOf = (m) => (m?.klien ? "klien" : m?.role);
 
 // Invites: read once per visit to the panel (rules let an owner read their
 // own), and again after anything here changes them.
@@ -49,7 +54,7 @@ function teamPeople(brands) {
   for (const b of brands) {
     for (const [uid, m] of Object.entries(b.members || {})) {
       if (!people.has(uid)) people.set(uid, { uid, name: m.name || m.email || uid, email: m.email || "", brands: [], paused: false });
-      people.get(uid).brands.push({ brand: b, role: m.role, off: !!m.disabled });
+      people.get(uid).brands.push({ brand: b, role: roleOf(m), off: !!m.disabled });
       if (m.seatPaused) people.get(uid).paused = true;
     }
   }
@@ -111,7 +116,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
   const owners = new Map();
   for (const [brandId, m] of Object.entries(memberships?.brands || {})) {
     if (!owners.has(m.ownerId)) owners.set(m.ownerId, { ownerId: m.ownerId, ownerName: m.ownerName || "", brands: [] });
-    owners.get(m.ownerId).brands.push({ brandId, name: m.brandName || brandId, role: m.role });
+    owners.get(m.ownerId).brands.push({ brandId, name: m.brandName || brandId, role: roleOf(m) });
   }
 
   const now = Date.now();
@@ -143,7 +148,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
             ${p.brands.map(({ brand, role, off }) => `
               <label class="checkbox-chip ${off ? "is-access-off" : ""}" style="padding:6px 10px;gap:6px;white-space:nowrap;" ${off ? `title="${escapeHtml(t("share.accessOff"))}"` : ""}>${off ? icon("lock", { size: 12 }) : ""}${escapeHtml(brand.name)}
                 <select class="select" data-role-brand="${escapeHtml(brand.id)}" data-role-member="${escapeHtml(p.uid)}" style="border:0;background:transparent;padding:0 2px;font-weight:700;color:inherit;" aria-label="${escapeHtml(t("team.inviteModal.role"))}">
-                  ${ROLES.map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${roleName(r)}</option>`).join("")}
+                  ${rolesHere().map((r) => `<option value="${r}" ${r === role ? "selected" : ""}>${roleName(r)}</option>`).join("")}
                 </select>
               </label>`).join("")}
           </div>
@@ -313,7 +318,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
         <div class="field" style="margin-bottom:6px;">
           <label>${t("team.inviteModal.role")}</label>
           <div class="flex gap-8" style="flex-wrap:wrap;">
-            ${ROLES.map((r, i) => `<label class="checkbox-chip"><input type="radio" name="inv-role" value="${r}" ${i === 0 ? "checked" : ""} />${roleName(r)}</label>`).join("")}
+            ${rolesHere().map((r, i) => `<label class="checkbox-chip"><input type="radio" name="inv-role" value="${r}" ${i === 0 ? "checked" : ""} />${roleName(r)}</label>`).join("")}
           </div>
           <p class="hint" id="inv-role-hint" style="display:block;margin-top:8px;">${t("team.role.editorHint")}</p>
         </div>
@@ -335,7 +340,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
   };
   qs("[data-cancel]", overlay).addEventListener("click", () => closeOverlay(overlay));
   qsa("input[name=inv-role]", overlay).forEach((r) => r.addEventListener("change", () => {
-    qs("#inv-role-hint", overlay).textContent = t(r.value === "viewer" ? "team.role.viewerHint" : "team.role.editorHint");
+    qs("#inv-role-hint", overlay).textContent = t(`team.role.${r.value}Hint`);
   }));
   qs("#inv-email", overlay).focus();
   const send = async () => {
@@ -394,7 +399,8 @@ const personRow = (name, sub, right = "", extra = "") => `
   </li>`;
 const switchHTML = (on, uid, name) => `<button type="button" class="team-switch" role="switch" aria-checked="${on}" data-access="${escapeHtml(uid)}" aria-label="${escapeHtml(t("share.switchLabel", { name }))}" title="${escapeHtml(t(on ? "share.switchOn" : "share.switchOff"))}"><i></i></button>`;
 
-export async function openShareDialog({ brandId = null } = {}) {
+export async function openShareDialog({ brandId = null, role = "" } = {}) {
+  const wantRole = rolesHere().includes(role) ? role : "editor";
   const own = () => ownSharedBrands().filter((b) => !b.archived);
   let current = brandId || own()[0]?.id || null;
   let result = null; // the invite just made: { email, link, emailSent, mailLimit }
@@ -437,7 +443,7 @@ export async function openShareDialog({ brandId = null } = {}) {
       body.innerHTML = `
         <ul class="share-list">
           ${personRow(ownerName, t("team.role.owner"))}
-          ${members.filter(([, m]) => !m?.disabled).map(([uid, m]) => personRow(m.name || m.email || uid, `${escapeHtml(m.email || "")}${uid === me ? ` · ${t("share.you")}` : ""}`, `<span class="text-faint" style="font-size:12.5px;font-weight:700;">${roleName(m.role)}</span>`)).join("")}
+          ${members.filter(([, m]) => !m?.disabled).map(([uid, m]) => personRow(m.name || m.email || uid, `${escapeHtml(m.email || "")}${uid === me ? ` · ${t("share.you")}` : ""}`, `<span class="text-faint" style="font-size:12.5px;font-weight:700;">${roleName(roleOf(m))}</span>`)).join("")}
         </ul>
         <p class="hint" style="display:block;margin-top:12px;">${t("share.memberNote")}</p>`;
       return;
@@ -455,7 +461,7 @@ export async function openShareDialog({ brandId = null } = {}) {
         </div>` : ""}
       <form class="share-add" id="share-add" novalidate>
         <input class="input" id="share-email" type="email" autocomplete="off" placeholder="${escapeHtml(t("share.addPlaceholder"))}" aria-label="${escapeHtml(t("share.addPlaceholder"))}" />
-        <select class="select" id="share-role" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${ROLES.map((r) => `<option value="${r}">${roleName(r)}</option>`).join("")}</select>
+        <select class="select" id="share-role" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${rolesHere().map((r) => `<option value="${r}" ${r === wantRole ? "selected" : ""}>${roleName(r)}</option>`).join("")}</select>
         <button class="btn btn-primary" id="share-invite" type="submit">${t("share.invite")}</button>
       </form>
       <div class="auth-error" id="share-error" style="display:none;margin-top:8px;"></div>
@@ -477,7 +483,7 @@ export async function openShareDialog({ brandId = null } = {}) {
           const off = !!m.disabled;
           const sub = `${escapeHtml(m.email || "")}${off ? ` · <span class="share-off-note">${t("share.accessOff")}</span>` : m.seatPaused ? ` · <span class="share-off-note">${t("team.pausedChip")}</span>` : ""}`;
           return personRow(name, sub, `
-            <select class="select share-role" data-role-member="${escapeHtml(uid)}" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${ROLES.map((r) => `<option value="${r}" ${r === m.role ? "selected" : ""}>${roleName(r)}</option>`).join("")}</select>
+            <select class="select share-role" data-role-member="${escapeHtml(uid)}" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${rolesHere().map((r) => `<option value="${r}" ${r === roleOf(m) ? "selected" : ""}>${roleName(r)}</option>`).join("")}</select>
             ${switchHTML(!off, uid, name)}
             <button class="icon-btn" data-remove-here="${escapeHtml(uid)}" data-name="${escapeHtml(name)}" title="${escapeHtml(t("team.remove"))}" aria-label="${escapeHtml(t("team.remove"))}">${icon("x", { size: 15 })}</button>`, off ? "is-off" : "");
         }).join("")}

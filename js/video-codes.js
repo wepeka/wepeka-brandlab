@@ -99,9 +99,13 @@ function prefixFor(brandId) {
   const brands = listBrands();
   const key = brands.map((b) => `${b.id}:${b.name}`).join("|");
   if (key !== prefixCache.key) prefixCache = { key, map: prefixesOf(brands) };
-  return prefixCache.map.get(brandId) || "V";
+  // Wepeka's letters for the brand, kept on it, so its client (who has
+  // other brands of their own) reads the same codes.
+  return brands.find((b) => b.id === brandId)?.videoPrefix || prefixCache.map.get(brandId) || "V";
 }
 export const videoCode = (c) => (c?.videoNo ? codeOf(c, prefixFor(c.brandId)) : "");
+// The brand's letters (KP), for the client's Antrean to show codes too.
+export const brandCodePrefix = (brandId) => prefixFor(brandId);
 
 export function findByCode(code) {
   const want = parseCode(code)?.code;

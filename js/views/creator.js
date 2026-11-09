@@ -35,7 +35,7 @@ import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
-import { canUsePosting, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
+import { canSeePosting, isClientView, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -856,7 +856,7 @@ function paint(root, brandId, state, refresh) {
     // Only an earlier step opens to look back — and, on Wepeka's own
     // account, Edit (the video) any time, to drop in a cut early.
     const ahead = STEP_KEYS.indexOf(state.viewStep) >= STEP_KEYS.indexOf(cur);
-    if (state.viewStep && ahead && !(state.viewStep === "edit" && cur !== "edit" && canUsePosting())) state.viewStep = null;
+    if (state.viewStep && ahead && !(state.viewStep === "edit" && cur !== "edit" && canSeePosting(selected))) state.viewStep = null;
     state.stepChanged = state.stepChanged || (state.lastStep !== null && state.lastStep !== `${selected.id}:${cur}`);
     state.lastStep = `${selected.id}:${cur}`;
   }
@@ -1958,8 +1958,8 @@ function editingPanel(c) {
     <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:20px;">${escapeHtml(c.title || t("common.untitled"))}</div>
-      ${canUsePosting() ? editStepVideoHTML(c) : editingAppsHTML()}
-      <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-edited-big">${icon("check", { size: 20 })}${t("cr.doneEditing")}</button>
+      ${canSeePosting(c) ? editStepVideoHTML(c) : editingAppsHTML()}
+      <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-edited-big" ${isClientView(c) ? "hidden" : ""}>${icon("check", { size: 20 })}${t("cr.doneEditing")}</button>
     </div>
   `;
 }
@@ -2454,14 +2454,14 @@ function editAppsSimpleHTML() {
 // editing-app tips. One piece, one page (owner, 2026-11-02).
 function editStepHTML(c, { review }) {
   return `
-    ${canUsePosting() ? postingMountHTML(c, "video") : editAppsSimpleHTML()}
-    ${review ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
+    ${canSeePosting(c) ? postingMountHTML(c, "video") : editAppsSimpleHTML()}
+    ${review || isClientView(c) ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
 }
 
 function uploadStepHTML(c, { review }) {
   // Wepeka's own account, a piece with a video: day, hour, caption and
   // "posted" in one place, the same panel as its video.
-  if (canUsePosting() && c.posting?.versions?.length) return postingMountHTML(c, "post");
+  if (canSeePosting(c) && c.posting?.versions?.length) return postingMountHTML(c, "post");
   const up = c.uploadedPlatforms || {};
   return `
     ${c.thumbnail ? `<img class="thumb-preview" src="${c.thumbnail}" alt="" />` : ""}

@@ -43,10 +43,6 @@
     {
       "source": "/founder",
       "destination": "/founder/index.html"
-    },
-    {
-      "source": "/review/:token([A-Za-z0-9_-]{20,40})",
-      "destination": "/review/index.html"
     }
   ],
   "headers": [
