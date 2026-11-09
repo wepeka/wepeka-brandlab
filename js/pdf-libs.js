@@ -52,8 +52,10 @@ export const PDF_PAGE_BREAK = "<!--pdf-page-break-->";
 // bottom of each, rasterizes them and saves `filename`. The pages use
 // `pageClass` on top of .rp-page (css/styles.css), so they look like the
 // on-screen preview sheet. `onProgress(done, total)` hears each page as it
-// is drawn — a long PDF takes a while.
-export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet", footer = null, filename = "document.pdf", onProgress = null } = {}) {
+// is drawn — a long PDF takes a while. `links`: every <a href="https://…">
+// on a page stays clickable in the PDF (the page itself is a picture, so a
+// link box is laid over it) — Rencana Minggu's reference videos.
+export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet", footer = null, filename = "document.pdf", onProgress = null, links = false } = {}) {
   await ensurePdfLibs();
   const host = document.createElement("div");
   host.className = "rp-pdf-host";
@@ -99,10 +101,20 @@ export async function downloadPagedPdf({ blocks = [], pageClass = "report-sheet"
     await Promise.all([...host.querySelectorAll("img")].map((img) => (img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; }))));
     if (document.fonts?.ready) await document.fonts.ready;
     const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+    const mm = 210 / A4_W;
     for (let i = 0; i < pages.length; i++) {
       const canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: "#ffffff", width: A4_W, height: A4_H, windowWidth: A4_W, logging: false, useCORS: true });
       if (i > 0) pdf.addPage("a4", "portrait");
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      if (links) {
+        const box = pages[i].getBoundingClientRect();
+        pages[i].querySelectorAll('a[href^="https://"], a[href^="http://"]').forEach((a) => {
+          [...a.getClientRects()].forEach((r) => {
+            if (!r.width || !r.height || r.bottom > box.top + A4_H) return;
+            pdf.link((r.left - box.left) * mm, (r.top - box.top) * mm, r.width * mm, r.height * mm, { url: a.href });
+          });
+        });
+      }
       onProgress?.(i + 1, pages.length);
     }
     pdf.save(filename);

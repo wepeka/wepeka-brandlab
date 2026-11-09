@@ -207,7 +207,7 @@ function renderLanding(root, brandId) {
   return () => off();
 }
 
-export function render(root, { brandId, sub, contentId }) {
+export function render(root, { brandId, sub, contentId, calView = "" }) {
   const brand = getBrand(brandId);
   if (!brand) {
     location.hash = "#/";
@@ -244,7 +244,7 @@ export function render(root, { brandId, sub, contentId }) {
     cleanup = contentListView.render(mount, { brandId });
     if (contentId) openContentEditor({ brandId, contentId, onSaved: () => {} });
   } else if (activeSub === "calendar") {
-    cleanup = calendarView.render(mount, { brandId });
+    cleanup = calendarView.render(mount, { brandId, view: calView });
   } else if (activeSub === "copy") {
     cleanup = copyStudioView.render(mount, { brandId });
   } else if (activeSub === "series") {

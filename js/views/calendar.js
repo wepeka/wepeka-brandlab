@@ -24,6 +24,7 @@ import { openScriptBulkPdf } from "../script-pdf.js";
 import { createArtSVG } from "../create-art.js";
 import { stageColor, stepOfStatus } from "../stage-colors.js";
 import { postingBadgeHTML, postingDotHTML, uploadMenuItemHTML, uploadForDate, handleFileDrop, reviewButtonHTML, wirePosting } from "../posting.js";
+import { canSeePlan, planBodyHTML, wirePlanBody, planBusy } from "./rencana.js";
 
 // Series days (Jadwal Kerja: "Rabu = Bedah Brand") still waiting for their
 // episode, date -> series. Only the rest of the visible range from today.
@@ -196,7 +197,7 @@ function writeBankOpen(open) {
   try { localStorage.setItem(BANK_OPEN_KEY, open ? "1" : "0"); } catch {}
 }
 
-export function render(root, { brandId }) {
+export function render(root, { brandId, view = "" }) {
   // Phones open on the week list: a 7-column month grid leaves ~46px per
   // day, too narrow to read a title. Month stays one tap away (and is used
   // when placing a piece from the Bank).
@@ -205,6 +206,9 @@ export function render(root, { brandId }) {
   // "kok kelihatan crowded dan rame banget") — both one tap away.
   const guided = getMode() === "guided";
   const state = { view: narrow || guided ? "week" : "month", cursor: new Date(), highlightId: null, bankOpen: guided ? false : readBankOpen(), bankCampaignId: null, placingId: null };
+  // Rencana (js/views/rencana.js): the week for the team / client that
+  // shoots it — opened straight from its link (#/brand/…/content/calendar/rencana).
+  if (view === "rencana" && canSeePlan(brandId)) state.view = "rencana";
   // Arriving from a campaign ("Jadwalkan …"): jump to that piece's month,
   // or — when it has no date yet — open the Bank on it, scoped to that
   // campaign, so it can be dragged (or tapped) onto a day.
@@ -657,7 +661,7 @@ function visibleRangeISO(state) {
     gridEnd.setDate(gridEnd.getDate() + 41);
     return { start: iso(gridStart), end: iso(gridEnd) };
   }
-  if (state.view === "week") {
+  if (state.view === "week" || state.view === "rencana") {
     const s = startOfWeek(d);
     const e = new Date(s);
     e.setDate(e.getDate() + 6);
@@ -669,6 +673,12 @@ function visibleRangeISO(state) {
 function paint(root, brandId, state, refresh) {
   const brand = getBrand(brandId);
   if (!brand) { location.hash = "#/"; return; }
+  // Rencana: someone is typing the week's notes — repaint once they leave the box.
+  if (state.view === "rencana" && planBusy(root)) { state.planPending = true; return; }
+  if (state.view === "rencana" && !canSeePlan(brandId)) state.view = "week";
+  const plan = state.view === "rencana";
+  // Minggu, Bulan — and Rencana on Wepeka's own brands.
+  const views = [...(guidedNow() ? ["week", "month"] : ["month", "week"]), ...(canSeePlan(brandId) ? ["rencana"] : [])];
   const items = itemsForBrand(brandId);
   const campaigns = listCampaigns(brandId);
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
@@ -716,17 +726,17 @@ function paint(root, brandId, state, refresh) {
       </div>
       ${goalWeek && !guided ? `<a class="cal-goalchip" href="#/brand/${brandId}/goals" title="${escapeHtml(t("roadmap.cal.goalChip"))}">${icon("target", { size: 12 })}${t("roadmap.cal.weekChip", { slots: goalWeek.slots, deadlines: goalWeek.deadlines })}</a>` : ""}
       <div class="cal-head-end">
-        ${guided ? "" : `<button type="button" class="btn btn-ghost btn-sm" id="cal-scripts">${icon("download", { size: 13 })}${t("cr.bulk.open")}</button>`}
-        <div class="segmented" style="width:150px;">
-          ${(guided ? ["week", "month"] : ["month", "week"]).map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
+        ${guided || plan ? "" : `<button type="button" class="btn btn-ghost btn-sm" id="cal-scripts">${icon("download", { size: 13 })}${t("cr.bulk.open")}</button>`}
+        <div class="segmented" style="width:${views.length * 75}px;">
+          ${views.map((v) => `<button data-view="${v}" class="${state.view === v ? "active" : ""}" aria-pressed="${state.view === v}">${t(`calendar.view.${v}`)}</button>`).join("")}
         </div>
         ${guided ? `<button type="button" class="icon-btn calx-more" id="cal-schedule" aria-haspopup="menu" aria-label="${escapeHtml(t("cal.schedule.btn"))}" title="${escapeHtml(t("cal.schedule.btn"))}">${icon("dots", { size: 16 })}</button>` : ""}
       </div>
     </div>
     ${state.placingId ? placingBarHTML(state, brandId) : ""}
-    <div class="cal-layout ${state.bankOpen ? "has-bank" : ""} ${state.placingId ? "is-placing" : ""}">
+    <div class="cal-layout ${state.bankOpen && !plan ? "has-bank" : ""} ${state.placingId ? "is-placing" : ""}">
       <div id="cal-body"></div>
-      ${state.bankOpen ? contentBankHTML(brandId, state) : ""}
+      ${state.bankOpen && !plan ? contentBankHTML(brandId, state) : ""}
     </div>
   `;
 
@@ -779,6 +789,8 @@ function paint(root, brandId, state, refresh) {
   wireHelpButtons(root);
   setPageGuide(() => startCalendarGuide(brandId));
   qs("#toggle-bank").addEventListener("click", () => {
+    // The Bank sits beside the week or the month, not the plan.
+    if (plan) { state.view = "week"; state.bankOpen = true; writeBankOpen(true); refresh(); return; }
     state.bankOpen = !state.bankOpen;
     if (!state.bankOpen) state.placingId = null;
     writeBankOpen(state.bankOpen);
@@ -792,6 +804,12 @@ function paint(root, brandId, state, refresh) {
   qsa("[data-view]").forEach((btn) => btn.addEventListener("click", () => { state.view = btn.dataset.view; paint(root, brandId, state, refresh); }));
 
   const body = qs("#cal-body");
+  if (plan) {
+    const from = iso(startOfWeek(state.cursor));
+    body.innerHTML = planBodyHTML(brandId, from);
+    wirePlanBody(body, brandId, from, { onIdle: () => { if (state.planPending) { state.planPending = false; refresh(); } } });
+    return;
+  }
   if (state.view === "month") renderMonth(body, brandId, state, items, campaigns, campaignById, refresh, deadlines);
   else renderAgenda(body, brandId, state, items, campaignById, refresh, deadlines);
 
@@ -807,7 +825,7 @@ function periodLabel(state) {
     return dayFirst ? `${x.getDate()} ${m}` : `${m} ${x.getDate()}`;
   };
   if (state.view === "month") return monthLabel(d);
-  if (state.view === "week") {
+  if (state.view === "week" || state.view === "rencana") {
     const s = startOfWeek(d); const e = new Date(s); e.setDate(e.getDate() + 6);
     return `${md(s)} – ${md(e)}`;
   }
@@ -816,7 +834,7 @@ function periodLabel(state) {
 function step(state, dir) {
   const d = new Date(state.cursor);
   if (state.view === "month") d.setMonth(d.getMonth() + dir);
-  else if (state.view === "week") d.setDate(d.getDate() + dir * 7);
+  else if (state.view === "week" || state.view === "rencana") d.setDate(d.getDate() + dir * 7);
   else d.setDate(d.getDate() + dir);
   state.cursor = d;
 }

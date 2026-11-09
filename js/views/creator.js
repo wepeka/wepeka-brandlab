@@ -36,6 +36,7 @@ import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
 import { canSeePosting, isClientView, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
+import { canSeePlan } from "./rencana.js";
 
 // Mirror twins (one idea posted to Instagram + TikTok, see
 // the content drawer) share their writing: whatever gets written
@@ -1023,7 +1024,7 @@ function paint(root, brandId, state, refresh) {
   }
 
   // The script isn't here: its box (Biasa or Pro) saves through #f-script below.
-  const fieldMap = { title: "f-title", idea: "f-idea", caption: "f-caption", cta: "f-cta", reference: "f-reference", notes: "f-notes" };
+  const fieldMap = { title: "f-title", idea: "f-idea", caption: "f-caption", cta: "f-cta", reference: "f-reference", notes: "f-notes", gear: "f-gear" };
   const indicator = qs("#save-indicator", root);
   let flashTimer = null;
   const flashSaved = () => {
@@ -2180,20 +2181,16 @@ function draftingPanel(c, campaigns, series = []) {
         ${captionStyleToggleHTML()}
       <textarea class="textarea" id="f-caption" placeholder="${t("cr.f.captionPh")}">${escapeHtml(c.caption || "")}</textarea>
       </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="f-cta">${t("cr.f.cta")}</label>
-          <input class="input" id="f-cta" value="${escapeHtml(c.cta)}" placeholder="${t("cr.f.ctaPh")}" />
-        </div>
-        <div class="field">
-          <label for="f-reference">${t("cr.f.reference")}</label>
-          <input class="input" id="f-reference" value="${escapeHtml(c.reference)}" placeholder="${t("cr.f.referencePh")}" />
-        </div>
+      <div class="field">
+        <label for="f-cta">${t("cr.f.cta")}</label>
+        <input class="input" id="f-cta" value="${escapeHtml(c.cta)}" placeholder="${t("cr.f.ctaPh")}" />
       </div>
-      <div class="field" style="margin-bottom:0;">
+      ${referenceFieldHTML(c)}
+      <div class="field"${canSeePlan(c.brandId) ? "" : ` style="margin-bottom:0;"`}>
         <label for="f-notes">${t("cr.f.notes")}</label>
         <textarea class="textarea" id="f-notes" style="min-height:60px;">${escapeHtml(c.notes || "")}</textarea>
       </div>
+      ${gearFieldHTML(c)}
       ${stageProgressHTML(c)}
     </div>
   `;
@@ -2361,6 +2358,26 @@ function chatInviteHTML(kind, docked) {
     </div>`;
 }
 
+// Referensi: a box, not a one-line input — a list of videos with notes keeps
+// its lines (an input dropped them, and saved them dropped on blur).
+function referenceFieldHTML(c) {
+  return `
+      <div class="field">
+        <label for="f-reference">${t("cr.f.reference")}</label>
+        <textarea class="textarea cr-ref-input" id="f-reference" rows="${Math.min(8, Math.max(1, String(c.reference || "").split("\n").length))}" placeholder="${t("cr.f.referencePh")}">${escapeHtml(c.reference || "")}</textarea>
+      </div>`;
+}
+// Gear (alat syuting): read by Rencana Minggu (js/views/rencana.js) — only
+// on the brands that have it.
+function gearFieldHTML(c) {
+  if (!canSeePlan(c.brandId)) return "";
+  return `
+      <div class="field" style="margin-bottom:0;">
+        <label for="f-gear">${t("cr.f.gear")}</label>
+        <textarea class="textarea" id="f-gear" rows="2" style="min-height:52px;" placeholder="${escapeHtml(t("cr.f.gearPh"))}">${escapeHtml(c.gear || "")}</textarea>
+      </div>`;
+}
+
 function ideaStepHTML(c, { campaigns, series, review, docked }) {
   return `
     <div class="cw-field">
@@ -2371,20 +2388,18 @@ function ideaStepHTML(c, { campaigns, series, review, docked }) {
     <div id="funnel-goal-wrap" class="cw-goal">${funnelGoalFieldHTML(c)}</div>
     ${campaigns.length ? campaignFieldHTML(c, campaigns) : ""}
     ${seriesFieldHTML(c, series)}
-    <details class="cw-more" ${c.reference || c.notes || c.cta ? "open" : ""}>
+    <details class="cw-more" ${c.reference || c.notes || c.cta || c.gear ? "open" : ""}>
       <summary>${icon("chevronDown", { size: 13 })}${t("cw.more")}</summary>
-      <div class="field">
-        <label for="f-reference">${t("cr.f.reference")}</label>
-        <input class="input" id="f-reference" value="${escapeHtml(c.reference)}" placeholder="${t("cr.f.referencePh")}" />
-      </div>
+      ${referenceFieldHTML(c)}
       <div class="field">
         <label for="f-cta">${t("cr.f.cta")}</label>
         <input class="input" id="f-cta" value="${escapeHtml(c.cta)}" placeholder="${t("cr.f.ctaPh")}" />
       </div>
-      <div class="field" style="margin-bottom:0;">
+      <div class="field"${canSeePlan(c.brandId) ? "" : ` style="margin-bottom:0;"`}>
         <label for="f-notes">${t("cr.f.notes")}</label>
         <textarea class="textarea" id="f-notes" style="min-height:60px;">${escapeHtml(c.notes || "")}</textarea>
       </div>
+      ${gearFieldHTML(c)}
     </details>
     ${chatInviteHTML("idea", docked)}
     ${review ? "" : nextBtnHTML("cw-to-script", t("cw.idea.next"), "script")}`;

@@ -69,7 +69,6 @@ export function scriptSheetBlocks(c, brand, { meta: lead = [] } = {}) {
   const title = (label) => `<div class="report-section-title">${label}</div>`;
   const script = String(c.script || "").replace(/\r\n?/g, "\n");
   const carousel = isCarouselContent(c);
-  const parsed = carousel ? null : parseScript(script);
   const { words } = scriptLength(script);
   const meta = [...lead, c.format, c.platform, !carousel && words ? t("cr.pdf.length", { s: scriptSeconds(c), w: words }) : ""].filter(Boolean);
   const blocks = [`
@@ -85,8 +84,22 @@ export function scriptSheetBlocks(c, brand, { meta: lead = [] } = {}) {
     </div>
     ${meta.length ? `<p class="sp-meta">${meta.map(escapeHtml).join(" · ")}</p>` : ""}`];
   if (String(c.idea || "").trim()) blocks.push(`${title(t("cr.pdf.idea"))}${para(c.idea.trim())}`);
+  blocks.push(...scriptPartBlocks(c));
+  if (String(c.caption || "").trim()) blocks.push(`${title(t("cr.pdf.caption"))}${para(c.caption.trim())}`);
+  return blocks;
+}
 
-  const scriptTitle = title(carousel ? t("cr.f.slides") : t("cr.pdf.script"));
+// Just the script (or the slides) as PDF blocks, under its own title — the
+// shooting table of a beat script, one block per part. Rencana Minggu
+// (js/views/rencana.js) puts it under each piece of the week.
+export function scriptPartBlocks(c, { heading = "" } = {}) {
+  const para = (text) => `<p class="sp-text">${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
+  const title = (label) => `<div class="report-section-title">${label}</div>`;
+  const script = String(c.script || "").replace(/\r\n?/g, "\n");
+  const carousel = isCarouselContent(c);
+  const parsed = carousel ? null : parseScript(script);
+  const blocks = [];
+  const scriptTitle = title(heading || (carousel ? t("cr.f.slides") : t("cr.pdf.script")));
   if (parsed) {
     const cell = (label, text, cls = "") => (String(text || "").trim() ? `<div class="sp-k">${escapeHtml(label)}</div><p class="sp-text${cls}">${escapeHtml(text.trim()).replace(/\n/g, "<br>")}</p>` : "");
     const row = (b, i) => `
@@ -107,7 +120,6 @@ export function scriptSheetBlocks(c, brand, { meta: lead = [] } = {}) {
     if (!paras.length) blocks.push(`${scriptTitle}${para("—")}`);
     paras.forEach((p, i) => blocks.push(`${i === 0 ? scriptTitle : ""}${para(p)}`));
   }
-  if (String(c.caption || "").trim()) blocks.push(`${title(t("cr.pdf.caption"))}${para(c.caption.trim())}`);
   return blocks;
 }
 

@@ -27,6 +27,7 @@ import create from "./i18n/create.js";
 import report from "./i18n/report.js";
 import deck from "./i18n/deck.js";
 import posting from "./i18n/posting.js";
+import rencana from "./i18n/rencana.js";
 
 const KEY = "wepeka-lang";
 
@@ -699,6 +700,7 @@ const EXTRA = {
   "report": report,
   "deck": deck,
   "posting": posting,
+  "rencana": rencana,
 };
 // Production build seam: scripts/build.mjs swaps this exact line for a
 // top-level await that loads ONLY the active language (one chunk per

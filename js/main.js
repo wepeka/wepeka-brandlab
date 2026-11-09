@@ -208,6 +208,8 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/list\/([^/]+)\/?$/))) return { view: "content-os", brandId: m[1], sub: "list", contentId: m[2] };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/list\/?$/))) return { view: "content-os", brandId: m[1], sub: "list" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/calendar\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar" };
+  // The Kalender opened on its Rencana view (the link a team / client gets).
+  if ((m = h.match(/^\/brand\/([^/]+)\/content\/calendar\/rencana\/?$/))) return { view: "content-os", brandId: m[1], sub: "calendar", calView: "rencana" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/copy\/?$/))) return { view: "content-os", brandId: m[1], sub: "copy" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/series\/?$/))) return { view: "content-os", brandId: m[1], sub: "series" };
   if ((m = h.match(/^\/brand\/([^/]+)\/content\/antrean\/?$/))) return { view: "content-os", brandId: m[1], sub: "antrean" };
@@ -946,7 +948,7 @@ async function renderRoute() {
         cleanup = view.render(viewRoot, { brandId: route.brandId, slide: route.slide || 1 });
         break;
       case "content-os":
-        cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId });
+        cleanup = view.render(viewRoot, { brandId: route.brandId, sub: route.sub, contentId: route.contentId, calView: route.calView || "" });
         break;
       case "settings":
         cleanup = view.render(viewRoot, { panel: route.panel });
