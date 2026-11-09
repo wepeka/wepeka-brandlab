@@ -530,3 +530,10 @@ body.pq-review-open{ overflow:hidden; }
   .rc-actions .cl-cta{ order:-1; flex:1 1 auto; justify-content:space-between; }
   .rc-ref-thumb{ width:96px; }
 }
+
+/* The client takes the file along (2026-11-09): download from their Drive. */
+.pst-cl-dl{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 4px; }
+.pst-cl-file{ display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:14px 0; }
+.pst-cl-file .pst-hint{ margin:0; }
+.pst-cap-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.pst-cap-head .pst-link{ margin:0; }

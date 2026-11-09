@@ -1036,8 +1036,9 @@ function paintClient(root, c, ui, repaint) {
   ui.ac?.abort();
   ui.ac = new AbortController();
   if (ui.part === "post") {
-    root.innerHTML = clientPostHTML(c, postingOf(c), key);
+    root.innerHTML = clientPostHTML(c, postingOf(c), key, { needDrive });
     wire(root, c.id, ui, repaint);
+    wireClientFiles(root, c);
     return;
   }
   root.innerHTML = `
@@ -1069,12 +1070,68 @@ function paintClient(root, c, ui, repaint) {
     ${v && !needDrive ? decideHTML(p, v, prev, ui, "", isVideo) : ""}
     ${v && !needDrive ? `<section class="pst-block pst-more">
       ${versionsHTML(p, v, null, { add: false })}
+      <div class="pst-cl-dl">${clientDownloadHTML(v)}</div>
       <p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.cl.where")}</b> Wepeka Brandlab › ${escapeHtml(getBrand(c.brandId)?.name || "")}</span><a href="https://drive.google.com/file/d/${escapeHtml(v.drive.id)}/view" target="_blank" rel="noopener">${t("post.drive.open")}</a></p>
     </section>` : ""}
     </div>
     </div>`;
   restorePlayers();
   wire(root, c.id, ui, repaint);
+  wireClientFiles(root, c);
+}
+
+// The client takes the file along (owner, 2026-11-09: "ganti aja ke
+// download file … yang uploadnya kalau di akunku aja"): posting from
+// Brandlab stays on Wepeka's own account; a client downloads the cut from
+// their own Google Drive, named by its code ("QN-7 · FINAL.mp4").
+const clientExt = (name, kind) => (String(name || "").match(/\.([a-z0-9]{2,4})$/i)?.[1] || (kind === "video" ? "mp4" : "jpg")).toLowerCase();
+function clientFiles(c, v) {
+  const base = videoCode(c) || String(c.title || "video").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 40);
+  const tag = v.status === "approved" ? "FINAL" : versionLabel(v);
+  const files = v.driveFiles?.length ? v.driveFiles : [{ id: v.drive.id }];
+  return files.map((f, i) => ({ id: f.id, name: `${base} · ${tag}${files.length > 1 ? ` · ${i + 1}` : ""}.${clientExt(f.name, v.kind)}` }));
+}
+function clientDownloadHTML(v, { big = false } = {}) {
+  const n = v.driveFiles?.length || 1;
+  const what = v.kind === "set" ? t("post.cl.dlSet", { n }) : v.kind === "image" ? t("post.cl.dlImage") : t("post.cl.dlVideo");
+  const label = v.status === "approved" ? what : `${what} · ${versionLabel(v)}`;
+  return big
+    ? `<button type="button" class="cl-cta pst-cta" data-cl-dl="${escapeHtml(v.id)}"><span>${escapeHtml(label)}</span><span class="cl-cta-dot pst-dot-drive">${icon("download", { size: 16 })}</span></button>`
+    : `<button type="button" class="btn btn-secondary btn-sm" data-cl-dl="${escapeHtml(v.id)}">${icon("download", { size: 14 })}${escapeHtml(label)}</button>`;
+}
+// Read through the client's own Drive (the same copy the player uses), saved
+// under its code; several photos one after another.
+async function clientDownload(c, v, btn) {
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner" style="width:14px;height:14px;"></span><span>${t("post.cl.dlMaking")}</span>`;
+  try {
+    const files = clientFiles(c, v);
+    for (const f of files) {
+      const a = document.createElement("a");
+      a.href = await driveVideoURL(f.id);
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (files.length > 1) await new Promise((r) => setTimeout(r, 450));
+    }
+  } catch (e) {
+    console.error("Client download failed", e);
+    toast(t("post.cl.dlFailed"), "error");
+  } finally {
+    if (btn.isConnected) { btn.disabled = false; btn.innerHTML = label; }
+  }
+}
+function wireClientFiles(root, c) {
+  const cp = clientPosting(postingOf(c));
+  qsa("[data-cl-dl]", root).forEach((btn) => btn.addEventListener("click", () => {
+    const v = cp.versions.find((x) => x.id === btn.dataset.clDl);
+    if (v && !btn.disabled) clientDownload(c, v, btn);
+  }));
+  qs("[data-cl-cap]", root)?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(c.caption || ""); toast(t("post.cl.capCopied")); } catch { toast(t("post.cl.capCopyFailed"), "error"); }
+  });
 }
 
 function clientConnectHTML() {
@@ -1088,15 +1145,23 @@ function clientConnectHTML() {
     </div>`;
 }
 
-// Upload step, client side: when it goes up and who posts it.
-function clientPostHTML(c, p, key) {
+// Upload step, client side: when it goes up, the file to download (the
+// approved cut, else the newest one sent) and the caption to copy. Posting
+// itself stays on Wepeka's account.
+function clientPostHTML(c, p, key, { needDrive = false } = {}) {
   const when = c.scheduleDate ? `${dayLabel(c.scheduleDate)}${p.time ? `, ${p.time}` : ""}` : t("pq.noDate");
   const link = p.ig?.permalink || c.publishedUrl || "";
+  const cp = clientPosting(p);
+  const dv = cp.versions.find((v) => v.id === cp.finalId) || latestOf(cp);
+  const file = needDrive ? clientConnectHTML()
+    : dv ? `<div class="pst-cl-file">${clientDownloadHTML(dv, { big: true })}<p class="pst-hint">${icon(dv.status === "approved" ? "check" : "info", { size: 13 })}${escapeHtml(dv.status === "approved" ? t("post.cl.dlFinal") : t("post.cl.dlNotYet", { label: versionLabel(dv) }))}</p></div>`
+    : `<p class="pst-hint">${icon("clock", { size: 13 })}${t("post.cl.dlNone")}</p>`;
   return `<section class="pst-block pst-post">
       <div class="pst-embed-top"><span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span></div>
       <p class="pst-client-line">${icon("calendar", { size: 13 })} ${t("post.cl.when", { when: escapeHtml(when) })}</p>
-      ${c.caption ? `<div class="pst-cap-read"><span class="pst-sub">${t("post.cl.caption")}</span><p>${escapeHtml(c.caption)}</p></div>` : ""}
-      ${link ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(link)}" target="_blank" rel="noopener">${icon("instagram", { size: 14 })}${t("post.cl.openIg")}</a>` : `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.cl.postedBy")}</p>`}
+      ${file}
+      ${c.caption ? `<div class="pst-cap-read"><div class="pst-cap-head"><span class="pst-sub">${t("post.cl.caption")}</span><button type="button" class="pst-link" data-cl-cap>${icon("copy", { size: 13 })}${t("post.cl.capCopy")}</button></div><p>${escapeHtml(c.caption)}</p></div>` : ""}
+      ${link ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(link)}" target="_blank" rel="noopener">${icon("instagram", { size: 14 })}${t("post.cl.openIg")}</a>` : ""}
     </section>`;
 }
 
