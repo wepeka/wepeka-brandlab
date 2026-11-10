@@ -8,19 +8,18 @@
 //   Feed    — the Instagram profile grid, to see the feed before it posts.
 //   Review  — the waiting cuts full screen, one after another, like Reels.
 // Private to Wepeka's own account (canUsePosting), like the rest of it.
-import { listBrands, listContent, getBrand, getContent, onChange, localISODate, organicViews } from "../store.js";
+import { listBrands, listContent, getBrand, getContent, onChange, localISODate, organicViews, isClientMember } from "../store.js";
 import { icon } from "../icons.js";
 import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine } from "../posting.js";
-import { driveVideoURL } from "../drive.js";
+import { canUsePosting, canSeePosting, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece } from "../video-codes.js";
 import { listRecentMedia, thumbnailFromMedia, testConnection } from "../instagram.js";
-import { canUseInstagramApi } from "../account.js";
+import { canUseInstagramApi, currentUid } from "../account.js";
 
 // The status chips over the list; "scheduled" also holds a failed post.
 const FILTERS = ["all", "none", "review", "client", "revision", "ready", "scheduled", "published"];
@@ -235,8 +234,15 @@ function openClientMenu(btn, brandId) {
   });
 }
 
-// The client's header: their Google Drive, where the videos land.
-function clientDriveHTML() {
+// The client's header: their Google Drive, where the videos land. An editor
+// (or a second Klien) reads the client's: whose it is, or that it isn't
+// connected yet — only the client connects it.
+function clientDriveHTML(brandId) {
+  const brand = getBrand(brandId);
+  if (clientDriveGap(brand) === "wait") return `<span class="pq-source">${icon("folder", { size: 14 })}<span>${t("pq.cl.driveTeamOff")}</span></span>`;
+  if (brand?.clientDrive?.uid && !(isClientMember(brand) && brand.clientDrive.uid === currentUid())) {
+    return `<span class="pq-source">${icon("folder", { size: 14 })}<span>${t("pq.cl.driveTeam", { email: escapeHtml(brand.clientDrive.email || "") })}</span></span>`;
+  }
   const d = driveInfo();
   if (!d.checked) return "";
   if (d.connected) return `<span class="pq-source">${icon("folder", { size: 14 })}<span>${t("pq.cl.driveOn", { email: escapeHtml(d.email || "") })}</span></span>`;
@@ -265,7 +271,7 @@ export function render(root, { brandId }) {
             <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t(client ? "pq.cl.lead" : "pq.lead")}</p></div>
           </div>
           <div class="pq-actions">
-            ${client ? clientDriveHTML() : `${sourceHTML()}
+            ${client ? clientDriveHTML(brandId) : `${sourceHTML()}
             <button type="button" class="btn btn-secondary pq-client-btn" id="pq-client" aria-haspopup="true">${icon("users", { size: 15 })}<span>${t("pq.client.btn")}</span><i class="pq-client-dot is-${clientDriveLine(getBrand(brandId)).tone}"></i></button>
             <button type="button" class="cl-cta" id="pq-review" ${reviewN ? "" : "disabled"}><span>${reviewN ? t("pq.review", { n: reviewN }) : t("pq.reviewNone")}</span><span class="cl-cta-dot pq-dot">${icon("play", { size: 16 })}</span></button>`}
           </div>
@@ -287,11 +293,12 @@ export function render(root, { brandId }) {
 
   const loadThumbs = () => {
     if (client) {
-      // The cover of the cut sent last, from the client's own Drive.
-      if (!driveInfo().connected) return;
+      // The cover of the cut sent last, from the client's Drive.
+      if (clientDriveGap(brandId)) return;
       qsa("[data-thumb]", root).forEach((el) => {
-        const poster = clientPosterOf(getContent(el.dataset.thumb));
-        if (poster) driveVideoURL(poster).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+        const c = getContent(el.dataset.thumb);
+        const poster = clientPosterOf(c);
+        if (poster) clientVideoURL(c, poster).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
       });
       return;
     }

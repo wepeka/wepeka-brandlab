@@ -61,9 +61,11 @@ export async function disconnectDrive() {
   await call("disconnect");
 }
 
-async function drive(path, init = {}) {
-  const res = await fetch(path, { ...init, headers: { ...(init.headers || {}), authorization: `Bearer ${await accessToken()}` } });
-  if (res.status === 401) token = null;
+// `key`: another way to the token, for a Drive that isn't this person's
+// own (an editor reading the client's cuts, js/posting.js clientDriveKey).
+async function drive(path, init = {}, key = null) {
+  const res = await fetch(path, { ...init, headers: { ...(init.headers || {}), authorization: `Bearer ${key ? await key.get() : await accessToken()}` } });
+  if (res.status === 401) { if (key) key.drop(); else token = null; }
   if (!res.ok) throw new DriveClientError("drive", res.status);
   return res;
 }
@@ -126,9 +128,9 @@ export async function uploadToDrive(file, { name, folderId, onProgress }) {
 // The whole file, for playing in the drawer (a <video> can't send the
 // Authorization header Drive needs). Kept for the tab's life, last few only.
 const blobs = new Map();
-export async function driveVideoURL(fileId, { onProgress } = {}) {
+export async function driveVideoURL(fileId, { onProgress, key = null } = {}) {
   if (blobs.has(fileId)) return blobs.get(fileId);
-  const res = await drive(`${API}/files/${encodeURIComponent(fileId)}?alt=media`);
+  const res = await drive(`${API}/files/${encodeURIComponent(fileId)}?alt=media`, {}, key);
   const total = Number(res.headers.get("content-length")) || 0;
   let blob;
   if (res.body && total && onProgress) {

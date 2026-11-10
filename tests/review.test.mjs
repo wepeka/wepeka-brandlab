@@ -72,8 +72,11 @@ test("approving keeps only that cut in the client's Drive (named FINAL); notes k
 
 test("only the brand's client acts as one, and only their own connected Drive receives the cuts", () => {
   const admin = (uid) => uid === "wepeka";
-  const brand = { ownerId: "wepeka", members: { rina: { role: "viewer", klien: true, name: "Rina" }, sari: { role: "viewer" }, off: { role: "viewer", klien: true, disabled: true } }, clientDrive: { uid: "rina", email: "rina@quatro.test" } };
+  const brand = { ownerId: "wepeka", members: { rina: { role: "viewer", klien: true, name: "Rina" }, sari: { role: "viewer" }, off: { role: "viewer", klien: true, disabled: true }, dodi: { role: "editor", name: "Dodi" }, beni: { role: "editor", seatPaused: true }, ed: { role: "editor", disabled: true } }, clientDrive: { uid: "rina", email: "rina@quatro.test" } };
   assert.equal(clientOn(brand, "rina", admin).name, "Rina");
+  assert.equal(clientOn(brand, "dodi", admin).name, "Dodi", "an editor works the Antrean like the client");
+  assert.throws(() => clientOn(brand, "beni", admin), /not-client/, "a paused seat reads like a viewer");
+  assert.throws(() => clientOn(brand, "ed", admin), /not-client/, "an editor whose access is off");
   assert.throws(() => clientOn(brand, "sari", admin), /not-client/, "a plain viewer");
   assert.throws(() => clientOn(brand, "off", admin), /not-client/, "access turned off");
   assert.throws(() => clientOn({ ...brand, ownerId: "someone" }, "rina", admin), /not-client/, "Video & posting is Wepeka's only");

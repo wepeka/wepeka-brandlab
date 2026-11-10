@@ -22,7 +22,7 @@
 // Scheduling still only marks the piece until the server worker exists; that
 // worker will copy the final cut to a short-lived spot for Instagram to
 // fetch (.claude/social-hub/ARSITEKTUR.md).
-import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember } from "./store.js";
+import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
@@ -30,7 +30,7 @@ import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter, brandCodePrefix } from "./video-codes.js";
 import { outboxFile } from "./outbox.js";
 import { syncFootageToMac, macName } from "./footage-mac.js";
-import { sendToClient, cleanPreviews, keepFinalOnly, clientDecide } from "./review-share.js";
+import { sendToClient, cleanPreviews, keepFinalOnly, clientDecide, clientViewKey } from "./review-share.js";
 import { postToInstagram, shareToFacebook, cancelInstagramPost } from "./ig-post.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "./dom.js";
@@ -45,12 +45,56 @@ export const canUsePosting = () => isAdmin(currentUid());
 // Antrean Video and the same video page — only the cuts sent to them,
 // played from their own Google Drive — and can write notes and approve,
 // never upload, schedule or post (api/_review.js).
+// A Kerja Tim editor on that brand sees it the same way (owner, 2026-11-10:
+// "editor bisa lihat antrean video juga dan bisa upload kaya client ya,
+// bedanya editor bisa edit brand dna dll"): watch, note, approve, download,
+// send footage — and, unlike the client, still edits the brand everywhere
+// else. A paused seat reads like a viewer (store.js brandRole), so not that.
 const brandOfC = (x) => (typeof x === "string" ? getBrand(x) : x?.brandId ? getBrand(x.brandId) : x);
 export function isClientView(x) {
   const b = brandOfC(x);
-  return !!b && !canUsePosting() && isClientMember(b) && isAdmin(b.ownerId);
+  return !!b && !canUsePosting() && isAdmin(b.ownerId) && (isClientMember(b) || brandRole(b) === "editor");
 }
 export const canSeePosting = (x) => canUsePosting() || isClientView(x);
+// The client proper ("Klien"): reads only, so no "Sudah syuting / Sudah
+// edit" buttons; an editor keeps them.
+export const isClientOnly = (x) => isClientView(x) && isClientMember(brandOfC(x));
+
+// Whose Drive the cuts are read from. The client who connected theirs reads
+// with their own token (js/drive.js); anyone else on the team (an editor, a
+// second Klien) with a short-lived key from the server (api/review view-key).
+// null = their own Drive.
+const ownsClientDrive = (b) => isClientMember(b) && (!b.clientDrive?.uid || b.clientDrive.uid === currentUid());
+const VIEW_KEYS = new Map(); // brandId → { get, drop }
+function clientDriveKey(x) {
+  const b = brandOfC(x);
+  if (!b || !isClientView(b) || ownsClientDrive(b)) return null;
+  if (!VIEW_KEYS.has(b.id)) {
+    let tok = null, asking = null;
+    VIEW_KEYS.set(b.id, {
+      get() {
+        if (tok && tok.exp > Date.now() + 60_000) return Promise.resolve(tok.value);
+        asking ||= clientViewKey(b.id)
+          .then((r) => { tok = { value: r.accessToken, exp: Date.now() + (r.expiresIn || 3600) * 1000 }; return tok.value; })
+          .finally(() => { asking = null; });
+        return asking;
+      },
+      drop() { tok = null; },
+    });
+  }
+  return VIEW_KEYS.get(b.id);
+}
+// A cut, its still or a slide, from the client's Drive, for whoever is watching.
+export const clientVideoURL = (x, fileId, opts = {}) => driveVideoURL(fileId, { ...opts, key: clientDriveKey(x) });
+// Why the cuts can't play yet: "connect" (the client's own Drive isn't
+// connected — they connect it here), "wait" (someone else's: the client
+// hasn't connected theirs yet), or false.
+export function clientDriveGap(x) {
+  const b = brandOfC(x);
+  if (!b) return false;
+  if (ownsClientDrive(b)) return DRIVE.checked && !DRIVE.connected ? "connect" : false;
+  return clientDriveLine(b).tone === "on" ? false : "wait";
+}
 
 // Instagram publishing by itself (owner, 2026-11-02: "bisa upload dari
 // brandlab ke akunku … tinggal click2"): a piece whose cuts are in the Mac
@@ -557,8 +601,8 @@ export function editStepVideoHTML(c) {
 export function wireEditStepVideo(root, { onChange } = {}) {
   qsa("[data-pst-edit-thumb]", root).forEach((el) => {
     const c = getContent(el.dataset.pstEditThumb);
-    const poster = c && isClientView(c) ? clientPosterOf(c) : "";
-    if (poster) driveVideoURL(poster).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+    const poster = c && isClientView(c) && !clientDriveGap(c) ? clientPosterOf(c) : "";
+    if (poster) clientVideoURL(c, poster).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
   });
   if (!canUsePosting()) {
     qsa("[data-pst-edit-open]", root).forEach((b) => b.addEventListener("click", () => openPosting({ contentId: b.dataset.pstEditOpen, onChange })));
@@ -1047,12 +1091,12 @@ function paintClient(root, c, ui, repaint) {
   const isVideo = v?.kind === "video";
   if (!prev || !isVideo) ui.compare = false;
   const code = videoCode(c);
-  const needDrive = DRIVE.checked && !DRIVE.connected;
+  const gap = clientDriveGap(c);
   const restorePlayers = keepPlayers(root);
   ui.ac?.abort();
   ui.ac = new AbortController();
   if (ui.part === "post") {
-    root.innerHTML = clientPostHTML(c, postingOf(c), key, { needDrive });
+    root.innerHTML = clientPostHTML(c, postingOf(c), key, { gap });
     wire(root, c.id, ui, repaint);
     wireClientFiles(root, c);
     return;
@@ -1065,7 +1109,7 @@ function paintClient(root, c, ui, repaint) {
     </div>
     <div class="pst-grid ${v ? "has-video" : ""}">
     <section class="pst-block pst-video">
-      ${needDrive ? clientConnectHTML() : v ? `
+      ${gap ? clientGapHTML(gap) : v ? `
         <div class="pst-players ${ui.compare ? "is-compare" : ""}">
           ${ui.compare ? playerHTML(prev, "A", c) : ""}${playerHTML(v, ui.compare ? "B" : "", c)}
         </div>
@@ -1083,11 +1127,11 @@ function paintClient(root, c, ui, repaint) {
         </div>`}
     </section>
     <div class="pst-side">
-    ${v && !needDrive ? decideHTML(p, v, prev, ui, "", isVideo) : ""}
-    ${v && !needDrive ? `<section class="pst-block pst-more">
+    ${v && !gap ? decideHTML(p, v, prev, ui, "", isVideo) : ""}
+    ${v && !gap ? `<section class="pst-block pst-more">
       ${versionsHTML(p, v, null, { add: false })}
       <div class="pst-cl-dl">${clientDownloadHTML(v)}</div>
-      <p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.cl.where")}</b> Wepeka Brandlab › ${escapeHtml(getBrand(c.brandId)?.name || "")}</span><a href="https://drive.google.com/file/d/${escapeHtml(v.drive.id)}/view" target="_blank" rel="noopener">${t("post.drive.open")}</a></p>
+      ${clientDriveKey(c) ? `<p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.cl.whereTeam")}</b> Wepeka Brandlab › ${escapeHtml(getBrand(c.brandId)?.name || "")}</span></p>` : `<p class="pst-where">${icon("folder", { size: 13 })}<span><b>${t("post.cl.where")}</b> Wepeka Brandlab › ${escapeHtml(getBrand(c.brandId)?.name || "")}</span><a href="https://drive.google.com/file/d/${escapeHtml(v.drive.id)}/view" target="_blank" rel="noopener">${t("post.drive.open")}</a></p>`}
     </section>` : ""}
     </div>
     </div>`;
@@ -1125,7 +1169,7 @@ async function clientDownload(c, v, btn) {
     const files = clientFiles(c, v);
     for (const f of files) {
       const a = document.createElement("a");
-      a.href = await driveVideoURL(f.id);
+      a.href = await clientVideoURL(c, f.id);
       a.download = f.name;
       document.body.appendChild(a);
       a.click();
@@ -1150,6 +1194,16 @@ function wireClientFiles(root, c) {
   });
 }
 
+// The editor's side of "not connected yet": only the client can connect
+// the Drive the cuts go into.
+function clientGapHTML(gap) {
+  if (gap === "connect") return clientConnectHTML();
+  return `<div class="pst-empty pst-connect">
+      <span class="pst-empty-art is-drive">${icon("folder", { size: 26 })}</span>
+      <b>${t("post.cl.waitTitle")}</b>
+      <span>${t("post.cl.waitBody")}</span>
+    </div>`;
+}
 function clientConnectHTML() {
   const setup = DRIVE.reason === "setup";
   return `<div class="pst-empty pst-connect">
@@ -1164,12 +1218,12 @@ function clientConnectHTML() {
 // Upload step, client side: when it goes up, the file to download (the
 // approved cut, else the newest one sent) and the caption to copy. Posting
 // itself stays on Wepeka's account.
-function clientPostHTML(c, p, key, { needDrive = false } = {}) {
+function clientPostHTML(c, p, key, { gap = false } = {}) {
   const when = c.scheduleDate ? `${dayLabel(c.scheduleDate)}${p.time ? `, ${p.time}` : ""}` : t("pq.noDate");
   const link = p.ig?.permalink || c.publishedUrl || "";
   const cp = clientPosting(p);
   const dv = cp.versions.find((v) => v.id === cp.finalId) || latestOf(cp);
-  const file = needDrive ? clientConnectHTML()
+  const file = gap ? clientGapHTML(gap)
     : dv ? `<div class="pst-cl-file">${clientDownloadHTML(dv, { big: true })}<p class="pst-hint">${icon(dv.status === "approved" ? "check" : "info", { size: 13 })}${escapeHtml(dv.status === "approved" ? t("post.cl.dlFinal") : t("post.cl.dlNotYet", { label: versionLabel(dv) }))}</p></div>`
     : `<p class="pst-hint">${icon("clock", { size: 13 })}${t("post.cl.dlNone")}</p>`;
   return `<section class="pst-block pst-post">
@@ -1640,16 +1694,18 @@ function wire(root, contentId, ui, repaint) {
     seek.addEventListener("input", () => { vids.forEach((x) => { x.currentTime = Math.min(+seek.value, x.duration || +seek.value); }); });
     vids.forEach((x) => x.addEventListener("click", () => play.click(), { signal }));
   }
+  // The client's cuts: through whoever's Drive holds them (clientDriveKey).
+  const driveKey = ui.client ? clientDriveKey(getContent(contentId)) : null;
   qsa(".pst-player[data-drive]:not([data-ready])", root).forEach((box) => {
     const video = qs("video", box), loading = qs(".pst-loading", box), pct = qs(".pst-loading b", box);
-    driveVideoURL(box.dataset.drive, { onProgress: (f) => { if (pct) pct.textContent = `${Math.round(f * 100)}%`; } })
+    driveVideoURL(box.dataset.drive, { key: driveKey, onProgress: (f) => { if (pct) pct.textContent = `${Math.round(f * 100)}%`; } })
       .then((url) => { video.src = url; box.dataset.ready = "1"; loading?.remove(); })
       .catch(() => { if (loading) loading.innerHTML = `${icon("info", { size: 16 })}<span>${t("post.loadFailed")}</span>`; });
   });
   // The client's own Drive: slides of a carousel, and the cuts' stills.
-  qsa("img[data-drive-img]", root).forEach((img) => { driveVideoURL(img.dataset.driveImg).then((url) => { img.src = url; }).catch(() => {}); });
+  qsa("img[data-drive-img]", root).forEach((img) => { driveVideoURL(img.dataset.driveImg, { key: driveKey }).then((url) => { img.src = url; }).catch(() => {}); });
   qsa("[data-vposter]", root).forEach((el) => {
-    driveVideoURL(el.dataset.vposter).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+    driveVideoURL(el.dataset.vposter, { key: driveKey }).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
   });
   if (ui.client) {
     qsa(".pst-slides", root).forEach((row) => row.addEventListener("scroll", () => {

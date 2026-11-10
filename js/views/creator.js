@@ -35,7 +35,7 @@ import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
-import { canSeePosting, isClientView, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
+import { canSeePosting, isClientOnly, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
 import { canSeePlan, shootPlanHTML, wireShootPlan } from "./rencana.js";
 import { footageBoxHTML, wireFootage } from "../footage.js";
 
@@ -1928,7 +1928,7 @@ function executionPanel(c) {
       ${canSeePlan(c.brandId) ? shootPlanHTML(c) : ""}
       ${footageBoxHTML(c)}
       ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
-      <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-shot-big" ${isClientView(c) ? "hidden" : ""}>${icon("check", { size: 20 })}${t("cr.doneShooting")}</button>
+      <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-shot-big" ${isClientOnly(c) ? "hidden" : ""}>${icon("check", { size: 20 })}${t("cr.doneShooting")}</button>
     </div>
   `;
 }
@@ -1966,7 +1966,7 @@ function editingPanel(c) {
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:20px;">${escapeHtml(c.title || t("common.untitled"))}</div>
       ${canSeePosting(c) ? editStepVideoHTML(c) : editingAppsHTML()}
-      <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-edited-big" ${isClientView(c) ? "hidden" : ""}>${icon("check", { size: 20 })}${t("cr.doneEditing")}</button>
+      <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-edited-big" ${isClientOnly(c) ? "hidden" : ""}>${icon("check", { size: 20 })}${t("cr.doneEditing")}</button>
     </div>
   `;
 }
@@ -2452,7 +2452,7 @@ function shootStepHTML(c, { review }) {
     ${canSeePlan(c.brandId) ? shootPlanHTML(c) : ""}
     ${footageBoxHTML(c)}
     ${isCarouselContent(c) ? slidesReadHTML(c.script) : stageScriptHTML(c.script)}
-    ${review || isClientView(c) ? "" : nextBtnHTML("mark-shot-big", designed ? t("cw.doneDesign") : t("cr.doneShooting"), "edit", { check: true })}`;
+    ${review || isClientOnly(c) ? "" : nextBtnHTML("mark-shot-big", designed ? t("cw.doneDesign") : t("cr.doneShooting"), "edit", { check: true })}`;
 }
 
 // The two free editing apps (same words as the classic panel), as two
@@ -2478,7 +2478,7 @@ function editAppsSimpleHTML() {
 function editStepHTML(c, { review }) {
   return `
     ${canSeePosting(c) ? postingMountHTML(c, "video") : editAppsSimpleHTML()}
-    ${review || isClientView(c) ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
+    ${review || isClientOnly(c) ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
 }
 
 function uploadStepHTML(c, { review }) {

@@ -25,6 +25,9 @@ const DAY = 86400000;
 // klien: true (api/_team.js memberRoleOf).
 const rolesHere = () => (isAdmin(auth.currentUser?.uid) ? ["editor", "viewer", "klien"] : ["editor", "viewer"]);
 const roleOf = (m) => (m?.klien ? "klien" : m?.role);
+// On Wepeka's brands an editor also works the Antrean Video like the client
+// (js/posting.js isClientView), so the hint says so there.
+const roleHint = (r) => t(r === "editor" && isAdmin(auth.currentUser?.uid) ? "team.role.editorHintWepeka" : `team.role.${r}Hint`);
 
 // Invites: read once per visit to the panel (rules let an owner read their
 // own), and again after anything here changes them.
@@ -320,7 +323,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
           <div class="flex gap-8" style="flex-wrap:wrap;">
             ${rolesHere().map((r, i) => `<label class="checkbox-chip"><input type="radio" name="inv-role" value="${r}" ${i === 0 ? "checked" : ""} />${roleName(r)}</label>`).join("")}
           </div>
-          <p class="hint" id="inv-role-hint" style="display:block;margin-top:8px;">${t("team.role.editorHint")}</p>
+          <p class="hint" id="inv-role-hint" style="display:block;margin-top:8px;">${roleHint(rolesHere()[0])}</p>
         </div>
         ${Number.isFinite(seats.limit) ? `<p class="hint" style="display:block;">${t("team.inviteModal.seatsLeft", { n: seats.left })}</p>` : ""}
         <div class="auth-error" id="inv-error" style="display:none;"></div>
@@ -340,7 +343,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
   };
   qs("[data-cancel]", overlay).addEventListener("click", () => closeOverlay(overlay));
   qsa("input[name=inv-role]", overlay).forEach((r) => r.addEventListener("change", () => {
-    qs("#inv-role-hint", overlay).textContent = t(`team.role.${r.value}Hint`);
+    qs("#inv-role-hint", overlay).textContent = roleHint(r.value);
   }));
   qs("#inv-email", overlay).focus();
   const send = async () => {

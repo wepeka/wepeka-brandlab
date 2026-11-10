@@ -1,7 +1,8 @@
 // /api/review/{upload|send|clean|keep} — Wepeka's own side (admin only,
 // like the rest of Video & posting); /api/review/decide — a client invited
-// as "Klien" on the brand, signed in to Brandlab, notes or approves the cut
-// sent to them; /api/review/footage-{start|add|remove} — the crew (Klien or
+// as "Klien" (or an editor) on the brand, signed in to Brandlab, notes or
+// approves the cut sent to them; view-key — the same people read the cuts
+// from the client's Drive; /api/review/footage-{start|add|remove} — the crew (Klien or
 // editor) sends the shoot's raw clips, footage-key — Wepeka's Mac copies
 // them. The cuts and the clips live in the client's own Google Drive. See
 // api/_review.js, api/_footage.js and api/_clientDrive.js.
@@ -81,6 +82,19 @@ async function forClient(req, db, uid) {
   const out = await changePiece(db, contentId, (cur) => applyDecision(cur, { versionId: String(b.versionId || ""), verdict: b.verdict, note: b.note, name: member.name || member.email || "" }));
   await tidy(db, brand, out);
   return { ok: true };
+}
+
+// view-key: the brand's team member who isn't the one whose Drive holds
+// the cuts (an editor, a second Klien) watches and downloads them through
+// a short-lived key to that Drive — the same key the crew already gets to
+// send footage, reaching only what Brandlab made there (scope drive.file).
+async function forViewer(req, db, uid) {
+  const brand = await readDoc(db, `brands/${String(req.body?.brandId || "")}`);
+  if (!brand) throw fail(404, "brand");
+  if (uid !== brand.ownerId) clientOn(brand, uid, isAdminUid);
+  else if (!isAdminUid(uid)) throw fail(403, "private");
+  const { accessToken, expiresIn } = await driveAccess(db, brand);
+  return { accessToken, expiresIn };
 }
 
 // The shoot's raw clips (api/_footage.js). start: the piece's Footage
@@ -193,6 +207,7 @@ export default async function handler(req, res) {
   const db = adminDb();
   try {
     if (action === "decide") return res.status(200).json(await forClient(req, db, user.uid));
+    if (action === "view-key") return res.status(200).json(await forViewer(req, db, user.uid));
     if (action.startsWith("footage-")) return res.status(200).json(await forFootage(action, req, db, user.uid));
     if (!isAdminUid(user.uid)) return res.status(403).json({ error: "private" });
     return res.status(200).json(await forOwner(action, req, db, user.uid));

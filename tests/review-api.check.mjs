@@ -138,6 +138,14 @@ test("end to end: connect, send two cuts, client notes, approves; older cut leav
   assert.deepEqual(notes.map((x) => [x.t, x.text, x.by, x.name]), [[null, "Musik kekencangan", "client", "Rina (Quatro)"], [3, "Logo kepotong", "client", "Rina (Quatro)"]]);
   assert.equal(docs.get("content/c1").posting.client.status, "revision");
 
+  // An editor on the brand works it like the client (owner, 2026-11-10):
+  // notes, and a short key to watch the cuts in the client's Drive.
+  assert.equal((await call(review, "decide", "dodi", { contentId: "c1", versionId: "a", verdict: "revise", note: { t: 5, text: "Teksnya kekecilan" } })).status, 200);
+  assert.deepEqual(["by", "name"].map((k) => docs.get("content/c1").posting.notes.at(-1)[k]), ["client", "Dodi"]);
+  for (const uid of ["dodi", "rina", ADMIN]) assert.equal((await call(review, "view-key", uid, { brandId: "q" })).accessToken, "tok", uid);
+  assert.equal((await call(review, "view-key", "sari", { brandId: "q" })).error, "not-client", "a plain viewer");
+  assert.equal((await call(review, "view-key", "stranger", { brandId: "q" })).error, "not-client");
+
   // Cut B: both stay to compare.
   const up2 = await call(review, "upload", ADMIN, { contentId: "c1", versionId: "b", code: "QN-1", files });
   assert.equal(up2.folderId, up.folderId, "same folder");

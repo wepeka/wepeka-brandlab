@@ -81,3 +81,6 @@ export const keepFinalOnly = (contentId) => call("keep", { contentId });
 // The client's own answer on the cut sent to them: approve, or a note
 // ({ t: second or null for the whole video, text }).
 export const clientDecide = ({ contentId, versionId, verdict, note }) => call("decide", { contentId, versionId, verdict, note });
+// A short-lived key to read the cuts from the client's Drive, for a team
+// member who isn't the one who connected it (an editor).
+export const clientViewKey = (brandId) => call("view-key", { brandId });

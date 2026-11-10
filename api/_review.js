@@ -162,11 +162,15 @@ export function ownPiece(c, uid) {
   return c;
 }
 
-// A client acting on a piece: they're on its brand as "Klien", their
-// access is on, and the brand is Wepeka's (Video & posting is private).
+// A client acting on a piece: they're on its brand as "Klien" or as an
+// editor (owner, 2026-11-10: "editor bisa lihat antrean video juga … kaya
+// client, bedanya editor bisa edit brand dna dll"; a seat paused over the
+// team's limit reads like a viewer, so not that), their access is on, and
+// the brand is Wepeka's (Video & posting is private).
+export const reviewsCuts = (m) => !!m && !m.disabled && (!!m.klien || (m.role === "editor" && !m.seatPaused));
 export function clientOn(brand, uid, isAdminUid) {
   const m = brand?.members?.[uid];
-  if (!brand || !m?.klien || m.disabled || !isAdminUid(brand.ownerId)) throw fail(403, "not-client");
+  if (!brand || !reviewsCuts(m) || !isAdminUid(brand.ownerId)) throw fail(403, "not-client");
   return m;
 }
 
