@@ -149,6 +149,16 @@ describe("emails", () => {
     assert.match(m.text, /Klien/);
     assert.match(m.text, /menyetujui video/);
   });
+  test("a client who can edit (Klien bisa edit) is an editor on the brand, still marked klien", () => {
+    assert.ok(ROLES.includes("klienEdit"));
+    assert.deepEqual(memberRoleOf("klienEdit"), { role: "editor", klien: true }, "the rules let them edit; klien keeps their Drive and approvals");
+    assert.equal(roleShown({ role: "editor", klien: true }), "klienEdit");
+    assert.equal(roleShown({ role: "editor" }), "editor");
+    const m = composeInviteEmail({ ownerName: "Wepeka", brandNames: ["Quatro"], role: "klienEdit", link: "https://brandlab.wepeka.com/#/undangan/t", email: "a@q.id" });
+    assert.match(m.text, /Klien \(bisa edit\)/);
+    assert.match(m.text, /Brand DNA/);
+    assert.match(m.text, /menyetujui video/);
+  });
   test("names and links are escaped in the HTML", () => {
     const m = composeInviteEmail({ ownerName: "<b>x</b>", brandNames: ["A&B"], role: "viewer", link: "https://brandlab.wepeka.com/#/undangan/t", email: "a@b.id" });
     assert.doesNotMatch(m.html, /<b>x<\/b>/);

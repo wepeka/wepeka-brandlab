@@ -77,6 +77,8 @@ test("only the brand's client acts as one, and only their own connected Drive re
   assert.equal(clientOn(brand, "dodi", admin).name, "Dodi", "an editor works the Antrean like the client");
   assert.throws(() => clientOn(brand, "beni", admin), /not-client/, "a paused seat reads like a viewer");
   assert.throws(() => clientOn(brand, "ed", admin), /not-client/, "an editor whose access is off");
+  assert.equal(clientOn({ ...brand, members: { ...brand.members, dessy: { role: "editor", klien: true, name: "Dessy" } } }, "dessy", admin).name, "Dessy", "Klien (bisa edit)");
+  assert.deepEqual(clientDriveOf({ ...brand, members: { dessy: { role: "editor", klien: true } }, clientDrive: { uid: "dessy", email: "d@q.test" } }), { uid: "dessy", email: "d@q.test" }, "their Drive holds the cuts");
   assert.throws(() => clientOn(brand, "sari", admin), /not-client/, "a plain viewer");
   assert.throws(() => clientOn(brand, "off", admin), /not-client/, "access turned off");
   assert.throws(() => clientOn({ ...brand, ownerId: "someone" }, "rina", admin), /not-client/, "Video & posting is Wepeka's only");

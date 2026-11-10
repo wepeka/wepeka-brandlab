@@ -23,8 +23,10 @@ const DAY = 86400000;
 // Wepeka sends (Antrean Video). Only Wepeka's own account invites one —
 // Video & posting is private to it. On the brand it's a viewer marked
 // klien: true (api/_team.js memberRoleOf).
-const rolesHere = () => (isAdmin(auth.currentUser?.uid) ? ["editor", "viewer", "klien"] : ["editor", "viewer"]);
-const roleOf = (m) => (m?.klien ? "klien" : m?.role);
+// "Klien (bisa edit)" (2026-11-10): the same client who also edits the
+// brand — role "editor" marked klien: true.
+const rolesHere = () => (isAdmin(auth.currentUser?.uid) ? ["editor", "viewer", "klien", "klienEdit"] : ["editor", "viewer"]);
+const roleOf = (m) => (m?.klien ? (m.role === "editor" ? "klienEdit" : "klien") : m?.role);
 // On Wepeka's brands an editor also works the Antrean Video like the client
 // (js/posting.js isClientView), so the hint says so there.
 const roleHint = (r) => t(r === "editor" && isAdmin(auth.currentUser?.uid) ? "team.role.editorHintWepeka" : `team.role.${r}Hint`);

@@ -14,14 +14,20 @@
 //   teamMail/{YYYY-MM-DD WIB} {total, byOwner {uid: n}} — team emails sent that day
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
-export const ROLES = ["editor", "viewer", "klien"];
+export const ROLES = ["editor", "viewer", "klien", "klienEdit"];
 // "Klien" (owner, 2026-11-09: Quatro opens Brandlab to check its videos):
 // on the brand doc a client is a viewer — the rules give them reading only —
 // marked klien: true, which lets them note and approve the cuts sent to
 // them through api/review. Only Wepeka's own account invites one (Video &
 // posting is private to it).
-export const memberRoleOf = (role) => (role === "klien" ? { role: "viewer", klien: true } : { role });
-export const roleShown = (m) => (m?.klien ? "klien" : m?.role);
+// "Klien (bisa edit)" (owner, 2026-11-10: "bisa gak ada role baru kaya
+// client yang bisa edit dna?"): the same client — connects their Drive,
+// notes and approves the cuts — who also edits the brand like an editor:
+// role "editor" on the brand doc, still marked klien: true.
+export const CLIENT_ROLES = { klien: "viewer", klienEdit: "editor" };
+export const isClientRole = (role) => Object.hasOwn(CLIENT_ROLES, role);
+export const memberRoleOf = (role) => (isClientRole(role) ? { role: CLIENT_ROLES[role], klien: true } : { role });
+export const roleShown = (m) => (m?.klien ? (m.role === "editor" ? "klienEdit" : "klien") : m?.role);
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CODE_MAX_ATTEMPTS = 5;
@@ -150,6 +156,7 @@ const ROLE_TEXT = {
   editor: { name: "Editor", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, dan ide)" },
   viewer: { name: "Lihat saja", what: "bisa melihat semua isi brand tanpa mengubahnya" },
   klien: { name: "Klien", what: "bisa melihat brand, menonton video di Antrean Video, memberi catatan revisi, dan menyetujui video" },
+  klienEdit: { name: "Klien (bisa edit)", what: "bisa mengubah isi brand (Brand DNA, Brand Book, konten, campaign, dan ide), menonton video di Antrean Video, memberi catatan revisi, dan menyetujui video" },
 };
 export function joinNames(names) {
   const list = (names || []).filter(Boolean);

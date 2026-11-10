@@ -40,7 +40,7 @@ import { APP_URL } from "./_reminders.js";
 import {
   ROLES, INVITE_TTL_MS, CODE_TTL_MS, RESEND_GAP_MS, MAX_PENDING_INVITES, TEAM_EMAIL_FROM_DEFAULT, CODE_DAY_SENDS, CODE_DAY_WRONG,
   teamMailDay, takeMailSlot, normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, codeGuardId, guardToday, inviteState, seatsUsed,
-  pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail, memberRoleOf } from "./_team.js";
+  pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail, memberRoleOf, isClientRole } from "./_team.js";
 
 export class TeamError extends Error {
   constructor(code, status, extra = {}) {
@@ -187,7 +187,7 @@ export async function invite(d, caller, body) {
   const email = normalizeEmail(body?.email);
   const role = body?.role;
   if (!brandIds || !email || !ROLES.includes(role)) fail("bad-request", 400);
-  if (role === "klien" && !isAdminUid(caller.uid)) fail("bad-request", 400);
+  if (isClientRole(role) && !isAdminUid(caller.uid)) fail("bad-request", 400);
   const owner = await d.auth.getUser(caller.uid);
   if (normalizeEmail(owner.email) === email) fail("self", 400);
   const now = d.now();
@@ -327,7 +327,7 @@ export async function accept(d, caller, body) {
       for (const [k, v] of Object.entries(scrub?.brandPatch || {})) updates.push(k, v);
       tx.update(ref, ...updates);
       // Invited again after their access was turned off: back on.
-      membershipBrands[b.id] = { ownerId: inv.ownerId, ...memberRoleOf(inv.role), ...(inv.role === "klien" ? {} : { klien: FieldValue.delete() }), brandName: String(b.name || "").slice(0, 80), ownerName: inv.ownerName, disabled: FieldValue.delete() };
+      membershipBrands[b.id] = { ownerId: inv.ownerId, ...memberRoleOf(inv.role), ...(isClientRole(inv.role) ? {} : { klien: FieldValue.delete() }), brandName: String(b.name || "").slice(0, 80), ownerName: inv.ownerName, disabled: FieldValue.delete() };
     }
     tx.set(d.db.doc(`memberships/${caller.uid}`), { ownerIds: FieldValue.arrayUnion(inv.ownerId), brands: membershipBrands }, { merge: true });
     tx.update(d.db.doc(`invites/${id}`), { status: "accepted", acceptedBy: caller.uid, acceptedAt: now });
@@ -430,7 +430,7 @@ export async function codeFinish(d, caller, body) {
 export async function changeRole(d, caller, body) {
   const { brandId, memberUid, role } = body || {};
   if (!idOk(brandId) || !idOk(memberUid) || !ROLES.includes(role)) fail("bad-request", 400);
-  if (role === "klien" && !isAdminUid(caller.uid)) fail("bad-request", 400);
+  if (isClientRole(role) && !isAdminUid(caller.uid)) fail("bad-request", 400);
   const next = memberRoleOf(role);
   await d.db.runTransaction(async (tx) => {
     const ref = d.db.doc(`brands/${brandId}`);

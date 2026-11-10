@@ -22,7 +22,7 @@
 // Scheduling still only marks the piece until the server worker exists; that
 // worker will copy the final cut to a short-lived spot for Instagram to
 // fetch (.claude/social-hub/ARSITEKTUR.md).
-import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole } from "./store.js";
+import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole, canEditBrand } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
@@ -56,9 +56,9 @@ export function isClientView(x) {
   return !!b && !canUsePosting() && isAdmin(b.ownerId) && (isClientMember(b) || brandRole(b) === "editor");
 }
 export const canSeePosting = (x) => canUsePosting() || isClientView(x);
-// The client proper ("Klien"): reads only, so no "Sudah syuting / Sudah
-// edit" buttons; an editor keeps them.
-export const isClientOnly = (x) => isClientView(x) && isClientMember(brandOfC(x));
+// The client who only reads ("Klien"): no "Sudah syuting / Sudah edit"
+// buttons; an editor and a "Klien (bisa edit)" keep them.
+export const isClientOnly = (x) => isClientView(x) && !canEditBrand(brandOfC(x));
 
 // Whose Drive the cuts are read from. The client who connected theirs reads
 // with their own token (js/drive.js); anyone else on the team (an editor, a
