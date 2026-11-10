@@ -340,7 +340,16 @@ const STATE_COLOR = {
 };
 const STATE_ICON = { none: "upload", review: "eye", client: "users", revision: "refresh", ready: "check", scheduled: "clock", published: "instagram", failed: "x" };
 
-const postingOf = (c) => c?.posting || { versions: [], notes: [] };
+// A piece can hold only part of `posting`: the server saved just the
+// client's Drive folder when the crew started uploading footage on a piece
+// with no cut yet (2026-11-10, QKC-30), and Create stopped loading. So the
+// two lists are always there, whatever else is.
+const postingOf = (c) => {
+  const p = c?.posting;
+  if (!p) return { versions: [], notes: [] };
+  if (Array.isArray(p.versions) && Array.isArray(p.notes)) return p;
+  return { ...p, versions: Array.isArray(p.versions) ? p.versions : [], notes: Array.isArray(p.notes) ? p.notes : [] };
+};
 const latestOf = (p) => p.versions[p.versions.length - 1] || null;
 const versionLabel = (v) => (v.n ? t("post.v.revision", { n: v.n }) : t("post.v.original"));
 

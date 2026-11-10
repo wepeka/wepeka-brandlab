@@ -155,6 +155,14 @@ export function applyClean(c) {
   return { patch: { posting: { ...p, previews } }, removePaths: [...out.removePaths, ...pathsOf(kept)], removeDrive: out.removeDrive };
 }
 
+// Remembering the piece's folder in the client's Drive. A piece with no cut
+// yet has no `posting`; a bare "posting.clientFolder" would make one holding
+// only the folder, with no versions or notes (2026-11-10: footage started on
+// QKC-30 and the owner's Create page stopped loading).
+export const clientFolderPatch = (c, folderId) => (c?.posting
+  ? { "posting.clientFolder": folderId }
+  : { posting: { versions: [], notes: [], clientFolder: folderId } });
+
 // The checks every owner action shares: the piece is the caller's own.
 export function ownPiece(c, uid) {
   if (!c) throw fail(404, "content");

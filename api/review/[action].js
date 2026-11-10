@@ -8,7 +8,7 @@
 // api/_review.js, api/_footage.js and api/_clientDrive.js.
 import { adminDb, adminBucket, requireAuth } from "../_firebaseAdmin.js";
 import { isAdminUid } from "../_aiQuota.js";
-import { checkUploads, driveNames, finalName, applySend, applyDecision, applyClean, applyKeepFinal, ownPiece, clientOn, clientDriveOf, fail } from "../_review.js";
+import { checkUploads, driveNames, finalName, applySend, applyDecision, applyClean, applyKeepFinal, ownPiece, clientOn, clientDriveOf, clientFolderPatch, fail } from "../_review.js";
 import { driveConfigured, refreshAccess } from "../_drive.js";
 import { pieceFolder, ensureFolder, checkFiles, deleteFiles, renameFile } from "../_clientDrive.js";
 import { FOOTAGE_FOLDER, footageMember, clipNames, applyFootageAdd, applyFootageRemove } from "../_footage.js";
@@ -128,7 +128,7 @@ async function forFootage(action, req, db, uid) {
       await db.doc(`brands/${brand.id}`).update({ "clientDrive.folders": { rootId: folders.rootId, brandFolderId: folders.brandFolderId } });
     }
     const patch = {};
-    if (folders.folderId !== c.posting?.clientFolder) patch["posting.clientFolder"] = folders.folderId;
+    if (folders.folderId !== c.posting?.clientFolder) Object.assign(patch, clientFolderPatch(c, folders.folderId));
     if (folderId !== c.footage?.folderId) patch["footage.folderId"] = folderId;
     if (Object.keys(patch).length) await db.doc(`content/${contentId}`).update(patch);
     return { accessToken: access.accessToken, expiresIn: access.expiresIn, folderId, names };
@@ -170,7 +170,7 @@ async function forOwner(action, req, db, uid) {
     if (folders.rootId !== cache.rootId || folders.brandFolderId !== cache.brandFolderId) {
       await db.doc(`brands/${brand.id}`).update({ "clientDrive.folders": { rootId: folders.rootId, brandFolderId: folders.brandFolderId } });
     }
-    if (folders.folderId !== c.posting?.clientFolder) await db.doc(`content/${contentId}`).update({ "posting.clientFolder": folders.folderId });
+    if (folders.folderId !== c.posting?.clientFolder) await db.doc(`content/${contentId}`).update(clientFolderPatch(c, folders.folderId));
     return { accessToken: access.accessToken, expiresIn: access.expiresIn, folderId: folders.folderId, ...driveNames({ code, version, files: b.files }) };
   }
   if (action === "send") {

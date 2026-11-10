@@ -16,6 +16,13 @@ test("a piece's video state follows its newest version, then its Instagram slot"
   assert.equal(postingState({ status: "published", posting: { versions: [v("a", "approved")], finalId: "a", notes: [] } }), "published");
 });
 
+test("a piece holding only the client's Drive folder (footage started, no cut yet) reads as no video, not a crash", () => {
+  // 2026-11-10 QKC-30: posting = { clientFolder } broke the whole Create page
+  assert.equal(postingState({ status: "production", posting: { clientFolder: "f1" } }), "none");
+  assert.equal(postingState({ status: "production", posting: { clientFolder: "f1", versions: [v("a", "pending")] } }), "review");
+  assert.equal(postingState({ status: "published", posting: { clientFolder: "f1" } }), "none");
+});
+
 test("videos land in the owner's Drive as Brandlab / brand / month / piece, the posted cut marked FINAL", () => {
   const c = { scheduleDate: "2026-11-04", title: "Video jendela drive-thru" };
   assert.deepEqual(driveFolderPath({ name: "Kopi Pagi" }, c, "id"), ["Brandlab", "Kopi Pagi", "2026-11 November", "04 Nov · Video jendela drive-thru"]);

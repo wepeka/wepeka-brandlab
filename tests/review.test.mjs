@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applySend, applyDecision, applyClean, applyKeepFinal, driveNames, finalName, checkUploads, clientOn, clientDriveOf } from "../api/_review.js";
+import { applySend, applyDecision, applyClean, applyKeepFinal, driveNames, finalName, checkUploads, clientOn, clientDriveOf, clientFolderPatch } from "../api/_review.js";
 import { pieceFolder, checkFiles, deleteFiles, driveName, ROOT_FOLDER } from "../api/_clientDrive.js";
+
+test("the client's Drive folder is saved without leaving a posting that has no versions or notes", () => {
+  // no cut yet (footage started on a Syuting piece): a whole posting, lists empty
+  assert.deepEqual(clientFolderPatch({ status: "production" }, "F"), { posting: { versions: [], notes: [], clientFolder: "F" } });
+  // a piece with cuts: only the folder changes, the cuts stay
+  assert.deepEqual(clientFolderPatch({ posting: { versions: [{ id: "a" }], notes: [] } }, "F"), { "posting.clientFolder": "F" });
+});
 
 const piece = (posting = {}, extra = {}) => ({
   id: "c1", brandId: "b1", ownerId: "u1", title: "Cara pesan", scheduleDate: "2026-11-05", caption: "Cap", status: "editing",
