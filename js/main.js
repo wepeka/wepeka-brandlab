@@ -45,7 +45,7 @@ import { showPayLoading, hidePayLoading } from "./pay-loading.js";
 import { WEPEKA_CONNECT_URL } from "./site-links.js";
 import { toast, showWelcomeBumper } from "./dom.js";
 import { subscribeAccount, setCachedAccount, getCachedAccount, isDeactivated, isReadOnly, accessState, isBrandLocked } from "./account.js";
-import { subscribeMemberships, effectiveAccess, getMemberships } from "./team.js";
+import { subscribeMemberships, effectiveAccess, getMemberships, claimInvites } from "./team.js";
 import { icon } from "./icons.js";
 import { escapeHtml } from "./dom.js";
 import { clearPageGuide } from "./section-guide.js";
@@ -502,6 +502,11 @@ async function boot(user) {
   };
 }
 
+// Accounts (uid) whose waiting team invites were already claimed this page
+// load — once each, so an account with none isn't asked again on every
+// account change.
+const inviteClaimTried = new Set();
+
 // Fires once immediately with the current account doc, then again live on
 // every plan/status change — a Midtrans webhook settling payment or an
 // admin deactivating the account both land here without a page refresh.
@@ -574,6 +579,18 @@ function onAccountChange(user, account) {
   // touched here; it's just not rendered until the account is paid/trial
   // again.
   if (state === "none" || state === "expired") {
+    // Invited to someone's team but signed in here (Google) instead of
+    // through the invite link: those invites are taken first. The
+    // memberships they write re-run this as "member"; none = the plans.
+    if (!inviteClaimTried.has(user.uid) && user.providerData?.some((p) => p.providerId === "google.com")) {
+      inviteClaimTried.add(user.uid);
+      teardownApp();
+      showLoading();
+      claimInvites(user).then(({ accepted }) => {
+        if (!accepted && lastUser?.uid === user.uid) onAccountChange(user, getCachedAccount());
+      });
+      return;
+    }
     teardownApp();
     app.innerHTML = `<main class="view" id="pricing-root" style="padding:0;max-width:none;"></main>`;
     renderPricingScreen(document.getElementById("pricing-root"), { account, user, locked: true });

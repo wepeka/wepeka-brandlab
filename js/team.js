@@ -76,6 +76,23 @@ export function effectiveAccess(account, m = memberships) {
   return hasMemberships(m) ? "member" : own;
 }
 
+// Someone a brand owner invited, signed in with Google from the ordinary
+// login screen rather than the invite link: every invite waiting for that
+// email is accepted (api/team.js claim). Resolves to { accepted (just now),
+// joined (+ ones this account had already taken) }; never throws. Only a
+// Google sign-in can claim, so no one else spends the call.
+export async function claimInvites(user = auth.currentUser) {
+  const none = { accepted: 0, joined: 0 };
+  if (!user?.providerData?.some((p) => p.providerId === "google.com")) return none;
+  try {
+    const out = await teamApi("claim");
+    return { accepted: Number(out.accepted) || 0, joined: Number(out.joined) || 0 };
+  } catch (e) {
+    console.warn("Team invites not claimed", e);
+    return none;
+  }
+}
+
 // POST /api/team (GET for "preview"). Resolves to the JSON on success;
 // rejects with an Error whose .code is the server's error code.
 export async function teamApi(action, body = {}) {

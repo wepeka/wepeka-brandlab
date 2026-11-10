@@ -10,6 +10,7 @@ import {
   GoogleAuthProvider, signInWithPopup, getAdditionalUserInfo, signInWithCustomToken,
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import { t } from "./i18n.js";
+import { claimInvites } from "./team.js";
 
 // Firebase Auth error code -> i18n key for a message worth showing a user.
 const AUTH_ERROR_KEYS = {
@@ -76,7 +77,9 @@ const googleProvider = new GoogleAuthProvider();
 // theirs. Every other sign-in keeps the rule above.
 export async function loginWithGoogle({ allowNew = false } = {}) {
   const result = await signInWithPopup(auth, googleProvider);
-  if (getAdditionalUserInfo(result)?.isNewUser && !allowNew) {
+  // A new Google account is kept only when a brand owner invited this
+  // email (Kerja Tim): signing in here accepts the invite, as its link would.
+  if (getAdditionalUserInfo(result)?.isNewUser && !allowNew && !(await claimInvites(result.user)).joined) {
     // Delete, not just sign out — a bare signOut would leave an orphan
     // Firebase user permanently squatting this email with no matching
     // account, forever. That would break wepeka.com's own sign-up for the

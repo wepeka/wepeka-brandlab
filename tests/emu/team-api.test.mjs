@@ -14,6 +14,7 @@ const { adminDb, adminAuth } = await import("../../api/_firebaseAdmin.js");
 const { runAction, TeamError } = await import("../../api/team.js");
 const { resolvePayer } = await import("../../api/_aiQuota.js");
 const { hashToken } = await import("../../api/_team.js");
+const { ADMIN_UIDS } = await import("../../api/_aiQuota.js");
 
 const DAY = 86400000;
 const PROJECT = "demo-brandlab";
@@ -208,6 +209,71 @@ describe("seats and plan", () => {
     // Nor keep an old invite alive with new links.
     const pending = (await db.collection("invites").where("ownerId", "==", "owen").get()).docs.find((x) => x.data().status === "pending");
     await expectError(runAction(d(), "rotate", as("owen"), { inviteId: pending.id }), "owner-inactive");
+  });
+});
+
+describe("claim: signed in from the login screen, not the invite link", () => {
+  // A Google sign-in on the Auth emulator: the user gets a google.com provider.
+  async function googleUser(uid, email) {
+    await auth.createUser({ uid, email, displayName: uid, emailVerified: true });
+    await auth.updateUser(uid, { providerToLink: { providerId: "google.com", uid: `g-${uid}`, email } });
+  }
+  // Only Wepeka's own account gives the Klien roles (api/team.js invite).
+  const WPK = ADMIN_UIDS[0];
+  async function seedWepeka() {
+    await user(WPK, "wepeka@test.local");
+    await db.doc(`accounts/${WPK}`).set({ uid: WPK, plan: "lifetime", status: "active", brandLimit: 50, displayName: "Wepeka" });
+    await db.doc("brands/q1").set({ id: "q1", ownerId: WPK, name: "Quatro", archived: false, createdAt: 1 });
+  }
+  test("a Google account on an invited email joins every brand waiting for it, with the invited role", async () => {
+    await seed();
+    await seedWepeka();
+    await db.doc("accounts/budi").set({ uid: "budi", plan: "pro", status: "active", brandLimit: 3, subscriptionExpiresAt: clock + 30 * DAY, displayName: "Budi" });
+    await db.doc("brands/c1").set({ id: "c1", ownerId: "budi", name: "Toko Budi", archived: false, createdAt: 1 });
+    await runAction(d(), "invite", as(WPK), { brandIds: ["q1"], email: "Tina@Test.local", role: "klienEdit" });
+    await runAction(d(), "invite", as("budi"), { brandIds: ["c1"], email: "tina@test.local", role: "viewer" });
+    await googleUser("tina", "tina@test.local");
+    const out = await runAction(d(), "claim", as("tina"), {});
+    assert.deepEqual([out.accepted, out.joined], [2, 2]);
+    assert.deepEqual(out.brandIds.sort(), ["c1", "q1"]);
+    const m = (await db.doc("memberships/tina").get()).data();
+    assert.deepEqual(m.ownerIds.sort(), ["budi", WPK].sort());
+    assert.equal(m.brands.q1.role, "editor");
+    assert.equal(m.brands.q1.klien, true);
+    assert.equal(m.brands.c1.role, "viewer");
+    assert.deepEqual((await db.doc("brands/q1").get()).data().memberIds, ["tina"]);
+    // Nothing left waiting: a second claim (the app's boot racing the login
+    // button) takes nothing new but still says she's on those teams.
+    const again = await runAction(d(), "claim", as("tina"), {});
+    assert.deepEqual([again.accepted, again.joined], [0, 2]);
+    const invs = (await db.collection("invites").where("email", "==", "tina@test.local").get()).docs.map((x) => x.data().status);
+    assert.deepEqual(invs, ["accepted", "accepted"]);
+  });
+  test("no Google, no claim: a password account, even verified, still needs the link", async () => {
+    await seed();
+    await seedWepeka();
+    const { link } = await runAction(d(), "invite", as(WPK), { brandIds: ["q1"], email: "rina@test.local", role: "klien" });
+    assert.deepEqual(await runAction(d(), "claim", as("rina"), {}), { brandIds: [], accepted: 0, joined: 0 });
+    assert.equal((await db.doc("memberships/rina").get()).exists, false);
+    assert.deepEqual((await runAction(d(), "accept", as("rina"), { token: tokenOf(link) })).brandIds, ["q1"]);
+  });
+  test("only invites for this email, still waiting, from an owner whose plan runs; the rest are left as they are", async () => {
+    await seed();
+    await runAction(d(), "invite", as("owen"), { brandIds: ["b1"], email: "someone@test.local", role: "editor" });
+    const old = await runAction(d(), "invite", as("owen"), { brandIds: ["b2"], email: "tina@test.local", role: "editor" });
+    await runAction(d(), "revoke", as("owen"), { inviteId: old.inviteId });
+    await googleUser("tina", "tina@test.local");
+    assert.equal((await runAction(d(), "claim", as("tina"), {})).accepted, 0);
+    const again = await runAction(d(), "invite", as("owen"), { brandIds: ["b2"], email: "tina@test.local", role: "editor" });
+    await db.doc("accounts/owen").update({ subscriptionExpiresAt: clock - 1 });
+    assert.equal((await runAction(d(), "claim", as("tina"), {})).accepted, 0);
+    assert.equal((await db.doc(`invites/${again.inviteId}`).get()).data().status, "pending", "waits until the plan is back");
+    await db.doc("accounts/owen").update({ subscriptionExpiresAt: clock + 30 * DAY });
+    assert.deepEqual((await runAction(d(), "claim", as("tina"), {})).brandIds, ["b2"]);
+    assert.equal((await db.doc("brands/b1").get()).data().memberIds, undefined, "someone else's invite untouched");
+  });
+  test("signed out, claim is refused", async () => {
+    await expectError(runAction(d(), "claim", null, {}), "auth");
   });
 });
 

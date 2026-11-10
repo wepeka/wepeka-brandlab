@@ -9,6 +9,8 @@
 //   POST {action:"rotate", inviteId, send?}         owner: a fresh link (old one stops working), optionally re-emailed
 //   POST {action:"revoke", inviteId}                owner
 //   POST {action:"accept", token}                   signed in with the invited, verified email
+//   POST {action:"claim"}                           signed in with Google: accepts every invite waiting
+//                                                    for that email (signed in from the login screen, no link)
 //   POST {action:"code-start", token}               6-digit code to the invited email (sign-up / unverified email)
 //   POST {action:"code-finish", token, code, name?, password?}
 //        signed in: marks the email verified and accepts;
@@ -290,8 +292,13 @@ export async function preview(d, body) {
 }
 
 export async function accept(d, caller, body) {
-  const id = hashToken(body?.token || "");
   if (typeof body?.token !== "string") fail("bad-request", 400);
+  return acceptInvite(d, caller, hashToken(body.token));
+}
+
+// The invite's id is its token's hash: the link accepts by token (above),
+// claim (below) by id.
+async function acceptInvite(d, caller, id) {
   const user = await d.auth.getUser(caller.uid);
   const now = d.now();
   return d.db.runTransaction(async (tx) => {
@@ -336,6 +343,45 @@ export async function accept(d, caller, body) {
     if (!out.already) await mirrorTeams(d, out.brandIds);
     return out;
   });
+}
+
+// Someone invited who signs in from the ordinary login screen instead of
+// the invite link — a client with no Brandlab of their own would otherwise
+// land on the plans page. Every invite still waiting for their email is
+// accepted, the same way the link would. Only for a Google sign-in on that
+// very address: Google vouches for the inbox, as the link's email would.
+// An invite that can't be taken right now (team full, the owner's plan
+// off) just stays waiting.
+// → { accepted: taken now, joined: + those this account had already taken
+//   (a second claim racing the first — the login button and the app's boot
+//   both ask — still learns it's on a team), brandIds }
+export async function claim(d, caller) {
+  const none = { brandIds: [], accepted: 0, joined: 0 };
+  const user = await d.auth.getUser(caller.uid);
+  const email = normalizeEmail(user.email);
+  const viaGoogle = (user.providerData || []).some((p) => p.providerId === "google.com" && normalizeEmail(p.email) === email);
+  if (!email || !user.emailVerified || !viaGoogle) return none;
+  const now = d.now();
+  const mine = docs(await d.db.collection("invites").where("email", "==", email).get())
+    .filter((inv) => inv.ownerId !== caller.uid)
+    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  const brandIds = [];
+  let accepted = 0;
+  let joined = 0;
+  for (const inv of mine) {
+    const state = inviteState(inv, now);
+    if (state === "accepted" && inv.acceptedBy === caller.uid) joined += 1;
+    if (state !== "pending") continue;
+    try {
+      const out = await acceptInvite(d, caller, inv.id);
+      if (!out.already) accepted += 1;
+      joined += 1;
+      brandIds.push(...out.brandIds);
+    } catch (err) {
+      if (!(err instanceof TeamError)) throw err;
+    }
+  }
+  return accepted || joined ? { brandIds: [...new Set(brandIds)], accepted, joined } : none;
 }
 
 export async function codeStart(d, body) {
@@ -558,7 +604,7 @@ export async function sync(d, caller) {
 }
 
 // ---------- HTTP ----------
-const SIGNED_IN = { invite, rotate, revoke, accept, role: changeRole, access: setAccess, remove, leave, sync };
+const SIGNED_IN = { invite, rotate, revoke, accept, claim, role: changeRole, access: setAccess, remove, leave, sync };
 
 export async function runAction(d, action, caller, body) {
   if (action === "preview") return preview(d, body);
