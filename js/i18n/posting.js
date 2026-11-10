@@ -164,6 +164,8 @@ export default {
   "post.drive.connected": { en: "Google Drive connected ({email}).", id: "Google Drive terhubung ({email})." },
   "post.drive.notConnected": { en: "Google Drive isn't connected.", id: "Google Drive belum terhubung." },
   "post.load": { en: "Loading from Drive…", id: "Memuat dari Drive…" },
+  "post.slide.prev": { en: "Previous slide", id: "Slide sebelumnya" },
+  "post.slide.next": { en: "Next slide", id: "Slide berikutnya" },
   "post.loadFailed": { en: "Couldn't load this video from Drive.", id: "Video tidak bisa dimuat dari Drive." },
 
   "post.ig.ctaMark": { en: "Book this slot", id: "Tandai jadwal tayang" },

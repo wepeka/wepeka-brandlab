@@ -1316,6 +1316,45 @@ function localConnectHTML() {
     </div>`;
 }
 
+// Carousel arrows + "1/7" (owner, 2026-11-10: "tambahin juga tombol buat
+// slide kalau carrousel"): a mouse can't swipe the row, so ‹ › step one slide.
+function slideNavHTML(n) {
+  if (n < 2) return "";
+  return `<span class="pst-slide-n">1/${n}</span>`
+    + `<button type="button" class="pst-slide-go is-prev" data-slide-go="-1" aria-label="${escapeHtml(t("post.slide.prev"))}" disabled>${icon("chevronLeft", { size: 20 })}</button>`
+    + `<button type="button" class="pst-slide-go is-next" data-slide-go="1" aria-label="${escapeHtml(t("post.slide.next"))}">${icon("chevronRight", { size: 20 })}</button>`;
+}
+
+// One wiring for every carousel on the page (Mac folder or client's Drive):
+// the counter follows the swipe, the arrows step and hide at the ends.
+function wireSlides(root) {
+  qsa(".pst-player.is-slides", root).forEach((box) => {
+    const row = qs(".pst-slides", box);
+    if (!row || row.dataset.wired) return;
+    row.dataset.wired = "1";
+    const total = row.children.length;
+    const at = () => Math.min(total - 1, Math.max(0, Math.round(row.scrollLeft / (row.clientWidth || 1))));
+    const show = () => {
+      const i = at();
+      const n = qs(".pst-slide-n", box);
+      if (n) n.textContent = `${i + 1}/${total}`;
+      const prev = qs(".pst-slide-go.is-prev", box), next = qs(".pst-slide-go.is-next", box);
+      if (prev) prev.disabled = i <= 0;
+      if (next) next.disabled = i >= total - 1;
+    };
+    row.addEventListener("scroll", show, { passive: true });
+    // A straight jump to the next slide: a smooth scroll on a snapping row
+    // can stop halfway between two slides.
+    qsa("[data-slide-go]", box).forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const i = Math.min(total - 1, Math.max(0, at() + Number(b.dataset.slideGo)));
+      row.scrollLeft = i * row.clientWidth;
+      show();
+    }));
+    show();
+  });
+}
+
 // A local cut plays straight from the Mac folder; a carousel is a row of
 // slides to swipe, a photo just the photo.
 function localPlayerHTML(v, tag, c) {
@@ -1323,7 +1362,7 @@ function localPlayerHTML(v, tag, c) {
   const label = tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : "";
   if (v.kind === "set" || v.kind === "image") {
     const files = v.kind === "image" ? [v.local.file] : (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`));
-    return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${files.length > 1 ? `<span class="pst-slide-n">1/${files.length}</span>` : ""}</div>`;
+    return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${slideNavHTML(files.length)}</div>`;
   }
   return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video></div>`;
 }
@@ -1333,7 +1372,7 @@ function localPlayerHTML(v, tag, c) {
 function playerHTML(v, tag, c) {
   if (v.local) return localPlayerHTML(v, tag, c);
   if (v.driveFiles && v.kind !== "video") {
-    return `<div class="pst-player is-slides"><div class="pst-slides">${v.driveFiles.map((f) => `<img data-drive-img="${escapeHtml(f.id)}" alt="">`).join("")}</div>${v.driveFiles.length > 1 ? `<span class="pst-slide-n">1/${v.driveFiles.length}</span>` : ""}</div>`;
+    return `<div class="pst-player is-slides"><div class="pst-slides">${v.driveFiles.map((f) => `<img data-drive-img="${escapeHtml(f.id)}" alt="">`).join("")}</div>${slideNavHTML(v.driveFiles.length)}</div>`;
   }
   const fromDrive = !v.url && v.drive?.id;
   return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" ${v.url ? "data-ready" : ""} ${fromDrive ? `data-drive="${escapeHtml(v.drive.id)}"` : ""}>${tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : ""}<video ${v.url ? `src="${escapeHtml(v.url)}"` : ""} playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video>${fromDrive ? `<span class="pst-loading">${icon("folder", { size: 16 })}<span>${t("post.load")}</span><b>0%</b></span>` : ""}</div>`;
@@ -1716,12 +1755,7 @@ function wire(root, contentId, ui, repaint) {
   qsa("[data-vposter]", root).forEach((el) => {
     driveVideoURL(el.dataset.vposter, { key: driveKey }).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
   });
-  if (ui.client) {
-    qsa(".pst-slides", root).forEach((row) => row.addEventListener("scroll", () => {
-      const n = qs(".pst-slide-n", row.parentElement);
-      if (n) n.textContent = `${Math.round(row.scrollLeft / row.clientWidth) + 1}/${row.children.length}`;
-    }, { passive: true }));
-  }
+  wireSlides(root);
   qs("#pst-connect", root)?.addEventListener("click", () => goConnect(contentId));
   qs("#pst-local", root)?.addEventListener("click", async () => { await linkOutbox(); repaint(); });
   const key = p.local?.key;
@@ -1735,10 +1769,6 @@ function wire(root, contentId, ui, repaint) {
       if (!x?.local) return;
       outboxThumb(key, x).then((src) => { if (src && el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
     });
-    qsa(".pst-slides", root).forEach((row) => row.addEventListener("scroll", () => {
-      const n = qs(".pst-slide-n", row.parentElement);
-      if (n) n.textContent = `${Math.round(row.scrollLeft / row.clientWidth) + 1}/${row.children.length}`;
-    }, { passive: true }));
   }
   qsa("[data-type]", root).forEach((b) => b.addEventListener("click", () => {
     updateContent(contentId, { format: FORMAT_OF[b.dataset.type], posting: { ...postingOf(getContent(contentId)), type: b.dataset.type } });
