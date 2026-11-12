@@ -1201,11 +1201,23 @@ function renderInviteScreen() {
     })
     .catch((e) => console.warn("invite page unavailable", e));
 }
-// Joined a team on the invite page: decide again what this person may open.
-window.addEventListener("team:joined", () => {
-  if (!lastUser) return;
-  if (storeReady) renderRoute();
-  else onAccountChange(lastUser, getCachedAccount());
+// Joined a team on the invite page: straight into the (first) shared brand.
+// The page waits ("Membuka …") until this account's access includes it —
+// the memberships listener has the brand, and an app already running has
+// loaded it — so the brand opens instead of the plans or the brand list.
+const JOIN_WAIT_MS = 10_000;
+window.addEventListener("team:joined", async (e) => {
+  const user = lastUser;
+  if (!user) return;
+  const brandId = e.detail?.brandIds?.[0] || null;
+  const ready = () => !brandId || (getMemberships()?.brands?.[brandId] && (!storeReady || getBrand(brandId)));
+  for (const start = Date.now(); !ready() && Date.now() - start < JOIN_WAIT_MS; ) await new Promise((r) => setTimeout(r, 150));
+  if (lastUser !== user || !location.hash.startsWith("#/undangan/")) return;
+  // replace: Back doesn't return to the used invite. With the app running,
+  // its hashchange renders the brand; otherwise the app starts here.
+  location.replace(brandId && getMemberships()?.brands?.[brandId] ? `#/brand/${brandId}` : "#/");
+  if (e.detail?.brandName) toast(t("team.joinedToast", { brand: e.detail.brandName }));
+  if (!storeReady) onAccountChange(user, getCachedAccount());
 });
 // Kerja Tim: the owner took this account off a brand (or put it in Trash)
 // while one of its pages is open — say so and leave it.
