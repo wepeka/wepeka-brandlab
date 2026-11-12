@@ -59,6 +59,8 @@ const PATHS = {
   logout: `<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>`,
   teleprompter: `<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 8h10M7 11.5h7"/><path d="M9 21h6M12 17v4"/>`,
   play: `<path d="M7 5l12 7-12 7z"/>`,
+  film: `<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7.5 4v16M16.5 4v16M3 8.5h4.5M3 15.5h4.5M16.5 8.5H21M16.5 15.5H21"/>`,
+  cloud: `<path d="M7 18.5a4.5 4.5 0 01-.7-8.95A6 6 0 0117.8 8.6 4.6 4.6 0 0117.5 18.5z"/>`,
   pause: `<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>`,
   refresh: `<path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3"/><path d="M18 4v4h-4M6 20v-4h4"/>`,
   bot: `<rect x="4" y="8" width="16" height="12" rx="4"/><circle cx="9" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="14.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 8V4.5"/><circle cx="12" cy="3" r="1.1" fill="currentColor" stroke="none"/><path d="M4 13H2M22 13h-2"/>`,

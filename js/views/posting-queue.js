@@ -20,6 +20,7 @@ import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece } from "../video-codes.js";
 import { listRecentMedia, thumbnailFromMedia, testConnection } from "../instagram.js";
 import { canUseInstagramApi, currentUid } from "../account.js";
+import { showsFootage, bankHTML, wireBank, footageCount } from "../footage-bank.js";
 
 // The status chips over the list; "scheduled" also holds a failed post.
 const FILTERS = ["all", "none", "review", "client", "revision", "ready", "scheduled", "published"];
@@ -85,9 +86,14 @@ function tileHTML({ c, state, sub }) {
   // Past its date and still not up: in the gallery like the rest, its date in
   // red (owner, 2026-11-12: "yang sudah terlambat pun masih bisa dilihat di semua").
   const late = !posted && !!c.scheduleDate && c.scheduleDate < localISODate();
-  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${posted ? "is-posted" : ""} ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
+  // The shoot's raw clips (owner, 2026-11-12: "video mana yang sudah ada
+  // footage2nya"): no cut yet = "Footage siap" on the tile; with cuts, a count.
+  const ft = footageCount(c);
+  const ftLabel = t("pq.ft.clips", { n: ft });
+  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${empty && ft ? "has-ft" : ""} ${posted ? "is-posted" : ""} ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
-        <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon(isClientView(c) ? "clock" : "upload", { size: 22 })}<small>${t(isClientView(c) ? "post.cst.none" : "post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
+        <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty && ft ? `${icon("film", { size: 24 })}<small>${t("pq.ft.ready")}</small><small class="pq-g-ftn">${escapeHtml(ftLabel)}</small>` : empty ? `${icon(isClientView(c) ? "clock" : "upload", { size: 22 })}<small>${t(isClientView(c) ? "post.cst.none" : "post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
+        ${ft && !empty ? `<span class="pq-g-ft" title="${escapeHtml(t("pq.ft.tileTitle", { n: ft }))}">${icon("film", { size: 12 })}${escapeHtml(ftLabel)}</span>` : ""}
         ${posted ? `<span class="pq-g-ok" title="${escapeHtml(t("pq.posted.seal"))}">${SEAL}</span>` : n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
         ${views !== null && views !== undefined && views !== "" ? `<span class="pq-g-views" title="${escapeHtml(t("pq.views"))}">${icon("eye", { size: 12 })}${formatNumber(views)}</span>` : ""}
         ${empty ? "" : ed ? `<span class="pq-g-state is-editor" style="--pst:${ed.color}"><i></i>${escapeHtml(ed.label)}</span>` : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
@@ -255,13 +261,16 @@ export function render(root, { brandId }) {
   try { view = localStorage.getItem(VIEW_KEY) || "list"; } catch { /* default */ }
   // The brand open in the app (its switcher, top left) — no second brand picker here.
   if (client) view = "list"; // the profile grid reads Wepeka's Instagram connection
-  const ui = { view, period: "all", status: "all", unmatched: [], client };
+  const ui = { view, period: "all", status: "all", unmatched: [], client, fbOpen: new Set() };
 
   const paint = () => {
     if (!client) ensureCodes(); // a piece made in Creator since: it gets its number now
     const items = pieces({ brandId, period: ui.period });
     const reviewN = client ? 0 : pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review").length;
     const brands = listBrands();
+    // Footage (the shoot's raw clips) only where a client's crew shoots.
+    const views = client ? [] : showsFootage(brandId) ? ["list", "footage", "feed"] : ["list", "feed"];
+    if (!client && !views.includes(ui.view)) ui.view = "list";
     root.innerHTML = `
       <div class="pq">
         <div class="calx-head">
@@ -277,13 +286,14 @@ export function render(root, { brandId }) {
         </div>
         ${ui.unmatched.length ? `<div class="pq-warn is-soft">${icon("folder", { size: 15 })}<b>${t("pq.unmatched")}</b><div class="pq-warn-list">${ui.unmatched.map((u) => `<label class="pq-pick"><span>${escapeHtml(u.brandFolder)}</span><select data-folder="${escapeHtml(u.brandFolder)}"><option value="">${t("pq.pickBrand")}</option>${brands.map((b) => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`).join("")}</select></label>`).join("")}</div></div>` : ""}
         <div class="pq-bar">
-          ${client ? "" : `<div class="segmented pq-seg">${["list", "feed"].map((v) => `<button data-view="${v}" class="${ui.view === v ? "active" : ""}" aria-pressed="${ui.view === v}">${t(`pq.view.${v}`)}</button>`).join("")}</div>`}
+          ${client ? "" : `<div class="segmented pq-seg">${views.map((v) => `<button data-view="${v}" class="${ui.view === v ? "active" : ""}" aria-pressed="${ui.view === v}">${t(`pq.view.${v}`)}</button>`).join("")}</div>`}
           ${ui.view === "list" ? `<div class="segmented pq-seg">${["all", "week", "next", "month"].map((v) => `<button data-period="${v}" class="${ui.period === v ? "active" : ""}" aria-pressed="${ui.period === v}">${t(`pq.period.${v}`)}</button>`).join("")}</div>` : ""}
         </div>
-        ${ui.view === "feed" ? feedHTML(brandId) : listHTML(items, ui)}
+        ${ui.view === "feed" ? feedHTML(brandId) : ui.view === "footage" ? bankHTML(brandId, ui, { whenLabel }) : listHTML(items, ui)}
       </div>`;
     wire();
     loadThumbs();
+    if (ui.view === "footage") wireBank(root, ui, paint);
     if (ui.view === "feed" && igOf(getBrand(brandId)) && canUseInstagramApi()) {
       const before = IG.get(brandId);
       loadGrid(brandId).then((g) => { if (g && g !== before && ui.view === "feed" && root.isConnected) paint(); });

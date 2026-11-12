@@ -269,6 +269,14 @@ export async function outboxClipSize(key, name) {
     return -1;
   }
 }
+// The clip itself, to look at in Antrean → Footage (null: not on the Mac yet).
+export async function outboxClipFile(key, name) {
+  try {
+    return await (await (await footageDir(key, false)).getFileHandle(name)).getFile();
+  } catch {
+    return null;
+  }
+}
 export async function outboxClipWriter(key, name) {
   return (await (await footageDir(key, true)).getFileHandle(name, { create: true })).createWritable();
 }

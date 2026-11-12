@@ -73,6 +73,39 @@ async function copyClip(c, key, f, onPct) {
   return "ok";
 }
 
+// A clip that isn't on this Mac yet, straight from the client's Drive, to
+// watch in Antrean → Footage. The whole file (a <video> can't send the
+// Authorization header); the last few kept while the tab lives.
+const played = new Map();
+export async function footageDriveURL(c, f, onPct) {
+  if (played.has(f.id)) return played.get(f.id);
+  let res = await fetch(`${API}/files/${encodeURIComponent(f.id)}?alt=media`, { headers: { authorization: `Bearer ${await keyFor(c)}` } });
+  if (res.status === 401) {
+    keys.delete(c.brandId);
+    res = await fetch(`${API}/files/${encodeURIComponent(f.id)}?alt=media`, { headers: { authorization: `Bearer ${await keyFor(c)}` } });
+  }
+  if (!res.ok) throw Object.assign(new Error("drive"), { code: res.status === 404 ? "gone" : "drive", status: res.status });
+  const total = Number(res.headers.get("content-length")) || f.size || 0;
+  const parts = [];
+  let got = 0;
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    got += value.length;
+    if (total) onPct?.(got / total);
+  }
+  const url = URL.createObjectURL(new Blob(parts, { type: res.headers.get("content-type") || f.type || "video/mp4" }));
+  played.set(f.id, url);
+  while (played.size > 4) {
+    const [id, old] = played.entries().next().value;
+    URL.revokeObjectURL(old);
+    played.delete(id);
+  }
+  return url;
+}
+
 const onMac = new Set(); // `${contentId}/${clipId}` already checked or copied
 const failedAt = new Map(); // contentId → when a copy last failed (wait a bit before the next try)
 let running = false;
