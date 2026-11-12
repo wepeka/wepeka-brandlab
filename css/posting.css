@@ -335,14 +335,6 @@
 .pq-filter b{ min-width:22px; padding:1px 6px; border-radius:999px; background: var(--surface-2); color: var(--text); font-size:11.5px; text-align:center; }
 .pq-filter.is-on{ background: var(--text); border-color: var(--text); color: var(--bg); }
 .pq-filter.is-on b{ background: color-mix(in srgb, var(--bg) 22%, transparent); color: var(--bg); }
-.pq-day{ display:flex; flex-direction:column; gap:8px; }
-.pq-day h3{ display:flex; align-items:center; gap:8px; margin:0; font-size:14px; font-weight:800; }
-.pq-day h3 span{ min-width:22px; padding:1px 7px; border-radius:999px; background: var(--surface-2); color: var(--text-muted); font-size:11.5px; text-align:center; }
-.pq-day.is-fold summary{ display:flex; align-items:center; gap:8px; list-style:none; cursor:pointer; color: var(--text-muted); }
-.pq-day.is-fold summary::-webkit-details-marker{ display:none; }
-.pq-day.is-fold summary > svg{ transition: transform .2s ease; }
-.pq-day.is-fold[open] summary > svg{ transform: rotate(180deg); }
-.pq-day.is-fold > .pq-gal{ margin-top:10px; }
 /* The gallery: a tile per piece, cover first (like a phone's photo grid). */
 .pq-gal{ display:grid; grid-template-columns:repeat(auto-fill, minmax(172px, 1fr)); gap:16px 14px; }
 .pq-g{ position:relative; display:flex; flex-direction:column; gap:8px; min-width:0; }
@@ -370,6 +362,10 @@
 .pq-g-info small{ display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; font-size:12px; font-weight:700; color: var(--text-muted); }
 .pq-g-info .pq-g-when:not(.is-faint){ color: var(--text); }
 .pq-g-info .is-faint{ color: var(--text-faint); font-weight:600; }
+.pq-g-info .pq-g-when.is-late{ color: var(--health-poor); }
+.pq-g-late{ padding:0 7px; border-radius:999px; background: var(--health-poor-soft, color-mix(in srgb, var(--health-poor) 14%, transparent)); color: var(--health-poor); font-weight:800; }
+.pq-g.is-late .pq-g-media{ box-shadow: 0 0 0 2px var(--health-poor); }
+.pq-g.is-late .pq-g-media:hover{ box-shadow: 0 0 0 3px var(--health-poor); }
 .pq-g-trial{ padding:0 7px; border-radius:999px; background: color-mix(in srgb, #A974FF 18%, transparent); color: color-mix(in srgb, #A974FF 70%, var(--text)); }
 .pq-g.is-trial .pq-g-media{ border-radius:18px 18px 18px 6px; }
 .pq-chip{ padding:1px 7px; border-radius:999px; background: var(--surface-2); }

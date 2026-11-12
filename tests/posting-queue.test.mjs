@@ -1,6 +1,7 @@
 // Antrean Video (js/views/posting-queue.js): what's past its date and still
-// not up sits folded ABOVE the gallery (owner, 2026-11-03: folded under ~90
-// tiles, Winson Wrapped #4 read as "hilang" the day after its date).
+// not up is IN the "Semua" gallery, first, marked late (owner, 2026-11-12:
+// "yang sudah terlambat pun masih bisa dilihat di semua"; before that it
+// waited in a closed "Lewat tanggal" fold).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -12,7 +13,7 @@ globalThis.fetch = async () => {
 
 const DAY = 86400000;
 
-test("Antrean: 'Lewat tanggal, belum tayang' comes before the gallery, posted pieces stay out of it", async () => {
+test("Antrean: a late piece sits in the 'Semua' gallery, first and marked late; posted pieces aren't late", async () => {
   const store = await import("../js/store.js");
   const { auth } = await import("../js/firebase.js");
   const { ADMIN_UIDS } = await import("../js/account.js");
@@ -30,15 +31,20 @@ test("Antrean: 'Lewat tanggal, belum tayang' comes before the gallery, posted pi
     const root = { innerHTML: "", isConnected: true, querySelector: () => null, querySelectorAll: () => [], classList: { contains: () => false } };
     render(root, { brandId: b.id })?.();
     const html = root.innerHTML;
-    const fold = html.indexOf('data-fold="late"');
-    const gallery = html.indexOf('<div class="pq-gal">', html.indexOf("</details>"));
-    assert.ok(fold > 0, "the late fold is there");
-    assert.ok(gallery > fold, "and it comes before the main gallery");
-    const late = html.slice(fold, html.indexOf("</details>"));
-    assert.match(late, /Kemarin belum naik/);
-    assert.doesNotMatch(late, /Besok tayang/);
-    assert.doesNotMatch(late, /Kemarin sudah naik/, "a piece marked posted isn't late");
-    assert.match(html.slice(gallery), /Besok tayang/);
+    assert.doesNotMatch(html, /<details/, "no closed fold any more");
+    const galleries = html.match(/<div class="pq-gal">/g) || [];
+    assert.equal(galleries.length, 1, "one gallery");
+    const tile = (title) => {
+      const at = html.indexOf(title);
+      assert.ok(at > 0, `${title} is in the gallery`);
+      return html.slice(html.lastIndexOf("<article", at), html.indexOf("</article>", at));
+    };
+    assert.ok(html.indexOf("Kemarin belum naik") < html.indexOf("Besok tayang"), "the late piece comes first");
+    assert.match(tile("Kemarin belum naik"), /class="pq-g [^"]*is-late/);
+    assert.match(tile("Kemarin belum naik"), /pq-g-late">Terlambat</);
+    assert.doesNotMatch(tile("Besok tayang"), /is-late/);
+    // Over all time a posted piece stays under its own "Sudah tayang" chip.
+    assert.doesNotMatch(html, /Kemarin sudah naik/);
   } finally {
     auth.currentUser = was;
   }

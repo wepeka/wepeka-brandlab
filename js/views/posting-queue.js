@@ -82,7 +82,10 @@ function tileHTML({ c, state, sub }) {
   // Posted: how it did, on the tile (owner: "dibuka bisa juga lihat ada views").
   const posted = state === "published";
   const views = posted ? organicViews(c) : null;
-  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${posted ? "is-posted" : ""}" style="--pst:${stateColor(state)}">
+  // Past its date and still not up: in the gallery like the rest, its date in
+  // red (owner, 2026-11-12: "yang sudah terlambat pun masih bisa dilihat di semua").
+  const late = !posted && !!c.scheduleDate && c.scheduleDate < localISODate();
+  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${posted ? "is-posted" : ""} ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
         <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty ? `${icon(isClientView(c) ? "clock" : "upload", { size: 22 })}<small>${t(isClientView(c) ? "post.cst.none" : "post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
         ${posted ? `<span class="pq-g-ok" title="${escapeHtml(t("pq.posted.seal"))}">${SEAL}</span>` : n > 1 ? `<span class="pq-g-n">${icon("layers", { size: 12 })}${n}</span>` : ""}
@@ -92,7 +95,7 @@ function tileHTML({ c, state, sub }) {
       ${code ? `<button type="button" class="pq-g-code" data-copy="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}</button>` : ""}
       <div class="pq-g-info">
         <b>${escapeHtml(c.title || t("common.untitled"))}</b>
-        <small class="pq-g-when ${c.scheduleDate ? "" : "is-faint"}">${icon("calendar", { size: 11 })}${escapeHtml(c.scheduleDate ? whenLabel(c) : t("pq.noDate"))}${c.scheduleDate && !time ? ` <span class="is-faint" title="${escapeHtml(t("pq.noTime"))}">· --:--</span>` : ""}</small>
+        <small class="pq-g-when ${c.scheduleDate ? "" : "is-faint"} ${late ? "is-late" : ""}">${icon("calendar", { size: 11 })}${late ? `<span class="pq-g-late">${escapeHtml(t("pq.late"))}</span>` : ""}${escapeHtml(c.scheduleDate ? whenLabel(c) : t("pq.noDate"))}${c.scheduleDate && !time ? ` <span class="is-faint" title="${escapeHtml(t("pq.noTime"))}">· --:--</span>` : ""}</small>
         <small>${icon(TYPE_ICON[type] || "play", { size: 11 })}${t(`post.type.${type}`)}${c.posting?.trialReel ? `<span class="pq-g-trial">${t("post.trialReel.label")}</span>` : ""}</small>
       </div>
     </article>`;
@@ -121,15 +124,11 @@ function listHTML(items, ui) {
     const list = shown.sort((a, b) => (b.c.publishedDate || b.c.scheduleDate || "").localeCompare(a.c.publishedDate || a.c.scheduleDate || ""));
     return `${chips}<div class="pq-gal">${list.map(tileHTML).join("")}</div>`;
   }
-  // One gallery, soonest first (no date last); what's past its date and
-  // still not up waits folded on top of it (owner, 2026-11-03: folded under
-  // ~90 tiles, Winson Wrapped #4 read as "hilang" the day after its date).
-  const today = localISODate();
-  const late = shown.filter((x) => x.c.scheduleDate && x.c.scheduleDate < today && x.state !== "published");
-  const main = shown.filter((x) => !late.includes(x));
-  return `${chips}
-    ${late.length ? `<details class="pq-day is-fold" data-fold="late" ${ui.open.late || !main.length ? "open" : ""}><summary><h3>${t("pq.group.late")}<span>${late.length}</span></h3>${icon("chevronDown", { size: 14 })}</summary><div class="pq-gal">${rows(late)}</div></details>` : ""}
-    ${main.length ? `<div class="pq-gal">${rows(main)}</div>` : ""}`;
+  // One gallery by date (no date last), so what's past its date and still
+  // not up leads it, marked late on its tile. It used to wait in a closed
+  // "Lewat tanggal" fold (owner, 2026-11-12: "yang sudah terlambat pun masih
+  // bisa dilihat di semua"; 2026-11-03 Winson Wrapped #4 read as "hilang").
+  return `${chips}<div class="pq-gal">${rows(shown)}</div>`;
 }
 
 function sourceHTML() {
@@ -256,7 +255,7 @@ export function render(root, { brandId }) {
   try { view = localStorage.getItem(VIEW_KEY) || "list"; } catch { /* default */ }
   // The brand open in the app (its switcher, top left) — no second brand picker here.
   if (client) view = "list"; // the profile grid reads Wepeka's Instagram connection
-  const ui = { view, period: "all", status: "all", open: {}, unmatched: [], client };
+  const ui = { view, period: "all", status: "all", unmatched: [], client };
 
   const paint = () => {
     if (!client) ensureCodes(); // a piece made in Creator since: it gets its number now
@@ -327,7 +326,6 @@ export function render(root, { brandId }) {
     qsa("[data-view]", root).forEach((b) => b.addEventListener("click", () => { ui.view = b.dataset.view; try { localStorage.setItem(VIEW_KEY, ui.view); } catch { /* per tab */ } paint(); }));
     qsa("[data-period]", root).forEach((b) => b.addEventListener("click", () => { ui.period = b.dataset.period; paint(); }));
     qsa("[data-status]", root).forEach((b) => b.addEventListener("click", () => { ui.status = b.dataset.status; paint(); }));
-    qsa("details[data-fold]", root).forEach((d) => d.addEventListener("toggle", () => { ui.open[d.dataset.fold] = d.open; }));
     qsa("[data-copy]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copy)));
     qs("#pq-review", root)?.addEventListener("click", () => openReview(pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review"), paint));
     qs("#pq-link", root)?.addEventListener("click", async () => { await linkOutbox(); await sync(); });

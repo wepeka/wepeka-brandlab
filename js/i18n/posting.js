@@ -357,7 +357,7 @@ export default {
   "pq.f.published": { en: "Posted", id: "Sudah tayang" },
   "pq.emptyAll": { en: "No Instagram content here yet. Make it in Creator first.", id: "Belum ada konten Instagram di sini. Buat dulu di Creator." },
   "pq.emptyFilter": { en: "Nothing matches.", id: "Tidak ada yang cocok." },
-  "pq.group.late": { en: "Date passed, not posted", id: "Lewat tanggal, belum tayang" },
+  "pq.late": { en: "Late", id: "Terlambat" },
   "pq.noDate": { en: "No date", id: "Tanpa tanggal" },
   "pq.today": { en: "Today", id: "Hari ini" },
   "pq.tomorrow": { en: "Tomorrow", id: "Besok" },
