@@ -9,14 +9,15 @@
 // grouped per piece (Wepeka Brandlab / <brand> / <code · title> / Footage).
 // The server opens the folder and hands a short-lived key for it
 // (api/_footage.js); the clips are sent in pieces, so a phone on a shaky
-// connection picks up where it stopped instead of starting over. On
-// Wepeka's Mac they're then copied into the piece's Outbox folder by
-// themselves (js/footage-mac.js), ready to edit.
+// connection picks up where it stopped instead of starting over. They stay
+// in that Drive; "Salin ke Mac" brings a piece's clips into its Outbox folder
+// on Wepeka's Mac when it's about to be edited (js/footage-mac.js; owner,
+// 2026-11-13: "Copy pas mau edit").
 import { auth } from "./firebase.js";
 import { getBrand, getContent, brandRole, isClientMember } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
-import { clientsOf, clientDriveLine, connectOwnDrive, usesOutbox, outboxInfo, ensureOutbox } from "./posting.js";
-import { macProgress, onMacProgress } from "./footage-mac.js";
+import { clientsOf, clientDriveLine, connectOwnDrive, usesOutbox, outboxInfo, ensureOutbox, folderKeyOf, copyFootageToMac } from "./posting.js";
+import { macStateOf, onMacProgress } from "./footage-mac.js";
 import { FOOTAGE_DIR } from "./outbox.js";
 import { videoCode } from "./video-codes.js";
 import { confirmDialog } from "./modals.js";
@@ -208,13 +209,17 @@ function rowHTML(item, i) {
 function macLineHTML(c) {
   if (!usesOutbox()) return "";
   const o = outboxInfo();
-  if (!o.connected) return `<p class="ft-mac is-off">${icon("folder", { size: 14 })}<span>${t("ft.mac.off")}</span></p>`;
-  const p = macProgress(c.id);
-  if (!p) return `<p class="ft-mac">${icon("folder", { size: 14 })}<span>${t("ft.mac.checking")}</span></p>`;
-  const where = `<code>${escapeHtml(`${p.key}/${FOOTAGE_DIR}`)}</code>`;
-  if (p.name) return `<p class="ft-mac is-busy">${icon("download", { size: 14 })}<span>${t("ft.mac.copying", { done: p.done, total: p.total, name: escapeHtml(p.name), pct: Math.round(p.pct * 100) })}</span></p>`;
-  if (p.error && p.done < p.total) return `<p class="ft-mac is-off">${icon("info", { size: 14 })}<span>${t("ft.mac.failed", { done: p.done, total: p.total })}</span></p>`;
-  return `<p class="ft-mac is-on">${icon("check", { size: 14 })}<span>${t("ft.mac.done", { done: p.done, total: p.total, where })}</span></p>`;
+  const p = o.connected ? macStateOf(c, folderKeyOf(c)) : null;
+  if (o.connected && !p) return `<p class="ft-mac">${icon("folder", { size: 14 })}<span>${t("ft.mac.checking")}</span></p>`;
+  if (p?.name) return `<p class="ft-mac is-busy">${icon("download", { size: 14 })}<span>${t("ft.mac.copying", { done: p.done, total: p.total, name: escapeHtml(p.name), pct: Math.round(p.pct * 100) })}</span></p>`;
+  if (p && p.total && p.done >= p.total) return `<p class="ft-mac is-on">${icon("check", { size: 14 })}<span>${t("ft.mac.done", { done: p.done, total: p.total, where: `<code>${escapeHtml(`${p.key}/${FOOTAGE_DIR}`)}</code>` })}</span></p>`;
+  // Only in the client's Drive (or part of it on the Mac): copied when asked.
+  const left = p ? p.left : (c.footage?.files || []).reduce((s, f) => s + (Number(f.size) || 0), 0);
+  const some = p && p.done > 0;
+  const say = p?.error ? t("ft.mac.failed", { done: p.done, total: p.total }) : some ? t("ft.mac.part", { done: p.done, total: p.total }) : t("ft.mac.drive");
+  return `<div class="ft-mac ft-mac-ask">${icon("cloud", { size: 14 })}<span>${say}</span>
+      <button type="button" class="btn btn-secondary btn-sm" data-ft-tomac>${icon("download", { size: 13 })}${t(some ? "ft.mac.copyRest" : "ft.mac.copy", { size: mb(left) })}</button>
+    </div>`;
 }
 
 function innerHTML(c) {
@@ -315,6 +320,14 @@ export function wireFootage(root, getPiece) {
   box.addEventListener("click", async (e) => {
     const c = getPiece();
     if (e.target.closest("[data-ft-connect]")) { connectOwnDrive(); return; }
+    const toMac = e.target.closest("[data-ft-tomac]");
+    if (toMac) {
+      toMac.disabled = true;
+      const ok = await copyFootageToMac(c.id).catch(() => false);
+      if (!ok && toMac.isConnected) toMac.disabled = false;
+      paint(c.id);
+      return;
+    }
     const retry = e.target.closest("[data-ft-retry]");
     if (retry) {
       const job = JOBS.get(c.id);

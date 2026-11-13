@@ -29,7 +29,7 @@ import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileU
 import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex, noteForEditor, writeEditorQueue } from "./outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter, brandCodePrefix } from "./video-codes.js";
 import { outboxFile } from "./outbox.js";
-import { syncFootageToMac, macName } from "./footage-mac.js";
+import { syncFootageToMac, macName, wantsMac, wishMac, freshLook } from "./footage-mac.js";
 import { sendToClient, cleanPreviews, keepFinalOnly, clientDecide, clientViewKey } from "./review-share.js";
 import { postToInstagram, shareToFacebook, cancelInstagramPost } from "./ig-post.js";
 import { icon } from "./icons.js";
@@ -221,14 +221,16 @@ export function videoIndex() {
         versions: p.versions.map((v) => ({ file: v.local?.file || v.name || "", status: v.status })),
         final: p.versions.find((v) => v.id === p.finalId)?.local?.file || "",
         cover: p.cover || "",
-        // The shoot's raw clips from the client's crew, copied into <folder>/footage/.
+        // The shoot's raw clips from the client's crew (in their Drive); in
+        // <folder>/footage/ once "Salin ke Mac" was pressed (footageToMac).
         footage: (c.footage?.files || []).map((f) => macName(f.name)),
+        footageToMac: !!(c.footage?.files?.length && wantsMac(c.id)),
       });
     }
   }
   items.sort((a, b) => `${a.date || "9999"}${a.time}${a.code}`.localeCompare(`${b.date || "9999"}${b.time}${b.code}`));
   return {
-    about: "Ditulis oleh Brandlab. Semua konten Instagram dari Creator dengan kodenya. Winson menyebut kode (mis. KP-12): cari di sini, lalu taruh hasil edit di 'folder' (buat kalau belum ada). Huruf di belakang (KP-12B) = video trial. 'footage' = video mentah hasil syuting tim klien, ada di '<folder>/footage/' (disalin Brandlab dari Google Drive klien): bahan editnya.",
+    about: "Ditulis oleh Brandlab. Semua konten Instagram dari Creator dengan kodenya. Winson menyebut kode (mis. KP-12): cari di sini, lalu taruh hasil edit di 'folder' (buat kalau belum ada). Huruf di belakang (KP-12B) = video trial. 'footage' = video mentah hasil syuting tim klien (bahan editnya), disimpan di Google Drive klien. Baru disalin ke '<folder>/footage/' kalau diminta: tombol 'Salin ke Mac' di Antrean Video > Footage (per video). Kalau folder footage belum ada/belum lengkap, minta Winson tekan tombol itu (atau tekan sendiri lewat Chrome), tunggu sampai 'Semua N di Mac'.",
     items,
   };
 }
@@ -250,9 +252,35 @@ function writeIndexSoon() {
       .catch((e) => { lastIndex = ""; console.warn("[posting] daftar-video.json not written", e); });
   }, 1200);
 }
-// The shoot's raw clips from the client's crew, into each piece's folder
-// (js/footage-mac.js) — whenever the folder is on and something arrives.
-const withFootage = () => listBrands().flatMap((b) => listContent(b.id).filter((c) => c.footage?.files?.length));
+// The shoot's raw clips from the client's crew, into a piece's folder
+// (js/footage-mac.js) — only the pieces asked for with "Salin ke Mac"
+// (owner, 2026-11-13: "Copy pas mau edit"); the rest stay in the client's
+// Drive. A wish on a piece that has gone out since is let go, so a folder
+// cleared after posting doesn't fill up again.
+const askedHere = new Set(); // asked in this tab: copied even when already out
+export function copiesFootageToMac(c) {
+  if (!c?.footage?.files?.length) return false;
+  if (askedHere.has(c.id)) return true;
+  if (!wantsMac(c.id)) return false;
+  if (postingState(c) !== "published") return true;
+  wishMac(c.id, false); // out now: let it go
+  return false;
+}
+const withFootage = () => listBrands().flatMap((b) => listContent(b.id).filter(copiesFootageToMac));
+// "Salin ke Mac" (Antrean → Footage, the Syuting step): from a click, since
+// a folder not connected yet opens Chrome's prompt.
+export async function copyFootageToMac(contentId) {
+  const c = getContent(contentId);
+  if (!c?.footage?.files?.length || !canUsePosting()) return false;
+  if (!OUT.connected) await linkOutbox();
+  if (!OUT.connected) return false;
+  askedHere.add(c.id);
+  if (postingState(c) !== "published") wishMac(c.id);
+  freshLook(c.id);
+  copyFootageSoon();
+  writeIndexSoon(); // daftar-video.json: footageToMac
+  return true;
+}
 function copyFootageSoon() {
   if (!OUT.connected || !canUsePosting() || !withFootage().length) return;
   syncFootageToMac(withFootage, {

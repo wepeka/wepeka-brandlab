@@ -124,3 +124,20 @@ test("a brand with no client and no footage keeps Galeri and Feed only", async (
     globalThis.localStorage?.removeItem("posting:queueView");
   }
 });
+
+test("footage comes onto the Mac only for a piece asked for with 'Salin ke Mac' (2026-11-13: 'Copy pas mau edit'), and stops once it's out", async () => {
+  const { copiesFootageToMac } = await import("../js/posting.js");
+  const { wishMac, wantsMac } = await import("../js/footage-mac.js");
+  const files = [clip("DJI_20261112100000_0001_D.MP4", 1)];
+  const editing = { id: "ask-1", status: "editing", footage: { files } };
+  const other = { id: "ask-2", status: "editing", footage: { files } };
+  assert.equal(copiesFootageToMac(editing), false, "nothing comes down by itself");
+  wishMac("ask-1");
+  assert.equal(copiesFootageToMac(editing), true);
+  assert.equal(copiesFootageToMac(other), false, "only the piece asked for");
+  assert.equal(copiesFootageToMac({ id: "ask-1", status: "editing" }), false, "no clips, nothing to copy");
+  // posted: the wish is let go, so a folder cleared afterwards stays empty
+  const out = { ...editing, status: "published", posting: { versions: [{ id: "v", status: "approved" }], finalId: "v", notes: [] } };
+  assert.equal(copiesFootageToMac(out), false);
+  assert.equal(wantsMac("ask-1"), false);
+});

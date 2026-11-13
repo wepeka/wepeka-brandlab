@@ -3,16 +3,17 @@
 // yang sudah ada footage2nya dan aku bisa lihat bank footage").
 //
 // The crew sends the clips on the Syuting step (js/footage.js) into the
-// client's Google Drive, and Wepeka's Mac copies them into each piece's
-// Outbox folder (js/footage-mac.js). This view shows them all for the brand
-// open in the app, one block per piece (newest arrivals first), each clip a
-// still you can tap to watch — played from the Mac copy, or straight from the
-// client's Drive when it isn't on the Mac yet. On top: the video pieces that
-// are already at Syuting or Edit and still have no footage, so nothing waits
-// unnoticed. The Galeri tiles carry the clip count too.
+// client's Google Drive, where they stay; a piece's clips come onto the Mac
+// (its Outbox folder, js/footage-mac.js) only with "Salin ke Mac", when it's
+// about to be edited (owner, 2026-11-13: "Copy pas mau edit"). This view
+// shows them all for the brand open in the app, one block per piece (newest
+// arrivals first), each clip a still you can tap to watch — played from the
+// Mac copy, or straight from the client's Drive when it isn't on the Mac. On
+// top: the video pieces that are already at Syuting or Edit and still have no
+// footage, so nothing waits unnoticed. The Galeri tiles carry the clip count too.
 import { listContent, getBrand, getContent, localISODate } from "./store.js";
-import { canUsePosting, clientsOf, folderKeyOf, usesOutbox, outboxInfo, openPosting } from "./posting.js";
-import { macName, macProgress, onMacProgress, footageDriveURL } from "./footage-mac.js";
+import { canUsePosting, clientsOf, folderKeyOf, usesOutbox, outboxInfo, openPosting, copyFootageToMac } from "./posting.js";
+import { macName, macProgress, macStateOf, onMacProgress, footageDriveURL } from "./footage-mac.js";
 import { outboxClipFile, FOOTAGE_DIR } from "./outbox.js";
 import { videoCode, codedPiece } from "./video-codes.js";
 import { icon } from "./icons.js";
@@ -125,13 +126,22 @@ function gridHTML(c, shown) {
   }).join("");
 }
 
+// Where the piece's clips are: being copied, all on the Mac, or (some) only
+// in the client's Drive — then "Salin ke Mac" with what it will take.
 function macLine(c) {
-  if (!usesOutbox() || !outboxInfo().connected) return "";
-  const p = macProgress(c.id);
-  if (!p) return "";
-  if (p.name) return `<span class="fb-mac is-busy" data-fb-mac="${escapeHtml(c.id)}">${icon("download", { size: 13 })}${t("pq.ft.macCopying", { done: p.done, total: p.total })}</span>`;
-  if (p.done < p.total) return `<span class="fb-mac is-off" data-fb-mac="${escapeHtml(c.id)}">${icon("cloud", { size: 13 })}${t("pq.ft.macPart", { done: p.done, total: p.total })}</span>`;
-  return `<span class="fb-mac is-on" data-fb-mac="${escapeHtml(c.id)}">${icon("check", { size: 13 })}${t("pq.ft.macAll", { n: p.total })}</span>`;
+  if (!usesOutbox()) return "";
+  const id = escapeHtml(c.id);
+  const p = outboxInfo().connected ? macStateOf(c, folderKeyOf(c)) : null;
+  if (p?.name) return `<span class="fb-mac is-busy" data-fb-mac="${id}">${icon("download", { size: 13 })}${t("pq.ft.macCopying", { done: p.done, total: p.total })}</span>`;
+  if (p && p.total && p.done >= p.total) return `<span class="fb-mac is-on" data-fb-mac="${id}">${icon("check", { size: 13 })}${t("pq.ft.macAll", { n: p.total })}</span>`;
+  // Not looked at yet (the folder is on): say nothing for the moment.
+  if (!p && outboxInfo().connected) return `<span data-fb-mac="${id}"></span>`;
+  const left = p ? p.left : clipsOf(c).reduce((s, f) => s + (Number(f.size) || 0), 0);
+  const some = p && p.done > 0;
+  return `<span class="fb-mac-wrap" data-fb-mac="${id}">
+      ${some ? `<span class="fb-mac is-off">${icon("cloud", { size: 13 })}${t("pq.ft.macPart", { done: p.done, total: p.total })}</span>` : ""}
+      <button type="button" class="btn btn-primary btn-sm fb-tomac" data-fb-tomac="${id}">${icon("download", { size: 13 })}${t(some ? "pq.ft.toMacRest" : "pq.ft.toMac", { size: sizeLabel(left) })}</button>
+    </span>`;
 }
 
 function pieceHTML(c, ui, whenLabel) {
@@ -192,7 +202,7 @@ export function bankHTML(brandId, ui, { whenLabel }) {
   const sum = footageTotals(pieces);
   const o = outboxInfo();
   const mac = !usesOutbox() ? "" : o.connected
-    ? `<span class="fb-sum-src">${icon("folder", { size: 13 })}${t("pq.ft.srcMac", { name: escapeHtml(o.name) })}</span>`
+    ? `<span class="fb-sum-src">${icon("cloud", { size: 13 })}${t("pq.ft.srcMac", { name: escapeHtml(o.name) })}</span>`
     : `<span class="fb-sum-src is-off">${icon("cloud", { size: 13 })}${t("pq.ft.srcDrive")}</span>`;
   return `<div class="fb">
       <div class="fb-sum">
@@ -347,12 +357,26 @@ function followMac(root) {
     const html = macLine(c);
     if (line) line.outerHTML = html || "<span data-fb-mac></span>";
     else if (html) qs(".fb-head-end", sec)?.insertAdjacentHTML("afterbegin", html);
+    wireToMac(sec);
     const done = macProgress(id)?.done || 0;
     if (done !== last.get(id)) {
       last.set(id, done);
       qsa(".fb-clip.is-cloud [data-fb-thumb]", sec).forEach((el) => { MEM.delete(el.dataset.fbThumb); });
       if (qs(".fb-clip.is-cloud", sec)) loadStills(root);
     }
+  });
+}
+
+// "Salin ke Mac": this piece's clips into its folder, now.
+function wireToMac(scope) {
+  qsa("[data-fb-tomac]", scope).forEach((b) => {
+    if (b.dataset.wired) return;
+    b.dataset.wired = "1";
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      const ok = await copyFootageToMac(b.dataset.fbTomac).catch(() => false);
+      if (!ok && b.isConnected) b.disabled = false;
+    });
   });
 }
 
@@ -366,6 +390,7 @@ export function wireBank(root, ui, repaint) {
     repaint();
   }));
   qsa("[data-fb-clip]", root).forEach((b) => b.addEventListener("click", () => openClip(b.dataset.fbClip, Number(b.dataset.i))));
+  wireToMac(root);
   loadStills(root);
   followMac(root);
 }

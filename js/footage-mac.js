@@ -1,10 +1,13 @@
-// The shoot's raw clips, onto Wepeka's Mac by themselves (owner, 2026-11-09:
-// "nanti kamu tinggal buka drivenya di folder apa bisa langsung kamu edit").
-// The client's crew sends them into the client's Google Drive (js/footage.js,
-// api/_footage.js); while Brandlab is open on the Mac with the Outbox folder
-// connected, every clip is copied into the piece's own folder:
+// The shoot's raw clips, onto Wepeka's Mac — only when asked (owner,
+// 2026-11-13: "Copy pas mau edit"). The client's crew sends them into the
+// client's Google Drive (js/footage.js, api/_footage.js), and that's where
+// they stay. "Salin ke Mac" on a piece (Antrean → Footage, or the Syuting
+// step) copies its clips into the piece's own folder:
 //   <Outbox>/<brand>/<code date title>/footage/IMG_0412.MOV
 // — the same folder the cuts go into, so the edit starts right there.
+// The wish is kept in this browser (where the Outbox folder lives), so a copy
+// cut short picks up again next time Brandlab opens, and clips that arrive
+// later for that piece follow it; it's let go once the piece is out.
 // One tab copies at a time (Web Locks); a clip already there with the same
 // size is left alone; one removed from the list stays on the Mac.
 import { auth } from "./firebase.js";
@@ -25,6 +28,20 @@ export function onMacProgress(fn) {
 // A name the Mac (and Chrome's folder writer) takes: no slashes or colons,
 // not ending in a dot or a space.
 export const macName = (s) => String(s || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 140).replace(/[.\s]+$/, "") || "footage";
+
+// The pieces this Mac should hold the footage of: { contentId: when asked }.
+const WISH = "brandlab:footageToMac";
+function wishes() {
+  try { return JSON.parse(localStorage.getItem(WISH) || "{}") || {}; } catch { return {}; }
+}
+export const wantsMac = (contentId) => !!wishes()[contentId];
+export function wishMac(contentId, on = true) {
+  const w = wishes();
+  if (!on === !w[contentId]) return;
+  if (on) w[contentId] = Date.now();
+  else delete w[contentId];
+  try { localStorage.setItem(WISH, JSON.stringify(w)); } catch { /* the copy still runs in this tab */ }
+}
 
 async function review(action, body) {
   const idToken = await auth.currentUser?.getIdToken();
@@ -131,19 +148,62 @@ export async function syncFootageToMac(pieces, { keyOf, remember }) {
   }
 }
 
+// How many of a piece's clips are on the Mac already, and which aren't.
+async function count(c, key) {
+  const todo = [];
+  let done = 0;
+  for (const f of c.footage?.files || []) {
+    const id = `${c.id}/${f.id}`;
+    if (onMac.has(id)) { done++; continue; }
+    const size = await outboxClipSize(key, macName(f.name));
+    if (size >= 0 && (!f.size || size === f.size)) { onMac.add(id); done++; } else todo.push(f);
+  }
+  return { done, todo, left: todo.reduce((s, f) => s + (Number(f.size) || 0), 0) };
+}
+
+// Just look (Antrean → Footage, the Syuting step): what's on the Mac, so the
+// piece says "Semua di Mac" or offers "Salin ke Mac" for what's missing.
+const looking = new Set();
+export async function peekFootageOnMac(c, key) {
+  const files = c?.footage?.files || [];
+  if (!files.length || !key || looking.has(c.id) || PROGRESS.get(c.id)?.name) return;
+  looking.add(c.id);
+  try {
+    const { done, left } = await count(c, key);
+    const was = PROGRESS.get(c.id);
+    if (was?.name) return; // a copy started meanwhile: it tells its own story
+    PROGRESS.set(c.id, { total: files.length, done, left, name: "", pct: 0, error: was?.error || "", key });
+    tell(c.id);
+  } finally {
+    looking.delete(c.id);
+  }
+}
+
+// What's known of a piece on the Mac; looks (again) when nothing is known
+// yet, or when clips came or went since.
+export function macStateOf(c, key) {
+  const p = PROGRESS.get(c?.id) || null;
+  const n = c?.footage?.files?.length || 0;
+  if (n && key && (!p || (!p.name && p.total !== n))) peekFootageOnMac(c, key).catch(() => {});
+  return p;
+}
+
+// Asked again by hand: look afresh (the folder may have been cleared) and
+// don't wait out an earlier failure.
+export function freshLook(contentId) {
+  failedAt.delete(contentId);
+  for (const id of onMac) if (id.startsWith(`${contentId}/`)) onMac.delete(id);
+  const p = PROGRESS.get(contentId);
+  if (p && !p.name) p.error = "";
+}
+
 async function syncPiece(c, key, remember) {
   const files = c.footage?.files || [];
   if (!files.length || !key) return;
   if (Date.now() - (failedAt.get(c.id) || 0) < 2 * 60_000) return;
-  const p = { total: files.length, done: 0, name: "", pct: 0, error: "", key };
+  const { done, todo, left } = await count(c, key);
+  const p = { total: files.length, done, left, name: "", pct: 0, error: "", key };
   PROGRESS.set(c.id, p);
-  const todo = [];
-  for (const f of files) {
-    const id = `${c.id}/${f.id}`;
-    if (onMac.has(id)) { p.done++; continue; }
-    const size = await outboxClipSize(key, macName(f.name));
-    if (size >= 0 && (!f.size || size === f.size)) { onMac.add(id); p.done++; } else todo.push(f);
-  }
   tell(c.id);
   if (todo.length) remember(c, key);
   for (const f of todo) {
@@ -153,6 +213,7 @@ async function syncPiece(c, key, remember) {
     try {
       const r = await copyClip(c, key, f, (pct) => { p.pct = pct; tell(c.id); });
       onMac.add(`${c.id}/${f.id}`);
+      p.left = Math.max(0, p.left - (Number(f.size) || 0));
       if (r === "ok") p.done++;
       else p.total--;
     } catch (e) {

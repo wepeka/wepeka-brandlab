@@ -452,7 +452,7 @@ body.pq-review-open{ overflow:hidden; }
 .fb-sum-txt b{ font-size:16px; }
 .fb-sum-txt small{ font-size:12.5px; font-weight:700; color: var(--text-muted); }
 .fb-sum-src{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color: var(--text-muted); }
-.fb-sum-src > svg{ color:#36D27F; flex:none; }
+.fb-sum-src > svg{ color:#3B9BFF; flex:none; }
 .fb-sum-src.is-off > svg{ color:#FF9F3D; }
 .fb-wait{ display:flex; flex-direction:column; gap:10px; padding:14px 16px; border-radius:20px; background: color-mix(in srgb, #FF9F3D 10%, var(--surface)); border:1px solid color-mix(in srgb, #FF9F3D 35%, var(--border)); }
 .fb-wait-head{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; }
@@ -483,6 +483,9 @@ body.pq-review-open{ overflow:hidden; }
 .fb-mac.is-on{ background: color-mix(in srgb, #36D27F 16%, transparent); color: color-mix(in srgb, #36D27F 70%, var(--text)); }
 .fb-mac.is-busy{ color: var(--text); }
 .fb-mac.is-off{ color:#E8590C; }
+/* Not on the Mac (yet): "Salin ke Mac", copied only when asked (2026-11-13). */
+.fb-mac-wrap{ display:inline-flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.fb-tomac{ white-space:nowrap; }
 .fb-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:10px; }
 .fb-clip{ position:relative; display:block; aspect-ratio:9/16; padding:0; border:0; border-radius:14px; overflow:hidden; background:#141414; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease; }
 .fb-clip:hover{ transform: translateY(-2px); box-shadow: 0 0 0 2px #FF2E93; }
@@ -657,6 +660,10 @@ body.pq-review-open{ overflow:hidden; }
 .ft-mac.is-on svg{ color:#1FA36B; }
 .ft-mac.is-busy svg{ color:#3B9BFF; }
 .ft-mac.is-off svg{ color:#E58A12; }
+.ft-mac-ask{ align-items:center; flex-wrap:wrap; }
+.ft-mac-ask > svg{ color:#3B9BFF; margin-top:0; }
+.ft-mac-ask > span{ flex:1 1 180px; }
+.ft-mac-ask > .btn{ flex:none; }
 .ft-list{ list-style:none; margin:12px 0 0; padding:0; display:flex; flex-direction:column; border:1px solid var(--border); border-radius: var(--radius-md, 12px); overflow:hidden; }
 .ft-list + .ft-list{ margin-top:10px; }
 .ft-row{ display:flex; align-items:center; gap:10px; padding:9px 12px; border-top:1px solid var(--border); }
