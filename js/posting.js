@@ -1656,8 +1656,12 @@ function postHTML(c, p, key, handle, posting = null) {
       <div class="field"><label for="pst-date">${t("post.ig.date")}</label><input class="input" type="date" id="pst-date" value="${escapeHtml(c.scheduleDate || "")}"></div>
       <div class="field"><label for="pst-time-in">${t("post.ig.time")}</label><input class="input" type="time" id="pst-time-in" value="${escapeHtml(p.time || "")}"></div>
     </div>`;
+  // Posted outside Brandlab (a brand with no Instagram here, or a cut put up
+  // before it was approved): "Sudah tayang" is always one click away
+  // (owner, 2026-11-13).
+  const byHand = `<div class="pst-decide pst-byhand"><button type="button" class="btn btn-secondary" id="pst-posted">${icon("check", { size: 15 })}${t("post.ig.alreadyPosted")}</button><small>${t("post.ig.byHandHint")}</small></div>`;
   if (key !== "ready" || !handle) {
-    return `<section class="pst-block pst-post is-locked">${acct}${when}${caption}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p></section>`;
+    return `<section class="pst-block pst-post is-locked">${acct}${when}${caption}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p>${byHand}</section>`;
   }
   // Facebook too (owner, 2026-11-07): one switch, remembered for the brand.
   const brand = getBrand(c.brandId);
@@ -1676,7 +1680,7 @@ function postHTML(c, p, key, handle, posting = null) {
       <div class="pst-decide">
         <button type="button" class="cl-cta pst-cta pst-go" id="pst-schedule"><span>${t(AUTO_POST ? "post.ig.cta" : "post.ig.ctaMark")}</span><span class="cl-cta-dot pst-dot-ig">${icon(AUTO_POST ? "instagram" : "calendar", { size: 16 })}</span></button>
         ${AUTO_POST ? `<button type="button" class="btn btn-secondary" id="pst-post-now">${icon("send", { size: 15 })}${t("post.ig.now")}</button>` : ""}
-        ${AUTO_POST ? `<button type="button" class="btn btn-ghost" id="pst-posted">${icon("check", { size: 15 })}${t("post.ig.alreadyPosted")}</button>` : ""}
+        <button type="button" class="btn btn-ghost" id="pst-posted">${icon("check", { size: 15 })}${t("post.ig.alreadyPosted")}</button>
       </div>
     </section>`;
 }

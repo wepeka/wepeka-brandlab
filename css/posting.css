@@ -168,6 +168,7 @@
 .pst-post .field{ margin-bottom:0; }
 .pst-count{ float:right; font-weight:600; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .pst-post.is-locked{ gap:8px; }
+.pst-byhand small{ color:var(--text-faint); font-size:12.5px; }
 .pst-live{ display:flex; align-items:flex-start; gap:12px; padding:14px; border-radius:16px; background: color-mix(in srgb, #FFC83D 16%, var(--surface-2)); }
 .pst-live.is-pub{ background: color-mix(in srgb, #36D27F 16%, var(--surface-2)); }
 .pst-live.is-fail{ background: color-mix(in srgb, #FF5F57 16%, var(--surface-2)); }

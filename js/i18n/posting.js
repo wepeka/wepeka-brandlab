@@ -99,6 +99,7 @@ export default {
   "post.ig.retry": { en: "Try again", id: "Coba lagi" },
   "post.ig.now": { en: "Post now", id: "Posting sekarang" },
   "post.ig.alreadyPosted": { en: "Already posted", id: "Sudah tayang" },
+  "post.ig.byHandHint": { en: "Already up on Instagram? Mark it here.", id: "Sudah di-posting di Instagram? Tandai di sini." },
   "post.ig.nowTitle": { en: "Post it to Instagram now?", id: "Posting ke Instagram sekarang?" },
   "post.ig.nowBody": { en: "The approved cut, cover and caption go up on @{handle} right away.", id: "Video yang disetujui, cover, dan caption langsung tayang di @{handle}." },
   "post.ig.autoNote": { en: "Brandlab posts it to Instagram at that time. Once the upload here finishes you can close the laptop.", id: "Brandlab yang posting ke Instagram di jam itu. Begitu upload di sini selesai, laptop boleh ditutup." },
