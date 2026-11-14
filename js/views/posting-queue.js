@@ -15,7 +15,7 @@ import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from ".
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark } from "../posting.js";
+import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { videoCode, codedPiece } from "../video-codes.js";
@@ -95,7 +95,12 @@ function tileHTML({ c, state, sub }) {
   // Sent to the client or not, under the title (owner, 2026-11-14: "mana
   // yang sudah aku kirim client yang mana yang belum, bisa kamu kasih tanda?").
   const cm = clientSendMark(c);
-  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${empty && ft ? "has-ft" : ""} ${posted ? "is-posted" : ""} ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
+  // Download on the cover (owner, 2026-11-14: "kasih tombol download video
+  // di brandlab di antreannya"): the cut chosen for Instagram or else the
+  // newest, from the Mac folder or the account's own Drive.
+  const dlV = !empty && !isClientView(c) ? downloadCutOf(c) : null;
+  const dl = dlV && canDownloadCut(c, dlV) ? ownDownloadLabel(c, dlV) : "";
+  return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${empty && ft ? "has-ft" : ""} ${posted ? "is-posted" : ""} ${late ? "is-late" : ""} ${dl ? "has-dl" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
         <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty && ft ? `${icon("film", { size: 24 })}<small>${t("pq.ft.ready")}</small><small class="pq-g-ftn">${escapeHtml(ftLabel)}</small>` : empty ? `${icon(isClientView(c) ? "clock" : "upload", { size: 22 })}<small>${t(isClientView(c) ? "post.cst.none" : "post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
         ${ft && !empty ? `<span class="pq-g-ft" title="${escapeHtml(t("pq.ft.tileTitle", { n: ft }))}">${icon("film", { size: 12 })}${escapeHtml(ftLabel)}</span>` : ""}
@@ -104,6 +109,7 @@ function tileHTML({ c, state, sub }) {
         ${empty ? "" : ed ? `<span class="pq-g-state is-editor" style="--pst:${ed.color}"><i></i>${escapeHtml(ed.label)}</span>` : `<span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>`}
       </button>
       ${code ? `<button type="button" class="pq-g-code" data-copy="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}</button>` : ""}
+      ${dl ? `<button type="button" class="pq-g-dl" data-dl="${escapeHtml(c.id)}" data-vid="${escapeHtml(dlV.id)}" data-compact="1" title="${escapeHtml(dl)}" aria-label="${escapeHtml(dl)}">${icon("download", { size: 16 })}</button>` : ""}
       <div class="pq-g-info">
         <b>${escapeHtml(c.title || t("common.untitled"))}</b>
         ${cm ? `<span class="pq-g-cl is-${cm.key} ${cm.st ? `is-${cm.st}` : ""}" title="${escapeHtml(cm.title)}">${icon(cm.key === "sent" ? "check" : "send", { size: 12 })}${escapeHtml(cm.label)}</span>` : ""}
@@ -357,6 +363,11 @@ export function render(root, { brandId }) {
     qsa("[data-period]", root).forEach((b) => b.addEventListener("click", () => { ui.period = b.dataset.period; paint(); }));
     qsa("[data-status]", root).forEach((b) => b.addEventListener("click", () => { ui.status = b.dataset.status; paint(); }));
     qsa("[data-copy]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copy)));
+    qsa("[data-dl]", root).forEach((b) => b.addEventListener("click", () => {
+      const c = getContent(b.dataset.dl);
+      const v = c?.posting?.versions?.find((x) => x.id === b.dataset.vid);
+      if (v) downloadCut(c, v, b);
+    }));
     qs("#pq-review", root)?.addEventListener("click", () => openReview(pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review"), paint));
     qs("#pq-link", root)?.addEventListener("click", async () => { await linkOutbox(); await sync(); });
     // The brand's client (Kerja Tim "Klien", 2026-11-09).

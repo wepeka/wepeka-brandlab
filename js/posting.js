@@ -1205,6 +1205,7 @@ function paint(root, contentId, ui, repaint) {
     ${v ? decideHTML(p, v, prev, ui, v.id === latestOf(p).id ? editorBlockHTML(c, ui) : "", isVideo && !needSource) : ""}
     ${v && !needSource ? `<section class="pst-block pst-more">
       ${versionsHTML(p, v, up, { sent: !!(p.client || clientsOf(brand).length) })}
+      ${ownDownloadHTML(c, v)}
       ${extrasHTML(p, v, c, ui)}
       ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
     </section>` : ""}
@@ -1214,6 +1215,11 @@ function paint(root, contentId, ui, repaint) {
   `;
   restorePlayers();
   wire(root, contentId, ui, repaint);
+  qsa("[data-own-dl]", root).forEach((btn) => btn.addEventListener("click", () => {
+    const cur = getContent(contentId);
+    const x = cur && postingOf(cur).versions.find((y) => y.id === btn.dataset.ownDl);
+    if (x) downloadCut(cur, x, btn);
+  }));
 }
 
 // The client's page (same layout as Wepeka's): the cuts sent to them from
@@ -1330,6 +1336,83 @@ function wireClientFiles(root, c) {
   qs("[data-cl-cap]", root)?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(c.caption || ""); toast(t("post.cl.capCopied")); } catch { toast(t("post.cl.capCopyFailed"), "error"); }
   });
+}
+
+// Wepeka's own side downloads too (owner, 2026-11-14: "bisa gak kamu kasih
+// tombol download video di brandlab di antreannya?"): the cut straight from
+// the Mac folder (or Wepeka's own Drive), saved under its code like the
+// client's copy ("QKC-36 · Revisi 11.mp4", "QKC-36 · FINAL.mp4").
+function ownFiles(c, v) {
+  const base = videoCode(c) || String(c.title || "video").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 40);
+  const tag = v.status === "approved" ? "FINAL" : versionLabel(v);
+  let files = [];
+  if (v.local) {
+    files = (v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file]).filter(Boolean).map((f) => ({ local: f, from: f }));
+  } else if (v.driveFiles?.length) {
+    files = v.driveFiles.map((f) => ({ id: f.id, from: f.name || "" }));
+  } else if (v.drive?.id) {
+    files = [{ id: v.drive.id, from: v.name || (v.drive.ext ? `.${v.drive.ext}` : "") }];
+  }
+  return files.map((f, i) => ({ ...f, name: `${base} · ${tag}${files.length > 1 ? ` · ${i + 1}` : ""}.${clientExt(f.from, v.kind)}` }));
+}
+// A local cut needs the Mac folder open in this browser; a Drive one, the id.
+export function canDownloadCut(c, v) {
+  if (!c || !v) return false;
+  if (v.local) return !!(postingOf(c).local?.key && OUT.connected && ownFiles(c, v).length);
+  return !!(v.drive?.id || v.driveFiles?.length);
+}
+// The gallery's one tap: the cut chosen for Instagram, else the newest.
+export function downloadCutOf(c) {
+  const p = postingOf(c);
+  return p.versions.find((x) => x.id === p.finalId) || latestOf(p);
+}
+export function ownDownloadLabel(c, v) {
+  const n = v.kind === "set" ? ownFiles(c, v).length : 1;
+  const what = v.kind === "set" ? t("post.cl.dlSet", { n }) : v.kind === "image" ? t("post.cl.dlImage") : t("post.cl.dlVideo");
+  return `${what} · ${v.status === "approved" ? "FINAL" : versionLabel(v)}`;
+}
+function ownDownloadHTML(c, v) {
+  if (!canDownloadCut(c, v)) return "";
+  return `<div class="pst-cl-dl"><button type="button" class="btn btn-secondary btn-sm" data-own-dl="${escapeHtml(v.id)}">${icon("download", { size: 14 })}${escapeHtml(ownDownloadLabel(c, v))}</button></div>`;
+}
+const saveFile = (href, name) => {
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+// The button spins while the file is read; several slides one after another.
+export async function downloadCut(c, v, btn) {
+  if (!btn || btn.disabled) return;
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner" style="width:14px;height:14px;"></span>${btn.dataset.compact ? "" : `<span>${t("post.cl.dlMaking")}</span>`}`;
+  const made = [];
+  try {
+    const key = postingOf(c).local?.key;
+    const files = ownFiles(c, v);
+    if (!files.length) throw new Error("no file for this cut");
+    for (const f of files) {
+      let href;
+      if (f.local) {
+        href = URL.createObjectURL(await outboxFile(key, f.local));
+        made.push(href);
+      } else {
+        href = await driveVideoURL(f.id);
+      }
+      saveFile(href, f.name);
+      if (files.length > 1) await new Promise((r) => setTimeout(r, 450));
+    }
+  } catch (e) {
+    console.error("Download failed", e);
+    toast(t("post.dl.failed"), "error");
+  } finally {
+    if (btn.isConnected) { btn.disabled = false; btn.innerHTML = label; }
+    // The browser has taken the file by then; the copy in memory can go.
+    if (made.length) setTimeout(() => made.forEach((u) => URL.revokeObjectURL(u)), 60000);
+  }
 }
 
 // The editor's side of "not connected yet": only the client can connect

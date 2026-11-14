@@ -340,6 +340,13 @@
 /* The gallery: a tile per piece, cover first (like a phone's photo grid). */
 .pq-gal{ display:grid; grid-template-columns:repeat(auto-fill, minmax(172px, 1fr)); gap:16px 14px; }
 .pq-g{ position:relative; display:flex; flex-direction:column; gap:8px; min-width:0; }
+/* Download on the cover's bottom-right corner (the frame is 9:16 of the tile's width). */
+.pq-g.has-dl{ container-type:inline-size; }
+.pq-g-dl{ position:absolute; z-index:2; right:8px; top:calc(100cqw * 16 / 9 - 42px); display:grid; place-items:center; width:34px; height:34px; padding:0; border:0; border-radius:50%; background: rgba(0,0,0,.62); color:#fff; cursor:pointer; backdrop-filter: blur(6px); transition: background .15s ease, transform .15s ease; }
+.pq-g-dl:hover{ background: var(--pst); transform: translateY(-1px); }
+.pq-g-dl:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+.pq-g-dl:disabled{ cursor:progress; }
+.pq-g.has-dl .pq-g-state{ max-width:calc(100% - 58px); }
 .pq-g-media{ position:relative; display:block; width:100%; aspect-ratio:9/16; padding:0; border:0; border-radius:18px; overflow:hidden; cursor:pointer; background:#141414; box-shadow: 0 0 0 2px transparent; transition: transform .2s var(--ease-spring, ease), box-shadow .2s ease; }
 .pq-g-media:hover{ transform: translateY(-2px); box-shadow: 0 0 0 2px var(--pst); }
 .pq-g-media:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--pst); }

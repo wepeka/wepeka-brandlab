@@ -137,3 +137,43 @@ test("Antrean: a customer's own brand gets the gallery with codes and Drive, wit
     auth.currentUser = was;
   }
 });
+
+// Download on the tile (owner, 2026-11-14: "kasih tombol download video di
+// brandlab di antreannya"): Wepeka's side, a tile with a cut it can read
+// gets the button, labelled with the cut it saves; an empty tile doesn't.
+test("Antrean: a tile with a cut gets a download button for the IG pick (else the newest); no cut, no button", async () => {
+  const store = await import("../js/store.js");
+  const { auth } = await import("../js/firebase.js");
+  const { ADMIN_UIDS } = await import("../js/account.js");
+  const { render } = await import("../js/views/posting-queue.js");
+  const { canDownloadCut, downloadCutOf, ownDownloadLabel } = await import("../js/posting.js");
+  await store.initStore("test-uid-antrean-dl");
+  const day = (n) => store.localISODate(new Date(Date.now() + n * DAY));
+  const b = store.createBrand({ name: "Kopi Unduh" });
+  const v = (id, n, status, extra = {}) => ({ id, n, status, kind: "video", drive: { id: `d-${id}`, ext: "mp4" }, ...extra });
+  const two = store.createContent(b.id, { title: "Dua versi", status: "editing", scheduleDate: day(2), platform: "Instagram", format: "Reels", posting: { type: "reels", versions: [v("a", 0, "revision"), v("b", 1, "pending")], finalId: null, notes: [] } });
+  const picked = store.createContent(b.id, { title: "Sudah dipilih", status: "editing", scheduleDate: day(3), platform: "Instagram", format: "Reels", posting: { type: "reels", versions: [v("c", 0, "approved"), v("d", 1, "pending")], finalId: "c", notes: [] } });
+  store.createContent(b.id, { title: "Belum ada cut", status: "draft", scheduleDate: day(4), platform: "Instagram", format: "Reels", posting: { type: "reels", versions: [], notes: [] } });
+  const was = auth.currentUser;
+  try {
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    assert.equal(downloadCutOf(store.getContent(two.id)).id, "b", "no IG pick: the newest cut");
+    assert.equal(downloadCutOf(store.getContent(picked.id)).id, "c", "the cut picked for Instagram");
+    assert.equal(ownDownloadLabel(store.getContent(picked.id), downloadCutOf(store.getContent(picked.id))), "Unduh video · FINAL");
+    // A Mac-folder cut needs the folder open in this browser (none in tests).
+    assert.equal(canDownloadCut(store.getContent(two.id), { id: "x", n: 0, status: "pending", kind: "video", local: { file: "v1.mp4" } }), false);
+    const root = { innerHTML: "", isConnected: true, querySelector: () => null, querySelectorAll: () => [], classList: { contains: () => false } };
+    render(root, { brandId: b.id })?.();
+    const html = root.innerHTML;
+    const tile = (title) => {
+      const at = html.indexOf(title);
+      assert.ok(at > 0, `${title} is in the gallery`);
+      return html.slice(html.lastIndexOf("<article", at), html.indexOf("</article>", at));
+    };
+    assert.match(tile("Dua versi"), /class="pq-g-dl" data-dl="[^"]+" data-vid="b"[^>]*aria-label="Unduh video · Revisi 1"/);
+    assert.match(tile("Sudah dipilih"), /data-vid="c"[^>]*aria-label="Unduh video · FINAL"/);
+    assert.doesNotMatch(tile("Belum ada cut"), /pq-g-dl/);
+  } finally {
+    auth.currentUser = was;
+  }
+});

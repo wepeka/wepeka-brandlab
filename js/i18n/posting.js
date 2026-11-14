@@ -243,6 +243,7 @@ export default {
   "post.cl.dlSet": { en: "Download {n} photos", id: "Unduh {n} foto" },
   "post.cl.dlMaking": { en: "Getting the file…", id: "Menyiapkan file…" },
   "post.cl.dlFailed": { en: "Couldn't download it. Try again, or open it in Drive.", id: "Gagal mengunduh. Coba lagi, atau buka di Drive." },
+  "post.dl.failed": { en: "Couldn't download it. Try again.", id: "Gagal mengunduh. Coba lagi." },
   "post.cl.dlFinal": { en: "The final version you approved.", id: "Versi final yang sudah kamu setujui." },
   "post.cl.dlNotYet": { en: "{label} isn't approved yet — this is the newest version.", id: "{label} belum disetujui — ini versi terbaru." },
   "post.cl.dlNone": { en: "No video sent yet. It shows up here once Wepeka sends it.", id: "Belum ada video yang dikirim. Muncul di sini begitu Wepeka mengirimnya." },
