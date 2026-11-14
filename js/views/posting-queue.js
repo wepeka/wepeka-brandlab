@@ -14,7 +14,7 @@ import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from ".
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine } from "../posting.js";
+import { canUsePosting, canSeePosting, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece } from "../video-codes.js";
@@ -90,6 +90,9 @@ function tileHTML({ c, state, sub }) {
   // footage2nya"): no cut yet = "Footage siap" on the tile; with cuts, a count.
   const ft = footageCount(c);
   const ftLabel = t("pq.ft.clips", { n: ft });
+  // Sent to the client or not, under the title (owner, 2026-11-14: "mana
+  // yang sudah aku kirim client yang mana yang belum, bisa kamu kasih tanda?").
+  const cm = clientSendMark(c);
   return `<article class="pq-g ${sub ? "is-trial" : ""} ${empty ? "is-empty" : ""} ${empty && ft ? "has-ft" : ""} ${posted ? "is-posted" : ""} ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pq-g-media" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(`${code} ${c.title || ""}`.trim())}">
         <span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${empty && ft ? `${icon("film", { size: 24 })}<small>${t("pq.ft.ready")}</small><small class="pq-g-ftn">${escapeHtml(ftLabel)}</small>` : empty ? `${icon(isClientView(c) ? "clock" : "upload", { size: 22 })}<small>${t(isClientView(c) ? "post.cst.none" : "post.state.none")}</small>` : icon(TYPE_ICON[type] || "play", { size: 26 })}</span>
@@ -101,6 +104,7 @@ function tileHTML({ c, state, sub }) {
       ${code ? `<button type="button" class="pq-g-code" data-copy="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}</button>` : ""}
       <div class="pq-g-info">
         <b>${escapeHtml(c.title || t("common.untitled"))}</b>
+        ${cm ? `<span class="pq-g-cl is-${cm.key} ${cm.st ? `is-${cm.st}` : ""}" title="${escapeHtml(cm.title)}">${icon(cm.key === "sent" ? "check" : "send", { size: 12 })}${escapeHtml(cm.label)}</span>` : ""}
         <small class="pq-g-when ${c.scheduleDate ? "" : "is-faint"} ${late ? "is-late" : ""}">${icon("calendar", { size: 11 })}${late ? `<span class="pq-g-late">${escapeHtml(t("pq.late"))}</span>` : ""}${escapeHtml(c.scheduleDate ? whenLabel(c) : t("pq.noDate"))}${c.scheduleDate && !time ? ` <span class="is-faint" title="${escapeHtml(t("pq.noTime"))}">· --:--</span>` : ""}</small>
         <small>${icon(TYPE_ICON[type] || "play", { size: 11 })}${t(`post.type.${type}`)}${c.posting?.trialReel ? `<span class="pq-g-trial">${t("post.trialReel.label")}</span>` : ""}</small>
       </div>

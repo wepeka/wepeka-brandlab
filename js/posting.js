@@ -458,6 +458,28 @@ export const latestVersion = (c) => latestOf(postingOf(c));
 export const stateColor = (key) => STATE_COLOR[key];
 export const stateLabelOf = (c) => stateLabel(c);
 
+// Sent to the client or not (owner, 2026-11-14: "aku bingung di brandlab
+// mana yang sudah aku kirim client yang mana yang belum, bisa kamu kasih
+// tanda?"). A cut counts as sent while it's the one the client holds or its
+// copy still sits in their Drive. Wepeka's side only, on brands with a Klien,
+// until the piece is scheduled or posted.
+const sentToClient = (p, v) => !!v && (p.client?.versionId === v.id || !!p.previews?.[v.id]);
+export function clientSendMark(c) {
+  if (!canUsePosting() || !c || isClientView(c)) return null;
+  const p = postingOf(c);
+  const last = latestOf(p);
+  if (!last || (!p.client && !clientsOf(getBrand(c.brandId)).length)) return null;
+  if (["scheduled", "published", "failed"].includes(postingState(c))) return null;
+  const cl = p.client;
+  const held = cl ? p.versions.find((x) => x.id === cl.versionId) : null;
+  if (held && held.id === last.id) {
+    const st = cl.status === "approved" ? "approved" : cl.status === "revision" ? "revision" : "waiting";
+    return { key: "sent", st, label: t(`post.mark.${st}`), title: t(cl.sentAt ? "post.mark.sentTitle" : "post.mark.sentTitleNoTime", { label: versionLabel(last), when: cl.sentAt ? timeLabel(cl.sentAt) : "" }) };
+  }
+  if (held) return { key: "newer", label: t("post.mark.newer", { label: versionLabel(last) }), title: t(cl.sentAt ? "post.mark.newerTitle" : "post.mark.newerTitleNoTime", { label: versionLabel(held), when: cl.sentAt ? timeLabel(cl.sentAt) : "" }) };
+  return { key: "none", label: t("post.mark.none"), title: t("post.mark.noneTitle") };
+}
+
 // ---------------------------------------------------------------- editor
 // "Send to editor" (owner, 2026-11-02): his notes on the newest cut go to
 // Claude, who edits the piece and drops the next version in the Mac folder.
@@ -1103,7 +1125,7 @@ function paint(root, contentId, ui, repaint) {
     <div class="pst-side">
     ${v ? decideHTML(p, v, prev, ui, v.id === latestOf(p).id ? editorBlockHTML(c, ui) : "", isVideo && !needSource) : ""}
     ${v && !needSource ? `<section class="pst-block pst-more">
-      ${versionsHTML(p, v, up)}
+      ${versionsHTML(p, v, up, { sent: !!(p.client || clientsOf(brand).length) })}
       ${extrasHTML(p, v, c, ui)}
       ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
     </section>` : ""}
@@ -1274,13 +1296,14 @@ function clientPostHTML(c, p, key, { gap = false } = {}) {
 
 // Every cut so far as a row of cards, oldest first (owner, 2026-11-02:
 // "kalau di-click hasil revisian videonya ada semua"); tap one to play it.
-function versionsHTML(p, v, up, { add = true } = {}) {
+function versionsHTML(p, v, up, { add = true, sent = false } = {}) {
   return `<div class="pst-vgal-wrap">
       <span class="pst-sub">${t("post.v.all", { n: p.versions.length })}</span>
       <div class="pst-vgal" role="list">
         ${p.versions.map((x) => `<button type="button" role="listitem" class="pst-vcard ${x.id === v.id ? "is-on" : ""}" data-vid="${x.id}" aria-pressed="${x.id === v.id}" style="--pst:${STATE_COLOR[x.status === "pending" ? "review" : x.status === "revision" ? "revision" : "ready"]}">
             <span class="pst-vcard-img" data-vthumb="${x.id}" ${x.poster ? `data-vposter="${escapeHtml(x.poster)}"` : ""}>${icon(x.kind === "set" ? "layers" : x.kind === "image" ? "image" : "play", { size: 18 })}</span>
             ${x.id === p.finalId ? `<em class="pst-vcard-final" title="${escapeHtml(t("post.v.final"))}">${icon("instagram", { size: 11 })}</em>` : ""}
+            ${sent && sentToClient(p, x) ? `<em class="pst-vcard-sent" title="${escapeHtml(t("post.mark.cutTitle"))}">${icon("check", { size: 11 })}${t("post.mark.cut")}</em>` : ""}
             <span class="pst-vcard-l">${escapeHtml(versionLabel(x))}</span>
             <small><i aria-hidden="true"></i>${t(`post.v.st.${x.status}`)}</small>
           </button>`).join("")}
