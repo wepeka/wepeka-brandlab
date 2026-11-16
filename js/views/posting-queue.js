@@ -7,17 +7,19 @@
 //             its trial cuts (KP-12B) right after it (owner, 2026-11-02).
 //   Feed    — the Instagram profile grid, to see the feed before it posts.
 //   Review  — the waiting cuts full screen, one after another, like Reels.
-// Private to Wepeka's own account (canUsePosting), like the rest of it.
+// Every account on its own brands since 2026-11-16 (canUsePosting); the Mac
+// folder, clients and footage stay Wepeka's own (isWepekaDesk).
 import { listBrands, listContent, getBrand, getContent, onChange, localISODate, organicViews, isClientMember } from "../store.js";
 import { icon } from "../icons.js";
 import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from "../dom.js";
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark } from "../posting.js";
+import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
-import { ensureCodes, videoCode, codedPiece } from "../video-codes.js";
+import { videoCode, codedPiece } from "../video-codes.js";
+import { driveVideoURL, driveImageURL } from "../drive.js";
 import { listRecentMedia, thumbnailFromMedia, testConnection } from "../instagram.js";
 import { canUseInstagramApi, currentUid } from "../account.js";
 import { showsFootage, bankHTML, wireBank, footageCount } from "../footage-bank.js";
@@ -44,7 +46,7 @@ const isIG = (c) => !c.platform || /instagram/i.test(c.platform);
 function pieces({ brandId, period }) {
   const range = rangeOf(period);
   const inRange = (d) => !range || (d && d >= range[0] && d <= range[1]);
-  const brands = listBrands().filter((b) => brandId === "all" || b.id === brandId);
+  const brands = listBrands().filter((b) => (brandId === "all" ? canUsePosting(b) : b.id === brandId));
   // A client sees a trial cut only once it's sent to them.
   return brands.flatMap((brand) => listContent(brand.id).filter(codedPiece).filter((c) => !c.trialOf || !isClientView(c) || c.posting?.client).map((c) => ({ brand, c, state: postingState(c) })))
     .filter(({ c }) => inRange(c.scheduleDate));
@@ -124,7 +126,7 @@ function listHTML(items, ui) {
   // 2026-11-02: "yang sudah tayang tetap bisa dilihat di antrean minggu ini");
   // over all time it stays under its own chip, or every old post would fill it.
   const inAll = (x) => ui.period !== "all" || x.state !== "published";
-  const list = ui.client ? CLIENT_FILTERS : FILTERS;
+  const list = ui.client ? CLIENT_FILTERS : isWepekaDesk() ? FILTERS : FILTERS.filter((f) => f !== "client");
   const counts = Object.fromEntries(list.map((f) => [f, f === "all" ? items.filter(inAll).length : items.filter((x) => filterOf(x.state) === f).length]));
   const chips = `<div class="pq-filters" role="group" aria-label="${escapeHtml(t("pq.filterLabel"))}">${list.map((f) => `<button type="button" class="pq-filter ${ui.status === f ? "is-on" : ""}" data-status="${f}" aria-pressed="${ui.status === f}" style="--pst:${f === "all" ? "var(--text)" : stateColor(f)}">${f === "all" ? "" : "<i></i>"}${t(ui.client && f !== "all" ? `post.cst.${f}` : `pq.f.${f}`)}<b>${counts[f]}</b></button>`).join("")}</div>`;
   const shown = items.filter((x) => (ui.status === "all" ? inAll(x) : filterOf(x.state) === ui.status));
@@ -201,7 +203,7 @@ function feedHTML(brandId) {
   const shown = grid?.username || handle;
   const mismatch = grid?.username && handle && grid.username.toLowerCase() !== handle.toLowerCase();
   let source;
-  if (!connected) source = `<span class="pq-feed-src is-off">${icon("info", { size: 13 })}${t("pq.feed.noIg")}</span>`;
+  if (!connected) source = `<span class="pq-feed-src is-off">${icon("info", { size: 13 })}${t(canUseInstagramApi() ? "pq.feed.noIg" : "pq.feed.fromBrandlab")}</span>`;
   else if (!grid) source = `<span class="pq-feed-src">${icon("refresh", { size: 13 })}${t("pq.feed.loading")}</span>`;
   else if (grid.error) source = `<span class="pq-feed-src is-off">${icon("info", { size: 13 })}${t("pq.feed.igError", { msg: escapeHtml(grid.error) })}</span>`;
   else source = `<span class="pq-feed-src is-on">${icon("instagram", { size: 13 })}${t("pq.feed.fromIg", { time: escapeHtml(new Date(grid.at).toLocaleTimeString(getLang() === "en" ? "en-US" : "id-ID", { hour: "2-digit", minute: "2-digit" })) })}</span>`;
@@ -258,9 +260,18 @@ function clientDriveHTML(brandId) {
   return `<button type="button" class="cl-cta" id="pq-drive"><span>${t("post.cl.driveCta")}</span><span class="cl-cta-dot pq-dot">${icon("link", { size: 16 })}</span></button>`;
 }
 
+// Everyone but Wepeka's account keeps the cuts in their own Google Drive:
+// whose Drive it is, or the button to connect it.
+function ownDriveHTML() {
+  const d = driveInfo();
+  if (!d.checked) return "";
+  if (d.connected) return `<span class="pq-source">${icon("folder", { size: 14 })}<span>${t("pq.cl.driveOn", { email: escapeHtml(d.email || "") })}</span></span>`;
+  return `<button type="button" class="btn btn-secondary" id="pq-drive">${icon("link", { size: 15 })}${t("post.cl.driveCta")}</button>`;
+}
+
 export function render(root, { brandId }) {
   if (!canSeePosting(brandId)) { location.hash = `#/brand/${brandId}/content`; return () => {}; }
-  const client = !canUsePosting();
+  const client = !canUsePosting(brandId);
   let view = "list";
   try { view = localStorage.getItem(VIEW_KEY) || "list"; } catch { /* default */ }
   // The brand open in the app (its switcher, top left) — no second brand picker here.
@@ -268,23 +279,23 @@ export function render(root, { brandId }) {
   const ui = { view, period: "all", status: "all", unmatched: [], client, fbOpen: new Set() };
 
   const paint = () => {
-    if (!client) ensureCodes(); // a piece made in Creator since: it gets its number now
+    if (!client) ensureVideoCodes(); // a piece made in Creator since: it gets its number now
     const items = pieces({ brandId, period: ui.period });
     const reviewN = client ? 0 : pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review").length;
     const brands = listBrands();
     // Footage (the shoot's raw clips) only where a client's crew shoots.
-    const views = client ? [] : showsFootage(brandId) ? ["list", "footage", "feed"] : ["list", "feed"];
+    const views = client ? [] : isWepekaDesk() && showsFootage(brandId) ? ["list", "footage", "feed"] : ["list", "feed"];
     if (!client && !views.includes(ui.view)) ui.view = "list";
     root.innerHTML = `
       <div class="pq">
         <div class="calx-head">
           <div class="calx-head-title">
             <span class="calx-head-art cl-pic" style="--cat:#FF5F57;--cat2:#FF2E93">${createArtSVG("video")}</span>
-            <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t(client ? "pq.cl.lead" : "pq.lead")}</p></div>
+            <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t(client ? "pq.cl.lead" : isWepekaDesk() ? "pq.lead" : "pq.leadOwn")}</p></div>
           </div>
           <div class="pq-actions">
-            ${client ? clientDriveHTML(brandId) : `${sourceHTML()}
-            <button type="button" class="btn btn-secondary pq-client-btn" id="pq-client" aria-haspopup="true">${icon("users", { size: 15 })}<span>${t("pq.client.btn")}</span><i class="pq-client-dot is-${clientDriveLine(getBrand(brandId)).tone}"></i></button>
+            ${client ? clientDriveHTML(brandId) : !isWepekaDesk() ? `${ownDriveHTML()}` : `${sourceHTML()}
+            <button type="button" class="btn btn-secondary pq-client-btn" id="pq-client" aria-haspopup="true">${icon("users", { size: 15 })}<span>${t("pq.client.btn")}</span><i class="pq-client-dot is-${clientDriveLine(getBrand(brandId)).tone}"></i></button>`}${client ? "" : `
             <button type="button" class="cl-cta" id="pq-review" ${reviewN ? "" : "disabled"}><span>${reviewN ? t("pq.review", { n: reviewN }) : t("pq.reviewNone")}</span><span class="cl-cta-dot pq-dot">${icon("play", { size: 16 })}</span></button>`}
           </div>
         </div>
@@ -324,6 +335,11 @@ export function render(root, { brandId }) {
         el.classList.add("has-img");
         return;
       }
+      // A cut in the account's own Drive: the still saved next to it.
+      if (!key && drivePosterOf(c)) {
+        driveImageURL(drivePosterOf(c)).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+        return;
+      }
       if (!key || !outboxInfo().connected) return;
       outboxThumb(key, latestVersion(c), c.posting.cover).then((src) => {
         if (src && el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); }
@@ -361,7 +377,7 @@ export function render(root, { brandId }) {
 
   paint();
   sync();
-  if (client) ensureDrive().then(() => { if (root.isConnected) paint(); });
+  if (client || !isWepekaDesk()) ensureDrive().then(() => { if (root.isConnected) paint(); });
   // New cuts from Claude show up by themselves while this page is open.
   const timer = setInterval(() => { if (document.visibilityState === "visible" && outboxInfo().connected) sync(); }, 15000);
   const off = onChange(() => { if (!document.querySelector(".pq-review")) paint(); });
@@ -418,6 +434,15 @@ function openReview(queue, onClose) {
       if (isVideo) outboxFileURL(key, v.local.file).then((u) => { const m = media(); if (m) { m.src = u; m.play().catch(() => {}); } });
       qsa("img[data-f]", el).forEach((img) => outboxFileURL(key, img.dataset.f).then((u) => { img.src = u; }));
     } else if (v.url) media()?.play().catch(() => {});
+    else if (v.drive?.id && isVideo) {
+      // A cut in the account's own Drive: fetched into the tab first.
+      const stage = qs(".pq-rv-stage", el);
+      stage?.classList.add("is-loading");
+      const at = i;
+      driveVideoURL(v.drive.id).then((u) => { const m = media(); if (m && at === i && el.isConnected) { m.src = u; m.play().catch(() => {}); } })
+        .catch(() => toast(t("post.loadFailed"), "error"))
+        .finally(() => stage?.classList.remove("is-loading"));
+    }
     const strip = qs(".pq-rv-slides", el);
     strip?.addEventListener("scroll", () => { const n = qs(".pq-rv-slide-n", el); if (n) n.textContent = `${Math.round(strip.scrollLeft / strip.clientWidth) + 1}/${files.length}`; }, { passive: true });
     // Tap the video to pause or carry on; a mark says it's paused.

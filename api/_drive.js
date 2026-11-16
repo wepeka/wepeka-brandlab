@@ -160,6 +160,19 @@ export async function finishConnect({ code, state, error, redirect, db, env = pr
   return { location: back, result: "ok" };
 }
 
+// Who may use Drive here. Since 2026-11-16 every Brandlab account keeps the
+// cuts of its own brands in its own Drive (owner: "aktivasi ke semua orang
+// user brandlab biasa"). Connecting needs an account that can still work in
+// Brandlab (trial running, or paid) — or Wepeka's own account, or a client
+// Wepeka invited ("Klien"). A token or disconnecting stays open to whoever
+// connected: a lapsed account still plays its own cuts and can leave.
+export function driveAllowed({ action, uid, account, membership, isAdminUid = () => false, isReadOnlyAccount = () => true }) {
+  if (isAdminUid(uid)) return true;
+  if (action !== "start") return true;
+  if (clientBrandIds(membership, isAdminUid).length) return true;
+  return !!account && account.status === "active" && !isReadOnlyAccount(account);
+}
+
 // The signed-in person's own actions: start / token / disconnect.
 export async function runDrive({ action, uid, email, ret, redirect, db, env = process.env, fetchImpl = fetch, isAdminUid = () => false }) {
   const ref = db.doc(`driveConnections/${uid}`);

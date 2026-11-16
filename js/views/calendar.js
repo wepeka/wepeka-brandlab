@@ -1316,7 +1316,7 @@ function openDateBankMenu(cell, { brandId, dateISO, refresh }) {
       }
     </div>
     <div class="menu-divider"></div>
-    ${uploadMenuItemHTML()}
+    ${uploadMenuItemHTML(brandId)}
     <button data-create>${icon("plus", { size: 15 })}${t("calendar.createNewContent")}</button>
   `;
   menu.addEventListener("click", (e) => {

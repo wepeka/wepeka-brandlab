@@ -159,3 +159,47 @@ test("Ask editor to make thumbnail: owner only, for a video cut in the Mac folde
     auth.currentUser = was;
   }
 });
+
+// Every account (owner, 2026-11-16: "aktivasi ke semua orang user brandlab
+// biasa"): Video & posting on the brands it owns, Drive only; Wepeka's desk
+// (Mac folder, editor, Instagram posting, clients) stays Wepeka's.
+test("Video & posting: every account on its own brands; Wepeka's brands keep the Klien view; the desk stays Wepeka's", async () => {
+  const store = await import("../js/store.js");
+  const { auth } = await import("../js/firebase.js");
+  const { ADMIN_UIDS } = await import("../js/account.js");
+  const { canUsePosting, canSeePosting, isClientView, isWepekaDesk, editorBlockHTML, editTipsToo } = await import("../js/posting.js");
+  await store.initStore("u-customer");
+  const was = auth.currentUser;
+  try {
+    auth.currentUser = { uid: "u-customer" };
+    const own = store.createBrand({ name: "Kopi Pagi" });
+    assert.equal(isWepekaDesk(), false);
+    assert.equal(canUsePosting(own), true, "their own brand");
+    assert.equal(canUsePosting(own.id), true, "by id too");
+    assert.equal(canSeePosting({ brandId: own.id }), true, "a piece of it");
+    // Someone else's brand shared through Kerja Tim: not theirs to keep videos for.
+    const shared = { id: "b-shared", ownerId: "u-other", members: { "u-customer": { role: "editor" } } };
+    assert.equal(canUsePosting(shared), false);
+    // A Wepeka brand where they're the Klien: the client view, as before.
+    const quatro = { id: "b-quatro", ownerId: ADMIN_UIDS[0], members: { "u-customer": { role: "viewer", klien: true } } };
+    assert.equal(canUsePosting(quatro), false);
+    assert.equal(isClientView(quatro), true);
+    assert.equal(canSeePosting(quatro), true);
+    // Nothing to resolve: nothing.
+    assert.equal(canUsePosting(undefined), false);
+    // The editor queue needs the Mac folder: still nowhere for a customer.
+    const c = { id: "c1", brandId: own.id, posting: { local: { key: "x/y" }, versions: [{ id: "a", n: 0, status: "pending", kind: "video", local: { file: "v1.mp4" } }], notes: [] } };
+    assert.equal(editorBlockHTML(c), "");
+    // Editing tips stay above the video until the first cut.
+    assert.equal(editTipsToo({ id: "c2", brandId: own.id }), true);
+    assert.equal(editTipsToo(c), false);
+
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    assert.equal(isWepekaDesk(), true);
+    assert.equal(canUsePosting(shared), true, "Wepeka's account: every brand it sees");
+    assert.equal(isClientView(quatro), false);
+    assert.equal(editTipsToo({ id: "c2", brandId: own.id }), false);
+  } finally {
+    auth.currentUser = was;
+  }
+});

@@ -438,6 +438,11 @@ body.pq-review-open{ overflow:hidden; }
 .pq-rv-chip span{ flex:1; min-width:0; overflow-wrap:anywhere; }
 .pq-rv-paused{ position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); display:none; place-items:center; width:64px; height:64px; border-radius:50%; background: rgba(0,0,0,.55); color:#fff; pointer-events:none; }
 .pq-rv-stage.is-paused .pq-rv-paused{ display:grid; }
+/* A cut from the account's own Drive, still coming into the tab. */
+.pq-rv-stage.is-loading::after{ content:""; position:absolute; top:50%; left:50%; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%; border:3px solid rgba(255,255,255,.25); border-top-color:#fff; animation:pq-rv-spin .8s linear infinite; }
+.pq-rv-stage.is-loading .pq-rv-paused{ display:none; }
+@keyframes pq-rv-spin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){ .pq-rv-stage.is-loading::after{ animation-duration:2.4s; } }
 .pq-rv-done{ margin:auto; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
 .pq-rv-done b{ font-family: var(--font-display); font-size:26px; }
 .pq-rv-done > span{ color: rgba(255,255,255,.7); font-size:14px; max-width:34ch; }

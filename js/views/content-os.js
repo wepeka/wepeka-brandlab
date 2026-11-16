@@ -9,7 +9,7 @@ import * as calendarView from "./calendar.js";
 import * as copyStudioView from "./copy-studio.js";
 import * as seriesView from "./series.js";
 import * as postingQueueView from "./posting-queue.js";
-import { canUsePosting, canSeePosting, isClientView, postingState, reviewQueue } from "../posting.js";
+import { canSeePosting, isClientView, postingState, reviewQueue } from "../posting.js";
 import { openContentEditor } from "./content-editor.js";
 import { t, getLang } from "../i18n.js";
 import { getMode } from "../mode.js";
@@ -39,11 +39,13 @@ const SUB_TABS = [
   { key: "list", labelKey: "contentOs.tab.list", color: "#FF9F3D", color2: "#FF4F4F", path: (id) => `#/brand/${id}/content/list` },
   { key: "copy", labelKey: "contentOs.tab.copy", color: "#FF6FAE", color2: "#B65CF0", path: (id) => `#/brand/${id}/content/copy` },
   { key: "series", labelKey: "contentOs.tab.series", color: "#F2C46D", color2: "#D9822B", path: (id) => `#/brand/${id}/content/series` },
-  // Antrean Video (js/views/posting-queue.js): Wepeka's own account only.
+  // Antrean Video (js/views/posting-queue.js): on the brands an account owns
+  // (2026-11-16, every account), and for a Wepeka brand's Klien.
   { key: "antrean", labelKey: "pq.title", color: "#FF5F57", color2: "#FF2E93", art: "video", path: (id) => `#/brand/${id}/content/antrean`, private: true },
 ];
-// Antrean Video: Wepeka's own account, and a brand's client (Kerja Tim "Klien").
-const tabsHere = (brandId) => SUB_TABS.filter((tab) => !tab.private || canUsePosting() || canSeePosting(brandId));
+// Antrean Video: the brand's owner (Wepeka's account: every brand), and a
+// Wepeka brand's client (Kerja Tim "Klien").
+const tabsHere = (brandId) => SUB_TABS.filter((tab) => !tab.private || canSeePosting(brandId));
 
 // The Konten tab bar. (The chat, which used to sit here as "Brainstorm",
 // has its own page now: js/views/chat.js.) Wrapped in .cos-tabs-wrap so a

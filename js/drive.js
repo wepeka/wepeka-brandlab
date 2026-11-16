@@ -158,6 +158,19 @@ export async function driveVideoURL(fileId, { onProgress, key = null } = {}) {
   return url;
 }
 
+// A small file (a cut's still for the Antrean gallery): its own, bigger
+// cache, so a gallery of stills never pushes the videos above out.
+const images = new Map();
+export function driveImageURL(fileId, { key = null } = {}) {
+  if (!images.has(fileId)) {
+    images.set(fileId, drive(`${API}/files/${encodeURIComponent(fileId)}?alt=media`, {}, key)
+      .then((res) => res.blob())
+      .then((blob) => URL.createObjectURL(blob))
+      .catch((e) => { images.delete(fileId); throw e; }));
+  }
+  return images.get(fileId);
+}
+
 export async function renameDriveFile(fileId, name) {
   await drive(`${API}/files/${encodeURIComponent(fileId)}?fields=id`, {
     method: "PATCH",

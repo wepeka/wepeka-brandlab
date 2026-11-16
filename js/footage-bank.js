@@ -12,7 +12,7 @@
 // top: the video pieces that are already at Syuting or Edit and still have no
 // footage, so nothing waits unnoticed. The Galeri tiles carry the clip count too.
 import { listContent, getBrand, getContent, localISODate } from "./store.js";
-import { canUsePosting, clientsOf, folderKeyOf, usesOutbox, outboxInfo, openPosting, copyFootageToMac } from "./posting.js";
+import { isWepekaDesk, clientsOf, folderKeyOf, usesOutbox, outboxInfo, openPosting, copyFootageToMac } from "./posting.js";
 import { macName, macProgress, macStateOf, onMacProgress, footageDriveURL } from "./footage-mac.js";
 import { outboxClipFile, FOOTAGE_DIR } from "./outbox.js";
 import { videoCode, codedPiece } from "./video-codes.js";
@@ -71,7 +71,7 @@ export const waitingForFootage = (contents) => contents.filter(needsFootage)
 // that already has footage).
 export function showsFootage(brandId) {
   const b = getBrand(brandId);
-  return canUsePosting() && !!b && (clientsOf(b).length > 0 || listContent(b.id).some(footageCount));
+  return isWepekaDesk() && !!b && (clientsOf(b).length > 0 || listContent(b.id).some(footageCount));
 }
 
 // ---- numbers on screen --------------------------------------------------------
@@ -456,7 +456,7 @@ function openClip(contentId, start) {
       if (file && (!f.size || file.size === f.size)) {
         src = URL.createObjectURL(file);
         own = true;
-      } else if (canUsePosting()) {
+      } else if (isWepekaDesk()) {
         const load = qs("[data-load] span", el);
         src = await footageDriveURL(c, f, (p) => { if (me === turn && load) load.textContent = t("pq.ft.fromDrive", { pct: Math.round(p * 100) }); });
       }

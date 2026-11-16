@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { seal, unseal, signState, readState, authUrl, finishConnect, runDrive, redirectUri, driveConfigured, DRIVE_SCOPE, clientBrandIds, refreshAccess } from "../api/_drive.js";
+import { seal, unseal, signState, readState, authUrl, finishConnect, runDrive, redirectUri, driveConfigured, DRIVE_SCOPE, clientBrandIds, refreshAccess, driveAllowed } from "../api/_drive.js";
 
 const env = { GOOGLE_OAUTH_CLIENT_ID: "cid", GOOGLE_OAUTH_CLIENT_SECRET: "secret", TOKEN_VAULT_KEY: crypto.randomBytes(32).toString("base64") };
 
@@ -113,4 +113,20 @@ test("a client's Drive: their brands say whose Drive gets the cuts, and forget i
   assert.equal(db.docs.get("brands/b1").clientDrive, null);
   const access = await refreshAccess(seal("1//r", env), { env, fetchImpl: googleSays({ access_token: "fresh", expires_in: 1200 }) });
   assert.deepEqual(access, { accessToken: "fresh", expiresIn: 1200 });
+});
+
+test("who may connect Drive: Wepeka, a Klien, or any account still working in Brandlab (2026-11-16)", async () => {
+  const { isAdminUid, isReadOnlyAccount } = await import("../api/_aiQuota.js");
+  const ok = (o) => driveAllowed({ action: "start", isAdminUid, isReadOnlyAccount, ...o });
+  const day = 86400000;
+  assert.equal(ok({ uid: "iSwfTtIQm6VkYoHFbI6wl7BzBF53" }), true, "Wepeka's own account");
+  assert.equal(ok({ uid: "u1", account: { status: "active", plan: "trial", trialEndsAt: Date.now() + day } }), true, "a running trial");
+  assert.equal(ok({ uid: "u1", account: { status: "active", plan: "pro", subscriptionExpiresAt: Date.now() + 30 * day } }), true, "a paid plan");
+  assert.equal(ok({ uid: "u1", account: { status: "active", plan: "trial", trialEndsAt: Date.now() - day } }), false, "an ended trial");
+  assert.equal(ok({ uid: "u1", account: { status: "readonly", plan: "pro" } }), false, "turned off");
+  assert.equal(ok({ uid: "u1", account: null }), false, "no account");
+  assert.equal(ok({ uid: "u1", account: null, membership: { brands: { q: { klien: true, ownerId: "iSwfTtIQm6VkYoHFbI6wl7BzBF53" } } } }), true, "a client Wepeka invited");
+  // Their own cuts still play, and they can leave, whatever the plan.
+  assert.equal(driveAllowed({ action: "token", uid: "u1", account: null, isAdminUid, isReadOnlyAccount }), true);
+  assert.equal(driveAllowed({ action: "disconnect", uid: "u1", account: null, isAdminUid, isReadOnlyAccount }), true);
 });

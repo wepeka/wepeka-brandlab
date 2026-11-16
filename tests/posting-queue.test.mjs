@@ -99,3 +99,34 @@ test("Antrean: each tile says whether its newest cut went to the client", async 
     auth.currentUser = was;
   }
 });
+
+// Every account on its own brands (owner, 2026-11-16): the same gallery,
+// Drive in the header, no Mac folder, clients, footage or "Dicek klien".
+test("Antrean: a customer's own brand gets the gallery with codes and Drive, without Wepeka's desk", async () => {
+  const store = await import("../js/store.js");
+  const { auth } = await import("../js/firebase.js");
+  const { render } = await import("../js/views/posting-queue.js");
+  await store.initStore("u-customer-antrean");
+  const day = (n) => store.localISODate(new Date(Date.now() + n * DAY));
+  const b = store.createBrand({ name: "Kopi Pagi" });
+  store.createContent(b.id, { title: "Video jendela", status: "editing", scheduleDate: day(2), platform: "Instagram", format: "Reels", posting: { type: "reels", notes: [], versions: [{ id: "v1", n: 0, status: "pending", kind: "video", drive: { id: "d1" } }] } });
+  store.createContent(b.id, { title: "Belum ada video", status: "draft", scheduleDate: day(3), platform: "Instagram", format: "Reels" });
+  const was = auth.currentUser;
+  try {
+    auth.currentUser = { uid: "u-customer-antrean" };
+    const root = { innerHTML: "", isConnected: true, querySelector: () => null, querySelectorAll: () => [], classList: { contains: () => false } };
+    render(root, { brandId: b.id })?.();
+    const html = root.innerHTML;
+    assert.match(html, /Video jendela/);
+    assert.match(html, /Belum ada video/);
+    assert.match(html, /class="pq-g-code"[^>]*>KP-\d+</, "each piece gets its code");
+    assert.match(html, /Upload videonya, cek dan beri catatan revisi/, "the lead speaks to them, not to the editor");
+    assert.doesNotMatch(html, /id="pq-client"/, "no Klien button");
+    assert.doesNotMatch(html, /data-status="client"/, "no 'Dicek klien' chip");
+    assert.doesNotMatch(html, /data-view="footage"/, "no footage bank");
+    assert.match(html, /id="pq-review"/, "review mode is there");
+    assert.match(html, /Mulai review \(1\)/);
+  } finally {
+    auth.currentUser = was;
+  }
+});

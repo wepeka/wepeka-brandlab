@@ -1,11 +1,10 @@
-// /api/drive/{start|token|disconnect|callback} — see api/_drive.js. Video &
-// posting is private to Wepeka's own account for now, so every signed-in
-// action checks the admin uid too (the same list as js/account.js) — or a
-// client Wepeka invited as "Klien" on one of its brands (2026-11-09), who
-// connects their own Drive to keep the videos sent to them.
+// /api/drive/{start|token|disconnect|callback} — see api/_drive.js. Every
+// Brandlab account keeps its cuts in its own Drive (2026-11-16); who may
+// connect is api/_drive.js driveAllowed: an account still working in
+// Brandlab, Wepeka's own, or a client Wepeka invited as "Klien".
 import { adminDb, requireAuth } from "../_firebaseAdmin.js";
-import { isAdminUid } from "../_aiQuota.js";
-import { driveConfigured, finishConnect, runDrive, redirectUri, clientBrandIds } from "../_drive.js";
+import { isAdminUid, isReadOnlyAccount } from "../_aiQuota.js";
+import { driveConfigured, finishConnect, runDrive, redirectUri, driveAllowed } from "../_drive.js";
 
 export default async function handler(req, res) {
   const action = String(req.query?.action || "");
@@ -35,9 +34,10 @@ export default async function handler(req, res) {
     return res.status(err.status || 401).json({ error: "auth" });
   }
   const db = adminDb();
-  if (!isAdminUid(user.uid)) {
-    const m = await db.doc(`memberships/${user.uid}`).get().catch(() => null);
-    if (!clientBrandIds(m?.exists ? m.data() : null, isAdminUid).length) return res.status(403).json({ error: "private" });
+  if (action === "start" && !isAdminUid(user.uid)) {
+    const [a, m] = await Promise.all([db.doc(`accounts/${user.uid}`).get(), db.doc(`memberships/${user.uid}`).get()].map((p) => p.catch(() => null)));
+    const allowed = driveAllowed({ action, uid: user.uid, account: a?.exists ? a.data() : null, membership: m?.exists ? m.data() : null, isAdminUid, isReadOnlyAccount });
+    if (!allowed) return res.status(403).json({ error: "inactive" });
   }
 
   try {

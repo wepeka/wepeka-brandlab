@@ -4,7 +4,7 @@
 // of it is KP-12B, KP-12C … The number is saved on the piece once (videoNo,
 // quietly — it isn't an edit) and never handed out twice in a brand; the
 // letters follow the brand's name. Private, like the rest of Video & posting:
-// only its admin-gated callers run ensureCodes().
+// its callers say which brands (js/posting.js ensureVideoCodes).
 import { listBrands, listContent, setContentQuiet } from "./store.js";
 
 // "KP-12", "KP-12B", "WIN-3" at the start of a folder name or a sentence.
@@ -87,8 +87,10 @@ export function nextTrialLetter(parentId, pieces) {
 }
 
 // ---- runtime ------------------------------------------------------------------
-export function ensureCodes() {
-  for (const b of listBrands()) {
+// `keep` picks the brands to number (js/posting.js: the ones this account
+// works on); by default every brand it sees.
+export function ensureCodes(keep = () => true) {
+  for (const b of listBrands().filter(keep)) {
     const all = listContent(b.id, { includeArchived: true, includeDeleted: true });
     planCodes(listContent(b.id).filter(codedPiece), all).forEach(({ id, videoNo }) => setContentQuiet(id, { videoNo }));
   }

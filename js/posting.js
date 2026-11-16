@@ -2,12 +2,14 @@
 // carry its video versions, the review decision and its Instagram slot, all
 // in one drawer. Owner's ask: "di kalender brandlab di click bisa langsung
 // upload, ada tanda mana yang sudah ter-upload", "UI se-simpel dan sejelas
-// mungkin", and only his own account may use it for now. So every hook in
-// js/views/calendar.js asks canUsePosting() first and adds nothing otherwise.
+// mungkin". First only his own account; since 2026-11-16 every account on
+// the brands it owns (canUsePosting), Drive only — the Mac folder, posting
+// from Brandlab, clients and trials stay his (isWepekaDesk). Every hook in
+// js/views/calendar.js asks canUsePosting(brand) first and adds nothing otherwise.
 //
 // Stored on the content doc itself (no second calendar, no second list):
 //   posting = {
-//     versions: [{ id, n, status: "pending"|"revision"|"approved", at, by, drive: { id, link, folderId, ext }, name, size, w, h, dur }],
+//     versions: [{ id, n, status: "pending"|"revision"|"approved", at, by, drive: { id, link, folderId, ext, poster }, name, size, w, h, dur }],
 //     finalId,                 // the approved version that gets posted
 //     notes: [{ id, versionId, t, text, at, done }],
 //     time: "19:00",           // WIB, the day is the piece's scheduleDate
@@ -24,7 +26,7 @@
 // fetch (.claude/social-hub/ARSITEKTUR.md).
 import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole, canEditBrand } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
-import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, renameDriveFile } from "./drive.js";
+import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, driveImageURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
 import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex, noteForEditor, writeEditorQueue } from "./outbox-sync.js";
 import { ensureCodes, videoCode, codedPiece, trialFields, nextTrialLetter, brandCodePrefix } from "./video-codes.js";
@@ -38,7 +40,25 @@ import { confirmDialog } from "./modals.js";
 import { go } from "./nav-context.js";
 import { t, getLang } from "./i18n.js";
 
-export const canUsePosting = () => isAdmin(currentUid());
+const brandOfC = (x) => (typeof x === "string" ? getBrand(x) : x?.brandId ? getBrand(x.brandId) : x);
+
+// Wepeka's own account: the whole desk — the Mac folder and its editor,
+// posting to Instagram/Facebook from Brandlab, clients and their footage,
+// trial cuts. Everything below that is only for it asks this.
+export const isWepekaDesk = () => isAdmin(currentUid());
+
+// Video & posting for every Brandlab account (owner, 2026-11-16: "aktivasi
+// ke semua orang user brandlab biasa"): the Antrean Video and each piece's
+// video page on the brands this account OWNS — cuts kept in its own Google
+// Drive, every version, notes by the second, approve, the video codes,
+// "Sudah tayang". Wepeka's account keeps it on every brand it sees. A brand
+// shared through Kerja Tim stays its owner's (a teammate's Drive can't play
+// the owner's files), and Wepeka's brands keep their Klien view below.
+export function canUsePosting(x) {
+  if (isWepekaDesk()) return true;
+  const b = brandOfC(x);
+  return !!b && !isAdmin(b.ownerId) && brandRole(b) === "owner";
+}
 
 // The brand's client (owner, 2026-11-09: "aku mau quatro buka lewat
 // brandlab"): someone Wepeka invited as "Klien" in Kerja Tim sees the same
@@ -50,12 +70,17 @@ export const canUsePosting = () => isAdmin(currentUid());
 // bedanya editor bisa edit brand dna dll"): watch, note, approve, download,
 // send footage — and, unlike the client, still edits the brand everywhere
 // else. A paused seat reads like a viewer (store.js brandRole), so not that.
-const brandOfC = (x) => (typeof x === "string" ? getBrand(x) : x?.brandId ? getBrand(x.brandId) : x);
 export function isClientView(x) {
   const b = brandOfC(x);
-  return !!b && !canUsePosting() && isAdmin(b.ownerId) && (isClientMember(b) || brandRole(b) === "editor");
+  return !!b && !isWepekaDesk() && isAdmin(b.ownerId) && (isClientMember(b) || brandRole(b) === "editor");
 }
-export const canSeePosting = (x) => canUsePosting() || isClientView(x);
+export const canSeePosting = (x) => canUsePosting(x) || isClientView(x);
+// Video codes (KP-12) on the brands this account works on here — never
+// written into somebody else's brand it only sees.
+export const ensureVideoCodes = () => ensureCodes((b) => canUsePosting(b));
+// Creator's Edit step: the editing-app tips stay above the video for
+// everyone but Wepeka's account until the piece has its first cut.
+export const editTipsToo = (c) => !isWepekaDesk() && !isClientView(c) && !postingOf(c).versions.length;
 // The client who only reads ("Klien"): no "Sudah syuting / Sudah edit"
 // buttons; an editor and a "Klien (bisa edit)" keep them.
 export const isClientOnly = (x) => isClientView(x) && !canEditBrand(brandOfC(x));
@@ -101,14 +126,14 @@ export function clientDriveGap(x) {
 // folder goes up through the server (js/ig-post.js → api/_igPost.js), at
 // the hour or right away. Anything else still books the slot and is marked
 // posted by hand.
-const autoPost = (c) => canUsePosting() && !!postingOf(c).local?.key;
+const autoPost = (c) => isWepekaDesk() && !!postingOf(c).local?.key;
 
 // Wepeka's own account works from a folder on the Mac (js/outbox.js) instead
 // of Google Drive (owner, 2026-11-01): Claude edits there, the results flow
 // in by themselves (js/outbox-sync.js), and every decision is written back
 // to the folder for Claude to read. Drive stays the way for everyone else
 // once Video & posting opens up.
-export const usesOutbox = () => canUsePosting() && outboxSupported();
+export const usesOutbox = () => isWepekaDesk() && outboxSupported();
 const OUT = { checked: false, connected: false, needsPermission: false, name: "" };
 let outboxCheck = null;
 export function ensureOutbox(force = false) {
@@ -240,7 +265,7 @@ let indexWatch = null;
 function writeIndexSoon() {
   clearTimeout(indexTimer);
   indexTimer = setTimeout(() => {
-    if (!OUT.connected || !canUsePosting()) return;
+    if (!OUT.connected || !isWepekaDesk()) return;
     writeBackChanged();
     writeEditorQueue();
     copyFootageSoon();
@@ -271,7 +296,7 @@ const withFootage = () => listBrands().flatMap((b) => listContent(b.id).filter(c
 // a folder not connected yet opens Chrome's prompt.
 export async function copyFootageToMac(contentId) {
   const c = getContent(contentId);
-  if (!c?.footage?.files?.length || !canUsePosting()) return false;
+  if (!c?.footage?.files?.length || !isWepekaDesk()) return false;
   if (!OUT.connected) await linkOutbox();
   if (!OUT.connected) return false;
   askedHere.add(c.id);
@@ -282,14 +307,14 @@ export async function copyFootageToMac(contentId) {
   return true;
 }
 function copyFootageSoon() {
-  if (!OUT.connected || !canUsePosting() || !withFootage().length) return;
+  if (!OUT.connected || !isWepekaDesk() || !withFootage().length) return;
   syncFootageToMac(withFootage, {
     keyOf: folderKeyOf,
     remember: (c, key) => { if (!c.posting?.local?.key && c.footageMac !== key) setContentQuiet(c.id, { footageMac: key }); },
   }).catch((e) => console.warn("[posting] footage to Mac", e));
 }
 function watchIndex() {
-  if (!OUT.connected || !canUsePosting()) return;
+  if (!OUT.connected || !isWepekaDesk()) return;
   writeIndexSoon();
   if (!indexWatch) indexWatch = onStoreChange(writeIndexSoon);
 }
@@ -299,8 +324,8 @@ function watchIndex() {
 export function createTrial(contentId) {
   const base = getContent(contentId);
   const parent = base?.trialOf ? getContent(base.trialOf) || base : base;
-  if (!parent || !canUsePosting()) return null;
-  ensureCodes();
+  if (!parent || !isWepekaDesk()) return null;
+  ensureVideoCodes();
   const letter = nextTrialLetter(parent.id, listContent(parent.brandId, { includeArchived: true, includeDeleted: true }));
   if (!letter) return null;
   const c = createContent(parent.brandId, { ...trialFields(parent, letter, parent.title || t("common.untitled")), posting: { versions: [], notes: [], type: "reels", time: postingOf(parent).time || "", trialReel: true } });
@@ -336,7 +361,7 @@ async function goConnect(contentId) {
   try {
     await connectDrive(location.hash);
   } catch (e) {
-    toast(e.code === "setup" ? t("post.drive.setup") : t("post.toast.uploadFailed"), "error");
+    toast(e.code === "setup" ? t("post.drive.setup") : e.code === "inactive" ? t("post.drive.inactive") : t("post.toast.uploadFailed"), "error");
   }
 }
 // The signed-in person's own Drive (a client keeps the cuts sent to them there).
@@ -432,7 +457,7 @@ export function clientPosterOf(c) {
 }
 
 // Only Instagram pieces, and not old posts that went out before this existed.
-const tracked = (c) => canUsePosting() && (!c.platform || /instagram/i.test(c.platform)) && !(c.status === "published" && !postingOf(c).versions.length);
+const tracked = (c) => canUsePosting(c) && (!c.platform || /instagram/i.test(c.platform)) && !(c.status === "published" && !postingOf(c).versions.length);
 
 // Calendar card (week view, a phone's picked day): one line under the step.
 export function postingBadgeHTML(c) {
@@ -465,7 +490,7 @@ export const stateLabelOf = (c) => stateLabel(c);
 // until the piece is scheduled or posted.
 const sentToClient = (p, v) => !!v && (p.client?.versionId === v.id || !!p.previews?.[v.id]);
 export function clientSendMark(c) {
-  if (!canUsePosting() || !c || isClientView(c)) return null;
+  if (!isWepekaDesk() || !c || isClientView(c)) return null;
   const p = postingOf(c);
   const last = latestOf(p);
   if (!last || (!p.client && !clientsOf(getBrand(c.brandId)).length)) return null;
@@ -492,7 +517,7 @@ const EDITOR_COLOR = { pending: "#FF2E93", delivered: "#3B9BFF" };
 // The chip for the drawer and the gallery tile, in place of the state:
 // waiting at the editor, then "Revisi N masuk" until that cut is decided.
 export function editorChip(c) {
-  if (!canUsePosting()) return null;
+  if (!isWepekaDesk()) return null;
   const p = postingOf(c);
   const ed = p.editor;
   if (ed?.status === "requested") return { key: "pending", label: t("post.editor.pending"), color: EDITOR_COLOR.pending, icon: "clock" };
@@ -509,7 +534,7 @@ const openNotesOf = (p, v) => (p.notes || []).filter((n) => n.versionId === v.id
 // open notes ticked), or — once sent — where it stands and "Batalkan".
 // Only for cuts in the Mac folder, which is where Claude delivers.
 export function editorBlockHTML(c, ui = {}) {
-  if (!canUsePosting() || !c) return "";
+  if (!isWepekaDesk() || !c) return "";
   const p = postingOf(c);
   const last = latestOf(p);
   if (!p.local?.key || !last?.local || postingState(c) === "published") return "";
@@ -540,7 +565,7 @@ export function editorBlockHTML(c, ui = {}) {
 function sendToEditor(contentId, { message, noteIds }) {
   const p = postingOf(getContent(contentId));
   const last = latestOf(p);
-  if (!canUsePosting() || !p.local?.key || !last?.local) return false;
+  if (!isWepekaDesk() || !p.local?.key || !last?.local) return false;
   const editor = { status: "requested", requestedAt: new Date().toISOString(), version: editorVersionOf(last), message, noteIds };
   // Asking for a new cut is asking for changes: an unchecked cut stops waiting in "Perlu dicek".
   const versions = p.versions.map((x) => (x.id === last.id && x.status === "pending" ? { ...x, status: "revision" } : x));
@@ -552,7 +577,7 @@ function sendToEditor(contentId, { message, noteIds }) {
 
 function cancelEditor(contentId) {
   const p = postingOf(getContent(contentId));
-  if (!canUsePosting() || p.editor?.status !== "requested") return;
+  if (!isWepekaDesk() || p.editor?.status !== "requested") return;
   updateContent(contentId, { posting: { ...p, editor: { ...p.editor, status: "cancelled", cancelledAt: new Date().toISOString() } } });
   writeEditorQueue();
   toast(t("post.editor.cancelled"));
@@ -562,7 +587,7 @@ function cancelEditor(contentId) {
 // the same queue as Send to editor, answered by a thumbnail-N.jpg in the
 // folder, which becomes the chosen cover (js/outbox-sync.js planSync).
 export function thumbBlockHTML(c, ui = {}) {
-  if (!canUsePosting() || !c) return "";
+  if (!isWepekaDesk() || !c) return "";
   const p = postingOf(c);
   const last = latestOf(p);
   if (!p.local?.key || last?.kind !== "video" || postingState(c) === "published") return "";
@@ -586,7 +611,7 @@ export function thumbBlockHTML(c, ui = {}) {
 function askThumbnail(contentId, { message, at, vid }) {
   const p = postingOf(getContent(contentId));
   const last = latestOf(p);
-  if (!canUsePosting() || !p.local?.key || !last?.local) return false;
+  if (!isWepekaDesk() || !p.local?.key || !last?.local) return false;
   // The frame is from the cut on screen; without one, the newest.
   const from = p.versions.find((x) => x.id === vid && x.local && x.kind === "video") || last;
   const thumb = { status: "requested", requestedAt: new Date().toISOString(), version: editorVersionOf(from), at, message, had: [...(p.covers || [])] };
@@ -598,7 +623,7 @@ function askThumbnail(contentId, { message, at, vid }) {
 
 function cancelThumbnail(contentId) {
   const p = postingOf(getContent(contentId));
-  if (!canUsePosting() || p.thumb?.status !== "requested") return;
+  if (!isWepekaDesk() || p.thumb?.status !== "requested") return;
   updateContent(contentId, { posting: { ...p, thumb: { ...p.thumb, status: "cancelled", cancelledAt: new Date().toISOString() } } });
   writeEditorQueue();
   toast(t("post.thumb.cancelled"));
@@ -634,18 +659,18 @@ function keepClientFinal(contentId) {
 // Creator's Edit step (owner, 2026-11-02: "di Creator fase edit diarahkan
 // ke sana juga, biar gak bingung"): one card for this piece's video — its
 // code to tell Claude, where it stands, how many cuts — that opens the same
-// drawer as the Kalender and Antrean Video. Admin only, like the rest.
+// drawer as the Kalender and Antrean Video. Wherever canSeePosting says.
 export function editStepVideoHTML(c) {
   if (!c || !canSeePosting(c)) return "";
   const client = isClientView(c);
-  if (!client) ensureCodes();
+  if (!client) ensureVideoCodes();
   const fresh = getContent(c.id) || c;
   const key = postingState(fresh);
   const p = client ? clientPosting(postingOf(fresh)) : postingOf(fresh);
   const code = videoCode(fresh);
   const last = latestOf(p);
   const line = client ? (last ? t("post.edit.cuts", { n: p.versions.length, label: escapeHtml(versionLabel(last)) }) : t("post.cl.emptyTitle")) : key === "none"
-    ? t("post.edit.none", { code: escapeHtml(code || "") })
+    ? t(isWepekaDesk() ? "post.edit.none" : "post.edit.noneOwn", { code: escapeHtml(code || "") })
     : [t("post.edit.cuts", { n: p.versions.length, label: escapeHtml(versionLabel(last)) }), last?.changeNote ? escapeHtml(last.changeNote) : ""].filter(Boolean).join(" · ");
   return `<div class="pst-edit" style="--pst:${STATE_COLOR[key]}">
       <span class="pst-edit-img" data-pst-edit-thumb="${escapeHtml(fresh.id)}">${icon(key === "none" ? "upload" : "play", { size: 20 })}</span>
@@ -658,37 +683,38 @@ export function editStepVideoHTML(c) {
     </div>`;
 }
 export function wireEditStepVideo(root, { onChange } = {}) {
-  qsa("[data-pst-edit-thumb]", root).forEach((el) => {
-    const c = getContent(el.dataset.pstEditThumb);
-    const poster = c && isClientView(c) && !clientDriveGap(c) ? clientPosterOf(c) : "";
-    if (poster) clientVideoURL(c, poster).then((src) => { if (el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
-  });
-  if (!canUsePosting()) {
-    qsa("[data-pst-edit-open]", root).forEach((b) => b.addEventListener("click", () => openPosting({ contentId: b.dataset.pstEditOpen, onChange })));
-    return;
-  }
   qsa("[data-pst-edit-open]", root).forEach((b) => b.addEventListener("click", () => openPosting({ contentId: b.dataset.pstEditOpen, onChange })));
   qsa(".pst-edit [data-copy-code]", root).forEach((b) => b.addEventListener("click", () => copyCode(b.dataset.copyCode)));
   qsa("[data-pst-edit-thumb]", root).forEach((el) => {
     const c = getContent(el.dataset.pstEditThumb);
-    const key = c?.posting?.local?.key;
+    if (!c) return;
+    const show = (src) => { if (src && el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } };
+    // The client: the cover of the cut sent to them, from their Drive.
+    if (isClientView(c)) {
+      const poster = !clientDriveGap(c) ? clientPosterOf(c) : "";
+      if (poster) clientVideoURL(c, poster).then(show).catch(() => {});
+      return;
+    }
+    const key = c.posting?.local?.key;
     const last = latestOf(postingOf(c));
     if (key && last?.local && OUT.connected) {
-      outboxThumb(key, last, c.posting.cover).then((src) => { if (src && el.isConnected) { el.style.backgroundImage = `url("${src}")`; el.classList.add("has-img"); } }).catch(() => {});
+      outboxThumb(key, last, c.posting.cover).then(show).catch(() => {});
     } else if (usesOutbox() && key && !OUT.checked) {
       ensureOutbox().then(() => { if (OUT.connected && el.isConnected) wireEditStepVideo(root, { onChange }); });
+    } else if (drivePosterOf(c)) {
+      // Everyone else: the still saved next to the cut in their own Drive.
+      driveImageURL(drivePosterOf(c)).then(show).catch(() => {});
     }
   });
 }
 
 // The row the calendar adds to a day's menu.
-export const uploadMenuItemHTML = () => (canUsePosting() ? `<button data-posting-upload>${icon("upload", { size: 15 })}${t("post.menu.upload")}</button>` : "");
+export const uploadMenuItemHTML = (brandId) => (canUsePosting(brandId) ? `<button data-posting-upload>${icon("upload", { size: 15 })}${t("post.menu.upload")}</button>` : "");
 
 // ---------------------------------------------------------------- review
 
 export function reviewQueue() {
-  if (!canUsePosting()) return [];
-  return listBrands().flatMap((b) => listContent(b.id).filter((c) => postingState(c) === "review").map((c) => ({ brand: b, c })));
+  return listBrands().filter((b) => canUsePosting(b)).flatMap((b) => listContent(b.id).filter((c) => postingState(c) === "review").map((c) => ({ brand: b, c })));
 }
 
 export function reviewButtonHTML() {
@@ -701,8 +727,8 @@ export function reviewButtonHTML() {
 let resumed = false;
 let lastSync = 0;
 export function wirePosting(root, { brandId, onChange } = {}) {
-  if (!canUsePosting()) return;
-  ensureCodes();
+  if (!canUsePosting(brandId)) return;
+  ensureVideoCodes();
   if (usesOutbox() && Date.now() - lastSync > 30_000) {
     lastSync = Date.now();
     ensureOutbox().then((o) => { if (o.connected) syncOutbox().catch(() => {}); });
@@ -755,16 +781,36 @@ function pickFile(onPick) {
 
 const isVideoFile = (f) => !!f && (/^video\//.test(f.type) || /\.(mp4|mov|m4v|webm)$/i.test(f.name || ""));
 
-// What the browser can read about the file before anything is sent.
-function probe(file) {
+// What the browser can read about the file before anything is sent — and,
+// when asked, a small still of it (a second in) for the Antrean gallery.
+// Never holds the upload up: a file the browser can't draw gives no still.
+function probe(file, { still = false } = {}) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const v = document.createElement("video");
-    const done = (meta) => { URL.revokeObjectURL(url); resolve(meta); };
-    v.preload = "metadata";
+    let meta = { w: 0, h: 0, dur: 0 };
+    let over = false;
+    const done = (shot = null) => { if (over) return; over = true; clearTimeout(timer); URL.revokeObjectURL(url); resolve(still ? { ...meta, still: shot } : meta); };
+    const timer = setTimeout(() => done(), 6000);
+    v.preload = still ? "auto" : "metadata";
     v.muted = true;
-    v.onloadedmetadata = () => done({ w: v.videoWidth, h: v.videoHeight, dur: v.duration });
-    v.onerror = () => done({ w: 0, h: 0, dur: 0 });
+    v.playsInline = true;
+    v.onloadedmetadata = () => {
+      meta = { w: v.videoWidth, h: v.videoHeight, dur: v.duration };
+      if (!still || !v.videoWidth) { done(); return; }
+      v.currentTime = Math.min(1, (v.duration || 0) / 3);
+    };
+    v.onseeked = () => {
+      try {
+        const w = 360, h = Math.round((w * v.videoHeight) / v.videoWidth);
+        const cv = document.createElement("canvas");
+        cv.width = w;
+        cv.height = h;
+        cv.getContext("2d").drawImage(v, 0, 0, w, h);
+        cv.toBlob((b) => done(b), "image/jpeg", 0.75);
+      } catch { done(); }
+    };
+    v.onerror = () => done();
     v.src = url;
   });
 }
@@ -786,11 +832,24 @@ export function driveFolderPath(brand, c, lang = getLang()) {
 export const driveFileName = (v, ext = "mp4", final = false) => `${versionLabel(v)}${final ? " (FINAL)" : ""}.${ext}`;
 
 async function storeVideo(file, { content, n, onProgress }) {
-  const meta = await probe(file);
+  const { still, ...meta } = await probe(file, { still: true });
   const ext = extOf(file.name);
   const folderId = await ensureFolders(driveFolderPath(getBrand(content.brandId), content));
   const up = await uploadToDrive(file, { name: driveFileName({ n }, ext), folderId, onProgress });
-  return { ...meta, drive: { id: up.id, link: up.webViewLink || "", folderId, ext }, name: file.name, size: file.size, type: file.type };
+  // Its still, next to it ("Revisi 1 · cover.jpg"), for the gallery tile.
+  let poster = "";
+  if (still) {
+    try { poster = (await uploadToDrive(still, { name: `${versionLabel({ n })} · cover.jpg`, folderId })).id || ""; } catch (e) { console.warn("[posting] still not saved", e); }
+  }
+  return { ...meta, drive: { id: up.id, link: up.webViewLink || "", folderId, ext, ...(poster ? { poster } : {}) }, name: file.name, size: file.size, type: file.type };
+}
+
+// The still a piece shows in the gallery, from its own Drive: the approved
+// cut's, else the newest one's.
+export function drivePosterOf(c) {
+  const p = postingOf(c);
+  const v = p.versions.find((x) => x.id === p.finalId) || latestOf(p);
+  return v && !v.local ? v.drive?.poster || "" : "";
 }
 
 // Keeps "(FINAL)" on the one file that gets posted. Best effort: a name
@@ -912,7 +971,7 @@ async function addVersion(contentId, file, onChange) {
 // "Upload video" on a day: a new piece named after the file, on that day.
 // The drawer opens right away so the upload's progress is in view.
 export function uploadForDate({ brandId, dateISO, file, onChange }) {
-  if (!canUsePosting()) return;
+  if (!canUsePosting(brandId)) return;
   if (dateISO < localISODate()) { toast(t("post.toast.past"), "error"); return; }
   const go = async (f) => {
     const problem = fileProblem(f);
@@ -933,7 +992,7 @@ export function uploadForDate({ brandId, dateISO, file, onChange }) {
 
 // A video file dragged from the desktop onto a calendar day.
 export function handleFileDrop(e, { brandId, dateISO, onChange }) {
-  if (!canUsePosting()) return false;
+  if (!canUsePosting(brandId)) return false;
   const file = [...(e.dataTransfer?.files || [])].find(isVideoFile);
   if (!file) return false;
   e.preventDefault();
@@ -992,7 +1051,7 @@ export function openPosting({ contentId, step = "edit", from = "" } = {}) {
 }
 
 // The slot the piece's page leaves for it: part "video" (Edit) or "post"
-// (Upload). Only Wepeka's own account gets one.
+// (Upload). Wherever canSeePosting says.
 export const postingMountHTML = (c, part = "video") => (c && canSeePosting(c) ? `<div class="pst pst-embed" data-pst-mount="${escapeHtml(c.id)}" data-part="${part}"></div>` : "");
 export function wirePostingMounts(root, { onChange } = {}) {
   qsa("[data-pst-mount]:not(.is-mounted)", root).forEach((el) => {
@@ -1097,7 +1156,7 @@ function paint(root, contentId, ui, repaint) {
       ${ed ? `<span class="pst-badge is-editor" style="--pst:${ed.color}">${icon(ed.icon, { size: 11 })}${escapeHtml(ed.label)}</span>` : `<span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span>`}
       ${p.time ? `<span class="pst-embed-when">${icon("clock", { size: 12 })}${escapeHtml(p.time)}</span>` : ""}
     </div>
-    ${trialsHTML(c)}
+    ${isWepekaDesk() ? trialsHTML(c) : ""}
 
     <div class="pst-grid ${v ? "has-video" : ""}">
     <section class="pst-block pst-video" id="pst-drop">
@@ -1129,7 +1188,7 @@ function paint(root, contentId, ui, repaint) {
       ${extrasHTML(p, v, c, ui)}
       ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
     </section>` : ""}
-    ${v ? clientHTML(c, p, v, key) : ""}
+    ${v && isWepekaDesk() ? clientHTML(c, p, v, key) : ""}
     </div>
     </div>
   `;
@@ -1346,7 +1405,7 @@ function extrasHTML(p, v, c, ui = {}) {
     <div class="pst-types" role="group" aria-label="${escapeHtml(t("post.type.label"))}">
       ${TYPES.map((k) => `<button type="button" class="pst-type ${(p.type || "reels") === k ? "is-on" : ""}" data-type="${k}" aria-pressed="${(p.type || "reels") === k}">${icon(k === "carousel" ? "layers" : k === "foto" ? "image" : k === "story" ? "clock" : "play", { size: 13 })}${t(`post.type.${k}`)}</button>`).join("")}
     </div>
-    ${(p.type || "reels") === "reels" ? `<label class="pst-switch"><input type="checkbox" id="pst-trialreel" ${p.trialReel ? "checked" : ""}><span><b>${t("post.trialReel.label")}</b><small>${t("post.trialReel.hint")}</small></span></label>` : ""}
+    ${(p.type || "reels") === "reels" && isWepekaDesk() ? `<label class="pst-switch"><input type="checkbox" id="pst-trialreel" ${p.trialReel ? "checked" : ""}><span><b>${t("post.trialReel.label")}</b><small>${t("post.trialReel.hint")}</small></span></label>` : ""}
     ${showCovers ? `<div class="pst-covers"><span class="pst-sub">${t("post.cover.label")}</span><div class="pst-cover-row">${covers.map((f) => `<button type="button" class="pst-cover ${p.cover === f ? "is-on" : ""}" data-cover="${escapeHtml(f)}" aria-pressed="${p.cover === f}" title="${escapeHtml(f)}"><img data-local-img="${escapeHtml(f)}" alt="">${fromEditor(f)}</button>`).join("")}
       ${canAdd && v?.kind === "video" ? `<button type="button" class="pst-cover is-add" id="pst-cover-frame">${icon("image", { size: 16 })}<span>${t("post.cover.frame")}</span></button>` : ""}
       ${canAdd ? `<button type="button" class="pst-cover is-add" id="pst-cover-file">${icon("upload", { size: 16 })}<span>${t("post.cover.file")}</span></button>` : ""}
@@ -1664,7 +1723,10 @@ function fbHTML(c, p, key) {
 
 function postHTML(c, p, key, handle, posting = null) {
   const AUTO_POST = autoPost(c);
-  const acct = `<div class="pst-acct">${icon("instagram", { size: 18 })}<b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(getBrand(c.brandId)?.name || "")}</b><span class="pst-pill ${handle ? "is-on" : ""}">${handle ? t("post.ig.connected") : t("post.ig.notConnected")}</span></div>`;
+  // Everyone but Wepeka's account posts by hand (Instagram from Brandlab is
+  // its own for now): no "connected" pill, nothing locked behind it.
+  const byHandOnly = !isWepekaDesk();
+  const acct = `<div class="pst-acct">${icon("instagram", { size: 18 })}<b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(getBrand(c.brandId)?.name || "")}</b>${byHandOnly ? "" : `<span class="pst-pill ${handle ? "is-on" : ""}">${handle ? t("post.ig.connected") : t("post.ig.notConnected")}</span>`}</div>`;
   if (posting) {
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-progress" role="status"><div class="pst-progress-row">${icon(posting.fb ? "facebook" : "instagram", { size: 14 })}<span>${t(posting.fb ? "post.fb.uploading" : "post.ig.uploading")}</span><b id="pst-ig-pct">${Math.round(posting.pct * 100)}%</b></div><div class="pst-progress-bar"><i id="pst-ig-fill" style="width:${Math.round(posting.pct * 100)}%"></i></div></div>
@@ -1711,8 +1773,8 @@ function postHTML(c, p, key, handle, posting = null) {
   // before it was approved): "Sudah tayang" is always one click away
   // (owner, 2026-11-13).
   const byHand = `<div class="pst-decide pst-byhand"><button type="button" class="btn btn-secondary" id="pst-posted">${icon("check", { size: 15 })}${t("post.ig.alreadyPosted")}</button><small>${t("post.ig.byHandHint")}</small></div>`;
-  if (key !== "ready" || !handle) {
-    return `<section class="pst-block pst-post is-locked">${acct}${when}${caption}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p>${byHand}</section>`;
+  if (key !== "ready" || (!handle && !byHandOnly)) {
+    return `<section class="pst-block pst-post is-locked">${acct}${when}${caption}<p class="pst-hint">${icon("lock", { size: 13 })}${!handle && !byHandOnly ? t("post.ig.connectHint") : t("post.ig.needApproval")}</p>${byHand}</section>`;
   }
   // Facebook too (owner, 2026-11-07): one switch, remembered for the brand.
   const brand = getBrand(c.brandId);

@@ -35,7 +35,7 @@ import { openHookTemplatePicker } from "../hook-template-picker.js";
 import { createArtSVG } from "../create-art.js";
 import { appIconSVG } from "../app-icons.js";
 import { STEP_KEYS, STEP_COLOR, STEP_COLOR2, STATUS_STEP } from "../stage-colors.js";
-import { canSeePosting, isClientOnly, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
+import { canSeePosting, isClientOnly, editTipsToo, editStepVideoHTML, postingMountHTML, wirePostingMounts } from "../posting.js";
 import { canSeePlan, shootPlanHTML, wireShootPlan } from "./rencana.js";
 import { footageBoxHTML, wireFootage } from "../footage.js";
 
@@ -1965,7 +1965,7 @@ function editingPanel(c) {
     <div class="card glass-card">
       ${phaseHead(c)}
       <div class="page-eyebrow" style="margin-bottom:20px;">${escapeHtml(c.title || t("common.untitled"))}</div>
-      ${canSeePosting(c) ? editStepVideoHTML(c) : editingAppsHTML()}
+      ${canSeePosting(c) ? `${editTipsToo(c) ? editingAppsHTML() : ""}${editStepVideoHTML(c)}` : editingAppsHTML()}
       <button type="button" class="btn btn-primary btn-block stage-big-action" id="mark-edited-big" ${isClientOnly(c) ? "hidden" : ""}>${icon("check", { size: 20 })}${t("cr.doneEditing")}</button>
     </div>
   `;
@@ -2477,7 +2477,7 @@ function editAppsSimpleHTML() {
 // editing-app tips. One piece, one page (owner, 2026-11-02).
 function editStepHTML(c, { review }) {
   return `
-    ${canSeePosting(c) ? postingMountHTML(c, "video") : editAppsSimpleHTML()}
+    ${canSeePosting(c) ? `${editTipsToo(c) ? editAppsSimpleHTML() : ""}${postingMountHTML(c, "video")}` : editAppsSimpleHTML()}
     ${review || isClientOnly(c) ? "" : nextBtnHTML("mark-edited-big", t("cr.doneEditing"), "upload", { check: true })}`;
 }
 
