@@ -13,6 +13,7 @@ import handler, { metaJson, rawBody } from "../api/instagram/webhook.js";
 
 const ACCOUNT = "17841400000000001";
 process.env.IG_AUTODM_ACCOUNT_ID = ACCOUNT;
+process.env.IG_AUTODM_ON = "1";
 const commentPayload = (text, { from = "555", id = "c1" } = {}) => ({
   object: "instagram",
   entry: [{ id: ACCOUNT, time: 1, changes: [{ field: "comments", value: { id, text, from: { id: from, username: "rani.store" }, media: { id: "m1" } } }] }],
@@ -223,6 +224,18 @@ describe("the endpoint", () => {
     const ok = await call({ method: "GET", query: { "hub.mode": "subscribe", "hub.verify_token": "wepeka-verify", "hub.challenge": "123" } });
     assert.deepEqual([ok.status, ok.body], [200, "123"]);
     assert.equal((await call({ method: "GET", query: { "hub.mode": "subscribe", "hub.verify_token": "nope", "hub.challenge": "1" } })).status, 403);
+  });
+  test("paused unless IG_AUTODM_ON is 1: a POST does nothing, Meta's handshake still works", async () => {
+    delete process.env.IG_AUTODM_ON;
+    delete process.env.IG_APP_SECRET;
+    try {
+      const out = await call({ raw: JSON.stringify(commentPayload("Branding")) });
+      assert.deepEqual([out.status, out.body], [200, { ok: true, paused: true }]);
+      const hello = await call({ method: "GET", query: { "hub.mode": "subscribe", "hub.verify_token": process.env.IG_VERIFY_TOKEN || "wepeka-branding", "hub.challenge": "7" } });
+      assert.deepEqual([hello.status, hello.body], [200, "7"]);
+    } finally {
+      process.env.IG_AUTODM_ON = "1";
+    }
   });
   test("an unsigned or wrongly signed POST is refused", async () => {
     process.env.IG_APP_SECRET = SECRET;

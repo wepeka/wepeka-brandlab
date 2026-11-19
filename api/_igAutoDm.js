@@ -11,6 +11,9 @@
 //   IG_ACCESS_TOKEN   the long-lived token generated for @wepeka there. It
 //                     lives 60 days; the daily cron refreshes it into
 //                     igAutoDm/token, which wins over the env value after that.
+//   IG_AUTODM_ON      must be "1" for any of this to run. Paused since
+//                     2026-11-19 while @winkhsin is suspended: the webhook
+//                     ignores every event and the token is not refreshed.
 // Optional: IG_AUTODM_KEYWORDS (comma list, replaces DEFAULT_KEYWORDS), IG_VERIFY_TOKEN (the
 // webhook's handshake word, not a secret — the app secret guards every POST),
 // META_GRAPH_VERSION.
@@ -24,6 +27,10 @@ const GRAPH = `https://graph.instagram.com/${GRAPH_VERSION}`;
 // @winkhsin's Instagram account id (Meta app "wepeka" → Instagram → API setup).
 export const WINKHSIN_ACCOUNT_ID = "17841400566996586";
 export const DEFAULT_VERIFY_TOKEN = "wepeka-branding";
+
+export function autoDmOn(env = process.env) {
+  return String(env.IG_AUTODM_ON || "").trim() === "1";
+}
 
 export function autoDmAccountId(env = process.env) {
   return String(env.IG_AUTODM_ACCOUNT_ID || "").trim() || WINKHSIN_ACCOUNT_ID;

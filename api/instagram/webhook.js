@@ -3,7 +3,7 @@
 // comment on a @winkhsin post or a DM event. Every POST is signed with the
 // Instagram app secret over the raw body, so the body is read unparsed.
 import { adminDb } from "../_firebaseAdmin.js";
-import { verifySignature, readEvents, handleEvents, graphClient, currentToken, keywords, DEFAULT_VERIFY_TOKEN } from "../_igAutoDm.js";
+import { autoDmOn, verifySignature, readEvents, handleEvents, graphClient, currentToken, keywords, DEFAULT_VERIFY_TOKEN } from "../_igAutoDm.js";
 
 export const config = { api: { bodyParser: false } };
 
@@ -55,6 +55,9 @@ export default async function handler(req, res) {
     return res.status(403).end();
   }
   if (req.method !== "POST") return res.status(405).end();
+
+  // Paused: nothing is read, stored or sent. Still 200, so Meta doesn't resend.
+  if (!autoDmOn()) return res.status(200).json({ ok: true, paused: true });
 
   const secret = String(process.env.IG_APP_SECRET || "").trim();
   if (!secret) {
