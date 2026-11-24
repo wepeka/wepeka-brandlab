@@ -6,6 +6,7 @@
 // This means none of the view files calling these functions need to change
 // — only this file's internals talk to the network.
 import { toast } from "./dom.js";
+import { can as canPerm, memberPerms } from "./permissions.js";
 import { t, getLang } from "./i18n.js";
 import CAMPAIGN_DICT from "./i18n/campaigns.js";
 import { db as fdb, auth, loadFirestore } from "./firebase.js";
@@ -560,6 +561,27 @@ export function isSharedBrand(brandOrId) {
   const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
   return !!b && (!isOwnBrand(b) || (Array.isArray(b.memberIds) && b.memberIds.length > 0));
 }
+// Roles (2026-11-24, js/permissions.js): what the signed-in person may do
+// in one module of a brand — "create", "video", "sales", "report", "board",
+// "goals", "brand", "chat", "publish" — and action ("view", "edit", …).
+// The owner may do everything. Views ask this to show or hide a part; the
+// rules and the server ask the same table.
+export function canDo(brandOrId, mod, act = "view") {
+  const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
+  if (!b) return true; // not loaded (yet): the rules decide
+  if (isOwnBrand(b)) return true;
+  return canPerm(b, ownerUid, mod, act);
+}
+// A shared brand as this member may hold it in memory: without Sales
+// access, nothing about money (products, costs, opening numbers, the AI's
+// sales advice, old inline sales) stays in the app — so no page, chart,
+// board widget or AI prompt can show or send it.
+function memberView(b) {
+  if (!b || b.ownerId === ownerUid) return b;
+  if ((memberPerms(b.members?.[ownerUid]).sales || []).includes("view")) return b;
+  const { salesTracker: _hidden, ...rest } = b;
+  return rest;
+}
 export function canEditBrand(brandOrId) {
   const b = typeof brandOrId === "string" ? getBrand(brandOrId) : brandOrId;
   if (!b) return true; // not loaded (yet): the rules decide
@@ -573,8 +595,14 @@ export function docOwnerFor(brandId) {
 // A viewer's edit stops here, before anything changes locally (the rules
 // would refuse it anyway): one quiet note, not one per keystroke.
 let viewerNoteAt = 0;
-function writableBrand(brandId) {
-  if (!brandId || canEditBrand(brandId)) return true;
+// `mod`: the module the write belongs to (roles): a Sales member saves
+// Sales without editing content, a Content Creator edits content but not
+// Sales. Without one, the old rule: owner or editor.
+function writableBrand(brandId, mod = null) {
+  if (!brandId) return true;
+  const b = getBrand(brandId);
+  if (!b || isOwnBrand(b)) return true;
+  if (mod === "video" ? ["upload", "comment", "approve"].some((a) => canDo(b, "video", a)) : mod ? canDo(b, mod, "edit") : canEditBrand(b)) return true;
   if (Date.now() - viewerNoteAt > 4000) {
     viewerNoteAt = Date.now();
     try {
@@ -890,7 +918,8 @@ function watchShared(uid, onReady) {
     const first = !seen;
     seen = true;
     if (!changed) return;
-    const next = snap.docs.map((d) => d.data()).filter((b) => b.ownerId !== uid && !b.deletedAt);
+    // Without Sales access the money never reaches memory (memberView).
+    const next = snap.docs.map((d) => d.data()).filter((b) => b.ownerId !== uid && !b.deletedAt).map(memberView);
     const nextIds = new Set(next.map((b) => b.id));
     const removed = shared.brands.filter((b) => !nextIds.has(b.id)).map((b) => b.id);
     shared.brands = next;
@@ -1790,10 +1819,20 @@ export function createBrand({ name, avatar = "", color = "", instagram, facebook
 // opened (Brand DNA, Brand Book), that copy as it was when last saved — so
 // in a shared brand only what THIS page changed is written, never the
 // older values of parts a teammate changed meanwhile.
+// Which module a brand-doc save belongs to (roles): Sales' own keys, the
+// brand identity, or anything else (null = the old owner/editor rule).
+const SALES_BRAND_KEYS = new Set(["salesTracker", "salesWidgetsCollapsed"]);
+const IDENTITY_KEYS = new Set(["name", "brandDNA", "brandGuidelines", "brandBuilder", "color", "avatar", "businessDescription", "personality"]);
+export function brandModuleOf(patch) {
+  const keys = Object.keys(patch || {});
+  if (keys.length && keys.every((k) => SALES_BRAND_KEYS.has(k))) return "sales";
+  if (keys.some((k) => IDENTITY_KEYS.has(k))) return "brand";
+  return null;
+}
 export function updateBrand(id, patch, { base = null } = {}) {
   const b = getBrand(id);
   if (!b) return null;
-  if (!writableBrand(id)) return null;
+  if (!writableBrand(id, brandModuleOf(patch))) return null;
   // What a refused move must restore, and the sales log as it was (the
   // Sales Tracker save is written as what it added/removed — salesWritePlan).
   const before = Object.fromEntries(Object.keys(patch).map((k) => [k, b[k]]));
@@ -2728,7 +2767,7 @@ export function campaignContentPlatform(campaign, settings = db.settings) {
   return hit?.name || PLATFORM_CANON[id] || id;
 }
 export function createContent(brandId, data = {}) {
-  if (!writableBrand(brandId)) return null;
+  if (!writableBrand(brandId, "create")) return null;
   const item = { ...emptyContent(brandId), ...data, id: uid(), brandId, ownerId: docOwnerFor(brandId) };
   // Made for a Social Media Growth campaign without a platform of its own
   // (chat drafts, plan ideas): it takes the campaign's, so it counts there.
@@ -2751,7 +2790,9 @@ const hasNumber = (obj) => Object.values(obj || {}).some((v) => (v && typeof v =
 export function updateContent(id, patch) {
   const item = getContent(id);
   if (!item) return null;
-  if (!writableBrand(item.brandId)) return null;
+  // Only the video part (a cut, a note): the video permission is enough.
+  const videoOnly = Object.keys(patch || {}).every((k) => k === "posting") && !canDo(item.brandId, "create", "edit");
+  if (!writableBrand(item.brandId, videoOnly ? "video" : "create")) return null;
   const wasPublished = item.status === "published";
   // Numbers count as "typed in" only when they change — a Save that writes
   // the same performance back isn't someone filling numbers.
@@ -2774,7 +2815,7 @@ export function updateContent(id, patch) {
 // saved without touching updatedAt, so lists sorted by "last changed" stay put.
 export function setContentQuiet(id, patch) {
   const item = getContent(id);
-  if (!item || !writableBrand(item.brandId)) return null;
+  if (!item || !writableBrand(item.brandId, "create")) return null;
   Object.assign(item, patch);
   persist(() => updateFields("content", item.id, item, Object.keys(patch)));
   return item;
@@ -2786,7 +2827,7 @@ export function archiveContent(id, archived = true) {
 export function deleteContent(id) {
   const item = getContent(id);
   if (!item) return;
-  if (!writableBrand(item.brandId)) return;
+  if (!writableBrand(item.brandId, "create")) return;
   item.deletedAt = Date.now();
   // trashedWithCampaign rides along: deleteCampaign/restoreCampaign set it
   // on the item right before calling these.
@@ -2795,7 +2836,7 @@ export function deleteContent(id) {
 export function restoreContent(id) {
   const item = getContent(id);
   if (!item || !item.deletedAt) return;
-  if (!writableBrand(item.brandId)) return;
+  if (!writableBrand(item.brandId, "create")) return;
   item.deletedAt = null;
   persist(() => updateFields("content", item.id, item, ["deletedAt", ..."trashedWithCampaign" in item ? ["trashedWithCampaign"] : []]));
 }
@@ -3722,7 +3763,7 @@ export const EVENT_PLAN_TERMS = {
 };
 
 export function createCampaign(brandId, data = {}) {
-  if (!writableBrand(brandId)) return null;
+  if (!writableBrand(brandId, "goals")) return null;
   const item = { ...emptyCampaign(brandId), ...data, id: uid(), brandId, ownerId: docOwnerFor(brandId) };
   db.campaigns = [...(db.campaigns || []), item];
   persist(() => setDoc(doc(fdb, "campaigns", item.id), item));
@@ -3732,7 +3773,7 @@ export function createCampaign(brandId, data = {}) {
 export function updateCampaign(id, patch) {
   const item = getCampaign(id);
   if (!item) return null;
-  if (!writableBrand(item.brandId)) return null;
+  if (!writableBrand(item.brandId, "goals")) return null;
   const by = isSharedBrand(item.brandId) ? { updatedBy: ownerUid } : {};
   Object.assign(item, patch, { updatedAt: Date.now() }, by);
   persist(() => updateFields("campaigns", item.id, item, [...Object.keys(patch), "updatedAt", ...Object.keys(by)]));
@@ -3744,7 +3785,7 @@ export function updateCampaign(id, patch) {
 export function setCampaignManualMetric(campaignId, milestoneId, patch) {
   const c = getCampaign(campaignId);
   if (!c) return null;
-  if (!writableBrand(c.brandId)) return null;
+  if (!writableBrand(c.brandId, "goals")) return null;
   const manualMetrics = { ...(c.manualMetrics || {}) };
   manualMetrics[milestoneId] = { ...(manualMetrics[milestoneId] || {}), ...patch, updatedAt: Date.now() };
   if (hasNumber(patch)) emitStep("numbers_logged", { brandId: c.brandId, kind: "manual" });
@@ -3794,7 +3835,7 @@ export function planIdeasNote(c) {
 export function deleteCampaign(id) {
   const c = getCampaign(id);
   if (!c) return;
-  if (!writableBrand(c.brandId)) return;
+  if (!writableBrand(c.brandId, "goals")) return;
   untouchedPlanIdeaIds(c).forEach((cid) => {
     const item = getContent(cid);
     item.trashedWithCampaign = c.id;
@@ -3808,7 +3849,7 @@ export function deleteCampaign(id) {
 export function restoreCampaign(id) {
   const c = getCampaign(id);
   if (!c || !c.deletedAt) return;
-  if (!writableBrand(c.brandId)) return;
+  if (!writableBrand(c.brandId, "goals")) return;
   c.deletedAt = null;
   persist(() => updateFields("campaigns", c.id, c, ["deletedAt"]));
   (db.content || []).filter((x) => x.trashedWithCampaign === c.id && x.deletedAt).forEach((x) => { x.trashedWithCampaign = null; restoreContent(x.id); });
@@ -3904,7 +3945,7 @@ export function findSeriesByNameInText(brandId, text) {
   return matches.sort((a, b) => b.name.length - a.name.length)[0];
 }
 export function createSeries(brandId, data = {}) {
-  if (!writableBrand(brandId)) return null;
+  if (!writableBrand(brandId, "create")) return null;
   const item = { ...emptySeries(brandId), ...data, id: uid(), brandId, ownerId: docOwnerFor(brandId), dna: { ...defaultSeriesDNA(), ...(data.dna || {}) } };
   db.series = [...(db.series || []), item];
   persist(() => setDoc(doc(fdb, "series", item.id), item));
@@ -3913,7 +3954,7 @@ export function createSeries(brandId, data = {}) {
 export function updateSeries(id, patch) {
   const item = getSeries(id);
   if (!item) return null;
-  if (!writableBrand(item.brandId)) return null;
+  if (!writableBrand(item.brandId, "create")) return null;
   const dnaBefore = item.dna || {};
   if (patch.dna) { item.dna = { ...item.dna, ...patch.dna }; patch = { ...patch, dna: item.dna }; }
   const by = isSharedBrand(item.brandId) ? { updatedBy: ownerUid } : {};
@@ -3938,14 +3979,14 @@ export function updateSeries(id, patch) {
 export function deleteSeries(id) {
   const s = getSeries(id);
   if (!s) return;
-  if (!writableBrand(s.brandId)) return;
+  if (!writableBrand(s.brandId, "create")) return;
   s.deletedAt = Date.now();
   persist(() => updateFields("series", s.id, s, ["deletedAt"]));
 }
 export function restoreSeries(id) {
   const s = getSeries(id);
   if (!s || !s.deletedAt) return;
-  if (!writableBrand(s.brandId)) return;
+  if (!writableBrand(s.brandId, "create")) return;
   s.deletedAt = null;
   persist(() => updateFields("series", s.id, s, ["deletedAt"]));
 }

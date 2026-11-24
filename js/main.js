@@ -1,3 +1,4 @@
+import { VIEW_MODULE } from "./apps.js";
 import { t, getLang } from "./i18n.js";
 
 // Small, self-contained fallback strings for the two failure paths below
@@ -30,7 +31,7 @@ import { initActivation } from "./activation.js";
 import { initMetaPixel } from "./meta-pixel.js";
 import { trackTrialStart } from "./trial-start.js";
 import { checkPendingOrders } from "./pending-orders.js";
-import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales, isOwnBrand, isSharedBrand } from "./store.js";
+import { getBrand, initStore, listBrands, listContent, listCampaigns, getSettings, appendBrandEvents, whenServerSynced, watchBrandScope, isBrandSalesReady, ensureBrandSales, isOwnBrand, isSharedBrand, canDo } from "./store.js";
 import { identityDone } from "./brand-progress.js";
 import { onAuthChange, logout, loginWithWepekaToken } from "./auth.js";
 import { auth, wipeLocalFirestore, claimLocalCache } from "./firebase.js";
@@ -861,6 +862,15 @@ async function renderRoute() {
     window.scrollTo(0, 0);
     return;
   }
+  // Kerja Tim roles (js/permissions.js): a page this person's role doesn't
+  // open (a typed address, an old link) sends them to the brand's Beranda —
+  // the menus don't show it either.
+  const needs = route.brandId ? VIEW_MODULE[route.view] : null;
+  if (needs && !canDo(route.brandId, needs, "view")) {
+    toast(t("team.noAccess"), "error");
+    location.replace(`#/brand/${route.brandId}`);
+    return;
+  }
   if (route.brandId) {
     try { localStorage.setItem(LAST_BRAND_KEY, route.brandId); } catch { /* private mode */ }
     // A brand's chat threads (and, for a brand using the Sales Tracker, its
@@ -880,7 +890,7 @@ async function renderRoute() {
   // else (entering a brand, leaving it, switching mode, the Pemula tabs
   // unlocking after the identity is done) rebuilds the shell.
   const brandForShell = route.brandId ? getBrand(route.brandId) : null;
-  const shellKey = `${route.brandId || ""}|${getMode()}|${brandForShell && identityDone(brandForShell) ? 1 : 0}`;
+  const shellKey = `${route.brandId || ""}|${getMode()}|${brandForShell && identityDone(brandForShell) ? 1 : 0}|${brandForShell ? Object.keys(VIEW_MODULE).filter((v) => canDo(brandForShell, VIEW_MODULE[v])).length : ""}`;
   let viewRoot = document.getElementById("view-root");
   if (viewRoot && app.dataset.shellKey === shellKey) {
     viewRoot.classList.add("view-leave");

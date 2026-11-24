@@ -1,4 +1,4 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue, canDo } from "../store.js";
 import { icon } from "../icons.js";
 import { initials, formatDate, formatNumber, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -1387,7 +1387,8 @@ function launcherHTML(ctx) {
   const step = launcherStep(ctx);
   const lockGoals = !journey.identityDone;
   const hereLabel = t(journey.currentIndex !== -1 || !journey.identityDone ? "lh.here" : "lh.hereToday");
-  const cards = APPS.map((app) => {
+  // Only the apps this person's role opens (owner: all).
+  const cards = APPS.filter((app) => canDo(brand, app.module, "view")).map((app) => {
     const locked = !!app.gated && lockGoals;
     return appCardHTML(app, { brandId, status: appStatus(app, { ...ctx, locked }), current: app.key === step.app && !locked, locked, hereLabel });
   }).join("");

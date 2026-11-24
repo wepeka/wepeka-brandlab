@@ -1,5 +1,5 @@
 import { icon } from "./icons.js";
-import { listBrands, getBrand, listOverdueAndDueSoon, onChange, isOwnBrand } from "./store.js";
+import { listBrands, getBrand, listOverdueAndDueSoon, onChange, isOwnBrand, canDo } from "./store.js";
 import { logout } from "./auth.js";
 import { avatarHTML, escapeHtml, formatDate, getDominantColor, pickTintTextColor, pickTintForeground, pickTintForegroundLight, qs, qsa, openMenu, closeMenu, toast } from "./dom.js";
 import { getTheme, toggleTheme } from "./theme.js";
@@ -164,7 +164,7 @@ const modeConfig = () => MODE_CONFIG[getMode()] || MODE_CONFIG.guided;
 // Pemula keeps My Goals locked until the identity is done (`gated`).
 const TABS = [
   { key: "home", labelKey: "nav.home", icon: "grid", path: (id) => `#/brand/${id}`, tour: "tab-home", matches: ["home"] },
-  ...APPS.filter((a) => a.tab !== false).map((a) => ({ key: a.key, labelKey: a.labelKey, icon: a.icon, color: a.color, color2: a.color2, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
+  ...APPS.filter((a) => a.tab !== false).map((a) => ({ key: a.key, module: a.module, labelKey: a.labelKey, icon: a.icon, color: a.color, color2: a.color2, path: a.path, tour: a.tour, matches: a.matches, gated: !!a.gated })),
 ];
 
 function notifRowHTML({ content, brand }, tone) {
@@ -272,7 +272,7 @@ export function shellHTML({ brandId, active }) {
   // isn't open yet. Konten is open from the start.
   const lock = brand && modeConfig().lockTabs && !identityDone(brand);
   const tabsHTML = brand
-    ? TABS.map((tab) => {
+    ? TABS.filter((tab) => !tab.module || canDo(brand, tab.module, "view")).map((tab) => {
         const locked = lock && tab.gated;
         const label = t(tab.labelKey);
         return `<a class="tab ${tab.matches.includes(active) ? "active" : ""} ${locked ? "is-locked" : ""}" ${tab.matches.includes(active) ? `aria-current="page"` : ""} href="${locked ? "#" : tab.path(brand.id)}" title="${escapeHtml(locked ? t("nav.locked") : label)}" aria-label="${escapeHtml(label)}" ${locked ? `data-locked-tab` : ""} data-tour="${tab.tour}" data-tab-key="${tab.key}"${tab.color ? ` style="--app:${tab.color};--app2:${tab.color2 || tab.color}"` : ""}>${icon(locked ? "lock" : tab.icon, { size: 16 })}<span class="tab-label">${label}</span></a>`;

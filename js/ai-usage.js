@@ -5,7 +5,7 @@
 // the owner sees is the live aiUsage/{uid} snapshot (js/store.js
 // getAiUsageDoc(), wired up in initStore()), not a number the browser could
 // edit its way past.
-import { getAiUsageDoc, getTeamAiUsageDoc, scopeBrandId, getBrand, isOwnBrand, brandRole } from "./store.js";
+import { getAiUsageDoc, getTeamAiUsageDoc, scopeBrandId, getBrand, isOwnBrand, brandRole, canDo, isSeatPaused } from "./store.js";
 import { getCachedAccount, isAdmin, isReadOnly, currentUid } from "./account.js";
 
 // Accounts from before per-plan quotas (builder/content/monthly) keep what
@@ -45,7 +45,7 @@ export function teamAiContext() {
   if (!brand || isOwnBrand(brand)) return null;
   const usage = getTeamAiUsageDoc(brand.ownerId);
   const limit = Number(usage?.quotaLimit);
-  return { usage, limit: Number.isFinite(limit) && limit > 0 ? limit : null, period: usage?.quotaPeriod || "day", viewer: brandRole(brand) !== "editor" };
+  return { usage, limit: Number.isFinite(limit) && limit > 0 ? limit : null, period: usage?.quotaPeriod || "day", viewer: !canDo(brand, "chat", "view") || isSeatPaused(brand) };
 }
 
 // "day" | "month" | "total" — which window the limit/usage numbers below

@@ -14,13 +14,13 @@
 // second stop of its card's gradient, a neighbouring hue so the gradient
 // reads clearly (owner, 2026-10-27: "gradasinya kurang kelihatan").
 export const APPS = [
-  { key: "builder", labelKey: "app.brand.name", subKey: "app.brand.sub", icon: "target", color: "#FFA52B", color2: "#FF5F2E", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"], guide: "brand-builder" },
-  { key: "campaigns", labelKey: "app.goals.name", subKey: "app.goals.sub", icon: "flag", color: "#30D97D", color2: "#0FA3A3", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals"], gated: true, guide: "campaigns" },
-  { key: "content-os", labelKey: "app.create.name", subKey: "app.create.sub", icon: "edit", color: "#3B9BFF", color2: "#4F55F5", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], guide: "creator" },
-  { key: "report", labelKey: "app.report.name", subKey: "app.report.sub", icon: "chart", color: "#A974FF", color2: "#E04FD8", path: (id) => `#/brand/${id}/report`, tour: "tab-report", matches: ["report"] },
-  { key: "papan", labelKey: "app.board.name", subKey: "app.board.sub", icon: "papan", color: "#FF4F9A", color2: "#FF7A45", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"] },
-  { key: "sales", labelKey: "app.sales.name", subKey: "app.sales.sub", icon: "wallet", color: "#C8F03C", color2: "#2BC96B", path: (id) => `#/brand/${id}/sales`, matches: ["sales"], tab: false, guide: "sales" },
-  { key: "deck", labelKey: "app.deck.name", subKey: "app.deck.sub", icon: "play", color: "#FFD23F", color2: "#FF9F1C", path: (id) => `#/brand/${id}/deck`, matches: ["deck"], tab: false },
+  { key: "builder", module: "brand", labelKey: "app.brand.name", subKey: "app.brand.sub", icon: "target", color: "#FFA52B", color2: "#FF5F2E", path: (id) => `#/brand/${id}/builder`, tour: "tab-builder", matches: ["builder", "dna", "guidelines"], guide: "brand-builder" },
+  { key: "campaigns", module: "goals", labelKey: "app.goals.name", subKey: "app.goals.sub", icon: "flag", color: "#30D97D", color2: "#0FA3A3", path: (id) => `#/brand/${id}/campaigns`, tour: "tab-campaigns", matches: ["campaigns", "goals"], gated: true, guide: "campaigns" },
+  { key: "content-os", module: "create", labelKey: "app.create.name", subKey: "app.create.sub", icon: "edit", color: "#3B9BFF", color2: "#4F55F5", path: (id) => `#/brand/${id}/content`, tour: "tab-content-os", matches: ["content-os"], guide: "creator" },
+  { key: "report", module: "report", labelKey: "app.report.name", subKey: "app.report.sub", icon: "chart", color: "#A974FF", color2: "#E04FD8", path: (id) => `#/brand/${id}/report`, tour: "tab-report", matches: ["report"] },
+  { key: "papan", module: "board", labelKey: "app.board.name", subKey: "app.board.sub", icon: "papan", color: "#FF4F9A", color2: "#FF7A45", path: (id) => `#/brand/${id}/papan`, tour: "tab-papan", matches: ["papan"] },
+  { key: "sales", module: "sales", labelKey: "app.sales.name", subKey: "app.sales.sub", icon: "wallet", color: "#C8F03C", color2: "#2BC96B", path: (id) => `#/brand/${id}/sales`, matches: ["sales"], tab: false, guide: "sales" },
+  { key: "deck", module: "brand", labelKey: "app.deck.name", subKey: "app.deck.sub", icon: "play", color: "#FFD23F", color2: "#FF9F1C", path: (id) => `#/brand/${id}/deck`, matches: ["deck"], tab: false },
 ];
 
 // How many slides the Pitch Deck has (js/views/deck.js SLIDES), for its
@@ -28,3 +28,9 @@ export const APPS = [
 export const DECK_SLIDE_COUNT = 26;
 
 export const appByKey = (key) => APPS.find((a) => a.key === key) || null;
+
+// `module` = the permission each app needs to be seen (Kerja Tim roles,
+// js/permissions.js): a Video Editor's Beranda and tab row have no Sales,
+// no Report and no My Goals. The pages check the same (js/main.js).
+// Route views → module, for the pages that aren't an app of their own.
+export const VIEW_MODULE = { builder: "brand", dna: "brand", guidelines: "brand", campaigns: "goals", goals: "goals", "content-os": "create", report: "report", papan: "board", sales: "sales", deck: "brand", chat: "chat" };
