@@ -35,7 +35,7 @@ import { syncFootageToMac, macName, wantsMac, wishMac, freshLook } from "./foota
 import { sendToClient, cleanPreviews, keepFinalOnly, clientDecide, clientViewKey } from "./review-share.js";
 import { postToInstagram, shareToFacebook, cancelInstagramPost } from "./ig-post.js";
 import { icon } from "./icons.js";
-import { qs, qsa, toast, escapeHtml, openMenu, closeMenu } from "./dom.js";
+import { qs, qsa, toast, escapeHtml, openMenu, closeMenu, resizeImageFile } from "./dom.js";
 import { confirmDialog } from "./modals.js";
 import { go } from "./nav-context.js";
 import { t, getLang } from "./i18n.js";
@@ -1509,13 +1509,23 @@ export async function downloadCover(c, btn) {
   try {
     const blob = await (await fetch(src)).blob();
     const href = URL.createObjectURL(blob);
-    saveFile(href, `${base} · cover.${ext}`);
+    saveFile(href, `${base} · thumbnail.${ext}`);
     setTimeout(() => URL.revokeObjectURL(href), 60000);
   } catch {
     window.open(src, "_blank", "noopener");
   } finally {
     if (btn?.isConnected) btn.disabled = false;
   }
+}
+
+// A thumbnail lives inside the piece's own doc (Firestore caps a doc at
+// 1 MB, the script and caption share it), so it's made small: a phone-sized
+// JPEG, smaller again if it still comes out big.
+export async function thumbDataURL(file) {
+  let url = await resizeImageFile(file, { maxDimension: 1280, quality: 0.82, format: "image/jpeg" });
+  if (url.length > 450_000) url = await resizeImageFile(file, { maxDimension: 960, quality: 0.72, format: "image/jpeg" });
+  if (url.length > 450_000) url = await resizeImageFile(file, { maxDimension: 720, quality: 0.65, format: "image/jpeg" });
+  return url;
 }
 
 // The hashtags in a caption, once each, in order — for people who put them
@@ -1563,7 +1573,13 @@ export function uploadTakeHTML(c) {
 export function uploadKitHTML(c, { captionCopy = false } = {}) {
   const cut = uploadCutOf(c);
   const share = canShareFiles();
-  const cover = /^(https:|data:image\/)/.test(c.thumbnail || "") ? `<button type="button" class="pqu-copy" data-u-cover="${escapeHtml(c.id)}">${icon("image", { size: 13 })}${t("pqu.cover")}</button>` : "";
+  // The thumbnail (owner, 2026-11-24: "bisa download dan upload thumbnail
+  // juga"): the piece's own `thumbnail`, set here or in Creator — download
+  // it, or upload / swap it for whoever may edit the brand.
+  const has = /^(https:|data:image\/)/.test(c.thumbnail || "");
+  const mayEdit = !isClientOnly(c) && canEditBrand(getBrand(c.brandId));
+  const pick = (label) => `<label class="pqu-copy pqu-thumb-pick">${icon("upload", { size: 13 })}${label}<input type="file" accept="image/*" data-u-thumb="${escapeHtml(c.id)}" hidden></label>`;
+  const cover = `${has ? `<span class="pqu-thumb" style="background-image:url('${escapeHtml(c.thumbnail.replace(/'/g, "%27"))}')" aria-hidden="true"></span><button type="button" class="pqu-copy" data-u-cover="${escapeHtml(c.id)}">${icon("download", { size: 13 })}${t("pqu.cover")}</button>` : ""}${mayEdit ? pick(t(has ? "pqu.thumbChange" : "pqu.thumbUpload")) : ""}`;
   return `<div class="pqu-kit">
       <div class="pqu-actions">
         ${uploadTakeHTML(c)}
@@ -1608,6 +1624,21 @@ export function wireUploadKit(root, { repaint } = {}) {
   }));
   qsa("[data-u-share]", root).forEach((b) => b.addEventListener("click", () => shareUpload(getContent(b.dataset.uShare))));
   qsa("[data-u-cover]", root).forEach((b) => b.addEventListener("click", () => downloadCover(getContent(b.dataset.uCover), b)));
+  qsa("[data-u-thumb]", root).forEach((input) => input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    const c = getContent(input.dataset.uThumb);
+    input.value = "";
+    if (!file || !c) return;
+    if (!/^image\//.test(file.type)) { toast(t("pqu.thumbNotImage"), "error"); return; }
+    try {
+      updateContent(c.id, { thumbnail: await thumbDataURL(file) });
+      toast(t("pqu.thumbSaved"), "success");
+      repaint?.();
+    } catch (e) {
+      console.error("[upload] thumbnail", e);
+      toast(t("pqu.thumbFailed"), "error");
+    }
+  }));
   qsa("[data-u-copy]", root).forEach((b) => b.addEventListener("click", () => {
     const c = getContent(b.dataset.id);
     if (!c) return;
