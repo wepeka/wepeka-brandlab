@@ -373,6 +373,10 @@ describe("Facebook Login for Business", () => {
     assert.match(r.body.reusable[0].label, /@kopipagi/);
     const r2 = await call(d, post("connect", { brandId: "b2", via: "facebook", reuseGrantId: r.body.reusable[0].grantId }));
     assert.deepEqual(r2.body, { pick: true });
+    const offered = await call(d, post("assets", { brandId: "b2" }));
+    assert.deepEqual(offered.body.usedBy.instagram, { [IG_ID]: "Kopi Pagi" }, "b1's account is marked, by name");
+    assert.equal(offered.body.usedBy.pages["5550001"], "Kopi Pagi");
+    assert.equal(offered.body.brandName, "Kopi Sore");
     await call(d, post("select", { brandId: "b2", igUserId: IG_ID2 }));
     const g = db.get(`metaGrants/${r.body.reusable[0].grantId}`);
     assert.deepEqual(g.brandIds.sort(), ["b1", "b2"]);
@@ -629,4 +633,37 @@ describe("Sales reads the automatic ad spend", () => {
     assert.deepEqual(row.reported, { purchases: 3, value: 900000 });
     assert.equal(row.roas, 2);
   });
+});
+
+// ---------- the account picker's order (js/meta-pick.js) ----------
+import { looksLike, pageForIg, sortForBrand } from "../js/meta-pick.js";
+
+test("picker: the brand's look-alike Instagram on top, other brands' accounts tucked away, the Page follows", () => {
+  assert.equal(looksLike("Quatro Kids Club", "quatrokidsclub"), true);
+  assert.equal(looksLike("Quatro Kids Club", "winkhsin"), false);
+  assert.equal(looksLike("AB", "ab"), false, "too short to mean anything");
+  const igs = [
+    { id: "17841400566996586", username: "winkhsin", pageId: "" },
+    { id: "17841438523032359", username: "quatrokidsclub", pageId: "" },
+    { id: "17841400000000001", username: "kopipagi", pageId: "" },
+  ];
+  const sorted = sortForBrand(igs, { brandName: "Quatro Kids Club", usedBy: { "17841400566996586": "Winson" }, current: "", label: (x) => x.username });
+  assert.deepEqual(sorted.free.map((x) => x.username), ["quatrokidsclub", "kopipagi"]);
+  assert.equal(sorted.free[0].match, true);
+  assert.deepEqual(sorted.used.map((x) => [x.username, x.usedBy]), [["winkhsin", "Winson"]]);
+  // The brand's own saved choice is never hidden, even if another brand uses it too.
+  const again = sortForBrand(igs, { brandName: "Quatro Kids Club", usedBy: { "17841400566996586": "Winson" }, current: "17841400566996586", label: (x) => x.username });
+  assert.equal(again.free[0].username, "winkhsin");
+  assert.equal(again.used.length, 0);
+
+  const pages = [
+    { id: "1493455100509166", name: "Quatrokidsclub", igId: "" },
+    { id: "2000", name: "Quatro Kids Club", igId: "" },
+    { id: "3000", name: "winkhsin", igId: "17841400566996586" },
+  ];
+  assert.equal(pageForIg({ id: "17841400566996586", username: "winkhsin", pageId: "" }, pages), "3000", "the Page Meta links it to");
+  assert.equal(pageForIg({ id: "x", username: "kopipagi", pageId: "2000" }, pages), "2000", "pageId from /me/accounts wins");
+  assert.equal(pageForIg({ id: "17841438523032359", username: "quatrokidsclub", pageId: "" }, pages), "", "two Pages share the name: no guess");
+  assert.equal(pageForIg({ id: "17841438523032359", username: "quatrokidsclub", pageId: "" }, pages.slice(0, 1)), "1493455100509166", "one Page with the same name");
+  assert.equal(pageForIg(null, pages), "");
 });

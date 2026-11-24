@@ -245,11 +245,29 @@ async function grantInPlay(d, brandId) {
   return { conn, grant: { ...grant, id: gid } };
 }
 
+// The owner's other brands' accounts, so the picker can leave out what
+// is already taken: { instagram: {id: brand name}, pages: {…}, ads: {…} }.
+async function usedByOthers(d, brand) {
+  const snap = await d.db.collection("metaConnections").where("ownerId", "==", brand.ownerId).get();
+  const used = { instagram: {}, pages: {}, ads: {} };
+  for (const doc of snap.docs) {
+    const c = doc.data();
+    if (doc.id === brand.id || !c.grantId) continue;
+    const name = (await read(d, `brands/${doc.id}`))?.name || "";
+    if (c.igUserId) used.instagram[c.igUserId] = name;
+    if (c.pageId) used.pages[c.pageId] = name;
+    if (c.adAccountId) used.ads[c.adAccountId] = name;
+  }
+  return used;
+}
+
 async function assets(d, uid, { brandId }) {
   const brand = await brandFor(d, uid, brandId);
   if (!canManage(brand, uid)) fail("not-allowed", 403);
   const { conn, grant } = await grantInPlay(d, brandId);
   return {
+    brandName: brand.name || "",
+    usedBy: await usedByOthers(d, brand),
     via: grant.via,
     pending: !!conn.pendingGrantId,
     who: grant.name || "",

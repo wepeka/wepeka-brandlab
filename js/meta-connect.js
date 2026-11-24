@@ -15,6 +15,7 @@ import { can } from "./permissions.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, avatarHTML, formatNumber } from "./dom.js";
+import { pageForIg, sortForBrand } from "./meta-pick.js";
 
 class MetaError extends Error {
   constructor(code, message) {
@@ -109,21 +110,29 @@ export async function syncMetaNow(brandId) {
 }
 
 // ---------- picking ----------
-const radio = (name, value, label, sub, checked) => `
-  <label class="meta-opt">
+// One question: which Instagram is this brand's. Its Facebook Page follows by
+// itself (with "Ganti" to change it), the ad account waits behind a fold, and
+// accounts another brand already uses stay out of the way (live 2026-11-25:
+// one login shows every account the person has, which read like a matching
+// game). Nothing comes ticked except a choice already made.
+const radio = (name, value, label, sub, checked, extra = "") => `
+  <label class="meta-opt${extra}">
     <input type="radio" name="${name}" value="${escapeHtml(value)}" ${checked ? "checked" : ""}>
     <span><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span>
   </label>`;
-function sectionHTML({ name, title, items, current, render, note = "" }) {
-  // Only a choice already made (changing accounts) comes ticked: even a
-  // single account is the owner's to pick (live 2026-11-25, the only
-  // Instagram offered for the Quatro brand was @winkhsin).
-  const picked = current || "";
-  return `<fieldset class="meta-pick-sec">
-    <legend>${title}</legend>
-    ${items.length ? items.map((x) => radio(name, x.id, ...render(x), x.id === picked)).join("") + radio(name, "", t("meta.pick.none"), "", !picked) : `<p class="text-faint meta-pick-empty">${t("meta.pick.nothing")}</p>`}
-    ${note && items.length ? `<p class="text-faint meta-pick-note">${note}</p>` : ""}
-  </fieldset>`;
+const matchTag = () => `<em class="meta-match">${escapeHtml(t("meta.pick.match"))}</em>`;
+const usedSub = (x) => escapeHtml(t("meta.pick.usedBy", { brand: x.usedBy }));
+
+function listHTML({ name, sorted, picked, render, noneLabel, noneTicked = false }) {
+  const row = (x) => {
+    const [label, sub] = render(x);
+    return radio(name, x.id, `${label}${x.match ? matchTag() : ""}`, x.usedBy ? usedSub(x) : sub, x.id === picked, x.usedBy ? " is-used" : "");
+  };
+  const usedOpen = sorted.used.some((x) => x.id === picked) || !sorted.free.length;
+  return `${sorted.free.map(row).join("")}
+    ${sorted.used.length ? `<button type="button" class="meta-pick-more" data-more="${name}" ${usedOpen ? "hidden" : ""}>${escapeHtml(t("meta.pick.showUsed", { n: sorted.used.length }))}</button>
+    <div class="meta-pick-used" data-used="${name}" ${usedOpen ? "" : "hidden"}>${sorted.used.map(row).join("")}</div>` : ""}
+    ${radio(name, "", noneLabel, "", !picked && noneTicked, " is-none")}`;
 }
 
 export async function openMetaPicker(brandId) {
@@ -135,21 +144,101 @@ export async function openMetaPicker(brandId) {
     toast(metaErrorText(e), "error");
     return;
   }
-  const pageName = (id) => a.pages.find((p) => p.id === id)?.name || "";
+  const brandName = a.brandName || brand?.name || "";
+  const usedBy = a.usedBy || {};
+  const fb = a.via === "facebook";
+  const pages = a.pages || [];
+  const pageName = (id) => pages.find((p) => p.id === id)?.name || "";
+  const igs = sortForBrand(a.instagram || [], { brandName, usedBy: usedBy.instagram, current: a.current.igUserId, label: (x) => x.username });
+  const pageList = sortForBrand(pages, { brandName, usedBy: usedBy.pages, current: a.current.pageId, label: (x) => x.name });
+  const adList = sortForBrand(a.adAccounts || [], { brandName, usedBy: usedBy.ads, current: a.current.adAccountId, label: (x) => x.name });
+  const igRender = (x) => [`${icon("instagram", { size: 14 })} @${escapeHtml(x.username || x.id)}`, ""];
+  const pageRender = (x) => [`${icon("facebook", { size: 14 })} ${escapeHtml(x.name || x.id)}`, ""];
+  const adRender = (x) => [escapeHtml(x.name || x.id), escapeHtml([x.id.replace(/^act_/, ""), x.currency].filter(Boolean).join(" · "))];
+
+  // "Tidak pakai" is only ticked for a brand already saved without one.
+  const saved = !!(a.current.igUserId || a.current.pageId || a.current.adAccountId);
+  // The Page follows the Instagram account until the person changes it.
+  let pageId = a.current.pageId || pageForIg((a.instagram || []).find((x) => x.id === a.current.igUserId), pages);
+  let pageByHand = !!a.current.pageId;
+
+  const igSection = (a.instagram || []).length
+    ? listHTML({ name: "meta-ig", sorted: igs, picked: a.current.igUserId, render: igRender, noneLabel: t("meta.pick.noIg"), noneTicked: saved })
+    : `<p class="text-faint meta-pick-empty">${t("meta.pick.nothing")}</p>`;
   const overlay = openModal({
-    title: t("meta.pick.title", { brand: escapeHtml(brand?.name || "") }),
+    title: t("meta.pick.title", { brand: escapeHtml(brandName) }),
     bodyHTML: `
-      <p class="text-muted meta-pick-intro">${t("meta.pick.intro")}</p>
-      ${sectionHTML({ name: "meta-ig", title: t("meta.pick.ig"), items: a.instagram, current: a.current.igUserId, render: (x) => [`${icon("instagram", { size: 14 })} @${escapeHtml(x.username || x.id)}`, x.pageId && pageName(x.pageId) ? escapeHtml(t("meta.pick.viaPage", { page: pageName(x.pageId) })) : ""] })}
-      ${a.via === "facebook" ? sectionHTML({ name: "meta-page", title: t("meta.pick.page"), items: a.pages, current: a.current.pageId, render: (x) => [`${icon("facebook", { size: 14 })} ${escapeHtml(x.name || x.id)}`, ""] }) : ""}
-      ${a.via === "facebook" ? sectionHTML({ name: "meta-ads", title: t("meta.pick.ads"), items: a.adAccounts, current: a.current.adAccountId, render: (x) => [escapeHtml(x.name || x.id), escapeHtml([x.id.replace(/^act_/, ""), x.currency].filter(Boolean).join(" · "))], note: t("meta.pick.adsNote") }) : ""}`,
+      <fieldset class="meta-pick-sec">
+        <legend>${t("meta.pick.igFor", { brand: escapeHtml(brandName) })}</legend>
+        ${igSection}
+      </fieldset>
+      ${fb ? `<div class="meta-pick-sec meta-pick-page">
+        <div class="meta-pick-label">${t("meta.pick.page")}</div>
+        <div class="meta-page-now" id="meta-page-now"></div>
+        <fieldset class="meta-pick-pages" id="meta-page-list" hidden>
+          <legend class="sr-only">${t("meta.pick.page")}</legend>
+          ${pages.length ? listHTML({ name: "meta-page", sorted: pageList, picked: pageId, render: pageRender, noneLabel: t("meta.pick.noPage") }) : `<p class="text-faint meta-pick-empty">${t("meta.pick.nothing")}</p>`}
+        </fieldset>
+      </div>
+      <details class="meta-pick-ads" ${a.current.adAccountId ? "open" : ""}>
+        <summary>${icon("plus", { size: 14 })}${t("meta.pick.addAds")}</summary>
+        <fieldset class="meta-pick-sec">
+          <legend class="sr-only">${t("meta.pick.ads")}</legend>
+          ${(a.adAccounts || []).length ? listHTML({ name: "meta-ads", sorted: adList, picked: a.current.adAccountId, render: adRender, noneLabel: t("meta.pick.none"), noneTicked: saved }) : `<p class="text-faint meta-pick-empty">${t("meta.pick.nothing")}</p>`}
+          <p class="text-faint meta-pick-note">${t("meta.pick.adsNote")}</p>
+        </fieldset>
+      </details>` : ""}`,
     footHTML: `<button class="btn btn-secondary" data-cancel>${t("common.cancel")}</button><button class="btn btn-primary" id="meta-pick-save">${icon("check", { size: 15 })}${t("common.save")}</button>`,
   });
   overlay.classList.add("meta-pick");
   qs("[data-cancel]", overlay)?.addEventListener("click", () => closeOverlay(overlay));
   const val = (name) => qs(`input[name="${name}"]:checked`, overlay)?.value || "";
+  qsa("[data-more]", overlay).forEach((b) =>
+    b.addEventListener("click", () => {
+      b.hidden = true;
+      const box = qs(`[data-used="${b.dataset.more}"]`, overlay);
+      if (box) box.hidden = false;
+    }),
+  );
+
+  const showPage = () => {
+    const now = qs("#meta-page-now", overlay);
+    if (!now) return;
+    const name = pageName(pageId);
+    const hint = !pageId ? (val("meta-ig") ? t("meta.pick.pageNone") : t("meta.pick.pageWait")) : pageByHand ? "" : t("meta.pick.pageFollows");
+    now.innerHTML = `<span>${pageId ? `<b>${icon("facebook", { size: 14 })} ${escapeHtml(name || pageId)}</b>` : `<b class="text-muted">${t("meta.pick.noPage")}</b>`}${hint ? `<small>${escapeHtml(hint)}</small>` : ""}</span>
+      ${pages.length ? `<button type="button" class="btn btn-ghost btn-sm" id="meta-page-change">${t(pageId ? "meta.pick.change" : "meta.pick.choose")}</button>` : ""}`;
+    qs("#meta-page-change", overlay)?.addEventListener("click", () => {
+      const list = qs("#meta-page-list", overlay);
+      qsa('input[name="meta-page"]', overlay).forEach((r) => (r.checked = r.value === pageId));
+      const ticked = qs('input[name="meta-page"]:checked', overlay);
+      const usedBox = ticked?.closest("[data-used]");
+      if (usedBox) {
+        usedBox.hidden = false;
+        const more = qs('[data-more="meta-page"]', overlay);
+        if (more) more.hidden = true;
+      }
+      if (list) list.hidden = false;
+      now.hidden = true;
+    });
+  };
+  showPage();
+  qsa('input[name="meta-ig"]', overlay).forEach((r) =>
+    r.addEventListener("change", () => {
+      if (pageByHand) return;
+      pageId = pageForIg((a.instagram || []).find((x) => x.id === r.value), pages);
+      showPage();
+    }),
+  );
+  qsa('input[name="meta-page"]', overlay).forEach((r) =>
+    r.addEventListener("change", () => {
+      pageId = r.value;
+      pageByHand = true;
+    }),
+  );
+
   qs("#meta-pick-save", overlay).addEventListener("click", async (e) => {
-    const pick = { igUserId: val("meta-ig"), pageId: val("meta-page"), adAccountId: val("meta-ads") };
+    const pick = { igUserId: val("meta-ig"), pageId: fb ? pageId : "", adAccountId: val("meta-ads") };
     if (!pick.igUserId && !pick.pageId && !pick.adAccountId) {
       toast(t("meta.pick.need"), "error");
       return;
@@ -159,7 +248,7 @@ export async function openMetaPicker(brandId) {
     try {
       await call("select", { brandId, ...pick });
       closeOverlay(overlay);
-      toast(t("meta.saved", { brand: brand?.name || "" }));
+      toast(t("meta.saved", { brand: brandName }));
     } catch (err) {
       btn.disabled = false;
       toast(metaErrorText(err), "error");
