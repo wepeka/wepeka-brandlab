@@ -429,6 +429,7 @@ function appMenuHTML(brandId, hasVideos) {
     ${hasVideos ? `<button type="button" data-act="videos">${icon("play", { size: 15 })}${t("guide.library.menu")}</button>` : ""}
     <button type="button" data-act="tour">${icon("target", { size: 15 })}${t("help.tour")}</button>
     <button type="button" data-act="community">${icon("users", { size: 15 })}${t("community.menu")}</button>
+    <button type="button" data-go="#/billboard">${icon("megaphone", { size: 15 })}${t("bb.menu")}</button>
     <button type="button" data-act="founder-circle">${icon("sparkle", { size: 15 })}${t("circle.menu")}</button>
     <button type="button" data-act="report">${icon("flag", { size: 15 })}${t("lapor.menu")}</button>
     <div class="menu-divider"></div>

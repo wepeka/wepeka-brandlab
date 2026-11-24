@@ -246,6 +246,7 @@ function parseRoute(hash) {
   if ((m = h.match(/^\/brand\/([^/]+)\/?$/))) return { view: "home", brandId: m[1] };
   if ((m = h.match(/^\/settings\/([^/]+)\/?$/))) return { view: "settings", panel: m[1] };
   if (h === "/settings") return { view: "settings" };
+  if (h === "/billboard") return { view: "billboard" };
   if (h === "/updates") return { view: "announcements" };
   if (h === "/updates/sesi") return { view: "announcements", tab: "sesi" };
   // Shortcut for announcements and WhatsApp posts (see route()).
@@ -925,6 +926,7 @@ async function renderRoute() {
         papan: () => import("./views/papan.js"),
         deck: () => import("./views/deck.js"),
         announcements: () => import("./views/announcements.js"),
+        billboard: () => import("./views/billboard.js"),
         goals: () => import("./views/goal-roadmap.js"),
         "content-os": () => import("./views/content-os.js"),
         settings: () => import("./views/settings.js"),
