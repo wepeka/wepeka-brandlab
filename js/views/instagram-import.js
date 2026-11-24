@@ -1,18 +1,36 @@
 import { getBrand, listContent, createContent, updateContent, localISODate } from "../store.js";
 import { icon } from "../icons.js";
 import { openModal, closeOverlay } from "../modals.js";
-import { qs, qsa, showProgressBar, escapeHtml, toast, loadingHTML } from "../dom.js";
+import { qs, qsa, escapeHtml, toast, formatNumber } from "../dom.js";
 import { canUseInstagramApi } from "../account.js";
-import { t } from "../i18n.js";
+import { t, getLang } from "../i18n.js";
 import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl, formatFromMedia, titleFromMedia, thumbnailFromMedia, igRef } from "../instagram.js";
+import { platformRingHTML, openFetchPanel } from "../fetch-panel.js";
 
 function normalizeCaption(s) {
   return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
+const locale = () => (getLang() === "en" ? "en-US" : "id-ID");
+const monthKey = (ts) => {
+  const d = new Date(ts);
+  return isNaN(d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+const monthLabel = (key) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(locale(), { month: "long", year: "numeric" });
+};
+const dayLabel = (ts) => new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "short" });
+const TYPE = {
+  Reels: { icon: "play", key: "integr.import.type.reels" },
+  Carousel: { icon: "layers", key: "integr.import.type.carousel" },
+  "Short Video": { icon: "film", key: "integr.import.type.video" },
+  "Static Post": { icon: "image", key: "integr.import.type.photo" },
+};
 
-// Lets you see thumbnails of your recent Instagram posts and choose exactly
-// which ones to bring into the Content Database, instead of a blind bulk
-// import of everything on the account.
+// Your recent Instagram posts as a grid, grouped by month: tap the ones to
+// bring into the Content Database (nothing is picked for you). Posts already
+// in Brandlab sit in their own tab; a post whose caption matches a planned
+// card says so and fills that card instead of adding a second one.
 export async function openInstagramImportPicker(brandId, onImported) {
   if (!canUseInstagramApi()) {
     toast(t("integr.ig.importSoon"), "error");
@@ -20,20 +38,28 @@ export async function openInstagramImportPicker(brandId, onImported) {
   }
   const brand = getBrand(brandId);
   const ig = igRef(brand);
+  const handle = ig?.username || brand?.instagram?.username || "";
 
   const overlay = openModal({
     title: t("integr.import.igTitle"),
-    wide: true,
-    bodyHTML: `<div id="ig-picker-body" style="min-height:140px;">
-      ${loadingHTML(t("integr.import.igLoading"), { style: "margin:0;" })}
+    width: "min(980px, 94vw)",
+    bodyHTML: `<div id="ig-picker-body" class="igi-body">
+      <div class="igi-loading">
+        ${platformRingHTML("instagram", { size: 76 })}
+        <b>${escapeHtml(handle ? t("integr.import.loadingFrom", { user: handle }) : t("integr.import.igLoading"))}</b>
+        <span>${escapeHtml(t("integr.import.loadingHint"))}</span>
+      </div>
     </div>`,
     footHTML: `
+      <span class="igi-count" id="ig-picker-count"></span>
       <button class="btn btn-secondary" id="ig-picker-cancel">${t("common.cancel")}</button>
-      <button class="btn btn-primary" id="ig-picker-import" disabled>${t("integr.import.selected")}</button>
+      <button class="btn btn-primary" id="ig-picker-import" disabled>${icon("download", { size: 15 })}<span>${t("integr.import.ctaNone")}</span></button>
     `,
   });
+  overlay.classList.add("igi");
   const bodyEl = overlay.querySelector("#ig-picker-body");
   const importBtn = overlay.querySelector("#ig-picker-import");
+  const countEl = overlay.querySelector("#ig-picker-count");
   overlay.querySelector("#ig-picker-cancel").addEventListener("click", () => closeOverlay(overlay));
 
   let media;
@@ -43,6 +69,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
     bodyEl.innerHTML = errorRow(t("integr.import.igUnreachable", { msg: e.message }));
     return;
   }
+  if (!overlay.isConnected) return;
   if (!media.length) {
     bodyEl.innerHTML = errorRow(t("integr.import.igEmpty"));
     return;
@@ -68,49 +95,129 @@ export async function openInstagramImportPicker(brandId, onImported) {
     if (match) linkTargets.set(code, match);
   });
 
-  bodyEl.innerHTML = `
-    <div class="ig-picker-toolbar">
-      <button class="btn btn-ghost btn-sm" id="ig-select-all">${t("integr.import.selectAll")}</button>
-      <button class="btn btn-ghost btn-sm" id="ig-select-none">${t("integr.import.selectNone")}</button>
-      <span class="text-faint" style="font-size:12px;margin-left:auto;">${t("integr.import.postsFound", { count: media.length })}</span>
-    </div>
-    <div class="ig-picker-grid">
-      ${media.map((m) => pickerCardHTML(m, existingCodes, linkTargets)).join("")}
-    </div>
-  `;
+  const fresh = media.filter((m) => {
+    const code = shortcodeFromUrl(m.permalink);
+    return code && !existingCodes.has(code);
+  });
+  const already = media.filter((m) => !fresh.includes(m));
+  const picked = new Set();
+  let tab = fresh.length ? "new" : "in";
 
-  const checkboxes = () => qsa("input[type=checkbox][data-code]", bodyEl);
-  const selectableCheckboxes = () => qsa("input[type=checkbox][data-code]:not(:disabled)", bodyEl);
+  const groups = (list) => {
+    const out = new Map();
+    for (const m of list) {
+      const k = monthKey(m.timestamp);
+      if (!out.has(k)) out.set(k, []);
+      out.get(k).push(m);
+    }
+    return [...out.entries()];
+  };
 
-  function updateImportCount() {
-    const checked = checkboxes().filter((cb) => cb.checked && !cb.disabled).length;
-    importBtn.disabled = checked === 0;
-    importBtn.textContent = checked ? t("integr.import.selectedCount", { count: checked }) : t("integr.import.selected");
+  function paint() {
+    const list = tab === "new" ? fresh : already;
+    bodyEl.innerHTML = `
+      <div class="igi-head">
+        <div class="igi-who">
+          ${platformRingHTML("instagram", { size: 40 })}
+          <div><b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(t("integr.import.igTitle"))}</b>
+          <span>${escapeHtml(t("integr.import.summary", { found: media.length, fresh: fresh.length }))}</span></div>
+        </div>
+        <div class="igi-tabs" role="tablist">
+          <button type="button" role="tab" data-tab="new" aria-selected="${tab === "new"}">${escapeHtml(t("integr.import.tabNew", { count: fresh.length }))}</button>
+          <button type="button" role="tab" data-tab="in" aria-selected="${tab === "in"}">${escapeHtml(t("integr.import.tabIn", { count: already.length }))}</button>
+        </div>
+      </div>
+      ${tab === "new" ? `<p class="igi-hint">${escapeHtml(t("integr.import.hint"))}</p>` : ""}
+      <div class="igi-scroll">
+        ${list.length ? groups(list).map(([k, items]) => monthHTML(k, items, tab === "new")).join("") : `<p class="igi-empty">${escapeHtml(t(tab === "new" ? "integr.import.allIn" : "integr.import.noneIn"))}</p>`}
+      </div>`;
+    qsa("[data-tab]", bodyEl).forEach((b) => b.addEventListener("click", () => {
+      tab = b.dataset.tab;
+      paint();
+    }));
+    qsa(".igi-card[data-code]", bodyEl).forEach((card) => card.addEventListener("click", () => {
+      const code = card.dataset.code;
+      if (picked.has(code)) picked.delete(code);
+      else picked.add(code);
+      card.setAttribute("aria-pressed", String(picked.has(code)));
+      syncMonthButtons();
+      updateCount();
+    }));
+    qsa("[data-month]", bodyEl).forEach((b) => b.addEventListener("click", () => {
+      const codes = qsa(`.igi-month[data-key="${b.dataset.month}"] .igi-card[data-code]`, bodyEl).map((c) => c.dataset.code);
+      const all = codes.every((c) => picked.has(c));
+      codes.forEach((c) => (all ? picked.delete(c) : picked.add(c)));
+      qsa(`.igi-month[data-key="${b.dataset.month}"] .igi-card[data-code]`, bodyEl).forEach((c) => c.setAttribute("aria-pressed", String(picked.has(c.dataset.code))));
+      syncMonthButtons();
+      updateCount();
+    }));
+    syncMonthButtons();
   }
-  checkboxes().forEach((cb) => cb.addEventListener("change", updateImportCount));
-  overlay.querySelector("#ig-select-all").addEventListener("click", () => {
-    selectableCheckboxes().forEach((cb) => (cb.checked = true));
-    updateImportCount();
-  });
-  overlay.querySelector("#ig-select-none").addEventListener("click", () => {
-    selectableCheckboxes().forEach((cb) => (cb.checked = false));
-    updateImportCount();
-  });
-  updateImportCount();
+
+  function monthHTML(key, items, selectable) {
+    return `<section class="igi-month" data-key="${key}">
+      <div class="igi-month-head">
+        <h3>${escapeHtml(monthLabel(key))}</h3>
+        ${selectable ? `<button type="button" class="igi-month-all" data-month="${key}"></button>` : `<span class="igi-month-n">${items.length}</span>`}
+      </div>
+      <div class="igi-grid">${items.map((m) => cardHTML(m, selectable)).join("")}</div>
+    </section>`;
+  }
+
+  function cardHTML(m, selectable) {
+    const code = shortcodeFromUrl(m.permalink);
+    const link = code ? linkTargets.get(code) : null;
+    const thumb = thumbnailFromMedia(m);
+    const type = TYPE[formatFromMedia(m)] || TYPE["Static Post"];
+    const eng = [
+      Number.isFinite(m.like_count) ? `${icon("heart", { size: 12 })}${formatNumber(m.like_count)}` : "",
+      Number.isFinite(m.comments_count) ? `${icon("comment", { size: 12 })}${formatNumber(m.comments_count)}` : "",
+    ].filter(Boolean).join("");
+    const inner = `
+      <span class="igi-thumb">
+        ${thumb ? `<img src="${escapeHtml(thumb)}" loading="lazy" alt="" />` : `<span class="igi-noimg">${icon("image", { size: 22 })}</span>`}
+        <span class="igi-type">${icon(type.icon, { size: 12 })}${escapeHtml(t(type.key))}</span>
+        ${selectable ? `<span class="igi-tick">${icon("check", { size: 14 })}</span>` : `<span class="igi-in">${icon("check", { size: 12 })}${escapeHtml(t("integr.import.already"))}</span>`}
+      </span>
+      <span class="igi-meta"><span>${escapeHtml(dayLabel(m.timestamp))}</span>${eng ? `<span class="igi-eng">${eng}</span>` : ""}</span>
+      <span class="igi-cap">${escapeHtml(titleFromMedia(m))}</span>
+      ${link ? `<span class="igi-link">${icon("link", { size: 11 })}<span>${escapeHtml(t("integr.import.matchShort", { title: link.title || t("common.untitled") }))}</span></span>` : ""}`;
+    return selectable
+      ? `<button type="button" class="igi-card" data-code="${escapeHtml(code)}" aria-pressed="${picked.has(code)}">${inner}</button>`
+      : `<div class="igi-card is-in">${inner}</div>`;
+  }
+
+  function syncMonthButtons() {
+    qsa("[data-month]", bodyEl).forEach((b) => {
+      const codes = qsa(`.igi-month[data-key="${b.dataset.month}"] .igi-card[data-code]`, bodyEl).map((c) => c.dataset.code);
+      const all = codes.length && codes.every((c) => picked.has(c));
+      b.textContent = all ? t("integr.import.unpickMonth") : t("integr.import.pickMonth", { count: codes.length });
+    });
+  }
+
+  function updateCount() {
+    const n = picked.size;
+    importBtn.disabled = n === 0;
+    importBtn.querySelector("span").textContent = n ? t("integr.import.cta", { count: n }) : t("integr.import.ctaNone");
+    countEl.textContent = n ? t("integr.import.chosen", { count: n }) : "";
+  }
+
+  paint();
+  updateCount();
 
   importBtn.addEventListener("click", async () => {
-    const selectedCodes = new Set(
-      checkboxes()
-        .filter((cb) => cb.checked && !cb.disabled)
-        .map((cb) => cb.dataset.code)
-    );
-    const toImport = media.filter((m) => selectedCodes.has(shortcodeFromUrl(m.permalink)));
+    const toImport = fresh.filter((m) => picked.has(shortcodeFromUrl(m.permalink)));
+    if (!toImport.length) return;
 
-    // Runs as a minimized floating progress bar instead of holding this
-    // modal open — importing a big batch shouldn't block using the rest of
-    // the app while it works through each one.
+    // The floating panel instead of holding this modal open — a big batch
+    // shouldn't block using the rest of the app while it works through each one.
     closeOverlay(overlay);
-    const bar = showProgressBar(t("integr.import.igProgress"));
+    const panel = openFetchPanel({
+      platform: "instagram",
+      title: t("integr.import.panelTitle"),
+      sub: brand?.name || "",
+      firstStep: t("integr.import.panelStep", { done: 1, total: toImport.length, title: titleFromMedia(toImport[0]) }),
+    });
 
     let created = 0;
     let linked = 0;
@@ -118,7 +225,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
     let done = 0;
     for (const m of toImport) {
       const code = shortcodeFromUrl(m.permalink);
-      bar.update(done, toImport.length, titleFromMedia(m));
+      panel.step(t("integr.import.panelStep", { done: done + 1, total: toImport.length, title: titleFromMedia(m) }), (done / toImport.length) * 100);
 
       const linkTarget = linkTargets.get(code);
       const publishFields = {
@@ -151,35 +258,19 @@ export async function openInstagramImportPicker(brandId, onImported) {
         metricFails++;
       }
       done++;
-      bar.update(done, toImport.length);
+      panel.step("", (done / toImport.length) * 100);
       onImported?.();
     }
 
-    const summaryParts = [];
-    if (created) summaryParts.push(t("integr.import.new", { count: created }));
-    if (linked) summaryParts.push(t("integr.import.linked", { count: linked }));
-    bar.done(`${t("integr.import.done", { summary: summaryParts.join(", ") })}${metricFails ? ` — ${t("integr.import.needMetrics", { count: metricFails })}` : ""}`);
+    panel.done({
+      title: t("integr.import.doneTitle"),
+      note: metricFails ? t("integr.import.needMetrics", { count: metricFails }) : "",
+      stats: [
+        created ? { n: created, label: t("integr.import.statNew") } : null,
+        linked ? { n: linked, label: t("integr.import.statLinked") } : null,
+      ],
+    });
   });
-}
-
-function pickerCardHTML(media, existingCodes, linkTargets) {
-  const code = shortcodeFromUrl(media.permalink);
-  const already = code && existingCodes.has(code);
-  const linkTarget = code ? linkTargets.get(code) : null;
-  const thumb = thumbnailFromMedia(media);
-  return `
-    <label class="ig-picker-card" data-card="${code}">
-      <input type="checkbox" data-code="${code}" ${already ? "checked disabled" : "checked"} />
-      <div class="ig-picker-thumb">
-        ${thumb ? `<img src="${thumb}" loading="lazy" alt="" />` : `<div class="ig-picker-noimg">${icon("image", { size: 20 })}</div>`}
-        <span class="ig-picker-type">${formatFromMedia(media)}</span>
-        <span class="ig-picker-check">${icon("check", { size: 12 })}</span>
-      </div>
-      <div class="ig-picker-caption">${escapeHtml(titleFromMedia(media))}</div>
-      ${already ? `<div class="ig-picker-already">${t("integr.import.already")}</div>` : ""}
-      ${linkTarget ? `<div class="ig-picker-linked">${icon("link", { size: 10 })} ${t("integr.import.matches", { title: escapeHtml(linkTarget.title || t("common.untitled")) })}</div>` : ""}
-    </label>
-  `;
 }
 
 function errorRow(message) {

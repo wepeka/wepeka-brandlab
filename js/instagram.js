@@ -88,7 +88,7 @@ export async function listRecentMedia(ig, { maxItems = 100 } = {}) {
   while (results.length < maxItems) {
     const json = await graphGet(
       `/${igUserId}/media`,
-      { fields: "id,permalink,caption,timestamp,media_type,media_product_type,media_url,thumbnail_url", limit: 50, ...(after ? { after } : {}) },
+      { fields: "id,permalink,caption,timestamp,media_type,media_product_type,media_url,thumbnail_url,like_count,comments_count", limit: 50, ...(after ? { after } : {}) },
       ig
     );
     results.push(...(json.data || []));

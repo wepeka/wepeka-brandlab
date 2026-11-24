@@ -479,6 +479,37 @@ describe("sync", () => {
     assert.equal(db.get("brands/b1/sales/2026-11").entries.filter((e) => e.id === "meta-ads-c1-2026-11").length, 1);
   });
 
+  test("stream: true sends one line per step, then the result; a refusal stays a plain error", async () => {
+    const db = seed({ "content/c1": { brandId: "b1", ownerId: "owner1", platform: "Instagram", publishedUrl: "https://www.instagram.com/reel/AAA/", status: "published" } });
+    const d = await connectFb(db, fakeMeta({ media, insights }));
+    db.docs.get("metaConnections/b1").connectedAt = NOW - 1.5 * DAY;
+    const streamRes = () => {
+      const r = { statusCode: 0, headers: {}, chunks: [], ended: false, body: null };
+      r.setHeader = (k, v) => { r.headers[k.toLowerCase()] = v; };
+      r.status = (c) => { r.statusCode = c; return r; };
+      r.json = (b) => { r.body = b; return r; };
+      r.write = (chunk) => { r.chunks.push(String(chunk)); return true; };
+      r.end = () => { r.ended = true; };
+      return r;
+    };
+    const refused = streamRes();
+    await route(d, post("sync", { brandId: "b1", stream: true }, "kl1"), refused);
+    assert.deepEqual([refused.statusCode, refused.body?.error, refused.chunks.length], [403, "not-allowed", 0]);
+
+    const r = streamRes();
+    await route(d, post("sync", { brandId: "b1", stream: true }), r);
+    assert.match(r.headers["content-type"], /ndjson/);
+    assert.ok(r.ended);
+    const lines = r.chunks.join("").trim().split("\n").map((l) => JSON.parse(l));
+    const steps = lines.filter((l) => l.step).map((l) => l.step);
+    assert.deepEqual([...new Set(steps)], ["posts", "numbers", "account", "page", "ads", "save"]);
+    const reads = lines.filter((l) => l.step === "numbers");
+    assert.deepEqual([reads[0].done, reads.at(-1).done, reads.at(-1).total], [0, 2, 2]);
+    const last = lines.at(-1);
+    assert.equal(last.done, true);
+    assert.deepEqual([last.result.updated, last.result.added, last.result.followers], [1, 1, 1200]);
+  });
+
   test("an ad account not in Rupiah is left out of Sales", async () => {
     const db = seed({ "content/c1": { brandId: "b1", ownerId: "owner1", igMediaId: "m1", platform: "Instagram", status: "published" } });
     const d = await connectFb(db, fakeMeta({ adCurrency: "USD" }));

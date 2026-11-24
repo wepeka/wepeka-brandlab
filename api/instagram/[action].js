@@ -10,7 +10,8 @@
 //   POST assets      {brandId}                       what the login shared, for the picker (names and ids only)
 //   POST select      {brandId, igUserId, pageId, adAccountId}  the brand's accounts
 //   POST disconnect  {brandId}
-//   POST sync        {brandId}                       one pass now (≥5 min apart)
+//   POST sync        {brandId, stream?}              one pass now (≥5 min apart); stream: true
+//                                                     = one JSON line per step (NDJSON), the result last
 //   POST graph       {brandId, path, params}         read-only Instagram GET through the server
 //   GET  cron                                        nightly (CRON_SECRET): tokens, numbers, ad spend
 //   POST deauthorize / data-deletion  signed_request  Meta's callbacks
@@ -85,16 +86,51 @@ export async function route(d, req, res) {
     if (action === "assets") return res.status(200).json(await assets(d, uid, body));
     if (action === "select") return res.status(200).json(await select(d, uid, body));
     if (action === "disconnect") return res.status(200).json(await disconnect(d, uid, body));
-    if (action === "sync") return res.status(200).json(await manualSync(d, uid, body));
+    if (action === "sync") return body.stream && typeof res.write === "function" ? await streamSync(d, uid, body, res) : res.status(200).json(await manualSync(d, uid, body));
     if (action === "graph") return res.status(200).json(await proxy(d, uid, body));
     return res.status(404).json({ error: "not-found" });
   } catch (err) {
-    if (err instanceof Fail) return res.status(err.status).json({ error: err.code });
-    if (err?.code === "not-configured") return res.status(503).json({ error: "not-configured" });
-    if (err instanceof V.GraphError) return res.status(err.needsReconnect ? 409 : 502).json({ error: err.needsReconnect ? "reconnect" : "meta", message: err.message });
-    console.error("[meta]", action, err?.message);
-    return res.status(500).json({ error: "unknown" });
+    const { status, body } = errorReply(err, action);
+    return res.status(status).json(body);
   }
+}
+function errorReply(err, action) {
+  if (err instanceof Fail) return { status: err.status, body: { error: err.code } };
+  if (err?.code === "not-configured") return { status: 503, body: { error: "not-configured" } };
+  if (err instanceof V.GraphError) return { status: err.needsReconnect ? 409 : 502, body: { error: err.needsReconnect ? "reconnect" : "meta", message: err.message } };
+  console.error("[meta]", action, err?.message);
+  return { status: 500, body: { error: "unknown" } };
+}
+
+// "Sinkron sekarang" with a progress bar (js/meta-connect.js syncMetaNow):
+// one JSON line per step while the pass runs, then {done, result}. Nothing
+// is sent before the first step, so a refusal (not allowed, too soon) still
+// comes back as a plain JSON error. If the platform buffers the reply, the
+// lines simply arrive together at the end.
+async function streamSync(d, uid, body, res) {
+  let open = false;
+  const line = (obj) => {
+    try {
+      if (!open) {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+        res.setHeader("X-Accel-Buffering", "no");
+        open = true;
+      }
+      res.write(`${JSON.stringify(obj)}\n`);
+    } catch {
+      // The person closed the tab; the pass carries on.
+    }
+  };
+  try {
+    const result = await manualSync(d, uid, body, line);
+    if (!open) return res.status(200).json(result);
+    line({ done: true, result });
+  } catch (err) {
+    if (!open) throw err;
+    line(errorReply(err, "sync").body);
+  }
+  res.end();
 }
 
 // ---------- config ----------
@@ -386,14 +422,14 @@ async function markReconnect(d, brandId) {
 }
 
 // ---------- sync ----------
-async function manualSync(d, uid, { brandId }) {
+async function manualSync(d, uid, { brandId }, progress) {
   const brand = await brandFor(d, uid, brandId);
   if (!canSync(brand, uid)) fail("not-allowed", 403);
   const conn = await read(d, `metaConnections/${brandId}`);
   if (!conn?.grantId) fail("not-connected", 404);
   if (conn.lastManualSyncAt && d.now() - conn.lastManualSyncAt < IG.MANUAL_SYNC_GAP_MS) fail("too-soon", 429);
   await d.db.doc(`metaConnections/${brandId}`).update({ lastManualSyncAt: d.now() });
-  return syncBrand(d, brandId, conn, brand);
+  return syncBrand(d, brandId, conn, brand, progress);
 }
 
 // Most metric reads one pass makes for one brand; the rest wait a day.
@@ -401,8 +437,16 @@ const MAX_READS_PER_PASS = 80;
 const MAX_FB_READS = 30;
 const FB_RECENT_MS = 35 * 24 * 3600 * 1000;
 
-export async function syncBrand(d, brandId, conn, brand = null) {
+// progress (optional): told each step, for the bar on "Sinkron sekarang".
+export async function syncBrand(d, brandId, conn, brand = null, progress = null) {
   const now = d.now();
+  const tell = (step) => {
+    try {
+      progress?.(step);
+    } catch {
+      // A progress line never stops the pass.
+    }
+  };
   brand = brand || (await read(d, `brands/${brandId}`));
   if (!brand || brand.deletedAt) return { skipped: "no-brand" };
   brand = { ...brand, id: brandId };
@@ -412,6 +456,7 @@ export async function syncBrand(d, brandId, conn, brand = null) {
   const grant = { ...grantDoc, id: conn.grantId };
   const key = V.tokenKey(d.env);
   const counts = { updated: 0, linked: 0, added: 0, failed: 0 };
+  let igFollowers = null;
   const brandPatch = {};
   try {
     // Instagram Login tokens live 60 days: refreshed with 20 left.
@@ -421,6 +466,7 @@ export async function syncBrand(d, brandId, conn, brand = null) {
       await d.db.doc(`metaGrants/${grant.id}`).update(tokenPatch);
       Object.assign(grant, tokenPatch);
     }
+    tell({ step: "posts" });
     const contentSnap = await d.db.collection("content").where("brandId", "==", brandId).get();
     const allContent = contentSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })).filter((c) => c.ownerId === brand.ownerId && !c.deletedAt);
 
@@ -429,6 +475,8 @@ export async function syncBrand(d, brandId, conn, brand = null) {
       const media = await IG.listMedia(api, conn.igUserId);
       const content = allContent.filter((c) => !c.platform || c.platform === "Instagram");
       const plan = IG.planSync({ media, content, connectedAt: conn.connectedAt, now });
+      const total = Math.min(MAX_READS_PER_PASS, plan.link.length + plan.refresh.length + plan.create.length);
+      tell({ step: "numbers", done: 0, total });
       let reads = 0;
       const metricsOf = async (m) => {
         reads++;
@@ -438,6 +486,8 @@ export async function syncBrand(d, brandId, conn, brand = null) {
           if (err instanceof V.GraphError && err.needsReconnect) throw err;
           counts.failed++;
           return null;
+        } finally {
+          tell({ step: "numbers", done: Math.min(reads, total), total });
         }
       };
       for (const { content: c, media: m } of [...plan.link, ...plan.refresh]) {
@@ -459,8 +509,10 @@ export async function syncBrand(d, brandId, conn, brand = null) {
         allContent.push(doc);
         counts.added++;
       }
+      tell({ step: "account" });
       try {
         const numbers = await IG.fetchAccountNumbers(api, conn.igUserId, now);
+        igFollowers = Number.isFinite(numbers.followers) ? numbers.followers : null;
         Object.assign(brandPatch, IG.insightsPatch(brand, "instagram", numbers, now));
         // The Page's entry below builds on this history, not the stored one.
         if (brandPatch.insightsHistory) brand.insightsHistory = brandPatch.insightsHistory;
@@ -471,9 +523,16 @@ export async function syncBrand(d, brandId, conn, brand = null) {
       Object.assign(brandPatch, { "instagram.status": "ok", "instagram.lastSyncAt": now, "instagram.lastSync": counts });
     }
 
-    const out = { ok: true, ...counts };
-    if (conn.pageId) out.facebook = await syncPage(d, brand, grant, conn, key, allContent, brandPatch, now);
-    if (conn.adAccountId) out.ads = await syncAds(d, brand, grant, conn, key, allContent, brandPatch, now);
+    const out = { ok: true, ...counts, ...(igFollowers !== null ? { followers: igFollowers } : {}) };
+    if (conn.pageId) {
+      tell({ step: "page" });
+      out.facebook = await syncPage(d, brand, grant, conn, key, allContent, brandPatch, now);
+    }
+    if (conn.adAccountId) {
+      tell({ step: "ads" });
+      out.ads = await syncAds(d, brand, grant, conn, key, allContent, brandPatch, now);
+    }
+    tell({ step: "save" });
 
     if (Object.keys(brandPatch).length) await d.db.doc(`brands/${brandId}`).update(brandPatch);
     await d.db.doc(`metaConnections/${brandId}`).update({ lastSyncAt: now, status: "ok" });

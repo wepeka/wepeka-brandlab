@@ -16,6 +16,7 @@ import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { icon } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, avatarHTML, formatNumber } from "./dom.js";
 import { pageForIg, sortForBrand } from "./meta-pick.js";
+import { openFetchPanel } from "./fetch-panel.js";
 
 class MetaError extends Error {
   constructor(code, message) {
@@ -37,6 +38,53 @@ async function call(action, body) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error) throw new MetaError(typeof json.error === "string" ? json.error : "server", json.message);
   return json;
+}
+
+// The sync with its steps as they happen: the server sends one JSON line per
+// step (NDJSON) and the result last. A plain JSON reply (a refusal, or a
+// platform that held the lines back) works too.
+async function callStream(action, body, onLine) {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) throw new MetaError("auth");
+  const res = await fetch(`/api/instagram/${action}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ ...(body || {}), stream: true }),
+  });
+  if (!/ndjson/.test(res.headers.get("content-type") || "") || !res.body?.getReader) {
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new MetaError(typeof json.error === "string" ? json.error : "server", json.message);
+    return json;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let last = null;
+  const take = (text) => {
+    if (!text.trim()) return;
+    let obj;
+    try {
+      obj = JSON.parse(text);
+    } catch {
+      return;
+    }
+    if (obj.done || obj.error) last = obj;
+    else onLine?.(obj);
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      take(buf.slice(0, nl));
+      buf = buf.slice(nl + 1);
+    }
+  }
+  take(buf);
+  if (!last) throw new MetaError("server");
+  if (last.error) throw new MetaError(typeof last.error === "string" ? last.error : "server", last.message);
+  return last.result;
 }
 
 // ---------- what the brand doc says ----------
@@ -87,24 +135,51 @@ export async function disconnectMeta(brandId) {
   }
 }
 
-export function syncSummary(r) {
-  if (r?.reconnect) return t("meta.err.reconnect");
-  const parts = [];
-  if (r?.updated) parts.push(t("meta.sync.updated", { count: r.updated }));
-  if (r?.linked) parts.push(t("meta.sync.linked", { count: r.linked }));
-  if (r?.added) parts.push(t("meta.sync.added", { count: r.added }));
-  return parts.length ? t("meta.sync.done", { summary: parts.join(", ") }) : t("meta.sync.nothing");
-}
 // One server pass now: Instagram numbers, posts since connecting, followers,
-// the Page, ad spend.
+// the Page, ad spend — shown step by step in the floating panel, with the
+// counts when it's done.
+const STEP_AT = { posts: 8, account: 80, page: 87, ads: 93, save: 97 };
+function stepLine(panel, line) {
+  if (line.step === "numbers") {
+    const total = Number(line.total) || 0;
+    const done = Math.min(Number(line.done) || 0, total);
+    if (!total) return panel.step(t("fetch.step.noPosts"), 75);
+    return panel.step(t("fetch.step.numbers", { done: Math.max(1, done), total }), 12 + 63 * (done / total));
+  }
+  if (STEP_AT[line.step]) panel.step(t(`fetch.step.${line.step}`), STEP_AT[line.step]);
+}
 export async function syncMetaNow(brandId) {
-  toast(t("meta.sync.running"));
+  const brand = getBrand(brandId);
+  const ig = !!brand?.instagram?.connected;
+  const fb = !!brand?.facebook?.connected;
+  const panel = openFetchPanel({
+    platform: ig ? "instagram" : "facebook",
+    badge: ig && fb ? "facebook" : "",
+    title: t(ig && fb ? "fetch.title.both" : ig ? "fetch.title.ig" : "fetch.title.fb"),
+    sub: brand?.name || "",
+    firstStep: t("fetch.step.start"),
+  });
+  panel.step("", 3);
   try {
-    const r = await call("sync", { brandId });
-    toast(syncSummary(r), r?.reconnect ? "error" : undefined);
+    const r = await callStream("sync", { brandId }, (line) => stepLine(panel, line));
+    if (r?.reconnect) {
+      panel.fail(t("meta.err.reconnect"), t("fetch.failed"));
+      return r;
+    }
+    const changed = (r?.updated || 0) + (r?.added || 0) + (r?.linked || 0);
+    panel.done({
+      title: t(changed ? "fetch.done" : "fetch.doneSame"),
+      note: t("fetch.doneNote"),
+      stats: [
+        r?.updated ? { n: r.updated, label: t("fetch.stat.updated") } : null,
+        r?.added ? { n: r.added, label: t("fetch.stat.added") } : null,
+        r?.linked ? { n: r.linked, label: t("fetch.stat.linked") } : null,
+        Number.isFinite(r?.followers) ? { n: r.followers, label: t("fetch.stat.followers") } : null,
+      ],
+    });
     return r;
   } catch (e) {
-    toast(metaErrorText(e), "error");
+    panel.fail(metaErrorText(e), t("fetch.failed"));
     return null;
   }
 }
