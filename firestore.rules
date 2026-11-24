@@ -155,6 +155,36 @@ service cloud.firestore {
       return roleIn(b) == 'editor'
         && b.get('members', {}).get(request.auth.uid, {}).get('seatPaused', false) != true;
     }
+    // Kerja Tim roles (2026-11-24, js/permissions.js): each member carries
+    // `p` {module: [action]} written by the server only (api/team.js) from
+    // their role — Admin, Content Creator, Video Editor, Social Media
+    // Manager, Sales, Viewer — or the owner's own boxes. Without `p`
+    // (invited before roles): an editor does what an editor did, a viewer
+    // only looks — and no longer at Sales. A paused seat only looks.
+    function memberOf(b) {
+      return b.get('members', {}).get(request.auth.uid, {});
+    }
+    function legacyCan(b, mod, act) {
+      return mod == 'sales' ? isEditor(b)
+        : act == 'view' ? canRead(b) : isEditor(b);
+    }
+    function can(b, mod, act) {
+      return roleIn(b) == 'owner'
+        || (roleIn(b) in ['editor', 'viewer']
+            && (memberOf(b).get('p', null) == null
+                  ? legacyCan(b, mod, act)
+                  : (act in memberOf(b).get('p', {}).get(mod, [])
+                     && (act == 'view' || memberOf(b).get('seatPaused', false) != true))));
+    }
+    // The brand doc's identity: only with My Brand edit (js/store.js IDENTITY_KEYS).
+    function identityKeys() {
+      return ['name', 'brandDNA', 'brandGuidelines', 'brandBuilder', 'color', 'avatar', 'businessDescription', 'personality'];
+    }
+    // A member who may write anything on the brand doc at all.
+    function memberWritesBrand(b) {
+      return isEditor(b) || can(b, 'brand', 'edit') || can(b, 'create', 'edit') || can(b, 'goals', 'edit')
+        || can(b, 'sales', 'edit') || can(b, 'board', 'edit');
+    }
     function ownerActive(ownerUid) {
       return activeAcc(get(/databases/$(database)/documents/accounts/$(ownerUid)).data);
     }
@@ -181,15 +211,31 @@ service cloud.firestore {
     }
     // An editor creating a brand doc: under a brand they edit, stamped with
     // that brand's owner, while the owner's plan is active.
-    function editorCreates(data) {
+    function editorCreates(data, mod) {
       return request.auth != null && data.get('brandId', null) is string
-        && isEditor(brandAt(data.brandId)) && data.ownerId == brandAt(data.brandId).ownerId && ownerActive(data.ownerId);
+        && can(brandAt(data.brandId), mod, 'edit') && data.ownerId == brandAt(data.brandId).ownerId && ownerActive(data.ownerId);
     }
     // An editor changing one: same brand, same owner, owner active.
-    function editorUpdates() {
+    function editorUpdates(mod) {
       return request.auth != null && resource.data.get('brandId', null) is string
-        && isEditor(brandAt(resource.data.brandId)) && brandAt(resource.data.brandId).ownerId == resource.data.ownerId
+        && can(brandAt(resource.data.brandId), mod, 'edit') && brandAt(resource.data.brandId).ownerId == resource.data.ownerId
         && keepsOwner() && request.resource.data.brandId == resource.data.brandId && ownerActive(resource.data.ownerId);
+    }
+    // A cut or a note on a piece (Antrean Video, js/posting.js): the video
+    // permission is enough, and only `posting` (+ who/when) changes.
+    function videoUpdates() {
+      return request.auth != null && resource.data.get('brandId', null) is string
+        && (can(brandAt(resource.data.brandId), 'video', 'upload')
+            || can(brandAt(resource.data.brandId), 'video', 'comment')
+            || can(brandAt(resource.data.brandId), 'video', 'approve'))
+        && brandAt(resource.data.brandId).ownerId == resource.data.ownerId
+        && keepsOwner() && request.resource.data.brandId == resource.data.brandId && ownerActive(resource.data.ownerId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['posting', 'updatedAt', 'updatedBy']);
+    }
+    // Reading the docs of one module (campaigns need My Goals: their
+    // numbers can carry sales totals).
+    function memberReadsModule(data, mod) {
+      return memberReads(data) && can(brandAt(data.brandId), mod, 'view');
     }
 
     // Every `update` below also requires ownerId to stay unchanged —
@@ -273,8 +319,12 @@ service cloud.firestore {
         && (!activityFieldsChange() || validActivityFields(request.resource.data))
         && (brandActive(resource.data) == brandActive(request.resource.data) || countNotRequired()
             || (countMovedFor(id) && (brandActive(resource.data) || countWithinLimit()))))
-        || (isEditor(resource.data) && keepsOwner() && ownerActive(resource.data.ownerId)
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(ownerOnlyKeys()));
+        || (memberWritesBrand(resource.data) && keepsOwner() && ownerActive(resource.data.ownerId)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(ownerOnlyKeys())
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['salesTracker'])
+                || can(resource.data, 'sales', 'edit'))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(identityKeys())
+                || can(resource.data, 'brand', 'edit')));
       allow delete: if isOwner(resource.data) && accountActive()
         && (!brandActive(resource.data) || countNotRequired() || countMovedFor(id));
     }
@@ -321,14 +371,14 @@ service cloud.firestore {
     // Uploaded files (js/brand-assets.js): one data URL per doc, capped so
     // the doc stays under Firestore's 1 MiB — mirrors ASSET_MAX_CHARS.
     // An editor writes them too, stamped with the brand owner (Kerja Tim).
-    function editorWritesUnder(brandId) {
-      return isEditor(brandAfter(brandId)) && request.resource.data.ownerId == brandAfter(brandId).ownerId
+    function editorWritesUnder(brandId, mod) {
+      return can(brandAfter(brandId), mod, 'edit') && request.resource.data.ownerId == brandAfter(brandId).ownerId
         && ownerActive(request.resource.data.ownerId);
     }
     match /brands/{brandId}/assets/{assetId} {
       allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
       allow create, update: if ((isOwner(request.resource.data) && accountActive() && ownsBrandAfter(brandId))
-            || editorWritesUnder(brandId))
+            || editorWritesUnder(brandId, 'brand'))
         && (resource == null || keepsOwner())
         && request.resource.data.brandId == brandId
         && assetId.matches('[A-Za-z0-9_-]{1,128}')
@@ -349,9 +399,11 @@ service cloud.firestore {
     // are, so the entries themselves aren't shape-checked; Firestore's 1 MiB
     // caps each doc.
     match /brands/{brandId}/sales/{month} {
-      allow read: if canRead(brandAt(brandId)) || isOwner(resource.data);
+      // Money: only with Sales access (a Video Editor, a Viewer or a client
+      // never reads it — 2026-11-24 roles).
+      allow read: if can(brandAt(brandId), 'sales', 'view') || isOwner(resource.data);
       allow create, update: if ((isOwner(request.resource.data) && accountActive() && ownsBrandAfter(brandId))
-            || editorWritesUnder(brandId))
+            || editorWritesUnder(brandId, 'sales'))
         && (resource == null || keepsOwner())
         && request.resource.data.brandId == brandId
         && month.matches('([0-9]{4}-[0-9]{2}|undated)(_[0-9]{1,3})?')
@@ -368,11 +420,11 @@ service cloud.firestore {
     // the time. Objects are free-form canvas shapes, so beyond ids, owner
     // and brand/board keys only Firestore's 1 MiB doc cap applies.
     function boardWriter(brandId) {
-      return (isOwner(request.resource.data) && accountActive() && ownsBrandAfter(brandId)) || editorWritesUnder(brandId);
+      return (isOwner(request.resource.data) && accountActive() && ownsBrandAfter(brandId)) || editorWritesUnder(brandId, 'board');
     }
     function boardDeleter(brandId) {
       return (isOwner(resource.data) && accountActive())
-        || (isEditor(brandAt(brandId)) && resource.data.ownerId == brandAt(brandId).ownerId && ownerActive(resource.data.ownerId));
+        || (can(brandAt(brandId), 'board', 'delete') && resource.data.ownerId == brandAt(brandId).ownerId && ownerActive(resource.data.ownerId));
     }
     // Guests (api/papan.js): someone outside the team who opened the board's
     // guest link signs in with a custom token whose "papan" claim names this
@@ -435,16 +487,16 @@ service cloud.firestore {
     }
     match /content/{id} {
       allow read: if isOwner(resource.data) || memberReads(resource.data);
-      allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data);
-      allow update: if (isOwner(resource.data) && accountActive() && keepsOwner()) || editorUpdates();
+      allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data, 'create');
+      allow update: if (isOwner(resource.data) && accountActive() && keepsOwner()) || editorUpdates('create') || videoUpdates();
       // Only the owner deletes for good (Trash purge); a member's "delete"
       // is the soft one (deletedAt), an update.
       allow delete: if isOwner(resource.data) && accountActive();
     }
     match /campaigns/{id} {
-      allow read: if isOwner(resource.data) || memberReads(resource.data);
-      allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data);
-      allow update: if (isOwner(resource.data) && accountActive() && keepsOwner()) || editorUpdates();
+      allow read: if isOwner(resource.data) || memberReadsModule(resource.data, 'goals');
+      allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data, 'goals');
+      allow update: if (isOwner(resource.data) && accountActive() && keepsOwner()) || editorUpdates('goals');
       // Only the owner deletes for good (Trash purge); a member's "delete"
       // is the soft one (deletedAt), an update.
       allow delete: if isOwner(resource.data) && accountActive();
@@ -460,8 +512,8 @@ service cloud.firestore {
     // back on every new episode. Same owner isolation as everything else.
     match /series/{id} {
       allow read: if isOwner(resource.data) || memberReads(resource.data);
-      allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data);
-      allow update: if (isOwner(resource.data) && accountActive() && keepsOwner()) || editorUpdates();
+      allow create: if (isOwner(request.resource.data) && accountActive()) || editorCreates(request.resource.data, 'create');
+      allow update: if (isOwner(resource.data) && accountActive() && keepsOwner()) || editorUpdates('create');
       // Only the owner deletes for good (Trash purge); a member's "delete"
       // is the soft one (deletedAt), an update.
       allow delete: if isOwner(resource.data) && accountActive();
@@ -471,8 +523,11 @@ service cloud.firestore {
     // never rewrites the brand doc. Same owner isolation as everything else.
     // Kerja Tim: a member's own threads in a shared brand are theirs alone
     // (ownerId = the member) and live while they edit that brand.
+    // (Roles, 2026-11-24: whoever may use Tanya Brandlab there — a Sales
+    // member yes, a Video Editor no — and not on a paused seat.)
     function editorThread(data) {
-      return data.get('brandId', null) is string && isEditor(brandAt(data.brandId))
+      return data.get('brandId', null) is string && can(brandAt(data.brandId), 'chat', 'view')
+        && memberOf(brandAt(data.brandId)).get('seatPaused', false) != true
         && ownerActive(brandAt(data.brandId).ownerId);
     }
     match /brainstorms/{id} {

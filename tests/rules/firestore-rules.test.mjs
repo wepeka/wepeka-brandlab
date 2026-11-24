@@ -387,3 +387,66 @@ describe("what the current production app writes is still accepted", () => {
     await assertFails(setDoc(doc(as("bob"), "settings/alice"), { formulas: {} }, { mergeFields: ["formulas"] }));
   });
 });
+
+// Kerja Tim roles (2026-11-24, js/permissions.js): what each role may read
+// and write, checked by the rules themselves — not only the app's menus.
+describe("roles: per module, enforced by the rules", () => {
+  const P = {
+    video: { brand: ["view"], create: ["view", "comment"], video: ["view", "upload", "comment"], board: ["view", "comment"] },
+    sales: { brand: ["view"], goals: ["view", "edit", "delete"], create: ["view"], report: ["view"], sales: ["view", "edit", "delete"], board: ["view"], chat: ["view"] },
+    creator: { brand: ["view"], goals: ["view"], create: ["view", "edit", "comment", "delete"], video: ["view", "upload", "comment"], report: ["view"], board: ["view", "edit", "comment", "delete"], chat: ["view"] },
+  };
+  const team = {
+    members: {
+      vid: { role: "viewer", preset: "video", p: P.video, name: "Dodi" },
+      sal: { role: "viewer", preset: "sales", p: P.sales, name: "Sari" },
+      cre: { role: "editor", preset: "creator", p: P.creator, name: "Cici" },
+      oldv: { role: "viewer", name: "Lama" },
+      olde: { role: "editor", name: "Lama editor" },
+    },
+    memberIds: ["vid", "sal", "cre", "oldv", "olde"],
+    ownerName: "Alice",
+  };
+  const piece = { id: "c1", ownerId: "alice", brandId: "a1", title: "Reel", status: "editing", posting: { versions: [], notes: [] } };
+  const goal = { id: "g1", ownerId: "alice", brandId: "a1", name: "Jualan", manualMetrics: { revenue: 5000000 } };
+  beforeEach(async () => {
+    await seedBasics({ brands: [brand("a1", "alice", team)] });
+    await seed(async (db) => {
+      await setDoc(doc(db, "brands/a1/sales/2026-10"), month("alice", "a1", "2026-10"));
+      await setDoc(doc(db, "content/c1"), piece);
+      await setDoc(doc(db, "campaigns/g1"), goal);
+    });
+  });
+  test("money: Sales and an editor from before roles read it; a Video Editor, a Content Creator and a plain viewer don't", async () => {
+    await assertSucceeds(getDoc(doc(as("sal"), "brands/a1/sales/2026-10")));
+    await assertSucceeds(getDoc(doc(as("olde"), "brands/a1/sales/2026-10")));
+    await assertFails(getDoc(doc(as("vid"), "brands/a1/sales/2026-10")));
+    await assertFails(getDoc(doc(as("cre"), "brands/a1/sales/2026-10")));
+    await assertFails(getDoc(doc(as("oldv"), "brands/a1/sales/2026-10")));
+  });
+  test("Sales logs a sale (month doc + products on the brand) but can't touch content or the Brand DNA", async () => {
+    await assertSucceeds(setDoc(doc(as("sal"), "brands/a1/sales/2026-11"), month("alice", "a1", "2026-11")));
+    await assertSucceeds(updateDoc(doc(as("sal"), "brands/a1"), { salesTracker: { products: [{ id: "p1", name: "Kopi", price: 25000 }] } }));
+    await assertFails(updateDoc(doc(as("sal"), "content/c1"), { title: "Ganti" }));
+    await assertFails(updateDoc(doc(as("sal"), "brands/a1"), { brandDNA: { oneLiner: "x" } }));
+  });
+  test("a Content Creator edits content but not money or the Brand DNA", async () => {
+    await assertSucceeds(updateDoc(doc(as("cre"), "content/c1"), { title: "Baru", updatedAt: 2 }));
+    await assertFails(setDoc(doc(as("cre"), "brands/a1/sales/2026-11"), month("alice", "a1", "2026-11")));
+    await assertFails(updateDoc(doc(as("cre"), "brands/a1"), { salesTracker: { products: [] } }));
+    await assertFails(updateDoc(doc(as("cre"), "brands/a1"), { brandDNA: { oneLiner: "x" } }));
+  });
+  test("a Video Editor adds a cut (posting only), never the script; doesn't read the goals", async () => {
+    await assertSucceeds(updateDoc(doc(as("vid"), "content/c1"), { posting: { versions: [{ id: "v1", n: 0, status: "pending" }], notes: [] }, updatedAt: 3, updatedBy: "vid" }));
+    await assertFails(updateDoc(doc(as("vid"), "content/c1"), { script: "ganti naskah" }));
+    await assertFails(updateDoc(doc(as("vid"), "content/c1"), { posting: { versions: [], notes: [] }, status: "published" }));
+    await assertSucceeds(getDoc(doc(as("vid"), "content/c1")));
+    await assertFails(getDoc(doc(as("vid"), "campaigns/g1")));
+    await assertSucceeds(getDoc(doc(as("sal"), "campaigns/g1")));
+  });
+  test("an editor from before roles keeps editing as before", async () => {
+    await assertSucceeds(updateDoc(doc(as("olde"), "content/c1"), { title: "Lama", updatedAt: 4 }));
+    await assertSucceeds(updateDoc(doc(as("olde"), "brands/a1"), { brandDNA: { oneLiner: "y" } }));
+    await assertFails(updateDoc(doc(as("oldv"), "content/c1"), { title: "No" }));
+  });
+});
