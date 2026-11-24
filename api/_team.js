@@ -13,8 +13,13 @@
 //                           email, across every invite and owner
 //   teamMail/{YYYY-MM-DD WIB} {total, byOwner {uid: n}} — team emails sent that day
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { ALL_ROLE_KEYS, presetKey, presetPerms, coarseRole, roleOfMember } from "./_permissions.js";
 
-export const ROLES = ["editor", "viewer", "klien", "klienEdit"];
+// Roles (2026-11-24, js/permissions.js): Admin, Content Creator, Video
+// Editor, Social Media Manager, Sales, Viewer — plus the two client roles
+// below, and "editor"/"viewer" still accepted from older app builds (they
+// become Admin / Viewer).
+export const ROLES = [...ALL_ROLE_KEYS, "editor", "viewer"];
 // "Klien" (owner, 2026-11-09: Quatro opens Brandlab to check its videos):
 // on the brand doc a client is a viewer — the rules give them reading only —
 // marked klien: true, which lets them note and approve the cuts sent to
@@ -26,8 +31,15 @@ export const ROLES = ["editor", "viewer", "klien", "klienEdit"];
 // role "editor" on the brand doc, still marked klien: true.
 export const CLIENT_ROLES = { klien: "viewer", klienEdit: "editor" };
 export const isClientRole = (role) => Object.hasOwn(CLIENT_ROLES, role);
-export const memberRoleOf = (role) => (isClientRole(role) ? { role: CLIENT_ROLES[role], klien: true } : { role });
-export const roleShown = (m) => (m?.klien ? (m.role === "editor" ? "klienEdit" : "klien") : m?.role);
+// What a role writes on the brand doc: the old two-way `role` (the client
+// roles keep theirs), the preset and its permission map `p`.
+export function memberRoleOf(role) {
+  const preset = presetKey(role) || "viewer";
+  const p = presetPerms(preset);
+  if (isClientRole(role)) return { role: CLIENT_ROLES[role], klien: true, preset, p };
+  return { role: coarseRole(p), preset, p };
+}
+export const roleShown = (m) => roleOfMember(m);
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CODE_MAX_ATTEMPTS = 5;
@@ -153,8 +165,13 @@ export function inviteLink(token, origin, fallback = "https://brandlab.wepeka.co
 
 const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const ROLE_TEXT = {
-  editor: { name: "Editor", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, dan ide)" },
-  viewer: { name: "Lihat saja", what: "bisa melihat semua isi brand tanpa mengubahnya" },
+  admin: { name: "Admin", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, video, dan penjualan)" },
+  creator: { name: "Content Creator", what: "bisa membuat dan mengubah konten (ide, naskah, kalender) dan mengupload video" },
+  video: { name: "Video Editor", what: "bisa membaca naskah, mengupload video, dan membalas catatan revisi" },
+  smm: { name: "Social Media Manager", what: "bisa mengatur konten dan jadwal, menyetujui video, dan menandai posting" },
+  sales: { name: "Sales", what: "bisa mencatat dan melihat penjualan, serta melihat konten dan laporan" },
+  editor: { name: "Admin", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, video, dan penjualan)" },
+  viewer: { name: "Lihat saja", what: "bisa melihat isi brand tanpa mengubahnya (kecuali data penjualan)" },
   klien: { name: "Klien", what: "bisa melihat brand, menonton video di Antrean Video, memberi catatan revisi, dan menyetujui video" },
   klienEdit: { name: "Klien (bisa edit)", what: "bisa mengubah isi brand (Brand DNA, Brand Book, konten, campaign, dan ide), menonton video di Antrean Video, memberi catatan revisi, dan menyetujui video" },
 };

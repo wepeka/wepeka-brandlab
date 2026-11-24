@@ -18,7 +18,8 @@
 //        An unverified account already on that email is taken over the way
 //        a password reset would (new password, old sign-ins ended); a
 //        verified one is left alone (409 account-exists).
-//   POST {action:"role", brandId, memberUid, role}  owner
+//   POST {action:"role", brandId, memberUid, role}  owner (a preset: admin|creator|video|smm|sales|viewer)
+//   POST {action:"perms", brandId, memberUid, p}    owner: the member's own boxes per module (js/permissions.js)
 //   POST {action:"access", brandId, memberUid, enabled}  owner: a member's access to one brand on/off
 //        (off = can't open it, stays on the list and keeps their seat, chats and work)
 //   POST {action:"remove", memberUid, brandIds?}    owner (all their brands when brandIds is left out)
@@ -43,6 +44,7 @@ import {
   ROLES, INVITE_TTL_MS, CODE_TTL_MS, RESEND_GAP_MS, MAX_PENDING_INVITES, TEAM_EMAIL_FROM_DEFAULT, CODE_DAY_SENDS, CODE_DAY_WRONG,
   teamMailDay, takeMailSlot, normalizeEmail, maskEmail, newToken, hashToken, newCode, hashCode, codeCheck, codeGuardId, guardToday, inviteState, seatsUsed,
   pausedMembers, inviteLink, composeInviteEmail, composeCodeEmail, memberRoleOf, isClientRole } from "./_team.js";
+import { cleanPerms, coarseRole } from "./_permissions.js";
 
 export class TeamError extends Error {
   constructor(code, status, extra = {}) {
@@ -485,8 +487,43 @@ export async function changeRole(d, caller, body) {
     const b = snap.data();
     if (b.ownerId !== caller.uid) fail("not-owner", 403);
     if (!b.members?.[memberUid]) fail("not-found", 404);
-    tx.update(ref, new FieldPath("members", memberUid, "role"), next.role, new FieldPath("members", memberUid, "klien"), next.klien ? true : FieldValue.delete());
-    tx.set(d.db.doc(`memberships/${memberUid}`), { brands: { [brandId]: { role: next.role, klien: next.klien ? true : FieldValue.delete() } } }, { merge: true });
+    tx.update(ref,
+      new FieldPath("members", memberUid, "role"), next.role,
+      new FieldPath("members", memberUid, "klien"), next.klien ? true : FieldValue.delete(),
+      new FieldPath("members", memberUid, "preset"), next.preset,
+      new FieldPath("members", memberUid, "p"), next.p,
+      new FieldPath("members", memberUid, "custom"), FieldValue.delete());
+    tx.set(d.db.doc(`memberships/${memberUid}`), { brands: { [brandId]: { role: next.role, klien: next.klien ? true : FieldValue.delete(), preset: next.preset } } }, { merge: true });
+  });
+  await mirrorTeams(d, [brandId]);
+  return {};
+}
+
+// The owner's own boxes for one member on one brand (owner, 2026-11-24:
+// "Owner dapat menentukan role dan mengatur hak akses setiap anggota tim").
+// The map is cleaned to known modules/actions; the old two-way role follows
+// it (editor = writes content), a client keeps their client mark; team
+// management stays the owner's.
+export async function setPerms(d, caller, body) {
+  const { brandId, memberUid } = body || {};
+  if (!idOk(brandId) || !idOk(memberUid) || !body?.p || typeof body.p !== "object") fail("bad-request", 400);
+  const p = cleanPerms(body.p);
+  delete p.team;
+  await d.db.runTransaction(async (tx) => {
+    const ref = d.db.doc(`brands/${brandId}`);
+    const snap = await tx.get(ref);
+    if (!snap.exists) fail("not-found", 404);
+    const b = snap.data();
+    if (b.ownerId !== caller.uid) fail("not-owner", 403);
+    const m = b.members?.[memberUid];
+    if (!m) fail("not-found", 404);
+    const role = m.klien ? m.role : coarseRole(p);
+    tx.update(ref,
+      new FieldPath("members", memberUid, "p"), p,
+      new FieldPath("members", memberUid, "role"), role,
+      new FieldPath("members", memberUid, "custom"), true,
+      new FieldPath("members", memberUid, "preset"), m.preset || (m.klien ? (m.role === "editor" ? "klienEdit" : "klien") : m.role === "editor" ? "admin" : "viewer"));
+    tx.set(d.db.doc(`memberships/${memberUid}`), { brands: { [brandId]: { role } } }, { merge: true });
   });
   await mirrorTeams(d, [brandId]);
   return {};
@@ -604,7 +641,7 @@ export async function sync(d, caller) {
 }
 
 // ---------- HTTP ----------
-const SIGNED_IN = { invite, rotate, revoke, accept, claim, role: changeRole, access: setAccess, remove, leave, sync };
+const SIGNED_IN = { invite, rotate, revoke, accept, claim, role: changeRole, perms: setPerms, access: setAccess, remove, leave, sync };
 
 export async function runAction(d, action, caller, body) {
   if (action === "preview") return preview(d, body);

@@ -18,6 +18,8 @@
 
 // A plan this table doesn't know gets Starter's allowance, never more
 // (audit S-25: unknown plans used to get 50/day, more than Starter).
+import { memberPerms } from "./_permissions.js";
+
 export const DEFAULT_AI_DAILY_LIMIT = 20;
 
 // Mirrors js/ai-usage.js's PLAN_QUOTA exactly — keep the two in sync.
@@ -378,7 +380,10 @@ export async function resolvePayer(db, uid, teamBrandId) {
   if (!brand || brand.ownerId !== entry.ownerId || !member) return { payerUid: uid, team: false };
   // The owner turned this person's access to the brand off (api/team.js setAccess).
   if (member.disabled || entry.disabled) return { error: "disabled" };
-  if (member.role !== "editor") return { error: "viewer" };
+  // Tanya Brandlab is a permission of its own since roles (2026-11-24,
+  // js/permissions.js "chat"): a Sales or Content Creator may ask, a Video
+  // Editor or Viewer may not. Members from before roles: editors yes.
+  if (!(memberPerms(member).chat || []).includes("view")) return { error: "viewer" };
   // Beyond the owner's seats (a smaller plan, a lapsed extra seat):
   // looks, but doesn't spend the owner's credits (api/team.js reconcileSeats).
   if (member.seatPaused) return { error: "seat-paused" };

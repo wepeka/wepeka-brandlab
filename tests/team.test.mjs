@@ -134,15 +134,19 @@ describe("emails", () => {
   test("the invite says who, which brands, which role, and the link", () => {
     const m = composeInviteEmail({ ownerName: "Winson", brandNames: ["Kopi Pagi", "Batik Rara"], role: "editor", link: "https://brandlab.wepeka.com/#/undangan/t", email: "sari@x.id" });
     assert.match(m.subject, /Winson mengundangmu ke tim Kopi Pagi dan Batik Rara/);
-    assert.match(m.text, /Editor/);
+    assert.match(m.text, /Admin/, "an old app's 'editor' invites an Admin");
+    assert.match(composeInviteEmail({ ownerName: "W", brandNames: ["K"], role: "video", link: "https://x/#/undangan/t", email: "a@b.id" }).text, /Video Editor/);
     assert.match(m.text, /#\/undangan\/t/);
     assert.match(m.html, /Gabung ke tim/);
     assert.doesNotMatch(m.html, /<script/i);
   });
   test("a client (Klien) is a viewer on the brand, marked klien, and the invite says what they can do", () => {
     assert.ok(ROLES.includes("klien"));
-    assert.deepEqual(memberRoleOf("klien"), { role: "viewer", klien: true }, "the rules read them as a viewer: nothing to edit");
-    assert.deepEqual(memberRoleOf("editor"), { role: "editor" });
+    // (2026-11-24: each role also carries its preset and permission map, js/permissions.js.)
+    const { preset: _kp, p: kp, ...klienRole } = memberRoleOf("klien");
+    assert.deepEqual(klienRole, { role: "viewer", klien: true }, "the rules read them as a viewer: nothing to edit");
+    assert.equal(kp.sales, undefined, "no money for a client");
+    assert.equal(memberRoleOf("editor").role, "editor");
     assert.equal(roleShown({ role: "viewer", klien: true }), "klien");
     assert.equal(roleShown({ role: "viewer" }), "viewer");
     const m = composeInviteEmail({ ownerName: "Wepeka", brandNames: ["Quatro"], role: "klien", link: "https://brandlab.wepeka.com/#/undangan/t", email: "a@q.id" });
@@ -151,9 +155,10 @@ describe("emails", () => {
   });
   test("a client who can edit (Klien bisa edit) is an editor on the brand, still marked klien", () => {
     assert.ok(ROLES.includes("klienEdit"));
-    assert.deepEqual(memberRoleOf("klienEdit"), { role: "editor", klien: true }, "the rules let them edit; klien keeps their Drive and approvals");
+    const { preset: _ep, p: _epp, ...klienEditRole } = memberRoleOf("klienEdit");
+    assert.deepEqual(klienEditRole, { role: "editor", klien: true }, "the rules let them edit; klien keeps their Drive and approvals");
     assert.equal(roleShown({ role: "editor", klien: true }), "klienEdit");
-    assert.equal(roleShown({ role: "editor" }), "editor");
+    assert.equal(roleShown({ role: "editor" }), "admin", "an editor from before roles reads as Admin");
     const m = composeInviteEmail({ ownerName: "Wepeka", brandNames: ["Quatro"], role: "klienEdit", link: "https://brandlab.wepeka.com/#/undangan/t", email: "a@q.id" });
     assert.match(m.text, /Klien \(bisa edit\)/);
     assert.match(m.text, /Brand DNA/);

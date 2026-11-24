@@ -663,6 +663,16 @@ describe("Kerja Tim: one AI pool per team", () => {
   test("a viewer gets no AI there", async () => {
     assert.deepEqual(await resolvePayer(team(), "rina", "b2"), { error: "viewer" });
   });
+  test("roles (2026-11-24): Sales may ask Tanya Brandlab, a Video Editor may not", async () => {
+    const { presetPerms } = await import("../api/_permissions.js");
+    const db = fakeFirestore({
+      "memberships/rina": { ownerIds: ["owen"], brands: { b1: { ownerId: "owen", role: "viewer" }, b2: { ownerId: "owen", role: "viewer" } } },
+      "brands/b1": { ownerId: "owen", members: { rina: { role: "viewer", preset: "sales", p: presetPerms("sales") } } },
+      "brands/b2": { ownerId: "owen", members: { rina: { role: "viewer", preset: "video", p: presetPerms("video") } } },
+    });
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { payerUid: "owen", team: true });
+    assert.deepEqual(await resolvePayer(db, "rina", "b2"), { error: "viewer" });
+  });
   test("a member whose access is off gets no AI there", async () => {
     const db = fakeFirestore({
       "memberships/rina": { ownerIds: ["owen"], brands: { b1: { ownerId: "owen", role: "editor", disabled: true } } },
