@@ -50,16 +50,31 @@ let root = null;
 let state = { connected: false, name: "", needsPermission: false };
 export const outboxState = () => ({ ...state });
 
-export async function restoreOutbox() {
+// Chrome can stop answering for a saved folder (owner's Chrome 158 after a
+// forced restart, 2026-11-24: queryPermission, listing, everything on the old
+// handle hung for good, so Antrean waited forever with no folder button, no
+// covers and no videos). No answer within `wait` = forget that handle and
+// show "Hubungkan folder di Mac", which picks the folder afresh.
+const ANSWER_MS = 5000;
+export async function restoreOutbox({ wait = ANSWER_MS } = {}) {
   if (!outboxSupported()) return outboxState();
+  let saved = null;
+  try { saved = await idb("readonly", (s) => s.get("root")); } catch { /* no saved folder */ }
+  if (!saved) return outboxState();
+  let timer;
   try {
-    const saved = await idb("readonly", (s) => s.get("root"));
-    if (saved) {
-      root = saved;
-      const perm = await saved.queryPermission?.({ mode: "readwrite" });
-      state = { connected: perm === "granted", name: saved.name, needsPermission: perm !== "granted" };
-    }
-  } catch { /* no saved folder */ }
+    const perm = await Promise.race([
+      saved.queryPermission?.({ mode: "readwrite" }),
+      new Promise((_, no) => { timer = setTimeout(() => no(new Error("no answer")), wait); }),
+    ]);
+    root = saved;
+    state = { connected: perm === "granted", name: saved.name, needsPermission: perm !== "granted" };
+  } catch {
+    root = null;
+    state = { connected: false, name: saved.name, needsPermission: false };
+  } finally {
+    clearTimeout(timer);
+  }
   return outboxState();
 }
 
@@ -162,23 +177,24 @@ async function postDir(key, { create = false } = {}) {
   return brand.getDirectoryHandle(p, { create });
 }
 
-// A file of a post as a URL this tab can play or show. Kept while the tab
-// lives; the last few dozen only.
-const urls = new Map();
+// A file of a post as a URL this tab can play or show: one per file, kept
+// while the tab lives and never revoked, because a player may still be
+// reading it. (Owner, 2026-11-24: "gabisa preview video di quatro". The old
+// cap of 40 URLs revoked the oldest ones, so on a brand with more than 40
+// pieces in the folder, opening a piece made thumbnails of its older cuts
+// and that revoked the URL of the video on screen: it never started.)
+// The File is the file on disk, not a copy in memory, so keeping them costs
+// next to nothing. A file rewritten under the same name (a new cover-1.jpg)
+// gets a fresh URL, since the old one can't read the new bytes.
+const urls = new Map(); // id → { url, stamp }
 export async function outboxFileURL(key, file) {
+  const f = await outboxFile(key, file);
   const id = `${key}/${file}`;
-  if (urls.has(id)) return urls.get(id);
-  let dir = await postDir(key);
-  const parts = file.split("/");
-  for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p);
-  const f = await (await dir.getFileHandle(parts[parts.length - 1])).getFile();
+  const stamp = `${f.size}:${f.lastModified}`;
+  const had = urls.get(id);
+  if (had?.stamp === stamp) return had.url;
   const url = URL.createObjectURL(f);
-  urls.set(id, url);
-  while (urls.size > 40) {
-    const [k, u] = urls.entries().next().value;
-    URL.revokeObjectURL(u);
-    urls.delete(k);
-  }
+  urls.set(id, { url, stamp });
   return url;
 }
 
@@ -192,35 +208,59 @@ export async function outboxFile(key, file) {
 
 // A small still for cards and the feed: the cover, or a frame of the video.
 // Takes a version as the piece stores it ({ kind, local: { file, slides } }).
-const thumbs = new Map();
+// Covers and slides are the files themselves; a video's frame is drawn once
+// and kept (a failed one is tried again next time).
+const frames = new Map();
 export async function outboxThumb(key, version, cover) {
   const file = version?.local?.file;
-  const id = `${key}|${cover || file}`;
-  if (thumbs.has(id)) return thumbs.get(id);
-  const job = (async () => {
-    if (cover) return outboxFileURL(key, cover);
-    if (!file) return "";
-    if (version.kind === "set") return outboxFileURL(key, `${file === "slides" ? "" : `${file}/`}${version.local.slides?.[0] || ""}`);
-    if (version.kind === "image") return outboxFileURL(key, file);
-    const src = await outboxFileURL(key, file);
-    return new Promise((resolve) => {
-      const v = document.createElement("video");
-      v.muted = true;
-      v.preload = "auto";
-      v.onloadeddata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 3); };
-      v.onseeked = () => {
-        const c = document.createElement("canvas");
-        c.width = 270;
-        c.height = Math.round((270 * (v.videoHeight || 16)) / (v.videoWidth || 9));
-        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
-        resolve(c.toDataURL("image/jpeg", 0.72));
-      };
-      v.onerror = () => resolve("");
-      v.src = src;
-    });
-  })();
-  thumbs.set(id, job);
+  if (cover) return outboxFileURL(key, cover);
+  if (!file) return "";
+  if (version.kind === "set") return outboxFileURL(key, `${file === "slides" ? "" : `${file}/`}${version.local.slides?.[0] || ""}`);
+  if (version.kind === "image") return outboxFileURL(key, file);
+  const id = `${key}/${file}`;
+  if (frames.has(id)) return frames.get(id);
+  const job = outboxFile(key, file).then((f) => frameSlot(() => videoFrame(f)));
+  frames.set(id, job);
+  const forget = () => { if (frames.get(id) === job) frames.delete(id); };
+  job.then((src) => { if (!src) forget(); }, forget);
   return job;
+}
+
+// A frame from about a third in (at most 1 s), from a URL of its own that is
+// let go as soon as the frame is drawn. A few at a time: a gallery of fifty
+// pieces would otherwise open fifty hidden full-size players at once.
+function videoFrame(f) {
+  const src = URL.createObjectURL(f);
+  const v = document.createElement("video");
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(""), 20000);
+    const done = (x) => { clearTimeout(timer); resolve(x); };
+    v.muted = true;
+    v.preload = "auto";
+    v.onloadeddata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 3); };
+    v.onseeked = () => {
+      const c = document.createElement("canvas");
+      c.width = 270;
+      c.height = Math.round((270 * (v.videoHeight || 16)) / (v.videoWidth || 9));
+      c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+      done(c.toDataURL("image/jpeg", 0.72));
+    };
+    v.onerror = () => done("");
+    v.src = src;
+  }).finally(() => {
+    v.removeAttribute("src");
+    v.load();
+    URL.revokeObjectURL(src);
+  });
+}
+const FRAME_SLOTS = 3;
+let framesBusy = 0;
+const frameQueue = [];
+function frameSlot(fn) {
+  // A finished job hands its slot straight to the next one waiting.
+  const run = () => fn().finally(() => { const next = frameQueue.shift(); if (next) next(); else framesBusy--; });
+  if (framesBusy < FRAME_SLOTS) { framesBusy++; return run(); }
+  return new Promise((resolve) => frameQueue.push(() => resolve(run())));
 }
 
 // ---- writing -----------------------------------------------------------------
