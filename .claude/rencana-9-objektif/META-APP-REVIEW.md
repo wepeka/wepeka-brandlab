@@ -10,7 +10,7 @@ App Meta: **wepeka** `1996512847700669`. Jenis Business, sudah Business-verified
 ## 0. Ringkasnya (diperbarui 25 Nov, pagi)
 
 **Keputusan final: dua app Meta, satu cara login per app** (aturan Meta: *"create an app for each setup"*).
-- **App 1 "wepeka"** (yang ini): **Sambungkan Facebook** → Instagram + Halaman + iklan. Ajukan 9 izin + `public_profile`.
+- **App 1 "wepeka"** (yang ini): **Sambungkan ke akun Meta** → Instagram + Halaman + iklan. Ajukan 9 izin + `public_profile`.
 - **App 2 (baru, khusus Instagram)**: **Sambungkan Instagram** → angka organik IG saja. Ajukan 3 izin `instagram_business_*`. Paketnya di §12.
 
 **Sudah beres di dashboard app 1 (diatur langsung 25 Nov):**
@@ -21,7 +21,7 @@ App Meta: **wepeka** `1996512847700669`. Jenis Business, sudah Business-verified
 - ✅ Draf App Review berisi **tepat 10**: `read_insights`, `pages_manage_posts`, `pages_show_list`, `instagram_content_publish`, `business_management`, `ads_read`, `pages_read_engagement`, `public_profile`, `instagram_manage_insights`, `instagram_basic`. 19 lainnya dibuang (dicek ulang setelah halaman dimuat ulang).
 
 **Sudah di kode (commit lokal, belum di-push):**
-- Halaman **Akun Sosmed**: per brand pilih *Sambungkan Instagram* atau *Sambungkan Facebook*; pengingat sebelum jendela Facebook; *Tambah Facebook & iklan* untuk brand yang lewat Instagram; data langsung ditarik setelah tersambung.
+- Halaman **Akun Sosmed**: per brand pilih *Sambungkan Instagram* atau *Sambungkan ke akun Meta*; pengingat sebelum jendela Facebook; *Tambah Facebook & iklan* untuk brand yang lewat Instagram; data langsung ditarik setelah tersambung.
 - **Rincian dari Meta** di tiap konten (Isi angka): Instagram organik · Dari iklan · Facebook · Total.
 - Angka dari iklan per postingan (`total_*` − organik) lewat jalur Facebook; reels Halaman yang di-cross-post ikut ditarik.
 - **Data dari Meta tidak dikirim ke AI** (`js/meta-safe.js`). Jadi kebijakan privasi dan jawaban data handling **tidak perlu menyebut penyedia AI**.
@@ -139,13 +139,13 @@ Meta menulis: *"We will test your app using our own test accounts. Do not includ
 - UI dalam bahasa Inggris. Bagian yang masih berbahasa Indonesia diberi teks keterangan bahasa Inggris.
 - Minimal 1080p. Lebar layar maksimal 1440 (Mac: System Settings → Displays → pilih resolusi yang lebih kecil).
 - **Tanpa suara.** Pakai mouse, perbesar kursor, boleh zoom dan anotasi.
-- Tiap video dimulai dari **keadaan logout**, lalu login, lalu tombol Connect Facebook dan jendela izin Meta, lalu **data izin itu tampil di Brandlab**.
+- Tiap video dimulai dari **keadaan logout**, lalu login, lalu tombol Connect Meta account dan jendela izin Meta, lalu **data izin itu tampil di Brandlab**.
 - **Satu klip per izin.** Cara paling hemat: rekam satu kali alur lengkap, lalu potong jadi 9 klip. Tiap klip memakai bagian login + izin yang sama, lalu bagian khusus izin itu.
 - Aturan lama tetap: Claude tidak membuka Instagram di browser. Bagian "postingan muncul di Instagram" kamu rekam sendiri dari HP atau laptopmu.
 
 **Bagian awal yang sama untuk semua klip (±40 detik):**
 1. brandlab.wepeka.com dalam keadaan logout, lalu login dengan email.
-2. ⋮ → **Settings** → **Social accounts** → klik **Connect Facebook** di brand demo.
+2. ⋮ → **Settings** → **Social accounts** → klik **Connect Meta account** di brand demo.
 3. Jendela Meta: pilih business portfolio → Instagram → Page → ad account → lihat daftar izin → Continue.
 4. Kembali ke Brandlab: jendela **Which Instagram is …?** → pilih IG; Page ikut otomatis; buka **Add an ad account** → pilih → **Save**.
 
@@ -215,7 +215,7 @@ Untuk kolom App Verification / Platform Settings → Web → "how to access and 
 
 > **Login:** https://brandlab.wepeka.com → "Sign in with email" → email: `<reviewer email>` · password: `<password>`. The account has an active plan and the interface is set to English (Settings → Language). Brandlab sign-in uses email/Google; Facebook Login for Business is used afterwards to connect a business's Meta assets.
 >
-> **Connect (all permissions):** open the ⋮ menu (top right) → Settings → "Social accounts". On the brand "Demo Coffee", click "Connect Facebook". In Meta's window choose a business portfolio (Meta requires one for this login), an Instagram professional account, a Facebook Page and, optionally, an ad account. Back in Brandlab, in "Which Instagram is Demo Coffee's?" pick the Instagram account (its Page is filled in automatically), optionally open "Add an ad account", then click "Save".
+> **Connect (all permissions):** open the ⋮ menu (top right) → Settings → "Social accounts". On the brand "Demo Coffee", click "Connect Meta account". In Meta's window choose a business portfolio (Meta requires one for this login), an Instagram professional account, a Facebook Page and, optionally, an ad account. Back in Brandlab, in "Which Instagram is Demo Coffee's?" pick the Instagram account (its Page is filled in automatically), optionally open "Add an ad account", then click "Save".
 >
 > 1. **instagram_basic, pages_show_list, business_management:** the brand card now shows the Instagram username, the Page and the ad account. Content → ⋮ → "Import from Instagram" lists the account's posts; pick some and click "Add N posts".
 > 2. **instagram_manage_insights, read_insights, pages_read_engagement:** on the brand card click "Sync now". A panel shows each step; when it says "Data is in!", the card shows Instagram followers and 30-day reach and the Page's followers and 28-day reach. Open any imported post: its views, reach, saves and shares are filled in.

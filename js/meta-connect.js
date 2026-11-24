@@ -13,7 +13,7 @@ import { getBrand, listBrands } from "./store.js";
 import { currentUid } from "./account.js";
 import { can } from "./permissions.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
-import { icon } from "./icons.js";
+import { icon, PLATFORM_ICON } from "./icons.js";
 import { qs, qsa, toast, escapeHtml, avatarHTML, formatNumber } from "./dom.js";
 import { pageForIg, sortForBrand } from "./meta-pick.js";
 import { openFetchPanel } from "./fetch-panel.js";
@@ -398,70 +398,102 @@ export async function handleMetaReturn() {
   if (brandId) setTimeout(() => syncMetaNow(brandId), 500);
 }
 
-// ---------- Pengaturan → Akun Meta ----------
+// ---------- Pengaturan → Akun Sosmed ----------
+// Colourful on purpose (owner, 2026-11-25: "terlalu flat kurang menarik"):
+// each way in is a tile in its platform's colours with what it brings; a
+// connected brand shows its accounts and its numbers as tiles.
 const when = (ms) => new Date(ms).toLocaleString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-function rowsHTML(b) {
-  const line = (ic, label, value, off) => `<div class="meta-line${off ? " is-off" : ""}">${icon(ic, { size: 15 })}<span>${label}</span><b>${value}</b></div>`;
-  const ig = b.instagram?.connected ? `@${escapeHtml(b.instagram.username || b.instagram.igUserId)}` : "";
-  const page = b.facebook?.connected ? escapeHtml(b.facebook.pageName || b.facebook.pageId) : "";
-  const ads = b.ads?.connected ? escapeHtml([b.ads.name, b.ads.currency].filter(Boolean).join(" · ")) : "";
-  const fb = metaVia(b) === "facebook";
-  return [
-    line("instagram", t("meta.row.instagram"), ig || t("meta.row.off"), !ig),
-    fb ? line("facebook", t("meta.row.page"), page || t("meta.row.off"), !page) : "",
-    fb ? line("megaphone", t("meta.row.ads"), ads || t("meta.row.off"), !ads) : "",
-  ].join("");
+const logo = (k) => PLATFORM_ICON[k] || "";
+const check = (text) => `<span class="sos-get">${icon("check", { size: 13 })}<span>${text}</span></span>`;
+
+function headHTML(b) {
+  const on = metaConnected(b);
+  const status = on ? t(metaVia(b) === "instagram" ? "meta.viaInstagram" : "meta.viaFacebook") : t("meta.notConnected");
+  return `<div class="sos-head">
+    ${avatarHTML(b, "flex:none;width:40px;height:40px;border-radius:12px;font-size:15px;")}
+    <div><b>${escapeHtml(b.name)}</b><small class="sos-status${on ? " is-on" : ""}"><i></i>${status}</small></div>
+  </div>`;
 }
+
+function waysHTML() {
+  return `<div class="sos-ways">
+    <button type="button" class="sos-way is-ig" data-meta-connect="instagram">
+      <span class="sos-way-top"><span class="sos-way-logo">${logo("instagram")}</span><span class="sos-way-name">${t("meta.connectIg")}</span></span>
+      <span class="sos-gets">${check(t("meta.ig.get1"))}${check(t("meta.ig.get2"))}</span>
+      <span class="sos-way-need">${t("meta.ig.need")}</span>
+      <span class="sos-way-cta">${t("meta.cta")}${icon("arrowRight", { size: 15 })}</span>
+    </button>
+    <button type="button" class="sos-way is-meta" data-meta-connect="facebook">
+      <span class="sos-best">${t("meta.best")}</span>
+      <span class="sos-way-top"><span class="sos-way-logo is-duo"><i>${logo("instagram")}</i><i>${logo("facebook")}</i></span><span class="sos-way-name">${t("meta.connectFb")}</span></span>
+      <span class="sos-gets">${check(t("meta.fb.get1"))}${check(t("meta.fb.get2"))}${check(t("meta.fb.get3"))}</span>
+      <span class="sos-way-need">${t("meta.fb.need")}</span>
+      <span class="sos-way-cta">${t("meta.cta")}${icon("arrowRight", { size: 15 })}</span>
+    </button>
+  </div>`;
+}
+
+function accountsHTML(b) {
+  const fb = metaVia(b) === "facebook";
+  const acc = (k, ic, label, value) => `<div class="sos-acc is-${k}${value ? "" : " is-off"}"><span class="sos-acc-ic">${ic}</span><span><small>${label}</small><b>${value || t("meta.row.off")}</b></span></div>`;
+  return `<div class="sos-accs">
+    ${acc("ig", logo("instagram"), t("meta.row.instagram"), b.instagram?.connected ? `@${escapeHtml(b.instagram.username || b.instagram.igUserId)}` : "")}
+    ${fb ? acc("fb", logo("facebook"), t("meta.row.page"), b.facebook?.connected ? escapeHtml(b.facebook.pageName || b.facebook.pageId) : "") : ""}
+    ${fb ? acc("ads", icon("megaphone", { size: 16 }), t("meta.row.ads"), b.ads?.connected ? escapeHtml([b.ads.name, b.ads.currency].filter(Boolean).join(" · ")) : "") : ""}
+  </div>`;
+}
+
 // What the last pass brought: followers and reach, Instagram and the Page.
-function numbersHTML(b) {
+function statsHTML(b) {
   const n = (v) => (v === null || v === undefined ? "–" : formatNumber(v));
   const ig = b.instagram?.connected && b.insights?.instagram?.source === "instagram" ? b.insights.instagram : null;
   const pg = b.facebook?.connected && b.insights?.facebook?.source === "facebook" ? b.insights.facebook : null;
-  const lines = [
-    ig ? t("meta.numbers.ig", { followers: n(ig.followers), reach: n(ig.reach30d) }) : "",
-    pg ? t("meta.numbers.page", { followers: n(pg.followers), reach: n(pg.reach30d) }) : "",
+  const tile = (k, value, label) => `<div class="sos-stat is-${k}"><b>${n(value)}</b><span>${label}</span></div>`;
+  const tiles = [
+    ig ? tile("ig", ig.followers, t("meta.stat.igFollowers")) : "",
+    ig ? tile("ig", ig.reach30d, t("meta.stat.igReach")) : "",
+    pg ? tile("fb", pg.followers, t("meta.stat.pageFollowers")) : "",
+    pg ? tile("fb", pg.reach30d, t("meta.stat.pageReach")) : "",
   ].filter(Boolean);
-  return lines.length ? `<p class="text-faint meta-when">${lines.join(" · ")}</p>` : "";
+  return tiles.length ? `<div class="sos-stats">${tiles.join("")}</div>` : "";
 }
-// One choice per brand (2026-11-25): Instagram (its organic numbers; just an
-// Instagram Business/Creator account) or Facebook (Instagram plus the Page
-// and ads, each apart on every post). The two logins run on two Meta apps —
-// Meta lets one app use Facebook Login or Instagram Login, "but not both".
+
 function brandCardHTML(b) {
-  const head = `<div class="meta-card-head">${avatarHTML(b, "flex:none;width:30px;height:30px;border-radius:9px;font-size:12px;")}<div><b>${escapeHtml(b.name)}</b><small>${metaConnected(b) ? t(metaVia(b) === "instagram" ? "meta.viaInstagram" : "meta.viaFacebook") : t("meta.notConnected")}</small></div></div>`;
   if (!metaConnected(b)) {
-    return `<div class="card meta-card" data-meta-brand="${escapeHtml(b.id)}">${head}
-      <p class="meta-choose-q">${t("meta.choose")}</p>
-      <div class="meta-ways">
-        <button type="button" class="meta-way is-ig" data-meta-connect="instagram"><span class="meta-way-ic">${icon("instagram", { size: 20 })}</span><span><b>${t("meta.connectIg")}</b><small>${t("meta.connectIgHint")}</small></span></button>
-        <button type="button" class="meta-way is-fb" data-meta-connect="facebook"><span class="meta-way-ic">${icon("facebook", { size: 20 })}</span><span><b>${t("meta.connectFb")}</b><small>${t("meta.connectFbHint")}</small></span></button>
-      </div>
+    return `<div class="card sos-card" data-meta-brand="${escapeHtml(b.id)}">${headHTML(b)}
+      ${waysHTML()}
       <p class="meta-choose-tip">${icon("info", { size: 13 })}${t("meta.chooseTip")}</p></div>`;
   }
   const last = b.instagram?.lastSyncAt || b.facebook?.lastSyncAt || b.ads?.lastSyncAt;
   const adsNote = b.ads?.lastSync?.currencySkipped ? t("meta.adsNotIdr") : b.ads?.lastSync?.unmatched ? t("meta.adsUnmatched", { n: b.ads.lastSync.unmatched }) : "";
-  return `<div class="card meta-card" data-meta-brand="${escapeHtml(b.id)}">${head}
+  const viaFb = metaVia(b) === "facebook";
+  return `<div class="card sos-card is-on is-${viaFb ? "meta" : "ig"}" data-meta-brand="${escapeHtml(b.id)}">${headHTML(b)}
     ${metaNeedsReconnect(b) ? `<p class="meta-warn">${icon("info", { size: 14 })}${t("meta.reconnectNote")}</p>` : ""}
-    <div class="meta-lines">${rowsHTML(b)}</div>
-    ${numbersHTML(b)}
-    <p class="text-faint meta-when">${last ? t("meta.lastSync", { when: escapeHtml(when(last)) }) : t("meta.neverSynced")}${adsNote ? ` · ${adsNote}` : ""}</p>
-    <div class="meta-actions">
-      ${metaNeedsReconnect(b) ? `<button type="button" class="btn btn-primary btn-sm" data-meta-connect="${escapeHtml(metaVia(b) || "facebook")}">${icon("refresh", { size: 14 })}${t("meta.reconnect")}</button>` : `<button type="button" class="btn btn-secondary btn-sm" data-meta-sync>${icon("refresh", { size: 14 })}${t("meta.syncNow")}</button>`}
-      ${metaVia(b) === "facebook" ? `<button type="button" class="btn btn-secondary btn-sm" data-meta-change>${t("meta.change")}</button>` : `<button type="button" class="btn btn-secondary btn-sm" data-meta-connect="facebook">${icon("facebook", { size: 14 })}${t("meta.addFb")}</button>`}
+    ${accountsHTML(b)}
+    ${statsHTML(b)}
+    <p class="sos-when">${icon("refresh", { size: 12 })}${last ? t("meta.lastSync", { when: escapeHtml(when(last)) }) : t("meta.neverSynced")}${adsNote ? ` · ${adsNote}` : ""}</p>
+    <div class="sos-actions">
+      ${metaNeedsReconnect(b) ? `<button type="button" class="btn btn-primary btn-sm" data-meta-connect="${escapeHtml(metaVia(b) || "facebook")}">${icon("refresh", { size: 14 })}${t("meta.reconnect")}</button>` : `<button type="button" class="btn btn-primary btn-sm" data-meta-sync>${icon("refresh", { size: 14 })}${t("meta.syncNow")}</button>`}
+      ${viaFb ? `<button type="button" class="btn btn-secondary btn-sm" data-meta-change>${t("meta.change")}</button>` : `<button type="button" class="btn btn-secondary btn-sm sos-upgrade" data-meta-connect="facebook"><span class="sos-mini-duo"><i>${logo("instagram")}</i><i>${logo("facebook")}</i></span>${t("meta.addFb")}</button>`}
       <button type="button" class="btn btn-ghost btn-sm" data-meta-disconnect>${t("meta.disconnect")}</button>
     </div></div>`;
+}
+
+function introHTML() {
+  const dot = (k, soon) => `<span class="sos-dot is-${k}${soon ? " is-soon" : ""}">${logo(k)}${soon ? `<em>${t("meta.soonTag")}</em>` : ""}</span>`;
+  return `<div class="card sos-hero">
+    <div class="sos-dots">${dot("instagram")}${dot("facebook")}${dot("tiktok", true)}${dot("youtube", true)}</div>
+    <h3>${t("meta.title")}</h3>
+    <p class="text-muted">${t("meta.intro")}</p>
+    <p class="text-faint sos-hero-note">${icon("info", { size: 13 })}${t("meta.proOnly")}</p>
+  </div>`;
 }
 
 export function renderMetaPanel(content) {
   const brands = listBrands().filter((b) => !b.archived && canManageMeta(b));
   content.innerHTML = `
     <div class="meta-panel">
-      <div class="card meta-intro">
-        <h3>${t("meta.title")}</h3>
-        <p class="text-muted">${t("meta.intro")}</p>
-        <p class="text-faint">${icon("info", { size: 13 })}${t("meta.proOnly")}</p>
-        <p class="text-faint meta-soon">${t("meta.soon")}</p>
-      </div>
+      ${introHTML()}
       ${brands.length ? brands.map(brandCardHTML).join("") : `<div class="card"><p class="text-muted" style="margin:0;">${t("meta.none")}</p></div>`}
     </div>`;
   qsa("[data-meta-brand]", content).forEach((card) => {
