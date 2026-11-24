@@ -108,7 +108,16 @@ function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = fals
       return json({ data: { is_valid: true, scopes: FB.FB_PERMISSIONS, expires_at: tokenType === "system" ? 0 : Math.floor((NOW + 60 * DAY) / 1000) } });
     }
     if (dead) return json({ error: { message: "Error validating access token", code: 190 } }, 400);
-    if (q === "/me") return json(tokenType === "system" ? { id: "sys1", client_business_id: "cb1" } : { id: "fbuser1", name: "Winson" });
+    if (q === "/me") {
+      const fields = (url.searchParams.get("fields") || "").split(",");
+      // What Meta really does (seen live 2026-11-25): a user token asking for
+      // client_business_id gets the whole request refused.
+      if (tokenType !== "system" && fields.includes("client_business_id")) {
+        return json({ error: { message: "(#190) The client_business_id field can only be accessed using a Business Integration System User access token.", code: 190 } }, 400);
+      }
+      const all = tokenType === "system" ? { id: "sys1", client_business_id: "cb1" } : { id: "fbuser1", name: "Winson" };
+      return json(Object.fromEntries(Object.entries(all).filter(([k]) => fields.includes(k))));
+    }
     if (q === "/me/accounts") return json({ data: [{ id: "5550001", name: "Kopi Pagi", access_token: "PAGE1", instagram_business_account: { id: IG_ID, username: "kopipagi" } }], paging: {} });
     if (q === "/me/assigned_instagram_accounts") return json({ data: [{ id: IG_ID2, username: "kopipagi.store" }], paging: {} });
     if (q === "/me/adaccounts") return json({ data: [{ id: "act_111", account_id: "111", name: "Iklan Kopi", currency: adCurrency, account_status: 1 }], paging: {} });
@@ -326,6 +335,8 @@ describe("Facebook Login for Business", () => {
     await connectFb(db, meta);
     const grant = [...db.docs.entries()].find(([p]) => p.startsWith("metaGrants/"))[1];
     assert.equal(grant.tokenType, "user");
+    assert.equal(grant.name, "Winson", "the person's name, asked separately");
+    assert.equal(grant.clientBusinessId, "");
     assert.equal(grant.tokenExpiresAt, NOW + 60 * DAY);
     assert.ok(meta.calls.some((c) => c.url.searchParams.get("grant_type") === "fb_exchange_token"));
     assert.equal(grant.instagram.length, 1, "no business-assigned list for a user token");

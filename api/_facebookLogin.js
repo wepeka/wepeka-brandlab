@@ -54,14 +54,30 @@ export async function exchangeCode(fetchImpl, { appId, appSecret, redirectUri, c
   const first = await graphGet(fetchImpl, FB_GRAPH, "/oauth/access_token", { client_id: appId, client_secret: appSecret, redirect_uri: redirectUri, code }, null);
   if (!first?.access_token) throw new GraphError("token exchange: no token", { status: 400 });
   let token = first.access_token;
-  const me = await get({ ...base, token }, "/me", { fields: "id,name,client_business_id" });
-  const tokenType = me.client_business_id ? "system" : "user";
+  const me = await get({ ...base, token }, "/me", { fields: "id" });
+  // Only a BISU token may read client_business_id; Meta refuses the whole
+  // request for a user token (code 190, "can only be accessed using a
+  // Business Integration System User access token", seen live 2026-11-25),
+  // so it's asked on its own and a refusal means "user token".
+  let clientBusinessId = "";
+  try {
+    clientBusinessId = String((await get({ ...base, token }, "/me", { fields: "client_business_id" })).client_business_id || "");
+  } catch {
+    clientBusinessId = "";
+  }
+  const tokenType = clientBusinessId ? "system" : "user";
   let expiresIn = Number(first.expires_in) || 0;
+  let name = "";
   if (tokenType === "user") {
     // 60 days instead of a couple of hours.
     const long = await graphGet(fetchImpl, FB_GRAPH, "/oauth/access_token", { grant_type: "fb_exchange_token", client_id: appId, client_secret: appSecret, fb_exchange_token: token }, null);
     token = long.access_token || token;
     expiresIn = Number(long.expires_in) || 60 * 24 * 3600;
+    try {
+      name = String((await get({ ...base, token }, "/me", { fields: "name" })).name || "");
+    } catch {
+      name = "";
+    }
   }
   const info = await debugToken(fetchImpl, { appId, appSecret, token });
   return {
@@ -72,8 +88,8 @@ export async function exchangeCode(fetchImpl, { appId, appSecret, redirectUri, c
     expiresAt: info.expiresAt || 0,
     expiresIn: tokenType === "system" ? 0 : expiresIn,
     appUserId: String(me.id || ""),
-    name: tokenType === "user" ? String(me.name || "") : "",
-    clientBusinessId: String(me.client_business_id || ""),
+    name,
+    clientBusinessId,
     permissions: info.scopes,
   };
 }
