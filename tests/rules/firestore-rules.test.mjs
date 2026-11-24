@@ -403,8 +403,9 @@ describe("roles: per module, enforced by the rules", () => {
       cre: { role: "editor", preset: "creator", p: P.creator, name: "Cici" },
       oldv: { role: "viewer", name: "Lama" },
       olde: { role: "editor", name: "Lama editor" },
+      kle: { role: "editor", klien: true, name: "Klien bisa edit" },
     },
-    memberIds: ["vid", "sal", "cre", "oldv", "olde"],
+    memberIds: ["vid", "sal", "cre", "oldv", "olde", "kle"],
     ownerName: "Alice",
   };
   const piece = { id: "c1", ownerId: "alice", brandId: "a1", title: "Reel", status: "editing", posting: { versions: [], notes: [] } };
@@ -443,6 +444,10 @@ describe("roles: per module, enforced by the rules", () => {
     await assertSucceeds(getDoc(doc(as("vid"), "content/c1")));
     await assertFails(getDoc(doc(as("vid"), "campaigns/g1")));
     await assertSucceeds(getDoc(doc(as("sal"), "campaigns/g1")));
+  });
+  test("a client from before roles (Klien bisa edit) edits content but never sees money", async () => {
+    await assertSucceeds(updateDoc(doc(as("kle"), "content/c1"), { title: "Klien", updatedAt: 5 }));
+    await assertFails(getDoc(doc(as("kle"), "brands/a1/sales/2026-10")));
   });
   test("an editor from before roles keeps editing as before", async () => {
     await assertSucceeds(updateDoc(doc(as("olde"), "content/c1"), { title: "Lama", updatedAt: 4 }));

@@ -414,6 +414,33 @@ describe("role, remove, leave", () => {
     assert.equal((await db.doc("memberships/rina").get()).data().brands.b1.role, "viewer");
     await expectError(runAction(d(), "role", as("rina"), { brandId: "b1", memberUid: "rina", role: "editor" }), "not-owner");
   });
+  // Roles (2026-11-24, js/permissions.js): a preset writes its map; the
+  // owner's own boxes write theirs; the old role follows "writes content".
+  test("roles: a preset writes its permission map; the owner's boxes write a custom one", async () => {
+    await teamOfTwo();
+    await runAction(d(), "role", as("owen"), { brandId: "b1", memberUid: "rina", role: "sales" });
+    let m = (await db.doc("brands/b1").get()).data().members.rina;
+    assert.equal(m.preset, "sales");
+    assert.equal(m.role, "viewer", "Sales doesn't write content");
+    assert.deepEqual(m.p.sales, ["view", "edit", "delete"]);
+    assert.equal(m.p.video, undefined);
+    assert.equal((await db.doc("memberships/rina").get()).data().brands.b1.preset, "sales");
+    // Tanya Brandlab follows the map: Sales may ask, paid by the owner.
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { payerUid: "owen", team: true });
+    // The owner's own boxes: content edit on, Sales off, junk dropped.
+    await runAction(d(), "perms", as("owen"), { brandId: "b1", memberUid: "rina", p: { create: ["view", "edit"], sales: [], hack: ["view"], team: ["view", "edit"] } });
+    m = (await db.doc("brands/b1").get()).data().members.rina;
+    assert.equal(m.custom, true);
+    assert.equal(m.role, "editor", "now writes content");
+    assert.deepEqual(m.p, { create: ["view", "edit"] });
+    await expectError(runAction(d(), "perms", as("rina"), { brandId: "b1", memberUid: "rina", p: { sales: ["view"] } }), "not-owner");
+    // Back to a preset clears the custom mark.
+    await runAction(d(), "role", as("owen"), { brandId: "b1", memberUid: "rina", role: "video" });
+    m = (await db.doc("brands/b1").get()).data().members.rina;
+    assert.equal(m.custom, undefined);
+    assert.deepEqual(m.p.video, ["view", "upload", "comment"]);
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { error: "viewer" }, "a Video Editor doesn't use the AI");
+  });
   test("removing takes her off, deletes her chats and people doc there, keeps her own elsewhere", async () => {
     await teamOfTwo();
     await runAction(d(), "remove", as("owen"), { memberUid: "rina", brandIds: ["b1"] });

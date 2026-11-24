@@ -189,7 +189,10 @@ describe("assets and sales under a shared brand", () => {
     await assertFails(setDoc(doc(as("vi"), "brands/b1/assets/a3"), { ownerId: "owen", brandId: "b1", kind: "logo", dataUrl, createdAt: 1 }));
     await assertFails(deleteDoc(doc(ed, "brands/b1/assets/a1")));
     await assertSucceeds(setDoc(doc(ed, "brands/b1/sales/2026-10"), { ownerId: "owen", brandId: "b1", month: "2026-10", entries: [] }));
-    await assertSucceeds(getDocs(collection(as("vi"), "brands/b1/sales")));
+    // Roles (2026-11-24): money only with Sales access — an editor from
+    // before roles reads as Admin (yes), a viewer as Viewer (no).
+    await assertSucceeds(getDocs(query(collection(as("ed"), "brands/b1/sales"), where("ownerId", "==", "owen"))));
+    await assertFails(getDocs(query(collection(as("vi"), "brands/b1/sales"), where("ownerId", "==", "owen"))));
     await assertFails(getDocs(collection(as("zed"), "brands/b1/sales")));
   });
 });

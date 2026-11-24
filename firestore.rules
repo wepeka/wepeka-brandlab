@@ -164,9 +164,20 @@ service cloud.firestore {
     function memberOf(b) {
       return b.get('members', {}).get(request.auth.uid, {});
     }
+    // A member without `p` reads as the preset their old role maps to
+    // (js/permissions.js memberPerms): editor = Admin (all but the team; a
+    // paused seat only looks), viewer = Viewer (looks at brand, goals,
+    // create, video, report, board — no Sales, no AI), a client = Klien /
+    // Klien (bisa edit) (no Sales, no posting).
     function legacyCan(b, mod, act) {
-      return mod == 'sales' ? isEditor(b)
-        : act == 'view' ? canRead(b) : isEditor(b);
+      let m = memberOf(b);
+      let writes = m.get('role', '') == 'editor' && m.get('seatPaused', false) != true;
+      return m.get('klien', false) == true
+          ? (!(mod in ['sales', 'publish', 'team'])
+             && (writes || (act == 'view' && mod in ['brand', 'create', 'video', 'board'])))
+        : m.get('role', '') == 'editor'
+          ? (mod != 'team' && (act == 'view' || writes))
+          : (act == 'view' && mod in ['brand', 'goals', 'create', 'video', 'report', 'board']);
     }
     function can(b, mod, act) {
       return roleIn(b) == 'owner'

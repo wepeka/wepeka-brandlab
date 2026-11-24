@@ -107,8 +107,10 @@ test("end to end: connect, send two cuts, client notes, approves; older cut leav
   const off = await call(review, "upload", ADMIN, { contentId: "c1", versionId: "a", code: "QN-1", files });
   assert.deepEqual([off.status, off.error], [409, "drive-off"]);
 
-  // Drive: a plain viewer may not use it; the client may.
-  assert.equal((await call(driveApi, "token", "sari")).error, "private");
+  // Drive: everyone uses their own (2026-11-16); the client connects theirs.
+  // Since 2026-11-16 every account may keep its own cuts in its own Drive:
+  // someone who never connected one hears "not-connected", not "private".
+  assert.equal((await call(driveApi, "token", "sari")).error, "not-connected");
   assert.equal((await call(driveApi, "token", "rina")).error, "not-connected");
   docs.set("driveConnections/rina", { refresh: seal("1//r"), email: "rina@gmail.test" });
   assert.equal((await call(driveApi, "token", "rina")).accessToken, "tok");
