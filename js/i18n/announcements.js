@@ -52,6 +52,7 @@ export default {
   "ann.email.partial": { en: "Emailed to {n} of {total} users — the email service stopped there (daily limit?).", id: "Email terkirim ke {n} dari {total} pengguna — layanan email berhenti di situ (batas harian?)." },
   "ann.email.already": { en: "This update was already sent by email.", id: "Pengumuman ini sudah pernah dikirim lewat email." },
   "ann.email.failed": { en: "The emails couldn't be sent. The update still shows in the app.", id: "Email gagal dikirim. Pengumumannya tetap tampil di aplikasi." },
+  "ann.email.inDigest": { en: "In the daily update email", id: "Masuk email update harian" },
   "ann.email.done": { en: "Sent by email to {n} users", id: "Sudah dikirim lewat email ke {n} pengguna" },
   "ann.email.confirmTitle": { en: "Send this update by email?", id: "Kirim pengumuman ini lewat email?" },
   "ann.email.confirmBody": { en: "\"{title}\" goes to every active user's inbox. It can only be sent once.", id: "\"{title}\" akan masuk ke email semua pengguna aktif. Hanya bisa dikirim sekali." },

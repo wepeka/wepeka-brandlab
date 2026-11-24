@@ -76,7 +76,10 @@ test("posts every entry once, then one email to everyone who wants it; the next 
   assert.deepEqual(sent.map((m) => m.to).sort(), ["dua@contoh.test", "satu@contoh.test"]);
   assert.match(sent[0].subject, /^Update Brandlab: /);
   assert.match(sent[0].html, /Cara pakai/);
-  for (const d of snap.docs) assert.ok(d.data().emailedAt, `${d.id} marked as mailed`);
+  for (const d of (await db.collection("announcements").get()).docs) {
+    assert.ok(d.data().emailedAt, `${d.id} marked as mailed`);
+    assert.equal(d.data().emailed?.sent, 2, `${d.id}: how many got it`);
+  }
 
   sent = [];
   clock += 30 * 60 * 1000;

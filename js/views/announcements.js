@@ -111,7 +111,7 @@ function itemHTML(a, { seenAt, admin }) {
         // A page inside Brandlab ("#/papan", "#/settings/team"): same tab.
         ? `<a class="btn btn-primary btn-sm ann-link" href="${esc(a.link)}">${esc(a.linkLabel || t("ann.open"))}${icon("arrowRight", { size: 12 })}</a>`
         : `<a class="btn btn-secondary btn-sm ann-link" href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.linkLabel || t("ann.open"))}${icon("arrowRight", { size: 12 })}</a>`) : ""}
-      ${admin && a.emailedAt ? `<p class="ann-emailed text-faint">${icon("send", { size: 12 })}${esc(t("ann.email.done", { n: a.emailed?.sent ?? 0 }))}</p>` : ""}
+      ${admin && a.emailedAt ? `<p class="ann-emailed text-faint">${icon("send", { size: 12 })}${esc(a.emailed?.sent == null ? t("ann.email.inDigest") : t("ann.email.done", { n: a.emailed.sent }))}</p>` : ""}
       ${admin && !a.emailedAt && emailOn ? `<button type="button" class="btn btn-ghost btn-sm ann-email-btn" data-ann-email="${esc(a.id)}">${icon("send", { size: 12 })}${t("ann.email.send")}</button>` : ""}
     </article>`;
 }

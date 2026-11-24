@@ -113,6 +113,13 @@ export default async function handler(req, res) {
       runningAt: null,
       lastError: result.ok ? null : String(result.error || "").slice(0, 200),
     }, { merge: true });
+    // How far the email got, on each post it carries (the admin's line
+    // "Sudah dikirim lewat email ke N pengguna" on Pengumuman).
+    if (newly.length || step.mode === "start") {
+      const batch = db.batch();
+      ids.forEach((id) => batch.set(db.doc(`announcements/${id}`), { emailed: { sent: done.size + newly.length, total: done.size + todo.length, at: Date.now(), digest: true } }, { merge: true }));
+      await batch.commit();
+    }
     out.mail = { ...step, posts: posts.length, sent: result.sent, remaining: todo.length - newly.length, ...(result.ok ? {} : { error: String(result.error || "") }) };
     return res.status(200).json({ ok: true, ...out });
   } catch (err) {
