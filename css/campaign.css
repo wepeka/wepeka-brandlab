@@ -1045,3 +1045,6 @@ button.gd-row:hover .gd-row-go{ transform: translateX(3px); color: var(--text); 
   .bb-card.is-lead .bb-cover{ min-height:0; aspect-ratio:16/9; }
   .bb-card.is-lead .bb-title{ font-size:20px; }
 }
+
+/* Daftar Konten: the video's Antrean state under the step (js/posting.js postingBadgeHTML). */
+.cl-video-state{ margin-top:5px; }
