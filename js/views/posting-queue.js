@@ -302,29 +302,37 @@ function uploadCardHTML({ c, state }, ui) {
         ? `<button type="button" class="cl-cta pqu-take" data-u-share="${escapeHtml(c.id)}"><span>${t("pqu.share")}</span><span class="cl-cta-dot pst-dot-ok">${icon("send", { size: 15 })}</span></button>`
         : `<button type="button" class="cl-cta pqu-take" data-u-prep="${escapeHtml(c.id)}" ${busy ? "disabled" : ""}><span>${busy ? t("pqu.preparing", { pct: Math.round((ui.preparing.pct || 0) * 100) }) : t("pqu.prepare")}</span><span class="cl-cta-dot pst-dot-drive">${busy ? `<span class="spinner" style="width:14px;height:14px;"></span>` : icon("download", { size: 15 })}</span></button>`)
       : `<button type="button" class="cl-cta pqu-take" data-u-dl="${escapeHtml(c.id)}"><span>${escapeHtml(cut.label)}</span><span class="cl-cta-dot pst-dot-drive">${icon("download", { size: 15 })}</span></button>`;
+  const copyBtn = (what, label, cls = "") => `<button type="button" class="pqu-copy ${cls}" data-u-copy="${what}" data-id="${escapeHtml(c.id)}">${icon("copy", { size: 13 })}${label}</button>`;
   return `<article class="pqu-card ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pqu-cover" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(t("pqu.openPiece"))}"><span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${icon("play", { size: 22 })}</span></button>
-      <div class="pqu-main">
+      <div class="pqu-info">
         <div class="pqu-head">
           ${code ? `<button type="button" class="pq-g-code" data-copy="${escapeHtml(code)}" title="${escapeHtml(t("post.code.copy"))}">${escapeHtml(code)}</button>` : ""}
           <span class="pq-g-state"><i></i>${escapeHtml(stateLabelOf(c))}</span>
         </div>
         <b class="pqu-title">${escapeHtml(c.title || t("common.untitled"))}</b>
-        <small class="pq-g-when ${late ? "is-late" : ""}">${icon("calendar", { size: 11 })}${late ? `<span class="pq-g-late">${escapeHtml(t("pq.late"))}</span>` : ""}${escapeHtml(c.scheduleDate ? whenLabel(c) : t("pq.noDate"))} · ${escapeHtml(t("pqu.where", { where: where.join(", ") }))}</small>
+        <small class="pq-g-when ${late ? "is-late" : ""}">${icon("calendar", { size: 11 })}${late ? `<span class="pq-g-late">${escapeHtml(t("pq.late"))}</span>` : ""}${escapeHtml(c.scheduleDate ? whenLabel(c) : t("pq.noDate"))}</small>
+        <small class="pqu-where">${icon("send", { size: 11 })}${escapeHtml(t("pqu.where", { where: where.join(", ") }))}</small>
+        ${cut && share ? `<small class="pqu-file">${icon("film", { size: 12 })}${escapeHtml(cut.label)}</small>` : ""}
+      </div>
+      <div class="pqu-body">
         <div class="pqu-actions">
           ${takeBtn}
-          ${/^(https:|data:image\/)/.test(c.thumbnail || "") ? `<button type="button" class="btn btn-secondary btn-sm" data-u-cover="${escapeHtml(c.id)}">${icon("image", { size: 14 })}${t("pqu.cover")}</button>` : ""}
-          <button type="button" class="btn btn-ghost btn-sm" data-u-copy="title" data-id="${escapeHtml(c.id)}">${icon("copy", { size: 13 })}${t("pqu.copyTitle")}</button>
+          <div class="pqu-more">
+            ${/^(https:|data:image\/)/.test(c.thumbnail || "") ? `<button type="button" class="pqu-copy" data-u-cover="${escapeHtml(c.id)}">${icon("image", { size: 13 })}${t("pqu.cover")}</button>` : ""}
+            ${copyBtn("title", t("pqu.copyTitle"))}
+          </div>
         </div>
-        ${cut && share ? `<small class="pqu-file">${icon("film", { size: 12 })}${escapeHtml(cut.label)}</small>` : ""}
         ${share && cut && ready ? `<p class="pqu-hint">${icon("info", { size: 12 })}${t("pqu.shareHint")}</p>` : ""}
         <div class="pqu-cap">
           <div class="pqu-cap-head"><span class="pst-sub">${t("post.cl.caption")}</span>
-            ${c.caption ? `<button type="button" class="pst-link" data-u-copy="caption" data-id="${escapeHtml(c.id)}">${icon("copy", { size: 13 })}${t("pqu.copyCaption")}</button>${tags.length ? `<button type="button" class="pst-link" data-u-copy="tags" data-id="${escapeHtml(c.id)}">${icon("copy", { size: 13 })}${t("pqu.copyTags", { n: tags.length })}</button>` : ""}` : ""}</div>
-          ${c.caption ? `<p class="pqu-cap-text" data-u-expand>${escapeHtml(c.caption)}</p>` : `<p class="pqu-cap-none">${t("pqu.noCaption")} <a href="#/brand/${escapeHtml(c.brandId)}/content/creator/${escapeHtml(c.id)}" class="pst-link">${t("pqu.fillCaption")}</a></p>`}
+            ${c.caption ? `${copyBtn("caption", t("pqu.copyCaption"), "is-main")}${tags.length ? copyBtn("tags", t("pqu.copyTags", { n: tags.length })) : ""}` : ""}</div>
+          ${c.caption ? `<p class="pqu-cap-text" data-u-expand title="${escapeHtml(t("pqu.capMore"))}">${escapeHtml(c.caption)}</p>` : `<p class="pqu-cap-none">${t("pqu.noCaption")} <a href="#/brand/${escapeHtml(c.brandId)}/content/creator/${escapeHtml(c.id)}" class="pst-link">${t("pqu.fillCaption")}</a></p>`}
         </div>
-        ${ui.client ? "" : `<div class="pqu-done">
-          <input class="input" data-u-link="${escapeHtml(c.id)}" inputmode="url" placeholder="${escapeHtml(t("pqu.linkPh"))}" aria-label="${escapeHtml(t("post.ig.linkLabel"))}" />
+        ${ui.client ? "" : `<div class="pqu-done ${ui.linkOpen?.has(c.id) ? "has-link" : ""}">
+          ${ui.linkOpen?.has(c.id)
+            ? `<input class="input" data-u-link="${escapeHtml(c.id)}" inputmode="url" placeholder="${escapeHtml(t("pqu.linkPh"))}" aria-label="${escapeHtml(t("post.ig.linkLabel"))}" />`
+            : `<button type="button" class="pst-link pqu-addlink" data-u-addlink="${escapeHtml(c.id)}">${icon("link", { size: 13 })}${t("pqu.addLink")}</button>`}
           <button type="button" class="btn btn-primary btn-sm" data-u-posted="${escapeHtml(c.id)}">${icon("check", { size: 14 })}${t("post.ig.alreadyPosted")}</button>
         </div>`}
       </div>
@@ -351,7 +359,7 @@ export function render(root, { brandId }) {
   try { view = localStorage.getItem(VIEW_KEY) || "list"; } catch { /* default */ }
   // The brand open in the app (its switcher, top left) — no second brand picker here.
   if (client && view !== "upload") view = "list"; // the profile grid reads Wepeka's Instagram connection
-  const ui = { view, period: "all", status: "all", unmatched: [], client, fbOpen: new Set(), preparing: null };
+  const ui = { view, period: "all", status: "all", unmatched: [], client, fbOpen: new Set(), preparing: null, linkOpen: new Set() };
 
   const paint = () => {
     if (!client) ensureVideoCodes(); // a piece made in Creator since: it gets its number now
@@ -471,6 +479,12 @@ export function render(root, { brandId }) {
       else copyText(c.caption || "", "post.cl.capCopied");
     }));
     qsa("[data-u-expand]", root).forEach((el) => el.addEventListener("click", () => el.classList.toggle("is-open")));
+    // The post link is optional: a small "+ Tambah link" until it's wanted.
+    qsa("[data-u-addlink]", root).forEach((b) => b.addEventListener("click", () => {
+      ui.linkOpen.add(b.dataset.uAddlink);
+      paint();
+      qs(`[data-u-link="${CSS.escape(b.dataset.uAddlink)}"]`, root)?.focus();
+    }));
     qsa("[data-u-posted]", root).forEach((b) => b.addEventListener("click", () => {
       const id = b.dataset.uPosted;
       const link = qs(`[data-u-link="${CSS.escape(id)}"]`, root)?.value || "";

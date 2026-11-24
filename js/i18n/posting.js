@@ -378,8 +378,10 @@ export default {
   "pqu.copyTags": { en: "Copy hashtags ({n})", id: "Salin hashtag ({n})" },
   "pqu.copiedTags": { en: "Hashtags copied", id: "Hashtag disalin" },
   "pqu.noCaption": { en: "No caption yet.", id: "Caption belum diisi." },
+  "pqu.capMore": { en: "Tap to show the whole caption", id: "Ketuk untuk lihat caption lengkap" },
   "pqu.fillCaption": { en: "Write it in Creator", id: "Tulis di Creator" },
   "pqu.linkPh": { en: "Post link (optional)", id: "Link postingan (opsional)" },
+  "pqu.addLink": { en: "Add the post link", id: "Tambah link postingan" },
   "pqu.openPiece": { en: "Open this piece", id: "Buka konten ini" },
   // Antrean → Footage: the shoot's raw clips (js/footage-bank.js, 2026-11-12).
   "pq.view.footage": { en: "Footage", id: "Footage" },
