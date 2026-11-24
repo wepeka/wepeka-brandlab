@@ -32,6 +32,7 @@ export default {
 
   "post.empty.title": { en: "No video for this piece yet", id: "Konten ini belum ada videonya" },
   "post.empty.body": { en: "Drop the video here or pick it. MP4 or MOV, 9:16.", id: "Seret video ke sini atau pilih file. MP4 atau MOV, 9:16." },
+  "post.empty.bodyPhone": { en: "Pick the video from your phone's gallery. MP4 or MOV, 9:16.", id: "Pilih video dari galeri HP. MP4 atau MOV, 9:16." },
   "post.empty.pick": { en: "Choose video", id: "Pilih video" },
 
   "post.compare.on": { en: "Compare with {label}", id: "Bandingkan dengan {label}" },
@@ -377,6 +378,7 @@ export default {
   "pqu.copyCaption": { en: "Copy caption", id: "Salin caption" },
   "pqu.copyTags": { en: "Copy hashtags ({n})", id: "Salin hashtag ({n})" },
   "pqu.copiedTags": { en: "Hashtags copied", id: "Hashtag disalin" },
+  "pqu.copyTagsShort": { en: "Hashtags", id: "Salin hashtag" },
   "pqu.noCaption": { en: "No caption yet.", id: "Caption belum diisi." },
   "pqu.capMore": { en: "Tap to show the whole caption", id: "Ketuk untuk lihat caption lengkap" },
   "pqu.fillCaption": { en: "Write it in Creator", id: "Tulis di Creator" },

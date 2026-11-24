@@ -18,7 +18,7 @@ import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from ".
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut, uploadCutOf, downloadUploadCut, canShareFiles, preparedUpload, prepareUploadShare, shareUpload, downloadCover, hashtagsOf, markPostedByHand } from "../posting.js";
+import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut, uploadKitHTML, uploadCopyHTML, wireUploadKit, markPostedByHand } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { videoCode, codedPiece } from "../video-codes.js";
@@ -286,23 +286,10 @@ function uploadItems(items) {
   return ordered(items.filter((x) => READY_STATES.has(x.state)));
 }
 function uploadCardHTML({ c, state }, ui) {
-  const cut = uploadCutOf(c);
   const code = videoCode(c);
   const late = !!c.scheduleDate && c.scheduleDate < localISODate();
   const twins = c.mirrorGroupId ? listContent(c.brandId).filter((x) => x.mirrorGroupId === c.mirrorGroupId && x.id !== c.id && x.status !== "archived") : [];
   const where = [c.platform || "Instagram", ...twins.map((x) => x.platform).filter(Boolean)];
-  const tags = hashtagsOf(c.caption);
-  const ready = preparedUpload(c.id);
-  const busy = ui.preparing?.id === c.id;
-  const share = canShareFiles();
-  const takeBtn = !cut
-    ? `<span class="pqu-nofile">${icon("info", { size: 13 })}${t(ui.client ? "pqu.noFileClient" : "pqu.noFile")}</span>`
-    : share
-      ? (ready
-        ? `<button type="button" class="cl-cta pqu-take" data-u-share="${escapeHtml(c.id)}"><span>${t("pqu.share")}</span><span class="cl-cta-dot pst-dot-ok">${icon("send", { size: 15 })}</span></button>`
-        : `<button type="button" class="cl-cta pqu-take" data-u-prep="${escapeHtml(c.id)}" ${busy ? "disabled" : ""}><span>${busy ? t("pqu.preparing", { pct: Math.round((ui.preparing.pct || 0) * 100) }) : t("pqu.prepare")}</span><span class="cl-cta-dot pst-dot-drive">${busy ? `<span class="spinner" style="width:14px;height:14px;"></span>` : icon("download", { size: 15 })}</span></button>`)
-      : `<button type="button" class="cl-cta pqu-take" data-u-dl="${escapeHtml(c.id)}"><span>${escapeHtml(cut.label)}</span><span class="cl-cta-dot pst-dot-drive">${icon("download", { size: 15 })}</span></button>`;
-  const copyBtn = (what, label, cls = "") => `<button type="button" class="pqu-copy ${cls}" data-u-copy="${what}" data-id="${escapeHtml(c.id)}">${icon("copy", { size: 13 })}${label}</button>`;
   return `<article class="pqu-card ${late ? "is-late" : ""}" style="--pst:${stateColor(state)}">
       <button type="button" class="pqu-cover" data-open="${escapeHtml(c.id)}" aria-label="${escapeHtml(t("pqu.openPiece"))}"><span class="pq-g-img" data-thumb="${escapeHtml(c.id)}">${icon("play", { size: 22 })}</span></button>
       <div class="pqu-info">
@@ -313,20 +300,11 @@ function uploadCardHTML({ c, state }, ui) {
         <b class="pqu-title">${escapeHtml(c.title || t("common.untitled"))}</b>
         <small class="pq-g-when ${late ? "is-late" : ""}">${icon("calendar", { size: 11 })}${late ? `<span class="pq-g-late">${escapeHtml(t("pq.late"))}</span>` : ""}${escapeHtml(c.scheduleDate ? whenLabel(c) : t("pq.noDate"))}</small>
         <small class="pqu-where">${icon("send", { size: 11 })}${escapeHtml(t("pqu.where", { where: where.join(", ") }))}</small>
-        ${cut && share ? `<small class="pqu-file">${icon("film", { size: 12 })}${escapeHtml(cut.label)}</small>` : ""}
       </div>
       <div class="pqu-body">
-        <div class="pqu-actions">
-          ${takeBtn}
-          <div class="pqu-more">
-            ${/^(https:|data:image\/)/.test(c.thumbnail || "") ? `<button type="button" class="pqu-copy" data-u-cover="${escapeHtml(c.id)}">${icon("image", { size: 13 })}${t("pqu.cover")}</button>` : ""}
-            ${copyBtn("title", t("pqu.copyTitle"))}
-          </div>
-        </div>
-        ${share && cut && ready ? `<p class="pqu-hint">${icon("info", { size: 12 })}${t("pqu.shareHint")}</p>` : ""}
+        ${uploadKitHTML(c)}
         <div class="pqu-cap">
-          <div class="pqu-cap-head"><span class="pst-sub">${t("post.cl.caption")}</span>
-            ${c.caption ? `${copyBtn("caption", t("pqu.copyCaption"), "is-main")}${tags.length ? copyBtn("tags", t("pqu.copyTags", { n: tags.length })) : ""}` : ""}</div>
+          <div class="pqu-cap-head"><span class="pst-sub">${t("post.cl.caption")}</span>${uploadCopyHTML(c, "caption")}${uploadCopyHTML(c, "tags")}</div>
           ${c.caption ? `<p class="pqu-cap-text" data-u-expand title="${escapeHtml(t("pqu.capMore"))}">${escapeHtml(c.caption)}</p>` : `<p class="pqu-cap-none">${t("pqu.noCaption")} <a href="#/brand/${escapeHtml(c.brandId)}/content/creator/${escapeHtml(c.id)}" class="pst-link">${t("pqu.fillCaption")}</a></p>`}
         </div>
         ${ui.client ? "" : `<div class="pqu-done ${ui.linkOpen?.has(c.id) ? "has-link" : ""}">
@@ -343,14 +321,6 @@ function uploadHTML(items, ui) {
   if (!list.length) return `<div class="pq-empty pqu-empty">${icon("check", { size: 20 })}<span>${t(ui.client ? "pqu.emptyClient" : "pqu.empty")}</span></div>`;
   return `<p class="pqu-lead">${t("pqu.lead", { n: list.length })}</p><div class="pqu-list">${list.map((x) => uploadCardHTML(x, ui)).join("")}</div>`;
 }
-async function copyText(text, okKey) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast(t(okKey), "success");
-  } catch {
-    toast(t("post.cl.capCopyFailed"), "error");
-  }
-}
 
 export function render(root, { brandId }) {
   if (!canSeePosting(brandId)) { location.hash = `#/brand/${brandId}/content`; return () => {}; }
@@ -359,7 +329,7 @@ export function render(root, { brandId }) {
   try { view = localStorage.getItem(VIEW_KEY) || "list"; } catch { /* default */ }
   // The brand open in the app (its switcher, top left) — no second brand picker here.
   if (client && view !== "upload") view = "list"; // the profile grid reads Wepeka's Instagram connection
-  const ui = { view, period: "all", status: "all", unmatched: [], client, fbOpen: new Set(), preparing: null, linkOpen: new Set() };
+  const ui = { view, period: "all", status: "all", unmatched: [], client, fbOpen: new Set(), linkOpen: new Set() };
 
   const paint = () => {
     if (!client) ensureVideoCodes(); // a piece made in Creator since: it gets its number now
@@ -446,38 +416,8 @@ export function render(root, { brandId }) {
       if (v) downloadCut(c, v, b);
     }));
     qs("#pq-review", root)?.addEventListener("click", () => openReview(pieces({ brandId: "all", period: "all" }).filter((x) => x.state === "review"), paint));
-    // Siap upload.
-    qsa("[data-u-dl]", root).forEach((b) => b.addEventListener("click", () => downloadUploadCut(getContent(b.dataset.uDl), b)));
-    qsa("[data-u-prep]", root).forEach((b) => b.addEventListener("click", async () => {
-      if (ui.preparing) return;
-      const c = getContent(b.dataset.uPrep);
-      ui.preparing = { id: c.id, pct: 0 };
-      paint();
-      let last = 0;
-      try {
-        await prepareUploadShare(c, (x) => {
-          ui.preparing = { id: c.id, pct: x };
-          // A label update, not a repaint (keeps the page still).
-          const btn = qs(`[data-u-prep="${CSS.escape(c.id)}"] span`, root);
-          if (btn && Date.now() - last > 200) { last = Date.now(); btn.textContent = t("pqu.preparing", { pct: Math.round(x * 100) }); }
-        });
-        toast(t("pqu.prepared"), "success");
-      } catch (e) {
-        console.error("[upload] prepare", e);
-        toast(t("post.dl.failed"), "error");
-      }
-      ui.preparing = null;
-      if (root.isConnected) paint();
-    }));
-    qsa("[data-u-share]", root).forEach((b) => b.addEventListener("click", () => shareUpload(getContent(b.dataset.uShare))));
-    qsa("[data-u-cover]", root).forEach((b) => b.addEventListener("click", () => downloadCover(getContent(b.dataset.uCover), b)));
-    qsa("[data-u-copy]", root).forEach((b) => b.addEventListener("click", () => {
-      const c = getContent(b.dataset.id);
-      if (!c) return;
-      if (b.dataset.uCopy === "title") copyText(c.title || "", "pqu.copiedTitle");
-      else if (b.dataset.uCopy === "tags") copyText(hashtagsOf(c.caption).join(" "), "pqu.copiedTags");
-      else copyText(c.caption || "", "post.cl.capCopied");
-    }));
+    // Siap upload: the kit (js/posting.js), then this page's own bits.
+    wireUploadKit(root, { repaint: paint });
     qsa("[data-u-expand]", root).forEach((el) => el.addEventListener("click", () => el.classList.toggle("is-open")));
     // The post link is optional: a small "+ Tambah link" until it's wanted.
     qsa("[data-u-addlink]", root).forEach((b) => b.addEventListener("click", () => {

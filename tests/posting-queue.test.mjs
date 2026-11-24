@@ -226,3 +226,34 @@ test("Antrean → Siap upload: only what's ready and not up yet, each with its f
     try { localStorage.removeItem("posting:queueView"); } catch { /* fine */ }
   }
 });
+
+// The same kit on Creator's Upload step (owner, 2026-11-24: "tampilan di
+// create juga sama bisa download video dan upload").
+test("upload kit: one component for Antrean and Creator — the cut, the cover, the title, caption and hashtags", async () => {
+  const store = await import("../js/store.js");
+  const { auth } = await import("../js/firebase.js");
+  const { uploadKitHTML, uploadCopyHTML } = await import("../js/posting.js");
+  await store.initStore("u-kit");
+  const b = store.createBrand({ name: "Kopi Kit" });
+  const v = (id, n, status) => ({ id, n, status, kind: "video", drive: { id: `d-${id}`, ext: "mp4" } });
+  const withCover = store.createContent(b.id, { title: "Ada cover", status: "editing", platform: "Instagram", format: "Reels", caption: "Halo #kopi", thumbnail: "data:image/png;base64,AAAA", posting: { type: "reels", notes: [], versions: [v("a", 0, "approved")], finalId: "a" } });
+  const noCut = store.createContent(b.id, { title: "Belum ada video", status: "editing", platform: "Instagram", format: "Reels", posting: { type: "reels", notes: [], versions: [] } });
+  const was = auth.currentUser;
+  try {
+    auth.currentUser = { uid: "u-kit" };
+    const kit = uploadKitHTML(store.getContent(withCover.id), { captionCopy: true });
+    assert.match(kit, /data-u-dl="[^"]+"[^>]*><span>Unduh video · FINAL</);
+    assert.match(kit, /data-u-cover=/);
+    assert.match(kit, /data-u-copy="title"/);
+    assert.match(kit, /data-u-copy="caption"/);
+    assert.match(kit, /Salin hashtag \(1\)/);
+    // No cut yet: says so instead of a dead button; no cover without one.
+    const empty = uploadKitHTML(store.getContent(noCut.id));
+    assert.doesNotMatch(empty, /data-u-dl|data-u-prep/);
+    assert.match(empty, /pqu-nofile/);
+    assert.doesNotMatch(empty, /data-u-cover/);
+    assert.equal(uploadCopyHTML(store.getContent(noCut.id), "caption"), "", "nothing to copy");
+  } finally {
+    auth.currentUser = was;
+  }
+});

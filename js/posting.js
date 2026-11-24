@@ -1196,7 +1196,7 @@ function paint(root, contentId, ui, repaint) {
         <div class="pst-empty">
           <span class="pst-empty-art">${icon("upload", { size: 26 })}</span>
           <b>${t("post.empty.title")}</b>
-          <span>${t("post.empty.body")}</span>
+          <span>${t(isTouch() ? "post.empty.bodyPhone" : "post.empty.body")}</span>
           <button type="button" class="cl-cta pst-cta" id="pst-add"><span>${t("post.empty.pick")}</span><span class="cl-cta-dot">${icon("upload", { size: 16 })}</span></button>
         </div>`}
     </section>
@@ -1536,6 +1536,88 @@ export function markPostedByHand(contentId, rawLink = "") {
   return true;
 }
 
+// A phone or tablet: nothing to drag a file onto, the gallery instead.
+const isTouch = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+
+// The kit itself, one component for both places it shows (owner,
+// 2026-11-24: "tampilan di create juga sama bisa download video"): Antrean →
+// Siap upload and the piece's own Upload step in Creator.
+// A phone reading a cut into memory: contentId → 0..1.
+const PREPARING = new Map();
+const kitCopyHTML = (c, what, label, cls = "") => `<button type="button" class="pqu-copy ${cls}" data-u-copy="${what}" data-id="${escapeHtml(c.id)}">${icon("copy", { size: 13 })}${label}</button>`;
+export function uploadCopyHTML(c, what) {
+  if (what === "caption") return c.caption ? kitCopyHTML(c, "caption", t("pqu.copyCaption"), "is-main") : "";
+  if (what === "tags") { const n = hashtagsOf(c.caption).length; return n ? kitCopyHTML(c, "tags", t("pqu.copyTags", { n })) : ""; }
+  return kitCopyHTML(c, "title", t("pqu.copyTitle"));
+}
+export function uploadTakeHTML(c) {
+  const cut = uploadCutOf(c);
+  if (!cut) return `<span class="pqu-nofile">${icon("info", { size: 13 })}${t(isClientView(c) ? "pqu.noFileClient" : "pqu.noFile")}</span>`;
+  if (!canShareFiles()) return `<button type="button" class="cl-cta pqu-take" data-u-dl="${escapeHtml(c.id)}"><span>${escapeHtml(cut.label)}</span><span class="cl-cta-dot pst-dot-drive">${icon("download", { size: 15 })}</span></button>`;
+  if (READY_FILES.has(c.id)) return `<button type="button" class="cl-cta pqu-take" data-u-share="${escapeHtml(c.id)}"><span>${t("pqu.share")}</span><span class="cl-cta-dot pst-dot-ok">${icon("send", { size: 15 })}</span></button>`;
+  const pct = PREPARING.get(c.id);
+  return `<button type="button" class="cl-cta pqu-take" data-u-prep="${escapeHtml(c.id)}" ${pct !== undefined ? "disabled" : ""}><span>${pct !== undefined ? t("pqu.preparing", { pct: Math.round(pct * 100) }) : t("pqu.prepare")}</span><span class="cl-cta-dot pst-dot-drive">${pct !== undefined ? `<span class="spinner" style="width:14px;height:14px;"></span>` : icon("download", { size: 15 })}</span></button>`;
+}
+// The file to take, the cover, the title; `captionCopy` adds the caption and
+// hashtag buttons where the caption isn't shown with its own.
+export function uploadKitHTML(c, { captionCopy = false } = {}) {
+  const cut = uploadCutOf(c);
+  const share = canShareFiles();
+  const cover = /^(https:|data:image\/)/.test(c.thumbnail || "") ? `<button type="button" class="pqu-copy" data-u-cover="${escapeHtml(c.id)}">${icon("image", { size: 13 })}${t("pqu.cover")}</button>` : "";
+  return `<div class="pqu-kit">
+      <div class="pqu-actions">
+        ${uploadTakeHTML(c)}
+        <div class="pqu-more">${cover}${uploadCopyHTML(c, "title")}${captionCopy ? `${uploadCopyHTML(c, "caption")}${uploadCopyHTML(c, "tags")}` : ""}</div>
+      </div>
+      ${cut && share ? `<small class="pqu-file">${icon("film", { size: 12 })}${escapeHtml(cut.label)}</small>` : ""}
+      ${cut && share && READY_FILES.has(c.id) ? `<p class="pqu-hint">${icon("info", { size: 12 })}${t("pqu.shareHint")}</p>` : ""}
+    </div>`;
+}
+async function copyKitText(text, okKey) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(t(okKey), "success");
+  } catch {
+    toast(t("post.cl.capCopyFailed"), "error");
+  }
+}
+// Its buttons, wherever it's painted. The caption copied is the one in the
+// box on screen when there is one (Creator's Upload step: maybe just typed).
+export function wireUploadKit(root, { repaint } = {}) {
+  qsa("[data-u-dl]", root).forEach((b) => b.addEventListener("click", () => downloadUploadCut(getContent(b.dataset.uDl), b)));
+  qsa("[data-u-prep]", root).forEach((b) => b.addEventListener("click", async () => {
+    const c = getContent(b.dataset.uPrep);
+    if (!c || PREPARING.size) return;
+    PREPARING.set(c.id, 0);
+    repaint?.();
+    let last = 0;
+    try {
+      await prepareUploadShare(c, (x) => {
+        PREPARING.set(c.id, x);
+        // A label update, not a repaint (keeps the page still).
+        const label = qs(`[data-u-prep="${CSS.escape(c.id)}"] span`, root);
+        if (label && Date.now() - last > 200) { last = Date.now(); label.textContent = t("pqu.preparing", { pct: Math.round(x * 100) }); }
+      });
+      toast(t("pqu.prepared"), "success");
+    } catch (e) {
+      console.error("[upload] prepare", e);
+      toast(t("post.dl.failed"), "error");
+    }
+    PREPARING.delete(c.id);
+    if (root.isConnected) repaint?.();
+  }));
+  qsa("[data-u-share]", root).forEach((b) => b.addEventListener("click", () => shareUpload(getContent(b.dataset.uShare))));
+  qsa("[data-u-cover]", root).forEach((b) => b.addEventListener("click", () => downloadCover(getContent(b.dataset.uCover), b)));
+  qsa("[data-u-copy]", root).forEach((b) => b.addEventListener("click", () => {
+    const c = getContent(b.dataset.id);
+    if (!c) return;
+    const caption = qs("#pst-caption", root)?.value ?? c.caption ?? "";
+    if (b.dataset.uCopy === "title") copyKitText(c.title || "", "pqu.copiedTitle");
+    else if (b.dataset.uCopy === "tags") copyKitText(hashtagsOf(caption).join(" "), "pqu.copiedTags");
+    else copyKitText(caption, "post.cl.capCopied");
+  }));
+}
+
 // The editor's side of "not connected yet": only the client can connect
 // the Drive the cuts go into.
 function clientGapHTML(gap) {
@@ -1566,13 +1648,13 @@ function clientPostHTML(c, p, key, { gap = false } = {}) {
   const cp = clientPosting(p);
   const dv = cp.versions.find((v) => v.id === cp.finalId) || latestOf(cp);
   const file = gap ? clientGapHTML(gap)
-    : dv ? `<div class="pst-cl-file">${clientDownloadHTML(dv, { big: true })}<p class="pst-hint">${icon(dv.status === "approved" ? "check" : "info", { size: 13 })}${escapeHtml(dv.status === "approved" ? t("post.cl.dlFinal") : t("post.cl.dlNotYet", { label: versionLabel(dv) }))}</p></div>`
+    : dv ? `<div class="pst-cl-file">${uploadKitHTML(c)}<p class="pst-hint">${icon(dv.status === "approved" ? "check" : "info", { size: 13 })}${escapeHtml(dv.status === "approved" ? t("post.cl.dlFinal") : t("post.cl.dlNotYet", { label: versionLabel(dv) }))}</p></div>`
     : `<p class="pst-hint">${icon("clock", { size: 13 })}${t("post.cl.dlNone")}</p>`;
   return `<section class="pst-block pst-post">
       <div class="pst-embed-top"><span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span></div>
       <p class="pst-client-line">${icon("calendar", { size: 13 })} ${t("post.cl.when", { when: escapeHtml(when) })}</p>
       ${file}
-      ${c.caption ? `<div class="pst-cap-read"><div class="pst-cap-head"><span class="pst-sub">${t("post.cl.caption")}</span><button type="button" class="pst-link" data-cl-cap>${icon("copy", { size: 13 })}${t("post.cl.capCopy")}</button></div><p>${escapeHtml(c.caption)}</p></div>` : ""}
+      ${c.caption ? `<div class="pst-cap-read"><div class="pst-cap-head"><span class="pst-sub">${t("post.cl.caption")}</span><button type="button" class="pst-link" data-cl-cap>${icon("copy", { size: 13 })}${t("post.cl.capCopy")}</button>${uploadCopyHTML(c, "tags")}</div><p>${escapeHtml(c.caption)}</p></div>` : ""}
       ${link ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(link)}" target="_blank" rel="noopener">${icon("instagram", { size: 14 })}${t("post.cl.openIg")}</a>` : ""}
     </section>`;
 }
@@ -1966,6 +2048,7 @@ function postHTML(c, p, key, handle, posting = null) {
   if (key === "scheduled") {
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-live"><span class="pst-live-ic">${icon("clock", { size: 20 })}</span><div><b>${t("post.ig.markedTitle", { when: `${escapeHtml(dayLabel(c.scheduleDate))}, ${escapeHtml(p.time || "")}` })}</b><small>${t("post.ig.markedBody")}</small></div></div>
+      ${uploadKitHTML(c, { captionCopy: true })}
       ${igLinkFieldHTML()}
       <div class="pst-decide">
         <button type="button" class="cl-cta pst-cta" id="pst-posted"><span>${t("post.ig.postedByHand")}</span><span class="cl-cta-dot pst-dot-ok">${icon("check", { size: 16 })}</span></button>
@@ -1982,11 +2065,14 @@ function postHTML(c, p, key, handle, posting = null) {
   if (key === "failed") {
     return `<section class="pst-block pst-post">${acct}
       <div class="pst-live is-fail"><span class="pst-live-ic">${icon("x", { size: 20 })}</span><div><b>${t("post.ig.failedTitle")}</b><small>${escapeHtml(p.ig?.error || "")}</small></div></div>
+      ${uploadKitHTML(c, { captionCopy: true })}
       <div class="pst-decide"><button type="button" class="btn btn-secondary btn-sm" id="pst-retry">${icon("refresh", { size: 14 })}${t("post.ig.retry")}</button>${p.ig?.auto ? `<button type="button" class="btn btn-ghost btn-sm" id="pst-unschedule">${t("post.ig.cancel")}</button>` : ""}</div></section>`;
   }
   // Until a video is approved and the account is connected, this step is
   // one line saying what unlocks it — no greyed-out form to puzzle over.
-  const caption = `<div class="field"><label for="pst-caption">${t("post.ig.caption")} <span class="pst-count" id="pst-count">${(c.caption || "").length}/2200</span></label><textarea class="textarea" id="pst-caption" rows="4" maxlength="2200" placeholder="${escapeHtml(t("post.ig.captionPh"))}">${escapeHtml(c.caption || "")}</textarea></div>`;
+  // Ready: the copy buttons sit by the caption box (it copies what's in it).
+  const capCopy = key === "ready" ? `<span class="pst-cap-copy">${kitCopyHTML(c, "caption", t("pqu.copyCaption"), "is-main")}${kitCopyHTML(c, "tags", t("pqu.copyTagsShort"))}</span>` : "";
+  const caption = `<div class="field"><label for="pst-caption">${t("post.ig.caption")} <span class="pst-count" id="pst-count">${(c.caption || "").length}/2200</span>${capCopy}</label><textarea class="textarea" id="pst-caption" rows="4" maxlength="2200" placeholder="${escapeHtml(t("post.ig.captionPh"))}">${escapeHtml(c.caption || "")}</textarea></div>`;
   // The day and hour it goes up, settable from the start (the slot on
   // Instagram is only booked once a cut is approved).
   const when = `<div class="pst-when">
@@ -2009,6 +2095,7 @@ function postHTML(c, p, key, handle, posting = null) {
   return `
     <section class="pst-block pst-post">
       ${acct}
+      ${uploadKitHTML(c)}
       ${when}
       ${caption}
       ${fbSwitch}
@@ -2414,6 +2501,7 @@ function wire(root, contentId, ui, repaint) {
   const afterLink = (link) => {
     if (link && Object.keys(postingOf(getContent(contentId)).previews || {}).length) cleanPreviews(contentId).catch((e) => console.warn("[posting] previews not cleaned", e));
   };
+  wireUploadKit(root, { repaint });
   qs("#pst-posted", root)?.addEventListener("click", () => {
     const link = readLink();
     if (link === null) return;

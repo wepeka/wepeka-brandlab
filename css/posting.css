@@ -730,12 +730,20 @@ body.pq-review-open{ overflow:hidden; }
 .pqu-take > span:first-child{ white-space:normal; text-align:left; }
 .pqu-more{ display:flex; flex-wrap:wrap; gap:6px; }
 .pqu-copy{ display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; padding:6px 12px; border-radius:999px; border:1px solid var(--border); background: var(--surface-2); color: var(--text); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; }
-.pqu-copy:hover{ border-color: color-mix(in srgb, var(--pst) 55%, var(--border)); }
-.pqu-copy.is-main{ background: color-mix(in srgb, var(--pst) 16%, var(--surface-2)); border-color: color-mix(in srgb, var(--pst) 45%, var(--border)); }
+.pqu-copy:hover{ border-color: color-mix(in srgb, var(--pst, var(--accent)) 55%, var(--border)); }
+.pqu-copy.is-main{ background: color-mix(in srgb, var(--pst, var(--accent)) 16%, var(--surface-2)); border-color: color-mix(in srgb, var(--pst, var(--accent)) 45%, var(--border)); }
+/* The same kit on Creator's Upload step (js/posting.js uploadKitHTML). */
+.pqu-kit{ display:flex; flex-direction:column; gap:8px; }
+.pst-post .pqu-kit{ margin:4px 0 14px; padding:12px; border-radius:16px; background: var(--surface-2); }
+.pst-post .pqu-kit .pqu-copy{ background: var(--surface); }
+.pst-cap-copy{ display:inline-flex; flex-wrap:wrap; gap:6px; margin-left:auto; }
+.pst-post .field > label:has(.pst-cap-copy){ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pst-post .pst-cap-copy .pqu-copy{ min-height:30px; padding:4px 10px; font-size:12px; }
+.pst-cl-file .pqu-kit{ margin-bottom:6px; }
 .pqu-nofile, .pqu-hint{ display:inline-flex; align-items:center; gap:6px; font-size:12px; color: var(--text-faint); margin:0; }
 .pqu-cap{ padding:10px 12px; border-radius:14px; background: var(--surface-2); }
 .pqu-cap .pqu-copy{ background: var(--surface); }
-.pqu-cap .pqu-copy.is-main{ background: color-mix(in srgb, var(--pst) 16%, var(--surface)); }
+.pqu-cap .pqu-copy.is-main{ background: color-mix(in srgb, var(--pst, var(--accent)) 16%, var(--surface)); }
 .pqu-cap-head{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
 .pqu-cap-head .pst-sub{ margin-right:auto; }
 .pqu-cap-text{ margin:0; font-size:13px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
@@ -745,6 +753,9 @@ body.pq-review-open{ overflow:hidden; }
 .pqu-done .input{ flex:1; min-width:0; }
 .pqu-addlink{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; }
 @media (max-width: 640px){
+  .pst-post .pqu-actions{ display:grid; grid-template-columns: 1fr; }
+  .pst-post .pqu-actions .cl-cta{ width:100%; }
+  .pst-post .pqu-more{ display:grid; grid-template-columns: repeat(auto-fit, minmax(0,1fr)); }
   .pqu-card{ grid-template-columns: 72px minmax(0,1fr); grid-template-areas: "cover info" "body body"; grid-template-rows: auto auto; column-gap:12px; padding:12px; }
   .pqu-cover .pq-g-img{ width:72px; border-radius:12px; }
   .pqu-actions{ display:grid; grid-template-columns: 1fr; }
