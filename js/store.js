@@ -940,7 +940,10 @@ function attachShared(b) {
   const have = sharedListeners.get(b.id);
   if (have) return have.ready;
   const unsubs = [];
-  const ready = Promise.all(SHARED_CHILDREN.map((col) => new Promise((resolve) => {
+  // My Goals (campaigns) only with access to it: the rules refuse the rest
+  // (roles, 2026-11-24).
+  const cols = SHARED_CHILDREN.filter((col) => col !== "campaigns" || canPerm(b, ownerUid, "goals", "view"));
+  const ready = Promise.all(cols.map((col) => new Promise((resolve) => {
     let seen = false;
     unsubs.push(onSnapshot(query(collection(fdb, col), where("ownerId", "==", b.ownerId), where("brandId", "==", b.id)), (snap) => {
       shared[col].set(b.id, snap.docs.map((d) => d.data()));

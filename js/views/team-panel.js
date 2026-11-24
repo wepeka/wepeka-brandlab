@@ -17,6 +17,7 @@ import { icon } from "../icons.js";
 import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { t, getLang } from "../i18n.js";
+import { roleChipHTML, rolePickerHTML, wireRolePicker } from "../role-look.js";
 import { ROLE_KEYS, CLIENT_KEYS, MODULES, LEVELS, presetKey, presetPerms, memberPerms, levelOf, withLevel, roleOfMember } from "../permissions.js";
 
 const DAY = 86400000;
@@ -94,8 +95,6 @@ function seatShopHTML(account, seats, paused) {
 const initialOf = (name) => escapeHtml(String(name || "?").trim().charAt(0).toUpperCase() || "?");
 const personDot = (name) => `<div class="avatar" style="flex:none;width:30px;height:30px;border-radius:50%;font-size:12px;">${initialOf(name)}</div>`;
 const roleName = (role) => t(`team.role.${role === "custom" ? "custom" : presetKey(role) || role}`);
-// A member's role picker: the presets, and "Khusus" while their boxes differ.
-const roleOptions = (current) => `${current === "custom" ? `<option value="custom" selected disabled>${roleName("custom")}</option>` : ""}${rolesHere().map((r) => `<option value="${r}" ${r === current ? "selected" : ""}>${roleName(r)}</option>`).join("")}`;
 
 // "Atur akses" (owner, 2026-11-24: "Owner dapat … mengatur hak akses setiap
 // anggota tim"): one plain level per module — Tidak ada / Lihat / Ubah … —
@@ -113,7 +112,7 @@ export function openAccessDialog({ brand, uid, onSaved } = {}) {
     </label>`;
   const overlay = openModal({
     title: t("perm.title", { name: m.name || m.email || "" }),
-    bodyHTML: `<p class="hint" style="display:block;margin:0 0 12px;">${t("perm.lead", { brand: escapeHtml(brand.name || "") })}</p>
+    bodyHTML: `<p class="perm-now">${roleChipHTML(roleOf(m))}</p><p class="hint" style="display:block;margin:0 0 12px;">${t("perm.lead", { brand: escapeHtml(brand.name || "") })}</p>
       <div class="perm-list">${PANEL_MODULES.map(row).join("")}</div>
       <p class="hint" style="display:block;margin-top:12px;">${t("perm.note")}</p>`,
     footHTML: `<button class="btn btn-ghost" data-perm-reset>${t("perm.reset", { role: roleName(m.preset || roleOf(m)) })}</button><button class="btn btn-primary" data-perm-save>${t("common.save")}</button>`,
@@ -189,7 +188,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
       <h3 style="font-size:16px;margin-bottom:6px;">${t("team.members")}</h3>
       <div class="list-editor-row">
         ${personDot(ownerName)}
-        <span class="row-label">${escapeHtml(ownerName)} <span class="text-faint">· ${t("team.role.owner")} · ${t("team.you")}</span></span>
+        <span class="row-label">${escapeHtml(ownerName)} ${roleChipHTML("owner")} <span class="text-faint">· ${t("team.you")}</span></span>
       </div>
       ${people.length ? people.map((p) => `
         <div class="list-editor-row" style="flex-wrap:wrap;">
@@ -198,9 +197,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
           <div class="flex items-center gap-8" style="flex-wrap:wrap;">
             ${p.brands.map(({ brand, role, off }) => `
               <label class="checkbox-chip ${off ? "is-access-off" : ""}" style="padding:6px 10px;gap:6px;white-space:nowrap;" ${off ? `title="${escapeHtml(t("share.accessOff"))}"` : ""}>${off ? icon("lock", { size: 12 }) : ""}${escapeHtml(brand.name)}
-                <select class="select" data-role-brand="${escapeHtml(brand.id)}" data-role-member="${escapeHtml(p.uid)}" style="border:0;background:transparent;padding:0 2px;font-weight:700;color:inherit;" aria-label="${escapeHtml(t("team.inviteModal.role"))}">
-                  ${roleOptions(role)}
-                </select>
+                ${rolePickerHTML({ value: role, attrs: `data-role-brand="${escapeHtml(brand.id)}" data-role-member="${escapeHtml(p.uid)}"` })}
               </label>`).join("")}
           </div>
           <button class="btn btn-secondary btn-sm" data-remove="${escapeHtml(p.uid)}" data-name="${escapeHtml(p.name)}">${t("team.remove")}</button>
@@ -234,7 +231,7 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
       ${[...owners.values()].map((o) => `
         <div class="list-editor-row" style="flex-wrap:wrap;">
           ${personDot(o.ownerName)}
-          <span class="row-label">${escapeHtml(t("team.sharedBy", { name: o.ownerName || "—" }))}<br><span class="text-faint" style="font-weight:500;">${o.brands.map((b) => `${escapeHtml(b.name)} · ${getBrand(b.brandId)?.members?.[storeUid()]?.seatPaused ? t("team.pausedShort") : roleName(b.role)}`).join(" · ")}</span></span>
+          <span class="row-label">${escapeHtml(t("team.sharedBy", { name: o.ownerName || "—" }))}<br><span class="text-faint" style="font-weight:500;">${o.brands.map((b) => `${escapeHtml(b.name)} ${getBrand(b.brandId)?.members?.[storeUid()]?.seatPaused ? `· ${t("team.pausedShort")}` : roleChipHTML(roleOf(getBrand(b.brandId)?.members?.[storeUid()]) || b.role)}`).join(" · ")}</span></span>
           <button class="btn btn-secondary btn-sm" data-leave="${escapeHtml(o.ownerId)}">${t("team.leave")}</button>
         </div>`).join("")}
     </div>` : ""}
@@ -258,15 +255,15 @@ export async function renderTeamPanel(content, { planName = (a) => a?.plan || ""
     const before = extraSeatEnds(getCachedAccount())[0] || 0;
     buyAddon(TEAM_SEAT_ADDON.renewKey, { isDone: (acc) => (Number((acc?.teamSeatSlotsUntil || []).map(Number).sort((a, b) => a - b)[0]) || 0) > before, onDone: seatBought });
   });
-  qsa("[data-role-brand]", content).forEach((sel) => sel.addEventListener("change", async () => {
+  qsa("[data-role-brand]", content).forEach((btn) => wireRolePicker(btn, { roles: rolesHere(), hint: roleHint, onPick: async (role) => {
     try {
-      await teamApi("role", { brandId: sel.dataset.roleBrand, memberUid: sel.dataset.roleMember, role: sel.value });
+      await teamApi("role", { brandId: btn.dataset.roleBrand, memberUid: btn.dataset.roleMember, role });
       toast(t("team.roleChanged"));
     } catch (e) {
       toast(teamError(e), "error");
       rerender(false);
     }
-  }));
+  } }));
   qsa("[data-remove]", content).forEach((btn) => btn.addEventListener("click", async () => {
     const name = btn.dataset.name;
     const ok = await confirmDialog({ title: t("team.remove.title", { name: escapeHtml(name) }), message: t("team.remove.message", { name: escapeHtml(name) }), confirmLabel: t("team.remove"), danger: true });
@@ -369,7 +366,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
         <div class="field" style="margin-bottom:6px;">
           <label>${t("team.inviteModal.role")}</label>
           <div class="flex gap-8" style="flex-wrap:wrap;">
-            ${rolesHere().map((r, i) => `<label class="checkbox-chip"><input type="radio" name="inv-role" value="${r}" ${i === 0 ? "checked" : ""} />${roleName(r)}</label>`).join("")}
+            ${rolesHere().map((r, i) => `<label class="checkbox-chip role-radio"><input type="radio" name="inv-role" value="${r}" ${i === 0 ? "checked" : ""} />${roleChipHTML(r)}</label>`).join("")}
           </div>
           <p class="hint" id="inv-role-hint" style="display:block;margin-top:8px;">${roleHint(rolesHere()[0])}</p>
         </div>
@@ -493,8 +490,8 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
     if (!mine) {
       body.innerHTML = `
         <ul class="share-list">
-          ${personRow(ownerName, t("team.role.owner"))}
-          ${members.filter(([, m]) => !m?.disabled).map(([uid, m]) => personRow(m.name || m.email || uid, `${escapeHtml(m.email || "")}${uid === me ? ` · ${t("share.you")}` : ""}`, `<span class="text-faint" style="font-size:12.5px;font-weight:700;">${roleName(roleOf(m))}</span>`)).join("")}
+          ${personRow(ownerName, "", roleChipHTML("owner"))}
+          ${members.filter(([, m]) => !m?.disabled).map(([uid, m]) => personRow(m.name || m.email || uid, `${escapeHtml(m.email || "")}${uid === me ? ` · ${t("share.you")}` : ""}`, roleChipHTML(roleOf(m)))).join("")}
         </ul>
         <p class="hint" style="display:block;margin-top:12px;">${t("share.memberNote")}</p>`;
       return;
@@ -512,10 +509,10 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
         </div>` : ""}
       <form class="share-add" id="share-add" novalidate>
         <input class="input" id="share-email" type="email" autocomplete="off" placeholder="${escapeHtml(t("share.addPlaceholder"))}" aria-label="${escapeHtml(t("share.addPlaceholder"))}" />
-        <select class="select" id="share-role" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${rolesHere().map((r) => `<option value="${r}" ${r === wantRole ? "selected" : ""}>${roleName(r)}</option>`).join("")}</select>
+        ${rolePickerHTML({ id: "share-role", value: qs("#share-role", overlay)?.dataset.roleValue || wantRole })}
         <button class="btn btn-primary" id="share-invite" type="submit">${t("share.invite")}</button>
       </form>
-      <p class="hint share-role-hint" id="share-role-hint" style="display:block;margin:8px 0 0;">${escapeHtml(roleHint(qs("#share-role", overlay)?.value || wantRole))}</p>
+      <p class="hint share-role-hint" id="share-role-hint" style="display:block;margin:8px 0 0;">${escapeHtml(roleHint(qs("#share-role", overlay)?.dataset.roleValue || wantRole))}</p>
       <div class="auth-error" id="share-error" style="display:none;margin-top:8px;"></div>
       ${result ? `
         <div class="share-result">
@@ -529,14 +526,14 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
         </div>` : ""}
       <div class="share-section">${t("share.people")}</div>
       <ul class="share-list">
-        ${personRow(ownerName, `${t("share.you")}`, `<span class="text-faint" style="font-size:12.5px;font-weight:700;">${t("team.role.owner")}</span>`)}
+        ${personRow(ownerName, `${t("share.you")}`, roleChipHTML("owner"))}
         ${members.map(([uid, m]) => {
           const name = m.name || m.email || uid;
           const off = !!m.disabled;
           const sub = `${escapeHtml(m.email || "")}${off ? ` · <span class="share-off-note">${t("share.accessOff")}</span>` : m.seatPaused ? ` · <span class="share-off-note">${t("team.pausedChip")}</span>` : ""}`;
           return personRow(name, sub, `
-            <select class="select share-role" data-role-member="${escapeHtml(uid)}" aria-label="${escapeHtml(t("team.inviteModal.role"))}">${roleOptions(roleOf(m))}</select>
-            <button class="btn btn-ghost btn-sm" data-perm-member="${escapeHtml(uid)}" title="${escapeHtml(t("perm.open"))}">${icon("shield", { size: 13 })}${t("perm.openShort")}</button>
+            ${rolePickerHTML({ value: roleOf(m), attrs: `data-role-member="${escapeHtml(uid)}"` })}
+            <button class="btn btn-ghost btn-sm perm-open" aria-label="${escapeHtml(t("perm.openShort"))}" data-perm-member="${escapeHtml(uid)}" title="${escapeHtml(t("perm.open"))}">${icon("shield", { size: 13 })}<span class="perm-open-l">${t("perm.openShort")}</span></button>
             ${switchHTML(!off, uid, name)}
             <button class="icon-btn" data-remove-here="${escapeHtml(uid)}" data-name="${escapeHtml(name)}" title="${escapeHtml(t("team.remove"))}" aria-label="${escapeHtml(t("team.remove"))}">${icon("x", { size: 15 })}</button>`, off ? "is-off" : "");
         }).join("")}
@@ -570,7 +567,7 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
     });
     qs("[data-share-team]", overlay)?.addEventListener("click", () => closeOverlay(overlay));
     // What the picked role may do, under the picker.
-    qs("#share-role", overlay)?.addEventListener("change", (e) => { const h = qs("#share-role-hint", overlay); if (h) h.textContent = roleHint(e.target.value); });
+    wireRolePicker(qs("#share-role", overlay), { roles: rolesHere(), hint: roleHint, onPick: (role) => { const h = qs("#share-role-hint", overlay); if (h) h.textContent = roleHint(role); } });
     qs("#share-add", overlay)?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = qs("#share-email", overlay).value.trim();
@@ -579,7 +576,7 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
       btn.disabled = true;
       err("");
       try {
-        const out = await teamApi("invite", { email, brandIds: [current], role: qs("#share-role", overlay).value });
+        const out = await teamApi("invite", { email, brandIds: [current], role: qs("#share-role", overlay).dataset.roleValue });
         result = { email, link: out.link, emailSent: out.emailSent, mailLimit: out.mailLimit };
         await paint(true);
       } catch (ex) {
@@ -590,15 +587,15 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
     qs("#share-result-copy", overlay)?.addEventListener("click", () => copy(result.link));
     qs("#share-result-wa", overlay)?.addEventListener("click", () => waShare(result.link, [brand.name]));
     qsa("[data-perm-member]", overlay).forEach((b) => b.addEventListener("click", () => openAccessDialog({ brand, uid: b.dataset.permMember, onSaved: () => paint() })));
-    qsa("[data-role-member]", overlay).forEach((sel) => sel.addEventListener("change", async () => {
+    qsa("[data-role-member]", overlay).forEach((btn) => wireRolePicker(btn, { roles: rolesHere(), hint: roleHint, onPick: async (role) => {
       try {
-        await teamApi("role", { brandId: current, memberUid: sel.dataset.roleMember, role: sel.value });
+        await teamApi("role", { brandId: current, memberUid: btn.dataset.roleMember, role });
         toast(t("team.roleChanged"));
       } catch (ex) {
         toast(teamError(ex), "error");
         paint();
       }
-    }));
+    } }));
     qsa("[data-access]", overlay).forEach((sw) => sw.addEventListener("click", async () => {
       const uid = sw.dataset.access;
       const name = brand.members?.[uid]?.name || "";

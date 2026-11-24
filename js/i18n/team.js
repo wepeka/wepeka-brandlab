@@ -19,6 +19,7 @@ export default {
   "team.role.sales": { en: "Sales", id: "Sales" },
   "team.role.salesHint": { en: "Logs and sees sales and money, sets sales goals, sees content and Report, uses AI. Doesn't change content.", id: "Mencatat dan melihat penjualan & keuangan, mengatur tujuan penjualan, melihat konten dan Report, memakai AI. Tidak mengubah konten." },
   "team.role.custom": { en: "Custom", id: "Khusus (diatur sendiri)" },
+  "team.youAre": { en: "You're here as", id: "Kamu di sini sebagai" },
   "team.role.editorHint": { en: "Can change everything in the brand: Brand DNA, Brand Book, content, campaigns and ideas. Uses your AI credits.", id: "Bisa mengubah semua isi brand: Brand DNA, Brand Book, konten, campaign, dan ide. Memakai kredit AI kamu." },
   "team.role.editorHintWepeka": { en: "Can change everything in the brand: Brand DNA, Brand Book, content, campaigns and ideas. In Video Queue they also work like the Client: watch the videos, note what to change, approve, download, and upload the shoot footage.", id: "Bisa mengubah semua isi brand: Brand DNA, Brand Book, konten, campaign, dan ide. Di Antrean Video juga sama seperti Klien: menonton video, memberi catatan revisi, menyetujui, mengunduh, dan upload footage syuting." },
   "team.role.klien": { en: "Client", id: "Klien" },

@@ -1,4 +1,6 @@
-import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue, canDo } from "../store.js";
+import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue, canDo, isOwnBrand, storeUid } from "../store.js";
+import { roleChipHTML } from "../role-look.js";
+import { roleOfMember } from "../permissions.js";
 import { icon } from "../icons.js";
 import { initials, formatDate, formatNumber, escapeHtml as esc, toast, showCalloutBubble, qs, qsa, wireClickableCards, resizeImageFile } from "../dom.js";
 import { brandDnaCompleteness, brandDnaDone, visualBasicsDone, brandBookProgress, guidelineSectionDone, identityDone as isIdentityDone, dnaResumeStep, missingDnaFields } from "../brand-progress.js";
@@ -1404,6 +1406,7 @@ function launcherHTML(ctx) {
             <p class="lh-date">${esc(date)}</p>
             <h1>${t(launcherGreetKey(now.getHours()))}${name ? `, ${esc(name)}` : ""} 👋</h1>
             <p class="lh-brandline"><b>${esc(brand.name)}</b><span>· ${t("lh.lead")}</span></p>
+            ${isOwnBrand(brand) ? "" : `<p class="lh-role">${t("team.youAre")} ${roleChipHTML(roleOfMember(brand.members?.[storeUid()]) || "viewer")}</p>`}
           </div>
         </div>
         <div class="page-eyebrow lh-help">${guideVideoButtonHTML("home")}</div>

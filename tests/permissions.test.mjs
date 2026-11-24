@@ -106,3 +106,26 @@ test("the server writes a role as its preset, its map and the old two-way role",
   assert.deepEqual([memberRoleOf("klien").role, memberRoleOf("klien").klien], ["viewer", true]);
   assert.equal(roleShown({ role: "viewer", preset: "sales", p: {} }), "sales");
 });
+
+test("a member's app: only the apps and pages their role opens, money never held, writes per module", async () => {
+  const store = await import("../js/store.js");
+  const { APPS, VIEW_MODULE } = await import("../js/apps.js");
+  const { roleChipHTML, roleLabel } = await import("../js/role-look.js");
+  await store.initStore("u-vid");
+  const brand = {
+    id: "b-team", ownerId: "owner-x", name: "Kopi Tim",
+    members: { "u-vid": { role: "viewer", preset: "video", p: presetPerms("video") } },
+    memberIds: ["u-vid"],
+    salesTracker: { products: [{ id: "p", name: "Kopi", price: 1, cost: 1 }], lastAdvice: { summary: "Omzet Rp 9.000.000" } },
+  };
+  // What the app shows a Video Editor: My Brand, Create, Board, Pitch Deck — no Goals, Report or Sales.
+  const shown = APPS.filter((a) => store.canDo(brand, a.module, "view")).map((a) => a.key);
+  assert.deepEqual(shown.sort(), ["builder", "content-os", "deck", "papan"]);
+  assert.equal(store.canDo(brand, VIEW_MODULE.sales), false);
+  assert.equal(store.canDo(brand, VIEW_MODULE.chat), false);
+  assert.equal(store.canDo(brand, "video", "upload"), true);
+  // The role's look: icon + name.
+  assert.match(roleChipHTML("video"), /role-chip/);
+  assert.equal(roleLabel("video"), "Video Editor");
+  assert.equal(roleLabel("editor"), "Admin");
+});
