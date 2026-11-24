@@ -11,7 +11,7 @@
     "emu": "firebase emulators:start --only auth,firestore,database --project demo-brandlab",
     "emu:seed": "node --import ./tests/setup.mjs scripts/emu-seed.mjs",
     "dev:api": "node scripts/dev-api.mjs",
-    "test:emu": "firebase emulators:exec --only auth,firestore,database --project demo-brandlab \"node --test \\\"tests/emu/*.test.mjs\\\"\""
+    "test:emu": "firebase emulators:exec --only auth,firestore,database --project demo-brandlab \"node --test --test-concurrency=1 \\\"tests/emu/*.test.mjs\\\"\""
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/ig-post",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/updates",
+      "schedule": "*/10 * * * *"
     }
   ],
   "redirects": [

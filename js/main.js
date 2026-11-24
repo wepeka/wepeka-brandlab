@@ -252,6 +252,9 @@ function parseRoute(hash) {
   if (h === "/updates/sesi") return { view: "announcements", tab: "sesi" };
   // Shortcut for announcements and WhatsApp posts (see route()).
   if (h === "/papan") return { view: "papan-go" };
+  // "#/go/content/antrean": a page inside the brand used last (an update's
+  // "Coba sekarang", api/_updates.js — a post can't know anyone's brand id).
+  if ((m = h.match(/^\/go\/([a-z0-9/-]+)$/))) return { view: "papan-go", next: m[1].replace(/\/+$/, "") };
   return { view: "brands" };
 }
 
@@ -838,9 +841,10 @@ async function renderRoute() {
     let last = null;
     try { last = localStorage.getItem(LAST_BRAND_KEY); } catch { /* private mode */ }
     const pick = open.find((b) => b.id === last) || (open.length === 1 ? open[0] : null);
-    if (pick) { location.replace(`#/brand/${pick.id}/papan`); return; }
+    const next = route.next || "papan";
+    if (pick) { location.replace(`#/brand/${pick.id}/${next}`); return; }
     route.view = "brands";
-    route.next = "papan";
+    route.next = next;
   }
 
   if (route.brandId && !getBrand(route.brandId)) {

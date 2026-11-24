@@ -18,6 +18,7 @@ export default {
   "ann.kind.fix": { en: "Fix", id: "Perbaikan" },
   "ann.kind.info": { en: "Info", id: "Info" },
   "ann.new": { en: "New", id: "Baru" },
+  "ann.steps": { en: "How to use it", id: "Cara pakai" },
   "ann.open": { en: "Open", id: "Buka" },
   "ann.empty": { en: "No updates yet. New features and fixes will show up here.", id: "Belum ada pengumuman. Fitur baru dan perbaikan akan muncul di sini." },
   "ann.slow": { en: "Updates are taking a while to load. Check your internet connection, then try again.", id: "Update-nya lama dimuat. Cek koneksi internet kamu, lalu coba lagi." },

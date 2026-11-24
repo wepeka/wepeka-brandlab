@@ -5210,6 +5210,17 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 .ann-shot figcaption{ font-size:12.5px; color:var(--text-muted); margin-top:6px; line-height:1.45; }
 .ann-shot figcaption p{ margin:0; }
 @media (max-width: 640px){ .ann-shots{ grid-template-columns:1fr; } }
+/* "Cara pakai": an update's tutorial (js/views/announcements.js stepsHTML) */
+.ann-steps{ margin:6px 0 2px; padding:12px 14px 6px; border-radius:12px; background:var(--surface-2); }
+.ann-steps-title{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+.ann-steps ol{ list-style:none; counter-reset:annstep; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:9px; }
+.ann-steps li{ counter-increment:annstep; position:relative; padding-left:32px; font-size:14px; line-height:1.5; min-height:22px; }
+.ann-steps li::before{ content:counter(annstep); position:absolute; left:0; top:-1px; width:22px; height:22px; border-radius:999px; display:grid; place-items:center; font-size:12px; font-weight:800; color:#fff; background:#3B9BFF; }
+.ann-steps li:nth-child(5n+1)::before{ background:#FFA52B; }
+.ann-steps li:nth-child(5n+2)::before{ background:#30D97D; }
+.ann-steps li:nth-child(5n+4)::before{ background:#A974FF; }
+.ann-steps li:nth-child(5n+5)::before{ background:#FF6FAE; }
+.ann-steps li p{ margin:0; display:inline; }
 .ann-title{ font-size:17px; margin:0; line-height:1.35; }
 .ann-body{ font-size:14px; line-height:1.6; color: var(--text); }
 .ann-link{ align-self:flex-start; }
@@ -5974,6 +5985,16 @@ body.chat-page-open .consultant-fab, body.chat-page-open .consultant-fab-hint{ d
 @media (min-width: 375px) and (max-width: 720px){
   .topbar:not(:has(#notif-bell-btn)) .wa-top-long{ display:inline; }
   .topbar:not(:has(#notif-bell-btn)) .wa-top-short{ display:none; }
+}
+/* Pages outside a brand (Pengumuman, Pengaturan, Billboard) on a phone:
+   no brand switcher, the wordmark is there instead, and with the full
+   "Join grup Brandlab" the row ran ~80px past the screen, so the whole
+   page zoomed out. The logo alone and "Join grup" fit. */
+@media (max-width: 720px){
+  .topbar:not(:has(.brand-switch)) .brand-mark{ font-size:0; gap:0; }
+  .topbar:not(:has(.brand-switch)) .brand-mark-divider{ display:none; }
+  .topbar:not(:has(.brand-switch)):not(:has(#notif-bell-btn)) .wa-top-long{ display:none; }
+  .topbar:not(:has(.brand-switch)):not(:has(#notif-bell-btn)) .wa-top-short{ display:inline; }
 }
 /* Its popover: what each group is for, and the group's own button (the
    Komunitas sheet's doors, js/community.js doorHTML). */

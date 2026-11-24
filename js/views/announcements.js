@@ -106,6 +106,7 @@ function itemHTML(a, { seenAt, admin }) {
       <h2 class="ann-title">${esc(a.title || "")}</h2>
       ${a.body ? `<div class="ann-body consultant-md">${renderLightMarkdown(a.body)}</div>` : ""}
       ${shotsHTML(a)}
+      ${stepsHTML(a)}
       ${a.link ? (/^#\//.test(a.link)
         // A page inside Brandlab ("#/papan", "#/settings/team"): same tab.
         ? `<a class="btn btn-primary btn-sm ann-link" href="${esc(a.link)}">${esc(a.linkLabel || t("ann.open"))}${icon("arrowRight", { size: 12 })}</a>`
@@ -121,6 +122,15 @@ function shotsHTML(a) {
   const shots = (Array.isArray(a.images) ? a.images : []).filter((x) => x && /^(\/[^/]|https:\/\/)/.test(String(x.src || ""))).slice(0, 6);
   if (!shots.length) return "";
   return `<div class="ann-shots${shots.length === 1 ? " one" : ""}">${shots.map((x) => `<figure class="ann-shot"><a href="${esc(x.src)}" target="_blank" rel="noopener"><img src="${esc(x.src)}" alt="${esc(x.alt || x.caption || "")}" loading="lazy" decoding="async"></a>${x.caption ? `<figcaption>${renderLightMarkdown(x.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`;
+}
+
+// "Cara pakai": an update's tutorial, one numbered step per tap (posts
+// from api/_updates.js carry them; owner 2026-11-24: every update comes
+// with a tutorial and screenshots).
+function stepsHTML(a) {
+  const steps = (Array.isArray(a.steps) ? a.steps : []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 10);
+  if (!steps.length) return "";
+  return `<div class="ann-steps"><span class="ann-steps-title">${icon("bulb", { size: 13 })}${t("ann.steps")}</span><ol>${steps.map((x) => `<li>${renderLightMarkdown(x)}</li>`).join("")}</ol></div>`;
 }
 
 // The two tabs, for a Lifetime account. A dot on "Sesi Founder" from the
