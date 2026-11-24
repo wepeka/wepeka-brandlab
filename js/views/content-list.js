@@ -7,7 +7,8 @@ import { openContentEditor } from "./content-editor.js";
 import { confirmDialog, openModal, closeOverlay } from "../modals.js";
 import { openInstagramImportPicker } from "./instagram-import.js";
 import { openReportModal } from "./report.js";
-import { syncInstagramPerformance } from "../instagram-sync.js";
+import { syncInstagramPerformance, refreshInstagramNow } from "../instagram-sync.js";
+import { igRef, igViaVault } from "../instagram.js";
 import { canUseInstagramApi } from "../account.js";
 import { analyzeScreenshot } from "../ocr.js";
 import { extractInsightsFromImage, hasAiKey, AiApiError } from "../ai.js";
@@ -165,7 +166,7 @@ function paint(root, brandId, state, refresh) {
   const activeFilters = panelFilterCount + (state.campaignId ? 1 : 0) + (state.seriesId ? 1 : 0);
   const seriesList = listSeries(brandId);
   const igAllowed = canUseInstagramApi();
-  const igConfigured = igAllowed && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
+  const igConfigured = igAllowed && !!igRef(brand);
   const igUnavailableNote = t("contentList.connectInEditBrand");
   const staleQueue = listContent(brandId).filter(needsEngagementUpdate).sort((a, b) => (a.publishedDate || "").localeCompare(b.publishedDate || ""));
 
@@ -256,7 +257,9 @@ function paint(root, brandId, state, refresh) {
       closeMenu();
       if (act === "update-engagement") openEngagementQueueList({ brandId, allQueue: staleQueue, refresh });
       else if (act === "import-ig") openInstagramImportPicker(brandId, refresh);
-      else if (act === "refresh-all") await refreshExistingInstagram(brandId, brand.instagram, refresh);
+      // Connected the new way: one server pass (numbers, new posts, followers,
+      // the Page and ad spend); the pasted token: the per-post refresh below.
+      else if (act === "refresh-all") await (igViaVault(brand) ? refreshInstagramNow(brandId).then(refresh) : refreshExistingInstagram(brandId, igRef(brand), refresh));
       else if (act === "report") openReportModal(brandId);
       else if (act === "scripts") openScriptBulkPdf({ brandId, seriesId: state.seriesId });
       else if (act === "delete-all") {

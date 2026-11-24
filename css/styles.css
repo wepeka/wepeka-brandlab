@@ -8464,3 +8464,51 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
 .lh-role-btn{ padding:0; border:0; background:none; cursor:pointer; }
 .role-opt-guide{ margin-top:4px; border-top:1px solid var(--border); border-radius:0 0 12px 12px; color: var(--accent); }
 .role-opt-guide svg{ color: var(--accent); }
+
+/* ---------- Pengaturan → Akun Meta (js/meta-connect.js) ---------- */
+.meta-panel{ display:flex; flex-direction:column; gap:14px; }
+.meta-intro h3{ font-size:16px; margin:0 0 8px; }
+.meta-intro p{ font-size:13px; margin:0 0 6px; line-height:1.5; }
+.meta-intro p:last-child{ margin:0; display:flex; align-items:center; gap:6px; }
+.meta-card{ display:flex; flex-direction:column; gap:12px; }
+.meta-card-head{ display:flex; align-items:center; gap:10px; }
+.meta-card-head b{ display:block; font-size:14.5px; }
+.meta-card-head small{ display:block; font-size:12px; color: var(--text-faint); }
+.meta-ways{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.meta-way{ display:flex; align-items:flex-start; gap:10px; text-align:left; padding:12px 14px; min-height:44px; border-radius:14px; border:1.5px solid var(--border); background: var(--surface); color: var(--text); cursor:pointer; font:inherit; }
+.meta-way b{ display:block; font-size:13.5px; }
+.meta-way small{ display:block; font-size:12px; color: var(--text-muted); margin-top:2px; line-height:1.4; }
+.meta-way svg{ flex:none; margin-top:1px; }
+.meta-way.is-main{ background:#1877F2; border-color:#1877F2; color:#fff; }
+.meta-way.is-main small{ color: rgba(255,255,255,.85); }
+.meta-way:hover{ border-color: var(--text-faint); }
+.meta-way.is-main:hover{ background:#0f65d8; border-color:#0f65d8; }
+.meta-way:disabled{ opacity:.6; cursor:default; }
+.meta-lines{ display:flex; flex-direction:column; gap:6px; }
+.meta-line{ display:flex; align-items:center; gap:8px; font-size:13px; padding:8px 10px; border-radius:10px; background: var(--surface-2); }
+.meta-line span{ color: var(--text-muted); min-width:120px; }
+.meta-line b{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meta-line.is-off b{ font-weight:400; color: var(--text-faint); }
+.meta-when{ font-size:12px; margin:0; }
+.meta-warn{ display:flex; gap:8px; align-items:flex-start; margin:0; padding:10px 12px; border-radius:12px; font-size:12.5px; background: var(--health-poor-soft, #fdecec); color: var(--text); }
+.meta-warn svg{ flex:none; margin-top:2px; color: var(--health-poor); }
+.meta-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+.meta-pick .meta-pick-intro{ font-size:13px; margin:0 0 12px; }
+.meta-pick-sec{ border:0; padding:0; margin:0 0 14px; display:flex; flex-direction:column; gap:6px; }
+.meta-pick-sec legend{ font-weight:700; font-size:13px; margin-bottom:6px; padding:0; }
+.meta-opt{ display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:12px; background: var(--surface-2); cursor:pointer; min-height:40px; }
+.meta-opt input{ margin-top:3px; accent-color: var(--accent); }
+.meta-opt b{ display:flex; align-items:center; gap:6px; font-size:13.5px; font-weight:600; }
+.meta-opt small{ display:block; font-size:12px; color: var(--text-muted); margin-top:2px; }
+.meta-pick-empty, .meta-pick-note{ font-size:12px; margin:2px 0 0; }
+.meta-brand-row{ display:flex; align-items:center; gap:10px; }
+.meta-brand-row > div{ flex:1; min-width:0; }
+.meta-brand-row b{ display:block; font-size:13.5px; }
+.meta-brand-row small{ display:block; font-size:12px; color: var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meta-legacy{ margin-top:14px; }
+.meta-legacy summary{ cursor:pointer; font-size:12.5px; color: var(--text-muted); }
+@media (max-width: 640px){
+  .meta-ways{ grid-template-columns:1fr; }
+  .meta-line span{ min-width:96px; }
+  .meta-actions .btn{ flex:1 1 auto; justify-content:center; }
+}

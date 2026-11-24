@@ -8,7 +8,8 @@ import { icon } from "../icons.js";
 import { avatarHTML, resizeImageFile, qs, qsa, toast, pickTintTextColor, pickTintForeground, openMenu, closeMenu, escapeHtml as escapeText, passwordFieldHTML, wirePasswordToggles, wireClickableCards } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { testConnection } from "../instagram.js";
-import { canUseInstagramApi } from "../account.js";
+import { canUseInstagramApi, isAdmin, currentUid } from "../account.js";
+import { metaBrandRowHTML, metaConnected, canManageMeta } from "../meta-connect.js";
 import { testFacebookConnection } from "../facebook.js";
 import { canCreateBrand, brandLimitOf, lockedBrandIds, ownBrandsOf } from "../account.js";
 import { slotReminderHTML } from "../brand-locked.js";
@@ -396,11 +397,19 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
         brand
           ? `
       ${
-        !canUseInstagramApi()
+        // Instagram, Facebook Page and ads are connected in Pengaturan →
+        // Akun Meta (js/meta-connect.js); this form only says where it stands.
+        canUseInstagramApi() && canManageMeta(brand) ? `<div class="divider"></div>${metaBrandRowHTML(brand)}` : ""
+      }
+      ${
+        // The token Wepeka's account pasted before connecting went through
+        // Meta's own login: kept (posting still reads it) until the brand is
+        // connected the new way.
+        !isAdmin(currentUid()) || metaConnected(brand)
           ? ""
           : `
-      <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.ig.title")}</div>
+      <details class="meta-legacy"><summary>${t("meta.legacy")}</summary>
+      <div class="page-eyebrow" style="margin:12px 0;">${t("integr.ig.title")}</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.ig.intro")}</p>
       <div class="field">
         <label for="ig-userid">Instagram Business Account ID</label>
@@ -415,15 +424,12 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       }
 
       ${
-        // The Facebook connector is a stub — js/facebook.js only ever calls
-        // testFacebookConnection, nothing reads the metrics it'd return —
-        // so it's gated behind the same admin-only check Instagram uses,
-        // to stop customers from being shown a connector that does nothing.
-        !canUseInstagramApi()
+        // The Page token Wepeka's account pasted for sharing reels to its
+        // Page (api/_igPost.js facebookFor), same rule as above.
+        !isAdmin(currentUid()) || metaConnected(brand)
           ? ""
           : `
-      <div class="divider"></div>
-      <div class="page-eyebrow" style="margin-bottom:12px;">${t("integr.fb.title")}</div>
+      <div class="page-eyebrow" style="margin:16px 0 12px;">${t("integr.fb.title")}</div>
       <p class="text-muted" style="font-size:12.5px;margin:0 0 14px;">${t("integr.fb.intro")}</p>
       <div class="field">
         <label for="fb-pageid">Facebook Page ID</label>
@@ -435,6 +441,7 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
       </div>
       <div id="fb-status" style="margin:10px 0;font-size:12.5px;">${draft.facebook.pageName ? `<span style="color:var(--health-good);">${t("integr.connectedTo", { name: escapeText(draft.facebook.pageName) })}</span>` : ""}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="fb-test">${icon("refresh", { size: 13 })}${t("integr.test")}</button>
+      </details>
       `
       }
 
@@ -573,14 +580,18 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     // The Instagram/Facebook/Ads fields only exist in the DOM when editing
     // an existing brand (see bodyHTML above) — a brand new-created here has
     // no connections yet, so these just fall back to draft's empty defaults.
+    // Written only from those fields: the connection made through "Hubungkan
+    // akun Meta" is the server's (brand.instagram / facebook), and an old
+    // copy from when this form opened must never overwrite it.
     const igUserIdEl = overlay.querySelector("#ig-userid");
     const instagram = igUserIdEl
       ? { ...draft.instagram, igUserId: igUserIdEl.value.trim(), accessToken: overlay.querySelector("#ig-token").value.trim() }
-      : draft.instagram;
+      : null;
     const fbPageIdEl = overlay.querySelector("#fb-pageid");
     const facebook = fbPageIdEl
       ? { ...draft.facebook, pageId: fbPageIdEl.value.trim(), pageAccessToken: overlay.querySelector("#fb-token").value.trim() }
-      : draft.facebook;
+      : null;
+    const links = { ...(instagram ? { instagram } : {}), ...(facebook ? { facebook } : {}) };
     // No textarea for this anymore (see the create/edit form above) — an
     // existing brand's old value just rides along unchanged.
     const aiVoiceGuide = draft.aiVoiceGuide;
@@ -588,10 +599,10 @@ export function openBrandModal({ brand = null, onSaved } = {}) {
     const audienceLanguage = overlay.querySelector("#brand-audience-lang").value;
     const color = overlay.querySelector("#brand-color").value;
     if (brand) {
-      updateBrand(brand.id, { name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription, audienceLanguage });
+      updateBrand(brand.id, { name, avatar: draft.avatar, color, ...links, aiVoiceGuide, businessDescription, audienceLanguage });
       toast(t("brands.form.updated"));
     } else {
-      const created = createBrand({ name, avatar: draft.avatar, color, instagram, facebook, aiVoiceGuide, businessDescription, audienceLanguage });
+      const created = createBrand({ name, avatar: draft.avatar, color, instagram: draft.instagram, facebook: draft.facebook, aiVoiceGuide, businessDescription, audienceLanguage });
       toast(t("brands.form.created", { name }));
       // Pemula: a brand you just made is obviously the one you want to
       // open — go straight in instead of showing a "pick a brand" page

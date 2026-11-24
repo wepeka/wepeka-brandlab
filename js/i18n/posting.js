@@ -88,7 +88,7 @@ export default {
   "post.ig.account": { en: "Instagram account", id: "Akun Instagram" },
   "post.ig.connected": { en: "Connected", id: "Terhubung" },
   "post.ig.notConnected": { en: "Not connected", id: "Belum terhubung" },
-  "post.ig.connectHint": { en: "Connect this brand's Instagram first.", id: "Hubungkan Instagram brand ini dulu." },
+  "post.ig.connectHint": { en: "Connect this brand's Instagram first (Settings → Meta accounts).", id: "Hubungkan Instagram brand ini dulu (Pengaturan → Akun Meta)." },
   "post.ig.date": { en: "Date", id: "Tanggal" },
   "post.ig.time": { en: "Time (WIB)", id: "Jam (WIB)" },
   "post.ig.caption": { en: "Caption", id: "Caption" },
@@ -125,7 +125,7 @@ export default {
 
   "post.fb.share": { en: "Also share to Facebook", id: "Bagikan juga ke Facebook" },
   "post.fb.shareHint": { en: "Page {page}, right after Instagram. Remembered for the next uploads.", id: "Halaman {page}, tayang tepat sesudah Instagram. Pilihan ini diingat untuk upload berikutnya." },
-  "post.fb.connectHint": { en: "To share on Facebook too, connect the brand's Facebook Page in the brand settings.", id: "Mau ikut tayang di Facebook? Hubungkan Halaman Facebook di pengaturan brand." },
+  "post.fb.connectHint": { en: "To share on Facebook too, connect the brand's Facebook Page in Settings → Meta accounts.", id: "Mau ikut tayang di Facebook? Hubungkan Halaman Facebook di Pengaturan → Akun Meta." },
   "post.fb.with": { en: "Also goes to Facebook · {page}", id: "Ikut tayang di Facebook · {page}" },
   "post.fb.going": { en: "Sending to Facebook…", id: "Lagi dikirim ke Facebook…" },
   "post.fb.goingBody": { en: "Page {page}. Usually a few minutes; this changes by itself.", id: "Halaman {page}. Biasanya beberapa menit, nanti berubah sendiri." },

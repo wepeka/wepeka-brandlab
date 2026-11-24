@@ -675,6 +675,15 @@ function onAccountChange(user, account) {
           .then((m) => m.showTourOffer())
           .catch((e) => console.warn("tour offer unavailable", e));
       }
+      // Back from Meta's login (Pengaturan → Akun Meta, js/meta-connect.js):
+      // say how it went, and after a Facebook login open the account picker
+      // once the greeting is out of the way.
+      if (/[?&]meta=/.test(location.search)) {
+        bumper
+          .then(() => import("./meta-connect.js"))
+          .then((m) => m.handleMetaReturn())
+          .catch((e) => console.warn("Meta return unavailable", e));
+      }
       // Weekly Instagram insights refresh for published content. Loaded
       // lazily (same reason every view is) and a few seconds after first
       // paint so it never competes with the initial render.

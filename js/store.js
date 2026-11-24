@@ -1573,10 +1573,11 @@ function hydrateSales(brand) {
   return { ...brand, salesTracker: { ...(brand.salesTracker || {}), entries: mergedEntries(brand.id, inline) } };
 }
 // A brand whose sales log is worth loading: it has products (no sale can be
-// logged without one) or entries still inline. Others cost nothing.
+// logged without one), entries still inline, or a Meta ad account whose
+// spend the server logs there (api/instagram/[action].js). Others cost nothing.
 function brandUsesSales(brandId) {
   const b = db.brands.find((x) => x.id === brandId);
-  return !!(b?.salesTracker?.products?.length || b?.salesTracker?.entries?.length || serverSales.get(brandId)?.length);
+  return !!(b?.salesTracker?.products?.length || b?.salesTracker?.entries?.length || serverSales.get(brandId)?.length || b?.ads?.connected);
 }
 // True once this brand's sales log is in memory — js/sales-tracker.js only
 // mirrors totals into a campaign (and shows totals as final) from a full log.

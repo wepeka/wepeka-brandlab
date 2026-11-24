@@ -8,6 +8,9 @@
     "api/instagram/post.js": {
       "maxDuration": 60
     },
+    "api/instagram/[action].js": {
+      "maxDuration": 300
+    },
     "api/cron/ig-post.js": {
       "maxDuration": 60
     }
@@ -28,6 +31,10 @@
     {
       "path": "/api/cron/updates",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/instagram/cron",
+      "schedule": "0 20 * * *"
     }
   ],
   "redirects": [

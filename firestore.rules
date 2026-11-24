@@ -663,5 +663,25 @@ service cloud.firestore {
     match /payments/{id} {
       allow read, write: if false;
     }
+
+    // Meta connections (api/instagram/[action].js, Admin SDK only — the
+    // same as having no rule, written out so nobody opens them by
+    // accident): the sealed tokens of each login (metaGrants), what each
+    // brand uses from one (metaConnections), logins in flight
+    // (metaOauthStates) and Meta's data-deletion receipts (metaDeletions).
+    // The app asks /api/instagram for data instead; the brand doc only
+    // carries names and ids (instagram / facebook / ads, owner-only keys).
+    match /metaGrants/{id} {
+      allow read, write: if false;
+    }
+    match /metaConnections/{brandId} {
+      allow read, write: if false;
+    }
+    match /metaOauthStates/{id} {
+      allow read, write: if false;
+    }
+    match /metaDeletions/{code} {
+      allow read, write: if false;
+    }
   }
 }

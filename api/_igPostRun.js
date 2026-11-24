@@ -1,6 +1,24 @@
 // Runs Instagram posting jobs (api/_igPost.js) against Firestore + Storage:
 // shared by the owner's "Posting sekarang" request and the minute cron.
+// The account comes from the brand's Meta connection (the vault) when it
+// has one, else from the token pasted in the brand (Wepeka's own, older).
 import { accountFor, facebookFor, step, graphClient, fbClient, SIGNED_FOR } from "./_igPost.js";
+import { postingAccounts } from "./_metaConnection.js";
+
+// Who posts a job: { account, page, graph, fbGraph }.
+export async function postersFor(db, job, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
+  const vault = await postingAccounts({ db, env, fetch: fetchImpl }, job.brandId).catch((e) => {
+    console.warn("[ig-post] vault", job.brandId, e.message);
+    return null;
+  });
+  let brands = null;
+  const legacy = async () => (brands ||= (await db.collection("brands").where("ownerId", "==", job.ownerId).get()).docs.map((d) => ({ id: d.id, ...d.data() })));
+  const account = vault?.account || (vault ? null : accountFor(await legacy(), job.brandId));
+  const graph = account ? graphClient(account.token, fetchImpl, account.base || undefined) : null;
+  const page = !job.fb ? null : vault?.page || (vault ? null : facebookFor(await legacy(), job.brandId, account));
+  const fbGraph = page ? fbClient(page.token, fetchImpl) : null;
+  return { account, page, graph, fbGraph };
+}
 
 export const LIVE = ["waiting", "children", "container", "publishing", "facebook"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -34,12 +52,8 @@ export async function runJob(db, bucket, contentId, { budgetMs = 0 } = {}) {
     if (!snap.exists) return "gone";
     const job = snap.data();
     if (!LIVE.includes(job.state)) return job.state;
-    const [cSnap, bSnap] = await Promise.all([db.collection("content").doc(contentId).get(), db.collection("brands").where("ownerId", "==", job.ownerId).get()]);
-    const brands = bSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const account = accountFor(brands, job.brandId);
-    const graph = account ? graphClient(account.token) : null;
-    const page = job.fb ? facebookFor(brands, job.brandId, account) : null;
-    const fbGraph = page ? fbClient(page.token) : null;
+    const cSnap = await db.collection("content").doc(contentId).get();
+    const { account, page, graph, fbGraph } = await postersFor(db, job);
     let out = await step(job, { graph, sign, caption: cSnap.data()?.caption || "", account, fbGraph, page, now: Date.now() });
     if (out.job) await ref.update(out.job);
     if (out.next) {

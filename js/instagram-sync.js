@@ -70,8 +70,10 @@ export async function maybeAutoSyncInstagram() {
     // The connection is the owner's: a brand shared with this account is
     // synced by its owner's app.
     if (!isOwnBrand(brand)) continue;
+    // Connected through "Hubungkan akun Meta": the server syncs it every
+    // night (api/instagram/[action].js cron) — only a pasted token is read here.
     const ig = brand.instagram;
-    if (!ig?.accessToken || !ig?.igUserId) continue;
+    if (ig?.connected === true || !ig?.accessToken || !ig?.igUserId) continue;
     if (ig.lastAutoSyncAt && Date.now() - ig.lastAutoSyncAt < AUTO_SYNC_INTERVAL_MS) continue;
     if (!instagramTrackedContent(brand.id).length) continue;
     try {
@@ -83,4 +85,11 @@ export async function maybeAutoSyncInstagram() {
       console.warn(`[Instagram auto-sync] ${brand.name}:`, e.message);
     }
   }
+}
+
+// "Sinkron sekarang" for a brand connected through "Hubungkan akun Meta":
+// one server pass (js/meta-connect.js).
+export async function refreshInstagramNow(brandId) {
+  const { syncMetaNow } = await import("./meta-connect.js");
+  return syncMetaNow(brandId);
 }

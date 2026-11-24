@@ -28,6 +28,7 @@ import report from "./i18n/report.js";
 import deck from "./i18n/deck.js";
 import posting from "./i18n/posting.js";
 import rencana from "./i18n/rencana.js";
+import meta from "./i18n/meta.js";
 
 const KEY = "wepeka-lang";
 
@@ -340,7 +341,7 @@ const CORE = {
   "contentList.emptyFiltered.title": { en: "No content matches", id: "Konten tidak ditemukan" },
   "contentList.emptyFiltered.body": { en: "Try a different search, or clear the filters.", id: "Coba kata kunci lain, atau hapus filternya." },
   "contentList.importInstagram": { en: "Import from Instagram", id: "Import dari Instagram" },
-  "contentList.connectInEditBrand": { en: "(connect in Edit Brand)", id: "(hubungkan di Edit Brand)" },
+  "contentList.connectInEditBrand": { en: "(connect in Settings → Meta accounts)", id: "(hubungkan di Pengaturan → Akun Meta)" },
   "contentList.refreshAllIg": { en: "Refresh all Instagram metrics", id: "Refresh Semua Metrik Instagram" },
   "contentList.deleteAllContent": { en: "Delete all content ({count})", id: "Hapus Semua Konten ({count})" },
   "contentList.nothingToDelete": { en: "There's no content to delete.", id: "Tidak ada konten untuk dihapus." },
@@ -701,6 +702,7 @@ const EXTRA = {
   "deck": deck,
   "posting": posting,
   "rencana": rencana,
+  "meta": meta,
 };
 // Production build seam: scripts/build.mjs swaps this exact line for a
 // top-level await that loads ONLY the active language (one chunk per

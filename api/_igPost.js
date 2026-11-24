@@ -1,6 +1,10 @@
 // Posting to Instagram from Brandlab (owner, 2026-11-02: "bisa upload dari
-// brandlab ke akunku aja … jadi aku tinggal click2 dari brandlab"). Admin
-// only, like the rest of Video & posting.
+// brandlab ke akunku aja … jadi aku tinggal click2 dari brandlab"). First
+// Wepeka's own (the cut from the Mac folder, the token pasted in the brand),
+// since 2026-11-24 every brand connected through "Hubungkan akun Meta"
+// (api/instagram/[action].js): the cut from the owner's Google Drive, the
+// token from the vault (api/_metaConnection.js postingAccounts), posted by
+// whoever on the brand has Posting (js/permissions.js).
 //
 // The approved cut lives on the Mac (js/outbox.js), and Instagram only takes
 // a URL it can fetch. So "Jadwalkan" / "Posting sekarang" copies the cut from
@@ -86,7 +90,9 @@ export function atOf(date, time) {
 export const wibDate = (ms) => new Date(ms + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
 // The job written when the owner schedules (or posts now).
-export function newJob(c, { uid, paths, cover, kind, at, facebook = false, now = Date.now() }) {
+// `uid` = the brand owner (the copies sit under their folder and the job
+// runs on their brand); `by` = who pressed the button, when it's a member.
+export function newJob(c, { uid, by = "", paths, cover, kind, at, facebook = false, now = Date.now() }) {
   const want = prefixOf(uid, c.id);
   const okPath = (x) => typeof x === "string" && x.startsWith(want) && !x.includes("..");
   if (!Array.isArray(paths) || !paths.length || !paths.every(okPath)) throw fail(400, "paths");
@@ -98,7 +104,7 @@ export function newJob(c, { uid, paths, cover, kind, at, facebook = false, now =
   if (type === "carousel" && (k !== "set" || paths.length < 2)) throw fail(400, "slides");
   if (!(at > 0)) throw fail(400, "at");
   return {
-    ownerId: uid, brandId: c.brandId, contentId: c.id, type, kind: k, paths, cover: cover || "",
+    ownerId: uid, ...(by && by !== uid ? { by } : {}), brandId: c.brandId, contentId: c.id, type, kind: k, paths, cover: cover || "",
     trial: !!p.trialReel && type === "reels", at: Math.max(at, now), state: "waiting",
     children: [], creation: "", mediaId: "", permalink: "", error: "", createdAt: now, updatedAt: now, tries: 0,
     fb: facebook ? { state: "waiting" } : null,
@@ -107,8 +113,8 @@ export function newJob(c, { uid, paths, cover, kind, at, facebook = false, now =
 
 // Only to the Facebook Page, for a piece already on Instagram ("Bagikan ke
 // Facebook" after the fact, or again after Facebook refused it).
-export function facebookJob(c, { uid, paths, cover, kind, now = Date.now() }) {
-  const job = newJob({ ...c, status: "editing", posting: { ...(c.posting || {}), ig: null } }, { uid, paths, cover, kind, at: now, facebook: true, now });
+export function facebookJob(c, { uid, by = "", paths, cover, kind, now = Date.now() }) {
+  const job = newJob({ ...c, status: "editing", posting: { ...(c.posting || {}), ig: null } }, { uid, by, paths, cover, kind, at: now, facebook: true, now });
   return { ...job, state: "facebook", fbOnly: true, trial: false };
 }
 
@@ -297,12 +303,14 @@ export const scheduledIg = (job) => ({ state: "scheduled", at: new Date(job.at).
 
 // Instagram's Graph API over fetch: form-encoded POST, query GET, the token
 // as access_token. An error answer throws with Instagram's own message.
-export function graphClient(token, fetchImpl = globalThis.fetch) {
+// `base`: graph.instagram.com for an Instagram Login token, graph.facebook.com
+// for a Facebook Login for Business one (api/_metaConnection.js says which).
+export function graphClient(token, fetchImpl = globalThis.fetch, base = GRAPH) {
   return async (method, path, params = {}) => {
     const body = new URLSearchParams({ ...params, access_token: token });
     const res = method === "GET"
-      ? await fetchImpl(`${GRAPH}${path}?${body}`)
-      : await fetchImpl(`${GRAPH}${path}`, { method, headers: { "content-type": "application/x-www-form-urlencoded" }, body });
+      ? await fetchImpl(`${base}${path}?${body}`)
+      : await fetchImpl(`${base}${path}`, { method, headers: { "content-type": "application/x-www-form-urlencoded" }, body });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json.error) {
       const e = new Error(json.error?.message || `instagram ${res.status}`);

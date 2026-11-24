@@ -1,23 +1,58 @@
 // Instagram Graph API client — read-only. Pulls insights for a post you've
-// already published (via Instagram itself), using a long-lived access token
-// you generate once in Meta's developer tools and paste into Settings.
+// already published, for the import picker, the Antrean feed, the
+// followers button and the per-post fetch.
 //
-// This can only ever be "fetch data for a post that already exists" — the
-// Graph API does not accept direct file uploads from a browser, so posting
-// content from this app isn't something this integration can do.
-//
-// Tokens from the newer "Instagram API with Instagram Login" setup start
-// with "IGAA" and only work against graph.instagram.com — NOT
-// graph.facebook.com (that's only for classic "EAA"-prefixed Facebook
-// tokens tied to a linked Page). This client targets the IGAA/Instagram
-// Login style, since that's the simpler, current onboarding path.
+// Two kinds of connection reach it (owner, 2026-11-24: "Hubungkan akun
+// Meta"): the brand connected through Facebook Login for Business or
+// Instagram Login — the token stays on the server, so every read goes
+// through /api/instagram/graph (read-only, this brand's account only) —
+// and the older token Wepeka's account pasted into the brand form, still
+// read straight from graph.instagram.com until that brand is connected the
+// new way. igRef(brand) says which; every helper below takes what it returns.
 import { t, getLang } from "./i18n.js";
+import { auth } from "./firebase.js";
 
 const API_BASE = "https://graph.instagram.com";
 
-class InstagramApiError extends Error {}
+class InstagramApiError extends Error {
+  constructor(message, code = "") {
+    super(message);
+    this.code = code;
+  }
+}
 
-async function graphGet(path, params, accessToken) {
+// { brandId, igUserId, username, accessToken? } for a brand whose Instagram
+// this app can read, else null. `accessToken` only for the pasted kind.
+export function igRef(brand) {
+  const ig = brand?.instagram;
+  if (!ig?.igUserId) return null;
+  if (ig.connected === true) return { brandId: brand.id, igUserId: ig.igUserId, username: ig.username || "" };
+  if (ig.accessToken) return { brandId: brand.id, igUserId: ig.igUserId, username: ig.username || "", accessToken: ig.accessToken };
+  return null;
+}
+// Connected through "Hubungkan akun Meta" (the server holds the token).
+export const igViaVault = (brand) => brand?.instagram?.connected === true && !!brand.instagram.igUserId;
+
+async function viaServer(ref, path, params) {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) throw new InstagramApiError(t("integr.ig.apiFailed", { status: 401 }), "auth");
+  const res = await fetch("/api/instagram/graph", {
+    method: "POST",
+    headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ brandId: ref.brandId, path, params: Object.fromEntries(Object.entries(params || {}).map(([k, v]) => [k, typeof v === "number" ? v : String(v)])) }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.error) {
+    const code = typeof json.error === "string" ? json.error : "";
+    throw new InstagramApiError(code === "reconnect" ? t("meta.err.reconnect") : json.message || json.error?.message || t("integr.ig.apiFailed", { status: res.status }), code);
+  }
+  return json;
+}
+
+// `ref`: igRef(brand), or (older callers) a bare pasted token.
+async function graphGet(path, params, ref) {
+  if (ref && typeof ref === "object" && !ref.accessToken) return viaServer(ref, path, params);
+  const accessToken = typeof ref === "string" ? ref : ref?.accessToken;
   const url = new URL(`${API_BASE}${path}`);
   Object.entries(params || {}).forEach(([k, v]) => url.searchParams.set(k, v));
   url.searchParams.set("access_token", accessToken);
@@ -31,8 +66,8 @@ async function graphGet(path, params, accessToken) {
   return json;
 }
 
-export async function testConnection({ igUserId, accessToken }) {
-  const json = await graphGet(`/${igUserId}`, { fields: "username" }, accessToken);
+export async function testConnection(ig) {
+  const json = await graphGet(`/${ig.igUserId}`, { fields: "username" }, ig);
   return json.username;
 }
 
@@ -46,14 +81,15 @@ export function shortcodeFromUrl(url) {
 // Pulls the account's recent posts (paginated), for the "Import" flow that
 // discovers everything already published on Instagram instead of requiring
 // one manually-created Content entry per post first.
-export async function listRecentMedia({ igUserId, accessToken }, { maxItems = 100 } = {}) {
+export async function listRecentMedia(ig, { maxItems = 100 } = {}) {
+  const { igUserId } = ig;
   const results = [];
   let after;
   while (results.length < maxItems) {
     const json = await graphGet(
       `/${igUserId}/media`,
       { fields: "id,permalink,caption,timestamp,media_type,media_product_type,media_url,thumbnail_url", limit: 50, ...(after ? { after } : {}) },
-      accessToken
+      ig
     );
     results.push(...(json.data || []));
     after = json.paging?.cursors?.after;
@@ -85,7 +121,8 @@ export function titleFromMedia(media) {
   return t("integr.ig.postTitle", { date: new Date(media.timestamp).toLocaleDateString(getLang() === "en" ? "en-US" : "id-ID") });
 }
 
-export async function findMediaByPermalink({ igUserId, accessToken }, publishedUrl) {
+export async function findMediaByPermalink(ig, publishedUrl) {
+  const { igUserId } = ig;
   const targetCode = shortcodeFromUrl(publishedUrl);
   if (!targetCode) {
     throw new InstagramApiError(t("integr.ig.badUrl"));
@@ -96,7 +133,7 @@ export async function findMediaByPermalink({ igUserId, accessToken }, publishedU
     const json = await graphGet(
       `/${igUserId}/media`,
       { fields: "id,permalink,timestamp,media_type,media_product_type", limit: 50, ...(after ? { after } : {}) },
-      accessToken
+      ig
     );
     const match = (json.data || []).find((m) => shortcodeFromUrl(m.permalink) === targetCode);
     if (match) return match;
@@ -159,9 +196,9 @@ const INSIGHT_METRICS = {
 // One named metric, or null if Instagram doesn't return a value for it.
 // Logs the raw response either way — this is what made the "views"/"follows"
 // mysteries diagnosable from a real account instead of guesswork.
-async function fetchOneMetric(mediaId, metricName, accessToken) {
+async function fetchOneMetric(mediaId, metricName, ig) {
   try {
-    const insights = await graphGet(`/${mediaId}/insights`, { metric: metricName }, accessToken);
+    const insights = await graphGet(`/${mediaId}/insights`, { metric: metricName }, ig);
     // eslint-disable-next-line no-console
     console.log(`[Instagram] metric=${metricName} →`, JSON.stringify(insights));
     const val = insights.data?.[0]?.values?.[0]?.value;
@@ -176,12 +213,12 @@ async function fetchOneMetric(mediaId, metricName, accessToken) {
 // Returns { metrics: {ourKey: value, ...}, warnings: [string, ...] }
 // Partial success is normal — whatever Instagram won't give us just gets
 // left for the user to fill in manually, same as the OCR flow.
-export async function fetchMediaMetrics({ accessToken }, media) {
+export async function fetchMediaMetrics(ig, media) {
   const metrics = {};
   const warnings = [];
 
   try {
-    const basic = await graphGet(`/${media.id}`, { fields: "like_count,comments_count" }, accessToken);
+    const basic = await graphGet(`/${media.id}`, { fields: "like_count,comments_count" }, ig);
     if (basic.like_count !== undefined) metrics.likes = basic.like_count;
     if (basic.comments_count !== undefined) metrics.comments = basic.comments_count;
   } catch (e) {
@@ -200,7 +237,7 @@ export async function fetchMediaMetrics({ accessToken }, media) {
     let lastError = null;
     let found = false;
     for (const metricName of names) {
-      const { value, error } = await fetchOneMetric(media.id, metricName, accessToken);
+      const { value, error } = await fetchOneMetric(media.id, metricName, ig);
       if (error) { lastError = error; continue; }
       if (value === null) continue;
       metrics[key] = value;
@@ -215,7 +252,7 @@ export async function fetchMediaMetrics({ accessToken }, media) {
     let lastError = null;
     let found = false;
     for (const metricName of viewNames) {
-      const { value, error } = await fetchOneMetric(media.id, metricName, accessToken);
+      const { value, error } = await fetchOneMetric(media.id, metricName, ig);
       if (error) { lastError = error; continue; }
       if (value === null) continue;
       metrics.views = value;
@@ -235,8 +272,8 @@ export async function fetchMediaMetrics({ accessToken }, media) {
 }
 
 // Current snapshot (not date-ranged) — followers/media count right now.
-export async function getAccountProfile({ igUserId, accessToken }) {
-  return graphGet(`/${igUserId}`, { fields: "username,followers_count,media_count" }, accessToken);
+export async function getAccountProfile(ig) {
+  return graphGet(`/${ig.igUserId}`, { fields: "username,followers_count,media_count" }, ig);
 }
 
 // Same "try each candidate name, one at a time" defensiveness as media
@@ -252,7 +289,8 @@ const ACCOUNT_METRICS = [
 
 // since/until: Date objects or anything `new Date()` accepts. Sums each
 // metric's daily values across the range into one number for that period.
-export async function getAccountInsights({ igUserId, accessToken }, { since, until }) {
+export async function getAccountInsights(ig, { since, until }) {
+  const { igUserId } = ig;
   const sinceTs = Math.floor(new Date(since).getTime() / 1000);
   const untilTs = Math.floor(new Date(until).getTime() / 1000);
   const metrics = {};
@@ -263,7 +301,7 @@ export async function getAccountInsights({ igUserId, accessToken }, { since, unt
     let lastError = null;
     for (const metricName of names) {
       try {
-        const json = await graphGet(`/${igUserId}/insights`, { metric: metricName, period: "day", since: sinceTs, until: untilTs }, accessToken);
+        const json = await graphGet(`/${igUserId}/insights`, { metric: metricName, period: "day", since: sinceTs, until: untilTs }, ig);
         const rows = json.data?.[0]?.values || [];
         metrics[key] = rows.reduce((sum, r) => sum + (typeof r.value === "number" ? r.value : 0), 0);
         found = true;

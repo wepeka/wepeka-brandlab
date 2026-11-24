@@ -70,6 +70,9 @@ export function contentMoney({ tracker, contents = [], from = null, to = null } 
         organic: 0, paid: 0, revenue: 0, count: 0, qty: 0,
         byAttribution: { auto: 0, manual: 0, estimate: 0, unknown: 0 },
         profit: 0, costedRevenue: 0, adSpend: 0,
+        // What Meta says its ads brought (api/instagram/[action].js writes it
+        // on the automatic Iklan expense): shown beside, never in, revenue.
+        reported: { purchases: 0, value: 0 },
       });
     }
     return groups.get(key);
@@ -90,7 +93,12 @@ export function contentMoney({ tracker, contents = [], from = null, to = null } 
   }
   for (const x of tracker?.expenses || []) {
     if (!x.contentId || !inRange(x, from, to)) continue;
-    groupOf(x.contentId).adSpend += money(x.amount);
+    const g = groupOf(x.contentId);
+    g.adSpend += money(x.amount);
+    if (x.meta) {
+      g.reported.purchases += money(x.meta.reportedPurchases);
+      g.reported.value += money(x.meta.reportedValue);
+    }
   }
   // Pieces with only a production cost still show (money out, none back yet).
   for (const c of contents) {

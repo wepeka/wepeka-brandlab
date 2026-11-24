@@ -26,6 +26,7 @@
 // fetch (.claude/social-hub/ARSITEKTUR.md).
 import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole, canEditBrand, scopeBrandId } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
+import { can } from "./permissions.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, driveImageURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
 import { syncOutbox, versionIdOf, FORMAT_OF, editorVersionOf, editorVersionIndex, noteForEditor, writeEditorQueue } from "./outbox-sync.js";
@@ -137,7 +138,21 @@ export function clientDriveGap(x) {
 // folder goes up through the server (js/ig-post.js → api/_igPost.js), at
 // the hour or right away. Anything else still books the slot and is marked
 // posted by hand.
-const autoPost = (c) => isWepekaDesk() && !!postingOf(c).local?.key;
+// Since 2026-11-24 any brand connected through "Hubungkan akun Meta"
+// (Pengaturan → Akun Meta) posts from Brandlab too: the cut from the
+// owner's Google Drive, by whoever on the brand has Posting (the owner,
+// Admin, Editor & Sosmed — js/permissions.js), the token on the server
+// (api/instagram/post.js reads the vault).
+export const metaPosts = (brand) => !!brand && brand.instagram?.connected === true && !!brand.instagram.igUserId
+  && brand.instagram.status !== "reconnect" && can(brand, currentUid(), "publish", "publish");
+// The cut that goes up from Drive: the approved one, or — working alone,
+// where approving is never a step — the newest.
+export function postCutOf(c) {
+  const p = postingOf(c);
+  const v = p.versions.find((x) => x.id === p.finalId && x.status === "approved") || (isSoloBrand(c) ? latestOf(p) : null);
+  return v && !v.local && (v.drive?.id || v.driveFiles?.length) ? v : null;
+}
+const autoPost = (c) => (isWepekaDesk() && !!postingOf(c).local?.key) || (!isWepekaDesk() && metaPosts(getBrand(c.brandId)) && !!postCutOf(c));
 
 // Wepeka's own account works from a folder on the Mac (js/outbox.js) instead
 // of Google Drive (owner, 2026-11-01): Claude edits there, the results flow
@@ -1062,6 +1077,9 @@ const igHandleOf = (brand) => {
 const handleKey = (x) => String(x || "").replace(/^@/, "").trim().toLowerCase();
 export const fbPageOf = (brand) => {
   if (!brand) return null;
+  // Connected through "Hubungkan akun Meta": its own Page or none (the
+  // server posts to the Page that connection picked, nothing else).
+  if (brand.instagram?.connected === true) return brand.facebook?.connected && brand.facebook.pageId ? { name: brand.facebook.pageName || "Facebook", brandId: brand.id } : null;
   const ok = (b) => (b?.facebook?.pageAccessToken && b.facebook.pageId ? { name: b.facebook.pageName || "Facebook", brandId: b.id } : null);
   if (ok(brand)) return ok(brand);
   const names = [brand.name, brand.instagram?.username, igHandleOf(brand)].map(handleKey).filter(Boolean);
@@ -2093,7 +2111,7 @@ function postHTML(c, p, key, handle, posting = null) {
   const AUTO_POST = autoPost(c);
   // Everyone but Wepeka's account posts by hand (Instagram from Brandlab is
   // its own for now): no "connected" pill, nothing locked behind it.
-  const byHandOnly = !isWepekaDesk();
+  const byHandOnly = !isWepekaDesk() && !metaPosts(getBrand(c.brandId));
   const acct = `<div class="pst-acct">${icon("instagram", { size: 18 })}<b>${handle ? `@${escapeHtml(handle)}` : escapeHtml(getBrand(c.brandId)?.name || "")}</b>${byHandOnly ? "" : `<span class="pst-pill ${handle ? "is-on" : ""}">${handle ? t("post.ig.connected") : t("post.ig.notConnected")}</span>`}</div>`;
   if (posting) {
     return `<section class="pst-block pst-post">${acct}
@@ -2169,6 +2187,36 @@ function postHTML(c, p, key, handle, posting = null) {
         <button type="button" class="btn btn-ghost" id="pst-posted">${icon("check", { size: 15 })}${t("post.ig.alreadyPosted")}</button>
       </div>
     </section>`;
+}
+
+// The files of a cut to post, and the reel's cover: from the Mac folder
+// (Wepeka's desk) or from the owner's Google Drive — the cover then is the
+// piece's own thumbnail from Creator, when it's a JPEG (Instagram takes
+// only that).
+async function cutFiles(c, v) {
+  const cp = postingOf(c);
+  const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
+  if (v.local) {
+    const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
+    const files = await Promise.all(names.map((n) => outboxFile(cp.local.key, n)));
+    const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;
+    return { files, cover };
+  }
+  const files = [];
+  for (const f of ownFiles(c, v)) {
+    const blob = await (await fetch(await driveVideoURL(f.id))).blob();
+    files.push(new File([blob], f.name, { type: blob.type || "" }));
+  }
+  let cover = null;
+  if (isReel && /^(data:image\/jpe?g|https:)/.test(String(c.thumbnail || ""))) {
+    try {
+      const b = await (await fetch(c.thumbnail)).blob();
+      if (/jpe?g/.test(b.type)) cover = new File([b], "cover.jpg", { type: "image/jpeg" });
+    } catch {
+      // No cover: Instagram picks a frame.
+    }
+  }
+  return { files, cover };
 }
 
 function wire(root, contentId, ui, repaint) {
@@ -2454,13 +2502,16 @@ function wire(root, contentId, ui, repaint) {
   qs("#pst-date", root)?.addEventListener("change", (e) => { updateContent(contentId, { scheduleDate: e.target.value }); repaint(); });
   qs("#pst-time-in", root)?.addEventListener("change", (e) => { save({ time: e.target.value }); repaint(); });
 
-  // From the Mac folder: the server posts it (at the hour, or now).
+  // From the Mac folder (Wepeka's desk) or the owner's Drive (a brand
+  // connected through "Hubungkan akun Meta"): the server posts it (at the
+  // hour, or now).
   const goInstagram = async (now) => {
     if (POSTING.has(contentId)) return;
     const cur = getContent(contentId);
     const cp = postingOf(cur);
-    const v = cp.versions.find((x) => x.id === cp.finalId);
-    if (!v?.local || !cp.local?.key || !OUT.connected) { toast(t("post.client.needFolder"), "error"); return; }
+    const v = isWepekaDesk() ? cp.versions.find((x) => x.id === cp.finalId) : postCutOf(cur);
+    if (isWepekaDesk() && (!v?.local || !cp.local?.key || !OUT.connected)) { toast(t("post.client.needFolder"), "error"); return; }
+    if (!v) { toast(t("post.ig.needApproval"), "error"); return; }
     const date = now ? localISODate() : qs("#pst-date", root).value;
     const hhmm = now ? new Date().toTimeString().slice(0, 5) : qs("#pst-time-in", root).value || "19:00";
     const at = now ? Date.now() : Date.parse(`${date}T${hhmm}:00+07:00`);
@@ -2473,10 +2524,7 @@ function wire(root, contentId, ui, repaint) {
     POSTING.set(contentId, { pct: 0 });
     repaint();
     try {
-      const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
-      const files = await Promise.all(names.map((n) => outboxFile(cp.local.key, n)));
-      const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
-      const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;
+      const { files, cover } = await cutFiles(cur, v);
       const r = await postToInstagram({
         contentId, kind: v.kind || "video", files, cover, at, facebook,
         onProgress: (f) => {
@@ -2508,18 +2556,16 @@ function wire(root, contentId, ui, repaint) {
     if (POSTING.has(contentId)) return;
     const cur = getContent(contentId);
     const cp = postingOf(cur);
-    const v = cp.versions.find((x) => x.id === cp.finalId) || latestOf(cp);
-    if (!v?.local || !cp.local?.key || !OUT.connected) { toast(t("post.client.needFolder"), "error"); return; }
+    const v = isWepekaDesk() ? cp.versions.find((x) => x.id === cp.finalId) || latestOf(cp) : postCutOf(cur);
+    if (isWepekaDesk() && (!v?.local || !cp.local?.key || !OUT.connected)) { toast(t("post.client.needFolder"), "error"); return; }
+    if (!v) { toast(t("post.ig.needApproval"), "error"); return; }
     const page = fbPageOf(getBrand(cur.brandId));
     if (!page) { toast(t("post.ig.err.page"), "error"); return; }
     if (!(await confirmDialog({ title: t("post.fb.sendTitle"), message: t("post.fb.sendBody", { page: escapeHtml(page.name) }), confirmLabel: t("post.fb.send") }))) return;
     POSTING.set(contentId, { pct: 0, fb: true });
     repaint();
     try {
-      const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
-      const files = await Promise.all(names.map((n) => outboxFile(cp.local.key, n)));
-      const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
-      const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;
+      const { files, cover } = await cutFiles(cur, v);
       const r = await shareToFacebook({
         contentId, kind: v.kind || "video", files, cover,
         onProgress: (f) => {

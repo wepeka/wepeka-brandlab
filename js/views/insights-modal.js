@@ -8,7 +8,7 @@ import { openModal, closeOverlay } from "../modals.js";
 import { icon } from "../icons.js";
 import { qs, toast, formatNumber, escapeHtml } from "../dom.js";
 import { canUseInstagramApi } from "../account.js";
-import { getAccountProfile } from "../instagram.js";
+import { getAccountProfile, igRef } from "../instagram.js";
 import { ageLabel } from "../campaign-metrics.js";
 import { t } from "../i18n.js";
 
@@ -21,11 +21,11 @@ export function openInsightsModal({ brandId, onSaved, reason = "", platform = "i
   // same form, same as Instagram did before the API integration existed.
   const savedStart = brand.insightsStart?.[platform]?.followers;
   const startNow = Number.isFinite(savedStart) ? savedStart : (brand.insightsHistory || []).filter((h) => h.platform === platform && Number.isFinite(h.followers)).sort((a, b) => a.at - b.at)[0]?.followers;
-  const igApi = platform === "instagram" && canUseInstagramApi() && !!(brand.instagram?.accessToken && brand.instagram?.igUserId);
+  const igApi = platform === "instagram" && canUseInstagramApi() && !!igRef(brand);
   const overlay = openModal({
     title: platform === "instagram" ? t("ins.title") : t("ins.titleFor", { platform: t(`goal.launch.platform.${platform}`) }),
     bodyHTML: `
-      <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("ins.intro")} ${ins?.updatedAt ? t("ins.lastRecorded", { age: escapeHtml(ageLabel(ins.updatedAt)), source: ins.source === "instagram" ? t("ins.fromApi") : "" }) : t("ins.never")}</p>
+      <p class="text-muted" style="font-size:13px;margin:0 0 14px;">${t("ins.intro")} ${ins?.updatedAt ? t("ins.lastRecorded", { age: escapeHtml(ageLabel(ins.updatedAt)), source: ins.source === "instagram" || ins.source === "facebook" ? t("ins.fromApi") : "" }) : t("ins.never")}</p>
       ${reason ? `<div class="hint" style="margin:0 0 14px;">${icon("info", { size: 12 })}<span>${escapeHtml(reason)}</span></div>` : ""}
       ${igApi ? `<button type="button" class="btn btn-secondary btn-sm" id="ins-fetch" style="margin-bottom:14px;">${icon("refresh", { size: 13 })}${t("ins.fetchFollowers")}</button>` : ""}
       <div class="field">
@@ -60,7 +60,7 @@ export function openInsightsModal({ brandId, onSaved, reason = "", platform = "i
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
-      const profile = await getAccountProfile(brand.instagram);
+      const profile = await getAccountProfile(igRef(brand));
       const count = Number(profile.followers_count);
       if (!Number.isFinite(count)) throw new Error(t("ins.noFollowerCount"));
       qs("#ins-followers", overlay).value = count;

@@ -4,7 +4,7 @@ import { openModal, closeOverlay } from "../modals.js";
 import { qs, qsa, showProgressBar, escapeHtml, toast, loadingHTML } from "../dom.js";
 import { canUseInstagramApi } from "../account.js";
 import { t } from "../i18n.js";
-import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl, formatFromMedia, titleFromMedia, thumbnailFromMedia } from "../instagram.js";
+import { listRecentMedia, fetchMediaMetrics, shortcodeFromUrl, formatFromMedia, titleFromMedia, thumbnailFromMedia, igRef } from "../instagram.js";
 
 function normalizeCaption(s) {
   return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -19,7 +19,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
     return;
   }
   const brand = getBrand(brandId);
-  const ig = brand?.instagram;
+  const ig = igRef(brand);
 
   const overlay = openModal({
     title: t("integr.import.igTitle"),

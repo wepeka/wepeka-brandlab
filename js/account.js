@@ -30,13 +30,18 @@ export function isAdmin(uid) {
   return !!uid && ADMIN_UIDS.includes(uid);
 }
 
-// Instagram Graph API features (connect account, import posts, fetch/refresh
-// insights, account overview, followers sync) are "Segera hadir" for
-// customers while the app is being sold — each customer would otherwise
-// need their own Meta developer token. Only Wepeka's internal account keeps
-// them. Every Instagram API entry point checks this one function.
+// Meta (Pengaturan → Akun Meta: Instagram, Facebook Page, ad account per
+// brand; import posts, numbers synced by the server, posting) — every entry
+// point checks this one function. Until Meta's App Review passes only
+// people with a role on the Meta app can log in at all, so it stays with
+// Wepeka's own account and accounts given `metaBeta: true` (Meta's
+// reviewer's test account among them). After approval:
+// META_FOR_EVERYONE = true here and META_OPEN=1 on the server
+// (api/instagram/[action].js).
+export const META_FOR_EVERYONE = false;
 export function canUseInstagramApi() {
-  return isAdmin(currentUid());
+  const acc = getCachedAccount();
+  return META_FOR_EVERYONE || isAdmin(currentUid()) || acc?.metaBeta === true || acc?.instagramBeta === true;
 }
 
 // Nothing is created here anymore (Fase 2: accounts/{uid} is made server-

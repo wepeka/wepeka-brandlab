@@ -23,7 +23,7 @@ import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { videoCode, codedPiece } from "../video-codes.js";
 import { driveVideoURL, driveImageURL } from "../drive.js";
-import { listRecentMedia, thumbnailFromMedia, testConnection } from "../instagram.js";
+import { listRecentMedia, thumbnailFromMedia, testConnection, igRef } from "../instagram.js";
 import { canUseInstagramApi, currentUid, isAdmin } from "../account.js";
 import { showsFootage, bankHTML, wireBank, footageCount } from "../footage-bank.js";
 
@@ -171,7 +171,8 @@ function sourceHTML() {
 // connection — the same one Brandlab's insights use — and kept a few
 // minutes. The username Instagram answers with is the account it really is.
 const IG = new Map(); // brandId → { at, key, media, username, error }
-const igOf = (brand) => (brand?.instagram?.igUserId && brand.instagram.accessToken ? brand.instagram : null);
+// Connected the new way (the server reads for us) or with the older pasted token.
+const igOf = (brand) => igRef(brand);
 async function loadGrid(brandId) {
   const ig = igOf(getBrand(brandId));
   if (!ig || !canUseInstagramApi()) return null;

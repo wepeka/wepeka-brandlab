@@ -24,6 +24,8 @@ import { helpButtonHTML, wireHelpButtons } from "../help.js";
 import { guideVideoButtonHTML } from "../guide-videos.js";
 import { renderRemindersPanel } from "../reminders.js";
 import { renderTeamPanel, openInviteModal } from "./team-panel.js";
+import { renderMetaPanel } from "../meta-connect.js";
+import { canUseInstagramApi } from "../account.js";
 
 // One list for both modes. `pro` panels only show in Pro; the AI panel
 // only exists for the Wepeka admin account (it edits the shared key —
@@ -33,6 +35,9 @@ const PANELS = [
   { key: "brands", labelKey: "settings.panel.brands" },
   // Kerja Tim (js/views/team-panel.js): both modes — inviting your team.
   { key: "team", labelKey: "settings.panel.team" },
+  // Instagram, Facebook Page and Meta ad account per brand (js/meta-connect.js);
+  // open to the accounts Meta lets in until its App Review passes.
+  { key: "meta", labelKey: "settings.panel.meta", meta: true },
   { key: "language", labelKey: "settings.panel.language" },
   { key: "account", labelKey: "settings.panel.account" },
   // Opt-in upload reminders (js/reminders.js) — both modes; all off by default.
@@ -50,7 +55,7 @@ const PANELS = [
 function visiblePanels() {
   const pro = getMode() === "advanced";
   const admin = isAdmin(currentUid());
-  return PANELS.filter((p) => (!p.pro || pro) && (!p.admin || admin));
+  return PANELS.filter((p) => (!p.pro || pro) && (!p.admin || admin) && (!p.meta || canUseInstagramApi()));
 }
 
 export function render(root, { panel } = {}) {
@@ -86,6 +91,7 @@ function paint(root, state, refresh) {
   else if (state.panel === "formats") renderListEditor(content, t("settings.panel.formats"), getSettings().formats, addFormat, removeFormat, t("set.formats.ph"));
   else if (state.panel === "brands") renderBrands(content, refresh);
   else if (state.panel === "team") renderTeamPanel(content, { planName });
+  else if (state.panel === "meta") renderMetaPanel(content);
   else if (state.panel === "ai") renderAi(content);
   else if (state.panel === "bg") renderBrandsBg(content);
   else if (state.panel === "language") renderLanguage(content);
