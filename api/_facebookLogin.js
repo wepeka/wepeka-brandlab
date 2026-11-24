@@ -91,18 +91,35 @@ export async function exchangeCode(fetchImpl, { appId, appSecret, redirectUri, c
     name,
     clientBusinessId,
     permissions: info.scopes,
+    granted: info.granted,
   };
 }
 
-// /debug_token with the app token: scopes and expiry for any token type.
+// /debug_token with the app token: scopes and expiry for any token type,
+// and which assets the person ticked in Meta's window (granular_scopes'
+// target_ids): { pages, instagram, ads } — ids, by the permission that names them.
+export const GRANTED_BY = {
+  pages: ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "read_insights"],
+  instagram: ["instagram_basic", "instagram_manage_insights", "instagram_content_publish"],
+  ads: ["ads_read", "ads_management"],
+};
+export function grantedTargets(granular) {
+  const out = { pages: new Set(), instagram: new Set(), ads: new Set() };
+  for (const g of Array.isArray(granular) ? granular : []) {
+    for (const [kind, scopes] of Object.entries(GRANTED_BY)) {
+      if (scopes.includes(g?.scope)) for (const id of g.target_ids || []) out[kind].add(String(id));
+    }
+  }
+  return { pages: [...out.pages], instagram: [...out.instagram], ads: [...out.ads] };
+}
 export async function debugToken(fetchImpl, { appId, appSecret, token }) {
   try {
     const json = await graphGet(fetchImpl, FB_GRAPH, "/debug_token", { input_token: token }, `${appId}|${appSecret}`);
     const d = json.data || {};
-    return { scopes: Array.isArray(d.scopes) ? d.scopes.map(String) : [], expiresAt: Number(d.expires_at) || 0, valid: d.is_valid !== false };
+    return { scopes: Array.isArray(d.scopes) ? d.scopes.map(String) : [], expiresAt: Number(d.expires_at) || 0, valid: d.is_valid !== false, granted: grantedTargets(d.granular_scopes) };
   } catch (e) {
     if (e instanceof GraphError && e.needsReconnect) throw e;
-    return { scopes: [], expiresAt: 0, valid: true };
+    return { scopes: [], expiresAt: 0, valid: true, granted: grantedTargets([]) };
   }
 }
 
@@ -111,7 +128,11 @@ export async function debugToken(fetchImpl, { appId, appSecret, token }) {
 // come through their Page, and, for a BISU token, also straight from the
 // business (Instagram API with unified login: no Page needed). Each edge
 // that isn't granted just comes back empty.
-export async function discoverAssets(fetchImpl, token, tokenType) {
+// `granted` (debugToken): what the person ticked. /me/accounts doesn't list
+// every one of them (live 2026-11-25: a business-owned Page and its
+// Instagram account were ticked but missing), so whatever is still missing
+// is read by its id.
+export async function discoverAssets(fetchImpl, token, tokenType, granted = null) {
   const api = { fetch: fetchImpl, base: FB_GRAPH, token };
   const soft = async (fn) => {
     try {
@@ -121,7 +142,13 @@ export async function discoverAssets(fetchImpl, token, tokenType) {
       return [];
     }
   };
-  const rawPages = await soft(() => list(api, "/me/accounts", { fields: "id,name,access_token,instagram_business_account{id,username}" }));
+  const PAGE_FIELDS = "id,name,access_token,instagram_business_account{id,username}";
+  const rawPages = await soft(() => list(api, "/me/accounts", { fields: PAGE_FIELDS }));
+  for (const id of granted?.pages || []) {
+    if (rawPages.some((p) => String(p.id) === id)) continue;
+    const one = await soft(async () => [await get(api, `/${id}`, { fields: PAGE_FIELDS })]);
+    if (one[0]?.id) rawPages.push(one[0]);
+  }
   const pages = [];
   for (const p of rawPages) {
     let pageToken = p.access_token || "";
@@ -147,9 +174,25 @@ export async function discoverAssets(fetchImpl, token, tokenType) {
       instagram.push({ id: String(ig.id), username: String(ig.username || ""), pageId: "" });
     }
   }
-  const adAccounts = (await soft(() => list(api, "/me/adaccounts", { fields: "id,account_id,name,currency,account_status" })))
+  for (const id of granted?.instagram || []) {
+    if (seen.has(id)) continue;
+    const one = await soft(async () => [await get(api, `/${id}`, { fields: "id,username" })]);
+    if (!one[0]?.id) continue;
+    seen.add(id);
+    instagram.push({ id, username: String(one[0].username || ""), pageId: "" });
+  }
+  const AD_FIELDS = "id,account_id,name,currency,account_status";
+  const rawAds = await soft(() => list(api, "/me/adaccounts", { fields: AD_FIELDS }));
+  const actId = (a) => (String(a.id).startsWith("act_") ? String(a.id) : `act_${a.account_id || a.id}`);
+  for (const id of granted?.ads || []) {
+    const act = id.startsWith("act_") ? id : `act_${id}`;
+    if (rawAds.some((a) => actId(a) === act)) continue;
+    const one = await soft(async () => [await get(api, `/${act}`, { fields: AD_FIELDS })]);
+    if (one[0]?.id) rawAds.push(one[0]);
+  }
+  const adAccounts = rawAds
     .filter((a) => a?.id)
-    .map((a) => ({ id: String(a.id).startsWith("act_") ? String(a.id) : `act_${a.account_id || a.id}`, name: String(a.name || a.account_id || a.id), currency: String(a.currency || ""), status: Number(a.account_status) || 0 }));
+    .map((a) => ({ id: actId(a), name: String(a.name || a.account_id || a.id), currency: String(a.currency || ""), status: Number(a.account_status) || 0 }));
   return { pages, instagram, adAccounts };
 }
 

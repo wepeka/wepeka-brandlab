@@ -201,7 +201,7 @@ async function callback(d, req, res) {
   try {
     if (saved.via === "facebook") {
       const got = await FB.exchangeCode(d.fetch, { ...fbConfig(d.env), code: String(q.code || "") });
-      const found = await FB.discoverAssets(d.fetch, got.token, got.tokenType);
+      const found = await FB.discoverAssets(d.fetch, got.token, got.tokenType, got.granted);
       const grant = {
         id: grantId, via: "facebook", ownerUid: saved.uid, tokenType: got.tokenType,
         token: V.sealToken(got.token, key), tokenExpiresAt: FB.tokenExpiry(got, now), tokenIssuedAt: now,

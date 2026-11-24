@@ -72,7 +72,7 @@ function fakeDb(seed = {}) {
 
 // ---------- a fake Meta ----------
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = false, adCurrency = "IDR", ads = null } = {}) {
+function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = false, adCurrency = "IDR", ads = null, hiddenAssets = false } = {}) {
   const calls = [];
   // A system user's /me/accounts hands out Page tokens too.
   const fbTokens = tokenType === "system" ? ["BISU", "PAGE1"] : ["FB-LONG", "PAGE1"];
@@ -105,7 +105,15 @@ function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = fals
     }
     if (q === "/debug_token") {
       assert.equal(token, `fb-app|${FB_SECRET}`);
-      return json({ data: { is_valid: true, scopes: FB.FB_PERMISSIONS, expires_at: tokenType === "system" ? 0 : Math.floor((NOW + 60 * DAY) / 1000) } });
+      // hiddenAssets: what happened live on 2026-11-25 — a Page (and its
+      // Instagram) and an ad account ticked in Meta's window that the /me
+      // lists leave out; only granular_scopes names them.
+      const granular = hiddenAssets ? [
+        { scope: "pages_show_list", target_ids: ["5550001", "5550009"] },
+        { scope: "instagram_basic", target_ids: [IG_ID, "17841400000000099"] },
+        { scope: "ads_read", target_ids: ["111", "222"] },
+      ] : [];
+      return json({ data: { is_valid: true, scopes: FB.FB_PERMISSIONS, granular_scopes: granular, expires_at: tokenType === "system" ? 0 : Math.floor((NOW + 60 * DAY) / 1000) } });
     }
     if (dead) return json({ error: { message: "Error validating access token", code: 190 } }, 400);
     if (q === "/me") {
@@ -123,6 +131,8 @@ function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = fals
     if (q === "/me/adaccounts") return json({ data: [{ id: "act_111", account_id: "111", name: "Iklan Kopi", currency: adCurrency, account_status: 1 }], paging: {} });
     assert.ok(fbTokens.includes(token), `facebook host with ${token} for ${q}`);
     if (q === "/5550001") return json({ name: "Kopi Pagi", followers_count: 800 });
+    if (q === "/5550009") return json({ id: "5550009", name: "Kopi Pagi Store", access_token: "PAGE9", instagram_business_account: { id: "17841400000000099", username: "kopipagi.store2" } });
+    if (q === "/act_222") return json({ id: "act_222", account_id: "222", name: "Iklan Store", currency: "IDR", account_status: 1 });
     if (q === "/5550001/insights") return url.searchParams.get("metric") === "page_total_media_view_unique" ? json({ data: [{ name: "page_total_media_view_unique", values: [{ value: 4000 }] }] }) : json({ error: { message: "bad metric", code: 100 } }, 400);
     if (q === "/9990001") return json(url.searchParams.get("fields") === "blue_reels_play_count" ? { blue_reels_play_count: 321 } : { likes: { summary: { total_count: 12 } }, comments: { summary: { total_count: 3 } } });
     if (q === "/act_111/ads") return json({ data: [{ id: "ad1", name: "Promo", creative: { effective_instagram_media_id: "m1" } }, { id: "ad2", name: "Lain", creative: { effective_instagram_media_id: "zzz" } }], paging: {} });
@@ -342,6 +352,16 @@ describe("Facebook Login for Business", () => {
     assert.equal(grant.instagram.length, 1, "no business-assigned list for a user token");
     const acc = await postingAccounts({ db, env: ENV, fetch: meta.fetch }, "b1");
     assert.deepEqual([acc.account.token, acc.page.token, acc.account.base], ["PAGE1", "PAGE1", V.FB_GRAPH]);
+  });
+
+  test("what was ticked in Meta's window but left out of /me lists is read by id", async () => {
+    const db = seed();
+    await connectFb(db, fakeMeta({ tokenType: "user", hiddenAssets: true }), { pick: null });
+    const grant = [...db.docs.entries()].find(([p]) => p.startsWith("metaGrants/"))[1];
+    assert.deepEqual(grant.pages.map((p) => p.id), ["5550001", "5550009"]);
+    assert.deepEqual(grant.instagram.map((x) => [x.id, x.username, x.pageId]), [[IG_ID, "kopipagi", "5550001"], ["17841400000000099", "kopipagi.store2", "5550009"]]);
+    assert.deepEqual(grant.adAccounts.map((a) => a.id), ["act_111", "act_222"]);
+    assert.doesNotMatch(JSON.stringify(grant), /PAGE9/, "its Page token sealed too");
   });
 
   test("a second brand reuses the login without another trip to Meta", async () => {

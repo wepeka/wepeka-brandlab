@@ -115,8 +115,10 @@ const radio = (name, value, label, sub, checked) => `
     <span><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span>
   </label>`;
 function sectionHTML({ name, title, items, current, render, note = "" }) {
-  // One choice already made (changing accounts) or the only one there is.
-  const picked = current || (items.length === 1 ? items[0].id : "");
+  // Only a choice already made (changing accounts) comes ticked: even a
+  // single account is the owner's to pick (live 2026-11-25, the only
+  // Instagram offered for the Quatro brand was @winkhsin).
+  const picked = current || "";
   return `<fieldset class="meta-pick-sec">
     <legend>${title}</legend>
     ${items.length ? items.map((x) => radio(name, x.id, ...render(x), x.id === picked)).join("") + radio(name, "", t("meta.pick.none"), "", !picked) : `<p class="text-faint meta-pick-empty">${t("meta.pick.nothing")}</p>`}
