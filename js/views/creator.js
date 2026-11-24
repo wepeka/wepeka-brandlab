@@ -2,6 +2,8 @@ import { getBrand, listContent, getContent, createContent, updateContent as stor
 import { campaignStages, activeStageIndex } from "../campaign-metrics.js";
 import { icon, platformIcon } from "../icons.js";
 import { escapeHtml, formatDate, formatNumber, toast, qs, qsa, wireClickableCards, openMenu, closeMenu } from "../dom.js";
+import { getTracker } from "../sales-tracker.js";
+import { revenueOfContent } from "../content-money.js";
 import { openContentEditor } from "./content-editor.js";
 import { openTeleprompter } from "./teleprompter.js";
 import { openIdeaSearch } from "../idea-search.js";
@@ -1899,12 +1901,28 @@ function publishedCardHTML(c) {
           <input class="input" id="f-url" placeholder="https://..." value="${escapeHtml(c.publishedUrl || "")}" />
         </div>
       </div>
+      ${moneyLineHTML(c)}
       ${has ? `<div class="cr-pub-stats">${PUB_STATS.filter((k) => k === "views" || (p[k] !== null && p[k] !== undefined && p[k] !== "")).map((k) => `<div class="cr-pub-stat${k === "views" ? " is-main" : ""}"><b>${formatNumber((k === "views" ? organicViews(c) : p[k]) ?? 0)}</b><span>${t(`cr.pub.stat.${k}`)}</span></div>`).join("")}</div>` : ""}
       <div class="flex items-center gap-8" style="flex-wrap:wrap;margin-top:12px;">
         <button type="button" class="btn ${has ? "btn-secondary" : "btn-primary"} btn-sm" id="cr-fill-performance">${icon("chart", { size: 13 })}${has ? t("cr.pub.updatePerf") : t("cr.pub.fillPerf")}</button>
         ${has ? "" : `<span class="text-faint" style="font-size:12px;">${t("cr.pub.perfHint")}</span>`}
       </div>
     </div>`;
+}
+
+// What this piece brought in, from the sales tied to it in Sales (any of
+// its platform twins, each sale once) — the line that links Create to
+// Sales. Nothing when no sale or cost is tied to it.
+function moneyLineHTML(c) {
+  const brand = getBrand(c.brandId);
+  if (!brand) return "";
+  const m = revenueOfContent({ tracker: getTracker(brand), contents: listContent(c.brandId), content: c });
+  if (!m || (!m.revenue && !m.cost)) return "";
+  const rp = (n) => `Rp ${formatNumber(Math.round(n || 0))}`;
+  const parts = [m.revenue ? t("cr.pub.money", { amount: rp(m.revenue), count: m.count }) : t("cr.pub.moneyNone")];
+  if (m.cost) parts.push(t("cr.pub.moneyCost", { amount: rp(m.cost) }));
+  if (m.roi !== null) parts.push(t("cr.pub.moneyRoi", { pct: Math.round(m.roi * 100) }));
+  return `<a class="cr-pub-money${m.roi !== null && m.roi < 0 ? " is-low" : ""}" href="#/brand/${escapeHtml(c.brandId)}/sales">${icon("money", { size: 14 })}<span>${escapeHtml(parts.join(" · "))}</span>${icon("arrowRight", { size: 12 })}</a>`;
 }
 
 function phaseHead(c) {

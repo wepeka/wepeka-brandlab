@@ -13,7 +13,8 @@
 // how much of the revenue that covers — a missing cost is never read as zero.
 // Logging and export are free for every account; the AI advice follows the
 // same Lifetime gate as Copy Studio. Still 100% manual entry.
-import { getBrand, listCampaigns, listContent, getContent, getSettings, unitLabel, localISODate, updateBrand, ensureBrandSales } from "../store.js";
+import { getBrand, listCampaigns, listContent, getContent, getSettings, unitLabel, localISODate, updateBrand, updateContent, ensureBrandSales } from "../store.js";
+import { contentMoney, marketingTotals, contentGroupKey } from "../content-money.js";
 import { widgetCardHTML, widgetCollapsedHTML, wireWidgetToggle } from "../widget-card.js";
 import {
   getTracker, addProduct, updateProduct, deleteSale, deleteExpense, clearAllSales, saveAdvice, productStats, trackerTotals, weeklySeries,
@@ -147,6 +148,7 @@ function paint(root, brandId, state, refresh) {
       ${periodTabsHTML(state)}
       ${statsHTML(tracker, range, state, unit, collapsed)}
       ${channelsHTML(tracker, range, state, collapsed)}
+      ${contentMoneyHTML(brandId, tracker, range, state, collapsed)}
       ${trendHTML(tracker, unit, state, collapsed)}
       ${adviceHTML(tracker, state, collapsed)}
       ${expensesHTML(tracker, range, state, collapsed)}
@@ -353,6 +355,84 @@ function channelsHTML(tracker, range, state, collapsed) {
     `, { sub: t("sales.src.sub", { period: t(`sales.period.${state.period}`) }) });
 }
 const AD_KEYS = new Set(["meta", "tiktok", "google", "marketplace", "other"]);
+
+// Which content made money (owner, 2026-11-24): every piece a sale or an ad
+// spend was tied to, plus the pieces published in the period so their
+// production cost can be typed in. One row per piece however many platforms
+// it went to; per-piece numbers are since it went up (production is paid
+// once), the strip on top follows the period. Sums: js/content-money.js.
+const MONEY_ROWS = 6;
+function contentMoneyHTML(brandId, tracker, range, state, collapsed) {
+  const contents = listContent(brandId);
+  const rows = contentMoney({ tracker, contents });
+  const known = new Set(rows.map((r) => r.key));
+  // Published in this period, nothing tied to it yet: a row to type its cost.
+  const fresh = [];
+  contents
+    .filter((c) => c.status === "published" && c.publishedDate && (!range.from || c.publishedDate >= range.from) && (!range.to || c.publishedDate <= range.to))
+    .sort((a, b) => b.publishedDate.localeCompare(a.publishedDate))
+    .forEach((c) => {
+      const key = contentGroupKey(c);
+      if (known.has(key)) return;
+      known.add(key);
+      const twins = contents.filter((x) => contentGroupKey(x) === key);
+      fresh.push({ key, contentId: c.id, title: c.title, platforms: [...new Set(twins.map((x) => x.platform).filter(Boolean))], publishedDate: c.publishedDate, revenue: 0, organic: 0, paid: 0, count: 0, adSpend: 0, productionCost: null, cost: 0, perRp: null, roas: null, roi: null, net: null, costCoverage: null, byAttribution: {} });
+    });
+  const all = [...rows, ...fresh];
+  const m = marketingTotals({ tracker, contents, from: range.from, to: range.to });
+  if (!all.length && !m.spend && !m.split.count) return "";
+  const periodName = t(`sales.period.${state.period}`);
+  const linked = rows.filter((r) => r.revenue > 0).length;
+  if (collapsed.has("contentMoney")) return widgetCollapsedHTML("contentMoney", "film", t("sales.cm.title"), t("sales.cm.summary", { n: linked }));
+  const times = (n) => (n === null ? "—" : `${perRpText(n)}×`);
+  const strip = `
+    <div class="stat-grid st-cm-kpis">
+      <div class="stat"><div class="label">${t("sales.cm.roas")}</div><div class="value">${times(m.roas)}</div><div class="sub">${m.adSpend ? t("sales.cm.roasSub", { rev: rp(m.adRevenue), spend: rp(m.adSpend) }) : t("sales.cm.roasNone")}</div></div>
+      <div class="stat"><div class="label">${t("sales.cm.organic")}</div><div class="value">${times(m.organicPerRp)}</div><div class="sub">${m.production ? t("sales.cm.organicSub", { rev: rp(m.organicContentRevenue), cost: rp(m.production) }) : t("sales.cm.organicNone")}</div></div>
+      <div class="stat"><div class="label">${t("sales.cm.spend")}</div><div class="value st-money">${rp(m.spend)}</div><div class="sub">${t("sales.cm.spendSub", { ads: rp(m.adSpend), event: rp(m.eventSpend), prod: rp(m.production) })}</div></div>
+    </div>
+    ${m.split.count ? `<p class="st-compare st-cm-split">${t("sales.cm.split", { manual: rp(m.split.manual + m.split.auto), estimate: rp(m.split.estimate), unknown: rp(m.split.unknown) })}</p>` : ""}`;
+  const result = (r) => {
+    if (r.roi !== null) return `<span class="st-roi ${r.roi >= 0 ? "is-good" : "is-bad"}">${icon(r.roi >= 0 ? "arrowUp" : "info", { size: 11 })}${t("sales.cm.roi", { pct: Math.round(r.roi * 100), net: rp(r.net) })}</span>`;
+    if (r.perRp !== null && r.revenue) return `<span class="st-roi ${r.perRp >= 1 ? "is-good" : "is-bad"}">${icon(r.perRp >= 1 ? "arrowUp" : "info", { size: 11 })}${t("sales.ch.roi", { spend: rp(r.cost), per: perRpText(r.perRp) })}</span>${r.costCoverage !== null && r.costCoverage < 1 ? `<small>${t("sales.cm.needCost")}</small>` : ""}`;
+    if (r.revenue && !r.cost) return `<small>${t("sales.cm.addCost")}</small>`;
+    return "";
+  };
+  const row = (r) => {
+    const where = r.platforms?.length ? r.platforms.join(" + ") : "";
+    const money = r.revenue
+      ? t("sales.cm.rowRev", { count: r.count }) + (r.paid ? ` · ${t("sales.cm.rowSplit", { organic: rp(r.organic), paid: rp(r.paid) })}` : "") + (r.byAttribution?.estimate ? ` · ${t("sales.cm.rowEstimate", { amount: rp(r.byAttribution.estimate) })}` : "")
+      : t("sales.cm.rowNone");
+    return `
+      <div class="st-ch-row st-cm-row" style="--c:#E04FD8">
+        <span class="st-ch-ico">${icon("film", { size: 16 })}</span>
+        <div class="st-ch-main">
+          <div class="st-ch-top"><b>${r.missing ? esc(t("sales.src.deleted")) : `<a href="#/brand/${esc(brandId)}/content/creator/${esc(r.contentId)}" class="st-cm-title">${esc(r.title || t("common.untitled"))}</a>`}</b><span class="st-ch-amount">${rp(r.revenue)}</span></div>
+          <small>${[where, r.publishedDate ? dayLabel(r.publishedDate, false) : ""].filter(Boolean).map(esc).join(" · ")}</small>
+          <small>${esc(money)}</small>
+          <div class="st-cm-costs">
+            ${r.missing ? "" : `<label class="st-cm-cost">${t("sales.cm.prodCost")}<span class="sw-money"><span>Rp</span><input class="input" inputmode="numeric" autocomplete="off" placeholder="${esc(t("sales.cm.prodCostPh"))}" data-pcost="${esc(r.key)}" value="${r.productionCost !== null && r.productionCost !== undefined ? formatNumber(r.productionCost) : ""}" /></span></label>`}
+            ${r.adSpend ? `<span class="st-cm-ad">${icon("megaphone", { size: 12 })}${t("sales.cm.adSpend", { amount: rp(r.adSpend) })}${r.roas !== null ? ` · ROAS ${perRpText(r.roas)}×` : ""}</span>` : ""}
+          </div>
+          ${result(r)}
+        </div>
+      </div>`;
+  };
+  const showAll = state.cmAll || all.length <= MONEY_ROWS;
+  return widgetCardHTML("contentMoney", "film", t("sales.cm.title"), `
+      ${strip}
+      ${all.length ? (showAll ? all : all.slice(0, MONEY_ROWS)).map(row).join("") : `<p class="ev-field-hint">${t("sales.cm.empty")}</p>`}
+      ${showAll ? "" : `<button type="button" class="btn btn-ghost btn-sm" data-cm-all>${t("sales.cm.more", { n: all.length - MONEY_ROWS })}</button>`}
+      <p class="ev-field-hint" style="margin:10px 0 0;">${t("sales.cm.note")}</p>
+    `, { sub: t("sales.cm.sub", { period: periodName }) });
+}
+// Production cost is the piece's, typed once: every twin gets the same number.
+function saveProductionCost(brandId, key, raw) {
+  const n = toNum(raw);
+  listContent(brandId).filter((c) => contentGroupKey(c) === key).forEach((c) => {
+    if ((c.productionCost ?? null) !== n) updateContent(c.id, { productionCost: n });
+  });
+}
 
 // Where the money went in the period, by category.
 function expensesHTML(tracker, range, state, collapsed) {
@@ -618,6 +698,20 @@ function wire(root, brandId, state, refresh, { brand, tracker, unit }) {
       refresh();
     })
   );
+  qs("[data-cm-all]", root)?.addEventListener("click", () => { state.cmAll = true; refresh(); });
+  qsa("[data-pcost]", root).forEach((el) => {
+    el.addEventListener("input", () => {
+      const n = toNum(el.value);
+      el.value = n === null ? "" : formatNumber(n);
+    });
+    // Saved when the owner leaves the field (or presses Enter), then repainted.
+    const commit = () => {
+      saveProductionCost(brandId, el.dataset.pcost, el.value);
+      refresh();
+    };
+    el.addEventListener("change", commit);
+    el.addEventListener("keydown", (e) => e.key === "Enter" && el.blur());
+  });
   qsa("[data-st-trend-span]", root).forEach((b) => b.addEventListener("click", () => { state.trendSpan = b.dataset.stTrendSpan; refresh(); }));
   qsa("[data-st-trend-metric]", root).forEach((b) => b.addEventListener("click", () => { state.trendMetric = b.dataset.stTrendMetric; refresh(); }));
   const readoutEl = qs("#st-readout", root);

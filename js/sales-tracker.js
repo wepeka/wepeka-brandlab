@@ -139,7 +139,7 @@ export function mergeProductsFromWizard(brandId, { model, products, openingReven
 // brand that sells at bazaars/launches/pop-ups, tagging a sale with which
 // event it came from is what lets eventSalesStats below answer "this event
 // sold how many of what" on the campaign's own page.
-export function logSale(brandId, { productId, qty = 1, amount = null, date = localISODate(), repeat = false, referral = false, note = "", eventId = null, source = null, channel = null, channelDetail = "" }) {
+export function logSale(brandId, { productId, qty = 1, amount = null, date = localISODate(), repeat = false, referral = false, note = "", eventId = null, source = null, channel = null, channelDetail = "", attribution = null }) {
   const tr = getTracker(getBrand(brandId));
   const product = tr.products.find((p) => p.id === productId);
   if (!product) return null;
@@ -154,7 +154,7 @@ export function logSale(brandId, { productId, qty = 1, amount = null, date = loc
   // unitCost: what one unit cost WHEN it was sold — a later change to the
   // product's cost must not rewrite the profit of sales already logged.
   const ch = cleanChannel(channel, channelDetail);
-  const entry = { id: uid("s"), productId, qty: q, amount: total, date: day, repeat: !!repeat, referral: !!referral || ch.channel === "referral", note: String(note || "").trim().slice(0, 140), eventId: eventId || null, ...(src ? { source: src } : {}), ...ch, ...(knownCost(product.cost) ? { unitCost: num(product.cost) } : {}), at: Date.now() };
+  const entry = { id: uid("s"), productId, qty: q, amount: total, date: day, repeat: !!repeat, referral: !!referral || ch.channel === "referral", note: String(note || "").trim().slice(0, 140), eventId: eventId || null, ...(src ? { source: src } : {}), ...ch, ...cleanAttribution(attribution, ch.channel), ...(knownCost(product.cost) ? { unitCost: num(product.cost) } : {}), at: Date.now() };
   save(brandId, { entries: [...tr.entries, entry] });
   emitStep("numbers_logged", { brandId, kind: "sales" });
   return entry;
@@ -197,6 +197,11 @@ export function updateSale(brandId, entryId, patch = {}) {
     Object.assign(next, cleanChannel(patch.channel, patch.channelDetail));
     if (next.channel === "referral") next.referral = true;
   }
+  if (patch.attribution !== undefined || patch.channel !== undefined) {
+    const was = next.attribution;
+    delete next.attribution;
+    Object.assign(next, cleanAttribution(patch.attribution === undefined ? was : patch.attribution, next.channel));
+  }
   save(brandId, { entries: tr.entries.map((e) => (e.id === entryId ? next : e)) });
   return next;
 }
@@ -223,6 +228,14 @@ function cleanChannel(channel, detail = "") {
   const d = String(detail || "").trim().slice(0, 60);
   return d ? { channel, channelDetail: d } : { channel };
 }
+// How sure the owner is of the channel (js/content-money.js reads it):
+// stored only when it isn't the plain "picked it" — "estimate" when they
+// ticked "cuma perkiraan", "auto" when an integration logged the sale.
+// Without a channel there is nothing to be sure of.
+function cleanAttribution(attribution, channel) {
+  if (!channel) return {};
+  return attribution === "estimate" || attribution === "auto" ? { attribution } : {};
+}
 // A sale's channel; older sales (before channels existed) read one from
 // their other tags: a post → social, an event → event, a referral → referral.
 export function entryChannel(e) {
@@ -247,10 +260,13 @@ export const EXPENSE_CATEGORIES = [
   { key: "other", icon: "dots", color: "#8A8479" },
 ];
 export const expenseCategoryByKey = (key) => EXPENSE_CATEGORIES.find((c) => c.key === key) || EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
-function expenseEntry({ category, amount, date, note = "", channelDetail = "", eventId = null, campaignId = null }, base = {}) {
+// `contentId`: ad spend for the piece of content the ad ran with, so that
+// piece's paid return can be read (js/content-money.js); ads only.
+function expenseEntry({ category, amount, date, note = "", channelDetail = "", eventId = null, campaignId = null, contentId = null }, base = {}) {
   const cat = expenseCategoryByKey(category).key;
   const d = String(channelDetail || "").trim().slice(0, 60);
-  return { ...base, kind: "expense", category: cat, amount: Math.max(0, Math.round(num(amount))), date: cleanDate(date), note: String(note || "").trim().slice(0, 140), ...(d ? { channelDetail: d } : {}), ...(eventId ? { eventId } : {}), ...(campaignId && !eventId ? { campaignId } : {}) };
+  const forContent = cat === "ads" && contentId ? String(contentId) : null;
+  return { ...base, kind: "expense", category: cat, amount: Math.max(0, Math.round(num(amount))), date: cleanDate(date), note: String(note || "").trim().slice(0, 140), ...(d ? { channelDetail: d } : {}), ...(eventId ? { eventId } : {}), ...(campaignId && !eventId ? { campaignId } : {}), ...(forContent ? { contentId: forContent } : {}) };
 }
 export function logExpense(brandId, data) {
   const tr = getTracker(getBrand(brandId));

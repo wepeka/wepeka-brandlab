@@ -1138,8 +1138,14 @@ export function campaignSummaryLine(c, brand) {
     : "";
   // Sales the owner tagged with this campaign (or its event) in the Sales
   // Tracker — read straight off the brand doc, like everything else here.
-  const tagged = (brand?.salesTracker?.entries || []).filter((e) => e.source?.campaignId === c.id || e.eventId === c.id);
-  const sales = tagged.length ? ` | sales tagged to this campaign: ${tagged.reduce((a, e) => a + (Number(e.qty) || 0), 0)} sold, Rp ${Math.round(tagged.reduce((a, e) => a + (Number(e.amount) || 0), 0))} in ${tagged.length} logged sales` : "";
+  // The log holds money out too (kind "expense"): an expense tagged to an
+  // event is what it COST, never a sale — kept apart so it isn't counted twice.
+  const log = brand?.salesTracker?.entries || [];
+  const forThis = (e) => e.source?.campaignId === c.id || e.eventId === c.id || e.campaignId === c.id;
+  const tagged = log.filter((e) => e.kind !== "expense" && forThis(e));
+  const spent = log.filter((e) => e.kind === "expense" && forThis(e)).reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  const sales = (tagged.length ? ` | sales tagged to this campaign: ${tagged.reduce((a, e) => a + (Number(e.qty) || 0), 0)} sold, Rp ${Math.round(tagged.reduce((a, e) => a + (Number(e.amount) || 0), 0))} in ${tagged.length} logged sales` : "")
+    + (spent ? ` | money spent on this campaign (logged): Rp ${Math.round(spent)}` : "");
   return `- id=${c.id} | name=${c.name} | objective=${c.objective} | key message=${c.keyMessage || "(none set)"} | audience=${c.targetAudience || brand?.brandDNA?.targetAudience || "(not set)"}${window}${ideas}${event}${sales}`;
 }
 

@@ -167,6 +167,28 @@ function doneHTML(kind, amountText, line) {
     </div>`;
 }
 
+// The posts a sale or an ad can be tied to: one line per piece of content,
+// however many platforms it went to (twins share mirrorGroupId), so the
+// owner never has to pick "the Instagram one or the TikTok one".
+function contentPickHTML(list, picked, { id = "sw-content", label = t("sw.detail.content") } = {}) {
+  if (!list.length) return "";
+  const groups = new Map();
+  list.forEach((c) => {
+    const key = c.mirrorGroupId || c.id;
+    const g = groups.get(key) || { c, platforms: new Set(), ids: new Set() };
+    if (c.platform) g.platforms.add(c.platform);
+    g.ids.add(c.id);
+    groups.set(key, g);
+  });
+  const options = [...groups.values()].map((g) => {
+    const value = g.ids.has(picked) ? picked : g.c.id;
+    const where = g.platforms.size > 1 ? ` · ${[...g.platforms].join(" + ")}` : "";
+    return `<option value="${esc(value)}" ${g.ids.has(picked) ? "selected" : ""}>${esc(g.c.title || t("common.untitled"))}${g.c.publishedDate ? ` — ${esc(formatDate(g.c.publishedDate, { year: undefined }))}` : ""}${esc(where)}</option>`;
+  }).join("");
+  return `<div class="sw-detail"><label class="sw-label" for="${id}">${label}</label>
+    <select class="select input" id="${id}"><option value="">${t("sw.detail.contentNone")}</option>${options}</select></div>`;
+}
+
 // ---------- Pemasukan ----------
 export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId = null, onSaved, onAddProduct = null }) {
   const tracker = getTracker(getBrand(brandId));
@@ -180,12 +202,12 @@ export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId
         step: 2, productId: entry.productId, qty: entry.qty, amount: entry.amount, auto: false, date: entry.date,
         channel: entryChannel(entry), detail: entry.channelDetail || "", contentId: entry.source?.contentId || "",
         eventId: entry.eventId || "", campaignId: !entry.source?.contentId && !entry.eventId ? entry.source?.campaignId || "" : "",
-        repeat: !!entry.repeat, note: entry.note || "", answered: true,
+        repeat: !!entry.repeat, note: entry.note || "", answered: true, estimate: entry.attribution === "estimate",
       }
     : {
         step: 0, productId: products[0]?.id || null, qty: 1, amount: null, auto: true, date: localISODate(),
         channel: preset?.eventPlan ? "event" : null, detail: "", contentId: "", eventId: preset?.eventPlan ? preset.id : "",
-        campaignId: preset && !preset.eventPlan ? preset.id : "", repeat: false, note: "", answered: !!preset?.eventPlan,
+        campaignId: preset && !preset.eventPlan ? preset.id : "", repeat: false, note: "", answered: !!preset?.eventPlan, estimate: false,
       };
   const product = () => products.find((p) => p.id === st.productId);
   const autoAmount = () => (product() ? effectivePrice(product(), st.date) * Math.max(1, st.qty || 1) : 0);
@@ -285,16 +307,13 @@ export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId
     const detailHTML = () => {
       const ch = channelByKey(st.channel);
       if (!ch?.detail) return "";
-      if (ch.detail === "ad") return `<div class="sw-detail"><span class="sw-label">${t("sw.detail.ad")}</span>${chipsHTML(AD_PLATFORMS.map((k) => ({ value: k, label: adPlatformLabel(k) })), st.detail, "data-detail")}</div>`;
+      if (ch.detail === "ad") return `<div class="sw-detail"><span class="sw-label">${t("sw.detail.ad")}</span>${chipsHTML(AD_PLATFORMS.map((k) => ({ value: k, label: adPlatformLabel(k) })), st.detail, "data-detail")}</div>${contentPickHTML(sources.content, st.contentId, { label: t("sw.detail.adContent") })}`;
       if (ch.detail === "event") {
         return `<div class="sw-detail"><span class="sw-label">${t("sw.detail.event")}</span>
           ${sources.events.length ? chipsHTML(sources.events.map((ev) => ({ value: ev.id, label: ev.name || "" })), st.eventId, "data-event") : ""}
           <input class="input" id="sw-event-name" maxlength="60" placeholder="${esc(t("sw.detail.eventPh"))}" value="${esc(st.eventId ? "" : st.detail)}" /></div>`;
       }
-      if (ch.detail === "content" && sources.content.length) {
-        return `<div class="sw-detail"><label class="sw-label" for="sw-content">${t("sw.detail.content")}</label>
-          <select class="select input" id="sw-content"><option value="">${t("sw.detail.contentNone")}</option>${sources.content.map((c) => `<option value="${c.id}" ${c.id === st.contentId ? "selected" : ""}>${esc(c.title || t("common.untitled"))}${c.publishedDate ? ` — ${esc(formatDate(c.publishedDate, { year: undefined }))}` : ""}</option>`).join("")}</select></div>`;
-      }
+      if (ch.detail === "content") return contentPickHTML(sources.content, st.contentId);
       return "";
     };
     const paint = () => {
@@ -381,7 +400,8 @@ export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId
       </div>
       ${dayPickerHTML(st.date)}
       ${goalLinkHTML(sources, allCampaigns, st)}
-      <div class="sw-field"><label class="checkbox-chip"><input type="checkbox" id="sw-repeat" ${st.repeat ? "checked" : ""} />${t("sales.log.repeat")}</label></div>
+      <div class="sw-field"><label class="checkbox-chip"><input type="checkbox" id="sw-repeat" ${st.repeat ? "checked" : ""} />${t("sales.log.repeat")}</label>
+        ${st.channel ? `<label class="checkbox-chip"><input type="checkbox" id="sw-estimate" ${st.estimate ? "checked" : ""} />${t("sw.estimate")}</label>` : ""}</div>
       <details class="sw-more" ${st.note ? "open" : ""}>
         <summary>${t("sw.more2")}</summary>
         <div class="sw-field"><label class="sw-label" for="sw-note">${t("sales.log.note")}</label><input class="input" id="sw-note" maxlength="140" autocomplete="off" placeholder="${esc(t("sales.log.notePh"))}" value="${esc(st.note)}" /></div>
@@ -392,6 +412,7 @@ export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId
     });
     qsa("[data-goto]", body).forEach((b) => b.addEventListener("click", () => go(Number(b.dataset.goto), "back")));
     qs("#sw-repeat", body).addEventListener("change", (e) => (st.repeat = e.target.checked));
+    qs("#sw-estimate", body)?.addEventListener("change", (e) => (st.estimate = e.target.checked));
     qs("#sw-note", body).addEventListener("input", (e) => (st.note = e.target.value));
     wireGoalLink(body, st);
     qs("#sw-back", foot).addEventListener("click", () => go(1, "back"));
@@ -399,12 +420,13 @@ export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId
       // The My Goals link works with any channel; a post brings its own campaign when none is picked.
       const event = st.eventId ? allCampaigns.find((c) => c.id === st.eventId) : null;
       const goalId = event?.id || st.campaignId || null;
-      const contentId = st.channel === "social" && st.contentId ? st.contentId : null;
+      const contentId = (st.channel === "social" || st.channel === "ads") && st.contentId ? st.contentId : null;
       const source = contentId || goalId ? { ...(contentId ? { contentId } : {}), ...(goalId ? { campaignId: goalId } : {}) } : null;
       const detail = st.channel === "ads" ? st.detail : st.channel === "event" ? event?.name || st.detail : "";
       const data = {
         productId: st.productId, qty: st.qty, amount: st.auto ? null : st.amount, date: st.date, note: st.note, repeat: st.repeat,
         channel: st.channel, channelDetail: detail, source, eventId: event?.id || null,
+        attribution: st.channel && st.estimate ? "estimate" : null,
       };
       const saved = entry ? updateSale(brandId, entry.id, { ...data, amount: amount(), channel: st.channel || "", referral: st.channel === "referral" ? true : entry.channel === "referral" ? false : undefined }) : logSale(brandId, data);
       if (!saved) return;
@@ -420,7 +442,7 @@ export function openIncomeWizard({ brandId, unit, entry = null, presetCampaignId
       foot.innerHTML = `<button type="button" class="btn btn-ghost" id="sw-close">${t("sw.finish")}</button><button type="button" class="btn sw-go" id="sw-again">${icon("plus", { size: 15 })}${t("sw.again")}</button>`;
       qs("#sw-close", foot).addEventListener("click", close);
       qs("#sw-again", foot).addEventListener("click", () => {
-        Object.assign(st, { qty: 1, amount: null, auto: true, channel: preset?.eventPlan ? "event" : null, answered: !!preset?.eventPlan, detail: "", contentId: "", eventId: preset?.eventPlan ? preset.id : "", campaignId: preset && !preset.eventPlan ? preset.id : "", repeat: false, note: "" });
+        Object.assign(st, { qty: 1, amount: null, auto: true, channel: preset?.eventPlan ? "event" : null, answered: !!preset?.eventPlan, detail: "", contentId: "", eventId: preset?.eventPlan ? preset.id : "", campaignId: preset && !preset.eventPlan ? preset.id : "", repeat: false, note: "", estimate: false });
         go(0);
       });
       qs("#sw-again", foot).focus();
@@ -438,15 +460,15 @@ export function openExpenseWizard({ brandId, entry = null, onSaved }) {
   const sources = saleSourceOptions(brandId);
   const allCampaigns = listCampaigns(brandId);
   const st = entry
-    ? { step: 1, category: entry.category, detail: entry.channelDetail || "", eventId: entry.eventId || "", campaignId: entry.campaignId || "", amount: entry.amount, date: entry.date, note: entry.note || "" }
-    : { step: 0, category: null, detail: "", eventId: "", campaignId: "", amount: null, date: localISODate(), note: "" };
+    ? { step: 1, category: entry.category, detail: entry.channelDetail || "", eventId: entry.eventId || "", campaignId: entry.campaignId || "", amount: entry.amount, date: entry.date, note: entry.note || "", contentId: entry.contentId || "" }
+    : { step: 0, category: null, detail: "", eventId: "", campaignId: "", amount: null, date: localISODate(), note: "", contentId: "" };
 
   const stepWhat = ({ body, foot, q, hint, go }) => {
     q.textContent = t("sw.expense.q1");
     hint.textContent = t("sw.expense.h1");
     const detailHTML = () => {
       const cat = st.category ? expenseCategoryByKey(st.category) : null;
-      if (cat?.detail === "ad") return `<div class="sw-detail"><span class="sw-label">${t("sw.detail.adSpend")}</span>${chipsHTML(AD_PLATFORMS.map((k) => ({ value: k, label: adPlatformLabel(k) })), st.detail, "data-detail")}</div>`;
+      if (cat?.detail === "ad") return `<div class="sw-detail"><span class="sw-label">${t("sw.detail.adSpend")}</span>${chipsHTML(AD_PLATFORMS.map((k) => ({ value: k, label: adPlatformLabel(k) })), st.detail, "data-detail")}</div>${contentPickHTML(sources.content, st.contentId, { id: "sw-x-content", label: t("sw.detail.adSpendContent") })}`;
       if (cat?.detail === "event") {
         return `<div class="sw-detail"><span class="sw-label">${t("sw.detail.eventSpend")}</span>
           ${sources.events.length ? chipsHTML(sources.events.map((ev) => ({ value: ev.id, label: ev.name || "" })), st.eventId, "data-event") : ""}
@@ -460,7 +482,7 @@ export function openExpenseWizard({ brandId, entry = null, onSaved }) {
         <div id="sw-detail-slot">${detailHTML()}</div>`;
       qsa("[data-pick]", body).forEach((b) =>
         b.addEventListener("click", () => {
-          if (st.category !== b.dataset.pick) Object.assign(st, { detail: "", eventId: "" });
+          if (st.category !== b.dataset.pick) Object.assign(st, { detail: "", eventId: "", contentId: "" });
           st.category = b.dataset.pick;
           qs("#sw-next", foot).disabled = false;
           if (!expenseCategoryByKey(st.category).detail) {
@@ -480,6 +502,7 @@ export function openExpenseWizard({ brandId, entry = null, onSaved }) {
         if (st.eventId) st.campaignId = "";
         qsa("[data-event]", body).forEach((x) => x.classList.toggle("active", x.dataset.event === st.eventId));
       }));
+      qs("#sw-x-content", body)?.addEventListener("change", (e) => (st.contentId = e.target.value));
       qs("#sw-event-name", body)?.addEventListener("input", (e) => {
         st.detail = e.target.value;
         if (st.detail) st.eventId = "";
@@ -524,7 +547,7 @@ export function openExpenseWizard({ brandId, entry = null, onSaved }) {
     const save = () => {
       if (!st.amount) return;
       const linked = st.eventId ? allCampaigns.find((e) => e.id === st.eventId) : null;
-      const data = { category: st.category, amount: st.amount, date: st.date, note: st.note, channelDetail: cat.detail === "event" ? linked?.name || st.detail : cat.detail === "ad" ? st.detail : "", eventId: linked?.id || null, campaignId: st.campaignId || null };
+      const data = { category: st.category, amount: st.amount, date: st.date, note: st.note, channelDetail: cat.detail === "event" ? linked?.name || st.detail : cat.detail === "ad" ? st.detail : "", eventId: linked?.id || null, campaignId: st.campaignId || null, contentId: cat.key === "ads" ? st.contentId || null : null };
       const saved = entry ? updateExpense(brandId, entry.id, data) : logExpense(brandId, data);
       if (!saved) return;
       onSaved?.({ kind: "expense", entry: saved, edited: !!entry });

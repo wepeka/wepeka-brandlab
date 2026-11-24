@@ -796,6 +796,22 @@ button.gd-row:hover .gd-row-go{ transform: translateX(3px); color: var(--text); 
 .st-roi.is-good{ background: var(--health-good-soft); color: var(--health-good); }
 .st-roi.is-bad{ background: var(--health-average-soft); color: var(--health-average); }
 
+/* Content that made money (js/views/sales.js contentMoneyHTML). */
+.st-cm-kpis{ grid-template-columns: repeat(3, minmax(0,1fr)); margin-bottom:6px; }
+@media (max-width: 640px){ .st-cm-kpis{ grid-template-columns: 1fr; } }
+.st-cm-split{ margin:4px 0 8px; }
+.st-cm-title{ color: inherit; text-decoration: none; }
+.st-cm-title:hover{ text-decoration: underline; }
+.st-cm-costs{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:8px; }
+.st-cm-cost{ display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:700; color: var(--text-muted); }
+.st-cm-cost .sw-money{ display:inline-flex; align-items:center; gap:6px; }
+.st-cm-cost .input{ width:120px; padding:6px 10px; min-height:0; font-size:13px; }
+.st-cm-ad{ display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color: var(--text-muted); }
+.st-cm-row small + small{ margin-top:2px; }
+.cr-pub-money{ display:flex; align-items:center; gap:8px; margin:10px 0 2px; padding:8px 12px; border-radius:12px; background: var(--health-good-soft); color: var(--health-good); font-size:13px; font-weight:700; text-decoration:none; }
+.cr-pub-money span{ flex:1; min-width:0; }
+.cr-pub-money.is-low{ background: var(--health-average-soft); color: var(--health-average); }
+
 /* AI strategy box. */
 .st-strategy{ position:relative; margin:0 0 12px; padding:14px 16px; border-radius:16px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--surface)), var(--surface)); border:1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .st-strategy b{ display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color: var(--text-muted); }
