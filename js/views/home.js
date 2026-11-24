@@ -1,4 +1,5 @@
 import { getBrand, listContent, listCampaigns, listOverdueAndDueSoon, onChange, getSettings, updateBrand, removeBrandLogEntry, updateContent, localISODate, listGoals, settleFinishedEvents, STATUS_LABELS, eventCampaignEnd, updateCampaign, performanceCheckDue, canDo, isOwnBrand, storeUid } from "../store.js";
+import { billboardPromoSlotHTML, mountBillboardPromo } from "../billboard-promo.js";
 import { roleChipHTML } from "../role-look.js";
 import { roleOfMember } from "../permissions.js";
 import { icon } from "../icons.js";
@@ -1412,6 +1413,7 @@ function launcherHTML(ctx) {
         <div class="page-eyebrow lh-help">${guideVideoButtonHTML("home")}</div>
       </header>
       ${notices.length ? `<div class="home-notices">${notices.join("")}</div>` : ""}
+      ${billboardPromoSlotHTML()}
       <div class="lh-bento" id="lh-apps">
         ${launcherTodayHTML(ctx, step)}
         ${cards}
@@ -1439,6 +1441,7 @@ function paintLauncher(root, ctx) {
   wireHelpButtons(root);
   wireRecapCard(root, { brandId, refresh });
   import("../founder-circle.js").then((m) => m.mountCircleNotice(root)).catch(() => {});
+  mountBillboardPromo(root);
   setPageGuide(() => runSpotlightTour(LAUNCHER_TOUR));
 
   qs("[data-today-cta]", root)?.addEventListener("click", () => { if (top) runTodayAction(top, { brandId, brand, content, refresh }); });

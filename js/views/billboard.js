@@ -10,18 +10,10 @@ import { backToLastBrandHTML } from "../back-link.js";
 import { icon } from "../icons.js";
 import { escapeHtml as esc, skeletonHTML } from "../dom.js";
 import { t, getLang } from "../i18n.js";
+import { loadBillboard, BILLBOARD_WALL } from "../billboard-data.js";
 
-const WALL = "https://www.wepeka.com/community/billboard";
-let cache = null; // { at, data } — one fetch per 10 minutes per tab
-
-async function load({ fresh = false } = {}) {
-  if (!fresh && cache && Date.now() - cache.at < 10 * 60 * 1000) return cache.data;
-  const res = await fetch(`/api/billboard${getLang() === "en" ? "?lang=en" : ""}`, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error(`billboard ${res.status}`);
-  const data = await res.json();
-  cache = { at: Date.now(), data };
-  return data;
-}
+const WALL = BILLBOARD_WALL;
+const load = (opts) => loadBillboard(opts);
 
 const dateOf = (iso) => (iso ? new Date(iso).toLocaleDateString(getLang() === "en" ? "en-GB" : "id-ID", { day: "numeric", month: "long", year: "numeric" }) : "");
 const catLabel = (c) => {
