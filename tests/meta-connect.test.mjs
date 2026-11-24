@@ -691,7 +691,7 @@ describe("Sales reads the automatic ad spend", () => {
   test("ROAS uses it; what Meta reports stays beside revenue", async () => {
     const { contentMoney } = await import("../js/content-money.js");
     const { entries } = FB.adsExpenseEntries(
-      [{ adId: "a", month: "2026-11", spend: 200000, impressions: 1, clicks: 1, purchases: 3, purchaseValue: 900000, igMediaId: "m1" }],
+      [{ adId: "a", month: "2026-11", spend: 200000, impressions: 21000, clicks: 640, purchases: 3, purchaseValue: 900000, igMediaId: "m1" }],
       { contents: [{ id: "c1", igMediaId: "m1" }], adAccountId: "act_1", currency: "IDR", now: NOW },
     );
     const tracker = {
@@ -701,7 +701,7 @@ describe("Sales reads the automatic ad spend", () => {
     const [row] = contentMoney({ tracker, contents: [{ id: "c1", title: "Reel", status: "published" }] });
     assert.equal(row.adSpend, 200000);
     assert.equal(row.revenue, 400000, "Meta's 900.000 is not a sale");
-    assert.deepEqual(row.reported, { purchases: 3, value: 900000 });
+    assert.deepEqual(row.reported, { purchases: 3, value: 900000, impressions: 21000, clicks: 640 }, "impressions and clicks shown too (ads_read)");
     assert.equal(row.roas, 2);
   });
 });

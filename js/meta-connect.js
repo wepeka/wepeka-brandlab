@@ -10,7 +10,7 @@
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { getBrand, listBrands } from "./store.js";
-import { currentUid } from "./account.js";
+import { currentUid, isAdmin, getCachedAccount } from "./account.js";
 import { can } from "./permissions.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { icon } from "./icons.js";
@@ -406,13 +406,18 @@ function numbersHTML(b) {
   ].filter(Boolean);
   return lines.length ? `<p class="text-faint meta-when">${lines.join(" · ")}</p>` : "";
 }
+// "Pakai Instagram saja" (Instagram Login) isn't in the first App Review:
+// Meta lets an app use Facebook Login or Instagram Login, "but not both"
+// (2026-11-25). Until that's settled it shows only for the admin and
+// accounts marked instagramBeta — not for Meta's reviewers (metaBeta).
+const showInstagramOnly = () => isAdmin(currentUid()) || getCachedAccount()?.instagramBeta === true;
 function brandCardHTML(b) {
   const head = `<div class="meta-card-head">${avatarHTML(b, "flex:none;width:30px;height:30px;border-radius:9px;font-size:12px;")}<div><b>${escapeHtml(b.name)}</b><small>${metaConnected(b) ? t(metaVia(b) === "instagram" ? "meta.viaInstagram" : "meta.viaFacebook") : t("meta.notConnected")}</small></div></div>`;
   if (!metaConnected(b)) {
     return `<div class="card meta-card" data-meta-brand="${escapeHtml(b.id)}">${head}
       <div class="meta-ways">
         <button type="button" class="meta-way is-main" data-meta-connect="facebook">${icon("facebook", { size: 18 })}<span><b>${t("meta.connectFb")}</b><small>${t("meta.connectFbHint")}</small></span></button>
-        <button type="button" class="meta-way" data-meta-connect="instagram">${icon("instagram", { size: 18 })}<span><b>${t("meta.connectIg")}</b><small>${t("meta.connectIgHint")}</small></span></button>
+        ${showInstagramOnly() ? `<button type="button" class="meta-way" data-meta-connect="instagram">${icon("instagram", { size: 18 })}<span><b>${t("meta.connectIg")}</b><small>${t("meta.connectIgHint")}</small></span></button>` : ""}
       </div></div>`;
   }
   const last = b.instagram?.lastSyncAt || b.facebook?.lastSyncAt || b.ads?.lastSyncAt;

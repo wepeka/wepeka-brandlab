@@ -72,7 +72,7 @@ export function contentMoney({ tracker, contents = [], from = null, to = null } 
         profit: 0, costedRevenue: 0, adSpend: 0,
         // What Meta says its ads brought (api/instagram/[action].js writes it
         // on the automatic Iklan expense): shown beside, never in, revenue.
-        reported: { purchases: 0, value: 0 },
+        reported: { purchases: 0, value: 0, impressions: 0, clicks: 0 },
       });
     }
     return groups.get(key);
@@ -98,6 +98,8 @@ export function contentMoney({ tracker, contents = [], from = null, to = null } 
     if (x.meta) {
       g.reported.purchases += money(x.meta.reportedPurchases);
       g.reported.value += money(x.meta.reportedValue);
+      g.reported.impressions += money(x.meta.impressions);
+      g.reported.clicks += money(x.meta.clicks);
     }
   }
   // Pieces with only a production cost still show (money out, none back yet).

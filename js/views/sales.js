@@ -413,6 +413,7 @@ function contentMoneyHTML(brandId, tracker, range, state, collapsed) {
           <div class="st-cm-costs">
             ${r.missing ? "" : `<label class="st-cm-cost">${t("sales.cm.prodCost")}<span class="sw-money"><span>Rp</span><input class="input" inputmode="numeric" autocomplete="off" placeholder="${esc(t("sales.cm.prodCostPh"))}" data-pcost="${esc(r.key)}" value="${r.productionCost !== null && r.productionCost !== undefined ? formatNumber(r.productionCost) : ""}" /></span></label>`}
             ${r.adSpend ? `<span class="st-cm-ad">${icon("megaphone", { size: 12 })}${t("sales.cm.adSpend", { amount: rp(r.adSpend) })}${r.roas !== null ? ` · ROAS ${perRpText(r.roas)}×` : ""}</span>` : ""}
+            ${r.reported?.impressions || r.reported?.clicks ? `<span class="st-cm-ad st-cm-reported">${icon("chart", { size: 12 })}${t("meta.reach", { impressions: formatNumber(r.reported.impressions), clicks: formatNumber(r.reported.clicks) })}</span>` : ""}
             ${r.reported?.purchases || r.reported?.value ? `<span class="st-cm-ad st-cm-reported">${icon("info", { size: 12 })}${t("meta.reported", { n: r.reported.purchases, value: rp(r.reported.value) })}</span>` : ""}
           </div>
           ${result(r)}

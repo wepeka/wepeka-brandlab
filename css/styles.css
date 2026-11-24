@@ -8461,6 +8461,7 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
 .meta-card-head b{ display:block; font-size:14.5px; }
 .meta-card-head small{ display:block; font-size:12px; color: var(--text-faint); }
 .meta-ways{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.meta-ways:has(> :only-child){ grid-template-columns:1fr; }
 .meta-way{ display:flex; align-items:flex-start; gap:10px; text-align:left; padding:12px 14px; min-height:44px; border-radius:14px; border:1.5px solid var(--border); background: var(--surface); color: var(--text); cursor:pointer; font:inherit; }
 .meta-way b{ display:block; font-size:13.5px; }
 .meta-way small{ display:block; font-size:12px; color: var(--text-muted); margin-top:2px; line-height:1.4; }

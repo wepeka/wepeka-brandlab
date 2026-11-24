@@ -95,5 +95,6 @@ export default {
   "meta.legacy": { en: "Pasted token (the old way, admin only)", id: "Token manual (cara lama, khusus admin)" },
   "meta.brandRow": { en: "Meta accounts", id: "Akun Meta" },
   "meta.brandRowManage": { en: "Manage in Settings", id: "Atur di Pengaturan" },
+  "meta.reach": { en: "Meta ads: {impressions} impressions · {clicks} clicks", id: "Iklan Meta: {impressions} tayangan · {clicks} klik" },
   "meta.reported": { en: "Meta reports {n} purchases · {value} (not counted as sales)", id: "Dilaporkan Meta: {n} pembelian · {value} (tidak dihitung sebagai penjualan)" },
 };
