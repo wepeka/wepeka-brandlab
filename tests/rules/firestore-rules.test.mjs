@@ -404,8 +404,10 @@ describe("roles: per module, enforced by the rules", () => {
       oldv: { role: "viewer", name: "Lama" },
       olde: { role: "editor", name: "Lama editor" },
       kle: { role: "editor", klien: true, name: "Klien bisa edit" },
+      kl: { role: "viewer", klien: true, name: "Klien" },
+      kln: { role: "viewer", klien: true, preset: "klien", p: { brand: ["view"], goals: ["view"], create: ["view"], video: ["view", "comment", "revise", "approve"], report: ["view"], sales: ["view"], board: ["view"] }, name: "Klien baru" },
     },
-    memberIds: ["vid", "sal", "cre", "oldv", "olde", "kle"],
+    memberIds: ["vid", "sal", "cre", "oldv", "olde", "kle", "kl", "kln"],
     ownerName: "Alice",
   };
   const piece = { id: "c1", ownerId: "alice", brandId: "a1", title: "Reel", status: "editing", posting: { versions: [], notes: [] } };
@@ -445,9 +447,21 @@ describe("roles: per module, enforced by the rules", () => {
     await assertFails(getDoc(doc(as("vid"), "campaigns/g1")));
     await assertSucceeds(getDoc(doc(as("sal"), "campaigns/g1")));
   });
-  test("a client from before roles (Klien bisa edit) edits content but never sees money", async () => {
+  test("a client from before roles (Klien bisa edit) edits content, sees the money but never writes it", async () => {
     await assertSucceeds(updateDoc(doc(as("kle"), "content/c1"), { title: "Klien", updatedAt: 5 }));
-    await assertFails(getDoc(doc(as("kle"), "brands/a1/sales/2026-10")));
+    await assertSucceeds(getDoc(doc(as("kle"), "brands/a1/sales/2026-10")));
+    await assertFails(setDoc(doc(as("kle"), "brands/a1/sales/2026-11"), month("alice", "a1", "2026-11")));
+  });
+  test("a Klien sees everything and changes nothing (old invite and new)", async () => {
+    for (const k of ["kl", "kln"]) {
+      await assertSucceeds(getDoc(doc(as(k), "brands/a1/sales/2026-10")));
+      await assertSucceeds(getDoc(doc(as(k), "campaigns/g1")));
+      await assertSucceeds(getDoc(doc(as(k), "content/c1")));
+      await assertFails(updateDoc(doc(as(k), "content/c1"), { title: "Ubah", updatedAt: 6 }));
+      await assertFails(updateDoc(doc(as(k), "campaigns/g1"), { name: "Ubah" }));
+      await assertFails(setDoc(doc(as(k), "brands/a1/sales/2026-11"), month("alice", "a1", "2026-11")));
+      await assertFails(updateDoc(doc(as(k), "brands/a1"), { brandDNA: { oneLiner: "x" } }));
+    }
   });
   test("an editor from before roles keeps editing as before", async () => {
     await assertSucceeds(updateDoc(doc(as("olde"), "content/c1"), { title: "Lama", updatedAt: 4 }));

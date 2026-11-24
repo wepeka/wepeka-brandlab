@@ -145,7 +145,9 @@ describe("emails", () => {
     // (2026-11-24: each role also carries its preset and permission map, js/permissions.js.)
     const { preset: _kp, p: kp, ...klienRole } = memberRoleOf("klien");
     assert.deepEqual(klienRole, { role: "viewer", klien: true }, "the rules read them as a viewer: nothing to edit");
-    assert.equal(kp.sales, undefined, "no money for a client");
+    // Sees everything, changes nothing (2026-11-24).
+    assert.deepEqual(kp.sales, ["view"], "a client reads the money, never writes it");
+    assert.ok(Object.values(kp).every((acts) => !acts.includes("edit")), "a client edits nothing");
     assert.equal(memberRoleOf("editor").role, "editor");
     assert.equal(roleShown({ role: "viewer", klien: true }), "klien");
     assert.equal(roleShown({ role: "viewer" }), "viewer");

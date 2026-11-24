@@ -21,7 +21,10 @@ test("the presets follow the brief: Editor & Sosmed never sees Sales, Sales sees
   assert.equal(p("smm").sales, undefined);
   // A Klien only sees and reviews videos; nothing about money.
   assert.deepEqual(p("klien").video, ["view", "comment", "revise", "approve"]);
-  assert.equal(p("klien").sales, undefined);
+  // Sees everything, changes nothing (2026-11-24).
+  assert.deepEqual(p("klien").sales, ["view"]);
+  for (const mod of ["brand", "goals", "create", "report", "board"]) assert.deepEqual(p("klien")[mod], ["view"], mod);
+  assert.equal(p("klien").publish, undefined);
   assert.equal(p("klien").chat, undefined);
   // Sales: money yes, content read-only.
   assert.deepEqual(p("sales").sales, ["view", "edit", "delete"]);
@@ -47,13 +50,16 @@ test("the old two-way role stays meaningful: editor only for those who write con
   assert.equal(coarseRole(presetPerms("viewer")), "viewer");
 });
 
-test("members from before roles: editor reads as Admin, viewer as Viewer (no Sales any more)", () => {
+test("members from before roles: editor reads as Admin, viewer as Viewer (no Sales any more), a Klien sees all", () => {
   const b = brand({ e: { role: "editor" }, v: { role: "viewer" }, k: { role: "viewer", klien: true } });
   assert.equal(can(b, "e", "sales", "edit"), true);
   assert.equal(can(b, "v", "sales", "view"), false);
   assert.equal(can(b, "v", "create", "view"), true);
   assert.equal(can(b, "k", "video", "approve"), true);
-  assert.equal(can(b, "k", "sales", "view"), false);
+  // A client sees everything and changes nothing (2026-11-24).
+  assert.equal(can(b, "k", "sales", "view"), true);
+  assert.equal(can(b, "k", "sales", "edit"), false);
+  assert.equal(can(b, "k", "create", "edit"), false);
   assert.equal(roleOfMember(b.members.e), "admin");
   assert.equal(roleOfMember(b.members.k), "klien");
 });
@@ -119,11 +125,16 @@ test("a member's app: only the apps and pages their role opens, money never held
     memberIds: ["u-vid"],
     salesTracker: { products: [{ id: "p", name: "Kopi", price: 1, cost: 1 }], lastAdvice: { summary: "Omzet Rp 9.000.000" } },
   };
-  // What the app shows a Klien: My Brand, Create, Board, Pitch Deck — no Goals, Report or Sales.
+  // What the app shows a Klien: every app to look at (2026-11-24, "client
+  // bisa lihat semua tapi gabisa ubah2"), nothing to change, no AI.
   const shown = APPS.filter((a) => store.canDo(brand, a.module, "view")).map((a) => a.key);
-  assert.deepEqual(shown.sort(), ["builder", "content-os", "deck", "papan"]);
-  assert.equal(store.canDo(brand, VIEW_MODULE.sales), false);
+  assert.deepEqual(shown.sort(), ["builder", "campaigns", "content-os", "deck", "papan", "report", "sales"]);
+  assert.equal(store.canDo(brand, VIEW_MODULE.sales), true);
+  for (const mod of ["brand", "goals", "create", "sales", "board", "publish"]) assert.equal(store.canDo(brand, mod, "edit"), false, mod);
   assert.equal(store.canDo(brand, VIEW_MODULE.chat), false);
+  // Editor & Sosmed: no money.
+  const smm = { ...brand, members: { "u-vid": { role: "editor", preset: "smm", p: presetPerms("smm") } } };
+  assert.equal(store.canDo(smm, VIEW_MODULE.sales), false);
   assert.equal(store.canDo(brand, "video", "approve"), true);
   assert.equal(store.canDo(brand, "video", "upload"), false);
   // The role's look: icon + name.

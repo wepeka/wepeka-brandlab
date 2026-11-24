@@ -171,7 +171,7 @@ const ROLE_TEXT = {
   sales: { name: "Sales", what: "bisa mencatat dan melihat penjualan, serta melihat konten dan laporan" },
   editor: { name: "Admin", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, video, dan penjualan)" },
   viewer: { name: "Lihat saja", what: "bisa melihat isi brand tanpa mengubahnya (kecuali data penjualan)" },
-  klien: { name: "Klien", what: "bisa melihat brand, menonton video di Antrean Video, memberi catatan revisi, dan menyetujui video" },
+  klien: { name: "Klien", what: "bisa melihat semua isi brand tanpa bisa mengubahnya, menonton video yang dikirim ke kamu di Antrean Video, memberi catatan revisi, dan menyetujui video" },
   klienEdit: { name: "Klien (bisa edit)", what: "bisa mengubah isi brand (Brand DNA, Brand Book, konten, campaign, dan ide), menonton video di Antrean Video, memberi catatan revisi, dan menyetujui video" },
 };
 export function joinNames(names) {

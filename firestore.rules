@@ -172,9 +172,11 @@ service cloud.firestore {
     function legacyCan(b, mod, act) {
       let m = memberOf(b);
       let writes = m.get('role', '') == 'editor' && m.get('seatPaused', false) != true;
+      // A client sees every page and writes only if made an editor (never
+      // Sales, posting or the team) — js/permissions.js PRESETS.klien/klienEdit.
       return m.get('klien', false) == true
-          ? (!(mod in ['sales', 'publish', 'team'])
-             && (writes || (act == 'view' && mod in ['brand', 'create', 'video', 'board'])))
+          ? (!(mod in ['publish', 'team'])
+             && ((writes && mod != 'sales') || (act == 'view' && mod in ['brand', 'goals', 'create', 'video', 'report', 'sales', 'board'])))
         : m.get('role', '') == 'editor'
           ? (mod != 'team' && (act == 'view' || writes))
           : (act == 'view' && mod in ['brand', 'goals', 'create', 'video', 'report', 'board']);

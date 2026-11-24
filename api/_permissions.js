@@ -50,9 +50,13 @@ export const PRESETS = {
   smm: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "editor"), publish: L("publish", "publish"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
   sales: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "view"), report: L("report", "view"), sales: L("sales", "edit"), board: L("board", "view"), chat: L("chat", "use") },
   viewer: { brand: L("brand", "view"), goals: L("goals", "view"), create: L("create", "view"), video: L("video", "view"), report: L("report", "view"), board: L("board", "view") },
-  // Wepeka's clients (only Wepeka's own account invites them, api/team.js).
-  klien: { brand: L("brand", "view"), create: L("create", "view"), video: L("video", "approve"), board: L("board", "view") },
-  klienEdit: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "editor"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
+  // A client sees everything and changes nothing (owner, 2026-11-24: "buat
+  // client bisa lihat semua tapi gabisa ubah2"): every page to look at,
+  // and in Video Queue the cuts sent to them, to note and approve. No AI
+  // (it spends the owner's credits), no posting, no team.
+  klien: { brand: L("brand", "view"), goals: L("goals", "view"), create: L("create", "view"), video: L("video", "approve"), report: L("report", "view"), sales: L("sales", "view"), board: L("board", "view") },
+  // Wepeka's own: the client who also edits (only Wepeka invites them).
+  klienEdit: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "editor"), report: L("report", "view"), sales: L("sales", "view"), board: L("board", "edit"), chat: L("chat", "use") },
 };
 // The roles an owner picks from, in this order; the klien ones are Wepeka's.
 export const ROLE_KEYS = ["admin", "creator", "smm", "sales", "viewer"];
