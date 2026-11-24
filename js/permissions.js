@@ -3,6 +3,10 @@
 // Manager, Sales, Viewer; per module and per action; "Video Editor tidak
 // perlu akses Sales dan informasi keuangan"; enforced in the database, the
 // server, Report, Board and Tanya Brandlab, not only by hiding menus).
+// Later that day: "editor sama sosmed manager jadikan 1 aja rolenya" — the
+// Video Editor and the Social Media Manager are one role, "Editor &
+// Sosmed" (key smm); and a Klien for every owner, who sees a video only
+// once the team approved it and sent it to them.
 //
 // Pure: no store, no Firebase — the app (js/store.js, views), the server
 // (api/team.js, api/ai.js) and the tests read the same table.
@@ -39,8 +43,8 @@ const L = (mod, level) => LEVELS[mod][level];
 export const PRESETS = {
   admin: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "all"), publish: L("publish", "publish"), report: L("report", "view"), sales: L("sales", "edit"), board: L("board", "edit"), chat: L("chat", "use") },
   creator: { brand: L("brand", "view"), goals: L("goals", "view"), create: L("create", "edit"), video: L("video", "upload"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
-  video: { brand: L("brand", "view"), create: L("create", "comment"), video: L("video", "upload"), board: L("board", "comment") },
-  smm: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "approve"), publish: L("publish", "publish"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
+  // Editor & Sosmed: cuts the videos, reviews and approves them, posts.
+  smm: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "edit"), video: ["view", "upload", "comment", "revise", "approve"], publish: L("publish", "publish"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
   sales: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "view"), report: L("report", "view"), sales: L("sales", "edit"), board: L("board", "view"), chat: L("chat", "use") },
   viewer: { brand: L("brand", "view"), goals: L("goals", "view"), create: L("create", "view"), video: L("video", "view"), report: L("report", "view"), board: L("board", "view") },
   // Wepeka's clients (only Wepeka's own account invites them, api/team.js).
@@ -48,11 +52,12 @@ export const PRESETS = {
   klienEdit: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: ["view", "upload", "comment", "revise", "approve"], report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
 };
 // The roles an owner picks from, in this order; the klien ones are Wepeka's.
-export const ROLE_KEYS = ["admin", "creator", "video", "smm", "sales", "viewer"];
+export const ROLE_KEYS = ["admin", "creator", "smm", "sales", "viewer"];
+// "klien" is every owner's (2026-11-24); "klienEdit" stays Wepeka's own.
 export const CLIENT_KEYS = ["klien", "klienEdit"];
 export const ALL_ROLE_KEYS = [...ROLE_KEYS, ...CLIENT_KEYS];
 // Invites made before roles said "editor" / "viewer".
-export const LEGACY = { editor: "admin", viewer: "viewer" };
+export const LEGACY = { editor: "admin", viewer: "viewer", video: "smm" };
 export const presetKey = (role) => (Object.hasOwn(PRESETS, role) ? role : LEGACY[role] || null);
 
 // A permission map cleaned to known modules and actions, each list in table

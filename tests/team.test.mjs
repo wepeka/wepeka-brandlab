@@ -135,7 +135,7 @@ describe("emails", () => {
     const m = composeInviteEmail({ ownerName: "Winson", brandNames: ["Kopi Pagi", "Batik Rara"], role: "editor", link: "https://brandlab.wepeka.com/#/undangan/t", email: "sari@x.id" });
     assert.match(m.subject, /Winson mengundangmu ke tim Kopi Pagi dan Batik Rara/);
     assert.match(m.text, /Admin/, "an old app's 'editor' invites an Admin");
-    assert.match(composeInviteEmail({ ownerName: "W", brandNames: ["K"], role: "video", link: "https://x/#/undangan/t", email: "a@b.id" }).text, /Video Editor/);
+    assert.match(composeInviteEmail({ ownerName: "W", brandNames: ["K"], role: "smm", link: "https://x/#/undangan/t", email: "a@b.id" }).text, /Editor & Sosmed/);
     assert.match(m.text, /#\/undangan\/t/);
     assert.match(m.html, /Gabung ke tim/);
     assert.doesNotMatch(m.html, /<script/i);

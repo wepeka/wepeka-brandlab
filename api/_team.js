@@ -167,8 +167,7 @@ const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const ROLE_TEXT = {
   admin: { name: "Admin", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, video, dan penjualan)" },
   creator: { name: "Content Creator", what: "bisa membuat dan mengubah konten (ide, naskah, kalender) dan mengupload video" },
-  video: { name: "Video Editor", what: "bisa membaca naskah, mengupload video, dan membalas catatan revisi" },
-  smm: { name: "Social Media Manager", what: "bisa mengatur konten dan jadwal, menyetujui video, dan menandai posting" },
+  smm: { name: "Editor & Sosmed", what: "bisa mengedit dan mengupload video, mereview dan menyetujui video, posting, serta mengatur konten dan tujuan" },
   sales: { name: "Sales", what: "bisa mencatat dan melihat penjualan, serta melihat konten dan laporan" },
   editor: { name: "Admin", what: "bisa mengubah semua isi brand (Brand DNA, Brand Book, konten, campaign, video, dan penjualan)" },
   viewer: { name: "Lihat saja", what: "bisa melihat isi brand tanpa mengubahnya (kecuali data penjualan)" },

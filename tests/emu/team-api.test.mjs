@@ -435,11 +435,16 @@ describe("role, remove, leave", () => {
     assert.deepEqual(m.p, { create: ["view", "edit"] });
     await expectError(runAction(d(), "perms", as("rina"), { brandId: "b1", memberUid: "rina", p: { sales: ["view"] } }), "not-owner");
     // Back to a preset clears the custom mark.
-    await runAction(d(), "role", as("owen"), { brandId: "b1", memberUid: "rina", role: "video" });
+    await runAction(d(), "role", as("owen"), { brandId: "b1", memberUid: "rina", role: "smm" });
     m = (await db.doc("brands/b1").get()).data().members.rina;
     assert.equal(m.custom, undefined);
-    assert.deepEqual(m.p.video, ["view", "upload", "comment"]);
-    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { error: "viewer" }, "a Video Editor doesn't use the AI");
+    assert.deepEqual(m.p.video, ["view", "upload", "comment", "revise", "approve"]);
+    assert.equal(m.role, "editor", "Editor & Sosmed writes content");
+    // A Klien — every owner may invite one now — doesn't use the AI.
+    await runAction(d(), "role", as("owen"), { brandId: "b1", memberUid: "rina", role: "klien" });
+    m = (await db.doc("brands/b1").get()).data().members.rina;
+    assert.deepEqual([m.role, m.klien, m.preset], ["viewer", true, "klien"]);
+    assert.deepEqual(await resolvePayer(db, "rina", "b1"), { error: "viewer" }, "a Klien doesn't use the AI");
   });
   test("removing takes her off, deletes her chats and people doc there, keeps her own elsewhere", async () => {
     await teamOfTwo();

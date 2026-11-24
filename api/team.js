@@ -191,7 +191,8 @@ export async function invite(d, caller, body) {
   const email = normalizeEmail(body?.email);
   const role = body?.role;
   if (!brandIds || !email || !ROLES.includes(role)) fail("bad-request", 400);
-  if (isClientRole(role) && !isAdminUid(caller.uid)) fail("bad-request", 400);
+  // A Klien is every owner's since 2026-11-24; "Klien (bisa edit)" stays Wepeka's.
+  if (role === "klienEdit" && !isAdminUid(caller.uid)) fail("bad-request", 400);
   const owner = await d.auth.getUser(caller.uid);
   if (normalizeEmail(owner.email) === email) fail("self", 400);
   const now = d.now();
@@ -478,7 +479,8 @@ export async function codeFinish(d, caller, body) {
 export async function changeRole(d, caller, body) {
   const { brandId, memberUid, role } = body || {};
   if (!idOk(brandId) || !idOk(memberUid) || !ROLES.includes(role)) fail("bad-request", 400);
-  if (isClientRole(role) && !isAdminUid(caller.uid)) fail("bad-request", 400);
+  // A Klien is every owner's since 2026-11-24; "Klien (bisa edit)" stays Wepeka's.
+  if (role === "klienEdit" && !isAdminUid(caller.uid)) fail("bad-request", 400);
   const next = memberRoleOf(role);
   await d.db.runTransaction(async (tx) => {
     const ref = d.db.doc(`brands/${brandId}`);

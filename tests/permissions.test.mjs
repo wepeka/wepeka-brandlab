@@ -11,18 +11,18 @@ test("the owner can do everything; a stranger nothing", () => {
   assert.equal(can(null, "owner", "create"), false);
 });
 
-test("the presets follow the brief: a Video Editor never sees Sales, Sales sees money, Viewer only looks", () => {
+test("the presets follow the brief: Editor & Sosmed never sees Sales, Sales sees money, Viewer only looks", () => {
   const p = (role) => presetPerms(role);
-  // Video Editor: reads the script, uploads and comments on cuts, no money, no AI, no approval.
-  assert.deepEqual(p("video").create, ["view", "comment"]);
-  assert.deepEqual(p("video").video, ["view", "upload", "comment"]);
-  assert.equal(p("video").sales, undefined);
-  assert.equal(p("video").chat, undefined);
-  assert.equal(p("video").report, undefined);
-  // Social Media Manager approves and publishes, no Sales.
-  assert.ok(p("smm").video.includes("approve"));
+  // Editor & Sosmed (the Video Editor and the Social Media Manager as one,
+  // 2026-11-24): uploads, reviews, approves, posts — no money.
+  assert.deepEqual(p("smm").video, ["view", "upload", "comment", "revise", "approve"]);
   assert.ok(p("smm").publish.includes("publish"));
+  assert.ok(p("smm").create.includes("edit"));
   assert.equal(p("smm").sales, undefined);
+  // A Klien only sees and reviews videos; nothing about money.
+  assert.deepEqual(p("klien").video, ["view", "comment", "revise", "approve"]);
+  assert.equal(p("klien").sales, undefined);
+  assert.equal(p("klien").chat, undefined);
   // Sales: money yes, content read-only.
   assert.deepEqual(p("sales").sales, ["view", "edit", "delete"]);
   assert.deepEqual(p("sales").create, ["view"]);
@@ -35,14 +35,14 @@ test("the presets follow the brief: a Video Editor never sees Sales, Sales sees 
   assert.equal(p("admin").team, undefined);
   // Every preset only uses known modules/actions and has view with any action.
   for (const key of Object.keys(PRESETS)) assert.deepEqual(presetPerms(key), cleanPerms(PRESETS[key]));
-  assert.deepEqual(ROLE_KEYS, ["admin", "creator", "video", "smm", "sales", "viewer"]);
+  assert.deepEqual(ROLE_KEYS, ["admin", "creator", "smm", "sales", "viewer"]);
 });
 
 test("the old two-way role stays meaningful: editor only for those who write content", () => {
   assert.equal(coarseRole(presetPerms("admin")), "editor");
   assert.equal(coarseRole(presetPerms("creator")), "editor");
   assert.equal(coarseRole(presetPerms("smm")), "editor");
-  assert.equal(coarseRole(presetPerms("video")), "viewer");
+  assert.equal(coarseRole(presetPerms("klien")), "viewer");
   assert.equal(coarseRole(presetPerms("sales")), "viewer");
   assert.equal(coarseRole(presetPerms("viewer")), "viewer");
 });
@@ -71,7 +71,7 @@ test("a paused seat or a member switched off only looks, or nothing", () => {
 });
 
 test("the owner's own boxes: levels per module, cleaned, custom shown as such", () => {
-  let p = presetPerms("video");
+  let p = presetPerms("creator");
   assert.equal(levelOf(p, "video"), "upload");
   assert.equal(levelOf(p, "sales"), "none");
   p = withLevel(p, "sales", "view");
@@ -81,7 +81,7 @@ test("the owner's own boxes: levels per module, cleaned, custom shown as such", 
   assert.equal(levelOf(p, "video"), "approve");
   // Junk never survives.
   assert.deepEqual(cleanPerms({ sales: ["edit", "hack"], nope: ["view"], chat: [] }), { sales: ["view", "edit"] });
-  assert.equal(roleOfMember({ role: "viewer", preset: "video", p, custom: true }), "custom");
+  assert.equal(roleOfMember({ role: "viewer", preset: "creator", p, custom: true }), "custom");
 });
 
 test("the server's copy (api/_permissions.js) is the same table as the app's", async () => {
@@ -93,11 +93,12 @@ test("the server's copy (api/_permissions.js) is the same table as the app's", a
 
 test("the server writes a role as its preset, its map and the old two-way role", async () => {
   const { memberRoleOf, ROLES, roleShown } = await import("../api/_team.js");
-  assert.ok(["admin", "creator", "video", "smm", "sales", "viewer", "klien", "klienEdit", "editor", "viewer"].every((r) => ROLES.includes(r)));
-  const v = memberRoleOf("video");
+  assert.ok(["admin", "creator", "smm", "sales", "viewer", "klien", "klienEdit", "editor", "viewer"].every((r) => ROLES.includes(r)));
+  const v = memberRoleOf("sales");
   assert.equal(v.role, "viewer");
-  assert.equal(v.preset, "video");
-  assert.equal(v.p.sales, undefined);
+  assert.equal(v.preset, "sales");
+  assert.equal(memberRoleOf("video").preset, "smm", "an invite made as Video Editor becomes Editor & Sosmed");
+  assert.deepEqual(v.p.sales, ["view", "edit", "delete"]);
   assert.equal(memberRoleOf("creator").role, "editor");
   // An old app sending "editor" gets an Admin.
   assert.equal(memberRoleOf("editor").preset, "admin");
@@ -114,18 +115,19 @@ test("a member's app: only the apps and pages their role opens, money never held
   await store.initStore("u-vid");
   const brand = {
     id: "b-team", ownerId: "owner-x", name: "Kopi Tim",
-    members: { "u-vid": { role: "viewer", preset: "video", p: presetPerms("video") } },
+    members: { "u-vid": { role: "viewer", preset: "klien", klien: true, p: presetPerms("klien") } },
     memberIds: ["u-vid"],
     salesTracker: { products: [{ id: "p", name: "Kopi", price: 1, cost: 1 }], lastAdvice: { summary: "Omzet Rp 9.000.000" } },
   };
-  // What the app shows a Video Editor: My Brand, Create, Board, Pitch Deck — no Goals, Report or Sales.
+  // What the app shows a Klien: My Brand, Create, Board, Pitch Deck — no Goals, Report or Sales.
   const shown = APPS.filter((a) => store.canDo(brand, a.module, "view")).map((a) => a.key);
   assert.deepEqual(shown.sort(), ["builder", "content-os", "deck", "papan"]);
   assert.equal(store.canDo(brand, VIEW_MODULE.sales), false);
   assert.equal(store.canDo(brand, VIEW_MODULE.chat), false);
-  assert.equal(store.canDo(brand, "video", "upload"), true);
+  assert.equal(store.canDo(brand, "video", "approve"), true);
+  assert.equal(store.canDo(brand, "video", "upload"), false);
   // The role's look: icon + name.
-  assert.match(roleChipHTML("video"), /role-chip/);
-  assert.equal(roleLabel("video"), "Video Editor");
+  assert.match(roleChipHTML("smm"), /role-chip/);
+  assert.equal(roleLabel("smm"), "Editor & Sosmed");
   assert.equal(roleLabel("editor"), "Admin");
 });

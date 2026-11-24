@@ -29,7 +29,9 @@ const DAY = 86400000;
 // brand — role "editor" marked klien: true.
 // Roles (2026-11-24, js/permissions.js): Admin, Content Creator, Video
 // Editor, Social Media Manager, Sales, Viewer; the client two stay Wepeka's.
-const rolesHere = () => (isAdmin(auth.currentUser?.uid) ? [...ROLE_KEYS, ...CLIENT_KEYS] : [...ROLE_KEYS]);
+// Klien for every owner (2026-11-24): sees a video only once the team
+// approved it and sent it; "Klien (bisa edit)" stays Wepeka's own.
+const rolesHere = () => (isAdmin(auth.currentUser?.uid) ? [...ROLE_KEYS, ...CLIENT_KEYS] : [...ROLE_KEYS, "klien"]);
 // "custom" once the owner changed a member's boxes (Atur akses).
 const roleOf = (m) => roleOfMember(m);
 // On Wepeka's brands an editor also works the Antrean Video like the client
