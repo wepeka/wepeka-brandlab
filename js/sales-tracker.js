@@ -43,6 +43,7 @@
 // Still 100% manual entry: there is no sales backend and nothing here reads
 // or asks for ads data.
 import { getBrand, updateBrand, listCampaigns, updateCampaign, getContent, listContent, localISODate, isBrandSalesReady, ensureBrandSales, emitStep } from "./store.js";
+import { trackerForAi } from "./meta-safe.js";
 
 const DAY = 86400000;
 const uid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -615,7 +616,8 @@ export function syncSalesCampaign(brandId) {
 
 // ---------- Text snapshot for the AI (real numbers only) ----------
 export function salesSnapshotText(brand, { unit = "" } = {}) {
-  const tracker = getTracker(brand);
+  // Ad spend pulled from Meta stays out of AI prompts (js/meta-safe.js).
+  const tracker = trackerForAi(getTracker(brand));
   const month = monthRange();
   const stats = productStats(tracker, month).filter((s) => !s.product.archived);
   const totals = trackerTotals(tracker, month);

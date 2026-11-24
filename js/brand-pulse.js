@@ -17,6 +17,7 @@ import { crossCampaignInsights } from "./cross-campaign.js";
 import { campaignStages, activeStageIndex, campaignHeadline } from "./campaign-metrics.js";
 import { t, campaignDisplayName } from "./i18n.js";
 import { learningText } from "./brand-learning.js";
+import { brandForAi, contentListForAi } from "./meta-safe.js";
 
 const DAY = 86400000;
 
@@ -436,6 +437,9 @@ export function buildPulseText(signals = [], log = [], { limit = 8, momentLimit 
 // every AI feature that reads the pulse writes with it.
 export function pulseTextFor(brand, { content = [], campaigns = [], settings } = {}) {
   if (!brand || !settings) return "";
+  // Numbers from Meta stay out of AI prompts (js/meta-safe.js).
+  brand = brandForAi(brand);
+  content = contentListForAi(content);
   const pulse = buildPulseText(computeSignals({ brand, content, campaigns, settings }), brand.developmentLog || []);
   const learned = learningText(brand, { content, settings });
   return [pulse, learned].filter(Boolean).join("\n\n");

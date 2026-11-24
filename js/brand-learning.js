@@ -23,6 +23,7 @@ import { getBrand, updateBrand, organicViews, localISODate, getSettings, listCon
 import { hookOf } from "./script-format.js";
 import { computeContentMetrics } from "./formulas.js";
 import { t, getLang, campaignDisplayName } from "./i18n.js";
+import { contentListForAi } from "./meta-safe.js";
 
 const DAY = 86400000;
 const TASTE_CAP = 10;
@@ -288,7 +289,8 @@ export async function maybeMonthlyLessons(brandId, { ai, summarize, allowed }) {
   if (!brand || !allowed) return;
   const month = previousMonth();
   if (brand.lessonsCheckedMonth === month || (brand.lessons || []).some((l) => l.month === month)) return;
-  const rows = monthRows(listContent(brandId), getSettings(), month);
+  // Numbers from Meta stay out of AI prompts (js/meta-safe.js).
+  const rows = monthRows(contentListForAi(listContent(brandId)), getSettings(), month);
   if (rows.length < MIN_LESSON_POSTS) {
     updateBrand(brandId, { lessonsCheckedMonth: month });
     return;

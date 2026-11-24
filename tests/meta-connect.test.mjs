@@ -72,7 +72,7 @@ function fakeDb(seed = {}) {
 
 // ---------- a fake Meta ----------
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = false, adCurrency = "IDR", ads = null, hiddenAssets = false } = {}) {
+function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = false, adCurrency = "IDR", ads = null, hiddenAssets = false, pageVideos = [] } = {}) {
   const calls = [];
   // A system user's /me/accounts hands out Page tokens too.
   const fbTokens = tokenType === "system" ? ["BISU", "PAGE1"] : ["FB-LONG", "PAGE1"];
@@ -134,6 +134,9 @@ function fakeMeta({ tokenType = "system", media = [], insights = {}, dead = fals
     if (q === "/5550009") return json({ id: "5550009", name: "Kopi Pagi Store", access_token: "PAGE9", instagram_business_account: { id: "17841400000000099", username: "kopipagi.store2" } });
     if (q === "/act_222") return json({ id: "act_222", account_id: "222", name: "Iklan Store", currency: "IDR", account_status: 1 });
     if (q === "/5550001/insights") return url.searchParams.get("metric") === "page_total_media_view_unique" ? json({ data: [{ name: "page_total_media_view_unique", values: [{ value: 4000 }] }] }) : json({ error: { message: "bad metric", code: 100 } }, 400);
+    if (q === "/5550001/video_reels") return json({ data: pageVideos, paging: {} });
+    if (q === "/5550001/videos") return json({ data: [], paging: {} });
+    if (/^\/fbv\d+$/.test(q)) return json(url.searchParams.get("fields") === "blue_reels_play_count" ? { blue_reels_play_count: 777 } : { likes: { summary: { total_count: 25 } }, comments: { summary: { total_count: 5 } } });
     if (q === "/9990001") return json(url.searchParams.get("fields") === "blue_reels_play_count" ? { blue_reels_play_count: 321 } : { likes: { summary: { total_count: 12 } }, comments: { summary: { total_count: 3 } } });
     if (q === "/act_111/ads") return json({ data: [{ id: "ad1", name: "Promo", creative: { effective_instagram_media_id: "m1" } }, { id: "ad2", name: "Lain", creative: { effective_instagram_media_id: "zzz" } }], paging: {} });
     if (q === "/act_111/insights") {
@@ -510,6 +513,46 @@ describe("sync", () => {
     assert.deepEqual([last.result.updated, last.result.added, last.result.followers], [1, 1, 1200]);
   });
 
+  test("through Facebook: organic and ads apart per post (total − organic); through Instagram: organic only", async () => {
+    const withAds = { m1: { views: 900, reach: 700, total_views: 1500, total_likes: 40, total_comments: 6 } };
+    const db = seed({ "content/c1": { brandId: "b1", ownerId: "owner1", platform: "Instagram", publishedUrl: "https://www.instagram.com/reel/AAA/", status: "published" } });
+    const meta = fakeMeta({ media: [reel("m1", "AAA", NOW - DAY)], insights: withAds });
+    const d = await connectFb(db, meta);
+    await call(d, post("sync", { brandId: "b1" }));
+    const c1 = db.get("content/c1");
+    assert.deepEqual([c1.igPaid.views, c1.igPaid.likes, c1.igPaid.comments], [600, 30, 4], "likes 10 and comments 2 are organic");
+    assert.deepEqual([c1.igPaid.totalViews, c1.igPaid.totalLikes], [1500, 40]);
+    assert.equal(c1.performance.views, 900, "reports keep the organic number");
+
+    const db2 = seed({ "content/c1": { brandId: "b1", ownerId: "owner1", platform: "Instagram", publishedUrl: "https://www.instagram.com/reel/AAA/", status: "published" } });
+    const meta2 = fakeMeta({ media: [reel("m1", "AAA", NOW - DAY)], insights: withAds });
+    const d2 = deps(db2, meta2);
+    const { body } = await call(d2, post("connect", { brandId: "b1", via: "instagram" }));
+    await call(d2, { method: "GET", query: { action: "callback", code: "good-ig", state: new URL(body.url).searchParams.get("state") } });
+    await call(d2, post("sync", { brandId: "b1" }));
+    assert.equal(db2.get("content/c1").igPaid, undefined);
+    assert.ok(!meta2.calls.some((c) => (c.url.searchParams.get("metric") || "").includes("total_")), "Instagram Login has no totals");
+  });
+
+  test("a reel posted straight on the Page joins the Instagram post with the same caption", async () => {
+    const cap = "Pagi tenang, kopi di tangan. Pesan lewat WA.";
+    const db = seed({
+      "content/c1": { brandId: "b1", ownerId: "owner1", platform: "Instagram", publishedUrl: "https://www.instagram.com/reel/AAA/", status: "published", caption: cap },
+      "content/c2": { brandId: "b1", ownerId: "owner1", platform: "Instagram", status: "published", caption: "Lain sama sekali, bukan ini" },
+    });
+    const pageVideos = [
+      { id: "fbv1", description: `  ${cap.toUpperCase()} `, created_time: new Date(NOW - DAY).toISOString() },
+      { id: "fbv2", description: "Video Facebook saja", created_time: new Date(NOW - DAY).toISOString() },
+      { id: "fbv3", description: cap, created_time: new Date(NOW - 90 * DAY).toISOString() },
+    ];
+    const d = await connectFb(db, fakeMeta({ media: [reel("m1", "AAA", NOW - DAY)], insights: { m1: { views: 900 } }, pageVideos }));
+    await call(d, post("sync", { brandId: "b1" }));
+    const c1 = db.get("content/c1");
+    assert.equal(c1.fbVideoId, "fbv1");
+    assert.deepEqual([c1.performanceByPlatform.facebook.views, c1.performanceByPlatform.facebook.likes, c1.performanceByPlatform.instagram.views], [777, 25, 900]);
+    assert.equal(db.get("content/c2").performanceByPlatform, undefined, "no twin, no numbers");
+  });
+
   test("an ad account not in Rupiah is left out of Sales", async () => {
     const db = seed({ "content/c1": { brandId: "b1", ownerId: "owner1", igMediaId: "m1", platform: "Instagram", status: "published" } });
     const d = await connectFb(db, fakeMeta({ adCurrency: "USD" }));
@@ -648,6 +691,8 @@ describe("moving a brand from Instagram Login to Facebook", () => {
     // Later the owner adds the Facebook Page and ads: same Instagram account.
     const fb = await call(d, post("connect", { brandId: "b1", via: "facebook" }));
     await call(d, { method: "GET", query: { action: "callback", code: "good-fb", state: new URL(fb.body.url).searchParams.get("state") } });
+    const offer = await call(d, post("assets", { brandId: "b1" }));
+    assert.equal(offer.body.current.igUserId, IG_ID, "the account in use comes ticked");
     const picked = await call(d, post("select", { brandId: "b1", igUserId: IG_ID, pageId: "5550001" }));
     assert.equal(picked.statusCode, 200, JSON.stringify(picked.body));
     const fbConn = db.get("metaConnections/b1");
@@ -773,4 +818,40 @@ test("picker: the brand's look-alike Instagram on top, other brands' accounts tu
   assert.equal(pageForIg({ id: "17841438523032359", username: "quatrokidsclub", pageId: "" }, pages), "", "two Pages share the name: no guess");
   assert.equal(pageForIg({ id: "17841438523032359", username: "quatrokidsclub", pageId: "" }, pages.slice(0, 1)), "1493455100509166", "one Page with the same name");
   assert.equal(pageForIg(null, pages), "");
+});
+
+// ---------- one post's breakdown (js/meta-breakdown.js) ----------
+import { metaBreakdown } from "../js/meta-breakdown.js";
+test("breakdown: Instagram organic, from ads and Facebook apart, with a total", () => {
+  const c = {
+    performanceByPlatform: { instagram: { views: 900, reach: 700, likes: 10, comments: 2 }, facebook: { views: 777, likes: 25, comments: 5 }, tiktok: { views: 50 } },
+    igPaid: { views: 600, likes: 30, comments: 4 },
+  };
+  const b = metaBreakdown(c);
+  assert.deepEqual([b.ig.views, b.ads.views, b.fb.views, b.total.views], [900, 600, 777, 2277], "TikTok isn't Meta's");
+  assert.deepEqual([b.total.likes, b.total.comments], [65, 11]);
+  assert.equal(metaBreakdown({ performance: { views: 10 } }), null, "numbers typed by hand only: no breakdown");
+  assert.equal(metaBreakdown({ performanceByPlatform: { instagram: { views: 5 } } }).ads, null, "through Instagram: no ads column data");
+});
+
+// ---------- what the AI may read (js/meta-safe.js) ----------
+import { contentForAi, brandForAi, trackerForAi } from "../js/meta-safe.js";
+test("AI prompts get no numbers from Meta; the owner's own and TikTok's stay", () => {
+  const c = {
+    title: "Promo",
+    performanceByPlatform: { instagram: { views: 900, likes: 10 }, facebook: { views: 70 }, tiktok: { views: 300 } },
+    performance: { views: 1270, likes: 10, reposts: 4, insightScreenshot: "s.png" },
+    igPaid: { views: 600 },
+  };
+  const safe = contentForAi(c);
+  assert.deepEqual(safe.performanceByPlatform, { tiktok: { views: 300 } });
+  assert.deepEqual([safe.performance.views, safe.performance.likes, safe.performance.reposts], [300, null, 4]);
+  assert.equal(safe.igPaid, undefined);
+  assert.equal(c.performanceByPlatform.instagram.views, 900, "the card itself is untouched");
+  const typed = { performance: { views: 50 } };
+  assert.equal(contentForAi(typed), typed);
+  const b = brandForAi({ insights: { instagram: { followers: 1200, source: "instagram" }, tiktok: { followers: 90, source: "manual" } }, insightsHistory: [{ source: "instagram" }, { source: "manual" }] });
+  assert.deepEqual([Object.keys(b.insights), b.insightsHistory.length], [["tiktok"], 1]);
+  const tr = trackerForAi({ expenses: [{ id: "meta-ads-c1-2026-11", attribution: "auto", amount: 1 }, { id: "x1", amount: 2 }] });
+  assert.deepEqual(tr.expenses.map((e) => e.id), ["x1"]);
 });

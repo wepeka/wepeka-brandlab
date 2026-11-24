@@ -297,6 +297,14 @@ async function usedByOthers(d, brand) {
   return used;
 }
 
+// What the picker shows ticked: the brand's saved choice on this login; or,
+// moving a brand from Instagram Login to Facebook, the Instagram account it
+// already uses (when this login shared it).
+function currentPick(conn, grant) {
+  if (conn.grantId === grant.id) return { igUserId: conn.igUserId || "", pageId: conn.pageId || "", adAccountId: conn.adAccountId || "" };
+  const keepIg = conn.igUserId && (grant.instagram || []).some((x) => x.id === conn.igUserId) ? conn.igUserId : "";
+  return { igUserId: keepIg, pageId: "", adAccountId: "" };
+}
 async function assets(d, uid, { brandId }) {
   const brand = await brandFor(d, uid, brandId);
   if (!canManage(brand, uid)) fail("not-allowed", 403);
@@ -310,7 +318,7 @@ async function assets(d, uid, { brandId }) {
     instagram: (grant.instagram || []).map(({ id, username, pageId }) => ({ id, username, pageId: pageId || "" })),
     pages: (grant.pages || []).map(({ id, name, igId }) => ({ id, name, igId: igId || "" })),
     adAccounts: (grant.adAccounts || []).map(({ id, name, currency, status }) => ({ id, name, currency, status })),
-    current: conn.grantId === grant.id ? { igUserId: conn.igUserId || "", pageId: conn.pageId || "", adAccountId: conn.adAccountId || "" } : { igUserId: "", pageId: "", adAccountId: "" },
+    current: currentPick(conn, grant),
   };
 }
 
@@ -492,12 +500,22 @@ export async function syncBrand(d, brandId, conn, brand = null, progress = null)
           tell({ step: "numbers", done: Math.min(reads, total), total, thumb: String(m.thumbnail_url || m.media_url || "").slice(0, 1000) });
         }
       };
+      // Through Facebook Login the totals with ads come too (organic vs ads).
+      const paidOf = async (m, metrics) => {
+        if (grant.via !== "facebook") return null;
+        try {
+          return IG.paidFromTotals(metrics, await IG.fetchTotalMetrics(api, m), now);
+        } catch (err) {
+          if (err instanceof V.GraphError && err.needsReconnect) throw err;
+          return null;
+        }
+      };
       for (const { content: c, media: m } of [...plan.link, ...plan.refresh]) {
         if (reads >= MAX_READS_PER_PASS) break;
         const metrics = await metricsOf(m);
         if (!metrics) continue;
         const linking = !c.publishedUrl;
-        const patch = { ...(linking ? IG.publishPatch(m) : {}), ...IG.metricsPatch(c, metrics, m, now) };
+        const patch = { ...(linking ? IG.publishPatch(m) : {}), ...IG.metricsPatch(c, metrics, m, now, await paidOf(m, metrics)) };
         await d.db.doc(`content/${c.id}`).update(patch);
         Object.assign(c, patch);
         counts[linking ? "linked" : "updated"]++;
@@ -507,6 +525,8 @@ export async function syncBrand(d, brandId, conn, brand = null, progress = null)
         const metrics = (await metricsOf(m)) || {};
         const id = d.newId();
         const doc = IG.newContentDoc({ id, brandId, ownerId: brand.ownerId, media: m, metrics, now });
+        const paid = await paidOf(m, metrics);
+        if (paid) doc.igPaid = paid;
         await d.db.doc(`content/${id}`).set(doc);
         allContent.push(doc);
         counts.added++;
@@ -574,6 +594,25 @@ async function syncPage(d, brand, grant, conn, key, contents, brandPatch, now) {
       res.updated++;
     } catch {
       res.failed++;
+    }
+  }
+  // Reels/videos posted on the Page outside Brandlab: a cross-post of an
+  // Instagram post joins that post's card (FB.pageVideoMatches).
+  const room = Math.max(0, MAX_FB_READS - videos.length);
+  if (room) {
+    const recent = await FB.listPageVideos(api, conn.pageId, now - FB_RECENT_MS);
+    for (const { content: c, videoId } of FB.pageVideoMatches(recent, contents).slice(0, room)) {
+      try {
+        const metrics = await FB.fetchPageVideoMetrics(api, videoId);
+        if (!Object.keys(metrics).length) continue;
+        const patch = { ...IG.platformMetricsPatch(c, "facebook", metrics, now), fbVideoId: videoId };
+        await d.db.doc(`content/${c.id}`).update(patch);
+        Object.assign(c, patch);
+        res.updated++;
+      } catch (err) {
+        if (err instanceof V.GraphError && err.needsReconnect) throw err;
+        res.failed++;
+      }
     }
   }
   brandPatch["facebook.lastSyncAt"] = now;

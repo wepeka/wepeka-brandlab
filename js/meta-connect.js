@@ -10,7 +10,7 @@
 import { auth } from "./firebase.js";
 import { t, getLang } from "./i18n.js";
 import { getBrand, listBrands } from "./store.js";
-import { currentUid, isAdmin, getCachedAccount } from "./account.js";
+import { currentUid } from "./account.js";
 import { can } from "./permissions.js";
 import { openModal, closeOverlay, confirmDialog } from "./modals.js";
 import { icon } from "./icons.js";
@@ -115,6 +115,20 @@ export async function startMetaConnect(brandId, via = "facebook") {
         await call("connect", { brandId, via, reuseGrantId: reuse.grantId });
         return openMetaPicker(brandId);
       }
+    }
+    // Meta's window lists every Page and account the person has: tick them
+    // all once, Brandlab sorts them per brand afterwards (one set of ticks
+    // per Facebook account — ticking fewer later cuts other brands off).
+    if (via === "facebook") {
+      const brand = getBrand(brandId);
+      const ig = brand?.instagram?.connected && brand.instagram.via === "instagram" ? brand.instagram.username : "";
+      const go = await confirmDialog({
+        title: t("meta.before.title"),
+        message: `${t("meta.before.body")}${ig ? `<br><br>${t("meta.before.keep", { name: `<b>@${escapeHtml(ig)}</b>` })}` : ""}`,
+        confirmLabel: t("meta.before.go"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!go) return;
     }
     toast(t("meta.going"));
     location.assign(r.url);
@@ -352,6 +366,7 @@ export async function openMetaPicker(brandId) {
       await call("select", { brandId, ...pick });
       closeOverlay(overlay);
       toast(t("meta.saved", { brand: brandName }));
+      setTimeout(() => syncMetaNow(brandId), 500);
     } catch (err) {
       btn.disabled = false;
       toast(metaErrorText(err), "error");
@@ -379,6 +394,8 @@ export async function handleMetaReturn() {
   if (result === "pick" && brandId) return openMetaPicker(brandId);
   if (result === "no-insights") return toast(t("meta.ret.noInsights"), "error");
   toast(t("meta.ret.connected", { name: brand?.instagram?.username ? `@${brand.instagram.username}` : "", brand: brand?.name || "" }));
+  // The first pull starts by itself, so the numbers show straight away.
+  if (brandId) setTimeout(() => syncMetaNow(brandId), 500);
 }
 
 // ---------- Pengaturan → Akun Meta ----------
@@ -406,19 +423,20 @@ function numbersHTML(b) {
   ].filter(Boolean);
   return lines.length ? `<p class="text-faint meta-when">${lines.join(" · ")}</p>` : "";
 }
-// "Pakai Instagram saja" (Instagram Login) isn't in the first App Review:
-// Meta lets an app use Facebook Login or Instagram Login, "but not both"
-// (2026-11-25). Until that's settled it shows only for the admin and
-// accounts marked instagramBeta — not for Meta's reviewers (metaBeta).
-const showInstagramOnly = () => isAdmin(currentUid()) || getCachedAccount()?.instagramBeta === true;
+// One choice per brand (2026-11-25): Instagram (its organic numbers; just an
+// Instagram Business/Creator account) or Facebook (Instagram plus the Page
+// and ads, each apart on every post). The two logins run on two Meta apps —
+// Meta lets one app use Facebook Login or Instagram Login, "but not both".
 function brandCardHTML(b) {
   const head = `<div class="meta-card-head">${avatarHTML(b, "flex:none;width:30px;height:30px;border-radius:9px;font-size:12px;")}<div><b>${escapeHtml(b.name)}</b><small>${metaConnected(b) ? t(metaVia(b) === "instagram" ? "meta.viaInstagram" : "meta.viaFacebook") : t("meta.notConnected")}</small></div></div>`;
   if (!metaConnected(b)) {
     return `<div class="card meta-card" data-meta-brand="${escapeHtml(b.id)}">${head}
+      <p class="meta-choose-q">${t("meta.choose")}</p>
       <div class="meta-ways">
-        <button type="button" class="meta-way is-main" data-meta-connect="facebook">${icon("facebook", { size: 18 })}<span><b>${t("meta.connectFb")}</b><small>${t("meta.connectFbHint")}</small></span></button>
-        ${showInstagramOnly() ? `<button type="button" class="meta-way" data-meta-connect="instagram">${icon("instagram", { size: 18 })}<span><b>${t("meta.connectIg")}</b><small>${t("meta.connectIgHint")}</small></span></button>` : ""}
-      </div></div>`;
+        <button type="button" class="meta-way is-ig" data-meta-connect="instagram"><span class="meta-way-ic">${icon("instagram", { size: 20 })}</span><span><b>${t("meta.connectIg")}</b><small>${t("meta.connectIgHint")}</small></span></button>
+        <button type="button" class="meta-way is-fb" data-meta-connect="facebook"><span class="meta-way-ic">${icon("facebook", { size: 20 })}</span><span><b>${t("meta.connectFb")}</b><small>${t("meta.connectFbHint")}</small></span></button>
+      </div>
+      <p class="meta-choose-tip">${icon("info", { size: 13 })}${t("meta.chooseTip")}</p></div>`;
   }
   const last = b.instagram?.lastSyncAt || b.facebook?.lastSyncAt || b.ads?.lastSyncAt;
   const adsNote = b.ads?.lastSync?.currencySkipped ? t("meta.adsNotIdr") : b.ads?.lastSync?.unmatched ? t("meta.adsUnmatched", { n: b.ads.lastSync.unmatched }) : "";
@@ -429,7 +447,7 @@ function brandCardHTML(b) {
     <p class="text-faint meta-when">${last ? t("meta.lastSync", { when: escapeHtml(when(last)) }) : t("meta.neverSynced")}${adsNote ? ` · ${adsNote}` : ""}</p>
     <div class="meta-actions">
       ${metaNeedsReconnect(b) ? `<button type="button" class="btn btn-primary btn-sm" data-meta-connect="${escapeHtml(metaVia(b) || "facebook")}">${icon("refresh", { size: 14 })}${t("meta.reconnect")}</button>` : `<button type="button" class="btn btn-secondary btn-sm" data-meta-sync>${icon("refresh", { size: 14 })}${t("meta.syncNow")}</button>`}
-      ${metaVia(b) === "facebook" ? `<button type="button" class="btn btn-secondary btn-sm" data-meta-change>${t("meta.change")}</button>` : ""}
+      ${metaVia(b) === "facebook" ? `<button type="button" class="btn btn-secondary btn-sm" data-meta-change>${t("meta.change")}</button>` : `<button type="button" class="btn btn-secondary btn-sm" data-meta-connect="facebook">${icon("facebook", { size: 14 })}${t("meta.addFb")}</button>`}
       <button type="button" class="btn btn-ghost btn-sm" data-meta-disconnect>${t("meta.disconnect")}</button>
     </div></div>`;
 }
@@ -442,6 +460,7 @@ export function renderMetaPanel(content) {
         <h3>${t("meta.title")}</h3>
         <p class="text-muted">${t("meta.intro")}</p>
         <p class="text-faint">${icon("info", { size: 13 })}${t("meta.proOnly")}</p>
+        <p class="text-faint meta-soon">${t("meta.soon")}</p>
       </div>
       ${brands.length ? brands.map(brandCardHTML).join("") : `<div class="card"><p class="text-muted" style="margin:0;">${t("meta.none")}</p></div>`}
     </div>`;

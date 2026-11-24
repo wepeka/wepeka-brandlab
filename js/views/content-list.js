@@ -23,6 +23,30 @@ import { aiReportButtonHTML } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
 import { appIconSVG } from "../app-icons.js";
 import { PLATFORM_CARDS, platformLink, platformCardName as platformName } from "../platforms.js";
+import { metaBreakdown } from "../meta-breakdown.js";
+
+// "Rincian dari Meta" on top of Isi angka: Instagram organic · from ads ·
+// Facebook · total (js/meta-breakdown.js). Read-only; the boxes below stay
+// the owner's own numbers.
+function breakdownHTML(c) {
+  const b = metaBreakdown(c);
+  if (!b) return "";
+  const n = (v) => (v === null || v === undefined ? "–" : formatNumber(v));
+  const rows = (o, keys) => keys.map((k) => `<div class="bd-row"><span>${t(`store.metric.${k}`)}</span><b>${n(o?.[k])}</b></div>`).join("");
+  const viaFb = getBrand(c.brandId)?.instagram?.via === "facebook";
+  const adsBody = b.ads
+    ? (b.ads.views || b.ads.likes || b.ads.comments ? rows(b.ads, ["views", "likes", "comments"]) : `<p class="bd-note">${t("bd.notBoosted")}</p>`)
+    : `<p class="bd-note">${t(viaFb ? "bd.adsSoon" : "bd.adsViaFb")}</p>`;
+  return `<section class="bd" aria-label="${escapeText(t("bd.title"))}">
+    <div class="bd-head"><b>${t("bd.title")}</b><small>${t("bd.sub")}</small></div>
+    <div class="bd-cols">
+      <div class="bd-col is-ig"><div class="bd-tag">${icon("instagram", { size: 13 })}${t("bd.ig")}</div>${rows(b.ig, ["views", "reach", "likes", "comments", "shares", "saves"])}</div>
+      <div class="bd-col is-ads"><div class="bd-tag">${icon("megaphone", { size: 13 })}${t("bd.ads")}</div>${adsBody}</div>
+      <div class="bd-col is-fb"><div class="bd-tag">${icon("facebook", { size: 13 })}${t("bd.fb")}</div>${b.fb ? rows(b.fb, ["views", "likes", "comments"]) : `<p class="bd-note">${t("bd.noFb")}</p>`}</div>
+    </div>
+    <div class="bd-total"><span>${t("bd.total")}</span>${["views", "likes", "comments"].map((k) => `<b>${n(b.total[k])} <small>${t(`store.metric.${k}`).toLowerCase()}</small></b>`).join("")}</div>
+  </section>`;
+}
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -681,6 +705,7 @@ export function openQuickFillModal({ c, onSaved, onBack, platformKey = "" }) {
         <div style="font-weight:700;font-size:14px;">${escapeText(c.title || t("common.untitled"))}</div>
         <div class="text-faint" style="font-size:12px;"><span class="platform-pill">${platformIcon(platformKey || c.platform)} ${escapeText(shownPlatform || "—")}</span> · ${t("contentList.eq.published", { date: formatDate(c.publishedDate) })}</div>
       </div>
+      ${platformKey ? "" : breakdownHTML(c)}
       <div class="field">
         <label>${t("contentList.qf.screenshotLabel")}</label>
         <div id="qe-dropzone" class="dropzone">

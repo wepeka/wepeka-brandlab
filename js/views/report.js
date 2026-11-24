@@ -27,6 +27,7 @@ import { qs, qsa, toast, formatNumber, formatPercent, formatDate, escapeHtml as 
 import { t, getLang, campaignDisplayName } from "../i18n.js";
 import { funnelShort } from "../funnel-field.js";
 import { PLATFORM_CARDS, platformCard, platformCardName, contentOnPlatform } from "../platforms.js";
+import { brandForAi, contentListForAi } from "../meta-safe.js";
 
 const DAY = 86400000;
 export const OVERALL_START = "2000-01-01";
@@ -62,9 +63,11 @@ const uniqueCount = (list) => new Set(list.map((x) => x.c.id)).size;
 // `platform`: "all" counts a reel ticked as uploaded to Instagram and
 // TikTok on both (its TikTok numbers from crossPostPerformance); a card key
 // counts only what went out there, with that platform's numbers.
-export function computeReportData(brand, start, end, platform = "all") {
+// forAi: the snapshot the AI reads — numbers from Meta left out (js/meta-safe.js).
+export function computeReportData(brand, start, end, platform = "all", { forAi = false } = {}) {
   const settings = getSettings();
-  const content = listContent(brand.id);
+  if (forAi) brand = brandForAi(brand);
+  const content = forAi ? contentListForAi(listContent(brand.id)) : listContent(brand.id);
   const inRange = content.filter((c) => {
     const d = c.publishedDate || c.scheduleDate;
     return d && d >= start && d <= end;
@@ -577,9 +580,9 @@ export function adviceSig(text, lang = getLang()) {
 // exactly these numbers (null when there is none yet).
 export function reportAdviceState(brandId, start, end, platform = "all") {
   const b = getBrand(brandId);
-  const d = computeReportData(b, start, end, platform);
+  const d = computeReportData(b, start, end, platform, { forAi: true });
   const prevR = previousRange(start, end);
-  const snapshot = reportSnapshotText(b, start, end, d, prevR ? computeReportData(b, prevR.start, prevR.end, platform) : null, prevR);
+  const snapshot = reportSnapshotText(brandForAi(b), start, end, d, prevR ? computeReportData(b, prevR.start, prevR.end, platform, { forAi: true }) : null, prevR);
   const sig = adviceSig(snapshot);
   const saved = b.reportAdvice;
   return { snapshot, sig, advice: saved && saved.sig === sig && saved.actions?.length ? saved : null };

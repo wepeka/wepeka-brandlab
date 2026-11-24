@@ -78,6 +78,7 @@ import { parseDirectives, renderLightMarkdown, serializeDirectives, isEmptyReply
 import { routeByRules, isWriteRequest, movesToBrainstorm, movesToConsultant, movesToCompanion, isContentTalk } from "./chat-router.js";
 import { computeWidgets, widgetHTML, widgetMenuText, widgetFactsText } from "./chat-widgets.js";
 import { parseScript, renderScript, scriptBeatsHTML } from "./script-format.js";
+import { brandForAi, contentListForAi } from "./meta-safe.js";
 import { openBrandMemoryModal, validateRecap, unrecappedMessages, savedMoments, momentKindLabel, saveMemoryText, isInMemory, memoryAddFormHTML, wireMemoryAddForm, memoryDiffHTML } from "./brand-memory.js";
 import { go } from "./nav-context.js";
 import { icon } from "./icons.js";
@@ -529,9 +530,10 @@ async function decideEngine(ai, text, history) {
 // ---- Consultant's live snapshot ------------------------------------------
 
 function buildSnapshot(brandId) {
-  const brand = getBrand(brandId);
+  // What the AI reads: numbers from Meta left out (js/meta-safe.js).
+  const brand = brandForAi(getBrand(brandId));
   const settings = getSettings();
-  const content = listContent(brandId);
+  const content = contentListForAi(listContent(brandId));
   const published = content.filter((c) => c.status === "published" && c.performance);
   const ers = published.map((c) => computeContentMetrics(c, settings).engagementRate).filter((v) => v !== null);
   const avgER = ers.length ? ers.reduce((a, b) => a + b, 0) / ers.length : null;
@@ -580,7 +582,7 @@ function buildSnapshot(brandId) {
     retentionSnapshotText(published),
     // The numbers the chart widgets draw (js/chat-widgets.js), so what the
     // Konsultan says and the chart under it never disagree.
-    widgetFactsText(widgetCtx(brandId)),
+    widgetFactsText({ ...widgetCtx(brandId), brand, content }),
     campaigns.length ? `Campaign aktif:\n${coverageLines.join("\n")}` : "Belum ada campaign aktif.",
   ].join("\n");
 }

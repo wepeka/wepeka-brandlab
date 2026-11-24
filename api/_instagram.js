@@ -181,6 +181,53 @@ export async function fetchMediaMetrics(api, media) {
   return metrics;
 }
 
+// Instagram API with Facebook Login only: totals that include boosted/ad
+// engagement. Meta: views, likes and comments "report organic interaction
+// metrics only", while total_views, total_likes and total_comments include
+// promoted/boosted engagement. So the part from ads = total − organic.
+export const TOTAL_NAMES = ["total_views", "total_likes", "total_comments"];
+export async function fetchTotalMetrics(api, media) {
+  const pick = (json) => {
+    const out = {};
+    for (const row of json?.data || []) {
+      const v = row.values?.[0]?.value ?? row.total_value?.value;
+      if (TOTAL_NAMES.includes(row.name) && typeof v === "number") out[row.name] = v;
+    }
+    return out;
+  };
+  try {
+    return pick(await get(api, `/${media.id}/insights`, { metric: TOTAL_NAMES.join(",") }));
+  } catch (e) {
+    if (e instanceof GraphError && e.needsReconnect) throw e;
+  }
+  const out = {};
+  for (const name of TOTAL_NAMES) {
+    try {
+      Object.assign(out, pick(await get(api, `/${media.id}/insights`, { metric: name })));
+    } catch (e) {
+      if (e instanceof GraphError && e.needsReconnect) throw e;
+    }
+  }
+  return out;
+}
+// { views, likes, comments } from ads, plus the totals; null when Meta gave none.
+export function paidFromTotals(organic, totals, now) {
+  const part = (total, own) => (Number.isFinite(total) ? Math.max(0, total - (Number.isFinite(own) ? own : 0)) : null);
+  const paid = {
+    views: part(totals?.total_views, organic?.views),
+    likes: part(totals?.total_likes, organic?.likes),
+    comments: part(totals?.total_comments, organic?.comments),
+  };
+  if (paid.views === null && paid.likes === null && paid.comments === null) return null;
+  return {
+    ...paid,
+    totalViews: Number.isFinite(totals?.total_views) ? totals.total_views : null,
+    totalLikes: Number.isFinite(totals?.total_likes) ? totals.total_likes : null,
+    totalComments: Number.isFinite(totals?.total_comments) ? totals.total_comments : null,
+    at: now,
+  };
+}
+
 export const MEDIA_FIELDS = "id,permalink,caption,timestamp,media_type,media_product_type,media_url,thumbnail_url,like_count,comments_count";
 export async function listMedia(api, igUserId, { maxItems = 100 } = {}) {
   const out = [];
@@ -253,8 +300,11 @@ export function platformMetricsPatch(content, platform, metrics, now) {
   for (const [k, v] of Object.entries(combinePlatformMetrics(byPlatform))) if (v !== null) performance[k] = v;
   return { performanceByPlatform: byPlatform, performance, updatedAt: now };
 }
-export function metricsPatch(content, metrics, media, now) {
+// paid (Facebook Login only, paidFromTotals): what came from ads, kept apart
+// in `igPaid` — never added to the organic numbers the reports use.
+export function metricsPatch(content, metrics, media, now, paid = null) {
   const patch = { ...platformMetricsPatch(content, "instagram", metrics, now), igMediaId: media.id, igSyncedAt: now };
+  if (paid) patch.igPaid = paid;
   const thumb = media.thumbnail_url || media.media_url || "";
   if (thumb && thumbnailReplaceable(content.thumbnail)) patch.thumbnail = thumb;
   return patch;
@@ -322,8 +372,8 @@ export function metaPurgePatch(content, now) {
   const by = content?.performanceByPlatform || {};
   const metaKeys = new Set([...Object.keys(by.instagram || {}), ...Object.keys(by.facebook || {})]);
   const thumb = META_THUMB.test(String(content?.thumbnail || ""));
-  if (!metaKeys.size && !content?.igMediaId && !content?.igSyncedAt && !thumb) return null;
-  const patch = { igMediaId: "", igSyncedAt: null, updatedAt: now };
+  if (!metaKeys.size && !content?.igMediaId && !content?.igSyncedAt && !thumb && !content?.igPaid && !content?.fbVideoId) return null;
+  const patch = { igMediaId: "", igSyncedAt: null, igPaid: null, fbVideoId: "", updatedAt: now };
   if (metaKeys.size) {
     const byPlatform = { ...by, instagram: {}, facebook: {} };
     const totals = combinePlatformMetrics(byPlatform);

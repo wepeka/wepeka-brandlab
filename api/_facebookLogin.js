@@ -299,6 +299,49 @@ const lastDayOf = (month) => {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 };
 
+// Reels and videos on the Page from the last weeks (posted anywhere, not
+// only from Brandlab): /video_reels and /videos, newest first, deduped.
+export async function listPageVideos(api, pageId, sinceMs) {
+  const out = new Map();
+  for (const path of [`/${pageId}/video_reels`, `/${pageId}/videos`]) {
+    let rows = [];
+    try {
+      rows = await list(api, path, { fields: "id,description,created_time" }, { maxItems: 50 });
+    } catch (e) {
+      if (e instanceof GraphError && e.needsReconnect) throw e;
+    }
+    for (const v of rows) {
+      const at = Date.parse(v?.created_time || "") || 0;
+      if (v?.id && at >= sinceMs && !out.has(String(v.id))) out.set(String(v.id), { id: String(v.id), description: String(v.description || ""), at });
+    }
+  }
+  return [...out.values()].sort((a, b) => b.at - a.at);
+}
+// Which card a Page video belongs to. One posted from Brandlab is already
+// known (posting.fb.id); one seen before keeps its card (fbVideoId); a
+// cross-post of an Instagram post carries the same caption, so it joins that
+// post's card and its Facebook numbers sit next to the Instagram ones.
+// A video with no twin stays out.
+const normCaption = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+export function pageVideoMatches(videos, contents) {
+  const fromBrandlab = new Set(contents.map((c) => String(c.posting?.fb?.id || "")).filter(Boolean));
+  const byCaption = new Map();
+  for (const c of contents) {
+    const k = normCaption(c.caption);
+    if (k.length >= 12 && !c.fbVideoId && !c.posting?.fb?.id && !byCaption.has(k)) byCaption.set(k, c);
+  }
+  const out = [];
+  for (const v of videos) {
+    if (fromBrandlab.has(v.id)) continue;
+    const known = contents.find((c) => String(c.fbVideoId || "") === v.id);
+    const c = known || byCaption.get(normCaption(v.description));
+    if (!c) continue;
+    if (!known) byCaption.delete(normCaption(v.description));
+    out.push({ content: c, videoId: v.id });
+  }
+  return out;
+}
+
 // Ad rows → one "Iklan" expense per piece of content and month, the way
 // js/sales-tracker.js expenseEntry stores one (category "ads" + contentId,
 // so js/content-money.js reads its ROAS), marked automatic. Spend only in
