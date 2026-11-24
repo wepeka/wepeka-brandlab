@@ -125,7 +125,14 @@ test("Antrean: a customer's own brand gets the gallery with codes and Drive, wit
     assert.doesNotMatch(html, /data-status="client"/, "no 'Dicek klien' chip");
     assert.doesNotMatch(html, /data-view="footage"/, "no footage bank");
     assert.match(html, /id="pq-review"/, "review mode is there");
-    assert.match(html, /Mulai review \(1\)/);
+    // Working alone: the new cut is the one to post, nothing waits for a review.
+    assert.match(html, /Video siap/);
+    assert.doesNotMatch(html, /Mulai review \(1\)/);
+    // Once a teammate works on the brand, the cut waits for a look.
+    store.updateBrand(b.id, { memberIds: ["u-editor"], members: { "u-editor": { role: "editor", name: "Dodi" } } });
+    render(root, { brandId: b.id })?.();
+    assert.match(root.innerHTML, /Mulai review \(1\)/);
+    assert.match(root.innerHTML, /Menunggu review/);
   } finally {
     auth.currentUser = was;
   }

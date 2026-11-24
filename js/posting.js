@@ -416,14 +416,34 @@ export function postingState(c) {
   if (!last) return "none";
   // Sent to the client's review link and not answered yet.
   if (p.client?.status === "waiting" && p.client.versionId === last.id) return "client";
-  if (last.status === "pending") return "review";
+  // Someone working alone reviews their own cut: the newest one is simply
+  // the one to post, no "Perlu dicek" to click through first.
+  if (last.status === "pending") return isSoloBrand(c) ? "ready" : "review";
   if (p.finalId && p.versions.some((v) => v.id === p.finalId && v.status === "approved")) return "ready";
   return "revision";
 }
 
+// A brand nobody else works on: no Kerja Tim member and not Wepeka's own
+// desk (owner, 2026-11-24: "Untuk pengguna individu, jangan memaksakan
+// workflow approval yang tidak diperlukan"). Approving stays possible, it's
+// just never a step they have to take.
+export function isSoloBrand(x) {
+  // A piece names its brand; anything else must already be a brand (an id
+  // or the doc) — a bare piece without brandId is never taken for one.
+  const b = typeof x === "string" ? getBrand(x) : x?.brandId ? getBrand(x.brandId) : x && "ownerId" in x ? x : null;
+  return !!b && !isWepekaDesk() && !(Array.isArray(b.memberIds) && b.memberIds.length);
+}
+
+// The words follow the review flow: Sedang diedit → Menunggu review →
+// Perlu revisi → Review ulang → Disetujui → Siap upload → Terjadwal →
+// Sudah tayang. The keys (and the colours, filters) stay the same.
 function stateLabel(c, key = postingState(c)) {
   if (isClientView(c)) return t(`post.cst.${key}`);
-  return t(`post.state.${key}`, { time: postingOf(c).time || "" }).trim();
+  const p = postingOf(c);
+  if (key === "none" && c?.status === "editing") return t("post.state.editing");
+  if (key === "review" && (latestOf(p)?.n || 0) > 0) return t("post.state.rereview");
+  if (key === "ready") return t(c?.scheduleDate && String(c?.caption || "").trim() ? "post.state.readyUpload" : isSoloBrand(c) ? "post.state.readySolo" : "post.state.ready");
+  return t(`post.state.${key}`, { time: p.time || "" }).trim();
 }
 
 // Where a piece stands for its client: sent and waiting on them, being

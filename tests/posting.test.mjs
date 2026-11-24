@@ -203,3 +203,43 @@ test("Video & posting: every account on its own brands; Wepeka's brands keep the
     auth.currentUser = was;
   }
 });
+
+test("review flow: someone working alone is never asked to approve their own cut; a team brand reviews, then reviews again", async () => {
+  const store = await import("../js/store.js");
+  const { auth } = await import("../js/firebase.js");
+  const { postingState, isSoloBrand, stateLabelOf, reviewQueue } = await import("../js/posting.js");
+  await store.initStore("u-solo");
+  const was = auth.currentUser;
+  try {
+    auth.currentUser = { uid: "u-solo" };
+    const solo = store.createBrand({ name: "Sendiri Saja" });
+    const team = store.createBrand({ name: "Ada Tim" });
+    store.updateBrand(team.id, { memberIds: ["u-editor"], members: { "u-editor": { role: "editor", name: "Dodi" } } });
+    assert.equal(isSoloBrand(solo), true);
+    assert.equal(isSoloBrand(store.getBrand(team.id)), false);
+
+    const pending = { versions: [v("a", "pending")], notes: [] };
+    const soloPiece = store.createContent(solo.id, { title: "Solo", status: "editing", platform: "Instagram", posting: pending });
+    const teamPiece = store.createContent(team.id, { title: "Tim", status: "editing", platform: "Instagram", posting: pending });
+    // Alone: the newest cut is simply the one to post.
+    assert.equal(postingState(store.getContent(soloPiece.id)), "ready");
+    assert.equal(stateLabelOf(store.getContent(soloPiece.id)), "Video siap");
+    // A team: the first cut waits for a review; the review list counts it.
+    assert.equal(postingState(store.getContent(teamPiece.id)), "review");
+    assert.equal(stateLabelOf(store.getContent(teamPiece.id)), "Menunggu review");
+    assert.deepEqual(reviewQueue().map((x) => x.c.id), [teamPiece.id]);
+    // A revised cut after notes: "Review ulang".
+    store.updateContent(teamPiece.id, { posting: { versions: [v("a", "revision"), v("b", "pending", { n: 1 })], notes: [] } });
+    assert.equal(stateLabelOf(store.getContent(teamPiece.id)), "Review ulang");
+    // Approved; with a date and a caption it's ready to upload.
+    store.updateContent(teamPiece.id, { posting: { versions: [v("a", "revision"), v("b", "approved", { n: 1 })], finalId: "b", notes: [] } });
+    assert.equal(stateLabelOf(store.getContent(teamPiece.id)), "Disetujui");
+    store.updateContent(teamPiece.id, { scheduleDate: "2026-12-01", caption: "Halo" });
+    assert.equal(stateLabelOf(store.getContent(teamPiece.id)), "Siap upload");
+    // A note on a solo cut still asks for changes (their own to-do).
+    store.updateContent(soloPiece.id, { posting: { versions: [v("a", "revision")], notes: [] } });
+    assert.equal(postingState(store.getContent(soloPiece.id)), "revision");
+  } finally {
+    auth.currentUser = was;
+  }
+});
