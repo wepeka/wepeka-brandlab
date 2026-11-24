@@ -177,3 +177,52 @@ test("Antrean: a tile with a cut gets a download button for the IG pick (else th
     auth.currentUser = was;
   }
 });
+
+// Siap upload (owner, 2026-11-24: "kalau orang sudah siap upload bisa
+// download videonya langsung dari brandlab trs bisa copas caption dsb").
+test("Antrean → Siap upload: only what's ready and not up yet, each with its file, its words and 'Sudah tayang'", async () => {
+  const store = await import("../js/store.js");
+  const { auth } = await import("../js/firebase.js");
+  const { render } = await import("../js/views/posting-queue.js");
+  const { uploadCutOf, hashtagsOf, markPostedByHand } = await import("../js/posting.js");
+  await store.initStore("u-siap-upload");
+  const day = (n) => store.localISODate(new Date(Date.now() + n * DAY));
+  const b = store.createBrand({ name: "Kopi Siap" });
+  const v = (id, n, status) => ({ id, n, status, kind: "video", drive: { id: `d-${id}`, ext: "mp4" } });
+  const piece = (title, posting, extra = {}) => store.createContent(b.id, { title, status: "editing", scheduleDate: day(2), platform: "Instagram", format: "Reels", posting: { type: "reels", notes: [], finalId: null, ...posting }, ...extra });
+  const ready = piece("Sudah disetujui", { versions: [v("a", 0, "revision"), v("b", 1, "approved")], finalId: "b" }, { caption: "Kopi baru!\n#kopi #pagi" });
+  piece("Masih direvisi", { versions: [v("c", 0, "revision")] });
+  piece("Belum ada video", { versions: [] });
+  const posted = piece("Sudah naik", { versions: [v("e", 0, "approved")], finalId: "e", ig: { state: "published", byHand: true } }, { status: "published", publishedDate: day(-1) });
+  const was = auth.currentUser;
+  try {
+    auth.currentUser = { uid: "u-siap-upload" };
+    assert.equal(uploadCutOf(store.getContent(ready.id)).v.id, "b", "the approved cut");
+    assert.equal(uploadCutOf(store.getContent(ready.id)).label, "Unduh video · FINAL");
+    assert.deepEqual(hashtagsOf(store.getContent(ready.id).caption), ["#kopi", "#pagi"]);
+    localStorage.setItem("posting:queueView", "upload");
+    const root = { innerHTML: "", isConnected: true, querySelector: () => null, querySelectorAll: () => [], classList: { contains: () => false } };
+    render(root, { brandId: b.id })?.();
+    const html = root.innerHTML;
+    assert.match(html, /class="pqu-list"/, "opens on Siap upload");
+    assert.match(html, /Sudah disetujui/);
+    assert.doesNotMatch(html, /Masih direvisi/);
+    assert.doesNotMatch(html, /pqu-card[^]*Sudah naik/);
+    assert.match(html, /data-u-dl="[^"]+"/, "a computer gets the download");
+    assert.match(html, /Salin hashtag \(2\)/);
+    assert.match(html, /data-u-posted=/);
+    assert.match(html, /data-view="upload"/, "the view is offered");
+    // "Sudah tayang": a post link is tidied, anything else refused.
+    assert.equal(markPostedByHand(ready.id, "bukan link"), false);
+    assert.equal(store.getContent(ready.id).status, "editing");
+    assert.equal(markPostedByHand(ready.id, "https://www.instagram.com/reel/DAbc123xyz/?igsh=x"), true);
+    const after = store.getContent(ready.id);
+    assert.equal(after.status, "published");
+    assert.equal(after.publishedUrl, "https://www.instagram.com/reel/DAbc123xyz/");
+    assert.deepEqual([after.posting.ig.state, after.posting.ig.byHand], ["published", true]);
+    assert.equal(store.getContent(posted.id).status, "published");
+  } finally {
+    auth.currentUser = was;
+    try { localStorage.removeItem("posting:queueView"); } catch { /* fine */ }
+  }
+});

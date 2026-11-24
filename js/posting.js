@@ -1415,6 +1415,127 @@ export async function downloadCut(c, v, btn) {
   }
 }
 
+// ---------------------------------------------------------------- Siap upload
+// Everything to post one piece by hand, in one place (owner, 2026-11-24:
+// "kalau orang sudah siap upload bisa download videonya langsung dari
+// brandlab trs bisa copas caption dsb dengan cepat"): the cut to post, how to
+// take it (a download on a computer; on a phone the share sheet, so it lands
+// in the gallery or straight in Instagram), and the words to paste.
+
+// The cut that goes up: the one approved (or, working alone, the newest);
+// a client gets the one sent to them. null = nothing to take yet.
+export function uploadCutOf(c) {
+  if (!c) return null;
+  if (isClientView(c)) {
+    const cp = clientPosting(postingOf(c));
+    const v = cp.versions.find((x) => x.id === cp.finalId) || latestOf(cp);
+    if (!v) return null;
+    const n = v.driveFiles?.length || 1;
+    const what = v.kind === "set" ? t("post.cl.dlSet", { n }) : v.kind === "image" ? t("post.cl.dlImage") : t("post.cl.dlVideo");
+    return { v, client: true, label: v.status === "approved" ? `${what} · FINAL` : `${what} · ${versionLabel(v)}` };
+  }
+  const v = downloadCutOf(c);
+  return v && canDownloadCut(c, v) ? { v, client: false, label: ownDownloadLabel(c, v) } : null;
+}
+
+// Save it (a computer): the same download as the tile and the client's page.
+export function downloadUploadCut(c, btn) {
+  const cut = uploadCutOf(c);
+  if (!cut || !btn || btn.disabled) return;
+  return cut.client ? clientDownload(c, cut.v, btn) : downloadCut(c, cut.v, btn);
+}
+
+// A phone hands files to its share sheet ("Simpan Video" → gallery, or
+// Instagram itself) — a plain download lands in Files, where Instagram
+// can't pick it. Only where the browser can share files.
+export function canShareFiles() {
+  try {
+    if (typeof navigator === "undefined" || !navigator.canShare || !navigator.share) return false;
+    if (typeof matchMedia === "function" && !matchMedia("(pointer: coarse)").matches) return false;
+    return navigator.canShare({ files: [new File([new Uint8Array(1)], "x.mp4", { type: "video/mp4" })] });
+  } catch {
+    return false;
+  }
+}
+// The share sheet only opens from a tap, and reading the file takes a
+// while, so it's two taps: "Siapkan" reads the cut into memory here (with
+// progress), then "Simpan / bagikan" opens the sheet at once.
+const READY_FILES = new Map(); // contentId → { files: File[], at }
+export const preparedUpload = (contentId) => READY_FILES.get(contentId) || null;
+export async function prepareUploadShare(c, onProgress = () => {}) {
+  const cut = uploadCutOf(c);
+  if (!cut) throw new Error("no cut");
+  const list = cut.client ? clientFiles(c, cut.v) : ownFiles(c, cut.v);
+  const key = postingOf(c).local?.key;
+  const files = [];
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
+    const part = (x) => onProgress((i + Math.max(0, Math.min(1, x))) / list.length);
+    let blob;
+    if (f.local) blob = await outboxFile(key, f.local);
+    else {
+      const href = cut.client ? await clientVideoURL(c, f.id, { onProgress: part }) : await driveVideoURL(f.id, { onProgress: part });
+      blob = await (await fetch(href)).blob();
+    }
+    const type = blob.type || (cut.v.kind === "video" || !cut.v.kind ? "video/mp4" : "image/jpeg");
+    files.push(new File([blob], f.name, { type }));
+    part(1);
+  }
+  // Only the last piece prepared stays in memory (a video can be 100+ MB).
+  READY_FILES.clear();
+  READY_FILES.set(c.id, { files, at: Date.now() });
+  return files;
+}
+export async function shareUpload(c) {
+  const ready = READY_FILES.get(c.id);
+  if (!ready) return false;
+  try {
+    await navigator.share({ files: ready.files, title: c.title || "" });
+    return true;
+  } catch (e) {
+    if (e?.name !== "AbortError") { console.warn("[upload] share", e); toast(t("pqu.shareFailed"), "error"); }
+    return false;
+  }
+}
+
+// The piece's own cover from Creator (a designed thumbnail), saved under
+// its code; a link that won't download opens in a new tab instead.
+export async function downloadCover(c, btn) {
+  const src = String(c?.thumbnail || "");
+  if (!/^(https:|data:image\/)/.test(src) || btn?.disabled) return;
+  const base = videoCode(c) || String(c.title || "cover").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 40);
+  const ext = (/^data:image\/(\w+)/.exec(src)?.[1] || /\.(jpe?g|png|webp)(\?|$)/i.exec(src)?.[1] || "jpg").replace("jpeg", "jpg");
+  if (btn) btn.disabled = true;
+  try {
+    const blob = await (await fetch(src)).blob();
+    const href = URL.createObjectURL(blob);
+    saveFile(href, `${base} · cover.${ext}`);
+    setTimeout(() => URL.revokeObjectURL(href), 60000);
+  } catch {
+    window.open(src, "_blank", "noopener");
+  } finally {
+    if (btn?.isConnected) btn.disabled = false;
+  }
+}
+
+// The hashtags in a caption, once each, in order — for people who put them
+// in the first comment.
+export function hashtagsOf(caption) {
+  return [...new Set(String(caption || "").match(/#[\p{L}\p{N}_]+/gu) || [])];
+}
+
+// "Sudah tayang" by hand, the link optional: the same write as the Upload
+// step's button, from wherever it's pressed. false = the link isn't one.
+export function markPostedByHand(contentId, rawLink = "") {
+  const raw = String(rawLink || "").trim();
+  const link = igPermalink(raw);
+  if (raw && !link) return false;
+  const cur = postingOf(getContent(contentId));
+  updateContent(contentId, { status: "published", publishedDate: localISODate(), ...(link ? { publishedUrl: link } : {}), posting: { ...cur, ig: { ...(cur.ig || {}), state: "published", byHand: true, postedAt: Date.now(), ...(link ? { permalink: link } : {}) } } });
+  if (link && Object.keys(cur.previews || {}).length) cleanPreviews(contentId).catch((e) => console.warn("[posting] previews not cleaned", e));
+  return true;
+}
+
 // The editor's side of "not connected yet": only the client can connect
 // the Drive the cuts go into.
 function clientGapHTML(gap) {
@@ -2296,9 +2417,7 @@ function wire(root, contentId, ui, repaint) {
   qs("#pst-posted", root)?.addEventListener("click", () => {
     const link = readLink();
     if (link === null) return;
-    const cur = postingOf(getContent(contentId));
-    updateContent(contentId, { status: "published", publishedDate: localISODate(), ...(link ? { publishedUrl: link } : {}), posting: { ...cur, ig: { ...(cur.ig || {}), state: "published", byHand: true, postedAt: Date.now(), ...(link ? { permalink: link } : {}) } } });
-    afterLink(link);
+    markPostedByHand(contentId, link);
     toast(t("post.toast.posted"));
     repaint();
   });
