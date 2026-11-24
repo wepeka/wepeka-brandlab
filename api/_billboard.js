@@ -1,5 +1,5 @@
-// WPK Billboard inside Brandlab (owner, 2026-11-24: "Menampilkan update
-// terbaru dari WPK Billboard … link menuju konten lengkap … jangan membuat
+// Wepeka Billboard inside Brandlab (owner, 2026-11-24: "Menampilkan update
+// terbaru dari Wepeka Billboard … link menuju konten lengkap … jangan membuat
 // sistem publikasi baru"). Brandlab only READS the Billboard that lives on
 // wepeka.com (wpk-dp, Supabase `billboard_posts`): its public card feed,
 // trimmed to what a card shows. Writing stays in wepeka.com's admin.

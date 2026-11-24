@@ -1,6 +1,6 @@
-// WPK Billboard (#/billboard) — the newest branding & marketing stories from
+// Wepeka Billboard (#/billboard) — the newest branding & marketing stories from
 // Wepeka's Billboard on wepeka.com, inside Brandlab (owner, 2026-11-24:
-// "Menampilkan update terbaru dari WPK Billboard, preview konten, link
+// "Menampilkan update terbaru dari Wepeka Billboard, preview konten, link
 // menuju konten lengkap, menghubungkan pengguna Brandlab dengan ekosistem
 // Wepeka"). Read-only: the stories are written and queued in wepeka.com's
 // admin; this page shows their cards (api/billboard.js) and every card opens

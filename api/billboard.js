@@ -1,4 +1,4 @@
-// GET /api/billboard — the WPK Billboard cards for Brandlab's page
+// GET /api/billboard — the Wepeka Billboard cards for Brandlab's page
 // (js/views/billboard.js). Public stories from wepeka.com, read server-side
 // so the browser needs no cross-site call; cached at the edge 10 minutes.
 // Read-only — see api/_billboard.js.
