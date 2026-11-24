@@ -68,7 +68,9 @@ async function callStream(action, body, onLine) {
     } catch {
       return;
     }
-    if (obj.done || obj.error) last = obj;
+    // The last line is {done: true, result} or {error}; a step's own
+    // `done` is a count.
+    if (obj.done === true || typeof obj.error === "string") last = obj;
     else onLine?.(obj);
   };
   for (;;) {
@@ -136,30 +138,56 @@ export async function disconnectMeta(brandId) {
 }
 
 // One server pass now: Instagram numbers, posts since connecting, followers,
-// the Page, ad spend — shown step by step in the floating panel, with the
-// counts when it's done.
-const STEP_AT = { posts: 8, account: 80, page: 87, ads: 93, save: 97 };
+// the Page, ad spend — shown step by step in the floating panel (each post's
+// picture drops in as its numbers are read), with the counts when it's done.
+const STEP_AT = { account: 80, page: 87, ads: 93, save: 97 };
 function stepLine(panel, line) {
+  if (line.step === "posts") {
+    if (Number.isFinite(line.found)) {
+      panel.step("posts", "done", t("fetch.val.posts", { n: formatNumber(line.found) }));
+      panel.progress(12);
+    } else {
+      panel.step("posts", "active");
+      panel.progress(6);
+    }
+    return;
+  }
   if (line.step === "numbers") {
     const total = Number(line.total) || 0;
     const done = Math.min(Number(line.done) || 0, total);
-    if (!total) return panel.step(t("fetch.step.noPosts"), 75);
-    return panel.step(t("fetch.step.numbers", { done: Math.max(1, done), total }), 12 + 63 * (done / total));
+    if (!total) {
+      panel.step("numbers", "done", t("fetch.val.none"));
+      return panel.progress(75);
+    }
+    panel.step("numbers", done >= total ? "done" : "active", `${done}/${total}`);
+    panel.thumb(line.thumb);
+    return panel.progress(12 + 63 * (done / total));
   }
-  if (STEP_AT[line.step]) panel.step(t(`fetch.step.${line.step}`), STEP_AT[line.step]);
+  if (STEP_AT[line.step]) {
+    panel.step(line.step, "active");
+    panel.progress(STEP_AT[line.step]);
+  }
 }
 export async function syncMetaNow(brandId) {
   const brand = getBrand(brandId);
   const ig = !!brand?.instagram?.connected;
   const fb = !!brand?.facebook?.connected;
+  const ads = !!brand?.ads?.connected;
+  const steps = [
+    ...(ig ? [{ key: "posts", label: t("fetch.s.posts") }, { key: "numbers", label: t("fetch.s.numbers") }, { key: "account", label: t("fetch.s.account") }] : []),
+    ...(fb ? [{ key: "page", label: t("fetch.s.page") }] : []),
+    ...(ads ? [{ key: "ads", label: t("fetch.s.ads") }] : []),
+    { key: "save", label: t("fetch.s.save") },
+  ];
   const panel = openFetchPanel({
     platform: ig ? "instagram" : "facebook",
     badge: ig && fb ? "facebook" : "",
     title: t(ig && fb ? "fetch.title.both" : ig ? "fetch.title.ig" : "fetch.title.fb"),
     sub: brand?.name || "",
-    firstStep: t("fetch.step.start"),
+    steps,
   });
-  panel.step("", 3);
+  panel.step(steps[0].key, "active");
+  panel.progress(3);
   try {
     const r = await callStream("sync", { brandId }, (line) => stepLine(panel, line));
     if (r?.reconnect) {

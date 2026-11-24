@@ -473,6 +473,7 @@ export async function syncBrand(d, brandId, conn, brand = null, progress = null)
     if (conn.igUserId) {
       const api = igApi(d, grant, conn, key);
       const media = await IG.listMedia(api, conn.igUserId);
+      tell({ step: "posts", found: media.length });
       const content = allContent.filter((c) => !c.platform || c.platform === "Instagram");
       const plan = IG.planSync({ media, content, connectedAt: conn.connectedAt, now });
       const total = Math.min(MAX_READS_PER_PASS, plan.link.length + plan.refresh.length + plan.create.length);
@@ -487,7 +488,8 @@ export async function syncBrand(d, brandId, conn, brand = null, progress = null)
           counts.failed++;
           return null;
         } finally {
-          tell({ step: "numbers", done: Math.min(reads, total), total });
+          // The post's picture, for the strip on the progress panel.
+          tell({ step: "numbers", done: Math.min(reads, total), total, thumb: String(m.thumbnail_url || m.media_url || "").slice(0, 1000) });
         }
       };
       for (const { content: c, media: m } of [...plan.link, ...plan.refresh]) {

@@ -366,6 +366,7 @@ const CORE = {
   "contentList.qf.screenshotLabel": { en: "Insights screenshot", id: "Screenshot Insight" },
   "contentList.qf.dropSub": { en: "or click to browse — metrics get pulled automatically", id: "atau klik buat pilih file — metriknya diambil otomatis" },
   "contentList.qf.analyzing": { en: "Reading the screenshot…", id: "Lagi baca screenshot…" },
+  "contentList.qf.analyzingPct": { en: "Reading the screenshot… {pct}%", id: "Lagi baca screenshot… {pct}%" },
   "contentList.qf.foundMetrics": { en: "Found {count} {metricWord} — double-check the numbers below before saving.", id: "Ketemu {count} {metricWord} — cek lagi angkanya di bawah sebelum simpan." },
   "contentList.qf.noMetricsFound": { en: "Couldn't confidently read any metrics — fill them in manually below.", id: "Nggak ada metrik yang kebaca dengan yakin — isi manual di bawah." },
   "contentList.qf.analyzeFailed": { en: "Couldn't analyze the image.", id: "Gagal analisis gambar." },

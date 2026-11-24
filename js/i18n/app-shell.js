@@ -385,7 +385,7 @@ export default {
   "integr.import.type.video": { en: "Video", id: "Video" },
   "integr.import.type.photo": { en: "Photo", id: "Foto" },
   "integr.import.panelTitle": { en: "Adding Instagram posts", id: "Memasukkan postingan Instagram" },
-  "integr.import.panelStep": { en: "Post {done} of {total}: {title}", id: "Postingan {done} dari {total}: {title}" },
+  "integr.import.s.add": { en: "Posts and their numbers", id: "Postingan + angkanya" },
   "integr.import.doneTitle": { en: "Posts are in!", id: "Postingan sudah masuk!" },
   "integr.import.statNew": { en: "new cards", id: "kartu baru" },
   "integr.import.statLinked": { en: "filled plans", id: "nyambung ke rencana" },

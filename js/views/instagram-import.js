@@ -216,8 +216,9 @@ export async function openInstagramImportPicker(brandId, onImported) {
       platform: "instagram",
       title: t("integr.import.panelTitle"),
       sub: brand?.name || "",
-      firstStep: t("integr.import.panelStep", { done: 1, total: toImport.length, title: titleFromMedia(toImport[0]) }),
+      steps: [{ key: "add", label: t("integr.import.s.add") }],
     });
+    panel.step("add", "active", `0/${toImport.length}`);
 
     let created = 0;
     let linked = 0;
@@ -225,7 +226,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
     let done = 0;
     for (const m of toImport) {
       const code = shortcodeFromUrl(m.permalink);
-      panel.step(t("integr.import.panelStep", { done: done + 1, total: toImport.length, title: titleFromMedia(m) }), (done / toImport.length) * 100);
+      panel.progress(3 + (done / toImport.length) * 92);
 
       const linkTarget = linkTargets.get(code);
       const publishFields = {
@@ -251,6 +252,7 @@ export async function openInstagramImportPicker(brandId, onImported) {
         created++;
       }
 
+      panel.thumb(thumbnailFromMedia(m));
       try {
         const { metrics } = await fetchMediaMetrics(ig, m);
         updateContent(target.id, { performance: metrics });
@@ -258,7 +260,8 @@ export async function openInstagramImportPicker(brandId, onImported) {
         metricFails++;
       }
       done++;
-      panel.step("", (done / toImport.length) * 100);
+      panel.step("add", done >= toImport.length ? "done" : "active", `${done}/${toImport.length}`);
+      panel.progress(3 + (done / toImport.length) * 92);
       onImported?.();
     }
 

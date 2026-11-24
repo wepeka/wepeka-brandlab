@@ -23,7 +23,6 @@ import { aiReportButtonHTML } from "../ai-report.js";
 import { openScriptBulkPdf } from "../script-pdf.js";
 import { appIconSVG } from "../app-icons.js";
 import { PLATFORM_CARDS, platformLink, platformCardName as platformName } from "../platforms.js";
-import { inlineLoaderHTML } from "../fetch-panel.js";
 
 // One table, three quick views: everything, what's live, what's still in
 // progress. Ideas/drafts are worked on in Creator — this is where you check
@@ -782,8 +781,7 @@ export function openQuickFillModal({ c, onSaved, onBack, platformKey = "" }) {
     let retFound = false;
     let lastError = "";
     for (let i = 0; i < files.length; i++) {
-      // The platform's ring (TikTok, Instagram, YouTube…) while it reads.
-      statusEl.innerHTML = inlineLoaderHTML(platformKey || c.platform, files.length > 1 ? t("ret.qf.reading", { n: i + 1, total: files.length }) : t("contentList.qf.analyzing"));
+      statusEl.innerHTML = `${loadingHTML(files.length > 1 ? t("ret.qf.reading", { n: i + 1, total: files.length }) : t("contentList.qf.analyzing"))}`;
       try {
         const dataUrl = await resizeImageFile(files[i], { maxDimension: 1400, format: "image/jpeg", quality: 0.88 });
         let result = null;
@@ -796,7 +794,7 @@ export function openQuickFillModal({ c, onSaved, onBack, platformKey = "" }) {
             useAi = false;
           }
         }
-        if (!result) result = await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = inlineLoaderHTML(platformKey || c.platform, t("contentList.qf.analyzing"), { pct }); });
+        if (!result) result = await analyzeScreenshot(dataUrl, (pct) => { statusEl.innerHTML = `${loadingHTML(t("contentList.qf.analyzingPct", { pct }))}`; });
         Object.entries(result.metrics || {}).forEach(([key, val]) => {
           const input = qs(`#qe-metric-${key}`, overlay);
           if (input && val !== null && val !== undefined) { input.value = val; metricsFound++; }
