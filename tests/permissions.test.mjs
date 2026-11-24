@@ -131,3 +131,28 @@ test("a member's app: only the apps and pages their role opens, money never held
   assert.equal(roleLabel("smm"), "Editor & Sosmed");
   assert.equal(roleLabel("editor"), "Admin");
 });
+
+// Panduan peran (owner, 2026-11-24: "ada guide dan penjelasannya dalam tabel
+// yang mudah dipahami soal role"): the guide reads the permission table
+// itself, so it can't promise what a role can't do.
+test("the role guide says exactly what the permission table allows", async () => {
+  const { guideLevel } = await import("../js/role-guide.js");
+  const { t } = await import("../js/i18n.js");
+  assert.equal(guideLevel("owner", "team"), "manage");
+  assert.equal(guideLevel("owner", "video"), "all");
+  assert.equal(guideLevel("smm", "video"), "editor", "Editor & Sosmed uploads AND approves");
+  assert.equal(guideLevel("creator", "video"), "upload");
+  assert.equal(guideLevel("klien", "video"), "approve");
+  assert.equal(guideLevel("viewer", "sales"), "none");
+  assert.equal(guideLevel("sales", "sales"), "edit");
+  assert.equal(guideLevel("admin", "team"), "none", "only the owner manages the team");
+  // Every level and module the guide can show has its words.
+  for (const role of ["owner", "admin", "creator", "smm", "sales", "viewer", "klien"]) {
+    for (const mod of ["brand", "goals", "create", "video", "publish", "report", "sales", "board", "chat", "team"]) {
+      const lv = guideLevel(role, mod);
+      const key = lv === "none" ? `rg.no.${mod}` : `rg.can.${mod}.${lv}`;
+      assert.notEqual(t(key), key, `missing text ${key}`);
+      assert.notEqual(t(`rg.lv.${lv}`), `rg.lv.${lv}`, `missing level ${lv}`);
+    }
+  }
+});

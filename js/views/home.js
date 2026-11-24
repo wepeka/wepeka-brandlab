@@ -1407,7 +1407,7 @@ function launcherHTML(ctx) {
             <p class="lh-date">${esc(date)}</p>
             <h1>${t(launcherGreetKey(now.getHours()))}${name ? `, ${esc(name)}` : ""} 👋</h1>
             <p class="lh-brandline"><b>${esc(brand.name)}</b><span>· ${t("lh.lead")}</span></p>
-            ${isOwnBrand(brand) ? "" : `<p class="lh-role">${t("team.youAre")} ${roleChipHTML(roleOfMember(brand.members?.[storeUid()]) || "viewer")}</p>`}
+            ${isOwnBrand(brand) ? "" : `<p class="lh-role">${t("team.youAre")} <button type="button" class="lh-role-btn" data-role-guide="${esc(roleOfMember(brand.members?.[storeUid()]) || "viewer")}" title="${esc(t("rg.link"))}">${roleChipHTML(roleOfMember(brand.members?.[storeUid()]) || "viewer")}</button></p>`}
           </div>
         </div>
         <div class="page-eyebrow lh-help">${guideVideoButtonHTML("home")}</div>
@@ -1442,6 +1442,11 @@ function paintLauncher(root, ctx) {
   wireRecapCard(root, { brandId, refresh });
   import("../founder-circle.js").then((m) => m.mountCircleNotice(root)).catch(() => {});
   mountBillboardPromo(root);
+  // A member taps their role to read what it can do (js/role-guide.js).
+  qs("[data-role-guide]", root)?.addEventListener("click", (e) => {
+    const role = e.currentTarget.dataset.roleGuide || "viewer";
+    import("../role-guide.js").then((m) => m.openRoleGuide({ role }));
+  });
   setPageGuide(() => runSpotlightTour(LAUNCHER_TOUR));
 
   qs("[data-today-cta]", root)?.addEventListener("click", () => { if (top) runTodayAction(top, { brandId, brand, content, refresh }); });

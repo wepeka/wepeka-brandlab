@@ -31,7 +31,7 @@ export const LEVELS = {
   brand: { none: [], view: ["view"], edit: ["view", "edit"] },
   goals: { none: [], view: ["view"], edit: ["view", "edit", "delete"] },
   create: { none: [], view: ["view"], comment: ["view", "comment"], edit: ["view", "edit", "comment", "delete"] },
-  video: { none: [], view: ["view"], comment: ["view", "comment"], upload: ["view", "upload", "comment"], approve: ["view", "comment", "revise", "approve"], all: ["view", "upload", "comment", "revise", "approve", "delete"] },
+  video: { none: [], view: ["view"], comment: ["view", "comment"], upload: ["view", "upload", "comment"], approve: ["view", "comment", "revise", "approve"], editor: ["view", "upload", "comment", "revise", "approve"], all: ["view", "upload", "comment", "revise", "approve", "delete"] },
   publish: { none: [], publish: ["view", "publish"] },
   report: { none: [], view: ["view"] },
   sales: { none: [], view: ["view"], edit: ["view", "edit", "delete"] },
@@ -47,12 +47,12 @@ export const PRESETS = {
   admin: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "all"), publish: L("publish", "publish"), report: L("report", "view"), sales: L("sales", "edit"), board: L("board", "edit"), chat: L("chat", "use") },
   creator: { brand: L("brand", "view"), goals: L("goals", "view"), create: L("create", "edit"), video: L("video", "upload"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
   // Editor & Sosmed: cuts the videos, reviews and approves them, posts.
-  smm: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "edit"), video: ["view", "upload", "comment", "revise", "approve"], publish: L("publish", "publish"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
+  smm: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "editor"), publish: L("publish", "publish"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
   sales: { brand: L("brand", "view"), goals: L("goals", "edit"), create: L("create", "view"), report: L("report", "view"), sales: L("sales", "edit"), board: L("board", "view"), chat: L("chat", "use") },
   viewer: { brand: L("brand", "view"), goals: L("goals", "view"), create: L("create", "view"), video: L("video", "view"), report: L("report", "view"), board: L("board", "view") },
   // Wepeka's clients (only Wepeka's own account invites them, api/team.js).
   klien: { brand: L("brand", "view"), create: L("create", "view"), video: L("video", "approve"), board: L("board", "view") },
-  klienEdit: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: ["view", "upload", "comment", "revise", "approve"], report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
+  klienEdit: { brand: L("brand", "edit"), goals: L("goals", "edit"), create: L("create", "edit"), video: L("video", "editor"), report: L("report", "view"), board: L("board", "edit"), chat: L("chat", "use") },
 };
 // The roles an owner picks from, in this order; the klien ones are Wepeka's.
 export const ROLE_KEYS = ["admin", "creator", "smm", "sales", "viewer"];

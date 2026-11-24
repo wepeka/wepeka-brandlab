@@ -8382,3 +8382,64 @@ body.chat-ws-docked .notes-fab:not(.is-open){ visibility:hidden; }
   .share-actions .role-chip{ min-width:0; }
   .share-actions .role-chip span{ max-width:118px; overflow:hidden; text-overflow:ellipsis; }
 }
+
+/* Panduan peran (js/role-guide.js): tap a role, read what it can do; a
+   table of every role; how videos go to a client. */
+.rg-modal .modal-body{ padding-top:6px; }
+.rg-lead{ margin:0 0 12px; color: var(--text-muted); font-size:14px; }
+.rg-pick{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.rg-pick-btn{ display:inline-flex; align-items:center; gap:7px; flex:none; padding:8px 12px; border-radius:999px; border:1px solid color-mix(in srgb, var(--rc) 40%, var(--border)); background: color-mix(in srgb, var(--rc) 10%, var(--surface)); color: var(--text); font:inherit; font-size:13px; font-weight:800; cursor:pointer; }
+.rg-pick-btn svg{ color: var(--rc); }
+.rg-pick-btn.is-on{ background: var(--rc); border-color: var(--rc); color:#fff; box-shadow: 0 8px 18px -12px var(--rc); }
+.rg-pick-btn.is-on svg{ color:#fff; }
+.rg-card{ border-radius:18px; padding:16px; border:1px solid color-mix(in srgb, var(--rc) 35%, var(--border)); background: linear-gradient(160deg, color-mix(in srgb, var(--rc) 12%, var(--surface)), var(--surface) 60%); }
+.rg-card-head{ display:flex; align-items:center; gap:12px; }
+.rg-card-head b{ display:block; font-size:18px; }
+.rg-card-head small{ display:block; font-size:13px; color: var(--text-muted); }
+.rg-card-ic{ display:grid; place-items:center; width:44px; height:44px; flex:none; border-radius:14px; color:#fff; background: linear-gradient(135deg, color-mix(in srgb, var(--rc) 75%, #fff), var(--rc)); }
+.rg-note{ display:flex; gap:6px; align-items:flex-start; margin:12px 0 0; font-size:13px; color: var(--text-muted); }
+.rg-note svg{ flex:none; margin-top:2px; }
+.rg-lists{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px; }
+.rg-list{ border-radius:14px; padding:10px 12px; background: var(--surface-2); }
+.rg-list-title{ display:flex; align-items:center; gap:6px; font-size:13px; font-weight:800; margin-bottom:4px; }
+.rg-list.is-can .rg-list-title{ color: var(--health-good); }
+.rg-list.is-cant .rg-list-title{ color: var(--text-faint); }
+.rg-list ul{ margin:0; padding-left:18px; display:grid; gap:4px; font-size:13.5px; line-height:1.45; }
+.rg-list.is-cant ul{ color: var(--text-muted); }
+.rg-h{ display:flex; align-items:center; gap:8px; margin:22px 0 4px; font-size:16px; }
+.rg-sub{ margin:0 0 10px; font-size:12.5px; color: var(--text-faint); }
+.rg-table-wrap{ overflow-x:auto; border-radius:14px; border:1px solid var(--border); }
+.rg-table{ width:100%; border-collapse:separate; border-spacing:0; font-size:12px; min-width:680px; }
+.rg-table th, .rg-table td{ padding:8px 5px; border-bottom:1px solid var(--border-soft, var(--border)); text-align:center; vertical-align:middle; }
+.rg-table thead th{ position:sticky; top:0; background: var(--surface); font-size:12px; }
+.rg-th{ display:inline-flex; flex-direction:column; align-items:center; gap:4px; color: var(--text); }
+.rg-th svg{ color: var(--rc); }
+.rg-table tbody th, .rg-table thead th:first-child{ position:sticky; left:0; z-index:1; text-align:left; background: var(--surface); min-width:132px; }
+.rg-table tbody th b{ display:block; font-size:13px; }
+.rg-table tbody th small{ display:block; font-size:11.5px; font-weight:500; color: var(--text-faint); }
+.rg-table tbody tr:last-child th, .rg-table tbody tr:last-child td{ border-bottom:0; }
+.rg-cell span{ display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:3px 8px; border-radius:999px; font-weight:800; line-height:1.2; text-align:center; }
+.rg-cell.is-edit span{ background: var(--health-good-soft); color: var(--health-good); }
+.rg-cell.is-upload span{ background: color-mix(in srgb, #3B9BFF 16%, transparent); color:#3B9BFF; }
+.rg-cell.is-comment span{ background: color-mix(in srgb, #FFA52B 18%, transparent); color: color-mix(in srgb, #FFA52B 80%, var(--text)); }
+.rg-cell.is-view span{ background: var(--surface-2); color: var(--text-muted); }
+.rg-cell.is-none{ color: var(--text-faint); }
+.rg-flow{ margin:8px 0 0; padding:0; list-style:none; counter-reset: rg; display:grid; gap:8px; }
+.rg-flow li{ counter-increment: rg; display:grid; grid-template-columns: 30px 1fr; column-gap:10px; align-items:start; padding:10px 12px; border-radius:14px; background: var(--surface-2); }
+.rg-flow li::before{ content: counter(rg); grid-row: span 2; display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background: var(--accent); color:#1b1a17; font-weight:800; font-size:13px; }
+.rg-flow li b{ font-size:14px; }
+.rg-flow li span{ font-size:13px; color: var(--text-muted); }
+.rg-foot{ display:flex; gap:6px; align-items:flex-start; margin:10px 0 0; font-size:12.5px; color: var(--text-faint); }
+.rg-foot svg{ flex:none; margin-top:2px; }
+.rg-link{ display:inline-flex; align-items:center; gap:6px; padding:0; border:0; background:none; color: var(--accent); font:inherit; font-size:13px; font-weight:800; cursor:pointer; }
+.rg-link:hover{ text-decoration: underline; }
+.lh-role .role-chip{ cursor:pointer; }
+@media (max-width: 640px){
+  .rg-pick{ flex-wrap:nowrap; overflow-x:auto; padding-bottom:4px; scrollbar-width:thin; }
+  .rg-lists{ grid-template-columns: 1fr; }
+  .rg-card{ padding:14px; }
+  .rg-card-head b{ font-size:16px; }
+}
+.lh-role-btn{ padding:0; border:0; background:none; cursor:pointer; }
+.role-opt-guide{ margin-top:4px; border-top:1px solid var(--border); border-radius:0 0 12px 12px; color: var(--accent); }
+.role-opt-guide svg{ color: var(--accent); }

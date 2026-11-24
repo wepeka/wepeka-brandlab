@@ -18,6 +18,7 @@ import { qs, qsa, toast, escapeHtml } from "../dom.js";
 import { openModal, closeOverlay, confirmDialog } from "../modals.js";
 import { t, getLang } from "../i18n.js";
 import { roleChipHTML, rolePickerHTML, wireRolePicker } from "../role-look.js";
+import { roleGuideLinkHTML, wireRoleGuideLinks } from "../role-guide.js";
 import { ROLE_KEYS, CLIENT_KEYS, MODULES, LEVELS, presetKey, presetPerms, memberPerms, levelOf, withLevel, roleOfMember } from "../permissions.js";
 
 const DAY = 86400000;
@@ -114,11 +115,12 @@ export function openAccessDialog({ brand, uid, onSaved } = {}) {
     </label>`;
   const overlay = openModal({
     title: t("perm.title", { name: m.name || m.email || "" }),
-    bodyHTML: `<p class="perm-now">${roleChipHTML(roleOf(m))}</p><p class="hint" style="display:block;margin:0 0 12px;">${t("perm.lead", { brand: escapeHtml(brand.name || "") })}</p>
+    bodyHTML: `<p class="perm-now">${roleChipHTML(roleOf(m))} ${roleGuideLinkHTML(m.preset || "")}</p><p class="hint" style="display:block;margin:0 0 12px;">${t("perm.lead", { brand: escapeHtml(brand.name || "") })}</p>
       <div class="perm-list">${PANEL_MODULES.map(row).join("")}</div>
       <p class="hint" style="display:block;margin-top:12px;">${t("perm.note")}</p>`,
     footHTML: `<button class="btn btn-ghost" data-perm-reset>${t("perm.reset", { role: roleName(m.preset || roleOf(m)) })}</button><button class="btn btn-primary" data-perm-save>${t("common.save")}</button>`,
   });
+  wireRoleGuideLinks(overlay);
   overlay.querySelectorAll("[data-perm]").forEach((sel) => sel.addEventListener("change", () => { p = withLevel(p, sel.dataset.perm, sel.value); }));
   const save = async (next, { preset = null } = {}) => {
     const btns = overlay.querySelectorAll("button");
@@ -371,6 +373,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
             ${rolesHere().map((r, i) => `<label class="checkbox-chip role-radio"><input type="radio" name="inv-role" value="${r}" ${i === 0 ? "checked" : ""} />${roleChipHTML(r)}</label>`).join("")}
           </div>
           <p class="hint" id="inv-role-hint" style="display:block;margin-top:8px;">${roleHint(rolesHere()[0])}</p>
+          <p style="margin:4px 0 0;">${roleGuideLinkHTML()}</p>
         </div>
         ${Number.isFinite(seats.limit) ? `<p class="hint" style="display:block;">${t("team.inviteModal.seatsLeft", { n: seats.left })}</p>` : ""}
         <div class="auth-error" id="inv-error" style="display:none;"></div>
@@ -389,6 +392,7 @@ export async function openInviteModal({ brandId = null, onDone = null } = {}) {
     err.style.display = msg ? "" : "none";
   };
   qs("[data-cancel]", overlay).addEventListener("click", () => closeOverlay(overlay));
+  wireRoleGuideLinks(overlay, () => qs("input[name=inv-role]:checked", overlay)?.value);
   qsa("input[name=inv-role]", overlay).forEach((r) => r.addEventListener("change", () => {
     qs("#inv-role-hint", overlay).textContent = roleHint(r.value);
   }));
@@ -515,6 +519,7 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
         <button class="btn btn-primary" id="share-invite" type="submit">${t("share.invite")}</button>
       </form>
       <p class="hint share-role-hint" id="share-role-hint" style="display:block;margin:8px 0 0;">${escapeHtml(roleHint(qs("#share-role", overlay)?.dataset.roleValue || wantRole))}</p>
+      <p style="margin:6px 0 0;">${roleGuideLinkHTML()}</p>
       <div class="auth-error" id="share-error" style="display:none;margin-top:8px;"></div>
       ${result ? `
         <div class="share-result">
@@ -568,6 +573,8 @@ export async function openShareDialog({ brandId = null, role = "" } = {}) {
       paint();
     });
     qs("[data-share-team]", overlay)?.addEventListener("click", () => closeOverlay(overlay));
+    // The whole role guide, opened on the role picked.
+    wireRoleGuideLinks(overlay, () => qs("#share-role", overlay)?.dataset.roleValue);
     // What the picked role may do, under the picker.
     wireRolePicker(qs("#share-role", overlay), { roles: rolesHere(), hint: roleHint, onPick: (role) => { const h = qs("#share-role-hint", overlay); if (h) h.textContent = roleHint(role); } });
     qs("#share-add", overlay)?.addEventListener("submit", async (e) => {

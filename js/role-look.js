@@ -55,7 +55,12 @@ export function wireRolePicker(btn, { roles, hint = (r) => "", onPick } = {}) {
           <span class="role-opt-text"><b>${escapeHtml(roleLabel(role))}</b><small>${escapeHtml(hint(role) || "")}</small></span>
           ${role === current ? icon("check", { size: 15 }) : ""}
         </button>`;
-    }).join("");
+    }).join("") + `<button type="button" class="role-opt role-opt-guide" data-guide>${icon("help", { size: 15 })}<span class="role-opt-text"><b>${escapeHtml(t("rg.link"))}</b></span></button>`;
+    // The whole guide, opened on the role shown (js/role-guide.js).
+    menu.querySelector("[data-guide]")?.addEventListener("click", () => {
+      closeMenu();
+      import("./role-guide.js").then((m) => m.openRoleGuide({ role: current })).catch(() => {});
+    });
     menu.querySelectorAll("[data-pick]").forEach((o) => o.addEventListener("click", () => {
       const role = o.dataset.pick;
       closeMenu();
