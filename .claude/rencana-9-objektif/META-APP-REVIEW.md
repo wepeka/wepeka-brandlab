@@ -1,209 +1,284 @@
-# Brandlab × Meta: setup, env, dan App Review
+# Paket App Review Meta: Brandlab (app "wepeka")
 
-Tanggal: 24 November 2026
-Kode: branch lokal `meta-connect-1124` (di atas `brandlab-9-objektif-1124` 8451551). **Belum di-push, belum dideploy.**
-App Meta: **wepeka** `1996512847700669` (Business, Published, Tech Provider). Instagram app ID (Instagram Login): `2167626837971435`.
+Versi 25 November 2026. Menggantikan versi 24 Nov.
+Dasar: riset dokumentasi resmi Meta tanggal 25 Nov 2026, semua bersumber. Ringkasan sumbernya ada di §11. Riset lengkap ada di file catatan sesi `meta-app-review-research-2026-11-25.md`.
 
-Isi dokumen:
-1. Yang sudah dibangun (ringkas)
-2. Pilihan tipe token dan alasannya
-3. Langkah di dashboard Meta (Configuration FBLB, redirect URI, callback)
-4. Env Vercel yang kamu isi sendiri
-5. Urutan go-live sampai App Review
-6. Teks App Review per izin (bahasa Inggris, siap tempel)
-7. Naskah screencast per izin (kamu yang merekam)
-8. Yang belum bisa dicek dari sini
+App Meta: **wepeka** `1996512847700669`. Jenis Business, sudah Business-verified, Tech Provider, Published.
 
 ---
 
-## 1. Yang sudah dibangun
+## 0. Ringkasnya
 
-- **Pengaturan → Akun Meta** (`#/settings/meta`): satu kartu per brand yang boleh kamu atur. Dua tombol:
-  - **Hubungkan lewat Facebook** (utama, Facebook Login for Business): Instagram profesional + Halaman Facebook + akun iklan dalam satu login. Setelah login, muncul jendela **Pilih akun untuk {brand}**. Pilihannya eksplisit: Instagram, Halaman, dan akun iklan, masing-masing bisa "Tidak pakai".
-  - **Pakai Instagram saja** (Instagram Login): untuk akun IG tanpa Halaman. Langsung tersambung, tanpa jendela pilih.
-  - Brand berikutnya bisa memakai login Facebook yang sama ("Pakai login Meta yang sudah ada?") tanpa login lagi.
-  - Kartu yang sudah tersambung menampilkan akun, ringkasan angka (pengikut dan jangkauan), waktu sinkron terakhir, serta tombol **Sinkron sekarang**, **Ganti akun**, dan **Putuskan**.
-- **Brankas token di server** (porting dari `feature/instagram-auto-sync` 1e9f5da + c3db5b2, tidak di-merge mentah):
-  - Token dienkripsi AES-256-GCM dengan `IG_TOKEN_KEY`, disimpan di koleksi `metaGrants`, `metaConnections`, `metaOauthStates`, dan `metaDeletions` yang tertutup untuk semua client.
-  - Dokumen brand hanya berisi nama dan ID (`brand.instagram`, `brand.facebook`, `brand.ads`).
-  - Token lama yang kamu tempel di form brand tetap dipakai posting akun Wepeka sampai brand itu dihubungkan dengan cara baru. Setelah itu token lama dihapus otomatis.
-- **Satu endpoint `/api/instagram/<action>`**: connect, callback, assets, select, disconnect, sync, graph (proxy baca saja), cron, deauthorize, data-deletion, deletion-status. `post.js` dan `webhook.js` yang sudah ada tetap fungsi terpisah.
-- **Cron malam** `/api/instagram/cron` jam 03.00 WIB (20:00 UTC). Isinya:
-  - refresh token Instagram Login;
-  - angka konten bulan ini, plus postingan baru sejak tersambung (otomatis jadi kartu, atau ditautkan ke kartu dengan caption yang sama);
-  - pengikut dan jangkauan Instagram serta Halaman;
-  - angka video Facebook yang diposting dari Brandlab;
-  - **biaya iklan per konten ke Sales**: pengeluaran "Iklan" dengan sumber otomatis, plus "Dilaporkan Meta: N pembelian · Rp X" yang tidak dijumlahkan ke penjualan. Hanya akun iklan dalam Rupiah.
-- **Posting untuk semua user** (bukan hanya admin):
-  - Siapa yang boleh: pemilik, Admin, dan Editor & Sosmed (izin **Posting**).
-  - Di Creator → langkah Upload: **Jadwalkan ke Instagram**, **Posting sekarang**, dan **Bagikan juga ke Facebook**.
-  - Cut yang dipakai adalah cut yang disetujui (atau cut terbaru untuk brand tanpa tim), diambil dari Google Drive pemilik. Akun Wepeka tetap memakai folder Mac seperti sebelumnya.
-- **Izin per peran** (§2.1, sama di app dan server):
+- **Status sekarang di dashboard: "Currently ineligible for submission".** Penyebabnya ikon app 1024×1024 belum ada.
+- **Draf pengajuan berisi 29 izin dan fitur. Yang dipakai Brandlab hanya 9**, ditambah `public_profile`. Sisanya harus dibuang. Meta menulis, "Selecting unneeded permissions is a common reason for rejection."
+- **Ajukan hanya 9 izin Facebook Login for Business (FBLB).** Izin Instagram Login (`instagram_business_*`) jangan ikut dulu, karena Meta menulis: *"Your app can either use Facebook Login or Instagram Login but not both."* Tombol "Pakai Instagram saja" sudah aku sembunyikan dari akun reviewer.
+- **Reviewer Meta tidak boleh diberi akun Facebook/Instagram pribadimu.** Mereka memakai akun uji Meta sendiri. Yang kamu berikan cukup **akun Brandlab** (email + password) yang aktif dan sudah dibuka fitur Meta-nya.
+- **Tiap izin wajib punya minimal 1 panggilan API sukses**, paling lambat 2 hari sebelum submit dan dalam 30 hari terakhir. Kalau belum ada, tombol "Request advanced access" tetap abu-abu. Untuk `ads_read`, `pages_manage_posts`, dan `instagram_content_publish` panggilannya **belum ada**.
+- **Satu screencast per izin**, UI Brandlab dalam bahasa Inggris, tanpa suara, minimal 1080p, lebar layar maksimal 1440.
+- **Meta mereview seluruh app**, termasuk ikon, nama, kebijakan privasi, dan URL hapus data. Pengajuan tidak bisa diedit setelah dikirim. Keputusan biasanya keluar dalam seminggu.
 
-  | Aksi | Siapa |
-  |---|---|
-  | Hubungkan, pilih akun, putuskan | Pemilik, atau anggota dengan My Brand **edit** + **Posting** (peran Admin) |
-  | Sinkron sekarang | Izin Posting atau Create edit |
-  | Baca lewat proxy (impor postingan, feed Antrean) | Semua anggota yang aksesnya aktif |
-  | Posting | Izin Posting |
-  | Biaya iklan | Hanya yang punya akses Sales (disimpan di `sales`, bukan di dokumen brand) |
+Yang sudah aku siapkan di kode (25 Nov, commit lokal, belum di-push):
+- Permintaan hapus data lewat Meta kini juga menghapus angka, ID postingan, thumbnail, riwayat pengikut, dan biaya iklan otomatis yang berasal dari Meta. Kartu konten milik user tetap ada.
+- Sales menampilkan **tayangan dan klik** iklan, di samping biaya dan pembelian. Ini syarat screencast `ads_read`.
+- "Pakai Instagram saja" hanya muncul untuk admin dan akun bertanda `instagramBeta`.
 
-- **Masih dikunci sampai App Review lolos.** Saat ini hanya admin dan akun dengan `metaBeta: true` (atau `instagramBeta: true`) di `accounts/{uid}` yang bisa membukanya. Untuk membuka ke semua: `META_FOR_EVERYONE = true` di `js/account.js` + env `META_OPEN=1`.
-- **Tes:** 32 tes baru (`tests/meta-connect.test.mjs`). Suite 1420/1422. Yang gagal hanya 2 tes lama: "Beranda Pro" (sudah gagal sebelumnya) dan `data-layer`, yang lulus 39/39 bila dijalankan di folder tanpa spasi. Build lulus.
-- **Harness lokal:** router asli + Meta palsu. Jalur Facebook, jalur Instagram, pilih akun, pakai login lagi, sinkron, impor, posting dari Drive, Sales, dan Putuskan sudah dicoba di laptop dan HP 390 px.
+---
 
-## 2. Tipe token: business integration system user (BISU)
+## 1. Urutan kerja (centang satu per satu)
 
-Sumber: developers.facebook.com/docs/facebook-login/facebook-login-for-business ("Supported access tokens"), dibaca 24 Nov 2026.
+**A. Dashboard Meta** (kamu, ±15 menit). Detailnya di §2.
+- [ ] Upload ikon 1024×1024, tanpa logo Facebook/Instagram.
+- [ ] Isi Terms of Service URL, App domains, dan platform Website.
+- [ ] Buang 19 izin/fitur yang tidak dipakai dari draf App Review.
 
-- Menurut Meta, **user access token** dipakai "if your app takes actions in real time, based on input from the user". Token ini berumur pendek, dan sekitar 60 hari setelah ditukar.
-- Menurut Meta, **BISU token** dipakai "if your app performs programmatic, automated actions on your business clients' assets without having to rely on input from an app user, or require re-authentication at a future date". Token ini khusus Tech Provider, defaultnya tidak kedaluwarsa, dan klien memilih aset persis (Page, IG, ad account) di jendela Meta.
+**B. Kebijakan privasi wepeka.com.** Teks tambahannya sudah jadi (§3); tinggal dipasang dan di-deploy di repo wpk-dp.
 
-**Pilihan: BISU** ("System-user access token", masa berlaku **Never**). Alasannya:
-1. Brandlab bekerja tanpa user di depan layar: posting terjadwal dijalankan cron per menit, sinkron jalan tiap malam. Ini persis kasus BISU. Dengan user token, posting terjadwal dan sinkron akan mati diam-diam setelah 60 hari kalau user tidak login ulang.
-2. Wepeka sudah Tech Provider. BISU memang khusus Tech Provider, dan Meta merekomendasikannya untuk aplikasi yang melayani bisnis klien.
-3. Aksesnya didelegasikan eksplisit per aset, jadi lebih sempit daripada user token yang mewarisi semua akses orangnya. Klien bisa mencabutnya sendiri di Business Settings → Integrations → Connected apps.
-4. "Instagram API with Unified Login" (FBLB + BISU, ditandai "recommended for new integrations") bahkan tidak butuh Page. Sementara itu Meta melabeli "API setup with Instagram login" sebagai LEGACY.
+**C. Push kode Brandlab ke produksi.** Isinya: panel tarik data, Import baru, hapus data, Sales, dan tombol IG disembunyikan. Push hanya setelah kamu bilang "push".
 
-**Konsekuensinya:** klien harus punya (atau membuat) **business portfolio**. Untuk yang tidak mau, ada tombol **Pakai Instagram saja**.
+**D. Panggilan API nyata** untuk izin yang belum punya (§4), **minimal 2 hari sebelum submit**.
 
-**Cadangan:** kodenya juga menerima configuration bertipe user token. Server membedakan keduanya lewat `/me?fields=client_business_id`. Kalau user token, server menukarnya ke token 60 hari. Kerja Instagram dan Halaman tetap memakai Page token (tidak kedaluwarsa), sementara iklan berhenti setelah 60 hari dan kartu meminta "Hubungkan lagi".
+**E. Akun reviewer Brandlab + brand demo** (§5).
 
-## 3. Langkah di dashboard Meta
+**F. Rekam 9 screencast** (§6).
 
-Nama menu di dashboard bisa sedikit berbeda dari yang ditulis di sini. Yang penting isiannya.
+**G. Isi formulir App Review**: teks per izin (§7), instruksi reviewer (§8), dan pertanyaan data handling (§9). Lalu **Submit**.
 
-### 3a. Tambahkan izin yang belum ada di use case
-Di app 1996512847700669 → **Use cases**:
-- Use case Facebook Login for Business / Pages: pastikan `pages_manage_posts` dan `read_insights` ada. Menurut rencana keduanya belum ada di draf.
-- Hapus dari draf App Review semua yang tidak ada di daftar §6 (Threads, katalog, branded content, Human Agent, Public Content Access, `ads_management`, izin pesan/komentar).
+**H. Selama direview: jangan ubah fitur Meta di Brandlab.** Meta menulis bahwa perubahan setelah submit "may require re-review".
 
-### 3b. Buat Configuration (halaman business-login/configurations masih kosong)
-**Facebook Login for Business → Configurations → Create configuration**:
-1. **Name:** `Brandlab – Hubungkan akun Meta`
-2. **Login variation:** General
-3. **Access token:** **System-user access token**, **Token expiration: Never**
-4. **Assets:** Pages, Instagram accounts, Ad accounts
-5. **Permissions** (9, tidak lebih): `instagram_basic`, `instagram_manage_insights`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement`, `business_management`, `pages_manage_posts`, `read_insights`, `ads_read`
-6. **Create**, lalu salin **Configuration ID** ke env `META_LOGIN_CONFIG_ID`.
+---
 
-### 3c. Redirect URI dan callback
-Satu redirect untuk kedua jalur:
+## 2. Dashboard Meta: yang harus diubah
 
-| Di mana | Isi |
-|---|---|
-| Facebook Login for Business → **Settings** → Valid OAuth Redirect URIs | `https://brandlab.wepeka.com/api/instagram/callback` |
-| (di halaman yang sama) Client OAuth login **On**, Web OAuth login **On**, Enforce HTTPS **On**, Use Strict Mode **On**, Login with JavaScript SDK **Off** | |
-| Facebook Login for Business → Settings → **Deauthorize callback URL** | `https://brandlab.wepeka.com/api/instagram/deauthorize` |
-| App settings → Basic → **Data deletion callback URL** (sudah diisi 29 Okt, cek saja) | `https://brandlab.wepeka.com/api/instagram/data-deletion` |
-| Instagram → API setup with Instagram login → Business login settings: redirect, deauthorize, data deletion (**sudah diisi 29 Okt**) | sama dengan tiga URL di atas |
+**App settings → Basic:**
 
-Kalau mau mencoba di preview Vercel: tambahkan `https://<preview>.vercel.app/api/instagram/callback` ke kedua daftar redirect, lalu set `META_REDIRECT_URI` di env Preview. Lebih sederhana mencoba langsung di brandlab.wepeka.com dengan akunmu (fitur masih terkunci untuk user lain).
-
-## 4. Env Vercel (project content-os, Production). Kamu isi sendiri.
-
-| Nama | Isi | Dari mana |
+| Kolom | Sekarang | Isi menjadi |
 |---|---|---|
-| `META_APP_ID` | `1996512847700669` | App settings → Basic |
-| `META_APP_SECRET` | (rahasia) | App settings → Basic → App secret → Show |
-| `META_LOGIN_CONFIG_ID` | ID dari langkah 3b | Configurations |
-| `IG_APP_ID` | `2167626837971435` | Instagram → API setup with Instagram login |
-| `IG_APP_SECRET` | (rahasia) | idem → Instagram app secret |
-| `IG_TOKEN_KEY` | hasil `openssl rand -base64 32` | buat sendiri di Terminal. **Jangan pernah diganti.** Kalau diganti, semua brand harus menyambung ulang. |
-| `CRON_SECRET` | sudah ada | dipakai juga oleh `/api/instagram/cron` |
-| `META_OPEN` | **jangan diisi dulu**. Isi `1` setelah App Review lolos. | |
-| `META_REDIRECT_URI` | opsional, hanya untuk domain lain | |
+| App icon | kosong (ini yang memblokir) | PNG/JPG 1024×1024, tanpa logo FB/IG. Pakai logo Wepeka/Brandlab. |
+| Display name | wepeka | Boleh tetap. Jangan pakai kata Facebook/Instagram/IG/Gram. |
+| App domains | kosong | `wepeka.com` dan `brandlab.wepeka.com` |
+| Terms of Service URL | kosong | `https://www.wepeka.com/syarat-ketentuan` |
+| Privacy policy URL | sudah diisi | tetap `https://www.wepeka.com/kebijakan-privasi`, tapi isinya ditambah (§3) |
+| User data deletion | callback sudah diisi | tetap |
+| Category | Business and pages | tetap |
+| Add platform | belum ada | **Website** → Site URL `https://brandlab.wepeka.com` |
 
-Rahasia tidak pernah ditulis di kode, LOG, atau dokumen ini.
+Kalau formulir App Review menanyakan **App Purpose**, pilih **Clients**.
 
-## 5. Urutan go-live sampai App Review
+**Review → App Review → hapus (ikon tong sampah) 19 item ini:**
 
-1. Kamu cek, lalu bilang "push". Branch `meta-connect-1124` naik (preview dulu kalau mau). Tidak perlu deploy rules karena koleksi baru sudah tertutup secara default. Blok di `firestore.rules` hanya menuliskannya secara eksplisit.
-2. Isi env (§4) dan buat Configuration (§3), lalu redeploy supaya env terbaca.
-3. Hubungkan brand-mu sendiri lewat **Pengaturan → Akun Meta**. Admin sudah otomatis boleh. Selama Standard Access, hanya akun yang punya peran di app Meta yang bisa login.
-4. Untuk reviewer: buat akun Brandlab khusus reviewer (email @wepeka.com), set `metaBeta: true` di `accounts/{uid}`, dan siapkan satu brand contoh dengan satu video yang sudah disetujui di Drive.
-5. Rekam screencast (§7), kirim App Review dengan teks §6. Meta kini mereview seluruh app dan pengajuan tidak bisa diedit, jadi pastikan semuanya lengkap dulu.
-6. Setelah lolos (Advanced Access), buka untuk semua: `META_FOR_EVERYONE = true` + `META_OPEN=1`. **Di commit yang sama**, tambahkan entri di `api/_updates.js` (Cara pakai + screenshot) sesuai aturan pengumuman. Entri itu sengaja belum dibuat sekarang karena user biasa belum bisa memakai fitur ini.
+`instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_insights`, `instagram_business_manage_messages`, `instagram_business_manage_comments`, `instagram_manage_messages`, `instagram_manage_comments`, `instagram_branded_content_ads_brand`, `instagram_branded_content_brand`, `instagram_branded_content_creator`, `instagram_creator_marketplace_discovery`, `threads_business_basic`, `catalog_management`, `ads_management`, `email`, `Human Agent`, `Marketing API Access Tier`, `Business Asset User Profile Access`, `Instagram Public Content Access`.
 
-## 6. Teks App Review per izin (tempel apa adanya)
+**Yang tetap ada (10):**
 
-Pembuka umum (kolom "App description / how the app uses data"):
-> Wepeka Brandlab (brandlab.wepeka.com) is a content-planning web app for small businesses and creators in Indonesia. A brand owner connects their Instagram professional account, Facebook Page and Meta ad account once, then plans, schedules and publishes posts from Brandlab and sees each post's performance and ad spend next to their own sales records. Tokens are stored encrypted on our server and never sent to the browser. Users can disconnect at any time in Settings → Meta accounts, and we honour deauthorization and data-deletion callbacks.
+`instagram_basic`, `instagram_manage_insights`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `read_insights`, `business_management`, `ads_read`, `public_profile`.
 
-**Facebook Login for Business**
+Menurut FAQ FBLB, `public_profile` wajib punya Advanced Access sebelum app FBLB live.
 
-- **instagram_basic**
-  > We read the connected Instagram professional account's username, profile and media list (id, caption, permalink, timestamp, thumbnail). The username is shown in Settings → Meta accounts so the user can confirm which account is connected, and the media list lets the user import their existing posts into Brandlab's content list and see their profile grid in the Video Queue.
-- **instagram_manage_insights**
-  > We read insights for the user's own posts (views, reach, saves, shares, reposts, follows, profile visits) and account-level reach and follower count. They are shown on each post in Brandlab's content list, in the Report page, and used for the user's follower goals. A server job refreshes them once a day.
-- **instagram_content_publish**
-  > When the user presses "Post now" or "Schedule to Instagram" on an approved video in Brandlab's Creator (Upload step), our server creates a media container from the user's own video and publishes it at the time the user chose. Nothing is posted without that explicit action.
-- **pages_show_list**
-  > After Facebook Login for Business, we list the Facebook Pages the user shared with Brandlab so they can pick which Page belongs to each brand (Settings → Meta accounts → "Pick the accounts").
-- **pages_read_engagement**
-  > We read the selected Page's name and follower count, and the likes, comments and views of videos the user published to that Page from Brandlab, to show them on the brand's Meta card and on each post's numbers.
-- **business_management**
-  > Our Facebook Login for Business configuration uses a business integration system user token, so clients grant Brandlab access to the Instagram accounts, Pages and ad accounts owned by their business portfolio. We use this permission only to read which assets the client assigned to Brandlab and show them in the account picker. We do not create, change or delete anything in the client's business portfolio.
-- **pages_manage_posts**
-  > When the user turns on "Also share to Facebook" before posting, we publish the same approved video (or photos) to the selected Facebook Page right after Instagram, with the caption the user wrote. Only on that explicit action.
-- **read_insights**
-  > We read the selected Page's 28-day reach and the Page videos' insights, and show them on the brand's Meta card and in the follower/reach numbers Brandlab uses for the user's Facebook goals.
-- **ads_read**
-  > We read spend, impressions, clicks and Meta-reported purchases for the ads in the ad account the user selected, and match each ad to the Instagram post it promotes. Spend appears in the user's Sales page as an automatic "Ads" expense next to that post, with Meta-reported purchases shown separately (never added to the user's own sales). Only team members the owner gave Sales access can see it. We never create or edit ads.
+Catatan:
+- Menghapus izin dari draf App Review **tidak** mematikan auto-DM @winkhsin. Akun yang punya peran di app tetap memakai Standard Access.
+- Kalau dashboard memaksa menambah `pages_read_user_content` sebagai dependency `instagram_basic`, ikuti saja. Di deskripsinya tulis "required by instagram_basic".
 
-**Instagram Login** (akun IG tanpa Page)
+---
 
-- **instagram_business_basic**: sama dengan `instagram_basic` di atas. Pakai kalimat yang sama, ganti "Facebook Login for Business" menjadi "Instagram Login".
-- **instagram_business_manage_insights**: sama dengan `instagram_manage_insights`.
-- **instagram_business_content_publish**: sama dengan `instagram_content_publish`.
+## 3. Kebijakan privasi: bagian yang harus ditambah
 
-Langkah untuk reviewer (kolom "Testing instructions"):
-> 1. Go to https://brandlab.wepeka.com and sign in with the test account below.
-> 2. Open the ⋮ menu → Settings → "Akun Meta" (Meta accounts).
-> 3. On the brand "<nama brand contoh>", click "Hubungkan lewat Facebook" (Connect with Facebook) and finish Facebook Login for Business with your test business, sharing an Instagram professional account, a Page and an ad account.
-> 4. In "Pilih akun untuk …" (Pick the accounts), select them and click "Simpan" (Save). Click "Sinkron sekarang" (Sync now) to load numbers.
-> 5. Publishing: Create → Creator → the piece "<judul>" → step 5 Upload → tick "Bagikan juga ke Facebook" → "Posting sekarang" (Post now).
-> 6. Ad spend: My Brand → Sales → "Konten yang menghasilkan uang".
-> 7. Instagram Login: on another brand click "Pakai Instagram saja" (Instagram only).
-> Test account: <email> / <password> (we can switch the interface to English: Settings → Language).
+Menurut Meta, kebijakan privasi wajib menjelaskan **data Meta apa yang diambil, untuk apa, dan cara meminta penghapusan**. Halaman wepeka.com/kebijakan-privasi sekarang belum menyebut data Instagram, Halaman, maupun iklan.
 
-## 7. Naskah screencast per izin
+Teks lengkapnya (Indonesia + English) ada di `.claude/rencana-9-objektif/privacy-meta-section.md`. Pasang sebagai bagian baru di `src/app/(store)/kebijakan-privasi/page.tsx` (repo `wepeka/wpk-dp`, branch master).
 
-Yang merekam kamu sendiri. Aturan Instagram tetap berlaku: Claude tidak mengoperasikan Instagram di browser mana pun.
+Ganti `[email kontak Wepeka]` dengan email yang benar-benar dibaca.
 
-Tips umum:
-- Rekam layar laptop (QuickTime → New Screen Recording). Satu video boleh mencakup beberapa izin, asal tiap izin terlihat jelas.
-- Ganti bahasa Brandlab ke **English** dulu (Pengaturan → Bahasa) supaya reviewer paham, atau beri teks keterangan.
-- Tunjukkan selalu: (1) login ke Brandlab, (2) jendela izin Meta, (3) fitur yang memakai izin itu, (4) hasilnya di Instagram/Facebook bila izinnya menulis sesuatu.
+**Satu keputusan dulu: AI.** Fitur AI Brandlab (chat, ringkasan laporan) bisa ikut membaca angka performa konten, termasuk yang berasal dari Instagram. Pilih salah satu:
+1. **Disebut terbuka.** Kebijakan privasi dan jawaban data handling menyebut penyedia AI sebagai pemroses: DeepSeek (Tiongkok), Google Gemini (AS), dan Anthropic (AS). Pekerjaannya cepat, tapi data Meta yang diproses di Tiongkok bisa memancing pertanyaan tambahan.
+2. **Data Meta tidak dikirim ke AI.** Aku ubah konteks AI supaya angka dari Instagram/Facebook tidak ikut terkirim. Jawaban data handling jadi lebih bersih.
 
-**Video A: Facebook Login for Business** (sekitar 3–4 menit, mencakup 9 izin)
-1. Buka brandlab.wepeka.com, login. Keterangan: *"Signing in to Brandlab."*
-2. ⋮ → Settings → **Meta accounts**. Klik **Connect with Facebook** pada brand contoh.
-3. Jendela Meta: tunjukkan pilihan business portfolio, Instagram account, Page, dan ad account, lalu daftar izin. *(business_management, pages_show_list)*
-4. Kembali ke Brandlab: jendela **Pick the accounts** menampilkan Instagram, Pages, dan ad accounts. Pilih, lalu **Save**. *(pages_show_list, instagram_basic, ads_read)*
-5. Kartu brand menampilkan @username, nama Page, dan akun iklan. Klik **Sync now**. Angka pengikut dan jangkauan Instagram serta Page muncul. *(instagram_basic, instagram_manage_insights, pages_read_engagement, read_insights)*
-6. Content list → ⋮ → **Import from Instagram**: grid postingan muncul. Pilih dua, Import, lalu buka satu kartu dan tunjukkan views, reach, dan saves. *(instagram_basic, instagram_manage_insights)*
-7. Create → Creator → video yang sudah disetujui → langkah **Upload**. Centang **Also share to Facebook**, klik **Post now**, konfirmasi. Tunggu status "Published". *(instagram_content_publish, pages_manage_posts)*
-8. Buka Instagram (HP atau web, dari akunmu sendiri) dan Halaman Facebook: tunjukkan postingan yang baru tayang. *(instagram_content_publish, pages_manage_posts)*
-9. Pindah ke My Brand → **Sales** → "Content that made money": baris postingan dengan **Ad spend Rp …** dan **Meta reports … purchases**. *(ads_read)*
-10. Kembali ke Settings → Meta accounts → **Disconnect** (opsional, menunjukkan user bisa mencabut).
+Rekomendasiku pilihan 2, supaya reviewnya lebih mulus.
 
-**Video B: Instagram Login** (sekitar 2 menit, mencakup 3 izin)
-1. Login Brandlab → Settings → Meta accounts → pada brand lain klik **Instagram only**.
-2. Jendela Instagram: login dengan akun IG profesional tanpa Page dan tunjukkan 3 izinnya.
-3. Kembali: kartu "via Instagram" dengan @username. **Sync now**: angka muncul. *(instagram_business_basic, instagram_business_manage_insights)*
-4. Creator → Upload → **Post now**. Tunjukkan postingannya di Instagram. *(instagram_business_content_publish)*
+---
+
+## 4. Panggilan API per izin (wajib sebelum submit)
+
+Cek di **App Review → Permissions and Features**. Tiap izin menunjukkan jumlah panggilan API. Panggilan tercatat sampai 2 hari setelah terjadi.
+
+| Izin | Sudah ada? | Cara membuatnya |
+|---|---|---|
+| `instagram_basic`, `instagram_manage_insights` | kemungkinan sudah (Quatro tersambung dan disinkron 25 Nov) | — |
+| `pages_show_list`, `pages_read_engagement`, `read_insights` | kemungkinan sudah (Halaman Quatrokidsclub ikut disinkron) | — |
+| `ads_read` | **belum** (belum ada akun iklan yang dihubungkan) | Pengaturan → Akun Meta → Quatro → **Ganti akun** → Tambah akun iklan → pilih akun iklan Rupiah → Simpan → **Sinkron sekarang** |
+| `instagram_content_publish` | **belum** | Posting satu video dari Brandlab ke akun IG milik Wepeka (Creator → Upload → Posting sekarang). Postingannya boleh diarsipkan setelahnya. |
+| `pages_manage_posts` | **belum** | Video yang sama dengan centang **Bagikan juga ke Facebook** |
+| `business_management` | belum pasti | Graph API Explorer → app wepeka → token dengan `business_management` → `GET /me/businesses` (Meta mengizinkan panggilan dari Graph API Explorer) |
+| `public_profile` | otomatis | — |
+
+Dua panggilan posting itu sekalian bisa jadi bahan screencast (§6).
+
+---
+
+## 5. Akun reviewer + brand demo
+
+Meta menulis: *"We will test your app using our own test accounts. Do not include your personal … credentials."* Membuat test user di Meta juga sedang dimatikan. Jadi:
+
+1. **Buat akun Brandlab khusus reviewer** dengan email dan password, misalnya email Wepeka yang kamu pegang. Akunnya kamu yang buat, dan passwordnya hanya kamu yang tahu.
+2. Kirim emailnya ke aku. Aku akan:
+   - menyalakan `metaBeta: true` supaya menu Akun Meta muncul;
+   - membuat paketnya aktif lebih dari 60 hari, supaya tidak kena paywall selama review dan review ulang.
+3. Login ke akun itu, ganti bahasa ke **English** (Settings → Language), lalu buat satu brand demo, misalnya **"Demo Coffee"**.
+4. **Supaya reviewer bisa mencoba posting**, brand demo perlu satu video yang sudah disetujui. Posting di Brandlab mengambil video dari Google Drive pemilik brand, jadi:
+   - hubungkan Google Drive milik akun Google Wepeka (bukan pribadi) ke akun reviewer;
+   - unggah satu video pendek ke satu kartu konten;
+   - tandai video itu siap posting.
+   Kalau ini terlalu repot, reviewer tetap bisa menilai izin posting dari screencast, tapi risikonya izin itu ditolak karena "cannot test".
+5. **Uji sendiri sehari sebelum submit**: buka jendela penyamaran, login dengan akun reviewer, lalu ikuti persis instruksi §8.
+
+---
+
+## 6. Screencast: aturan + naskah per izin
+
+**Aturan Meta:**
+- UI dalam bahasa Inggris. Bagian yang masih berbahasa Indonesia diberi teks keterangan bahasa Inggris.
+- Minimal 1080p. Lebar layar maksimal 1440 (Mac: System Settings → Displays → pilih resolusi yang lebih kecil).
+- **Tanpa suara.** Pakai mouse, perbesar kursor, boleh zoom dan anotasi.
+- Tiap video dimulai dari **keadaan logout**, lalu login, lalu tombol Connect with Facebook dan jendela izin Meta, lalu **data izin itu tampil di Brandlab**.
+- **Satu klip per izin.** Cara paling hemat: rekam satu kali alur lengkap, lalu potong jadi 9 klip. Tiap klip memakai bagian login + izin yang sama, lalu bagian khusus izin itu.
+- Aturan lama tetap: Claude tidak membuka Instagram di browser. Bagian "postingan muncul di Instagram" kamu rekam sendiri dari HP atau laptopmu.
+
+**Bagian awal yang sama untuk semua klip (±40 detik):**
+1. brandlab.wepeka.com dalam keadaan logout, lalu login dengan email.
+2. ⋮ → **Settings** → **Meta accounts** → klik **Connect with Facebook** di brand demo.
+3. Jendela Meta: pilih business portfolio → Instagram → Page → ad account → lihat daftar izin → Continue.
+4. Kembali ke Brandlab: jendela **Which Instagram is …?** → pilih IG; Page ikut otomatis; buka **Add an ad account** → pilih → **Save**.
+
+**Bagian khusus per izin:**
+
+| Klip | Izin | Yang direkam setelah bagian awal |
+|---|---|---|
+| 1 | `pages_show_list` | Zoom ke jendela pilih akun: daftar Page milik user, Page terpilih, lalu kartu brand yang menampilkan nama Page. |
+| 2 | `business_management` | Zoom ke langkah Meta "choose business portfolio" dan pemilihan aset (ini token BISU). Lalu kartu brand dengan IG, Page, dan akun iklan dari portfolio itu. |
+| 3 | `instagram_basic` | Kartu brand menampilkan @username. Lalu Content list → ⋮ → **Import from Instagram**: grid postingan dengan username, foto, tanggal, dan jumlah like. Pilih 2 postingan → **Add 2 posts** → kartunya muncul. |
+| 4 | `instagram_manage_insights` | **Sync now**: panel progres berjalan sampai "Data is in!". Buka satu kartu konten: views, reach, saves, shares. Kartu brand: followers + reach 30 hari. |
+| 5 | `instagram_content_publish` | Create → Creator → video demo → step **Upload** → caption + hashtag → **Post now** → status Published. Lalu (rekaman HP/laptopmu) postingan yang sama tampil di Instagram. |
+| 6 | `pages_manage_posts` | Sama seperti klip 5 dengan centang **Also share to Facebook** → postingan tampil di Halaman Facebook. Keterangan: *"Brandlab only publishes; it does not edit or delete Page posts."* |
+| 7 | `pages_read_engagement` | Kartu brand: nama Page + jumlah followers. Kartu konten dari video yang diposting ke Page: likes/comments Facebook. |
+| 8 | `read_insights` | **Sync now** → kartu brand: "Page: N followers, 28-day reach N". Kartu video Page: views Facebook. |
+| 9 | `ads_read` | **Sync now** → My Brand → **Sales** → "Content that made money": baris postingan dengan **Ad spend Rp …**, **Meta ads: N impressions · N clicks**, **Meta reports N purchases**. Zoom ke angka-angkanya. |
 
 Syarat sebelum merekam:
-- Kodenya sudah live dan env sudah diisi.
-- Akun IG dan Halaman yang dipakai harus punya peran di app (Standard Access).
-- Ada satu video yang sudah disetujui di Drive brand contoh.
-- Ada iklan aktif atau baru saja aktif dari akun iklan Rupiah yang mempromosikan postingan yang sudah ada di Brandlab (untuk langkah 9 video A). Biaya iklan baru masuk setelah sinkron.
+- Kode 25 Nov sudah live.
+- Akun IG, Page, dan akun iklan yang dipakai milik Wepeka dan punya peran di app.
+- Ada iklan yang mempromosikan postingan yang sudah ada di Brandlab, aktif dalam 2 bulan terakhir, dari akun iklan Rupiah. Kalau belum ada, boost satu postingan dengan anggaran kecil.
 
-## 8. Yang belum bisa dicek dari sini
+---
 
-- Panggilan ke Meta sungguhan belum pernah terjadi. Semua tes memakai Meta palsu. Pemeriksaan pertama di produksi: login dengan akunmu, lalu lihat apakah jendela Pick the accounts terisi.
-- **Belum terverifikasi di dokumentasi untuk token BISU:** apakah `/me/accounts` selalu mengembalikan Page beserta Page token-nya. Kode punya cadangan `/{page-id}?fields=access_token`, dan kalau tidak ada Page token, BISU dipakai langsung. Kalau Page tidak muncul di picker, kabari aku.
-- Nama metrik Page setelah perubahan Juni 2026: kode mencoba `page_total_media_view_unique`, lalu `page_impressions_unique`. Kalau dua-duanya ditolak, jangkauan Page tampil "–" (pengikut tetap tampil).
-- Penjualan yang dilaporkan Meta dihitung dari `omni_purchase` / `purchase`. Iklan tanpa pixel tidak punya angka ini.
-- Posting dari Drive lewat HP dengan video besar (ratusan MB) belum dites di perangkat asli.
+## 7. Teks per izin (bahasa Inggris, tempel apa adanya)
+
+Meta menulis *"Each permission and feature must have its own description. Do not copy and paste."* Karena itu tiap teks di bawah sengaja dibuat berbeda.
+
+Kolom deskripsi umum app:
+> Wepeka Brandlab (https://brandlab.wepeka.com) is a web app that helps small businesses and creators in Indonesia plan, publish and measure their social media content. A business connects its Instagram professional account, Facebook Page and (optionally) Meta ad account once through Facebook Login for Business, using a Business Integration System User token (we are a Tech Provider). Brandlab then imports the business's posts, shows each post's performance, publishes posts only when the user presses "Post now" or "Schedule", and records ad spend as an expense next to the business's own sales. Tokens are encrypted on our servers and never reach the browser. Users disconnect in Settings → Meta accounts at any time, and we honour Meta's deauthorize and data deletion callbacks.
+
+**instagram_basic**
+> After a business connects with Facebook Login for Business, Brandlab reads the Instagram professional account's ID and username to show which account is connected on the brand's card (Settings → Meta accounts), and reads the account's media list (ID, caption, permalink, timestamp, thumbnail) for "Import from Instagram", where the user picks which of their existing posts to add to their content list. Without it the user would have to copy every post into Brandlab by hand, and we could not show which account a brand is using.
+
+**instagram_manage_insights**
+> Brandlab shows each imported post's own performance (views, reach, likes, comments, shares, saves) on the post's card and in the monthly report, plus the account's follower count and 30-day reach on the brand's card. The data is refreshed when the user presses "Sync now" and once a night. We only read insights of the business's own connected account, never of other accounts. Without this permission the user would have to type every number from screenshots.
+
+**instagram_content_publish**
+> In Brandlab's Creator, a user prepares a post (video or photos plus caption). When they press "Post now" or "Schedule to Instagram" in the Upload step, our server creates the media container from the user's own file and publishes it to their connected Instagram account at the time they chose. Nothing is ever published without that explicit action. This lets a team plan, approve and publish from one place instead of switching apps.
+
+**pages_show_list**
+> After Facebook Login for Business, Brandlab lists the Facebook Pages the business shared with us in the account picker ("Which Instagram is this brand's?" → Facebook Page), so the user can link the right Page to each brand. It also lets us find the Page that belongs to the selected Instagram account. Without it the user could not choose a Page.
+
+**pages_read_engagement**
+> For the Page the user linked to a brand, Brandlab reads the Page's name and follower count to show them on the brand's card, and reads likes and comments on videos the user published to that Page from Brandlab, shown on that post's card next to its Instagram numbers. It is also required by pages_manage_posts, read_insights and the Instagram permissions above.
+
+**pages_manage_posts**
+> When the user ticks "Also share to Facebook" before pressing "Post now" or "Schedule", Brandlab publishes the same approved video (or photos) with the user's caption to the Facebook Page linked to the brand, right after Instagram. Brandlab only creates posts the user asked for; it does not edit or delete Page posts. This saves teams from uploading the same video twice.
+
+**read_insights**
+> Brandlab reads the linked Page's 28-day reach (page_total_media_view_unique) and the view counts of videos the user published to the Page from Brandlab, and shows them on the brand's card and on each post's numbers, so the business sees its Facebook results next to Instagram in one report. Page insights are not available through pages_read_engagement alone.
+
+**business_management**
+> Brandlab is a Tech Provider and connects clients through Facebook Login for Business with a Business Integration System User token, so clients can grant access to Instagram accounts, Pages and ad accounts owned by their business portfolio. Meta's documentation states that business_management is required when making API requests as a business system user, and it is a default, required permission of the Pages and Instagram content-management use cases. We use it only so the system user token can read the assets the client assigned (shown in the account picker). Brandlab never creates, claims or changes business assets, ad accounts or business settings.
+
+**ads_read**
+> If a business links an ad account (optional), Brandlab reads, per ad, the spend, impressions, clicks and Meta-reported purchases for the last two months, and matches each ad to the Instagram post it promotes. In the Sales page the spend appears as an automatic "Ads" expense next to that post, with impressions, clicks and Meta-reported purchases shown beside it (never added to the business's own sales), so the owner sees what each piece of content cost and earned. Only team members the owner gave Sales access can see it. Brandlab never creates or edits ads.
+
+**public_profile** (kalau diminta)
+> Granted with Facebook Login for Business; we read only the app-scoped user ID to keep each login separate. Required by Meta for Facebook Login for Business apps.
+
+---
+
+## 8. Instruksi untuk reviewer (bahasa Inggris)
+
+Untuk kolom App Verification / Platform Settings → Web → "how to access and test". Ganti bagian `<…>`.
+
+> **Login:** https://brandlab.wepeka.com → "Sign in with email" → email: `<reviewer email>` · password: `<password>`. The account has an active plan and the interface is set to English (Settings → Language). Brandlab sign-in uses email/Google; Facebook Login for Business is used afterwards to connect a business's Meta assets.
+>
+> **Connect (all permissions):** open the ⋮ menu (top right) → Settings → "Meta accounts". On the brand "Demo Coffee", click "Connect with Facebook". In Meta's window choose a business portfolio (Meta requires one for this login), an Instagram professional account, a Facebook Page and, optionally, an ad account. Back in Brandlab, in "Which Instagram is Demo Coffee's?" pick the Instagram account (its Page is filled in automatically), optionally open "Add an ad account", then click "Save".
+>
+> 1. **instagram_basic, pages_show_list, business_management:** the brand card now shows the Instagram username, the Page and the ad account. Content → ⋮ → "Import from Instagram" lists the account's posts; pick some and click "Add N posts".
+> 2. **instagram_manage_insights, read_insights, pages_read_engagement:** on the brand card click "Sync now". A panel shows each step; when it says "Data is in!", the card shows Instagram followers and 30-day reach and the Page's followers and 28-day reach. Open any imported post: its views, reach, saves and shares are filled in.
+> 3. **instagram_content_publish, pages_manage_posts:** Create → Creator → the piece "Demo video" → step 5 "Upload" → write a caption → tick "Also share to Facebook" → "Post now". The status turns to Published and the post appears on the Instagram account and the Page.
+> 4. **ads_read:** after "Sync now" with an ad account linked, open My Brand → Sales → "Content that made money": posts promoted by ads show the ad spend, impressions, clicks and Meta-reported purchases.
+> 5. **Disconnect:** Settings → Meta accounts → "Disconnect" removes the tokens.
+>
+> Screen recordings for each permission follow exactly these steps. If anything blocks you, contact `<email>`.
+
+---
+
+## 9. Pertanyaan data handling (bahasa Inggris)
+
+Pertanyaan ini muncul di langkah 2 pengajuan dan nanti ditanyakan tiap tahun di Data Use Checkup.
+
+1. **Processors / service providers with access to Platform Data:**
+   - **Vercel Inc.**: hosting and serverless functions. Countries: United States, plus the edge network.
+   - **Google LLC** (Firebase Firestore, Firebase Storage, Google Cloud): database and files. Country: `<region project Firebase; cek di Firebase console → Project settings → Default GCP resource location>`.
+   - **Google Drive**: the owner's own Drive, only for the owner's video files. Not Meta data.
+   - **AI providers**: only if you choose option 1 in §3. DeepSeek (China), Google Gemini (US), Anthropic (US).
+2. **Responsible entity (controller):** Wepeka, a sole proprietorship of Winson Pratama Kho, Indonesia.
+3. **National-security requests in the past 12 months:** No.
+4. **Policies for such requests:** answer honestly. If none exist yet, choose the closest options, such as "review legality" and "disclose only the minimum required".
+
+**Data Protection Assessment** (dikirim lewat email dan Alert Inbox setelah Advanced Access; 60 hari untuk mengisi). Siapkan dari sekarang:
+- **2FA di semua alat:** GitHub, Vercel, Google/Firebase, Meta. Vercel-mu masih perlu dibereskan, jadi ini prioritas.
+- Token Meta dienkripsi AES-256-GCM di server, dan app secret serta token tidak pernah ada di perangkat user. Data lain terenkripsi saat disimpan oleh Google/Vercel, dan koneksi memakai TLS 1.2+.
+- Data tiap klien terpisah per brand (aturan Firestore + pemeriksaan di server). Brandlab memproses data hanya atas perintah klien.
+- Penghapusan: Putuskan menghapus token. Permintaan hapus lewat Meta menghapus token beserta data dari Meta (sudah ada di kode). Permintaan lewat email ditangani paling lama 30 hari.
+- Saluran laporan keamanan publik, misalnya alamat email di wepeka.com.
+
+---
+
+## 10. Setelah lolos, dan Instagram Login
+
+**Setelah Advanced Access keluar:**
+1. Buka untuk semua: `META_FOR_EVERYONE = true` di `js/account.js` + env `META_OPEN=1`.
+2. Di commit yang sama, tambahkan entri pengumuman di `api/_updates.js` (Cara pakai + screenshot).
+3. Perbaiki dulu "angka manual tidak ditimpa sinkron" sebelum dibuka untuk semua.
+4. Isi Data Protection Assessment kalau dikirim.
+
+**"Pakai Instagram saja" (akun IG tanpa Halaman/portfolio).** Ada tiga jalan:
+- **Instagram API with Unified Login** (paling disarankan Meta). Konfigurasi FBLB yang sama bisa menerima login lewat Instagram, memakai izin `instagram_*` yang sama, tanpa review tambahan. Syaratnya klien punya business portfolio, dan konfigurasinya harus berlabel "Instagram Login Compatible".
+- **App Meta terpisah** khusus Instagram Login, dengan review sendiri.
+- Pengajuan kedua di app yang sama, dengan risiko ditolak karena aturan "not both".
+
+Kita putuskan setelah pengajuan pertama lolos.
+
+---
+
+## 11. Sumber utama (dibaca 25 Nov 2026)
+
+- Proses + syarat pengajuan: developers.facebook.com/documentation/resp-plat-initiatives/individual-processes/app-review, …/app-review/submission-guide
+- Aturan screencast: developers.facebook.com/docs/app-review/submission-guide/screen-recordings
+- Allowed usage per izin: developers.facebook.com/documentation/development/permissions
+- `business_management` wajib untuk system user: developers.facebook.com/documentation/pages-api/manage-pages
+- `read_insights` untuk /insights Halaman: developers.facebook.com/docs/graph-api/reference/insights
+- "Facebook Login or Instagram Login but not both": developers.facebook.com/documentation/instagram-platform/app-review
+- Access Verification dihapus 9 Okt 2026: developers.facebook.com/blog/post/2026/10/09/retiring-access-verification-for-tech-provider-apps
+- Test user dimatikan: developers.facebook.com/documentation/development/build-and-test/test-users
+- Kebijakan privasi: developers.facebook.com/documentation/development/terms-and-policies/privacy-policy
+- Data Protection Assessment: developers.facebook.com/documentation/resp-plat-initiatives/individual-processes/data-protection-assessment
+
+Belum terkonfirmasi dari dokumentasi:
+- apakah akun uji reviewer Meta punya IG profesional, Halaman, dan akun iklan sendiri;
+- apakah `pages_manage_posts` tetap disetujui untuk "hanya posting" (teks screencast Meta menyebut buat, ubah, hapus);
+- cara banding resmi kalau ditolak (halaman "After You Submit" milik Meta kosong).
