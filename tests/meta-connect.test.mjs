@@ -12,7 +12,7 @@ import * as IG from "../api/_instagram.js";
 import * as FB from "../api/_facebookLogin.js";
 import { route, canManage, canSync } from "../api/instagram/[action].js";
 import { postingAccounts } from "../api/_metaConnection.js";
-import { pieceFor } from "../api/instagram/post.js";
+import { pieceFor, postersOf } from "../api/instagram/post.js";
 import { postersFor } from "../api/_igPostRun.js";
 import { presetPerms } from "../api/_permissions.js";
 import { METRIC_KEYS as CLIENT_METRIC_KEYS } from "../js/store.js";
@@ -533,6 +533,13 @@ describe("posting from the vault", () => {
     assert.equal((await pieceFor(db, ADMIN, "cw")).desk, true);
     db.docs.set("accounts/owner1", { status: "active", plan: "trial", trialEndsAt: NOW - 1 });
     await assert.rejects(pieceFor(db, "smm1", "c1"), /inactive/);
+  });
+  test("copies go up only for a brand that can post them", async () => {
+    const db = seed();
+    assert.deepEqual(await postersOf(db, { ...BRAND }, { env: ENV }), { account: null, page: null }, "not connected: nothing to post with");
+    await connectFb(db, fakeMeta());
+    const p = await postersOf(db, { ...BRAND }, { env: ENV });
+    assert.deepEqual([p.account.igUserId, p.page.pageId], [IG_ID, "5550001"]);
   });
   test("the posting job reads the vault: BISU on graph.facebook.com, Page for Facebook", async () => {
     const db = seed();

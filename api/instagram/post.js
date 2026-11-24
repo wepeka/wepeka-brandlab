@@ -39,7 +39,7 @@ export async function pieceFor(db, uid, contentId) {
 
 // The account and Page this brand posts to: the vault first, the pasted
 // token (Wepeka's own brands) second.
-async function postersOf(db, brand, { env = process.env } = {}) {
+export async function postersOf(db, brand, { env = process.env } = {}) {
   const vault = await postingAccounts({ db, env, fetch: globalThis.fetch }, brand.id);
   if (vault) return { account: vault.account || null, page: vault.page || null };
   if (!isAdminUid(brand.ownerId)) return { account: null, page: null };
@@ -52,12 +52,19 @@ async function act(req, db, uid) {
   const b = req.body || {};
   const contentId = String(b.contentId || "");
   const ref = db.collection("content").doc(contentId);
-  const { c, brand } = await pieceFor(db, uid, contentId);
+  const { c, brand, desk } = await pieceFor(db, uid, contentId);
   const owner = brand.ownerId;
   const bucket = await adminBucket();
   const jobRef = db.collection("igJobs").doc(contentId);
 
   if (b.action === "upload") {
+    // Copies only go up for a brand that can post them (Wepeka's desk, or a
+    // brand connected through "Hubungkan akun Meta"): nobody parks files in
+    // Storage that no job will ever post and clean up.
+    if (!desk) {
+      const { account, page } = await postersOf(db, brand);
+      if (!account && !page) throw fail(409, "account");
+    }
     const origin = ORIGINS.test(req.headers.origin || "") ? req.headers.origin : undefined;
     const files = await Promise.all(uploadPaths(owner, contentId, b.files).map(async ({ path, type }) => {
       const [uploadUrl] = await bucket.file(path).createResumableUpload({ origin, metadata: { contentType: type } });
