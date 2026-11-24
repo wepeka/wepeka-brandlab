@@ -628,6 +628,42 @@ describe("Meta's callbacks", () => {
   });
 });
 
+describe("moving a brand from Instagram Login to Facebook", () => {
+  test("same account: no second set of cards, the old login is dropped, the numbers carry on", async () => {
+    const media = [reel("m1", "AAA", NOW - DAY), reel("m2", "BBB", NOW - DAY / 2)];
+    const insights = { m1: { views: 900, reach: 700 }, m2: { views: 100, reach: 80 } };
+    const db = seed();
+    const meta = fakeMeta({ media, insights });
+    const d = deps(db, meta);
+    const { body } = await call(d, post("connect", { brandId: "b1", via: "instagram" }));
+    await call(d, { method: "GET", query: { action: "callback", code: "good-ig", state: new URL(body.url).searchParams.get("state") } });
+    const igConn = db.get("metaConnections/b1");
+    assert.equal(igConn.via, "instagram");
+    db.docs.get("metaConnections/b1").connectedAt = NOW - 1.5 * DAY;
+    const first = await call(d, post("sync", { brandId: "b1" }));
+    assert.equal(first.body.added, 2, "both posts arrive as cards");
+    const cards = () => [...db.docs.entries()].filter(([p, c]) => p.startsWith("content/") && c.brandId === "b1");
+    assert.equal(cards().length, 2);
+
+    // Later the owner adds the Facebook Page and ads: same Instagram account.
+    const fb = await call(d, post("connect", { brandId: "b1", via: "facebook" }));
+    await call(d, { method: "GET", query: { action: "callback", code: "good-fb", state: new URL(fb.body.url).searchParams.get("state") } });
+    const picked = await call(d, post("select", { brandId: "b1", igUserId: IG_ID, pageId: "5550001" }));
+    assert.equal(picked.statusCode, 200, JSON.stringify(picked.body));
+    const fbConn = db.get("metaConnections/b1");
+    assert.equal(fbConn.via, "facebook");
+    assert.equal(fbConn.connectedAt, NOW - 1.5 * DAY, "same account: its start date stays");
+    assert.equal(db.get(`metaGrants/${igConn.grantId}`), undefined, "the Instagram Login token is gone");
+    assert.equal(db.get("brands/b1").instagram.via, "facebook");
+
+    const again = await call(d, post("sync", { brandId: "b1" }));
+    assert.equal(again.statusCode, 200, JSON.stringify(again.body));
+    assert.deepEqual([again.body.added, again.body.updated], [0, 2], "the same posts are updated, not added twice");
+    assert.equal(cards().length, 2);
+    assert.equal(cards().find(([, c]) => c.igMediaId === "m1")[1].performanceByPlatform.instagram.views, 900);
+  });
+});
+
 describe("posting from the vault", () => {
   const piece = { brandId: "b1", ownerId: "owner1", status: "editing", posting: { type: "reels" } };
   test("who may post a piece: Posting on the brand, or Wepeka's own desk", async () => {
