@@ -578,6 +578,46 @@ describe("Meta's callbacks", () => {
     const page = await call(d, { method: "GET", query: { action: "deletion-status", code: r.body.confirmation_code } });
     assert.match(page.body, /sudah selesai/);
   });
+  test("a deletion request also removes what came from Meta; the owner's own plans and numbers stay", async () => {
+    const card = {
+      brandId: "b1", ownerId: "owner1", platform: "Instagram", title: "Promo", caption: "Promo pagi",
+      igMediaId: "m1", igSyncedAt: NOW - DAY, thumbnail: "https://scontent.cdninstagram.com/v/t51/abc.jpg",
+      performanceByPlatform: { instagram: { views: 900, reach: 700 }, facebook: { views: 50 }, tiktok: { views: 300 } },
+      performance: { views: 1250, reach: 700, reposts: 4, insightScreenshot: "s.png", confirmedAt: NOW - DAY },
+    };
+    const db = seed({
+      "content/c1": card,
+      "content/c2": { brandId: "b1", ownerId: "owner1", platform: "TikTok", thumbnail: "https://example.com/t.jpg", performance: { views: 80 } },
+      "brands/b1/sales/2026-11": { ownerId: "owner1", brandId: "b1", month: "2026-11", entries: [
+        { id: "s1", kind: "sale", amount: 100000, date: "2026-11-02" },
+        { id: "meta-ads-c1-2026-11", kind: "expense", amount: 150000, date: "2026-11-24", attribution: "auto", category: "ads" },
+      ] },
+    });
+    const d = await connectFb(db, fakeMeta({ tokenType: "user" }));
+    Object.assign(db.docs.get("brands/b1"), {
+      insights: { instagram: { followers: 1200, source: "instagram" }, tiktok: { followers: 90, source: "manual" } },
+      insightsHistory: [{ platform: "instagram", followers: 1100, at: NOW - 2 * DAY, source: "instagram" }, { platform: "tiktok", followers: 80, at: NOW - 2 * DAY, source: "manual" }],
+    });
+
+    // Removing the app without a deletion request leaves the numbers.
+    await call(d, { method: "POST", query: { action: "deauthorize" }, body: { signed_request: V.signRequestForTest({ user_id: "nobody" }, FB_SECRET) } });
+    assert.equal(db.get("content/c1").performanceByPlatform.instagram.views, 900);
+
+    const r = await call(d, { method: "POST", query: { action: "data-deletion" }, body: `signed_request=${encodeURIComponent(V.signRequestForTest({ user_id: "fbuser1" }, FB_SECRET))}` });
+    assert.equal(r.statusCode, 200);
+    const c1 = db.get("content/c1");
+    assert.deepEqual([c1.performanceByPlatform.instagram, c1.performanceByPlatform.facebook, c1.performanceByPlatform.tiktok], [{}, {}, { views: 300 }]);
+    assert.deepEqual([c1.performance.views, c1.performance.reach, c1.performance.reposts], [300, null, 4], "TikTok and hand-typed numbers stay");
+    assert.deepEqual([c1.igMediaId, c1.thumbnail, c1.title, c1.performance.insightScreenshot], ["", "", "Promo", "s.png"]);
+    assert.equal(db.get("content/c2").thumbnail, "https://example.com/t.jpg", "other cards untouched");
+    const b = db.get("brands/b1");
+    assert.equal(b.insights.instagram, null);
+    assert.equal(b.insights.tiktok.followers, 90);
+    assert.deepEqual(b.insightsHistory.map((h) => h.platform), ["tiktok"]);
+    assert.deepEqual(db.get("brands/b1/sales/2026-11").entries.map((e) => e.id), ["s1"]);
+    const page = await call(d, { method: "GET", query: { action: "deletion-status", code: r.body.confirmation_code } });
+    assert.match(page.body, /angka, gambar, dan biaya iklan/);
+  });
   test("an Instagram Login account is found by its Instagram id too", async () => {
     const db = seed();
     const d = deps(db, fakeMeta());

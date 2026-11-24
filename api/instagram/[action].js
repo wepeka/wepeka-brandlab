@@ -686,8 +686,9 @@ async function grantsOf(d, metaId) {
 }
 // The tokens and the account's identity leave Brandlab. Content the owner
 // keeps in their own workspace (cards, numbers they logged) stays theirs.
+// Returns the brands that were on those logins.
 async function dropGrants(d, grants) {
-  let brands = 0;
+  const brands = [];
   for (const g of grants) {
     for (const brandId of g.brandIds || []) {
       const conn = await read(d, `metaConnections/${brandId}`);
@@ -696,7 +697,7 @@ async function dropGrants(d, grants) {
         const patch = { instagram: { ...DISCONNECTED.instagram, status: "removed" } };
         if (g.via === "facebook") Object.assign(patch, { facebook: DISCONNECTED.facebook, ads: DISCONNECTED.ads });
         await d.db.doc(`brands/${brandId}`).update(patch).catch(() => null);
-        brands++;
+        brands.push(brandId);
       }
     }
     await d.db.doc(`metaGrants/${g.id}`).delete();
@@ -709,20 +710,48 @@ async function deauthorize(d, req, res) {
   await dropGrants(d, await grantsOf(d, data.user_id));
   return res.status(200).json({ ok: true });
 }
+// Removing the app with a deletion request: the logins go, and so does what
+// Brandlab got from Meta for those brands (purgeMetaData).
 async function dataDeletion(d, req, res) {
   const data = signedPayload(d, req);
   if (!data) return res.status(400).json({ error: "bad-signature" });
   const brands = await dropGrants(d, await grantsOf(d, data.user_id));
+  let cards = 0;
+  for (const brandId of brands) cards += await purgeMetaData(d, brandId);
   const code = crypto.randomBytes(9).toString("base64url");
-  await d.db.doc(`metaDeletions/${code}`).set({ at: d.now(), status: "done", connections: brands });
+  await d.db.doc(`metaDeletions/${code}`).set({ at: d.now(), status: "done", connections: brands.length, cards });
   return res.status(200).json({ url: `${APP_URL}/api/instagram/deletion-status?code=${code}`, confirmation_code: code });
+}
+// Per card: Instagram/Facebook figures, post ids, Meta thumbnails
+// (IG.metaPurgePatch). The brand: follower/reach figures from Meta and their
+// history. Sales: the automatic ad-spend expenses (meta-ads-…).
+async function purgeMetaData(d, brandId) {
+  const now = d.now();
+  let cards = 0;
+  const content = await d.db.collection("content").where("brandId", "==", brandId).get();
+  for (const doc of content.docs) {
+    const patch = IG.metaPurgePatch(doc.data(), now);
+    if (!patch) continue;
+    await d.db.doc(`content/${doc.id}`).update(patch);
+    cards++;
+  }
+  const brand = await read(d, `brands/${brandId}`);
+  const brandPatch = brand ? IG.brandPurgePatch(brand) : null;
+  if (brandPatch) await d.db.doc(`brands/${brandId}`).update(brandPatch);
+  const sales = await d.db.collection(`brands/${brandId}/sales`).get();
+  for (const doc of sales.docs) {
+    const entries = doc.data().entries || [];
+    const kept = entries.filter((e) => !(e?.attribution === "auto" && String(e?.id || "").startsWith("meta-ads-")));
+    if (kept.length !== entries.length) await d.db.doc(`brands/${brandId}/sales/${doc.id}`).update({ entries: kept });
+  }
+  return cards;
 }
 async function deletionStatus(d, req, res) {
   const code = String(req.query?.code || "");
   const row = /^[A-Za-z0-9_-]{6,40}$/.test(code) ? await read(d, `metaDeletions/${code}`) : null;
   const when = row ? new Date(row.at).toISOString().slice(0, 10) : "";
   const text = row
-    ? `Permintaan penghapusan data Meta ${code} sudah selesai (${when}). Token akses dan identitas akun Instagram/Facebook sudah dihapus dari Wepeka Brandlab.\n\nMeta data deletion request ${code} is complete (${when}). The access tokens and Instagram/Facebook account identity were removed from Wepeka Brandlab.`
+    ? `Permintaan penghapusan data Meta ${code} sudah selesai (${when}). Token akses, identitas akun Instagram/Facebook, serta angka, gambar, dan biaya iklan yang berasal dari Meta sudah dihapus dari Wepeka Brandlab.\n\nMeta data deletion request ${code} is complete (${when}). The access tokens, the Instagram/Facebook account identity, and the numbers, pictures and ad spend received from Meta were removed from Wepeka Brandlab.`
     : "Kode tidak ditemukan. / Code not found.";
   res.setHeader?.("Content-Type", "text/plain; charset=utf-8");
   return res.status(row ? 200 : 404).send(text);

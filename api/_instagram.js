@@ -311,6 +311,41 @@ export function insightsPatch(brand, platform, { followers, reach30d }, now) {
   return patch;
 }
 
+// A deletion request through Meta (the person removed the app and asked for
+// their data to go; api/instagram/[action].js dataDeletion): what Brandlab
+// got from Meta leaves the brand. On a card: the Instagram and Facebook
+// figures (other platforms' and numbers typed by hand stay), the post id and
+// a thumbnail from Instagram/Facebook. The card itself stays — it's the
+// owner's plan.
+const META_THUMB = /^https:\/\/[^/]*(cdninstagram\.com|fbcdn\.net)\//;
+export function metaPurgePatch(content, now) {
+  const by = content?.performanceByPlatform || {};
+  const metaKeys = new Set([...Object.keys(by.instagram || {}), ...Object.keys(by.facebook || {})]);
+  const thumb = META_THUMB.test(String(content?.thumbnail || ""));
+  if (!metaKeys.size && !content?.igMediaId && !content?.igSyncedAt && !thumb) return null;
+  const patch = { igMediaId: "", igSyncedAt: null, updatedAt: now };
+  if (metaKeys.size) {
+    const byPlatform = { ...by, instagram: {}, facebook: {} };
+    const totals = combinePlatformMetrics(byPlatform);
+    const performance = { ...(content.performance || {}) };
+    for (const k of metaKeys) if (k in totals) performance[k] = totals[k];
+    Object.assign(patch, { performanceByPlatform: byPlatform, performance });
+  }
+  if (thumb) patch.thumbnail = "";
+  return patch;
+}
+// The brand's follower/reach figures that came from Meta (not the ones the
+// owner typed) and their history.
+export function brandPurgePatch(brand) {
+  const fromMeta = (x) => x && ["instagram", "facebook"].includes(x.source);
+  const patch = {};
+  for (const p of ["instagram", "facebook"]) if (fromMeta(brand?.insights?.[p])) patch[`insights.${p}`] = null;
+  const history = Array.isArray(brand?.insightsHistory) ? brand.insightsHistory : [];
+  const kept = history.filter((h) => !fromMeta(h));
+  if (kept.length !== history.length) patch.insightsHistory = kept;
+  return Object.keys(patch).length ? patch : null;
+}
+
 export async function fetchAccountNumbers(api, igUserId, now) {
   const profile = await get(api, `/${igUserId}`, { fields: "username,followers_count,media_count" });
   let reach30d = null;
