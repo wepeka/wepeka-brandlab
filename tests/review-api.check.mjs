@@ -100,9 +100,9 @@ docs.set("memberships/sari", { ownerIds: [ADMIN], brands: { q: { ownerId: ADMIN,
 const files = [{ name: "v1.mp4", type: "video/mp4", size: 100 }];
 
 test("end to end: connect, send two cuts, client notes, approves; older cut leaves their Drive", async () => {
-  // Nobody signed in, or not Wepeka, for the owner's actions.
+  // Nobody signed in, or not the piece's owner, for the owner's actions.
   assert.equal((await call(review, "upload", null, { contentId: "c1" })).status, 401);
-  assert.equal((await call(review, "upload", "rina", { contentId: "c1", versionId: "a", files })).error, "private");
+  assert.equal((await call(review, "upload", "rina", { contentId: "c1", versionId: "a", files })).error, "owner");
   // No client Drive yet.
   const off = await call(review, "upload", ADMIN, { contentId: "c1", versionId: "a", code: "QN-1", files });
   assert.deepEqual([off.status, off.error], [409, "drive-off"]);
@@ -231,4 +231,39 @@ test("a client whose access was turned off can't act any more", async () => {
   docs.get("brands/q").members.rina.disabled = true;
   docs.get("content/c1").posting.client = { versionId: "b", status: "waiting" };
   assert.equal((await call(review, "decide", "rina", { contentId: "c1", versionId: "b", verdict: "approve" })).error, "not-client");
+});
+
+// Every owner's Klien (owner, 2026-11-24: "aku mau ada pilihan role client
+// juga, ini baru bisa masuk di brandlab kalau di setujui tim dulu videonya"):
+// a cut goes to the client only once the team approved it; the client then
+// watches it in their own Drive, notes or approves.
+test("any owner: only a team-approved cut goes to the Klien, who then approves it", async () => {
+  revoked = false;
+  docs.set("accounts/owen", { status: "active", plan: "pro", subscriptionExpiresAt: Date.now() + 30 * 86400000 });
+  docs.set("brands/k", { ownerId: "owen", name: "Kopi Owen", members: { kiki: { role: "viewer", klien: true, preset: "klien", name: "Kiki (klien)" }, edo: { role: "editor", preset: "smm", name: "Edo" } }, memberIds: ["kiki", "edo"] });
+  docs.set("memberships/kiki", { ownerIds: ["owen"], brands: { k: { ownerId: "owen", role: "viewer", klien: true } } });
+  docs.set("content/k1", { ownerId: "owen", brandId: "k", title: "Promo Owen", status: "editing", posting: { versions: [{ id: "x", n: 0, status: "pending", kind: "video" }, { id: "y", n: 1, status: "approved", kind: "video" }], finalId: "y", notes: [] } });
+  // The Klien connects their own Drive (any owner's Klien may now).
+  const started = await call(driveApi, "start", "kiki", { ret: "#/brand/k/content/antrean" });
+  assert.ok(started.url, "a Klien without a plan of their own may connect Drive");
+  docs.set("driveConnections/kiki", { refresh: seal("1//k"), email: "kiki@gmail.test" });
+  docs.set("brands/k", { ...docs.get("brands/k"), clientDrive: { uid: "kiki", email: "kiki@gmail.test", at: 1 } });
+  // Not yet approved by the team: refused.
+  assert.equal((await call(review, "upload", "owen", { contentId: "k1", versionId: "x", code: "KO-1", files })).error, "not-approved");
+  // A teammate isn't the piece's owner.
+  assert.equal((await call(review, "upload", "edo", { contentId: "k1", versionId: "y", code: "KO-1", files })).error, "owner");
+  // The approved cut: into the Klien's Drive, then recorded.
+  const slot = await call(review, "upload", "owen", { contentId: "k1", versionId: "y", code: "KO-1", files });
+  assert.equal(slot.status, 200);
+  const fileId = browserUpload(slot.folderId, slot.names[0]);
+  assert.equal((await call(review, "send", "owen", { contentId: "k1", versionId: "y", code: "KO-1", kind: "video", drive: [fileId] })).status, 200);
+  assert.equal(docs.get("content/k1").posting.client.status, "waiting");
+  // A teammate isn't the Klien on someone else's brand.
+  assert.equal((await call(review, "decide", "edo", { contentId: "k1", versionId: "y", verdict: "approve" })).error, "not-client");
+  // The Klien approves.
+  assert.equal((await call(review, "decide", "kiki", { contentId: "k1", versionId: "y", verdict: "approve" })).status, 200);
+  assert.equal(docs.get("content/k1").posting.client.status, "approved");
+  // An owner whose plan lapsed can't send.
+  docs.set("accounts/owen", { status: "expired", plan: "pro" });
+  assert.equal((await call(review, "upload", "owen", { contentId: "k1", versionId: "y", code: "KO-1", files })).error, "inactive");
 });

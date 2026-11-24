@@ -1,5 +1,5 @@
-// /api/review/{upload|send|clean|keep} — Wepeka's own side (admin only,
-// like the rest of Video & posting); /api/review/decide — a client invited
+// /api/review/{upload|send|clean|keep} — the piece's owner (Wepeka's desk;
+// since 2026-11-24 every owner, cuts the team approved only); /api/review/decide — a client invited
 // as "Klien" (or an editor) on the brand, signed in to Brandlab, notes or
 // approves the cut sent to them; view-key — the same people read the cuts
 // from the client's Drive; /api/review/footage-{start|add|remove} — the crew (Klien or
@@ -8,7 +8,8 @@
 // api/_review.js, api/_footage.js and api/_clientDrive.js.
 import { adminDb, adminBucket, requireAuth } from "../_firebaseAdmin.js";
 import { isAdminUid } from "../_aiQuota.js";
-import { checkUploads, driveNames, finalName, applySend, applyDecision, applyClean, applyKeepFinal, ownPiece, clientOn, clientDriveOf, clientFolderPatch, fail } from "../_review.js";
+import { checkUploads, driveNames, finalName, applySend, applyDecision, applyClean, applyKeepFinal, ownPiece, clientOn, clientDriveOf, clientFolderPatch, sendableCut, fail } from "../_review.js";
+import { isReadOnlyAccount } from "../_aiQuota.js";
 import { driveConfigured, refreshAccess } from "../_drive.js";
 import { pieceFolder, ensureFolder, checkFiles, deleteFiles, renameFile } from "../_clientDrive.js";
 import { FOOTAGE_FOLDER, footageMember, clipNames, applyFootageAdd, applyFootageRemove } from "../_footage.js";
@@ -157,11 +158,18 @@ async function forOwner(action, req, db, uid) {
   const c = ownPiece(await readDoc(db, `content/${contentId}`), uid);
   const brand = await readDoc(db, `brands/${c.brandId}`);
   if (!brand) throw fail(404, "brand");
+  // Every owner since 2026-11-24 (Wepeka's desk before): an account still
+  // working in Brandlab, and only cuts the team approved.
+  const desk = isAdminUid(uid);
+  if (!desk) {
+    const acc = await readDoc(db, `accounts/${uid}`);
+    if (!acc || acc.status !== "active" || isReadOnlyAccount(acc)) throw fail(403, "inactive");
+  }
   if (action === "upload") {
     // The piece's folder in the client's Drive, the file names, and a key
-    // for this browser to upload into it straight from the Mac folder.
-    const version = (c.posting?.versions || []).find((v) => v.id === String(b.versionId || ""));
-    if (!version) throw fail(404, "version");
+    // for this browser to upload into it (from the Mac folder, or the
+    // owner's own Drive).
+    const version = sendableCut(c, String(b.versionId || ""), { teamFirst: !desk });
     checkUploads(b.files);
     const access = await driveAccess(db, brand);
     const code = String(b.code || "").slice(0, 16);
@@ -174,6 +182,7 @@ async function forOwner(action, req, db, uid) {
     return { accessToken: access.accessToken, expiresIn: access.expiresIn, folderId: folders.folderId, ...driveNames({ code, version, files: b.files }) };
   }
   if (action === "send") {
+    sendableCut(c, String(b.versionId || ""), { teamFirst: !desk });
     const { accessToken } = await driveAccess(db, brand);
     const folderId = c.posting?.clientFolder;
     if (!folderId) throw fail(400, "missing");
@@ -209,7 +218,7 @@ export default async function handler(req, res) {
     if (action === "decide") return res.status(200).json(await forClient(req, db, user.uid));
     if (action === "view-key") return res.status(200).json(await forViewer(req, db, user.uid));
     if (action.startsWith("footage-")) return res.status(200).json(await forFootage(action, req, db, user.uid));
-    if (!isAdminUid(user.uid)) return res.status(403).json({ error: "private" });
+    // upload/send/clean/keep: the piece's owner (checked in forOwner).
     return res.status(200).json(await forOwner(action, req, db, user.uid));
   } catch (err) {
     if (!err.status) console.warn("[review]", action, err.message);

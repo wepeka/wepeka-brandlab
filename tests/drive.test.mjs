@@ -96,7 +96,7 @@ test("disconnect revokes at Google and forgets the token", async () => {
 // A brand's client ("Klien") connecting their own Drive (2026-11-09).
 test("a client's Drive: their brands say whose Drive gets the cuts, and forget it on disconnect", async () => {
   const admin = (uid) => uid === "wepeka";
-  assert.deepEqual(clientBrandIds({ brands: { b1: { ownerId: "wepeka", role: "viewer", klien: true }, b2: { ownerId: "wepeka", role: "viewer" }, b3: { ownerId: "x", klien: true }, b4: { ownerId: "wepeka", klien: true, disabled: true } } }, admin), ["b1"]);
+  assert.deepEqual(clientBrandIds({ brands: { b1: { ownerId: "wepeka", role: "viewer", klien: true }, b2: { ownerId: "wepeka", role: "viewer" }, b3: { ownerId: "x", klien: true }, b4: { ownerId: "wepeka", klien: true, disabled: true } } }, admin), ["b1", "b3"], "any owner's Klien since 2026-11-24");
   const db = fakeDb();
   const updates = [];
   const base = db.doc;

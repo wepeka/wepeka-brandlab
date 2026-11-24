@@ -18,13 +18,13 @@ import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from ".
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut, uploadKitHTML, uploadCopyHTML, wireUploadKit, markPostedByHand } from "../posting.js";
+import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, clientTeam, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut, uploadKitHTML, uploadCopyHTML, wireUploadKit, markPostedByHand } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { videoCode, codedPiece } from "../video-codes.js";
 import { driveVideoURL, driveImageURL } from "../drive.js";
 import { listRecentMedia, thumbnailFromMedia, testConnection } from "../instagram.js";
-import { canUseInstagramApi, currentUid } from "../account.js";
+import { canUseInstagramApi, currentUid, isAdmin } from "../account.js";
 import { showsFootage, bankHTML, wireBank, footageCount } from "../footage-bank.js";
 
 // The status chips over the list; "scheduled" also holds a failed post.
@@ -50,8 +50,12 @@ function pieces({ brandId, period }) {
   const range = rangeOf(period);
   const inRange = (d) => !range || (d && d >= range[0] && d <= range[1]);
   const brands = listBrands().filter((b) => (brandId === "all" ? canUsePosting(b) : b.id === brandId));
-  // A client sees a trial cut only once it's sent to them.
-  return brands.flatMap((brand) => listContent(brand.id).filter(codedPiece).filter((c) => !c.trialOf || !isClientView(c) || c.posting?.client).map((c) => ({ brand, c, state: postingState(c) })))
+  // A client sees a trial cut only once it's sent to them. Any other
+  // owner's Klien (2026-11-24: "baru bisa masuk di brandlab kalau di setujui
+  // tim dulu videonya") sees a piece only once a team-approved cut was sent;
+  // Wepeka's clients keep seeing the plan ("Sedang dibuat").
+  const shown = (brand, c) => !isClientView(c) || (!isAdmin(brand.ownerId) ? !!c.posting?.client : !c.trialOf || !!c.posting?.client);
+  return brands.flatMap((brand) => listContent(brand.id).filter(codedPiece).filter((c) => shown(brand, c)).map((c) => ({ brand, c, state: postingState(c) })))
     .filter(({ c }) => inRange(c.scheduleDate));
 }
 
@@ -135,11 +139,13 @@ function listHTML(items, ui) {
   // 2026-11-02: "yang sudah tayang tetap bisa dilihat di antrean minggu ini");
   // over all time it stays under its own chip, or every old post would fill it.
   const inAll = (x) => ui.period !== "all" || x.state !== "published";
-  const list = ui.client ? CLIENT_FILTERS : isWepekaDesk() ? FILTERS : FILTERS.filter((f) => f !== "client");
+  // "Dicek klien" where the brand has a Klien (any owner's since 2026-11-24).
+  const hasClient = isWepekaDesk() || items.some((x) => clientsOf(x.brand).length);
+  const list = ui.client ? CLIENT_FILTERS : hasClient ? FILTERS : FILTERS.filter((f) => f !== "client");
   const counts = Object.fromEntries(list.map((f) => [f, f === "all" ? items.filter(inAll).length : items.filter((x) => filterOf(x.state) === f).length]));
   const chips = `<div class="pq-filters" role="group" aria-label="${escapeHtml(t("pq.filterLabel"))}">${list.map((f) => `<button type="button" class="pq-filter ${ui.status === f ? "is-on" : ""}" data-status="${f}" aria-pressed="${ui.status === f}" style="--pst:${f === "all" ? "var(--text)" : stateColor(f)}">${f === "all" ? "" : "<i></i>"}${t(ui.client && f !== "all" ? `post.cst.${f}` : `pq.f.${f}`)}<b>${counts[f]}</b></button>`).join("")}</div>`;
   const shown = items.filter((x) => (ui.status === "all" ? inAll(x) : filterOf(x.state) === ui.status));
-  if (!shown.length) return `${chips}<div class="pq-empty">${icon("check", { size: 20 })}<span>${t(ui.status === "all" ? "pq.emptyAll" : "pq.emptyFilter")}</span></div>`;
+  if (!shown.length) return `${chips}<div class="pq-empty">${icon("check", { size: 20 })}<span>${t(ui.status === "all" ? (ui.client ? "pq.cl.emptyAll" : "pq.emptyAll") : "pq.emptyFilter")}</span></div>`;
   const rows = (list) => ordered(list).map(tileHTML).join("");
   if (ui.status === "published") {
     const list = shown.sort((a, b) => (b.c.publishedDate || b.c.scheduleDate || "").localeCompare(a.c.publishedDate || a.c.scheduleDate || ""));
@@ -344,7 +350,7 @@ export function render(root, { brandId }) {
         <div class="calx-head">
           <div class="calx-head-title">
             <span class="calx-head-art cl-pic" style="--cat:#FF5F57;--cat2:#FF2E93">${createArtSVG("video")}</span>
-            <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t(client ? "pq.cl.lead" : isWepekaDesk() ? "pq.lead" : "pq.leadOwn")}</p></div>
+            <div class="calx-head-text"><h1>${t("pq.title")}</h1><p class="calx-head-what">${t(client ? "pq.cl.lead" : isWepekaDesk() ? "pq.lead" : "pq.leadOwn", { team: clientTeam(brandId) })}</p></div>
           </div>
           <div class="pq-actions">
             ${client ? clientDriveHTML(brandId) : !isWepekaDesk() ? `${ownDriveHTML()}` : `${sourceHTML()}

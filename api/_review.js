@@ -176,10 +176,24 @@ export function ownPiece(c, uid) {
 // team's limit reads like a viewer, so not that), their access is on, and
 // the brand is Wepeka's (Video & posting is private).
 export const reviewsCuts = (m) => !!m && !m.disabled && (!!m.klien || (m.role === "editor" && !m.seatPaused));
+// Since 2026-11-24 every owner may have a Klien ("aku mau ada pilihan role
+// client juga"): on Wepeka's brands the Klien or an editor, on anyone
+// else's the Klien only.
 export function clientOn(brand, uid, isAdminUid) {
   const m = brand?.members?.[uid];
-  if (!brand || !reviewsCuts(m) || !isAdminUid(brand.ownerId)) throw fail(403, "not-client");
+  if (!brand || !m || m.disabled) throw fail(403, "not-client");
+  if (!(isAdminUid(brand.ownerId) ? reviewsCuts(m) : !!m.klien)) throw fail(403, "not-client");
   return m;
+}
+// A cut goes to the client only once the team approved it (owner,
+// 2026-11-24: "baru bisa masuk di brandlab kalau di setujui tim dulu
+// videonya"). Wepeka's own desk keeps sending drafts for its clients to
+// check, as before.
+export function sendableCut(c, versionId, { teamFirst }) {
+  const v = (c?.posting?.versions || []).find((x) => x.id === versionId);
+  if (!v) throw fail(404, "version");
+  if (teamFirst && v.status !== "approved") throw fail(409, "not-approved");
+  return v;
 }
 
 // Whose Drive receives a brand's cuts: the client who connected theirs,

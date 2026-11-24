@@ -24,7 +24,7 @@
 // Scheduling still only marks the piece until the server worker exists; that
 // worker will copy the final cut to a short-lived spot for Instagram to
 // fetch (.claude/social-hub/ARSITEKTUR.md).
-import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole, canEditBrand } from "./store.js";
+import { listBrands, getBrand, updateBrand, listContent, getContent, createContent, updateContent, setContentQuiet, localISODate, onChange as onStoreChange, isClientMember, brandRole, canEditBrand, scopeBrandId } from "./store.js";
 import { isAdmin, currentUid } from "./account.js";
 import { driveStatus, connectDrive, ensureFolders, uploadToDrive, driveVideoURL, driveImageURL, renameDriveFile } from "./drive.js";
 import { outboxSupported, restoreOutbox, connectOutbox, grantOutbox, outboxFileURL, outboxThumb, writeDecisions, addToOutbox, writeRootFile } from "./outbox.js";
@@ -70,11 +70,22 @@ export function canUsePosting(x) {
 // bedanya editor bisa edit brand dna dll"): watch, note, approve, download,
 // send footage — and, unlike the client, still edits the brand everywhere
 // else. A paused seat reads like a viewer (store.js brandRole), so not that.
+// Since 2026-11-24 any owner's Klien sees the same ("aku mau ada pilihan
+// role client juga"): only the cuts the team approved and sent to them.
 export function isClientView(x) {
   const b = brandOfC(x);
-  return !!b && !isWepekaDesk() && isAdmin(b.ownerId) && (isClientMember(b) || brandRole(b) === "editor");
+  if (!b || isWepekaDesk()) return false;
+  return isAdmin(b.ownerId) ? isClientMember(b) || brandRole(b) === "editor" : isClientMember(b);
 }
 export const canSeePosting = (x) => canUsePosting(x) || isClientView(x);
+// Who makes the videos, in the client's words: Wepeka on Wepeka's brands,
+// else the brand owner's name (any owner's Klien since 2026-11-24).
+export function clientTeam(x = scopeBrandId()) {
+  const b = brandOfC(x);
+  if (!b || isAdmin(b.ownerId)) return "Wepeka";
+  return b.ownerName || t("post.cl.theTeam");
+}
+const tc = (key, vars = {}) => t(key, { team: clientTeam(), ...vars });
 // Video codes (KP-12) on the brands this account works on here — never
 // written into somebody else's brand it only sees.
 export const ensureVideoCodes = () => ensureCodes((b) => canUsePosting(b));
@@ -510,7 +521,7 @@ export const stateLabelOf = (c) => stateLabel(c);
 // until the piece is scheduled or posted.
 const sentToClient = (p, v) => !!v && (p.client?.versionId === v.id || !!p.previews?.[v.id]);
 export function clientSendMark(c) {
-  if (!isWepekaDesk() || !c || isClientView(c)) return null;
+  if (!c || isClientView(c) || !canUsePosting(c)) return null;
   const p = postingOf(c);
   const last = latestOf(p);
   if (!last || (!p.client && !clientsOf(getBrand(c.brandId)).length)) return null;
@@ -1209,7 +1220,7 @@ function paint(root, contentId, ui, repaint) {
       ${extrasHTML(p, v, c, ui)}
       ${v.drive ? whereHTML(brand, c, v) : v.local ? localWhereHTML(p, v) : ""}
     </section>` : ""}
-    ${v && isWepekaDesk() ? clientHTML(c, p, v, key) : ""}
+    ${v && (isWepekaDesk() || clientsOf(brand).length) ? clientHTML(c, p, v, key) : ""}
     </div>
     </div>
   `;
@@ -1267,7 +1278,7 @@ function paintClient(root, c, ui, repaint) {
         <div class="pst-empty">
           <span class="pst-empty-art">${icon("clock", { size: 26 })}</span>
           <b>${t("post.cl.emptyTitle")}</b>
-          <span>${t("post.cl.emptyBody")}</span>
+          <span>${tc("post.cl.emptyBody")}</span>
         </div>`}
     </section>
     <div class="pst-side">
@@ -1656,7 +1667,7 @@ function clientGapHTML(gap) {
   return `<div class="pst-empty pst-connect">
       <span class="pst-empty-art is-drive">${icon("folder", { size: 26 })}</span>
       <b>${t("post.cl.waitTitle")}</b>
-      <span>${t("post.cl.waitBody")}</span>
+      <span>${tc("post.cl.waitBody")}</span>
     </div>`;
 }
 function clientConnectHTML() {
@@ -1664,7 +1675,7 @@ function clientConnectHTML() {
   return `<div class="pst-empty pst-connect">
       <span class="pst-empty-art is-drive">${icon("folder", { size: 26 })}</span>
       <b>${t("post.cl.driveTitle")}</b>
-      <span>${t("post.cl.driveBody")}</span>
+      <span>${tc("post.cl.driveBody")}</span>
       ${setup ? `<span class="pst-hint">${icon("info", { size: 13 })}${t("post.drive.setup")}</span>` : ""}
       <button type="button" class="cl-cta pst-cta" id="pst-connect" ${setup ? "disabled" : ""}><span>${t("post.cl.driveCta")}</span><span class="cl-cta-dot pst-dot-drive">${icon("link", { size: 16 })}</span></button>
     </div>`;
@@ -1680,7 +1691,7 @@ function clientPostHTML(c, p, key, { gap = false } = {}) {
   const dv = cp.versions.find((v) => v.id === cp.finalId) || latestOf(cp);
   const file = gap ? clientGapHTML(gap)
     : dv ? `<div class="pst-cl-file">${uploadKitHTML(c)}<p class="pst-hint">${icon(dv.status === "approved" ? "check" : "info", { size: 13 })}${escapeHtml(dv.status === "approved" ? t("post.cl.dlFinal") : t("post.cl.dlNotYet", { label: versionLabel(dv) }))}</p></div>`
-    : `<p class="pst-hint">${icon("clock", { size: 13 })}${t("post.cl.dlNone")}</p>`;
+    : `<p class="pst-hint">${icon("clock", { size: 13 })}${tc("post.cl.dlNone")}</p>`;
   return `<section class="pst-block pst-post">
       <div class="pst-embed-top"><span class="pst-badge is-${key}" style="--pst:${STATE_COLOR[key]}">${icon(STATE_ICON[key], { size: 11 })}${escapeHtml(stateLabel(c, key))}</span></div>
       <p class="pst-client-line">${icon("calendar", { size: 13 })} ${t("post.cl.when", { when: escapeHtml(when) })}</p>
@@ -1896,7 +1907,7 @@ function decideHTML(p, v, prev, ui, editor = "", timed = true) {
   } else if (ui.client && v.status === "approved") {
     head = `<p class="pst-result is-ok">${icon("check", { size: 15 })}<span>${t("post.cl.approved")}</span></p>`;
   } else if (ui.client && v.status === "revision") {
-    head = `<div class="pst-rev-ask"><p class="pst-result is-rev">${icon("refresh", { size: 15 })}<span>${t("post.cl.revising")}</span></p>
+    head = `<div class="pst-rev-ask"><p class="pst-result is-rev">${icon("refresh", { size: 15 })}<span>${tc("post.cl.revising")}</span></p>
         <button type="button" class="cl-cta pst-cta" id="pst-ok"><span>${t("post.cl.ok", { label: escapeHtml(label) })}</span><span class="cl-cta-dot pst-dot-ok">${icon("check", { size: 16 })}</span></button></div>`;
   } else if (v.status === "pending") {
     head = `<div class="pst-rev-ask">
@@ -1962,7 +1973,12 @@ function clientHTML(c, p, v, key) {
   const drive = clientDriveLine(brand);
   const sending = SENDING.get(c.id);
   const local = !!(v.local && p.local?.key && OUT.connected);
-  const canSend = local && drive.tone === "on" && !["scheduled", "published"].includes(key);
+  // Everyone else sends from their own Drive, and only a cut the team
+  // approved (owner, 2026-11-24: "baru bisa masuk … kalau di setujui tim
+  // dulu videonya"); Wepeka's desk keeps sending drafts from the Mac.
+  const fromDrive = !isWepekaDesk() && !!(v.drive?.id || v.driveFiles?.length);
+  const teamOk = isWepekaDesk() || v.status === "approved";
+  const canSend = (local || fromDrive) && teamOk && drive.tone === "on" && !["scheduled", "published"].includes(key);
   let line;
   if (!cl || !sent) line = t("post.client.intro");
   else if (cl.status === "waiting") line = t("post.client.waiting", { label: escapeHtml(versionLabel(sent)), when: escapeHtml(timeLabel(cl.sentAt)) });
@@ -1981,6 +1997,7 @@ function clientHTML(c, p, v, key) {
         ${people.length ? `<button type="button" class="btn btn-secondary btn-sm" id="pst-client-copy">${icon("link", { size: 14 })}${t("post.client.copy")}</button>` : `<button type="button" class="btn btn-secondary btn-sm" id="pst-client-invite">${icon("users", { size: 14 })}${t("post.client.invite")}</button>`}
       </div>`}
       ${!local && !cl && v.local ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.client.needFolder")}</p>` : ""}
+      ${!teamOk ? `<p class="pst-hint">${icon("lock", { size: 13 })}${t("post.client.needApproval")}</p>` : ""}
       ${people.length ? `<p class="pst-hint">${icon("info", { size: 13 })}${t("post.client.rule")}</p>` : ""}
     </section>`;
 }
@@ -1999,7 +2016,9 @@ async function sendCut(contentId, versionId, repaint) {
   const c = getContent(contentId);
   const p = postingOf(c);
   const v = p.versions.find((x) => x.id === versionId);
-  if (!v?.local || !p.local?.key || !OUT.connected) { toast(t("post.client.needFolder"), "error"); return; }
+  const fromDrive = !isWepekaDesk() && !!(v?.drive?.id || v?.driveFiles?.length);
+  if (!fromDrive && (!v?.local || !p.local?.key || !OUT.connected)) { toast(t("post.client.needFolder"), "error"); return; }
+  if (!isWepekaDesk() && v.status !== "approved") { toast(t("post.client.needApproval"), "error"); return; }
   if (clientDriveLine(getBrand(c.brandId)).tone !== "on") { toast(t("post.client.driveOff"), "error"); return; }
   // The brand keeps Wepeka's code letters, so its client reads the same codes.
   const brand = getBrand(c.brandId);
@@ -2007,9 +2026,21 @@ async function sendCut(contentId, versionId, repaint) {
   SENDING.set(contentId, { pct: 0 });
   repaint();
   try {
-    const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
-    const files = await Promise.all(names.map((n) => outboxFile(p.local.key, n)));
-    const poster = v.kind === "set" ? null : await posterBlob(p, v);
+    let files;
+    let poster = null;
+    if (fromDrive) {
+      // The cut read back from the owner's own Drive (the same copy the player uses).
+      files = [];
+      for (const f of ownFiles(c, v)) {
+        const blob = await (await fetch(await driveVideoURL(f.id))).blob();
+        files.push(new File([blob], f.name, { type: blob.type || "video/mp4" }));
+      }
+      if (v.kind !== "set" && v.drive?.poster) poster = await driveImageURL(v.drive.poster).then((u) => fetch(u)).then((r) => r.blob()).catch(() => null);
+    } else {
+      const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
+      files = await Promise.all(names.map((n) => outboxFile(p.local.key, n)));
+      poster = v.kind === "set" ? null : await posterBlob(p, v);
+    }
     await sendToClient({
       contentId, versionId, kind: v.kind || "video", code: videoCode(c), files, poster,
       onProgress: (f) => {
@@ -2302,7 +2333,7 @@ function wire(root, contentId, ui, repaint) {
         await clientDecide({ contentId, versionId: ui.vid, verdict: "approve" });
         toast(t("post.cl.approvedToast"));
       } catch (e) {
-        toast(t(e.code === "stale" ? "post.cl.stale" : "post.cl.failed"), "error");
+        toast(e.code === "stale" ? tc("post.cl.stale") : t("post.cl.failed"), "error");
       }
       return;
     }
@@ -2342,7 +2373,7 @@ function wire(root, contentId, ui, repaint) {
         repaint();
       }).catch((e) => {
         if (btn) btn.disabled = false;
-        toast(t(e.code === "stale" ? "post.cl.stale" : "post.cl.failed"), "error");
+        toast(e.code === "stale" ? tc("post.cl.stale") : t("post.cl.failed"), "error");
       });
       return;
     }

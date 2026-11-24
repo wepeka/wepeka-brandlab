@@ -120,8 +120,9 @@ export async function refreshAccess(sealed, { env = process.env, fetchImpl = fet
 // brands[id].klien). Their own Drive keeps the cuts sent to them, so the
 // brands they're a client on say whose Drive that is: clientDrive
 // { uid, email, at } on the brand doc (no secret in it).
-export function clientBrandIds(membership, isAdminUid) {
-  return Object.entries(membership?.brands || {}).filter(([, m]) => m?.klien && !m.disabled && isAdminUid(m.ownerId)).map(([id]) => id);
+// (Since 2026-11-24 any owner's Klien, not only Wepeka's.)
+export function clientBrandIds(membership, _isAdminUid) {
+  return Object.entries(membership?.brands || {}).filter(([, m]) => m?.klien && !m.disabled).map(([id]) => id);
 }
 export async function markClientBrands(db, uid, info, isAdminUid) {
   const snap = await db.doc(`memberships/${uid}`).get();
