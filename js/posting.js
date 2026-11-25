@@ -1402,17 +1402,20 @@ export function canDownloadCut(c, v) {
 // day · title" folders every other brand uses — and wherever the Mac folder
 // isn't open, the player, "Simpan / bagikan video" and Instagram posting read
 // that copy. On the Mac nothing changes: the folder stays the source.
-export const readsFromMac = (v, connected = OUT.connected) => !!v?.local && (connected || !v.drive?.id);
+export const readsFromMac = (v, connected = OUT.connected) => !!v?.local && (connected || !(v.drive?.id || v.driveFiles?.length));
 const PHONE_FROM = Date.parse("2026-11-25T00:00:00Z"); // older cuts stay Mac-only: no backlog of uploads
 const PHONE = { running: false, pct: new Map(), failed: new Set() }; // pct: versionId → 0..1
 export const phoneCopyPct = (versionId) => PHONE.pct.get(versionId);
 // The cuts worth a phone copy: the newest of each piece still in the works,
-// and the one approved for Instagram — videos only, made since this shipped.
+// and the one approved for Instagram — a video, a photo, or a carousel's
+// slides (owner, 2026-11-25: "buat yang carrousel juga bisa gitu dong"),
+// made since this shipped.
 export function phoneCopyWanted(c, from = PHONE_FROM) {
   const p = postingOf(c);
   if (!p.local?.key || c.status === "published" || p.ig?.state === "published") return [];
   const pick = [latestOf(p), p.versions.find((x) => x.id === p.finalId)].filter(Boolean);
-  return [...new Map(pick.map((v) => [v.id, v])).values()].filter((v) => v.local?.file && !v.drive?.id && (v.kind || "video") === "video" && (v.at || 0) >= from);
+  return [...new Map(pick.map((v) => [v.id, v])).values()].filter((v) => v.local?.file && !v.drive?.id && !v.driveFiles?.length
+    && (v.kind !== "set" || (v.local.slides || []).length) && (v.at || 0) >= from);
 }
 export async function copyCutsForPhone() {
   if (PHONE.running || !isWepekaDesk() || !OUT.connected) return;
@@ -1442,21 +1445,37 @@ async function copyOneForPhone({ contentId, versionId }) {
   if (!v?.local?.file) return;
   PHONE.pct.set(versionId, 0);
   tellWatchers(contentId, false);
+  const say = (f) => {
+    PHONE.pct.set(versionId, f);
+    qsa(`[data-phone="${versionId}"]`).forEach((el) => { el.textContent = t("post.phone.copying", { pct: Math.round(f * 100) }); });
+  };
   try {
-    const file = await outboxFile(p.local.key, v.local.file);
-    if (file.size > MAX_BYTES) throw new Error("too big");
-    const ext = extOf(v.local.file);
     const folderId = await ensureFolders(driveFolderPath(getBrand(c.brandId), c));
-    const up = await uploadToDrive(file, {
-      name: driveFileName(v, ext), folderId,
-      onProgress: (f) => {
-        PHONE.pct.set(versionId, f);
-        qsa(`[data-phone="${versionId}"]`).forEach((el) => { el.textContent = t("post.phone.copying", { pct: Math.round(f * 100) }); });
-      },
-    });
+    let patch;
+    if ((v.kind || "video") === "video") {
+      const file = await outboxFile(p.local.key, v.local.file);
+      if (file.size > MAX_BYTES) throw new Error("too big");
+      const ext = extOf(v.local.file);
+      const up = await uploadToDrive(file, { name: driveFileName(v, ext), folderId, onProgress: say });
+      patch = { drive: { id: up.id, link: up.webViewLink || "", folderId, ext, copy: true } };
+    } else {
+      // A photo, or a carousel's slides in their order: "Revisi 2 · 01.jpg" …
+      const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
+      const files = await Promise.all(names.map((n) => outboxFile(p.local.key, n)));
+      const total = files.reduce((n, f) => n + f.size, 0) || 1;
+      const out = [];
+      let done = 0;
+      for (let i = 0; i < files.length; i++) {
+        const name = `${versionLabel(v)} · ${String(i + 1).padStart(2, "0")}.${extOf(files[i].name)}`;
+        const up = await uploadToDrive(files[i], { name, folderId, onProgress: (f) => say((done + f * files[i].size) / total) });
+        out.push({ id: up.id, name });
+        done += files[i].size;
+      }
+      patch = { driveFiles: out, driveCopy: true };
+    }
     // Read again: the piece may have changed while the copy went up.
     const fp = postingOf(getContent(contentId));
-    updateContent(contentId, { posting: { ...fp, versions: fp.versions.map((x) => (x.id === versionId ? { ...x, drive: { id: up.id, link: up.webViewLink || "", folderId, ext, copy: true } } : x)) } });
+    updateContent(contentId, { posting: { ...fp, versions: fp.versions.map((x) => (x.id === versionId ? { ...x, ...patch } : x)) } });
   } catch (e) {
     PHONE.failed.add(versionId); // tried once this session; the next session tries again
     console.warn("[posting] phone copy failed", e);
@@ -1919,16 +1938,16 @@ function localPlayerHTML(v, tag, c) {
   const label = tag ? `<span class="pst-tag">${tag} · ${escapeHtml(versionLabel(v))}</span>` : "";
   if (v.kind === "set" || v.kind === "image") {
     const files = v.kind === "image" ? [v.local.file] : (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`));
-    return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${slideNavHTML(files.length)}</div>`;
+    return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${slideNavHTML(files.length)}${phoneLineHTML(v)}</div>`;
   }
   return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video>${phoneLineHTML(v)}</div>`;
 }
 // On the Mac: whether this cut can be opened on the phone yet.
 function phoneLineHTML(v) {
-  if (!isWepekaDesk() || (v.kind || "video") !== "video") return "";
+  if (!isWepekaDesk()) return "";
   const pct = phoneCopyPct(v.id);
   if (pct !== undefined) return `<span class="pst-phone" data-phone="${escapeHtml(v.id)}">${t("post.phone.copying", { pct: Math.round(pct * 100) })}</span>`;
-  return v.drive?.id ? `<span class="pst-phone is-on">${icon("check", { size: 12 })}${t("post.phone.ready")}</span>` : "";
+  return v.drive?.id || v.driveFiles?.length ? `<span class="pst-phone is-on">${icon("check", { size: 12 })}${t("post.phone.ready")}</span>` : "";
 }
 
 // A Drive video is fetched into the tab first (js/drive.js driveVideoURL);

@@ -522,6 +522,9 @@ function openReview(queue, onClose) {
       driveVideoURL(v.drive.id).then((u) => { const m = media(); if (m && at === i && el.isConnected) { m.src = u; m.play().catch(() => {}); } })
         .catch(() => toast(t("post.loadFailed"), "error"))
         .finally(() => stage?.classList.remove("is-loading"));
+    } else if (!isVideo && v.driveFiles?.length) {
+      // A Mac-folder photo or carousel away from the Mac: its slides' Drive copy, in order.
+      qsa("img[data-f]", el).forEach((img, k) => { const f = v.driveFiles[k]; if (f) driveImageURL(f.id).then((u) => { img.src = u; }).catch(() => {}); });
     }
     const strip = qs(".pq-rv-slides", el);
     strip?.addEventListener("scroll", () => { const n = qs(".pq-rv-slide-n", el); if (n) n.textContent = `${Math.round(strip.scrollLeft / strip.clientWidth) + 1}/${files.length}`; }, { passive: true });

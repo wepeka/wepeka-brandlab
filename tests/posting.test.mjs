@@ -252,9 +252,10 @@ test("away from the Mac (the phone), a Mac-folder cut with its Drive copy reads 
   assert.equal(readsFromMac(copied, false), false, "phone: the Drive copy");
   assert.equal(readsFromMac(local, false), true, "no copy yet: still the folder (shows 'open on the Mac')");
   assert.equal(readsFromMac({ id: "d", drive: { id: "x" } }, false), false, "a Drive cut is never local");
+  assert.equal(readsFromMac({ id: "s", kind: "set", local: { file: "v1", slides: ["01.jpg"] }, driveFiles: [{ id: "a" }] }, false), false, "phone: a carousel's copied slides");
 });
 
-test("phone copies: the newest cut and the approved one of a piece in the works, videos made since it shipped, once", () => {
+test("phone copies: the newest cut and the approved one of a piece in the works (video, photo or carousel), made since it shipped, once", () => {
   const from = Date.parse("2026-11-25T00:00:00Z"), at = from + 1000;
   const cut = (id, extra = {}) => ({ id, n: 0, status: "pending", at, kind: "video", local: { file: `${id}.mp4` }, ...extra });
   const piece = (posting, extra = {}) => ({ status: "editing", ...extra, posting: { local: { key: "winkhsin/WIN-1 x" }, notes: [], ...posting } });
@@ -263,7 +264,10 @@ test("phone copies: the newest cut and the approved one of a piece in the works,
   assert.deepEqual(ids(piece({ versions: [cut("v1", { status: "approved" }), cut("v2")], finalId: "v1" })), ["v2", "v1"], "plus the approved one");
   assert.deepEqual(ids(piece({ versions: [cut("v1", { drive: { id: "d" } })] })), [], "already copied");
   assert.deepEqual(ids(piece({ versions: [cut("v1", { at: from - 1 })] })), [], "made before it shipped");
-  assert.deepEqual(ids(piece({ versions: [cut("v1", { kind: "set" })] })), [], "carousels stay on the Mac");
+  assert.deepEqual(ids(piece({ versions: [cut("v1", { kind: "set", local: { file: "v1", slides: ["01.jpg", "02.jpg"] } })] })), ["v1"], "a carousel's slides too (2026-11-25)");
+  assert.deepEqual(ids(piece({ versions: [cut("v1", { kind: "set", local: { file: "v1", slides: [] } })] })), [], "an empty slide folder: nothing to copy");
+  assert.deepEqual(ids(piece({ versions: [cut("v1", { kind: "image", local: { file: "foto.jpg" } })] })), ["v1"], "a photo too");
+  assert.deepEqual(ids(piece({ versions: [cut("v1", { kind: "set", local: { file: "v1", slides: ["01.jpg"] }, driveFiles: [{ id: "a" }] })] })), [], "slides already copied");
   assert.deepEqual(ids(piece({ versions: [cut("v1")] }, { status: "published" })), [], "already posted");
   assert.deepEqual(ids({ status: "editing", posting: { versions: [{ ...cut("v1"), local: undefined, drive: { id: "x" } }], notes: [] } }), [], "not a Mac-folder piece");
 });
