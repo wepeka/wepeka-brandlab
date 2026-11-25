@@ -1417,10 +1417,41 @@ export function phoneCopyWanted(c, from = PHONE_FROM) {
   return [...new Map(pick.map((v) => [v.id, v])).values()].filter((v) => v.local?.file && !v.drive?.id && !v.driveFiles?.length
     && (v.kind !== "set" || (v.local.slides || []).length) && (v.at || 0) >= from);
 }
+// The cover picked for a piece, as its thumbnail too: "Unduh thumbnail" on
+// the phone reads the piece's thumbnail, and the cover only sits in the Mac
+// folder (owner, 2026-11-25: "lah terus aku download thumbnailnya dari
+// manaa" → "Ya, otomatiskan"). Only while the thumbnail is empty or was put
+// there this way (posting.thumbFrom): one he uploaded himself stays.
+export function coverThumbWanted(c) {
+  const p = postingOf(c);
+  if (!p.local?.key || c.status === "published" || p.ig?.state === "published") return null;
+  const cover = String(p.cover || "");
+  if (!/\.(jpe?g|png|webp)$/i.test(cover) || !(p.covers || []).includes(cover)) return null;
+  if (c.thumbnail && !p.thumbFrom) return null;
+  if (c.thumbnail && p.thumbFrom === cover) return null;
+  return cover;
+}
+async function coversToThumbs() {
+  for (const b of listBrands()) {
+    for (const c of listContent(b.id)) {
+      const cover = coverThumbWanted(c);
+      if (!cover || PHONE.failed.has(`cover:${c.id}:${cover}`)) continue;
+      try {
+        const url = await thumbDataURL(await outboxFile(postingOf(c).local.key, cover));
+        const fp = postingOf(getContent(c.id));
+        if (fp.cover === cover) updateContent(c.id, { thumbnail: url, posting: { ...fp, thumbFrom: cover } });
+      } catch (e) {
+        PHONE.failed.add(`cover:${c.id}:${cover}`);
+        console.warn("[posting] cover as thumbnail failed", e);
+      }
+    }
+  }
+}
 export async function copyCutsForPhone() {
   if (PHONE.running || !isWepekaDesk() || !OUT.connected) return;
   PHONE.running = true;
   try {
+    await coversToThumbs();
     if (!(await checkDrive()).connected) return;
     for (;;) {
       let job = null;

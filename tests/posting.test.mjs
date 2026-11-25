@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { postingState, formatIssues, driveFolderPath, driveFileName, cleanName, readsFromMac, phoneCopyWanted } from "../js/posting.js";
+import { postingState, formatIssues, driveFolderPath, driveFileName, cleanName, readsFromMac, phoneCopyWanted, coverThumbWanted } from "../js/posting.js";
 
 const v = (id, status, extra = {}) => ({ id, n: 0, status, w: 540, h: 960, dur: 10, size: 1e6, type: "video/mp4", ...extra });
 
@@ -270,4 +270,16 @@ test("phone copies: the newest cut and the approved one of a piece in the works 
   assert.deepEqual(ids(piece({ versions: [cut("v1", { kind: "set", local: { file: "v1", slides: ["01.jpg"] }, driveFiles: [{ id: "a" }] })] })), [], "slides already copied");
   assert.deepEqual(ids(piece({ versions: [cut("v1")] }, { status: "published" })), [], "already posted");
   assert.deepEqual(ids({ status: "editing", posting: { versions: [{ ...cut("v1"), local: undefined, drive: { id: "x" } }], notes: [] } }), [], "not a Mac-folder piece");
+});
+
+test("the picked cover becomes the piece's thumbnail (for the phone), never over one uploaded by hand", () => {
+  const piece = (posting, extra = {}) => ({ status: "editing", ...extra, posting: { local: { key: "winkhsin/WIN-1 x" }, covers: ["cover-1.jpg", "cover-2.jpg"], versions: [], notes: [], ...posting } });
+  assert.equal(coverThumbWanted(piece({ cover: "cover-2.jpg" })), "cover-2.jpg", "no thumbnail yet");
+  assert.equal(coverThumbWanted(piece({ cover: "cover-2.jpg", thumbFrom: "cover-2.jpg" }, { thumbnail: "data:image/jpeg;base64,x" })), null, "already that cover");
+  assert.equal(coverThumbWanted(piece({ cover: "cover-1.jpg", thumbFrom: "cover-2.jpg" }, { thumbnail: "data:image/jpeg;base64,x" })), "cover-1.jpg", "another cover picked: follows it");
+  assert.equal(coverThumbWanted(piece({ cover: "cover-1.jpg" }, { thumbnail: "https://x/own.jpg" })), null, "his own thumbnail stays");
+  assert.equal(coverThumbWanted(piece({ cover: "cover-9.jpg" })), null, "a cover not in the folder");
+  assert.equal(coverThumbWanted(piece({ cover: "" })), null);
+  assert.equal(coverThumbWanted(piece({ cover: "cover-2.jpg" }, { status: "published" })), null, "already posted");
+  assert.equal(coverThumbWanted({ status: "editing", posting: { cover: "cover-2.jpg", covers: ["cover-2.jpg"], versions: [], notes: [] } }), null, "not a Mac-folder piece");
 });
