@@ -176,6 +176,7 @@ export async function linkOutbox() {
   if (OUT.connected) {
     const r = await syncOutbox();
     toast(t("post.local.synced", { n: r.posts }));
+    copyCutsForPhone().catch(() => {});
   }
   return OUT;
 }
@@ -777,7 +778,7 @@ export function wirePosting(root, { brandId, onChange } = {}) {
   ensureVideoCodes();
   if (usesOutbox() && Date.now() - lastSync > 30_000) {
     lastSync = Date.now();
-    ensureOutbox().then((o) => { if (o.connected) syncOutbox().catch(() => {}); });
+    ensureOutbox().then((o) => { if (o.connected) syncOutbox().then(() => copyCutsForPhone()).catch(() => {}); });
   }
   if (!resumed) {
     resumed = true;
@@ -1375,7 +1376,7 @@ function ownFiles(c, v) {
   const base = videoCode(c) || String(c.title || "video").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 40);
   const tag = v.status === "approved" ? "FINAL" : versionLabel(v);
   let files = [];
-  if (v.local) {
+  if (readsFromMac(v)) {
     files = (v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file]).filter(Boolean).map((f) => ({ local: f, from: f }));
   } else if (v.driveFiles?.length) {
     files = v.driveFiles.map((f) => ({ id: f.id, from: f.name || "" }));
@@ -1385,10 +1386,84 @@ function ownFiles(c, v) {
   return files.map((f, i) => ({ ...f, name: `${base} · ${tag}${files.length > 1 ? ` · ${i + 1}` : ""}.${clientExt(f.from, v.kind)}` }));
 }
 // A local cut needs the Mac folder open in this browser; a Drive one, the id.
+// Away from the Mac (the phone) a local cut with its Drive copy reads from
+// Drive instead (copyCutsForPhone).
 export function canDownloadCut(c, v) {
   if (!c || !v) return false;
-  if (v.local) return !!(postingOf(c).local?.key && OUT.connected && ownFiles(c, v).length);
+  if (readsFromMac(v)) return !!(postingOf(c).local?.key && OUT.connected && ownFiles(c, v).length);
   return !!(v.drive?.id || v.driveFiles?.length);
+}
+
+// Wepeka's desk works from the Mac folder, which a phone can't open (owner,
+// 2026-11-25: "buat aku bisa lihat videonya dari handphone juga", and sending
+// a cut straight into the Instagram app from the phone, so Instagram's own
+// "share to Facebook" still links the reel). So each new cut is also copied
+// into the account's own Google Drive — the same "Brandlab / brand / month /
+// day · title" folders every other brand uses — and wherever the Mac folder
+// isn't open, the player, "Simpan / bagikan video" and Instagram posting read
+// that copy. On the Mac nothing changes: the folder stays the source.
+export const readsFromMac = (v, connected = OUT.connected) => !!v?.local && (connected || !v.drive?.id);
+const PHONE_FROM = Date.parse("2026-11-25T00:00:00Z"); // older cuts stay Mac-only: no backlog of uploads
+const PHONE = { running: false, pct: new Map(), failed: new Set() }; // pct: versionId → 0..1
+export const phoneCopyPct = (versionId) => PHONE.pct.get(versionId);
+// The cuts worth a phone copy: the newest of each piece still in the works,
+// and the one approved for Instagram — videos only, made since this shipped.
+export function phoneCopyWanted(c, from = PHONE_FROM) {
+  const p = postingOf(c);
+  if (!p.local?.key || c.status === "published" || p.ig?.state === "published") return [];
+  const pick = [latestOf(p), p.versions.find((x) => x.id === p.finalId)].filter(Boolean);
+  return [...new Map(pick.map((v) => [v.id, v])).values()].filter((v) => v.local?.file && !v.drive?.id && (v.kind || "video") === "video" && (v.at || 0) >= from);
+}
+export async function copyCutsForPhone() {
+  if (PHONE.running || !isWepekaDesk() || !OUT.connected) return;
+  PHONE.running = true;
+  try {
+    if (!(await checkDrive()).connected) return;
+    for (;;) {
+      let job = null;
+      for (const b of listBrands()) {
+        for (const c of listContent(b.id)) {
+          const v = phoneCopyWanted(c).find((x) => !PHONE.failed.has(x.id));
+          if (v) { job = { contentId: c.id, versionId: v.id }; break; }
+        }
+        if (job) break;
+      }
+      if (!job) break;
+      await copyOneForPhone(job);
+    }
+  } finally {
+    PHONE.running = false;
+  }
+}
+async function copyOneForPhone({ contentId, versionId }) {
+  const c = getContent(contentId);
+  const p = postingOf(c);
+  const v = p.versions.find((x) => x.id === versionId);
+  if (!v?.local?.file) return;
+  PHONE.pct.set(versionId, 0);
+  tellWatchers(contentId, false);
+  try {
+    const file = await outboxFile(p.local.key, v.local.file);
+    if (file.size > MAX_BYTES) throw new Error("too big");
+    const ext = extOf(v.local.file);
+    const folderId = await ensureFolders(driveFolderPath(getBrand(c.brandId), c));
+    const up = await uploadToDrive(file, {
+      name: driveFileName(v, ext), folderId,
+      onProgress: (f) => {
+        PHONE.pct.set(versionId, f);
+        qsa(`[data-phone="${versionId}"]`).forEach((el) => { el.textContent = t("post.phone.copying", { pct: Math.round(f * 100) }); });
+      },
+    });
+    // Read again: the piece may have changed while the copy went up.
+    const fp = postingOf(getContent(contentId));
+    updateContent(contentId, { posting: { ...fp, versions: fp.versions.map((x) => (x.id === versionId ? { ...x, drive: { id: up.id, link: up.webViewLink || "", folderId, ext, copy: true } } : x)) } });
+  } catch (e) {
+    PHONE.failed.add(versionId); // tried once this session; the next session tries again
+    console.warn("[posting] phone copy failed", e);
+  } finally {
+    PHONE.pct.delete(versionId);
+    tellWatchers(contentId, true);
+  }
 }
 // The gallery's one tap: the cut chosen for Instagram, else the newest.
 export function downloadCutOf(c) {
@@ -1518,8 +1593,14 @@ export async function prepareUploadShare(c, onProgress = () => {}) {
 export async function shareUpload(c) {
   const ready = READY_FILES.get(c.id);
   if (!ready) return false;
+  // The caption rides along on the clipboard (owner, 2026-11-25): Instagram
+  // opens with the video, he only pastes. Started in the same tap as the
+  // sheet — a later write would no longer count as the person's own tap.
+  const cap = String(getContent(c.id)?.caption || c.caption || "");
+  const copied = cap && navigator.clipboard?.writeText ? navigator.clipboard.writeText(cap).then(() => true, () => false) : Promise.resolve(false);
   try {
     await navigator.share({ files: ready.files, title: c.title || "" });
+    if (await copied) toast(t("pqu.capOnClipboard"), "success");
     return true;
   } catch (e) {
     if (e?.name !== "AbortError") { console.warn("[upload] share", e); toast(t("pqu.shareFailed"), "error"); }
@@ -1840,13 +1921,20 @@ function localPlayerHTML(v, tag, c) {
     const files = v.kind === "image" ? [v.local.file] : (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`));
     return `<div class="pst-player is-slides" data-key="${escapeHtml(key)}">${label}<div class="pst-slides">${files.map((f) => `<img data-local-img="${escapeHtml(f)}" alt="">`).join("")}</div>${slideNavHTML(files.length)}</div>`;
   }
-  return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video></div>`;
+  return `<div class="pst-player" data-pv="${escapeHtml(v.id)}" data-key="${escapeHtml(key)}" data-local="${escapeHtml(v.local.file)}">${label}<video playsinline preload="metadata" ${tag === "A" ? "muted" : ""}></video>${phoneLineHTML(v)}</div>`;
+}
+// On the Mac: whether this cut can be opened on the phone yet.
+function phoneLineHTML(v) {
+  if (!isWepekaDesk() || (v.kind || "video") !== "video") return "";
+  const pct = phoneCopyPct(v.id);
+  if (pct !== undefined) return `<span class="pst-phone" data-phone="${escapeHtml(v.id)}">${t("post.phone.copying", { pct: Math.round(pct * 100) })}</span>`;
+  return v.drive?.id ? `<span class="pst-phone is-on">${icon("check", { size: 12 })}${t("post.phone.ready")}</span>` : "";
 }
 
 // A Drive video is fetched into the tab first (js/drive.js driveVideoURL);
 // the player says so while it loads.
 function playerHTML(v, tag, c) {
-  if (v.local) return localPlayerHTML(v, tag, c);
+  if (readsFromMac(v)) return localPlayerHTML(v, tag, c);
   if (v.driveFiles && v.kind !== "video") {
     return `<div class="pst-player is-slides"><div class="pst-slides">${v.driveFiles.map((f) => `<img data-drive-img="${escapeHtml(f.id)}" alt="">`).join("")}</div>${slideNavHTML(v.driveFiles.length)}</div>`;
   }
@@ -2196,7 +2284,7 @@ function postHTML(c, p, key, handle, posting = null) {
 async function cutFiles(c, v) {
   const cp = postingOf(c);
   const isReel = (cp.type || "reels") === "reels" && (v.kind || "video") === "video";
-  if (v.local) {
+  if (readsFromMac(v)) {
     const names = v.kind === "set" ? (v.local.slides || []).map((f) => (v.local.file === "slides" ? f : `${v.local.file}/${f}`)) : [v.local.file];
     const files = await Promise.all(names.map((n) => outboxFile(cp.local.key, n)));
     const cover = isReel && /\.jpe?g$/i.test(cp.cover || "") ? await outboxFile(cp.local.key, cp.cover).catch(() => null) : null;

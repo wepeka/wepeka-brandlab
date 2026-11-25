@@ -18,7 +18,7 @@ import { qs, qsa, escapeHtml, toast, formatNumber, openMenu, closeMenu } from ".
 import { t, getLang } from "../i18n.js";
 import { createArtSVG } from "../create-art.js";
 import { weekStart, addDays } from "../goal-roadmap.js";
-import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, clientTeam, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut, uploadKitHTML, uploadCopyHTML, wireUploadKit, markPostedByHand } from "../posting.js";
+import { canUsePosting, canSeePosting, isWepekaDesk, ensureVideoCodes, drivePosterOf, isClientView, clientCutCount, clientPosterOf, clientsOf, clientQueueURL, driveInfo, ensureDrive, connectOwnDrive, clientDriveGap, clientVideoURL, postingState, openPosting, usesOutbox, ensureOutbox, outboxInfo, linkOutbox, versionLabelOf, latestVersion, stateColor, stateLabelOf, decide, copyCode, editorChip, clientDriveLine, clientSendMark, clientTeam, canDownloadCut, downloadCutOf, ownDownloadLabel, downloadCut, uploadKitHTML, uploadCopyHTML, wireUploadKit, markPostedByHand, copyCutsForPhone } from "../posting.js";
 import { outboxThumb, outboxFileURL } from "../outbox.js";
 import { syncOutbox, pickBrand } from "../outbox-sync.js";
 import { videoCode, codedPiece } from "../video-codes.js";
@@ -450,7 +450,7 @@ export function render(root, { brandId }) {
     if (!usesOutbox()) return;
     const o = await ensureOutbox();
     if (o.connected) {
-      try { ui.unmatched = (await syncOutbox()).unmatched; } catch (e) { console.warn("[antrean] sync", e); }
+      try { ui.unmatched = (await syncOutbox()).unmatched; copyCutsForPhone().catch(() => {}); } catch (e) { console.warn("[antrean] sync", e); }
     }
     paint();
   };

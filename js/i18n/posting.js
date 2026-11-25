@@ -193,6 +193,8 @@ export default {
   "post.local.needFolder": { en: "Connect the folder on your Mac first.", id: "Hubungkan folder di Mac dulu." },
   "post.local.where": { en: "On the Mac:", id: "Di Mac:" },
   "post.local.missing": { en: "This file isn't in the folder anymore.", id: "File ini sudah tidak ada di folder." },
+  "post.phone.copying": { en: "Copying for the phone… {pct}%", id: "Menyalin ke HP… {pct}%" },
+  "post.phone.ready": { en: "Opens on the phone too", id: "Bisa dibuka di HP" },
   "post.local.synced": { en: "Folder connected · {n} posts found.", id: "Folder tersambung · {n} post ditemukan." },
 
   "post.type.label": { en: "Kind of post", id: "Jenis post" },
@@ -372,7 +374,8 @@ export default {
   "pqu.preparing": { en: "Getting the video… {pct}%", id: "Menyiapkan video… {pct}%" },
   "pqu.prepared": { en: "Video ready — tap again to save or share it.", id: "Video siap — ketuk lagi untuk simpan atau bagikan." },
   "pqu.share": { en: "Save / share video", id: "Simpan / bagikan video" },
-  "pqu.shareHint": { en: "Pick \"Save Video\" to put it in your gallery, or pick Instagram to post it straight away.", id: "Pilih \"Simpan Video\" supaya masuk galeri, atau pilih Instagram untuk langsung posting." },
+  "pqu.shareHint": { en: "Pick Instagram to post it straight away (the caption is already copied, just paste it), or \"Save Video\" to put it in your gallery.", id: "Pilih Instagram untuk langsung posting (caption sudah tersalin, tinggal tempel), atau \"Simpan Video\" supaya masuk galeri." },
+  "pqu.capOnClipboard": { en: "Caption copied — paste it in Instagram", id: "Caption sudah tersalin — tinggal tempel di Instagram" },
   "pqu.shareFailed": { en: "Couldn't open the share menu. Try again.", id: "Menu bagikan tidak bisa dibuka. Coba lagi." },
   "pqu.cover": { en: "Download thumbnail", id: "Unduh thumbnail" },
   "pqu.thumbUpload": { en: "Upload thumbnail", id: "Upload thumbnail" },

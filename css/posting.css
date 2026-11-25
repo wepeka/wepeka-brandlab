@@ -771,3 +771,7 @@ body.pq-review-open{ overflow:hidden; }
   .pqu-cap-text{ -webkit-line-clamp:3; }
   .pqu-done .btn{ width:100%; justify-content:center; min-height:42px; }
 }
+
+/* Wepeka's desk: whether a Mac-folder cut can be opened on the phone yet (its Drive copy). */
+.pst-phone{ position:absolute; right:8px; top:8px; z-index:2; display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:999px; font-size:11.5px; font-weight:600; color:#fff; background:rgba(0,0,0,.55); backdrop-filter:blur(6px); pointer-events:none; }
+.pst-phone.is-on{ background:rgba(22,163,74,.85); }
